@@ -99,10 +99,10 @@ func TestThePinToolIsRefusedInAFolderNoWorkspaceResolvesFrom(t *testing.T) {
 			entity := filepath.Join("catalog", "recipe", "helm", "server", "1.0.0", "recipe.yaml")
 			reads := "  source:\n    kind: helm-https-chart\n    url: " + srv.URL + "/pinchart.tgz\n    version: \"1.0.0\"\n"
 			if tc.noSource {
-				reads = "  workload: |\n    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n    containers:\n      main:\n" +
+				reads = "  workload: |\n    apiVersion: aggrega.ai/v1beta1\n    kind: Workload\n    containers:\n      main:\n" +
 					"        image: demo:1\n"
 			}
-			writeNoticeFixture(t, filepath.Join(folder, entity), "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\n"+
+			writeNoticeFixture(t, filepath.Join(folder, entity), "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\n"+
 				"metadata:\n  name: server\n  version: \"1.0.0\"\nspec:\n  capability: helm\n  implements: server\n"+reads)
 			if tc.marked {
 				writeNoticeFixture(t, filepath.Join(folder, workspaceconfig.ConfigFilename), "workspace: {}\n")

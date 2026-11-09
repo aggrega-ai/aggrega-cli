@@ -636,7 +636,7 @@ func publishPluginEntityWithRuntime(t *testing.T, host, name, version, pluginPat
 	// pair — spec.plugin is the digest-free artifact identity, the version is
 	// supplied by metadata.version, and the .wasm rides inline in the entity's
 	// single manifest at <repo>:<version>.
-	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: `+name+`
@@ -712,7 +712,7 @@ func TestIntegration_PipelinePluginPinning_RoundTrip(t *testing.T) {
 	// pipeline (the artifacts: entry makes it resource-generating, which is what
 	// triggers the FR pipeline to execute).
 	cat := t.TempDir()
-	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -725,7 +725,7 @@ spec:
       port: { type: integer, default: 8080 }
       replicas: { type: integer, default: 1 }
 `)
-	writeFixtureEntity(t, cat, "recipe/helm/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "recipe/helm/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -734,7 +734,7 @@ spec:
   capability: helm
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `+"`replicas`"+` 1 }}
     containers:
@@ -747,7 +747,7 @@ spec:
       plugin: `+recipePluginURI+`
       function: step
 `)
-	writeFixtureEntity(t, cat, "feature/test/cred/1.0.0/feature.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "feature/test/cred/1.0.0/feature.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/cred
@@ -758,7 +758,7 @@ spec:
   schema:
     values: {}
 `)
-	writeFixtureEntity(t, cat, "featurerecipe/helm/cred/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "featurerecipe/helm/cred/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: cred
@@ -803,7 +803,7 @@ spec:
 	// A consumer workspace wiring the Component (with a secret attachment that pulls
 	// the Feature) through the Manifest mappings, resolved purely over the registry.
 	ws := t.TempDir()
-	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -816,7 +816,7 @@ spec:
         cred:
           type: test/cred
 `)
-	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -830,7 +830,7 @@ spec:
       type:
         test/cred:1.0.0: helm/cred:1.0.0
 `)
-	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel
@@ -1058,7 +1058,7 @@ func assertSinglePluginManifest(t *testing.T, host, name, version, wantWasmDiges
 func writePipelinePluginFixtureCatalog(t *testing.T, host, pluginURI string) string {
 	t.Helper()
 	cat := t.TempDir()
-	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -1071,7 +1071,7 @@ spec:
       port: { type: integer, default: 8080 }
       replicas: { type: integer, default: 1 }
 `)
-	writeFixtureEntity(t, cat, "recipe/helm/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "recipe/helm/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -1080,7 +1080,7 @@ spec:
   capability: helm
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `+"`replicas`"+` 1 }}
     containers:
@@ -1096,7 +1096,7 @@ spec:
 	pushCatalog(t, host, cat)
 
 	ws := t.TempDir()
-	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -1106,7 +1106,7 @@ spec:
     app:
       type: test/svc
 `)
-	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -1117,7 +1117,7 @@ spec:
       type:
         test/svc:1.0.0: helm/svc:1.0.0
 `)
-	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel
@@ -1311,7 +1311,7 @@ func writeFixtureEntity(t *testing.T, catalogDir, relPath, yaml string) {
 func authoredFixtureCatalog(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	writeFixtureEntity(t, dir, "component/test/needs-socket/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, dir, "component/test/needs-socket/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/needs-socket
@@ -1327,7 +1327,7 @@ spec:
   schema:
     values: {}
 `)
-	writeFixtureEntity(t, dir, "recipe/compose/needs-socket/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, dir, "recipe/compose/needs-socket/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: needs-socket
@@ -1336,13 +1336,13 @@ spec:
   capability: compose
   implements: test/needs-socket
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: busybox:1
 `)
-	writeFixtureEntity(t, dir, "aggregate/test/app-agg/1.0.0/aggregate.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, dir, "aggregate/test/app-agg/1.0.0/aggregate.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test/app-agg
@@ -1379,7 +1379,7 @@ func TestIntegration_RequiredSocket_AuthoredFixture(t *testing.T) {
 	pushCatalog(t, host, authoredFixtureCatalog(t))
 
 	ws := t.TempDir()
-	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -1390,7 +1390,7 @@ spec:
       type: test/needs-socket
       # backend (required: true) is deliberately left UNBOUND.
 `)
-	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -1401,7 +1401,7 @@ spec:
       type:
         test/needs-socket:1.0.0: compose/needs-socket:1.0.0
 `)
-	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

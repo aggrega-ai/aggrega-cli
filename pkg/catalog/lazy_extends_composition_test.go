@@ -17,7 +17,7 @@ import (
 // Parent contributes values.replicas (maximum 3, default 1) and a provides key;
 // the child extends it and authors no pillar content, so replicas, its
 // constraint, its default, and the provides key are all INHERITED verbatim.
-const extendsParentCompYAML = `apiVersion: aggrega.ai/v1alpha1
+const extendsParentCompYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/test/parent-comp
@@ -32,7 +32,7 @@ spec:
       endpoint: { type: string }
 `
 
-const extendsChildCompYAML = `apiVersion: aggrega.ai/v1alpha1
+const extendsChildCompYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/test/child-comp
@@ -44,7 +44,7 @@ spec:
   schema: inherited
 `
 
-const extendsParentFeatYAML = `apiVersion: aggrega.ai/v1alpha1
+const extendsParentFeatYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/test/parent-feat
@@ -57,7 +57,7 @@ spec:
       threshold: { type: integer, maximum: 10 }
 `
 
-const extendsChildFeatYAML = `apiVersion: aggrega.ai/v1alpha1
+const extendsChildFeatYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/test/child-feat

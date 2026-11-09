@@ -49,7 +49,7 @@ func writeCompletionFixture(t *testing.T, dir, name, content string) string {
 func TestCompletionDispatchKindCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n"
 	path := writeCompletionFixture(t, dir, "agg.yaml", content)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -87,13 +87,13 @@ func TestCompletionDispatchKindCursor(t *testing.T) {
 func TestCompletionDispatchApiVersionCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n"
 	path := writeCompletionFixture(t, dir, "agg.yaml", content)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, path, content)
 
-	// Cursor on "aggrega.ai/v1alpha1" value at line 0, char 14.
+	// Cursor on "aggrega.ai/v1beta1" value at line 0, char 14.
 	result := completionRequest(t, srv, path, 0, 14)
 	if len(result.Items) != 1 {
 		t.Errorf("apiVersion completion returned %d items; want 1", len(result.Items))
@@ -104,11 +104,11 @@ func TestCompletionDispatchExtendsCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	// Sibling Component fixture in workspace.
-	writeCompletionFixture(t, dir, "parent.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/parent\n  version: 1.0.0\nspec: {}\n")
+	writeCompletionFixture(t, dir, "parent.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/parent\n  version: 1.0.0\nspec: {}\n")
 	// Child Component file whose cursor will be on spec.extends.
 	// Use a placeholder value so yamlpos can classify the cursor on
 	// a scalar (cursors on whitespace past EOL don't classify).
-	childContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: app/child\n  version: 1.0.0\nspec:\n  extends: placeholder\n"
+	childContent := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: app/child\n  version: 1.0.0\nspec:\n  extends: placeholder\n"
 	childPath := writeCompletionFixture(t, dir, "child.yaml", childContent)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -131,8 +131,8 @@ func TestCompletionDispatchExtendsCursor(t *testing.T) {
 func TestCompletionDispatchComponentsTypeCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeCompletionFixture(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n")
-	aggContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: placeholder\n"
+	writeCompletionFixture(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n")
+	aggContent := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: placeholder\n"
 	aggPath := writeCompletionFixture(t, dir, "agg.yaml", aggContent)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -148,8 +148,8 @@ func TestCompletionDispatchComponentsTypeCursor(t *testing.T) {
 func TestCompletionDispatchImplementsCursorRecipe(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeCompletionFixture(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/cache\n  version: 1.0.0\nspec: {}\n")
-	recipeContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: cache-recipe\n  version: 1.0.0\nspec:\n  implements: placeholder\n  capability: helm\n"
+	writeCompletionFixture(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/cache\n  version: 1.0.0\nspec: {}\n")
+	recipeContent := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: cache-recipe\n  version: 1.0.0\nspec:\n  implements: placeholder\n  capability: helm\n"
 	recipePath := writeCompletionFixture(t, dir, "recipe.yaml", recipeContent)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -167,11 +167,11 @@ func TestCompletionDispatchImplementsCursorFeatureRecipe(t *testing.T) {
 	dir := t.TempDir()
 	// A Feature URI in the workspace (the FeatureRecipe's
 	// spec.implements: cursor should enumerate Features, not Components).
-	writeCompletionFixture(t, dir, "feature.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: feature/scaling\n  version: 1.0.0\nspec: {}\n")
+	writeCompletionFixture(t, dir, "feature.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: feature/scaling\n  version: 1.0.0\nspec: {}\n")
 	// A Component in the same workspace — should NOT appear since
 	// FeatureRecipe.spec.implements targets Features only.
-	writeCompletionFixture(t, dir, "component.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/x\n  version: 1.0.0\nspec: {}\n")
-	frContent := "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: scaling-fr\n  version: 1.0.0\nspec:\n  implements: placeholder\n  capability: helm\n"
+	writeCompletionFixture(t, dir, "component.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/x\n  version: 1.0.0\nspec: {}\n")
+	frContent := "apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: scaling-fr\n  version: 1.0.0\nspec:\n  implements: placeholder\n  capability: helm\n"
 	frPath := writeCompletionFixture(t, dir, "fr.yaml", frContent)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -190,7 +190,7 @@ func TestCompletionDispatchImplementsCursorFeatureRecipe(t *testing.T) {
 func TestCompletionDispatchSchemaKeywordCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec:\n  schema:\n    properties:\n      port:\n        type: integer\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec:\n  schema:\n    properties:\n      port:\n        type: integer\n"
 	path := writeCompletionFixture(t, dir, "comp.yaml", content)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -209,7 +209,7 @@ func TestCompletionDispatchSchemaKeywordCursor(t *testing.T) {
 func TestCompletionDispatchSchemaTypeValueCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec:\n  schema:\n    properties:\n      port:\n        type: integer\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec:\n  schema:\n    properties:\n      port:\n        type: integer\n"
 	path := writeCompletionFixture(t, dir, "comp.yaml", content)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -237,7 +237,7 @@ func TestCompletionDispatchSchemaTypeAsArrayCursor(t *testing.T) {
 	dir := t.TempDir()
 	// Type-as-array: JSON Schema 2020-12 allows `type: [string, "null"]`.
 	// Cursor on the array element should still offer primitive-type candidates.
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/x\n  version: 1.0.0\nspec:\n  schema:\n    properties:\n      port:\n        type:\n          - integer\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/x\n  version: 1.0.0\nspec:\n  schema:\n    properties:\n      port:\n        type:\n          - integer\n"
 	path := writeCompletionFixture(t, dir, "comp.yaml", content)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -260,7 +260,7 @@ func TestCompletionDispatchSchemaValueOfNonTypeKeyReturnsEmpty(t *testing.T) {
 	// Per the deferred-value design, this returns empty candidates
 	// (no keyword candidates, no primitive candidates — schema-value
 	// completion is shipped only for type: keys today).
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec:\n  schema:\n    description: A free-form description.\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec:\n  schema:\n    description: A free-form description.\n"
 	path := writeCompletionFixture(t, dir, "comp.yaml", content)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -276,8 +276,8 @@ func TestCompletionDispatchSchemaValueOfNonTypeKeyReturnsEmpty(t *testing.T) {
 func TestCompletionDispatchReleaseAggregatePathCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeCompletionFixture(t, dir, "app.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec: {}\n")
-	releaseContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  aggregate: placeholder\n"
+	writeCompletionFixture(t, dir, "app.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec: {}\n")
+	releaseContent := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  aggregate: placeholder\n"
 	releasePath := writeCompletionFixture(t, dir, "release.yaml", releaseContent)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -293,8 +293,8 @@ func TestCompletionDispatchReleaseAggregatePathCursor(t *testing.T) {
 func TestCompletionDispatchManifestRecipeReferenceCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeCompletionFixture(t, dir, "recipe.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: recipes/helm-server\n  version: 1.0.0\nspec:\n  implements: core/server\n  capability: helm\n")
-	manifestContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  mappings:\n    components:\n      type:\n        core/server: placeholder\n"
+	writeCompletionFixture(t, dir, "recipe.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: recipes/helm-server\n  version: 1.0.0\nspec:\n  implements: core/server\n  capability: helm\n")
+	manifestContent := "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  mappings:\n    components:\n      type:\n        core/server: placeholder\n"
 	manifestPath := writeCompletionFixture(t, dir, "manifest.yaml", manifestContent)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -310,7 +310,7 @@ func TestCompletionDispatchManifestRecipeReferenceCursor(t *testing.T) {
 func TestCompletionDispatchUsesTargetCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	aggContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n    api:\n      type: core/api\n      uses:\n        backend:\n          primary:\n            target: placeholder\n"
+	aggContent := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n    api:\n      type: core/api\n      uses:\n        backend:\n          primary:\n            target: placeholder\n"
 	aggPath := writeCompletionFixture(t, dir, "agg.yaml", aggContent)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -329,7 +329,7 @@ func TestCompletionDispatchUsesTargetCursor(t *testing.T) {
 func TestCompletionDispatchUnknownCursorReturnsEmpty(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/x\n  version: 1.0.0\nspec: {}\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/x\n  version: 1.0.0\nspec: {}\n"
 	path := writeCompletionFixture(t, dir, "comp.yaml", content)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -346,10 +346,10 @@ func TestCompletionDispatchUnknownCursorReturnsEmpty(t *testing.T) {
 func TestCompletionDispatchTriggerSlashPrefixNarrows(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeCompletionFixture(t, dir, "a.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n")
-	writeCompletionFixture(t, dir, "b.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/web-server\n  version: 1.0.0\nspec: {}\n")
-	writeCompletionFixture(t, dir, "c.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: app/api\n  version: 1.0.0\nspec: {}\n")
-	aggContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: core/\n"
+	writeCompletionFixture(t, dir, "a.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n")
+	writeCompletionFixture(t, dir, "b.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/web-server\n  version: 1.0.0\nspec: {}\n")
+	writeCompletionFixture(t, dir, "c.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: app/api\n  version: 1.0.0\nspec: {}\n")
+	aggContent := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: core/\n"
 	aggPath := writeCompletionFixture(t, dir, "agg.yaml", aggContent)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
@@ -383,7 +383,7 @@ func TestCompletionDispatchTriggerSlashPrefixNarrows(t *testing.T) {
 func TestCompletionDispatchClassifierUnknownReturnsEmpty(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/x\n  version: 1.0.0\n  description: A free-form description scalar.\nspec: {}\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/x\n  version: 1.0.0\n  description: A free-form description scalar.\nspec: {}\n"
 	path := writeCompletionFixture(t, dir, "comp.yaml", content)
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()

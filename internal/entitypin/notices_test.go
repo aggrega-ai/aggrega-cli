@@ -15,7 +15,7 @@ import (
 // refusedSiblingRecipe is a Recipe the catalog walk refuses to place — a helm
 // Recipe with no output-bearing block — so a view reading its directory writes
 // the one-line notice that it skipped it.
-const refusedSiblingRecipe = "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: refused\n" +
+const refusedSiblingRecipe = "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: refused\n" +
 	"  version: \"1.0.0\"\nspec:\n  capability: helm\n  implements: refused\n"
 
 // TestThePinStepsCatalogNoticesGoToTheWriterItIsGiven holds the catalog view the

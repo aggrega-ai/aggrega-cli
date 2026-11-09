@@ -70,7 +70,7 @@ func mustResolve(t *testing.T, lookup pluginpath.Lookup, uri string) pluginpath.
 // service — the smallest end-to-end synthesis case, enough to drive the
 // helm-provider guest's render_node export over the workload projection.
 func minimalSynthWorkload() *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)

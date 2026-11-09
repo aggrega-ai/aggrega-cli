@@ -27,7 +27,7 @@ import (
 func bundleFileNameWorkspace(t *testing.T, root string, names ...string) (releasePath, catalogDir string) {
 	t.Helper()
 	var library strings.Builder
-	library.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: ArtifactLibrary\nmetadata:\n  name: Probe\n" +
+	library.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: ArtifactLibrary\nmetadata:\n  name: Probe\n" +
 		"  version: \"1.0.0\"\nspec:\n  artifacts:\n    Bundle:\n")
 	for i, name := range names {
 		library.WriteString("      \"" + name + "\": |\n        apiVersion: v1\n        kind: ConfigMap\n" +

@@ -20,7 +20,7 @@ import (
 // the Release is {core/server, server-recipe, helm}. Returns the catalog dir.
 func writeIsolationWorkspace(t *testing.T, tmp string) string {
 	t.Helper()
-	writeFixtureFile(t, filepath.Join(tmp, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(tmp, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: iso
@@ -32,7 +32,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixtureFile(t, filepath.Join(tmp, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(tmp, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: iso-release
@@ -49,7 +49,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixtureFile(t, filepath.Join(tmp, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(tmp, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: iso-manifest
@@ -61,7 +61,7 @@ spec:
         core/server: server-recipe:1.0.0
 `)
 	catalogDir := filepath.Join(tmp, "catalog")
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -73,7 +73,7 @@ spec:
     values:
       port: { type: integer, default: 8080 }
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -82,7 +82,7 @@ spec:
   capability: helm
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
@@ -154,7 +154,7 @@ func TestServeValidate_BrokenOutOfClosureIsolation(t *testing.T) {
 	}
 
 	// Add broken entities OUTSIDE the closure.
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "broken.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "broken.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: broken-recipe
@@ -162,7 +162,7 @@ metadata:
 spec:
   capability: helm
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "libs", "broken-lib.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "libs", "broken-lib.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BrokenLib
@@ -173,7 +173,7 @@ spec:
       $dynamicAnchor: forbidden
       type: string
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "broken.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "broken.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/broken
@@ -205,7 +205,7 @@ func TestServeValidate_InClosureBreakSurfacesDiagnostic(t *testing.T) {
 	catalogDir := writeIsolationWorkspace(t, tmp)
 
 	// Corrupt the IN-closure core/server component with a dangling $ref.
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server

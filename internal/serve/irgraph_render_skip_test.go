@@ -28,7 +28,7 @@ func renderDialWorkspace(t *testing.T) (ws, releaseRel string) {
 	ws = t.TempDir()
 
 	catalogDir := filepath.Join(ws, "catalog")
-	const svcComponent = `apiVersion: aggrega.ai/v1alpha1
+	const svcComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -41,7 +41,7 @@ spec:
       host: { type: string, required: true }
 `
 	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), svcComponent)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -52,7 +52,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -62,7 +62,7 @@ spec:
 	// The helm-renderer provider Plugin binds the helm provider to the embedded
 	// helm rendering guest; its digest-free spec.plugin identity resolves through
 	// the plugin-resolution cascade's embed tier with no cache or lockfile.
-	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm
@@ -80,7 +80,7 @@ spec:
     timeoutMs: 300000
 `)
 
-	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -92,7 +92,7 @@ spec:
         demo/svc: demo-server-synthesized
 `)
 
-	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-agg
@@ -103,7 +103,7 @@ spec:
       type: "demo/svc:1.0.0"
 `)
 	relPath := filepath.Join(ws, "app-release.yaml")
-	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release

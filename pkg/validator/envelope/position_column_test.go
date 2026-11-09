@@ -33,7 +33,7 @@ func TestARenderedPositionCountsItsColumnInCharacters(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			doc := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\n" +
+			doc := "apiVersion: aggrega.ai/v1beta1\nkind: Component\n" +
 				`metadata: {name: core/bad, description: "` + tc.description + `", version: "bogus", ` +
 				"labels: {component.aggrega.ai/type: server}}\nspec: {}\n"
 			_, err := ValidateBytes(KindComponent, []byte(doc), "component.yaml")

@@ -59,7 +59,7 @@ func (p *fakeAggregatePuller) PullAggregate(ctx context.Context, name, _ string)
 }
 
 func registryAggregateBody(name, version string, subURIs ...string) []byte {
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: " + name +
+	src := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: " + name +
 		"\n  version: \"" + version + "\"\nspec:\n  components:\n    " + name + "-svc:\n      type: server\n      values:\n        port: 8080\n"
 	if len(subURIs) > 0 {
 		src += "  aggregates:\n"
@@ -78,7 +78,7 @@ func itoaSmall(i int) string { return string(rune('0' + i)) }
 // must resolve them through the registry tier + cache→catalog bridge.
 func writeServerCatalog(t *testing.T, catalogRoot string) {
 	t.Helper()
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -91,7 +91,7 @@ spec:
       port: { type: integer, default: 8080 }
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -100,7 +100,7 @@ spec:
   capability: helm
   implements: server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -113,7 +113,7 @@ spec:
 
 func writeServerManifest(t *testing.T, root string) {
 	t.Helper()
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -138,7 +138,7 @@ func TestRegistryTopLevelResolvesEndToEnd(t *testing.T) {
 	writeServerCatalog(t, catalogDir)
 	writeServerManifest(t, root)
 	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\noffline: true\nskip_signature_verification: true\n")
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -195,7 +195,7 @@ func TestRegistrySubResolvesEndToEnd(t *testing.T) {
 	writeServerManifest(t, root)
 	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\noffline: true\nskip_signature_verification: true\n")
 	// The top-level is a LOCAL ./file that imports `mysub` by bare identity.
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: top
@@ -210,7 +210,7 @@ spec:
     mysub:
       type: mysub
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -265,7 +265,7 @@ func TestRegistryAggregateDriftTagVsVersion(t *testing.T) {
 	writeServerCatalog(t, catalogDir)
 	writeServerManifest(t, root)
 	writeWorkspaceConfig(t, root, "default_registry: hub.aggrega.ai\nauto_pull: false\noffline: true\nskip_signature_verification: true\n")
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod

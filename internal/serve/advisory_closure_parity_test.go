@@ -57,7 +57,7 @@ func pillarOverlapAndNarrowingWorkspace(t *testing.T) (ws, releaseRel string) {
 	catalogDir := filepath.Join(ws, "catalog")
 
 	// One property name in two pillars, plus the slot the Feature attaches to.
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -76,7 +76,7 @@ spec:
       endpoint: { type: string }
 `)
 
-	writeFixtureFile(t, filepath.Join(catalogDir, "features", "limits-base.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "features", "limits-base.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: demo/limits-base
@@ -91,7 +91,7 @@ spec:
 
 	// Redeclares the inherited bound at a lower value: the child replaces what it
 	// inherited, which is the advisory the composition raises.
-	writeFixtureFile(t, filepath.Join(catalogDir, "features", "limits.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "features", "limits.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: demo/limits
@@ -105,7 +105,7 @@ spec:
       retries: { type: integer, minimum: 1 }
 `)
 
-	writeFixtureFile(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: advisory-parity-manifest
@@ -116,7 +116,7 @@ spec:
       type: {}
 `)
 
-	writeFixtureFile(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: advisory-parity
@@ -132,7 +132,7 @@ spec:
             retries: 3
 `)
 
-	writeFixtureFile(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: advisory-parity-release

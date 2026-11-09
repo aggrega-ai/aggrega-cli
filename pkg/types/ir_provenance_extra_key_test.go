@@ -121,7 +121,7 @@ func irProvenanceValidate(t *testing.T, g *types.IRGraph, mutate func(map[string
 func irProvenanceDefinition(t *testing.T) map[string]any {
 	t.Helper()
 	var doc map[string]any
-	if err := json.Unmarshal([]byte(schemas.IRSchemaV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.IRSchemaV1beta1), &doc); err != nil {
 		t.Fatalf("decode embedded IR schema: %v", err)
 	}
 	defs, _ := doc["$defs"].(map[string]any)

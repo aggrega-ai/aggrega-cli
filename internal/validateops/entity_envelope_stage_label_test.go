@@ -18,7 +18,7 @@ import (
 // pipeline step per id given, with extra appended at the end of the document.
 func stageLabelFeatureRecipe(extra string, ids ...string) string {
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: retry-policy\n  version: 1.0.0\nspec:\n  capability: helm\n  implements: core/retry-policy:1.0.0\n  pipeline:\n")
+	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: retry-policy\n  version: 1.0.0\nspec:\n  capability: helm\n  implements: core/retry-policy:1.0.0\n  pipeline:\n")
 	for _, id := range ids {
 		b.WriteString("    - id: " + id + "\n      plugin: pipeline-step/litellm-gateway-config:1.0.0\n      function: step\n")
 	}
@@ -50,6 +50,14 @@ func TestEnvelopeRefusalStageLabel(t *testing.T) {
 			wantLabel: "shape: ",
 			condition: envelope.ErrDuplicatePipelineStepID(),
 			shortCode: "E0370",
+		},
+		{
+			name: "a retired api version keeps the schema label under its own condition",
+			doc: strings.Replace(stageLabelFeatureRecipe("", "write_retry_count"),
+				"apiVersion: aggrega.ai/v1beta1", "apiVersion: aggrega.ai/v1alpha1", 1),
+			wantLabel: "schema: ",
+			condition: envelope.ErrRetiredAPIVersion(),
+			shortCode: "E0373",
 		},
 		{
 			name:      "a schema violation keeps the schema label",
@@ -99,7 +107,7 @@ func TestEnvelopeRefusalStageLabel(t *testing.T) {
 func TestEnvelopeStageLabelOfAFailureThatIsNoViolation(t *testing.T) {
 	t.Parallel()
 
-	_, err := envelope.ValidateBytes(envelope.KindFeatureRecipe, []byte("apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n\t- mixed tabs and spaces"), "recipe.yaml")
+	_, err := envelope.ValidateBytes(envelope.KindFeatureRecipe, []byte("apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n\t- mixed tabs and spaces"), "recipe.yaml")
 	if err == nil {
 		t.Fatal("a document mixing tabs and spaces must fail to parse")
 	}

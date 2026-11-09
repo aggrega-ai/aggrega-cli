@@ -67,7 +67,7 @@ func TestDescend_ShortFormFeatureRecipeViaKindHint(t *testing.T) {
 	loader := &fakeRecipeLoader{
 		features: map[string]*types.FeatureRecipe{
 			uri: {
-				APIVersion: "aggrega.ai/v1alpha1",
+				APIVersion: "aggrega.ai/v1beta1",
 				Kind:       "FeatureRecipe",
 				Metadata:   types.FeatureRecipeMetadata{Name: uri, Version: "1.0.0"},
 				Spec:       types.FeatureRecipeSpec{Capability: "helm", Source: "oci://hub.aggrega.ai/charts/k8s-secret"},
@@ -115,7 +115,7 @@ func TestDescend_PathFormNoHintUnchanged(t *testing.T) {
 // feature when a bare URI is shared across kinds.
 func TestComputeClosure_ManifestMappingValuesCarryKindHint(t *testing.T) {
 	t.Parallel()
-	man := loadManifest(t, `apiVersion: aggrega.ai/v1alpha1
+	man := loadManifest(t, `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: m

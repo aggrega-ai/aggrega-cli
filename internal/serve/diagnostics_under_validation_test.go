@@ -24,7 +24,7 @@ import (
 // document is useless as a fixture here: its correct diagnostics answer is the
 // empty one, which is byte-identical to the false clean answer this file exists
 // to rule out, so no assertion over it could tell the two apart.
-const brokenComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+const brokenComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/broken

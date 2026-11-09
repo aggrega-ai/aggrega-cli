@@ -63,7 +63,7 @@ type closureFaultRow struct {
 	why string
 }
 
-const corpusManifest = `apiVersion: aggrega.ai/v1alpha1
+const corpusManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: corpus-manifest
@@ -74,7 +74,7 @@ spec:
       type: {}
 `
 
-const corpusAggregate = `apiVersion: aggrega.ai/v1alpha1
+const corpusAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-aggregate
@@ -91,7 +91,7 @@ func closureFaultCorpus() []closureFaultRow {
 			// what an editor underlines.
 			name: "manifest reference names no file",
 			files: map[string]string{
-				"release.yaml": `apiVersion: aggrega.ai/v1alpha1
+				"release.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-release
@@ -117,7 +117,7 @@ spec:
 			// fault moves to `spec.aggregate` and so does the span.
 			name: "aggregate reference names no file",
 			files: map[string]string{
-				"release.yaml": `apiVersion: aggrega.ai/v1alpha1
+				"release.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-release
@@ -158,7 +158,7 @@ spec:
 			// refusal, two spans, told apart by who wrote the reference.
 			name: "manifest reference is inherited, so the walk degrades to the enclosing key",
 			files: map[string]string{
-				"release.yaml": `apiVersion: aggrega.ai/v1alpha1
+				"release.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-child-release
@@ -167,7 +167,7 @@ metadata:
 spec:
   extends: ./base.yaml
 `,
-				"base.yaml": `apiVersion: aggrega.ai/v1alpha1
+				"base.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-base-release
@@ -191,7 +191,7 @@ spec:
 		{
 			name: "release document does not parse",
 			files: map[string]string{
-				"release.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nspec:\n  manifest: [unclosed\n",
+				"release.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Release\nspec:\n  manifest: [unclosed\n",
 				"release.lock": "",
 			},
 			release:     "release.yaml",
@@ -203,7 +203,7 @@ spec:
 		{
 			name: "release carries no spec block at all",
 			files: map[string]string{
-				"release.yaml": `apiVersion: aggrega.ai/v1alpha1
+				"release.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-release
@@ -399,7 +399,7 @@ func TestClosureErrorDataFallsBackWhenTheWalkResolvesNothing(t *testing.T) {
 	// A document with no root mapping key the path's first segment can
 	// match. The walk returns nothing for `.spec.manifest`, so the payload
 	// must keep its file-level shape.
-	const noSpec = `apiVersion: aggrega.ai/v1alpha1
+	const noSpec = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-release

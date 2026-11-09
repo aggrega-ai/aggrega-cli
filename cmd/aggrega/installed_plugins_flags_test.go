@@ -423,7 +423,7 @@ func pluginEntityWithFlags(t *testing.T, flags []wasm.PluginCommandFlag) []byte 
 		entries = append(entries, e)
 	}
 	doc, err := json.Marshal(map[string]any{
-		"apiVersion": "aggrega.ai/v1alpha1",
+		"apiVersion": "aggrega.ai/v1beta1",
 		"kind":       "Plugin",
 		"metadata":   map[string]any{"name": "greet", "version": "1.0.0", "pluginType": "cli"},
 		"spec": map[string]any{
@@ -511,13 +511,13 @@ func TestPluginFlagGuardAgreesWithTheEntitySchema(t *testing.T) {
 
 	t.Run("a planted divergence is caught", func(t *testing.T) {
 		const anchor = `"enum": ["string", "bool", "int"]`
-		if n := strings.Count(schemas.PluginV1alpha1, anchor); n != 1 {
+		if n := strings.Count(schemas.PluginV1beta1, anchor); n != 1 {
 			t.Fatalf("plant anchor %s appears %d times in the Plugin schema; want exactly 1", anchor, n)
 		}
-		if failures := flagAgreementFailures(t, compiledPluginSchemaAccepts(t, schemas.PluginV1alpha1)); len(failures) != 0 {
+		if failures := flagAgreementFailures(t, compiledPluginSchemaAccepts(t, schemas.PluginV1beta1)); len(failures) != 0 {
 			t.Fatalf("the unplanted schema, compiled directly, diverges from the host check:\n%s", strings.Join(failures, "\n"))
 		}
-		planted := strings.Replace(schemas.PluginV1alpha1, anchor, `"enum": ["string", "bool"]`, 1)
+		planted := strings.Replace(schemas.PluginV1beta1, anchor, `"enum": ["string", "bool"]`, 1)
 		failures := flagAgreementFailures(t, compiledPluginSchemaAccepts(t, planted))
 		want := strings.Join([]string{
 			"int with default: the host check and the entity schema disagree",

@@ -15,7 +15,7 @@ import (
 // recursiveAliasDoc is a Component that anchors spec and aliases it as its
 // own descendant. Expanding the alias reproduces the anchor, which contains
 // the alias again: the document denotes an infinite tree.
-var recursiveAliasDoc = []byte(`apiVersion: aggrega.ai/v1alpha1
+var recursiveAliasDoc = []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api
@@ -86,7 +86,7 @@ func TestEnvelope_RecursiveAliasRefused(t *testing.T) {
 // only the enclosing anchor's reappearance beneath itself that halts.
 func TestEnvelope_MutuallyRecursiveAliasRefused(t *testing.T) {
 	t.Parallel()
-	doc := []byte(`apiVersion: aggrega.ai/v1alpha1
+	doc := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api
@@ -121,7 +121,7 @@ spec: &outer
 // through the same code the halt guards.
 func deepAliasingDoc(depth int) []byte {
 	var b strings.Builder
-	b.WriteString(`apiVersion: aggrega.ai/v1alpha1
+	b.WriteString(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: deep-control

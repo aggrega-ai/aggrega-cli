@@ -1,6 +1,6 @@
 # The control for the two-boundary helm variant: one boundary, one attachment,
 # so the expected file set for a single contributor is readable on its own.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: bs-helm-one-boundary

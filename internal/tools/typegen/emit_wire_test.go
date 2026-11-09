@@ -330,28 +330,28 @@ func TestWireRegistryRefusesWhatTheHostExportListsLeaveUnsaid(t *testing.T) {
 	}{
 		{
 			name: "a socket whose plugin type lists no export",
-			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket",
+			target: codecTarget{schemaFile: "wasm-example-v1beta1.schema.json", pkgPath: "example.com/socket",
 				wireExports: []wireExport{{pluginType: plugintype.Linter, inputDef: "ExampleInput", outputDef: "ExampleOutput"}}},
 			registry: withHostExports(plugintype.Linter, nil),
 			wantSubs: []string{"example_gen.go", string(plugintype.Linter), "host-export list is empty"},
 		},
 		{
 			name: "a role whose default its type's list does not hold",
-			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket",
+			target: codecTarget{schemaFile: "wasm-example-v1beta1.schema.json", pkgPath: "example.com/socket",
 				wireExports: everyRole("ExampleInput")},
 			registry: withHostExports(plugintype.Governance, withoutRenderVerdict),
 			wantSubs: []string{"example_gen.go", string(plugintype.RoleRenderVerdict), renderVerdict},
 		},
 		{
 			name: "a served plugin type listing an export no entry declares",
-			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket",
+			target: codecTarget{schemaFile: "wasm-example-v1beta1.schema.json", pkgPath: "example.com/socket",
 				wireExports: []wireExport{{pluginType: plugintype.Importer, export: importer.HostExports[0], inputDef: "ExampleInput", outputDef: "ExampleOutput"}}},
 			registry: withHostExports(plugintype.Importer, append(append([]string(nil), importer.HostExports...), unregistered)),
 			wantSubs: []string{"example_gen.go", string(plugintype.Importer), unregistered},
 		},
 		{
 			name: "a served plugin type listing several exports, one of which no entry declares",
-			target: codecTarget{schemaFile: "wasm-example-v1alpha1.schema.json", pkgPath: "example.com/socket",
+			target: codecTarget{schemaFile: "wasm-example-v1beta1.schema.json", pkgPath: "example.com/socket",
 				wireExports: everyProviderExport},
 			registry: withHostExports(plugintype.Provider, append(append([]string(nil), provider.HostExports...), unregistered)),
 			wantSubs: []string{"example_gen.go", string(plugintype.Provider), unregistered},

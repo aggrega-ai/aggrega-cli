@@ -15,7 +15,7 @@ import (
 // twice, so it is the document the invocation proofs below are read against: a
 // rule reporting nothing on it is a rule that found nothing rather than a rule
 // nothing asked.
-const legalPlacementRelease = `apiVersion: aggrega.ai/v1alpha1
+const legalPlacementRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -140,7 +140,7 @@ func TestBoundaryPlacementTraversalEnumeratesEveryAuthoredPlacement(t *testing.T
 // because that boundary is not a scope any file spells.
 func TestBoundaryPlacementLocatorNamesTheAuthoredKeyOnEveryAxis(t *testing.T) {
 	t.Parallel()
-	const topLevelOnly = `apiVersion: aggrega.ai/v1alpha1
+	const topLevelOnly = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -219,7 +219,7 @@ spec:
 // reading cannot, and there is no window in which it does not.
 func TestReleaseBoundaryPlacementsReportsDeclarationsNotTheReconciledSet(t *testing.T) {
 	t.Parallel()
-	const namedAndRouted = `apiVersion: aggrega.ai/v1alpha1
+	const namedAndRouted = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod

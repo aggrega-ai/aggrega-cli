@@ -1,5 +1,5 @@
 # The chart refuses, quoting the value the Component declares sensitive.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: helm-refusal-quoting-release

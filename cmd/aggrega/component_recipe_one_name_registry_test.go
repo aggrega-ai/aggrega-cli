@@ -19,7 +19,7 @@ import (
 // and its Manifest names the Recipe by: one name, one version, two kinds.
 const oneNameRegistryRef = "compose/app:1.0.0"
 
-const oneNameRegistryComponent = `apiVersion: aggrega.ai/v1alpha1
+const oneNameRegistryComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: compose/app
@@ -35,7 +35,7 @@ spec:
         default: "hello"
 `
 
-const oneNameRegistryRecipe = `apiVersion: aggrega.ai/v1alpha1
+const oneNameRegistryRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: app
@@ -44,7 +44,7 @@ spec:
   capability: compose
   implements: compose/app:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -68,7 +68,7 @@ func TestAComponentAndARecipeOfOneNameServedByARegistryEachPinTheirOwnDocument(t
 	if err := os.MkdirAll(filepath.Join(root, "catalog"), 0o755); err != nil {
 		t.Fatalf("mkdir catalog: %v", err)
 	}
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: one-name
@@ -78,7 +78,7 @@ spec:
     app:
       type: `+oneNameRegistryRef+`
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: one-name-manifest
@@ -90,7 +90,7 @@ spec:
         `+oneNameRegistryRef+`: `+oneNameRegistryRef+`
 `)
 	releasePath := filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: one-name-release

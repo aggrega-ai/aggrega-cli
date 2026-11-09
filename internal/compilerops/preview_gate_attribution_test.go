@@ -35,7 +35,7 @@ import (
 
 // unmappedInstanceAggregate declares one component whose type the manifest below
 // maps to nothing.
-const unmappedInstanceAggregate = `apiVersion: aggrega.ai/v1alpha1
+const unmappedInstanceAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: attribution-app
@@ -48,7 +48,7 @@ spec:
 
 // unmappedInstanceManifest carries an empty component mapping table, so the
 // instance the Aggregate declares resolves to no recipe at all.
-const unmappedInstanceManifest = `apiVersion: aggrega.ai/v1alpha1
+const unmappedInstanceManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: attribution-manifest
@@ -59,7 +59,7 @@ spec:
       type: {}
 `
 
-const unmappedInstanceRelease = `apiVersion: aggrega.ai/v1alpha1
+const unmappedInstanceRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: attribution-release

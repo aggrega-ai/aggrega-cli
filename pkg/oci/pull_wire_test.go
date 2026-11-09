@@ -86,7 +86,7 @@ func (r *manifestRequestLog) ServeHTTP(w http.ResponseWriter, req *http.Request)
 func TestAPullAsksForTheManifestOnceByTheReferenceItWasGiven(t *testing.T) {
 	t.Parallel()
 	const repository = "component/core/api-server"
-	source := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/api-server\n")
+	source := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/api-server\n")
 
 	cases := []struct {
 		name string

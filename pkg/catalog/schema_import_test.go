@@ -64,7 +64,7 @@ func schemaImportFixture(t *testing.T, specBody string, files map[string]string)
 		}
 	}
 	path := filepath.Join(entityDir, "component.yaml")
-	doc := `apiVersion: aggrega.ai/v1alpha1
+	doc := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: local/compute/importer

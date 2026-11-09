@@ -23,7 +23,7 @@ import (
 // also mounts; the second reads it. The first also mounts a configmap volume,
 // which is what proves the configuration an init container carries survives.
 func twoInitContainerWorkload() *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 
 	main := types.ContainerSpec{Image: "platform:1.0"}
 	main.Ports.Set("http", types.PortSpec{Port: 5678})
@@ -462,7 +462,7 @@ func TestComposeAssemble_InitChainAndEdgeDependency(t *testing.T) {
 		{Name: "warm-cache", Image: "warm:1.0"},
 	}
 
-	db := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	db := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	dc := types.ContainerSpec{Image: "postgres:15"}
 	dc.Ports.Set("pg", types.PortSpec{Port: 5432})
 	db.Containers.Set("main", dc)

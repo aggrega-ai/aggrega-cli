@@ -24,7 +24,7 @@ import (
 // the root, which renders a ConfigMap from a local chart. A Recipe written against
 // a base implements everything extending it, at any depth.
 var extendsBasePublisher = map[string]string{
-	"component/acme/datastore/root-db/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"component/acme/datastore/root-db/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/datastore/root-db
@@ -37,7 +37,7 @@ spec:
     values:
       greeting: { type: string, default: hello }
 `,
-	"component/acme/datastore/base-db/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"component/acme/datastore/base-db/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/datastore/base-db
@@ -49,7 +49,7 @@ spec:
   extends: acme/datastore/root-db:1.0.0
   schema: inherited
 `,
-	"recipe/helm/base-db/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"recipe/helm/base-db/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: base-db
@@ -75,7 +75,7 @@ data:
 // published base, and whose Manifest maps only that Component — the base is named
 // by nothing but the wrapper's `extends`.
 var extendsWrapperConsumer = map[string]string{
-	"catalog/db/component.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"catalog/db/component.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: local/datastore/db
@@ -87,7 +87,7 @@ spec:
   extends: acme/datastore/base-db:1.0.0
   schema: inherited
 `,
-	"aggregate.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"aggregate.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -99,7 +99,7 @@ spec:
       values:
         greeting: ciao
 `,
-	"manifest.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"manifest.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -110,7 +110,7 @@ spec:
       type:
         local/datastore/db:0.1.0: helm/base-db:1.0.0
 `,
-	"release.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"release.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: dev

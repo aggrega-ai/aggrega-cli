@@ -44,25 +44,25 @@ func TestUnloadableDocumentAnswersEachShape(t *testing.T) {
 	}{
 		{
 			name:       "the envelope with a YAML syntax error",
-			data:       "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/broken\nspec:\n  schema: values: [\n",
+			data:       "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/broken\nspec:\n  schema: values: [\n",
 			unloadable: true,
 			reason:     "failed to unmarshal YAML:",
 		},
 		{
 			name:       "the envelope quoted, with a YAML syntax error",
-			data:       "apiVersion: \"aggrega.ai/v1alpha1\"\nkind: Component\nspec: : [\n",
+			data:       "apiVersion: \"aggrega.ai/v1beta1\"\nkind: Component\nspec: : [\n",
 			unloadable: true,
 			reason:     "failed to unmarshal YAML:",
 		},
 		{
 			name:       "the envelope single-quoted, with a YAML syntax error",
-			data:       "apiVersion: 'aggrega.ai/v1alpha1'\nkind: Component\nspec: : [\n",
+			data:       "apiVersion: 'aggrega.ai/v1beta1'\nkind: Component\nspec: : [\n",
 			unloadable: true,
 			reason:     "failed to unmarshal YAML:",
 		},
 		{
 			name:       "the envelope with a header that does not decode",
-			data:       "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  - name: core/listed\nspec: {}\n",
+			data:       "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  - name: core/listed\nspec: {}\n",
 			unloadable: true,
 			reason:     "failed to decode the envelope: line 4 (metadata): a list is written where a map is expected",
 		},
@@ -74,7 +74,7 @@ func TestUnloadableDocumentAnswersEachShape(t *testing.T) {
 		},
 		{
 			name: "a well-formed Aggrega document",
-			data: "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n",
+			data: "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n",
 		},
 		{
 			name: "a Helm chart template",
@@ -86,7 +86,7 @@ func TestUnloadableDocumentAnswersEachShape(t *testing.T) {
 		},
 		{
 			name: "an envelope line indented inside a block scalar",
-			data: "description: |\n  apiVersion: aggrega.ai/v1alpha1\n  kind: Component\nvalues: : [\n",
+			data: "description: |\n  apiVersion: aggrega.ai/v1beta1\n  kind: Component\nvalues: : [\n",
 		},
 		{
 			name: "an empty file",
@@ -139,7 +139,7 @@ func TestUnloadableDocumentAnswersEachShape(t *testing.T) {
 // passed for the envelope's identity alone.
 func TestUnloadableDocumentDecodesIntoTheCallersHeader(t *testing.T) {
 	t.Parallel()
-	data := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: helm/broken\nspec:\n  capability:\n    - a-list\n")
+	data := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: helm/broken\nspec:\n  capability:\n    - a-list\n")
 	var header struct {
 		Spec struct {
 			Capability string `yaml:"capability"`
@@ -161,7 +161,7 @@ func TestUnloadableDocumentsHaltNamesEveryFileInPathOrder(t *testing.T) {
 	if err := UnloadableDocumentsHalt(nil); err != nil {
 		t.Fatalf("a walk finding nothing halted: %v", err)
 	}
-	bad := []byte("apiVersion: aggrega.ai/v1alpha1\nspec: : [\n")
+	bad := []byte("apiVersion: aggrega.ai/v1beta1\nspec: : [\n")
 	found := []error{
 		UnloadableDocument("catalog/z.yaml", bad, nil, nil),
 		UnloadableDocument("catalog/a.yaml", bad, nil, nil),

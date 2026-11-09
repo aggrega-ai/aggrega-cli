@@ -82,7 +82,7 @@ func TestDiagnosticRangeRoundTrip(t *testing.T) {
 func TestAnalyzerSelectorViolationMapsToSocketRange(t *testing.T) {
 	t.Parallel()
 	const file = "aggregate.yaml"
-	content := `apiVersion: aggrega.ai/v1alpha1
+	content := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 spec:
   components:
@@ -118,7 +118,7 @@ spec:
 func TestAnalyzerAppliesToViolationMapsToFeatureRange(t *testing.T) {
 	t.Parallel()
 	const file = "aggregate.yaml"
-	content := `apiVersion: aggrega.ai/v1alpha1
+	content := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 spec:
   components:
@@ -161,7 +161,7 @@ spec:
 func TestAnalyzerSubsystemNestedViolationFallsBackToFileLevel(t *testing.T) {
 	t.Parallel()
 	const file = "aggregate.yaml"
-	content := `apiVersion: aggrega.ai/v1alpha1
+	content := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 spec:
   subsystems:

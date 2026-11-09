@@ -23,7 +23,7 @@ func TestLoadWithCacheDirSkipsCachedLibraries(t *testing.T) {
 	dir := t.TempDir()
 	const cacheDir = ".aggrega/cache"
 
-	mustWrite(t, filepath.Join(dir, "authored.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	mustWrite(t, filepath.Join(dir, "authored.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Authored
@@ -38,7 +38,7 @@ spec:
 	if err := os.MkdirAll(cacheSlot, 0o755); err != nil {
 		t.Fatalf("mkdir cache slot: %v", err)
 	}
-	mustWrite(t, filepath.Join(cacheSlot, "library.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	mustWrite(t, filepath.Join(cacheSlot, "library.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Cached

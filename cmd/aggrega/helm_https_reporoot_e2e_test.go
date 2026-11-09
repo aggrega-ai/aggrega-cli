@@ -32,7 +32,7 @@ func sourcedRepoRootFixture(t *testing.T, root, repoRootURL, chart string) strin
 	// pin_sources_at_pull on: the pull under test records the recipe's source pin
 	// beside it, which by default a pull does not do and halts for.
 	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\npin_sources_at_pull: true\n")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -44,7 +44,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: pin-rel
@@ -61,7 +61,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -72,7 +72,7 @@ spec:
       type:
         server: server
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -85,7 +85,7 @@ spec:
       port: { type: integer, default: 8080 }
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -239,7 +239,7 @@ func collisionRepoRootFixture(t *testing.T, root, repoRootURL, chartA, chartB st
 	// pin_sources_at_pull on: the pull under test records the recipe's source pin
 	// beside it, which by default a pull does not do and halts for.
 	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\npin_sources_at_pull: true\n")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -254,7 +254,7 @@ spec:
       type: worker
       values: {}
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: pin-rel
@@ -274,7 +274,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -286,7 +286,7 @@ spec:
         server: server
         worker: worker
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -298,7 +298,7 @@ spec:
     values:
       port: { type: integer, default: 8080 }
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "components", "worker.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "worker.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: worker
@@ -312,7 +312,7 @@ spec:
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 	// Each Recipe in a directory of its own: the pull pins both, and a pin writes
 	// the one lock its entity's directory holds.
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -326,7 +326,7 @@ spec:
     chart: %s
     version: "1.0.0"
 `, repoRootURL, chartA))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "worker", "worker.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "worker", "worker.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: worker

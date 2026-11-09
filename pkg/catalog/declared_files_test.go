@@ -23,7 +23,7 @@ func declaredFixture(t *testing.T, doc string, files map[string]string) string {
 	return filepath.Join(dir, doc)
 }
 
-const declaredRecipeHead = `apiVersion: aggrega.ai/v1alpha1
+const declaredRecipeHead = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: declared
@@ -33,7 +33,7 @@ spec:
   implements: core/compute/server:1.0.0
 `
 
-const declaredComponentHead = `apiVersion: aggrega.ai/v1alpha1
+const declaredComponentHead = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: declared
@@ -208,10 +208,10 @@ func TestDeclaredFilesAreWhatTheEntityNames(t *testing.T) {
 			name: "an Aggregate at a workspace root carries nothing of the workspace",
 			doc:  "aggregate.yaml",
 			files: with(stray, map[string]string{
-				"aggregate.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: app\n  version: 1.0.0\n" +
+				"aggregate.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: app\n  version: 1.0.0\n" +
 					"spec:\n  components:\n    web:\n      type: core/compute/server:1.0.0\n",
-				"release.yaml":         "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: dev\n",
-				"manifest.yaml":        "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: m\n",
+				"release.yaml":         "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: dev\n",
+				"manifest.yaml":        "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: m\n",
 				".aggrega-config.yaml": "workspace: {}\n",
 				"release.lock":         "version: 1\n",
 			}),

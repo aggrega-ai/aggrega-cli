@@ -29,7 +29,7 @@ func constAloneWorkspace(t *testing.T, root, declaration, value string) (catalog
 	// result cannot depend on a registry the machine may or may not reach.
 	writeWorkspaceConfig(t, root, "workspace: {}\noffline: true")
 	catalogDir = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogDir, "component/acme/web/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/acme/web/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/web
@@ -41,7 +41,7 @@ spec:
     values:
       mode: `+declaration+`
 `)
-	writeFixture(t, filepath.Join(catalogDir, "recipe/compose/web/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipe/compose/web/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: web
@@ -50,13 +50,13 @@ spec:
   capability: compose
   implements: acme/web:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: "web:1"
 `)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: const-app
@@ -68,7 +68,7 @@ spec:
       values:
         mode: `+value+`
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: const-manifest
@@ -80,7 +80,7 @@ spec:
         acme/web:1.0.0: compose/web:1.0.0
 `)
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: const-release

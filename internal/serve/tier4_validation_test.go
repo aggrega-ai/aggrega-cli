@@ -135,7 +135,7 @@ func TestHandleValidateNoReleaseScaffoldAnswersCleanly(t *testing.T) {
 	var in, out bytes.Buffer
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    file,
-		Content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: scaffold\n  version: \"1.0.0\"\nspec:\n  components: {}\n",
+		Content: "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: scaffold\n  version: \"1.0.0\"\nspec:\n  components: {}\n",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 

@@ -21,7 +21,7 @@ import (
 func namelessDocChartFixture(t *testing.T, root string) string {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -31,7 +31,7 @@ spec:
     app:
       type: server
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: nameless-rel
@@ -48,7 +48,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -59,7 +59,7 @@ spec:
       type:
         server: server
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -79,7 +79,7 @@ spec:
 	chartDir := filepath.Join(catalogRoot, "recipes", "charts", "nameless")
 	writeNamelessDocChart(t, chartDir)
 	recipePath := filepath.Join(catalogRoot, "recipes", "server.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server

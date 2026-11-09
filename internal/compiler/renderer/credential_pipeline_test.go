@@ -57,7 +57,7 @@ func credentialPipelineInput(t *testing.T) (renderer.RendererInput, renderer.Rec
 				Spec: types.RecipeSpec{
 					Capability: "helm",
 					Implements: "core/compute/api-server",
-					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

@@ -17,7 +17,7 @@ import (
 )
 
 // unresolvedRefComponent is the one Component the catalog holds.
-const unresolvedRefComponent = `apiVersion: aggrega.ai/v1alpha1
+const unresolvedRefComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/web
@@ -32,7 +32,7 @@ spec:
 
 // unresolvedRefModule is the module the Release's Aggregate imports, with its one
 // component's type left to the row.
-const unresolvedRefModule = `apiVersion: aggrega.ai/v1alpha1
+const unresolvedRefModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: example/store
@@ -45,7 +45,7 @@ spec:
 
 // unresolvedRefRoot is the Release's own Aggregate: one component of its own,
 // whose type is left to the row, and the module above.
-const unresolvedRefRoot = `apiVersion: aggrega.ai/v1alpha1
+const unresolvedRefRoot = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: unresolved-reference-app
@@ -59,7 +59,7 @@ spec:
       type: example/store
 `
 
-const unresolvedRefManifest = `apiVersion: aggrega.ai/v1alpha1
+const unresolvedRefManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: unresolved-reference-manifest
@@ -70,7 +70,7 @@ spec:
       type: {}
 `
 
-const unresolvedRefRelease = `apiVersion: aggrega.ai/v1alpha1
+const unresolvedRefRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: unresolved-reference-release

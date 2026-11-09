@@ -30,7 +30,7 @@ import (
 // entries written under each tier.
 func nameTierManifest(componentNames, featureNames []string) string {
 	var b strings.Builder
-	b.WriteString(`apiVersion: aggrega.ai/v1alpha1
+	b.WriteString(`apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: prod-manifest

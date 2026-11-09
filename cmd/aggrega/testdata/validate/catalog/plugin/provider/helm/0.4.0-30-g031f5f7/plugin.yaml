@@ -1,7 +1,7 @@
 # generated; DO NOT EDIT
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Cognitio S.r.l.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm
@@ -20,7 +20,7 @@ spec:
     workloadSchema: |
       apiVersion:
         type: string
-        description: Always aggrega.ai/v1alpha1.
+        description: Always aggrega.ai/v1beta1.
       kind:
         type: string
         description: Always Workload.

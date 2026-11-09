@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata: { name: annapp-synthesized, version: "1.0.0" }
 spec:
@@ -10,7 +10,7 @@ spec:
   # synthesized kind — which the target's claim DOES cover for the annotation this
   # corpus authors. It is the host that has to stay quiet.
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

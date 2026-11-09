@@ -21,7 +21,7 @@ import (
 // not declare at all.
 func connectionSlotCatalog(t *testing.T) CatalogLookup {
 	t.Helper()
-	const gwYAML = `apiVersion: aggrega.ai/v1alpha1
+	const gwYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/gateway
@@ -38,7 +38,7 @@ spec:
     logs:
       selector: "component.aggrega.ai/category=sink"
 `
-	const modelYAML = `apiVersion: aggrega.ai/v1alpha1
+	const modelYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/model
@@ -100,7 +100,7 @@ func TestConnectionAttachmentFillsADeclaredSlot(t *testing.T) {
 	t.Parallel()
 
 	aggregate := func(uses string) *types.Aggregate {
-		return parseAggregate(t, `apiVersion: aggrega.ai/v1alpha1
+		return parseAggregate(t, `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -218,7 +218,7 @@ func TestConnectionAttachmentSlotRuleIsInvokedByTheResolve(t *testing.T) {
 	t.Parallel()
 
 	doc := func(name string) *types.Aggregate {
-		return parseAggregate(t, `apiVersion: aggrega.ai/v1alpha1
+		return parseAggregate(t, `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -273,7 +273,7 @@ spec:
 func TestNearMissOnAConnectionIsRefusedAndNeverAdvised(t *testing.T) {
 	t.Parallel()
 
-	const gwYAML = `apiVersion: aggrega.ai/v1alpha1
+	const gwYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/gateway
@@ -299,7 +299,7 @@ spec:
 		},
 	}
 	doc := func(block string) *types.Aggregate {
-		return parseAggregate(t, `apiVersion: aggrega.ai/v1alpha1
+		return parseAggregate(t, `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo

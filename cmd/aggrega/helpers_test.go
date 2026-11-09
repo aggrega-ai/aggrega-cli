@@ -92,7 +92,7 @@ func TestInspectCatalogComponent_ComponentNotFound(t *testing.T) {
 func TestInspectCatalogComponent_HappyPath(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	compYAML := `apiVersion: aggrega.ai/v1alpha1
+	compYAML := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -119,7 +119,7 @@ spec:
 // for unnamed Components.
 func TestInspectComponentFile_MissingNameUsesPath(t *testing.T) {
 	t.Parallel()
-	src := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nspec:\n  schema:\n    values:\n      x: {type: string}\n")
+	src := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nspec:\n  schema:\n    values:\n      x: {type: string}\n")
 	if err := renderComponentFile(context.Background(), nil, "/some/file.yaml", src, nil, testInspectOptions(io.Discard)); err != nil {
 		t.Errorf("happy: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestInspectComponentFile_MissingNameUsesPath(t *testing.T) {
 // TestInspectComponentFile_NoSchemaDeclared pins the no-schema branch.
 func TestInspectComponentFile_NoSchemaDeclared(t *testing.T) {
 	t.Parallel()
-	src := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: x\nspec: {}\n")
+	src := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: x\nspec: {}\n")
 	if err := renderComponentFile(context.Background(), nil, "/some/file.yaml", src, nil, testInspectOptions(io.Discard)); err != nil {
 		t.Errorf("no-schema: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestInspectComponentFile_MalformedYAML(t *testing.T) {
 // TestInspectComponentFile_WithExtends pins the extends-header branch.
 func TestInspectComponentFile_WithExtends(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: child

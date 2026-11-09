@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: refusal-undeclared-recipe
@@ -11,7 +11,7 @@ spec:
     note-is-not-inline: |
       {{- fail (printf "the admin note %s must not be written inline" .values.adminNote) -}}
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

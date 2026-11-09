@@ -22,7 +22,7 @@ func writeManifestFile(t *testing.T, dir, name, content string) {
 	}
 }
 
-const prodManifest = `apiVersion: aggrega.ai/v1alpha1
+const prodManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: prod
@@ -73,7 +73,7 @@ func TestResolveManifestExtends_ShallowKeyReplacement(t *testing.T) {
 	writeManifestFile(t, dir, "prod.yaml", prodManifest)
 	// local overlay: swap the one credential FeatureRecipe and the postgres
 	// component recipe; add a child-only component key; leave everything else.
-	writeManifestFile(t, dir, "local.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFile(t, dir, "local.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: local
@@ -139,7 +139,7 @@ spec:
 func TestResolveManifestExtends_MultiLevelChildWins(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeManifestFile(t, dir, "root.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFile(t, dir, "root.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: root
@@ -151,7 +151,7 @@ spec:
         core/db: db-root:1.0.0
         core/only-root: only-root:1.0.0
 `)
-	writeManifestFile(t, dir, "mid.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFile(t, dir, "mid.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: mid
@@ -164,7 +164,7 @@ spec:
         core/db: db-mid:2.0.0
         core/only-mid: only-mid:1.0.0
 `)
-	writeManifestFile(t, dir, "leaf.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFile(t, dir, "leaf.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: leaf
@@ -201,7 +201,7 @@ spec:
 func TestResolveManifestExtends_Cycle(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeManifestFile(t, dir, "a.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFile(t, dir, "a.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: a
@@ -213,7 +213,7 @@ spec:
       type:
         core/x: x:1.0.0
 `)
-	writeManifestFile(t, dir, "b.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFile(t, dir, "b.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: b
@@ -244,7 +244,7 @@ spec:
 func TestResolveManifestExtends_UnresolvableParent(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeManifestFile(t, dir, "child.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFile(t, dir, "child.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: child
@@ -330,7 +330,7 @@ func chainManifestName(i int) string { return fmt.Sprintf("m%02d", i) }
 // keyed on its own name, so a composed result shows which links were folded in.
 func manifestChainDoc(name, extends string) string {
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: ")
+	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: ")
 	b.WriteString(name)
 	b.WriteString("\n  version: 1.0.0\nspec:\n")
 	if extends != "" {
@@ -650,7 +650,7 @@ func TestResolveManifestExtends_MissingParentCarriesDirectoryAdviceAndResolveErr
 func TestResolveManifestExtends_TwoFilesSharingOneNameCompose(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeManifestFile(t, dir, "first.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFile(t, dir, "first.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: shared
@@ -662,7 +662,7 @@ spec:
       type:
         core/first: first-recipe:1.0.0
 `)
-	writeManifestFile(t, dir, "second.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFile(t, dir, "second.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: shared
@@ -674,7 +674,7 @@ spec:
       type:
         core/second: second-recipe:1.0.0
 `)
-	writeManifestFile(t, dir, "third.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFile(t, dir, "third.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: tail

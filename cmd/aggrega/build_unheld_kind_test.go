@@ -48,7 +48,7 @@ func TestBuildAutoPull_NamesAFileOfAKindNoCatalogHolds(t *testing.T) {
 			t.Chdir(root)
 			releasePath, catalogRoot := writeValidWorkspace(t, root)
 			writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), "workspace: {}\noffline: true\n")
-			writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+			writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: iso-smoke
@@ -61,7 +61,7 @@ spec:
         port: 8080
 `)
 			misspelled := filepath.Join(catalogRoot, "base", "components", "probe.yaml")
-			writeFixture(t, misspelled, `apiVersion: aggrega.ai/v1alpha1
+			writeFixture(t, misspelled, `apiVersion: aggrega.ai/v1beta1
 kind: Componnent
 metadata:
   name: `+tc.declares+`

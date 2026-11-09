@@ -47,7 +47,7 @@ func TestPushBareYAMLEntity(t *testing.T) {
 			name:      "Component",
 			kind:      "Component",
 			mediaType: oci.MediaTypeComponent,
-			body: `apiVersion: aggrega.ai/v1alpha1
+			body: `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server
@@ -64,7 +64,7 @@ spec:
 			name:      "Feature",
 			kind:      "Feature",
 			mediaType: oci.MediaTypeFeature,
-			body: `apiVersion: aggrega.ai/v1alpha1
+			body: `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/ingress
@@ -114,7 +114,7 @@ func TestPushSchemaLibraryInThePerVersionLayout(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	libPath := filepath.Join(root, "schemalibrary", "core", "Probes", "1.0.0", "library.yaml")
-	writeEntityFixture(t, libPath, `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, libPath, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Probes
@@ -156,7 +156,7 @@ func TestPushPublishesAnEntityAloneInItsDirectoryWhateverTheDirectoryIsNamed(t *
 			root := t.TempDir()
 			t.Chdir(root)
 			libPath := filepath.Join(root, rel)
-			writeEntityFixture(t, libPath, `apiVersion: aggrega.ai/v1alpha1
+			writeEntityFixture(t, libPath, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Probes
@@ -201,7 +201,7 @@ func TestPushRecipeCarriesWhatItDeclaresAndNothingBeside(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	recipeDir := filepath.Join(root, "recipes", "server", "1.0.0")
-	writeEntityFixture(t, filepath.Join(recipeDir, "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, filepath.Join(recipeDir, "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -213,7 +213,7 @@ spec:
     header:
       $import: partials/header.yaml
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
 `)
 	writeEntityFixture(t, filepath.Join(recipeDir, "templates", "deployment.yaml.tmpl"), "kind: Deployment\n")
@@ -265,7 +265,7 @@ func TestPushRecipePreservesRemoteSourceURL(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	recipeDir := filepath.Join(root, "recipes", "mariadb", "1.0.0")
-	recipeBody := `apiVersion: aggrega.ai/v1alpha1
+	recipeBody := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: mariadb
@@ -278,7 +278,7 @@ spec:
     url: ` + chartURL + `
     version: "25.0.8"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
 `
 	writeEntityFixture(t, filepath.Join(recipeDir, "mariadb.yaml"), recipeBody)
@@ -325,7 +325,7 @@ func TestPushAcceptsAggregate(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	entityPath := filepath.Join(root, "1.0.0", "aggregate.yaml")
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: smoke
@@ -349,7 +349,7 @@ func TestPushRejectsDeploymentSideKinds(t *testing.T) {
 		name string
 		body string
 	}{
-		{name: "Release", body: `apiVersion: aggrega.ai/v1alpha1
+		{name: "Release", body: `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: smoke-rel
@@ -359,7 +359,7 @@ spec:
   aggregate: smoke
   manifest: smoke
 `},
-		{name: "Manifest", body: `apiVersion: aggrega.ai/v1alpha1
+		{name: "Manifest", body: `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: smoke-manifest
@@ -398,7 +398,7 @@ func TestPushDryRunSkipsNetworkCall(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	entityPath := filepath.Join(root, "1.0.0", "entity.yaml")
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server
@@ -440,7 +440,7 @@ func TestPushUsesWorkspaceDefaultRegistry(t *testing.T) {
 default_registry: workspace.example.com
 `)
 	entityPath := filepath.Join(root, "1.0.0", "entity.yaml")
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server

@@ -20,7 +20,7 @@ import (
 func TestManifest_AnnotationBinding_SingleBindingRoundTrip(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -75,7 +75,7 @@ spec:
 func TestManifest_AnnotationBinding_NestedPathRoundTrips(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -119,7 +119,7 @@ spec:
 func TestManifest_AnnotationBinding_MultipleBindingsAuthorOrder(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -154,7 +154,7 @@ spec:
 func TestManifest_AnnotationBinding_AbsentSectionYieldsNilPointer(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -181,7 +181,7 @@ spec:
 func TestManifest_AnnotationBinding_EmptyMappingYieldsNonNilEmpty(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -223,7 +223,7 @@ spec:
 func TestManifestMappings_UnknownKeyIsRefused(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -254,7 +254,7 @@ spec:
 func TestManifestMappings_KnownKeysStillDecode(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test

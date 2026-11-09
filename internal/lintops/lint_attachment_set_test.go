@@ -33,7 +33,7 @@ import (
 // publishing linter's artifact reference, at the given version. Its declared
 // export mirrors the built-in guest's own, so the load-gate cross-check passes.
 func linterAttachmentEntity(version string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: publishing
@@ -79,7 +79,7 @@ func twoAttachmentWorkspace(t *testing.T, refs string) *workspaceconfig.Resolved
 func componentWithOneFinding(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "proposed.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: BadName

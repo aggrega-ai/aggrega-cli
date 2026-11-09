@@ -101,7 +101,7 @@ func (m *mockPuller) Pull(ctx context.Context, reference, tag string) (*oci.Pull
 // used across the cascade tests. The metadata.name is "test/api-server"
 // and the kind is "Component".
 func fullstackComponentYAML() string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/api-server
@@ -165,7 +165,7 @@ func TestLazyLookupComponentTier1HitFromNonStrictLayout(t *testing.T) {
 }
 
 const cachedComponentURI = "test/cached-component:2.0.0"
-const cachedComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+const cachedComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/cached-component
@@ -253,7 +253,7 @@ func TestLazyLookupComponentTier3HitFromOCIPuller(t *testing.T) {
 	tmp := t.TempDir()
 	cacheDir := ".aggrega/cache"
 	uri := "test/registry-component:3.0.0"
-	yamlBody := `apiVersion: aggrega.ai/v1alpha1
+	yamlBody := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/registry-component
@@ -286,7 +286,7 @@ func TestLazyLookupExtendsRecursionMergesParent(t *testing.T) {
 	if err := os.MkdirAll(componentDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	parent := `apiVersion: aggrega.ai/v1alpha1
+	parent := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/base
@@ -296,7 +296,7 @@ metadata:
     inherited-key: parent-value
 spec: {}
 `
-	child := `apiVersion: aggrega.ai/v1alpha1
+	child := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/derived
@@ -334,7 +334,7 @@ func TestLazyLookupHotCacheAvoidsReResolution(t *testing.T) {
 	tmp := t.TempDir()
 	cacheDir := ".aggrega/cache"
 	uri := "test/hotcache-component:1.0.0"
-	yamlBody := `apiVersion: aggrega.ai/v1alpha1
+	yamlBody := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/hotcache-component
@@ -385,7 +385,7 @@ func TestLazyLookupFeatureTier1HitFromCatalogDir(t *testing.T) {
 	if err := os.MkdirAll(featureDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	featureYAML := `apiVersion: aggrega.ai/v1alpha1
+	featureYAML := `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/health-check

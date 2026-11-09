@@ -30,7 +30,7 @@ func TestThreeTierLookup_OnComposedManifest(t *testing.T) {
 	)
 
 	dir := t.TempDir()
-	writeManifestFixture(t, dir, "prod.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFixture(t, dir, "prod.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: prod
@@ -44,7 +44,7 @@ spec:
       name:
         billing-db: legacy-worker
 `)
-	writeManifestFixture(t, dir, "local.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeManifestFixture(t, dir, "local.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: local

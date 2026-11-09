@@ -35,7 +35,7 @@ func deprecatedPinWorkspace(t *testing.T, withMarker bool) (srv *Server, aggPath
 	t.Helper()
 	tmp := t.TempDir()
 
-	writeFixtureFile(t, filepath.Join(tmp, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(tmp, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-release
@@ -50,7 +50,7 @@ spec:
       components:
         app: {}
 `)
-	aggBody = `apiVersion: aggrega.ai/v1alpha1
+	aggBody = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-agg
@@ -61,7 +61,7 @@ spec:
       type: "demo/absent-server:1.0.0"
 `
 	writeFixtureFile(t, filepath.Join(tmp, "app-agg.yaml"), aggBody)
-	writeFixtureFile(t, filepath.Join(tmp, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(tmp, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest

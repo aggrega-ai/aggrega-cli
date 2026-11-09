@@ -27,7 +27,7 @@ func TestTheReportedFormRoundTripsContentVerbatim(t *testing.T) {
 			name: "content opening with a comment banner, as a generated entity does",
 			docs: []Document{{
 				Path:    "/out/linter/publishing-linter/1.0.0/plugin.yaml",
-				Content: "# generated; DO NOT EDIT\napiVersion: aggrega.ai/v1alpha1\nkind: Plugin\n",
+				Content: "# generated; DO NOT EDIT\napiVersion: aggrega.ai/v1beta1\nkind: Plugin\n",
 			}},
 		},
 		{

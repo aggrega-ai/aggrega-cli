@@ -37,7 +37,7 @@ import (
 func connectionPinFixture(t *testing.T, root string) (catalogDir, releasePath string) {
 	t.Helper()
 	catalogDir = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogDir, "component/example/compute/caller/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/example/compute/caller/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/caller
@@ -58,7 +58,7 @@ spec:
         credential:
           description: The credential the caller presents to the peer this connection reaches.
 `)
-	writeFixture(t, filepath.Join(catalogDir, "component/example/compute/peer/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/example/compute/peer/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/peer
@@ -74,7 +74,7 @@ spec:
         default: "peer"
 `)
 	for _, name := range []string{"caller", "peer"} {
-		writeFixture(t, filepath.Join(catalogDir, "recipe/compose/"+name+"/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogDir, "recipe/compose/"+name+"/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: `+name+`
@@ -83,7 +83,7 @@ spec:
   capability: compose
   implements: example/compute/`+name+`:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -92,7 +92,7 @@ spec:
           MESSAGE: "{{ .values.message }}"
 `)
 	}
-	writeFixture(t, filepath.Join(catalogDir, "feature/example/token/1.0.0/feature.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "feature/example/token/1.0.0/feature.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/token
@@ -107,7 +107,7 @@ spec:
       key:
         type: string
 `)
-	writeFixture(t, filepath.Join(catalogDir, "feature/example/badge/1.0.0/feature.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "feature/example/badge/1.0.0/feature.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/badge
@@ -122,7 +122,7 @@ spec:
       issuer:
         type: string
 `)
-	writeFixture(t, filepath.Join(catalogDir, "feature-recipe/compose/token-plain/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "feature-recipe/compose/token-plain/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: token-plain
@@ -133,7 +133,7 @@ spec:
   provides:
     key: "{{ .values.key }}"
 `)
-	writeFixture(t, filepath.Join(catalogDir, "feature-recipe/compose/badge-plain/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "feature-recipe/compose/badge-plain/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: badge-plain
@@ -144,7 +144,7 @@ spec:
   provides:
     issuer: "{{ .infra.issuer }}"
 `)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: callers
@@ -169,7 +169,7 @@ spec:
     peer-b:
       type: example/compute/peer
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: callers-manifest
@@ -187,7 +187,7 @@ spec:
         first.credential: compose/token-plain:1.0.0
 `)
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: callers-release

@@ -71,7 +71,7 @@ func (fx referenceFixture) releaseWith(head string) string {
 // childRelease is a Release that names a parent and nothing else, so every other
 // field is the parent's.
 func childRelease(extends string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: child\n  environment: production\n" +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: child\n  environment: production\n" +
 		"  version: \"1.0.0\"\nspec:\n  extends: " + extends + "\n"
 }
 

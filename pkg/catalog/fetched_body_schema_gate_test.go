@@ -38,7 +38,7 @@ func TestTier3PullRefusesABodyItsSchemaRejectsAndWritesNothing(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	// A Component whose metadata.version is a traversal — the exact route a hostile
 	// registry takes. Its own schema requires a version there, so the gate refuses it.
-	body := []byte(`apiVersion: aggrega.ai/v1alpha1
+	body := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: remote/db
@@ -72,7 +72,7 @@ func TestTier3PullCachesABodyItsSchemaAccepts(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	const cacheDir = ".aggrega/cache"
-	body := []byte(`apiVersion: aggrega.ai/v1alpha1
+	body := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: remote/db

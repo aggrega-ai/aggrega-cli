@@ -16,7 +16,7 @@ import (
 // body, indented as it sits under that key, and returns its path.
 func writeContractAggregate(t *testing.T, body string) string {
 	t.Helper()
-	src := "apiVersion: aggrega.ai/v1alpha1\n" +
+	src := "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Aggregate\n" +
 		"metadata:\n" +
 		"  name: test\n" +

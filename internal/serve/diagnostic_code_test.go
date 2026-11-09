@@ -240,7 +240,7 @@ func TestDiagnosticCodeKeyAbsentWhenNoConditionIsNamed(t *testing.T) {
 	var in, out bytes.Buffer
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    filepath.Join(tmp, "aggregate.yaml"),
-		Content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n  bad: [unclosed\n",
+		Content: "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n  bad: [unclosed\n",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {
@@ -335,7 +335,7 @@ func TestDiagnosticCodeFromRuleSentinel(t *testing.T) {
 func TestDiagnosticCodeOnEnvelopeRejection(t *testing.T) {
 	t.Parallel()
 	srv := newTestServer(t, t.TempDir(), nil, nil)
-	content := []byte(`apiVersion: aggrega.ai/v1alpha1
+	content := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: r
@@ -412,7 +412,7 @@ func TestDiagnosticCodeOnCascadeFailure(t *testing.T) {
 	unloadable := filepath.Join(tmp, "release.yaml")
 	// Found, parses as YAML, and rejected by its kind's schema: the shape that
 	// makes the cascade record a load error rather than an absence.
-	if err := os.WriteFile(unloadable, []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: r\nspec:\n  bogus_key: 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(unloadable, []byte("apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: r\nspec:\n  bogus_key: 1\n"), 0o644); err != nil {
 		t.Fatalf("write release: %v", err)
 	}
 	_, loadErr := resolver.LoadRelease(unloadable)

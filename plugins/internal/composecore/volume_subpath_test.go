@@ -57,7 +57,7 @@ func TestComposeSubPathMountsThePartOfTheVolumeItNames(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+			w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 			if tc.stateful {
 				w.Form = "stateful"
 			}
@@ -118,7 +118,7 @@ func TestComposeSubPathOnAMountWithNoSubpathFormIsRefused(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+			w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 			c := types.ContainerSpec{Image: "app:1.0"}
 			c.VolumeMounts = []types.VolumeMount{{Name: "part", Path: "/etc/app/app.conf", SubPath: "app.conf"}}
 			w.Containers.Set("main", c)
@@ -148,7 +148,7 @@ func TestComposeSubPathOnAMountWithNoSubpathFormIsRefused(t *testing.T) {
 
 	// Positive control: the same mounts written without subPath synthesize.
 	for _, tc := range cases {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 		c := types.ContainerSpec{Image: "app:1.0"}
 		c.VolumeMounts = []types.VolumeMount{{Name: "part", Path: "/etc/app/app.conf"}}
 		w.Containers.Set("main", c)

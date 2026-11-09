@@ -14,7 +14,7 @@ import (
 // the sole required spec field. The .wasm location and the catalog coordinate
 // are derived from (pluginType, name), not carried in the spec.
 func newShapePlugin(name, pluginType string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: ` + name + `

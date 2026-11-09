@@ -33,7 +33,7 @@ const mcpTrustGateURI = mcpTrustGateCoordinate + ":" + mcpTrustGateVersion
 // never dispatches, so the attachment joins the verdict attachment set the record
 // is compared against without any guest bytes needing to exist — presence is
 // decided before anything is loaded.
-const mcpTrustGatePluginEntity = `apiVersion: aggrega.ai/v1alpha1
+const mcpTrustGatePluginEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: ` + mcpTrustGateName + `

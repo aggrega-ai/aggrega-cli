@@ -20,7 +20,7 @@ const (
 
 func newRecipe(provider string) *types.Recipe {
 	return &types.Recipe{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Recipe",
 		Metadata:   types.RecipeMetadata{Name: tName, Version: tVer},
 		Spec:       types.RecipeSpec{Capability: provider, Implements: "core/test:1.0.0"},
@@ -92,7 +92,7 @@ func TestValidateRecipe_InputKinds_HasSourceAndValuesMapping_Passes(t *testing.T
 func TestValidateRecipe_InputKinds_HasWorkload_Passes(t *testing.T) {
 	t.Parallel()
 	r := newRecipe("helm")
-	r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"}
+	r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1beta1\nkind: Workload"}
 	if err := validator.ValidateRecipe(r, tFile); err != nil {
 		t.Fatalf("expected pass, got %v", err)
 	}

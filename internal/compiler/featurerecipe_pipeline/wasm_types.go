@@ -13,7 +13,7 @@ import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 // The two values are single-sourced from types.Scope* (untyped-const conversion),
 // so the pipeline's wire scope vocabulary cannot drift from the Plugin entity's
 // scope vocabulary — they are equal by construction. The schema-level enums
-// (plugin-v1alpha1 and wasm-frp-step-v1alpha1) remain intentionally separate
+// (plugin-v1beta1 and wasm-frp-step-v1beta1) remain intentionally separate
 // surfaces; unifying those is a wire change and is out of scope for the Go-side
 // single-sourcing. The document-root keys the wire carries ("own"/"host") reach
 // the payload as JSON struct tags the compiler cannot const-fold against these

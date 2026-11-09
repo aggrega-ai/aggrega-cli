@@ -8,7 +8,7 @@
 // integrity checks and for human inspection of the cache.
 //
 // The wire shape is pinned at read time by the
-// cache-metadata-v1alpha1 JSON Schema (embed-by-import from the
+// cache-metadata-v1beta1 JSON Schema (embed-by-import from the
 // aggrega-schemas Go module). The validator is package-singleton:
 // compiled once via sync.Once on first Read call and reused for the
 // process lifetime. Read calls are frequent at build time (one per
@@ -33,7 +33,7 @@ import (
 )
 
 // ErrCacheMetadataInvalid wraps every structural-validation failure
-// Read raises against the cache-metadata-v1alpha1 schema. Errors
+// Read raises against the cache-metadata-v1beta1 schema. Errors
 // satisfying errors.Is(err, ErrCacheMetadataInvalid) carry a wrapped
 // message naming the offending field path and the validation
 // diagnostic.
@@ -64,7 +64,7 @@ var (
 func getValidator() (jsonvalidator.Validator, error) {
 	validatorOnce.Do(func() {
 		schema := &libschema.Schema{}
-		if err := json.Unmarshal([]byte(schemas.CacheMetadataV1alpha1), schema); err != nil {
+		if err := json.Unmarshal([]byte(schemas.CacheMetadataV1beta1), schema); err != nil {
 			validatorErr = fmt.Errorf("metadata: decode schema: %w", err)
 			return
 		}
@@ -116,7 +116,7 @@ func Write(path string, m CacheMetadata) error {
 
 // Read parses the metadata.yaml at path into a CacheMetadata.
 // Validates the parsed document against the embedded
-// cache-metadata-v1alpha1 JSON Schema before typed unmarshal —
+// cache-metadata-v1beta1 JSON Schema before typed unmarshal —
 // missing required fields, unknown properties, malformed digest
 // patterns, and malformed RFC 3339 pulled_at timestamps all halt
 // with ErrCacheMetadataInvalid.

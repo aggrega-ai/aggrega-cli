@@ -202,7 +202,7 @@ func TestVerifyManifestImplementsConsistency_NilResolverResolvesNoAncestry(t *te
 	}
 }
 
-const ancestryBaseCompYAML = `apiVersion: aggrega.ai/v1alpha1
+const ancestryBaseCompYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ancestry/base
@@ -215,7 +215,7 @@ spec:
       replicas: { type: integer, default: 1 }
 `
 
-const ancestryMidCompYAML = `apiVersion: aggrega.ai/v1alpha1
+const ancestryMidCompYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ancestry/mid
@@ -227,7 +227,7 @@ spec:
   schema: inherited
 `
 
-const ancestryLeafCompYAML = `apiVersion: aggrega.ai/v1alpha1
+const ancestryLeafCompYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: enterprise/ancestry/leaf
@@ -240,7 +240,7 @@ spec:
   schema: inherited
 `
 
-const ancestryBaseRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+const ancestryBaseRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: ancestry-base
@@ -249,14 +249,14 @@ spec:
   capability: compose
   implements: "core/ancestry/base"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: demo:1
 `
 
-const ancestryOtherRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+const ancestryOtherRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: ancestry-other
@@ -265,14 +265,14 @@ spec:
   capability: compose
   implements: "core/ancestry/unrelated"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: demo:1
 `
 
-const ancestryCycARecipeless = `apiVersion: aggrega.ai/v1alpha1
+const ancestryCycARecipeless = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ancestry/cyc-a
@@ -284,7 +284,7 @@ spec:
   schema: inherited
 `
 
-const ancestryCycBRecipeless = `apiVersion: aggrega.ai/v1alpha1
+const ancestryCycBRecipeless = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ancestry/cyc-b

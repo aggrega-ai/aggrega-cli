@@ -50,7 +50,7 @@ func attachmentContainerWorkspace(t *testing.T) (root, catalogDir, nestedRelease
 		}
 	}
 
-	write("catalog/components/edge.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("catalog/components/edge.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/edge
@@ -62,7 +62,7 @@ spec:
     provides:
       host: { type: string, required: true }
 `)
-	write("catalog/recipes/edge.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("catalog/recipes/edge.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-edge-synthesized
@@ -73,14 +73,14 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: demo-edge:latest
 `)
-	write("catalog/plugins/helm-renderer.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("catalog/plugins/helm-renderer.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm
@@ -97,7 +97,7 @@ spec:
     maxMemoryPages: 4096
     timeoutMs: 300000
 `)
-	write("app-manifest.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("app-manifest.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -108,7 +108,7 @@ spec:
       type:
         demo/edge: demo-edge-synthesized
 `)
-	write("nested-agg.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("nested-agg.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: nested-agg
@@ -122,7 +122,7 @@ spec:
             ledger:
               type: "demo/edge:1.0.0"
 `)
-	write("nested-release.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("nested-release.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: nested-release
@@ -137,7 +137,7 @@ spec:
       components:
         ledger: {}
 `)
-	write("flat-agg.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("flat-agg.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: flat-agg
@@ -147,7 +147,7 @@ spec:
     checkout:
       type: "demo/edge:1.0.0"
 `)
-	write("flat-release.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("flat-release.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: flat-release

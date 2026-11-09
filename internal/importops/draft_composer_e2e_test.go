@@ -447,13 +447,13 @@ func TestTheCompositionAroundEachShapeOfDraft(t *testing.T) {
 		Metadata: types.RecipeMetadata{Name: "x-server", Version: "1.0.0"},
 		Spec:     types.RecipeSpec{Capability: "compose", Implements: "example/x"},
 	}}}
-	aggregate := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: app\n  version: 1.2.3\n" +
+	aggregate := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: app\n  version: 1.2.3\n" +
 		"spec:\n  components:\n    a:\n      type: example/x\n"
 	manifestFor := func(name, version string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: " + name + "\n  version: " +
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: " + name + "\n  version: " +
 			version + "\nspec:\n  mappings:\n    components:\n      type:\n        example/x: compose/x-server\n"
 	}
-	releaseHead := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: app-dev\n  environment: dev\n" +
+	releaseHead := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: app-dev\n  environment: dev\n" +
 		"  version: 0.2.0\nspec:\n"
 	for _, tc := range []struct {
 		name      string

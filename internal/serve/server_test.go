@@ -442,7 +442,7 @@ func TestValidateWithNoReleaseAnswersForTheDocumentAlone(t *testing.T) {
 
 	// A Release with values: on a boundary component — a document-envelope
 	// violation, which the envelope leg reports without consulting any Release.
-	envelopeViolation := `apiVersion: aggrega.ai/v1alpha1
+	envelopeViolation := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: r
@@ -508,7 +508,7 @@ func TestValidateWithAReleaseOmitsTheCheckedKey(t *testing.T) {
 	var in, out bytes.Buffer
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    filepath.Join(ws, "x.yaml"),
-		Content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: x\n  version: \"1.0.0\"\nspec:\n  components: {}\n",
+		Content: "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: x\n  version: \"1.0.0\"\nspec:\n  components: {}\n",
 		Release: "release.yaml",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
@@ -541,7 +541,7 @@ func TestValidateWithNoReleaseStillSeedsTheParseCache(t *testing.T) {
 	ws := t.TempDir()
 	srv := newLazyCascadeServer(t, ws, nil, nil)
 	file := filepath.Join(ws, "aggregate.yaml")
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: x\n  version: \"1.0.0\"\nspec:\n  components: {}\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: x\n  version: \"1.0.0\"\nspec:\n  components: {}\n"
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 		t.Fatalf("write aggregate: %v", err)
 	}
@@ -592,7 +592,7 @@ func TestServeAggregaValidateParseOnlyReturnsDiagnostics(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	file := filepath.Join(tmp, "x.yaml")
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: x\n  version: \"1.0.0\"\nspec:\n  components: {}\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: x\n  version: \"1.0.0\"\nspec:\n  components: {}\n"
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
@@ -624,7 +624,7 @@ func TestServeAggregaValidateParseErrorReturnsLineColumn(t *testing.T) {
 	var in, out bytes.Buffer
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    "bad.yaml",
-		Content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n  unindented: bad\n",
+		Content: "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n  unindented: bad\n",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {
@@ -725,7 +725,7 @@ func TestServeAggregaInvalidateResetsLazyCatalog(t *testing.T) {
 	if err := os.MkdirAll(componentDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	yamlBody := `apiVersion: aggrega.ai/v1alpha1
+	yamlBody := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: invalidate-test/comp
@@ -859,7 +859,7 @@ func TestServeAggregaFindReferencesReturnsEmptyWhenCursorNotOnMetadataName(t *te
 	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "comp.yaml")
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: my-comp\nspec:\n  extends: parent-comp\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: my-comp\nspec:\n  extends: parent-comp\n"
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -891,7 +891,7 @@ func TestServeAggregaFindImplementationsReturnsEmptyWhenCursorNotOnMetadataName(
 	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "comp.yaml")
-	content := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: my-comp\nspec:\n  extends: parent-comp\n"
+	content := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: my-comp\nspec:\n  extends: parent-comp\n"
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}

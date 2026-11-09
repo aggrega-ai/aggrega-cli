@@ -3,8 +3,8 @@
 
 // Emitted-IR conformance — the output-side twin of the document-envelope
 // gate. Every end-to-end fixture build's emitted IR document is validated
-// against ir-v1alpha1.schema.json at test time, making pkg/types/ir.go's
-// "strictly mirrors ir-v1alpha1.schema.json" claim executable. This is a
+// against ir-v1beta1.schema.json at test time, making pkg/types/ir.go's
+// "strictly mirrors ir-v1beta1.schema.json" claim executable. This is a
 // TEST-time check only: runtime emit-validation is deliberately not part
 // of the pipeline (the compiler trusts its own IR builder).
 package compiler_test
@@ -100,7 +100,7 @@ func assertIRConforms(t *testing.T, subject string, graph *types.IRGraph) {
 		t.Fatalf("%s: IR schema engine error: %v", subject, err)
 	}
 	if len(findings) > 0 {
-		t.Errorf("%s: emitted IR violates ir-v1alpha1.schema.json (%d finding(s)); the ir.go hand-mirror has drifted from the schema:\n%s\n--- first findings ---\n%+v",
+		t.Errorf("%s: emitted IR violates ir-v1beta1.schema.json (%d finding(s)); the ir.go hand-mirror has drifted from the schema:\n%s\n--- first findings ---\n%+v",
 			subject, len(findings), raw, findings[:min(4, len(findings))])
 	}
 }

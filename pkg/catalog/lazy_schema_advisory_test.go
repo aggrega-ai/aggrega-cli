@@ -16,7 +16,7 @@ import (
 // probedParentDoc authors an x-aggrega-* extension keyword inline in its schema
 // content, the shape the discouragement names; probedChildDoc extends it and
 // authors none of its own.
-const probedParentDoc = `apiVersion: aggrega.ai/v1alpha1
+const probedParentDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/probed
@@ -31,7 +31,7 @@ spec:
         x-aggrega-probe: planted
 `
 
-const probedChildDoc = `apiVersion: aggrega.ai/v1alpha1
+const probedChildDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/probed-child
@@ -44,7 +44,7 @@ spec:
 `
 
 // brokenChildDoc extends a parent no catalog holds.
-const brokenChildDoc = `apiVersion: aggrega.ai/v1alpha1
+const brokenChildDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/orphan

@@ -24,7 +24,7 @@ import (
 func twoUnknownPillarKeys(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	writeFixture(t, dir, "first.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "first.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/first
@@ -36,7 +36,7 @@ spec:
     bogusPillarKey:
       host: { type: string }
 `)
-	writeFixture(t, dir, "second.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "second.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/second
@@ -193,7 +193,7 @@ func TestClosureGroupRemedyStaysOnTheGroup(t *testing.T) {
 // the group a condition rather than a pass counting what it found.
 func TestSubAggregateParameterGroupDeclaresItsCondition(t *testing.T) {
 	t.Parallel()
-	const module = `apiVersion: aggrega.ai/v1alpha1
+	const module = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app/mod

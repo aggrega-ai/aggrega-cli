@@ -50,7 +50,7 @@ func TestPushStampsCatalogSearchableAnnotations(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	entityPath := filepath.Join(root, "1.0.0", "entity.yaml")
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -103,7 +103,7 @@ func TestPushStampsPluginSearchableAnnotations(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	entityPath := filepath.Join(root, "frp-step-patch.yaml")
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: patch

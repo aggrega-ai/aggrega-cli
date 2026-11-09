@@ -24,7 +24,7 @@ import (
 func TestValidateRecipeEntity_ImplementsPin(t *testing.T) {
 	t.Parallel()
 	catDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(catDir, "api-server.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := os.WriteFile(filepath.Join(catDir, "api-server.yaml"), []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server
@@ -52,7 +52,7 @@ spec:
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			recipePath := filepath.Join(t.TempDir(), "recipe.yaml")
-			data := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: probe-recipe\n" +
+			data := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: probe-recipe\n" +
 				"  version: 1.0.0\nspec:\n  capability: probe\n  implements: " + tc.implements + "\n" +
 				"  artifacts:\n    probe.txt: \"probe\"\n")
 			if err := os.WriteFile(recipePath, data, 0o644); err != nil {

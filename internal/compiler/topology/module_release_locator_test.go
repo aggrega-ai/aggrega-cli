@@ -74,7 +74,7 @@ func TestModuleComponentReleaseFindingsResolveToTheAuthoredKey(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			src := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: rel\n" +
+			src := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: rel\n" +
 				"spec:\n  aggregate: root\n  boundaries:\n    edge:\n" + tc.boundary
 			var release types.Release
 			if err := yaml.Unmarshal([]byte(src), &release); err != nil {

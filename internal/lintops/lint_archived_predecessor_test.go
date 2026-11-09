@@ -20,7 +20,7 @@ import (
 // archivedRecipeBody is a Recipe minimal enough to publish and to lint. Its
 // version is substituted so one body serves as both the predecessor and the
 // candidate.
-const archivedRecipeBody = `apiVersion: aggrega.ai/v1alpha1
+const archivedRecipeBody = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: service
@@ -31,7 +31,7 @@ spec:
   capability: helm
   implements: example/compute/service
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:

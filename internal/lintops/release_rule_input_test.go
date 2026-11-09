@@ -49,7 +49,7 @@ const (
 // one. The instance description carries a parameter reference as template text:
 // the Aggregate is handed over as its author wrote it, so the reference arrives
 // unresolved rather than as the value a parameter fulfils it with.
-const probeAggregate = `apiVersion: aggrega.ai/v1alpha1
+const probeAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: probe-app
@@ -69,7 +69,7 @@ spec:
       description: "serves callers holding {{ .parameters.api_key }}"
 `
 
-const probeManifest = `apiVersion: aggrega.ai/v1alpha1
+const probeManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: probe-manifest
@@ -82,7 +82,7 @@ spec:
         core/compute/web-ui: helm-web-ui-synthesized-with-artifacts:1.0.0
 `
 
-const probeBaseRelease = `apiVersion: aggrega.ai/v1alpha1
+const probeBaseRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: base-release
@@ -103,7 +103,7 @@ spec:
             port: 8080
 `
 
-const probeChildRelease = `apiVersion: aggrega.ai/v1alpha1
+const probeChildRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: child-release
@@ -127,7 +127,7 @@ const (
 // parameter declarations and a module it imports, passing that module a
 // parameter value. The module's components are not among the Aggregate's own,
 // so the Component map is the one probeAggregate yields.
-const probeAggregateWithModule = `apiVersion: aggrega.ai/v1alpha1
+const probeAggregateWithModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: probe-app
@@ -160,7 +160,7 @@ const probeModulePath = "modules/probe-module.yaml"
 
 // probeModule is the module probeAggregateWithModule imports: one parameter it
 // declares and one component.
-const probeModule = `apiVersion: aggrega.ai/v1alpha1
+const probeModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: probe-module
@@ -176,7 +176,7 @@ spec:
 
 // probeBaseReleaseWithModule is probeBaseRelease routing the module's component
 // into the same boundary.
-const probeBaseReleaseWithModule = `apiVersion: aggrega.ai/v1alpha1
+const probeBaseReleaseWithModule = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: base-release
@@ -630,7 +630,7 @@ func TestReleaseRunReportsAReleaseScopedFindingAgainstTheRelease(t *testing.T) {
 // first declaration, and the order is the Aggregate's across subsystems.
 func TestReleaseRuleDocumentsLeaveOutWhatDoesNotResolve(t *testing.T) {
 	t.Parallel()
-	const aggregateYAML = `apiVersion: aggrega.ai/v1alpha1
+	const aggregateYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: split-app
@@ -654,7 +654,7 @@ spec:
 	if err := yaml.Unmarshal([]byte(aggregateYAML), &agg); err != nil {
 		t.Fatalf("parse aggregate: %v", err)
 	}
-	rel := &types.Release{APIVersion: "aggrega.ai/v1alpha1", Kind: "Release"}
+	rel := &types.Release{APIVersion: "aggrega.ai/v1beta1", Kind: "Release"}
 	rel.Metadata.Name = "split-release"
 	rc := &compilerops.ResolvedClosure{Release: rel, Aggregate: &agg, AggBytes: []byte(aggregateYAML), AggregatePath: "aggregate.yaml"}
 
@@ -669,7 +669,7 @@ spec:
 			return types.Component{}, false
 		}
 		var c types.Component
-		c.APIVersion, c.Kind = "aggrega.ai/v1alpha1", "Component"
+		c.APIVersion, c.Kind = "aggrega.ai/v1beta1", "Component"
 		c.Metadata.Name = name
 		return c, true
 	}

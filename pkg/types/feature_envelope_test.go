@@ -20,7 +20,7 @@ import (
 func featureEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal([]byte(schemas.FeatureV1alpha1), schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.FeatureV1beta1), schema); err != nil {
 		t.Fatalf("unmarshal envelope schema: %v", err)
 	}
 	v, err := jsonvalidator.New(schema)
@@ -34,7 +34,7 @@ func TestFeatureEnvelope_AcceptsAssertions(t *testing.T) {
 	t.Parallel()
 	v := featureEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: ops/audit
@@ -57,7 +57,7 @@ func TestFeatureEnvelope_RejectsNonStringAssertionValue(t *testing.T) {
 	t.Parallel()
 	v := featureEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: ops/audit

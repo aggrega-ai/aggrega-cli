@@ -20,7 +20,7 @@ import (
 func moduleRulesCatalog(t *testing.T) resolver.CatalogLookup {
 	t.Helper()
 	var envOnly types.Component
-	if err := yaml.Unmarshal([]byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := yaml.Unmarshal([]byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/env-only
@@ -31,7 +31,7 @@ spec:
 		t.Fatalf("component fixture parse: %v", err)
 	}
 	var scrape types.Feature
-	if err := yaml.Unmarshal([]byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := yaml.Unmarshal([]byte(`apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: app/scrape
@@ -84,7 +84,7 @@ func buildModuleCompositionAt(
 	documents := map[string]*types.Aggregate{}
 	for typeName, spec := range modules {
 		var module types.Aggregate
-		doc := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: " + typeName + "\nspec:\n" + spec
+		doc := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: " + typeName + "\nspec:\n" + spec
 		if err := yaml.Unmarshal([]byte(doc), &module); err != nil {
 			t.Fatalf("module fixture parse: %v\n%s", err, doc)
 		}
@@ -241,7 +241,7 @@ func TestBuildAsksTheReleaseAttachmentSocketRuleOfAModuleComponent(t *testing.T)
 	release := func(t *testing.T, attachment string) *types.Release {
 		t.Helper()
 		var r types.Release
-		doc := `apiVersion: aggrega.ai/v1alpha1
+		doc := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

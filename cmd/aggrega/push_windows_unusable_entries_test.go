@@ -33,7 +33,7 @@ func TestPushDryRunWarnsAboutEachEntryWindowsCannotUseAndExitsZero(t *testing.T)
 	t.Chdir(root)
 	dir := filepath.Join(root, "component", "core", "windows-names", "1.0.0")
 	entityPath := filepath.Join(dir, "component.yaml")
-	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/windows-names

@@ -62,7 +62,7 @@ const (
 // without ever touching the developer's hand-authored base config.
 //
 // The overlay is additive-only and validates against the same
-// aggrega-config-v1alpha1 schema as the base file. For each of the five
+// aggrega-config-v1beta1 schema as the base file. For each of the five
 // list-valued fields (catalog_dirs, the three plugin
 // sockets governance/linter/importer, and the provider bindings) its
 // entries — both the base list and any `_append` companion — are concatenated

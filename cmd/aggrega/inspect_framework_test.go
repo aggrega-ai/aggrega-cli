@@ -17,7 +17,7 @@ import (
 // referenceComponent is the standalone Component file the framework-proof tests
 // render through the kindRenderer table. It carries a schema body and a
 // usesSchema socket so list / default / yaml outputs each have substance.
-const referenceComponent = `apiVersion: aggrega.ai/v1alpha1
+const referenceComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -137,7 +137,7 @@ func TestInspectPath_NonStandaloneKind(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "workload.yaml")
-	if err := os.WriteFile(path, []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Workload\nmetadata:\n  name: w\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("apiVersion: aggrega.ai/v1beta1\nkind: Workload\nmetadata:\n  name: w\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	err := inspectPath(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&bytes.Buffer{}))
@@ -157,7 +157,7 @@ func TestInspectPath_UnknownKind(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "x.yaml")
-	if err := os.WriteFile(path, []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Sprocket\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("apiVersion: aggrega.ai/v1beta1\nkind: Sprocket\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	err := inspectPath(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{}), path, nil, testInspectOptions(&bytes.Buffer{}))
@@ -215,7 +215,7 @@ func TestInspectCatalogPrecedence_FlagBeatsConfig(t *testing.T) {
 // usesSchema socket name is socketName, making the resolved source observable.
 func writeComponentWithSocket(t *testing.T, dir, socketName string) {
 	t.Helper()
-	body := `apiVersion: aggrega.ai/v1alpha1
+	body := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server

@@ -19,7 +19,7 @@ import (
 // one required with no default, which only the check can fill in a build of one;
 // one required with a default, which the resolver fills; and one optional, which
 // nothing fills.
-const probeComponent = `apiVersion: aggrega.ai/v1alpha1
+const probeComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/probe
@@ -53,7 +53,7 @@ func probeRecipe(image, form string) string {
 	if form != "" {
 		formLine = "    form: " + form + "\n"
 	}
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: probe
@@ -62,7 +62,7 @@ spec:
   capability: helm
   implements: example/compute/probe
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
 ` + formLine + `    replicas: 1
     containers:

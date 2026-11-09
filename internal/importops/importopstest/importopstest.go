@@ -61,6 +61,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
@@ -595,8 +596,7 @@ func DraftSetBody(files ...abi.ScaffoldFile) string {
 // DraftedAggregate is the Aggregate a draft-composition case drafts: four
 // instances of three component types — example/x twice, then example/y and
 // example/z, declared in the order x, y, z, x.
-const DraftedAggregate = `apiVersion: aggrega.ai/v1alpha1
-kind: Aggregate
+const DraftedAggregate = "apiVersion: " + apiversion.APIVersion + "\n" + `kind: Aggregate
 metadata:
   name: drafted
   version: 0.1.0
@@ -615,8 +615,7 @@ spec:
 // DraftedRelease is the Release a draft-composition case drafts beside
 // DraftedAggregate: it deploys that Aggregate, names no Manifest, and carries the
 // comment line the importers that draft a Release write where the Manifest goes.
-const DraftedRelease = `apiVersion: aggrega.ai/v1alpha1
-kind: Release
+const DraftedRelease = "apiVersion: " + apiversion.APIVersion + "\n" + `kind: Release
 metadata:
   name: drafted
   environment: testing
@@ -635,8 +634,7 @@ spec:
 // over the draft-composition catalog hands it back: the comment line where the
 // Manifest goes replaced by spec.manifest naming the drafted Manifest, every
 // other byte as drafted.
-const DraftedReleaseComposed = `apiVersion: aggrega.ai/v1alpha1
-kind: Release
+const DraftedReleaseComposed = "apiVersion: " + apiversion.APIVersion + "\n" + `kind: Release
 metadata:
   name: drafted
   environment: testing
@@ -655,8 +653,7 @@ spec:
 // the draft-composition catalog drafts beside DraftedReleaseComposed: named and
 // versioned as the Release is, mapping example/x — the one type exactly one
 // compose Recipe implements — and leaving example/y and example/z unmapped.
-const DraftedManifestComposed = `apiVersion: aggrega.ai/v1alpha1
-kind: Manifest
+const DraftedManifestComposed = "apiVersion: " + apiversion.APIVersion + "\n" + `kind: Manifest
 metadata:
   name: drafted
   version: 0.1.0
@@ -895,7 +892,7 @@ func WriteImporterEntity(t *testing.T, dir, name string, formats []string, detec
 		capabilities = append(capabilities, "import:"+f)
 	}
 	entity := types.Plugin{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: apiversion.APIVersion,
 		Kind:       "Plugin",
 		Metadata:   types.PluginMetadata{Name: name, Version: "1.0.0", PluginType: "importer"},
 		Spec: types.PluginSpec{
@@ -931,7 +928,7 @@ func generateEntity(t *testing.T, workspaceRoot, dir, module, name string) (type
 	t.Helper()
 
 	overlay := filepath.Join(t.TempDir(), name+".yaml")
-	body := "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: " + name + "\n"
+	body := "apiVersion: " + apiversion.APIVersion + "\nkind: Plugin\nmetadata:\n  name: " + name + "\n"
 	if err := os.WriteFile(overlay, []byte(body), 0o644); err != nil {
 		t.Fatalf("write the %s overlay: %v", name, err)
 	}

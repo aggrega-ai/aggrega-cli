@@ -108,9 +108,9 @@ func TestThePullVerifiesASignedEnvelopeAndABuildHoldsItsFactToItsArtifact(t *tes
 			const host = "envelope.example.com"
 			store := memory.New()
 			signedDigest := envelopeSigned(t, store, "1.0.0",
-				[]byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/signed\n  version: 1.0.0\n"), row.sign)
+				[]byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/signed\n  version: 1.0.0\n"), row.sign)
 			otherDigest, err := oci.Push(context.Background(), store, "2.0.0", oci.MediaTypeComponent,
-				[]byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/other\n  version: 2.0.0\n"), nil)
+				[]byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/other\n  version: 2.0.0\n"), nil)
 			if err != nil {
 				t.Fatalf("Push: %v", err)
 			}

@@ -186,7 +186,7 @@ func TestAToolsWorkspaceRootThatIsNotThereIsRefusedNamingTheArgument(t *testing.
 func noteWorkspace(t *testing.T) (root, release string) {
 	t.Helper()
 	root = markedNoticeWorkspace(t)
-	writeNoticeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeNoticeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
@@ -196,7 +196,7 @@ spec:
     web:
       type: example/compute/missing:1.0.0
 `)
-	writeNoticeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeNoticeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -208,7 +208,7 @@ spec:
         example/compute/missing:1.0.0: compose/missing:1.0.0
 `)
 	release = filepath.Join(root, "release.yaml")
-	writeNoticeFixture(t, release, `apiVersion: aggrega.ai/v1alpha1
+	writeNoticeFixture(t, release, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release
@@ -281,7 +281,7 @@ func TestThePullToolsRefusalCarriesTheNoteAndTheConditionsCodes(t *testing.T) {
 func TestThePullToolInAFolderNoWorkspaceResolvesFromWritesNoCache(t *testing.T) {
 	folder := aDirectoryNoWorkspaceResolvesFrom(t)
 	release := filepath.Join(folder, "production.yaml")
-	writeNoticeFixture(t, release, `apiVersion: aggrega.ai/v1alpha1
+	writeNoticeFixture(t, release, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release
@@ -296,7 +296,7 @@ spec:
       components:
         web: {}
 `)
-	writeNoticeFixture(t, filepath.Join(folder, "app.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeNoticeFixture(t, filepath.Join(folder, "app.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
@@ -306,7 +306,7 @@ spec:
     web:
       type: example/compute/missing:1.0.0
 `)
-	writeNoticeFixture(t, filepath.Join(folder, "app-mappings.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeNoticeFixture(t, filepath.Join(folder, "app-mappings.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest

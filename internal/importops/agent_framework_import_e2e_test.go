@@ -418,7 +418,7 @@ const agentFrameworkImage = "ghcr.io/example/agent-framework-app:1.0.0"
 // path.
 func writeAgentFrameworkRelease(t *testing.T, dir, key, part string) string {
 	t.Helper()
-	manifest := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported-agent-framework\n" +
+	manifest := "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: imported-agent-framework\n" +
 		"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n" +
 		"        core/ai-agent/agent-framework:1.0.0: helm/agent-framework:1.0.0\n" +
 		"        core/ai-model/openai:1.0.0: helm/openai:1.0.0\n        core/ai-tool/mcp:1.0.0: helm/mcp-remote:1.0.0\n" +

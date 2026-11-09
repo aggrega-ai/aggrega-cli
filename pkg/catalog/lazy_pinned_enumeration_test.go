@@ -17,7 +17,7 @@ import (
 // Cache-fixture entities for the lazy-enumeration tests. The library-referencing
 // component carries a schema $ref; recipes/FRs publish as tar.gz bundles.
 const (
-	bridgeComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+	bridgeComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb
@@ -27,7 +27,7 @@ metadata:
 spec:
   inject: ["env"]
 `
-	bridgeFeatureYAML = `apiVersion: aggrega.ai/v1alpha1
+	bridgeFeatureYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/secret-value
@@ -36,7 +36,7 @@ metadata:
     feature.aggrega.ai/kind: secret
 spec: {}
 `
-	bridgeRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+	bridgeRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: mariadb
@@ -45,13 +45,13 @@ spec:
   capability: compose
   implements: "core/datastore/mariadb"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: demo:1
 `
-	bridgeFeatureRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+	bridgeFeatureRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: dotenv-secret
@@ -60,7 +60,7 @@ spec:
   capability: compose
   implements: "core/secret-value"
 `
-	dbSizingLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	dbSizingLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -96,14 +96,14 @@ func recipeBundle(t *testing.T, yaml string) []byte {
 }
 
 const (
-	pinnedAggregateYAML = `apiVersion: aggrega.ai/v1alpha1
+	pinnedAggregateYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: example/app
   version: "1.0.0"
 spec: {}
 `
-	pinnedMappingLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	pinnedMappingLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BaseMappings
@@ -112,7 +112,7 @@ spec:
   mappings:
     SimpleValues: 'image: {{ .Values.image }}'
 `
-	pinnedWorkloadLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	pinnedWorkloadLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: BaseWorkloads

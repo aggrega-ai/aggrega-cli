@@ -30,7 +30,7 @@ import (
 
 func TestWorkloadProjection_OpaqueIntDecodesAsNumber(t *testing.T) {
 	t.Parallel()
-	payload := []byte(`{"workload":{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","metadata":{"name":"web"},"scheduling":{"affinity":{"weight":1000000}}}}`)
+	payload := []byte(`{"workload":{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","metadata":{"name":"web"},"scheduling":{"affinity":{"weight":1000000}}}}`)
 
 	var wp WorkloadProjection
 	if err := wp.UnmarshalJSON(payload); err != nil {
@@ -59,7 +59,7 @@ func TestWorkloadProjection_OpaqueIntDecodesAsNumber(t *testing.T) {
 func TestWorkloadProjection_OpaqueIntYAMLKeepsFidelity(t *testing.T) {
 	t.Parallel()
 	const bigInt = "9007199254740993" // 2^53 + 1
-	payload := []byte(`{"workload":{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","metadata":{"name":"web"},"scheduling":{"affinity":{"weight":1000000},"tolerations":[{"tolerationSeconds":` + bigInt + `}]}}}`)
+	payload := []byte(`{"workload":{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","metadata":{"name":"web"},"scheduling":{"affinity":{"weight":1000000},"tolerations":[{"tolerationSeconds":` + bigInt + `}]}}}`)
 
 	var wp WorkloadProjection
 	if err := wp.UnmarshalJSON(payload); err != nil {

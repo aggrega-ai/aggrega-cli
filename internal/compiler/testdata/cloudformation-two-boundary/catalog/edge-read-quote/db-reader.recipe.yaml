@@ -9,7 +9,7 @@
 # This variant quotes the database host it reads directly off the connection,
 # which leaves the value as it is, so the build accepts it.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: db-reader

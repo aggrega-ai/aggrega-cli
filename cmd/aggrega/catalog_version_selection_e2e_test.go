@@ -71,7 +71,7 @@ func writeMultiVersionWorkspace(t *testing.T) (root string, digests map[string]s
 	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), multiVersionWorkspaceConfig(true))
 
 	for _, v := range []string{"1.0.0", "2.0.0"} {
-		versioned("test/svc@"+v, "catalog/component/test/svc/"+v+"/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+		versioned("test/svc@"+v, "catalog/component/test/svc/"+v+"/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -85,7 +85,7 @@ spec:
     infra:
       replicas: { type: integer, default: 1 }
 `)
-		versioned("test/tag@"+v, "catalog/feature/test/tag/"+v+"/feature.yaml", `apiVersion: aggrega.ai/v1alpha1
+		versioned("test/tag@"+v, "catalog/feature/test/tag/"+v+"/feature.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/tag
@@ -95,7 +95,7 @@ spec:
     values:
       label: { type: string, default: "tag-`+v+`" }
 `)
-		versioned("test/sub@"+v, "catalog/aggregate/test/sub/"+v+"/aggregate.yaml", `apiVersion: aggrega.ai/v1alpha1
+		versioned("test/sub@"+v, "catalog/aggregate/test/sub/"+v+"/aggregate.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test/sub
@@ -108,7 +108,7 @@ spec:
         greeting: sub-`+v+`
 `)
 		pluginDir := "catalog/plugin/pipeline-step/patch/" + v
-		doc(pluginDir+"/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
+		doc(pluginDir+"/plugin.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: patch
@@ -123,7 +123,7 @@ spec:
 `)
 		writeFixtureBytes(t, filepath.Join(root, pluginDir, pluginpath.PluginLeaf("pipeline-step/patch")), guest)
 	}
-	doc("catalog/component/test/inner/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	doc("catalog/component/test/inner/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/inner
@@ -138,7 +138,7 @@ spec:
       replicas: { type: integer, default: 1 }
 `)
 	recipe := func(name, implements, pipeline string) {
-		body := `apiVersion: aggrega.ai/v1alpha1
+		body := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: ` + name + `
@@ -147,7 +147,7 @@ spec:
   capability: helm
   implements: ` + implements + `
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra ` + "`replicas`" + ` 1 }}
     containers:
@@ -162,7 +162,7 @@ spec:
 		doc("catalog/recipe/helm/"+name+"/1.0.0/recipe.yaml", body)
 	}
 	recipe("inner", "test/inner", "")
-	doc("catalog/feature-recipe/helm/tag/1.0.0/feature-recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	doc("catalog/feature-recipe/helm/tag/1.0.0/feature-recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: tag
@@ -181,7 +181,7 @@ spec:
 `)
 	for _, f := range versionSelectionForms {
 		recipe("svc-"+f.id, "test/svc", "pipeline-step/patch"+f.suffix)
-		doc("aggregate-"+f.id+".yaml", `apiVersion: aggrega.ai/v1alpha1
+		doc("aggregate-"+f.id+".yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-`+f.id+`
@@ -197,7 +197,7 @@ spec:
     sub:
       type: test/sub`+f.suffix+`
 `)
-		doc("manifest-"+f.id+".yaml", `apiVersion: aggrega.ai/v1alpha1
+		doc("manifest-"+f.id+".yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest-`+f.id+`
@@ -212,7 +212,7 @@ spec:
       type:
         test/tag`+f.suffix+`: helm/tag:1.0.0
 `)
-		doc("release-"+f.id+".yaml", `apiVersion: aggrega.ai/v1alpha1
+		doc("release-"+f.id+".yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel-`+f.id+`
@@ -366,7 +366,7 @@ func TestValidateReportsAnUnsatisfiablePinAsThePullDoes(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), multiVersionWorkspaceConfig(true))
-	writeFixture(t, filepath.Join(root, "catalog/component/test/svc/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "catalog/component/test/svc/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -378,7 +378,7 @@ spec:
     infra:
       replicas: { type: integer, default: 1 }
 `)
-	writeFixture(t, filepath.Join(root, "catalog/recipe/helm/svc/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "catalog/recipe/helm/svc/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -387,7 +387,7 @@ spec:
   capability: helm
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       server:
@@ -395,7 +395,7 @@ spec:
 `)
 	for _, pin := range []string{"1.0.0", "2.0.0"} {
 		dir := filepath.Join(root, "pin-"+pin)
-		writeFixture(t, filepath.Join(dir, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(dir, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
@@ -405,7 +405,7 @@ spec:
     app:
       type: test/svc:`+pin+`
 `)
-		writeFixture(t, filepath.Join(dir, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(dir, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -416,7 +416,7 @@ spec:
       type:
         test/svc:`+pin+`: helm/svc:1.0.0
 `)
-		writeFixture(t, filepath.Join(dir, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(dir, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

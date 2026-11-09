@@ -21,7 +21,7 @@ import (
 // list is written as a scalar, which its kind's schema does not accept. Its
 // header still declares its identity, so a reference to that identity can be
 // matched to it.
-const refusedAdminerComponent = "apiVersion: aggrega.ai/v1alpha1\n" +
+const refusedAdminerComponent = "apiVersion: aggrega.ai/v1beta1\n" +
 	"kind: Component\n" +
 	"metadata:\n" +
 	"  name: core/devtool/adminer\n" +

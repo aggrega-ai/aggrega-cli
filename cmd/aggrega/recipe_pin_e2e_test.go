@@ -70,7 +70,7 @@ func sourcedPinFixture(t *testing.T, root, chartURL string) string {
 	// halts on an entity whose lock does not hold them; this workspace asks every
 	// pull, a build's own fill included, to run the pin step instead.
 	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\npin_sources_at_pull: true\n")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -82,7 +82,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: pin-rel
@@ -99,7 +99,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -110,7 +110,7 @@ spec:
       type:
         server: server
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -123,7 +123,7 @@ spec:
       port: { type: integer, default: 8080 }
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server

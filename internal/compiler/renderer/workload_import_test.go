@@ -16,7 +16,7 @@ import (
 // pairs, inserting in sorted-name order for stable iteration.
 func workloadLibraryFixture(name string, entries map[string]string) types.WorkloadLibrary {
 	wl := types.WorkloadLibrary{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "WorkloadLibrary",
 		Metadata:   types.WorkloadLibraryMetadata{Name: name, Version: "1.0.0"},
 	}

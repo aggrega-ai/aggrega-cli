@@ -31,7 +31,7 @@ const localCatalogNoteFixture = "\n  note: the account of where local entities a
 // resolve, to a component of a Release. It is the smallest document whose walk
 // records a reference with a kind hint and then asks a lookup for it.
 const attachedFeatureRelease = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod

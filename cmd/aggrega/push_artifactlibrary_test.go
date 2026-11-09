@@ -29,7 +29,7 @@ import (
 // fragments authored inline as YAML strings. Every file body being inline is the
 // property that decides how this kind publishes — the entity references nothing
 // beside it, so the artifact is the entity file and nothing else.
-const artifactLibraryPublishBody = `apiVersion: aggrega.ai/v1alpha1
+const artifactLibraryPublishBody = `apiVersion: aggrega.ai/v1beta1
 kind: ArtifactLibrary
 metadata:
   name: SharedArtifacts

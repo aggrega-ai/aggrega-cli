@@ -29,7 +29,7 @@ const cancellationProbeCorpus = 5
 // header line per entity that produced one, so a stream watching those writes
 // knows when an entity has been dispatched without the test needing a clock.
 func cancellationProbeComponent(n int) string {
-	return fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	return fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: BadName%d

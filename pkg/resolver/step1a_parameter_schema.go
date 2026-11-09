@@ -17,7 +17,7 @@ import (
 // parameterContractSchemaJSON is the hardcoded map-level sub-schema for
 // the Aggregate `spec.parameters:` block. It mirrors the canonical
 // `properties.spec.properties.parameters` subtree of
-// `aggrega-schemas/json/aggregate-v1alpha1.schema.json` —
+// `aggrega-schemas/json/aggregate-v1beta1.schema.json` —
 // specifically the whole `{type: object, additionalProperties:
 // {oneOf: [...]}}` shape, NOT the inner per-parameter `oneOf` alone.
 //
@@ -26,14 +26,14 @@ import (
 // is inert to JSON Schema validation; it is present here only to keep this
 // literal byte-equivalent to the canonical subtree.
 //
-// The literal exists because aggregate-v1alpha1.schema.json carries the
+// The literal exists because aggregate-v1beta1.schema.json carries the
 // parameter contract inline at `properties.spec.properties.parameters`
 // rather than under a named `$defs/parameter_contract` slot —
 // no standalone sub-schema is referencable. Hardcoding the literal here
 // avoids runtime JSON Schema document traversal for the
 // shallow-load envelope-validation second-line-of-defense check.
 //
-// MAINTENANCE CONTRACT — if `aggregate-v1alpha1.schema.json` changes its
+// MAINTENANCE CONTRACT — if `aggregate-v1beta1.schema.json` changes its
 // `properties.spec.properties.parameters` subtree, update THIS literal
 // in lockstep. The drift detector at
 // `step1a_parameter_schema_test.go::TestParameterContractSchema_NoDrift`

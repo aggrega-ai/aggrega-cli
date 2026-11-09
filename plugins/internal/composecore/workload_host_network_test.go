@@ -15,7 +15,7 @@ import (
 // hostNetworkWorkload builds a one-container workload publishing one port,
 // optionally declaring that it runs on the node's own network.
 func hostNetworkWorkload(hostNetwork bool) *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", HostNetwork: hostNetwork}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", HostNetwork: hostNetwork}
 	c := types.ContainerSpec{Image: "media:1.0"}
 	c.Ports.Set("rtp", types.PortSpec{Port: 7881, Protocol: "UDP"})
 	w.Containers.Set("main", c)
@@ -78,7 +78,7 @@ func TestSynthesizeWorkload_HostNetworkReachesTheEmittedBytes(t *testing.T) {
 func TestAssembleBoundary_HostNetworkServiceLeavesTheBoundaryNetwork(t *testing.T) {
 	t.Parallel()
 
-	peer := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	peer := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	pc := types.ContainerSpec{Image: "peer:1.0"}
 	pc.Ports.Set("http", types.PortSpec{Port: 8080})
 	peer.Containers.Set("main", pc)
@@ -129,7 +129,7 @@ func TestAssembleBoundary_HostNetworkServiceLeavesTheBoundaryNetwork(t *testing.
 // the service it is meant to accompany.
 func TestSynthesizeWorkload_HostNetworkSidecarsFollowTheMain(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", HostNetwork: true}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", HostNetwork: true}
 	main := types.ContainerSpec{Image: "media:1.0"}
 	main.Ports.Set("rtp", types.PortSpec{Port: 7881})
 	w.Containers.Set("main", main)

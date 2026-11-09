@@ -17,7 +17,7 @@ import (
 
 // versionlessFeatureDocument is a Feature its kind's schema refuses for one
 // fault: it declares no metadata.version.
-const versionlessFeatureDocument = `apiVersion: aggrega.ai/v1alpha1
+const versionlessFeatureDocument = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: local/nightly-backup

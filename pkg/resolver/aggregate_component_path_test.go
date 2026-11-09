@@ -44,7 +44,7 @@ func TestAggregateAnnotationComponentPath_Spelling(t *testing.T) {
 func TestAggregateAnnotationComponentPath_ReachesEveryWalkedComponent(t *testing.T) {
 	t.Parallel()
 	agg := loadAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test

@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: example-base-server-recipe
@@ -7,7 +7,7 @@ spec:
   capability: helm
   implements: example/base-server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:

@@ -118,7 +118,7 @@ func TestExportTableRefusesAMalformedTable(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			target := codecTarget{schema: tc.schema, schemaFile: "wasm-example-v1alpha1.schema.json",
+			target := codecTarget{schema: tc.schema, schemaFile: "wasm-example-v1beta1.schema.json",
 				pkgPath: "example.com/socket", exportTable: plugintype.Provider, wireExports: tc.wire}
 			got, err := target.wireRegistrations()
 			if tc.wantSub == "" {
@@ -182,7 +182,7 @@ func TestExportTableIsHeldToTheHostExportList(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			target := codecTarget{schema: table(tc.exports), schemaFile: "wasm-example-v1alpha1.schema.json",
+			target := codecTarget{schema: table(tc.exports), schemaFile: "wasm-example-v1beta1.schema.json",
 				pkgPath: "example.com/socket", exportTable: plugintype.Provider}
 			got, err := collectWireEntries(map[string]codecTarget{"example_gen.go": target})
 			if tc.wantSub == "" {

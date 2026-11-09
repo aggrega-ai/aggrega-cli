@@ -36,7 +36,7 @@ use serde_json::{json, Value};
 /// A Recipe publishing the given provides bag.
 fn recipe(provides: Value) -> Value {
     json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Recipe",
         "metadata": {"name": "example", "version": "1.0.0"},
         "spec": {
@@ -50,7 +50,7 @@ fn recipe(provides: Value) -> Value {
 /// A Recipe with no provides block at all.
 fn recipe_without_provides() -> Value {
     json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Recipe",
         "metadata": {"name": "example", "version": "1.0.0"},
         "spec": {"capability": "helm", "implements": "core/ai-model/example:1.0.0"},
@@ -60,7 +60,7 @@ fn recipe_without_provides() -> Value {
 /// A Component whose schema carries the given pillar block.
 fn component(schema: Value) -> Value {
     json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "core/ai-model/example", "version": "1.0.0"},
         "spec": {"schema": schema},
@@ -214,7 +214,7 @@ fn a_component_declaring_no_provides_pillar_is_an_empty_contract() {
 #[test]
 fn a_component_carrying_no_schema_is_an_empty_contract() {
     let bare = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "core/ai-model/example", "version": "1.0.0"},
         "spec": {},
@@ -321,7 +321,7 @@ fn a_kind_other_than_recipe_is_silent() {
     // rule is about a Recipe against its Component and must not read one.
     for kind in ["Component", "Feature", "FeatureRecipe", "SchemaLibrary"] {
         let entity = json!({
-            "apiVersion": "aggrega.ai/v1alpha1",
+            "apiVersion": "aggrega.ai/v1beta1",
             "kind": kind,
             "metadata": {"name": "core/ai-model/example", "version": "1.0.0"},
             "spec": {"provides": {"provider": "p"}},

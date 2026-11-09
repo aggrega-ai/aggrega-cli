@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: compose-raw-fragments-with-artifacts
@@ -15,7 +15,7 @@ spec:
   # ones the compose provider derives, and a fragment's own networks: entry
   # halts the build.
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       placeholder:

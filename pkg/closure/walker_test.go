@@ -120,7 +120,7 @@ func resolutionOK(version, digest, tier string) closure.Resolution {
 // ----- Test fixtures (inline YAML) -----
 
 const fullFixtureRelease = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -139,7 +139,7 @@ spec:
 `
 
 const fullFixtureManifest = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app
@@ -156,7 +156,7 @@ spec:
 `
 
 const fullFixtureAggregate = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app

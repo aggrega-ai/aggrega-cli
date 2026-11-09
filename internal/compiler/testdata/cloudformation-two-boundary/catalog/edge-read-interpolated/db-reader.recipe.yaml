@@ -9,7 +9,7 @@
 # This variant writes the database host directly off the connection inside a
 # larger string, where no cross-stack reference can stand.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: db-reader

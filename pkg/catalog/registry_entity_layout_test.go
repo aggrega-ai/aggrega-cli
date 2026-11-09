@@ -108,7 +108,7 @@ var carriedChart = map[string]string{
 	"chart/templates/banner.yaml": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: carried\ndata:\n  carried-by: the-published-chart\n",
 }
 
-const carriedRecipeDoc = `apiVersion: aggrega.ai/v1alpha1
+const carriedRecipeDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: carried
@@ -121,7 +121,7 @@ spec:
     {"k": "v"}
 `
 
-const carriedFeatureRecipeDoc = `apiVersion: aggrega.ai/v1alpha1
+const carriedFeatureRecipeDoc = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: carried
@@ -364,7 +364,7 @@ func TestPinnedSlotWhoseBlobFailsVerificationIsNeverLaidOut(t *testing.T) {
 func TestPinnedRecipeSourceLeavingItsDirectoryIsRefused(t *testing.T) {
 	const uri = "helm/escape:1.0.0"
 	pub := t.TempDir()
-	writeTree(t, pub, map[string]string{"recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	writeTree(t, pub, map[string]string{"recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: escape
@@ -409,7 +409,7 @@ spec:
 func TestPulledComponentReadsTheSchemaItsArchiveCarries(t *testing.T) {
 	const uri = "acme/compute/imported:1.0.0"
 	pub := t.TempDir()
-	const doc = `apiVersion: aggrega.ai/v1alpha1
+	const doc = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/compute/imported
@@ -468,7 +468,7 @@ spec:
 func TestPulledComponentResolvesFromItsLaidOutDocument(t *testing.T) {
 	const uri = "acme/compute/plain:1.0.0"
 	pub := t.TempDir()
-	writeTree(t, pub, map[string]string{"component.yaml": `apiVersion: aggrega.ai/v1alpha1
+	writeTree(t, pub, map[string]string{"component.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/compute/plain

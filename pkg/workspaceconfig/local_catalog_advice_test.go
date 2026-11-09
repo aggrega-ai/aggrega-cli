@@ -22,8 +22,8 @@ const countPhrase = "declaring an entity kind"
 // identically whether the implementation counted the documents or answered
 // "there is at least one".
 var countedDocuments = map[string]string{
-	"component.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: counted-component\n",
-	"server.yml":     "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: counted-recipe\n",
+	"component.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: counted-component\n",
+	"server.yml":     "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: counted-recipe\n",
 }
 
 // uncountedDocuments is the corpus a workspace root ordinarily carries that has

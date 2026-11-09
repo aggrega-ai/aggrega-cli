@@ -49,7 +49,7 @@ func writeTerraformGateWorkspace(t *testing.T, root, recipeInputs, frInputs stri
 		featureMapping = "    features:\n      type:\n        core/metrics: metrics-fr:1.0.0\n"
 	}
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: tf-gate
@@ -62,7 +62,7 @@ spec:
         port: 8080
 `+attachment)
 
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: tf-gate-release
@@ -80,7 +80,7 @@ spec:
             replicas: 1
 `)
 
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: tf-gate-manifest
@@ -93,7 +93,7 @@ spec:
 `+featureMapping)
 
 	catalogRoot = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -107,7 +107,7 @@ spec:
 `)
 	seedEmbeddedPlugins(t, filepath.Join(catalogRoot, "base", "providers"), "provider/terraform")
 
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "terraform", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "terraform", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -118,7 +118,7 @@ spec:
 `+recipeInputs)
 
 	if frInputs != "" {
-		writeFixture(t, filepath.Join(catalogRoot, "base", "features", "metrics.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogRoot, "base", "features", "metrics.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/metrics
@@ -126,7 +126,7 @@ metadata:
 spec:
   schema: {}
 `)
-		writeFixture(t, filepath.Join(catalogRoot, "feature-recipes", "terraform", "metrics.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogRoot, "feature-recipes", "terraform", "metrics.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: metrics-fr
@@ -159,7 +159,7 @@ func writeTerraformModule(t *testing.T, dir string) {
 // well-formed Workload content, so a build that halts halts on the provider's
 // inability to synthesize it rather than on anything wrong with the block.
 const tfWorkloadBlock = `  workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
@@ -181,7 +181,7 @@ const tfWorkloadBlock = `  workload: |
 // refused by workload validation — an earlier gate than the one under test, which
 // would leave the case proving only that.
 const tfAttachmentWorkloadBlock = `  workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:

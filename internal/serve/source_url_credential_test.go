@@ -33,7 +33,7 @@ func credentialURLRecipe(credential string) string {
 	if credential != "" {
 		host = credential + "@" + host
 	}
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -71,7 +71,7 @@ func credentialURLWorkspace(t *testing.T, recipe string) (root, recipePath strin
 	t.Helper()
 	root = t.TempDir()
 	writeCredentialFixture(t, root, workspaceconfig.ConfigFilename, "workspace:\n  catalog_dirs:\n    - ./catalog\noffline: true\n")
-	writeCredentialFixture(t, root, "catalog/component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeCredentialFixture(t, root, "catalog/component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -84,7 +84,7 @@ spec:
       replicas: { type: integer, default: 1 }
 `)
 	recipePath = writeCredentialFixture(t, root, "catalog/recipe/helm/svc/1.0.0/recipe.yaml", recipe)
-	writeCredentialFixture(t, root, "aggregate.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeCredentialFixture(t, root, "aggregate.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
@@ -94,7 +94,7 @@ spec:
     app:
       type: test/svc
 `)
-	writeCredentialFixture(t, root, "manifest.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeCredentialFixture(t, root, "manifest.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -105,7 +105,7 @@ spec:
       type:
         test/svc: helm/svc:1.0.0
 `)
-	writeCredentialFixture(t, root, "release.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeCredentialFixture(t, root, "release.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

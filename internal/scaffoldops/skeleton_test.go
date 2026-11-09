@@ -35,7 +35,7 @@ func TestSkeletonDraftsTheDocumentTheSchemaRequires(t *testing.T) {
 			kind:  "component",
 			seed:  "checkout",
 			shape: "labels is a required object with a required key of its own",
-			want: "apiVersion: aggrega.ai/v1alpha1\n" +
+			want: "apiVersion: aggrega.ai/v1beta1\n" +
 				"kind: Component\n" +
 				"metadata:\n" +
 				"  name: checkout\n" +
@@ -49,7 +49,7 @@ func TestSkeletonDraftsTheDocumentTheSchemaRequires(t *testing.T) {
 			kind:  "aggregate",
 			seed:  "storefront",
 			shape: "spec is required and declares nothing required within it",
-			want: "apiVersion: aggrega.ai/v1alpha1\n" +
+			want: "apiVersion: aggrega.ai/v1beta1\n" +
 				"kind: Aggregate\n" +
 				"metadata:\n" +
 				"  name: storefront\n" +
@@ -61,7 +61,7 @@ func TestSkeletonDraftsTheDocumentTheSchemaRequires(t *testing.T) {
 			kind:  "release",
 			seed:  "storefront-staging",
 			shape: "metadata requires environment as well as name and version",
-			want: "apiVersion: aggrega.ai/v1alpha1\n" +
+			want: "apiVersion: aggrega.ai/v1beta1\n" +
 				"kind: Release\n" +
 				"metadata:\n" +
 				"  name: storefront-staging\n" +
@@ -74,7 +74,7 @@ func TestSkeletonDraftsTheDocumentTheSchemaRequires(t *testing.T) {
 			kind:  "recipe",
 			seed:  "postgres-helm",
 			shape: "spec requires two free-form scalars",
-			want: "apiVersion: aggrega.ai/v1alpha1\n" +
+			want: "apiVersion: aggrega.ai/v1beta1\n" +
 				"kind: Recipe\n" +
 				"metadata:\n" +
 				"  name: postgres-helm\n" +
@@ -88,7 +88,7 @@ func TestSkeletonDraftsTheDocumentTheSchemaRequires(t *testing.T) {
 			kind:  "manifest",
 			seed:  "staging",
 			shape: "spec requires an object that declares nothing required within it",
-			want: "apiVersion: aggrega.ai/v1alpha1\n" +
+			want: "apiVersion: aggrega.ai/v1beta1\n" +
 				"kind: Manifest\n" +
 				"metadata:\n" +
 				"  name: staging\n" +
@@ -101,7 +101,7 @@ func TestSkeletonDraftsTheDocumentTheSchemaRequires(t *testing.T) {
 			kind:  "plugin",
 			seed:  "helm-renderer",
 			shape: "spec.abiVersion is a const, so it is filled rather than placeheld",
-			want: "apiVersion: aggrega.ai/v1alpha1\n" +
+			want: "apiVersion: aggrega.ai/v1beta1\n" +
 				"kind: Plugin\n" +
 				"metadata:\n" +
 				"  name: helm-renderer\n" +

@@ -63,7 +63,7 @@ func TestANoticeAboutAFileIsPrintedOnceHoweverOftenItsWalkRuns(t *testing.T) {
 			name: "a recipe the walk refuses to parse",
 			dirs: []string{"a"},
 			files: map[string]string{
-				"a/refused.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: refused\n  version: 1.0.0\nspec:\n  capability: helm\n  implements: core/refused\n",
+				"a/refused.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: refused\n  version: 1.0.0\nspec:\n  capability: helm\n  implements: core/refused\n",
 			},
 			subject: "a/refused.yaml",
 			marker:  "skipped:",

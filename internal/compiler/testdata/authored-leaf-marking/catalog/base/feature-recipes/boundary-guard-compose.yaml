@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: mark-boundary-guard-compose
@@ -14,7 +14,7 @@ spec:
   implements: feature.mark/boundary-guard
   executionScope: boundary
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       guard:

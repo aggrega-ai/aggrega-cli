@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	localPathComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+	localPathComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb
@@ -24,14 +24,14 @@ metadata:
 spec:
   inject: ["env"]
 `
-	localPathFeatureYAML = `apiVersion: aggrega.ai/v1alpha1
+	localPathFeatureYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/secret-value
   version: "1.0.0"
 spec: {}
 `
-	localPathRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+	localPathRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: mariadb
@@ -40,13 +40,13 @@ spec:
   capability: compose
   implements: "core/datastore/mariadb"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: demo:1
 `
-	localPathFeatureRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+	localPathFeatureRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: dotenv-secret
@@ -55,14 +55,14 @@ spec:
   capability: compose
   implements: "core/secret-value"
 `
-	localPathAggregateYAML = `apiVersion: aggrega.ai/v1alpha1
+	localPathAggregateYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: example/app
   version: "1.0.0"
 spec: {}
 `
-	localPathSchemaLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	localPathSchemaLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -72,7 +72,7 @@ spec:
     Storage:
       size: { type: string, default: "10Gi" }
 `
-	localPathMappingLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	localPathMappingLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BaseMappings
@@ -81,7 +81,7 @@ spec:
   mappings:
     SimpleValues: 'image: {{ .Values.image }}'
 `
-	localPathWorkloadLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	localPathWorkloadLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: BaseWorkloads
@@ -90,7 +90,7 @@ spec:
   workloads:
     SimpleService: 'kind: Deployment'
 `
-	localPathArtifactsLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	localPathArtifactsLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: ArtifactLibrary
 metadata:
   name: SharedCRDs

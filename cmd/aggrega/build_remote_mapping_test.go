@@ -55,7 +55,7 @@ func (p *fakeRemoteMappingLibraryPuller) PullLibrary(_ context.Context, _, _, fl
 // parameterized on version. Its ServerValues entry is a Go-template values
 // fragment producing the provider's `image` value from the component's
 // `.values.tag`; sourceless helm renders that image into the Deployment.
-const helmHelpersLibrarySourceFmt = `apiVersion: aggrega.ai/v1alpha1
+const helmHelpersLibrarySourceFmt = `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: HelmHelpers
@@ -75,7 +75,7 @@ spec:
 func remoteMappingLibraryFixture(t *testing.T, root string) string {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -87,7 +87,7 @@ spec:
       values:
         tag: "v3"
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: smoke-rel
@@ -104,7 +104,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -115,7 +115,7 @@ spec:
       type:
         server: server
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -142,7 +142,7 @@ spec:
 	// the MappingLibrary entry (the values-mapping rule: valuesMapping requires
 	// source).
 	recipePath := filepath.Join(catalogRoot, "recipes", "server.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -330,7 +330,7 @@ func TestBuildResolvesRecursiveMappingImport(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 
 	// HelmHelpers.ServerValues now indirects to BaseValues.Real (recursive import).
-	writeFixture(t, filepath.Join(catalogDir, "mappinglibraries", "helmhelpers.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "mappinglibraries", "helmhelpers.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: HelmHelpers
@@ -340,7 +340,7 @@ spec:
     ServerValues: |
       $import: BaseValues#/mappings/Real
 `)
-	writeFixture(t, filepath.Join(catalogDir, "mappinglibraries", "basevalues.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "mappinglibraries", "basevalues.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BaseValues
@@ -375,7 +375,7 @@ func TestBuildHaltsOnMappingImportCycle(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 
 	// HelmHelpers.ServerValues → Cycle.B → HelmHelpers.ServerValues (A↔B cycle).
-	writeFixture(t, filepath.Join(catalogDir, "mappinglibraries", "helmhelpers.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "mappinglibraries", "helmhelpers.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: HelmHelpers
@@ -385,7 +385,7 @@ spec:
     ServerValues: |
       $import: Cycle#/mappings/B
 `)
-	writeFixture(t, filepath.Join(catalogDir, "mappinglibraries", "cycle.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "mappinglibraries", "cycle.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: Cycle

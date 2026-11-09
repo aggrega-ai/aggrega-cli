@@ -55,7 +55,7 @@ func bundleWith(t *testing.T, entities map[string]string) []byte {
 // would record a skip of its own and make the silence assertions below read as
 // the product's answer when they were the fixture's.
 func pinnedRecipeYAML(name string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: ` + name + `
@@ -64,7 +64,7 @@ spec:
   capability: helm
   implements: core/` + name + `
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
 `
 }

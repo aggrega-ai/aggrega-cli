@@ -1,5 +1,5 @@
 # The workload carries the undeclared value where the guest wants a quantity.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: helm-refusal-workload-note-release

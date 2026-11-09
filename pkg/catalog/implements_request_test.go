@@ -15,7 +15,7 @@ import (
 // implementsRequestComponentYAML is a minimal loadable Component of the type
 // app/db at version.
 func implementsRequestComponentYAML(version string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: app/db\n  version: \"" + version +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: app/db\n  version: \"" + version +
 		"\"\n  labels:\n    component.aggrega.ai/type: server\nspec: {}\n"
 }
 
@@ -147,7 +147,7 @@ func TestABareInstanceIsOfferedTheRecipesImplementingItsResolvedVersion(t *testi
 // featureImplementsRequestFeatureYAML is a minimal loadable Feature of the type
 // name at version.
 func featureImplementsRequestFeatureYAML(name, version string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: " + name + "\n  version: \"" + version +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: " + name + "\n  version: \"" + version +
 		"\"\nspec:\n  schema:\n    values:\n      label: { type: string, default: \"x\" }\n"
 }
 

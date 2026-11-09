@@ -61,7 +61,7 @@ func TestResolveAllExtends_NarrowingAdvisoriesDoNotAccumulate(t *testing.T) {
 // pass's own accumulator on the same principle.
 func TestValidateSchemaPillarsPass_OverlapAdvisoriesDoNotAccumulate(t *testing.T) {
 	t.Parallel()
-	const overlapFeature = `apiVersion: aggrega.ai/v1alpha1
+	const overlapFeature = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/pillar-overlap

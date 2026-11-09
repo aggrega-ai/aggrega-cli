@@ -71,7 +71,7 @@ func writeRegistryPluginFixtureNaming(t *testing.T, host, pluginPath, std string
 	const pluginName = "gateway-step"
 	root := t.TempDir()
 	cat := filepath.Join(root, "catalog")
-	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -83,7 +83,7 @@ spec:
     infra:
       replicas: { type: integer, default: 1 }
 `)
-	writeFixtureEntity(t, cat, "recipe/helm/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "recipe/helm/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -92,7 +92,7 @@ spec:
   capability: helm
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `+"`replicas`"+` 1 }}
     containers:
@@ -101,7 +101,7 @@ spec:
         ports:
           web: 8080
 `)
-	writeFixtureEntity(t, cat, "feature/test/control/1.0.0/feature.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "feature/test/control/1.0.0/feature.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/control
@@ -116,7 +116,7 @@ spec:
 	if bare {
 		entityURI = types.PluginCoordinate(pipelineStepPluginType, pluginName)
 	}
-	writeFixtureEntity(t, cat, "featurerecipe/helm/control/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "featurerecipe/helm/control/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: control
@@ -143,7 +143,7 @@ spec:
 	if attach {
 		features = "      features:\n        control:\n          type: test/control\n"
 	}
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -153,7 +153,7 @@ spec:
     app:
       type: test/svc
 `+features)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -167,7 +167,7 @@ spec:
       type:
         test/control:1.0.0: helm/control:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

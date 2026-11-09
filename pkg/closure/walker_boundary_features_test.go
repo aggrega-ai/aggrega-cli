@@ -28,7 +28,7 @@ import (
 // through the Manifest axis whatever the boundary walk did, and the assertion
 // would prove nothing about the walk.
 const boundaryAttachmentRelease = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -208,7 +208,7 @@ func TestDeeplyNestedBoundaryFeatureIsPinned(t *testing.T) {
 
 	const depth = 64
 	var sb strings.Builder
-	sb.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: prod\n  environment: prod\n  version: 1.0.0\nspec:\n  boundaries:\n")
+	sb.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: prod\n  environment: prod\n  version: 1.0.0\nspec:\n  boundaries:\n")
 	indent := "    "
 	wantPath := "release.spec"
 	for i := 0; i < depth; i++ {
@@ -257,7 +257,7 @@ func TestDeeplyNestedBoundaryFeatureIsPinned(t *testing.T) {
 // author wrote. Recording the flattened dotted id instead would point at a key
 // present nowhere in the document, and one the Release schema rejects on this axis.
 const routedAttachmentRelease = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod

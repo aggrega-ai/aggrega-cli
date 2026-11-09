@@ -29,7 +29,7 @@ const epochCreated = "1970-01-01T00:00:00Z"
 // otherwise match even with the time-derived stamp.
 func TestPushPinsManifestCreated(t *testing.T) {
 	ctx := context.Background()
-	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
+	content := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
 
 	store := memory.New()
 	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content, nil); err != nil {
@@ -50,7 +50,7 @@ func TestPushPinsManifestCreated(t *testing.T) {
 // content as a no-op rather than a conflicting overwrite.
 func TestPushManifestDigestDeterministic(t *testing.T) {
 	ctx := context.Background()
-	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
+	content := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
 
 	first, err := oci.Push(ctx, memory.New(), "1.0.0", oci.MediaTypeComponent, content, nil)
 	if err != nil {
@@ -72,7 +72,7 @@ func TestPushManifestDigestDeterministic(t *testing.T) {
 // registry never receives.
 func TestManifestDigestMatchesPush(t *testing.T) {
 	ctx := context.Background()
-	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: core/observability/logging\n  version: 2.3.1\n")
+	content := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: core/observability/logging\n  version: 2.3.1\n")
 
 	preview, err := oci.ManifestDigest(ctx, oci.MediaTypeFeature, content, nil)
 	if err != nil {
@@ -95,7 +95,7 @@ func TestManifestDigestMatchesPush(t *testing.T) {
 func TestPullSurfacesManifestBytesMatchingDigest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
+	content := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
 
 	store := memory.New()
 	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content, nil); err != nil {

@@ -25,24 +25,24 @@ func TestBuild_ABoundaryFeatureLabelsItsOutputWithItsOwnProvider(t *testing.T) {
 	root := t.TempDir()
 	catalogDir := filepath.Join(root, "catalog")
 
-	writeFixture(t, filepath.Join(catalogDir, "components", "app.yaml"), "apiVersion: aggrega.ai/v1alpha1\n"+
+	writeFixture(t, filepath.Join(catalogDir, "components", "app.yaml"), "apiVersion: aggrega.ai/v1beta1\n"+
 		"kind: Component\nmetadata:\n  name: app\n  version: \"1.0.0\"\n  labels:\n"+
 		"    component.aggrega.ai/type: \"server\"\nspec:\n  schema:\n    values: {}\n")
 	recipe := filepath.Join(catalogDir, "recipes", "app", "recipe.yaml")
-	writeFixture(t, recipe, "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: app\n"+
+	writeFixture(t, recipe, "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: app\n"+
 		"  version: \"1.0.0\"\nspec:\n  capability: compose\n  implements: app\n  workload: |\n"+
-		"    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n    containers:\n      main:\n"+
+		"    apiVersion: aggrega.ai/v1beta1\n    kind: Workload\n    containers:\n      main:\n"+
 		"        image: \"nginx:1.27\"\n")
-	writeFixture(t, filepath.Join(catalogDir, "features", "audit.yaml"), "apiVersion: aggrega.ai/v1alpha1\n"+
+	writeFixture(t, filepath.Join(catalogDir, "features", "audit.yaml"), "apiVersion: aggrega.ai/v1beta1\n"+
 		"kind: Feature\nmetadata:\n  name: probe/audit\n  version: \"1.0.0\"\nspec: {}\n")
 	featureRecipe := filepath.Join(catalogDir, "feature-recipes", "audit", "featurerecipe.yaml")
-	writeFixture(t, featureRecipe, "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: audit\n"+
+	writeFixture(t, featureRecipe, "apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: audit\n"+
 		"  version: \"1.0.0\"\nspec:\n  capability: helm\n  implements: probe/audit\n  executionScope: boundary\n"+
 		"  artifacts:\n    cm.yaml: |\n      apiVersion: v1\n      kind: ConfigMap\n      metadata:\n"+
 		"        name: audit\n      data:\n        read: \"{{ .boundary.boundary_name }}\"\n")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n"+
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n"+
 		"metadata:\n  name: aggregate\n  version: \"1.0.0\"\nspec:\n  components:\n    app:\n      type: app\n")
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\n"+
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\n"+
 		"metadata:\n  name: manifest\n  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n"+
 		"        app: app\n    features:\n      type:\n        probe/audit: audit\n")
 	releasePath := filepath.Join(root, "release.yaml")

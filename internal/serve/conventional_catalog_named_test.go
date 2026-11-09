@@ -33,7 +33,7 @@ import (
 func TestEachReleaseReadsTheConventionalCatalogAsItsOwnStackNamesIt(t *testing.T) {
 	t.Parallel()
 	const probe = "example/probe"
-	const component = "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: " + probe +
+	const component = "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: " + probe +
 		"\n  version: \"1.0.0\"\n  labels:\n    component.aggrega.ai/type: server\nspec: {}\n"
 	const config = "workspace:\n  releases:\n    listing.yaml:\n      catalog_dirs:\n        - ./catalog\n"
 	for _, row := range []struct {
@@ -126,7 +126,7 @@ func TestEachReleaseReadsTheConventionalCatalogAsItsOwnStackNamesIt(t *testing.T
 func TestAConventionalCatalogLinkedToAListedPlaceIsReadThroughTheListing(t *testing.T) {
 	t.Parallel()
 	const probe = "example/probe"
-	const component = "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: " + probe +
+	const component = "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: " + probe +
 		"\n  version: \"1.0.0\"\n  labels:\n    component.aggrega.ai/type: server\nspec: {}\n"
 	for _, row := range []struct {
 		name string

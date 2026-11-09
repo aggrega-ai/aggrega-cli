@@ -50,7 +50,7 @@ func localMutatorWorkspace(t *testing.T, mutatorBytes []byte) (root, catalogDir 
 	t.Helper()
 	root = t.TempDir()
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -60,7 +60,7 @@ spec:
     app:
       type: test/svc
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -71,7 +71,7 @@ spec:
       type:
         test/svc:1.0.0: compose/svc:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel
@@ -88,7 +88,7 @@ spec:
 `)
 
 	catalogDir = filepath.Join(root, "catalog")
-	writeFixtureEntity(t, catalogDir, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -99,7 +99,7 @@ spec:
   schema:
     values: {}
 `)
-	writeFixtureEntity(t, catalogDir, "recipe/compose/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "recipe/compose/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -108,7 +108,7 @@ spec:
   capability: compose
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -137,7 +137,7 @@ spec:
 // the file staged is the file the resolver reads.
 func writeColocatedGovernanceGuest(t *testing.T, catalogDir, name, export string, guest []byte) {
 	t.Helper()
-	writeFixtureEntity(t, catalogDir, "plugin/governance/"+name+"/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "plugin/governance/"+name+"/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: `+name+`

@@ -17,21 +17,21 @@ import (
 
 // triadLinksAggregate is the Aggregate a row lays, carrying the name the Release
 // refers to it by.
-const triadLinksAggregate = "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n" +
+const triadLinksAggregate = "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  version: \"1.0.0\"\n" +
 	"  name: probe-app\nspec:\n  components: {}\n"
 
 // triadLinksManifest is the Manifest a row lays.
-const triadLinksManifest = "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  version: \"1.0.0\"\n" +
+const triadLinksManifest = "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  version: \"1.0.0\"\n" +
 	"  name: probe-manifest\nspec:\n  mappings:\n    components:\n      type: {}\n"
 
 // triadLinksRelease is the Release a row names, referring to its Aggregate and its
 // Manifest by name, so resolving either scans the directory it is named in.
-const triadLinksRelease = "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: probe-release\n" +
+const triadLinksRelease = "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: probe-release\n" +
 	"  version: \"1.0.0\"\n  environment: production\nspec:\n  aggregate: probe-app\n  manifest: probe-manifest\n"
 
 // triadLinksChildManifest is a Manifest named on its own that extends the one a
 // row lays by name.
-const triadLinksChildManifest = "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  version: \"1.0.0\"\n" +
+const triadLinksChildManifest = "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  version: \"1.0.0\"\n" +
 	"  name: probe-child\nspec:\n  extends: probe-manifest\n  mappings:\n    components:\n      type: {}\n"
 
 // TestTheReleaseDirectoryScanDoesNotReadALinkLeadingOut drives the scan that

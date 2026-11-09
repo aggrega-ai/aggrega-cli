@@ -15,7 +15,7 @@ import (
 // TemplateContext is the runtime view assembled by the Go compiler and injected into
 // Recipe and FeatureRecipe Go templates during rendering. This is NOT persisted to disk;
 // it exists only in compiler memory during rendering.
-// Schema: template-context-v1alpha1.schema.json
+// Schema: template-context-v1beta1.schema.json
 //
 // Field availability within base rendering:
 //   - .source — populated at source resolution from Recipe.Spec.Source after
@@ -100,7 +100,7 @@ func (c *TemplateContext) AttachmentPillars(name string) (TemplateAttachment, bo
 }
 
 // ContextBlock is the compiler-assembled execution context providing identity, topology, and delivery data.
-// Schema: template-context-v1alpha1.schema.json#/properties/context
+// Schema: template-context-v1beta1.schema.json#/properties/context
 type ContextBlock struct {
 	InstanceID string `json:"instance_id" yaml:"instance_id"`
 	// RenderedName is the name the node's own provider gives the resources it
@@ -218,7 +218,7 @@ type ContextBlock struct {
 // empty for a caller whose providers report nothing. Everywhere else it is nil
 // and absent.
 //
-// Schema: template-context-v1alpha1.schema.json#/$defs/inbound_edge
+// Schema: template-context-v1beta1.schema.json#/$defs/inbound_edge
 type InboundEdge struct {
 	ComponentID        string             `json:"component_id" yaml:"component_id"`
 	Socket             string             `json:"socket" yaml:"socket"`
@@ -229,7 +229,7 @@ type InboundEdge struct {
 }
 
 // AnnotationBuckets holds the three cascading annotation origins for a node.
-// Schema: template-context-v1alpha1.schema.json context.annotations
+// Schema: template-context-v1beta1.schema.json context.annotations
 type AnnotationBuckets struct {
 	Release   OrderedMap[string] `json:"release,omitempty,omitzero" yaml:"release,omitempty"`
 	Catalog   OrderedMap[string] `json:"catalog,omitempty,omitzero" yaml:"catalog,omitempty"`
@@ -250,7 +250,7 @@ type AnnotationBuckets struct {
 // MarshalJSON methods take responsibility for routing keys into and out of it,
 // and TemplateUntaggedKeys carries them to a template.
 //
-// Schema: template-context-v1alpha1.schema.json context.inject
+// Schema: template-context-v1beta1.schema.json context.inject
 type InjectPipe struct {
 	Env        OrderedMap[string]             `json:"env,omitempty,omitzero" yaml:"env,omitempty"`
 	File       OrderedMap[string]             `json:"file,omitempty,omitzero" yaml:"file,omitempty"`
@@ -508,7 +508,7 @@ func customMechanismTemplateKeys[V any](additional OrderedMap[V]) map[string]any
 }
 
 // EnrichedEdge is an enriched topological edge assembled by the compiler for template consumption.
-// Schema: template-context-v1alpha1.schema.json#/$defs/enriched_edge
+// Schema: template-context-v1beta1.schema.json#/$defs/enriched_edge
 type EnrichedEdge struct {
 	Source          string                         `json:"source,omitempty" yaml:"source,omitempty"`
 	Target          string                         `json:"target" yaml:"target"`
@@ -576,7 +576,7 @@ type EnrichedEdge struct {
 }
 
 // TemplateMetadata provides Release and compilation identity for deterministic naming.
-// Schema: template-context-v1alpha1.schema.json#/properties/metadata
+// Schema: template-context-v1beta1.schema.json#/properties/metadata
 type TemplateMetadata struct {
 	ReleaseName    string `json:"release_name" yaml:"release_name"`
 	ReleaseVersion string `json:"release_version" yaml:"release_version"`
@@ -624,7 +624,7 @@ type TemplateMetadata struct {
 // credential attachment's infra and provides readable rather than silently
 // dropped on the way to a template.
 //
-// Schema: template-context-v1alpha1.schema.json#/$defs/template_attachment
+// Schema: template-context-v1beta1.schema.json#/$defs/template_attachment
 type TemplateAttachment struct {
 	Type            string             `json:"type" yaml:"type"`
 	ResolvedVersion string             `json:"resolved_version,omitempty" yaml:"resolved_version,omitempty"`
@@ -635,7 +635,7 @@ type TemplateAttachment struct {
 }
 
 // StepOutput holds the outputs exported by one pipeline step for inter-step communication.
-// Schema: template-context-v1alpha1.schema.json#/properties/steps
+// Schema: template-context-v1beta1.schema.json#/properties/steps
 type StepOutput struct {
 	Outputs OrderedMap[string] `json:"outputs" yaml:"outputs"`
 }
@@ -645,7 +645,7 @@ type StepOutput struct {
 // boundary, which read .boundary.* in place of .context.*; its injectMapping is
 // evaluated per component against that component's context. Population happens
 // at feature rendering's boundary-scope dispatch branch; component-scope FRs
-// leave the pointer nil. Schema: template-context-v1alpha1.schema.json#/properties/boundary
+// leave the pointer nil. Schema: template-context-v1beta1.schema.json#/properties/boundary
 //
 // Path names the Release boundary the FeatureRecipe is attached to; AssemblyPath
 // names the directory, relative to the build's output directory, that the
@@ -677,7 +677,7 @@ type BoundaryContext struct {
 // surface, they extend ComponentInfo and the schema description picks
 // them up via documentation rather than schema constraint.
 //
-// Schema: template-context-v1alpha1.schema.json#/properties/boundary/properties/components
+// Schema: template-context-v1beta1.schema.json#/properties/boundary/properties/components
 type ComponentInfo struct {
 	InstanceID      string `json:"instance_id" yaml:"instance_id"`
 	Component       string `json:"component" yaml:"component"`

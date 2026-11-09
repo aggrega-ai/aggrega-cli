@@ -23,7 +23,7 @@ import (
 func valueTemplateWorkspace(t *testing.T, locals, provides, image string) (catalogRoot, releasePath string) {
 	t.Helper()
 	root := t.TempDir()
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: value-template-failure
@@ -33,7 +33,7 @@ spec:
     only:
       type: core/server
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: value-template-failure-release
@@ -50,7 +50,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: value-template-failure-manifest
@@ -62,7 +62,7 @@ spec:
         core/server: server-recipe:1.0.0
 `)
 	catalogRoot = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -75,7 +75,7 @@ spec:
       replicas: { type: integer, default: 1 }
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -84,7 +84,7 @@ spec:
   capability: helm
   implements: core/server
 `+locals+provides+`  workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas }}
     containers:

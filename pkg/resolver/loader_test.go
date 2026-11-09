@@ -17,7 +17,7 @@ import (
 func TestLoadAggregate_ValidYAML(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "aggregate.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test-app
@@ -70,7 +70,7 @@ func TestLoadAggregate_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "bad.yaml")
 	// YAML v3 is lenient with many inputs; use a truly malformed document
-	os.WriteFile(f, []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n\t- mixed tabs and spaces"), 0644)
+	os.WriteFile(f, []byte("apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n\t- mixed tabs and spaces"), 0644)
 
 	_, err := LoadAggregate(f)
 	if err == nil {
@@ -91,7 +91,7 @@ func TestLoadAggregate_InvalidYAML(t *testing.T) {
 func TestLoadRelease_ValidYAML(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "release.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -128,7 +128,7 @@ spec:
 func TestLoadManifest_ValidYAML(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "manifest.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test-manifest
@@ -165,7 +165,7 @@ spec:
 func TestLoadManifest_RejectsUnknownMappingKey(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "manifest.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test-manifest
@@ -197,7 +197,7 @@ spec:
 func TestLoadManifest_RejectsReservedPrefix_FlatShape(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "manifest.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test-manifest
@@ -341,7 +341,7 @@ func TestLoadManifest_ReservedPrefixNamesEveryOffendingBinding(t *testing.T) {
 // rule is invoked in, so the order written here is the order findings appear in.
 func reservedPrefixManifestYAML(keys ...string) []byte {
 	var b strings.Builder
-	b.WriteString(`apiVersion: aggrega.ai/v1alpha1
+	b.WriteString(`apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test-manifest
@@ -365,7 +365,7 @@ spec:
 func TestLoadManifest_AcceptsNamespacedPrefix(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "manifest.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test-manifest
@@ -396,7 +396,7 @@ spec:
 func TestLoadManifest_RejectsCrossBindingPillarCollision(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "manifest.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test-manifest
@@ -455,7 +455,7 @@ spec:
 func TestLoadManifest_RejectsCrossBindingCollision_NestedPath(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "manifest.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test-manifest
@@ -501,7 +501,7 @@ spec:
 func TestLoadManifest_CrossBindingCollisionNamesEveryCollidingBinding(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "manifest.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test-manifest
@@ -580,7 +580,7 @@ spec:
 func TestLoadManifest_RepeatedRouteWithinOneBindingIsRefusedByTheEnvelope(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "manifest.yaml")
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test-manifest
@@ -617,7 +617,7 @@ func TestLoadManifest_AcceptsCrossBindingDifferentSubkeyOrPillar(t *testing.T) {
 	f := filepath.Join(dir, "manifest.yaml")
 	// Two bindings targeting the same Feature with different (path, pillar)
 	// pairs are legitimate — distinct routing slots compose without collision.
-	yaml := `apiVersion: aggrega.ai/v1alpha1
+	yaml := `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test-manifest

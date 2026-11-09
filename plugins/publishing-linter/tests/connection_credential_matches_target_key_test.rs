@@ -49,7 +49,7 @@ const SHARED: &str = "{{ .parameters.shared_key }}";
 /// registry pull token of the same secret family that no caller presents.
 fn key_checking_server() -> Value {
     json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "example/ai-model/server", "version": "1.0.0"},
         "spec": {
@@ -73,7 +73,7 @@ fn hosted_server(hosting: &str) -> Value {
 /// A target declaring no caller key — only the pull token.
 fn keyless_server() -> Value {
     json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "example/ai-model/open-server", "version": "1.0.0"},
         "spec": {
@@ -103,7 +103,7 @@ const SCRAPE: &str = "scrape_target";
 /// serves the connections on either socket.
 fn caller() -> Value {
     json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "example/ai-agent/caller", "version": "1.0.0"},
         "spec": {
@@ -158,7 +158,7 @@ fn aggregate_on(socket: &str, target_key: Option<&str>, credential: Option<&str>
         json!({"primary": connection(credential)}),
     );
     json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Aggregate",
         "metadata": {"name": "two-ended", "version": "1.0.0"},
         "spec": {
@@ -176,7 +176,7 @@ fn aggregate_on(socket: &str, target_key: Option<&str>, credential: Option<&str>
 /// A Release adding nothing to either end.
 fn bare_release() -> Value {
     json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Release",
         "metadata": {"name": "two-ended-release", "version": "1.0.0"},
         "spec": {"boundaries": {"app": {"components": {"model": {}, "agent": {}}}}},
@@ -186,7 +186,7 @@ fn bare_release() -> Value {
 /// A Release whose `app` boundary carries the given component entries.
 fn release_with(components: Value) -> Value {
     json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Release",
         "metadata": {"name": "two-ended-release", "version": "1.0.0"},
         "spec": {"boundaries": {"app": {"components": components}}},
@@ -397,7 +397,7 @@ fn a_connection_only_the_release_wires_is_read() {
 fn a_key_reaching_the_target_from_a_subsystem_or_a_boundary_is_not_read() {
     // A subsystem-wide attachment named for the key slot reaches the target.
     let agg = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Aggregate",
         "metadata": {"name": "two-ended", "version": "1.0.0"},
         "spec": {"subsystems": {
@@ -421,7 +421,7 @@ fn a_key_reaching_the_target_from_a_subsystem_or_a_boundary_is_not_read() {
 
     // A boundary-wide attachment named for the key slot reaches the target.
     let release = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Release",
         "metadata": {"name": "two-ended-release", "version": "1.0.0"},
         "spec": {"boundaries": {"serving": {

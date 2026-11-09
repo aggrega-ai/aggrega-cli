@@ -38,7 +38,7 @@ func unheldKindWorkspace(t *testing.T, declares string) (*Server, string) {
 	ws := t.TempDir()
 	catalogDir := filepath.Join(ws, "catalog")
 	writeFixtureFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename), "workspace:\n  catalog_dirs:\n    - ./catalog\n")
-	writeFixtureFile(t, filepath.Join(catalogDir, "feature", "nightly-backup.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "feature", "nightly-backup.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Featur
 metadata:
   name: `+declares+`
@@ -46,7 +46,7 @@ metadata:
 spec:
   appliesTo: "component.aggrega.ai/category=datastore"
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/server
@@ -55,7 +55,7 @@ spec:
   schema:
     values: {}
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipee
 metadata:
   name: demo-server
@@ -64,7 +64,7 @@ spec:
   capability: helm
   implements: demo/server
 `)
-	writeFixtureFile(t, filepath.Join(ws, "feature-at-root.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "feature-at-root.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: local/at-root
@@ -72,7 +72,7 @@ metadata:
 spec:
   appliesTo: "component.aggrega.ai/category=datastore"
 `)
-	writeFixtureFile(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo-aggregate
@@ -82,7 +82,7 @@ spec:
     web:
       type: demo/server
 `)
-	writeFixtureFile(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: demo-manifest
@@ -94,7 +94,7 @@ spec:
         demo/server: demo-server
 `)
 	releasePath := filepath.Join(ws, "release.yaml")
-	writeFixtureFile(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-release

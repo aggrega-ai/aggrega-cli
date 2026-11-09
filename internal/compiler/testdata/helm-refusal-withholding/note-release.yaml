@@ -1,5 +1,5 @@
 # The control: the chart refuses, quoting the value nobody declared.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: helm-refusal-note-release

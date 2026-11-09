@@ -45,7 +45,7 @@ import (
 // is a complete document rather than a fragment because the render's own sub-pass
 // evaluates, parses and validates what the import resolves to, so a fragment would
 // make the comparison's admitted rows fail on a fault that is not the import's.
-const workloadImportBody = `apiVersion: aggrega.ai/v1alpha1
+const workloadImportBody = `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

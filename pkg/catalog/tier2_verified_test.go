@@ -65,7 +65,7 @@ func TestTier2ReadVerified(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	const uri = "hub.aggrega.ai/schemalibrary/core/DbSizing:1.0.0"
 	const version = "1.0.0"
-	body := []byte("apiVersion: aggrega.ai/v1alpha1\n" +
+	body := []byte("apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: SchemaLibrary\nmetadata:\n  name: DbSizing\n  version: 1.0.0\n" +
 		"spec:\n  schemas:\n    Storage: {}\n")
 
@@ -142,12 +142,12 @@ func TestTier2ReadVerifiedManifestAuthorityBeatsForgedPins(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	const uri = "hub.aggrega.ai/schemalibrary/core/DbSizing:1.0.0"
 	const version = "1.0.0"
-	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\nmetadata:\n  name: DbSizing\n  version: 1.0.0\nspec: {}\n")
+	body := []byte("apiVersion: aggrega.ai/v1beta1\nkind: SchemaLibrary\nmetadata:\n  name: DbSizing\n  version: 1.0.0\nspec: {}\n")
 
 	// Seed a faithful two-blob slot (content + manifest committing to the original
 	// body), then overwrite ONLY the content blob with a forged body.
 	_, manifestPin := seedVerifiedEntitySlot(t, ws, cacheDir, uri, version, oci.MediaTypeSchemaLibrary, body)
-	forged := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\nmetadata:\n  name: DbSizing\n  version: 1.0.0\nspec: {evil: true}\n")
+	forged := []byte("apiVersion: aggrega.ai/v1beta1\nkind: SchemaLibrary\nmetadata:\n  name: DbSizing\n  version: 1.0.0\nspec: {evil: true}\n")
 	slot := ocitest.MustCachePath(ws, cacheDir, "SchemaLibrary", uri, version)
 	if err := os.WriteFile(filepath.Join(slot, "blob"), forged, 0o644); err != nil {
 		t.Fatalf("forge content: %v", err)

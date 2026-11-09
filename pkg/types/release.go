@@ -6,7 +6,7 @@ package types
 //go:generate go run ../../internal/tools/typegen release_gen.go
 
 // Release's struct declarations (Release, ReleaseMetadata, ReleaseSpec) are
-// generated into release_gen.go from the published release-v1alpha1 schema;
+// generated into release_gen.go from the published release-v1beta1 schema;
 // their godoc is the schema's descriptions. This hand-written companion holds
 // the routing types the generated spec references — Boundary (recursive),
 // BoundaryComponent, BoundaryFeature, ReleaseUsesEntry, AggregateRouting — and
@@ -15,7 +15,7 @@ package types
 // contained node; boundaries is the only required spec field.
 
 // Boundary is a recursive logical box into which components are routed.
-// Schema: release-v1alpha1.schema.json#/$defs/boundary
+// Schema: release-v1beta1.schema.json#/$defs/boundary
 //
 // Features is typed as OrderedMap[BoundaryFeature], the same typed
 // shape as [BoundaryComponent.Features]: boundary-wide feature
@@ -68,7 +68,7 @@ type Boundary struct {
 
 // BoundaryComponent is a component instance routed into a boundary with
 // optional sizing and feature attachments. Schema:
-// release-v1alpha1.schema.json#/$defs/boundary_component
+// release-v1beta1.schema.json#/$defs/boundary_component
 //
 // Infra carries per-component physical-sizing payloads (instance type,
 // replica count, storage class, etc.) that flow into the IR's per-node
@@ -105,7 +105,7 @@ type BoundaryComponent struct {
 // Values field by construction — the Release values: ban holds at the edge
 // surface. Retargeting a developer-declared edge is rejected at build (a Loud
 // Guardrail), not represented here.
-// Schema: release-v1alpha1.schema.json#/$defs/release_uses_block
+// Schema: release-v1beta1.schema.json#/$defs/release_uses_block
 type ReleaseUsesEntry struct {
 	Target string          `json:"target,omitempty" yaml:"target,omitempty"`
 	Infra  OrderedMap[any] `json:"infra,omitempty,omitzero" yaml:"infra,omitempty"`
@@ -121,7 +121,7 @@ type ReleaseUsesEntry struct {
 // carries. Release provides type (for an attachment only the Release makes),
 // description, and infra (operational sizing). Never values — values are the
 // Developer's domain on the Aggregate, and the Release schema refuses the key.
-// Schema: release-v1alpha1.schema.json#/$defs/release_connection_attachment
+// Schema: release-v1beta1.schema.json#/$defs/release_connection_attachment
 type ReleaseConnectionAttachment struct {
 	Type        string          `json:"type,omitempty" yaml:"type,omitempty"`
 	Description string          `json:"description,omitempty" yaml:"description,omitempty"`
@@ -144,7 +144,7 @@ type ReleaseConnectionAttachment struct {
 // edge from that one component. Either breadth stamps the attachment as the
 // edge's origin feature, so a consumer is injected the target's provides
 // exactly as it would be for a per-component feature uses-edge.
-// Schema: release-v1alpha1.schema.json#/$defs/boundary_component/properties/features
+// Schema: release-v1beta1.schema.json#/$defs/boundary_component/properties/features
 type BoundaryFeature struct {
 	Type        string                             `json:"type,omitempty" yaml:"type,omitempty"`
 	Description string                             `json:"description,omitempty" yaml:"description,omitempty"`
@@ -153,7 +153,7 @@ type BoundaryFeature struct {
 }
 
 // AggregateRouting routes a nested Aggregate sub-module's components into a boundary.
-// Schema: release-v1alpha1.schema.json#/$defs/aggregate_routing
+// Schema: release-v1beta1.schema.json#/$defs/aggregate_routing
 type AggregateRouting struct {
 	Components OrderedMap[BoundaryComponent] `json:"components,omitempty,omitzero" yaml:"components,omitempty"`
 	Aggregates OrderedMap[AggregateRouting]  `json:"aggregates,omitempty,omitzero" yaml:"aggregates,omitempty"`

@@ -58,7 +58,7 @@ func TestResolveAllExtends_MalformedParentPin(t *testing.T) {
 			c := &Catalog{Components: map[string]types.Component{}, Features: map[string]types.Feature{}}
 			for _, f := range []struct{ name, extends string }{{"core/base", ""}, {"core/child", tc.extends}} {
 				feat := types.Feature{}
-				feat.APIVersion = "aggrega.ai/v1alpha1"
+				feat.APIVersion = "aggrega.ai/v1beta1"
 				feat.Kind = "Feature"
 				feat.Metadata.Name = f.name
 				feat.Metadata.Version = "1.0.0"

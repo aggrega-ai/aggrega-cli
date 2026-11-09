@@ -437,7 +437,7 @@ func TestAnUnacceptedKindNamesTheAcceptedKindsAndWhereItIsChecked(t *testing.T) 
 			route: "A Release is checked by the Release scope: validate it as the Release rather than as an entity"},
 		{name: "a SchemaLibrary", doc: draft(t, "schemalibrary", "MyLibrary"),
 			route: "A SchemaLibrary is checked by the whole-catalog scope when it sits in a catalog directory"},
-		{name: "a kind outside the entity vocabulary", doc: "apiVersion: aggrega.ai/v1alpha1\nkind: NotAKind\n"},
+		{name: "a kind outside the entity vocabulary", doc: "apiVersion: aggrega.ai/v1beta1\nkind: NotAKind\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

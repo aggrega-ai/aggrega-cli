@@ -129,7 +129,7 @@ const platformSockets = `  usesSchema:
 
 // partComponent writes a Component carrying labels and one value key.
 func partComponent(name, labels, value string) catalogComponent {
-	return catalogComponent{name: name, version: "1.0.0", body: "apiVersion: aggrega.ai/v1alpha1\nkind: Component\n" +
+	return catalogComponent{name: name, version: "1.0.0", body: "apiVersion: aggrega.ai/v1beta1\nkind: Component\n" +
 		"metadata:\n  name: " + name + "\n  version: 1.0.0\n  labels:\n" + labels +
 		"spec:\n  schema:\n    values:\n      " + value + ": { type: string }\n"}
 }
@@ -141,11 +141,11 @@ func partComponent(name, labels, value string) catalogComponent {
 // since neither is reached over HTTP — and a tool reached over HTTP and a vector
 // store, which a mapping override can name.
 var platformComponents = []catalogComponent{
-	{name: langflowPlatform, version: "1.0.0", body: "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n" +
+	{name: langflowPlatform, version: "1.0.0", body: "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n" +
 		"  name: core/ai-agent/langflow\n  version: 1.0.0\n  labels:\n    component.aggrega.ai/type: server\n" +
 		"    component.aggrega.ai/category: ai-agent\nspec:\n" + platformSockets +
 		"  schema:\n    values:\n      flow_id: { type: string }\n      flow_definition: { type: string }\n"},
-	{name: flowisePlatform, version: "1.0.0", body: "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n" +
+	{name: flowisePlatform, version: "1.0.0", body: "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n" +
 		"  name: core/ai-agent/flowise\n  version: 1.0.0\n  labels:\n    component.aggrega.ai/type: server\n" +
 		"    component.aggrega.ai/category: ai-agent\nspec:\n" + platformSockets +
 		"  schema:\n    values:\n      chatflow_id: { type: string }\n      flow_definition: { type: string }\n"},

@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: db-synth
@@ -10,7 +10,7 @@ spec:
     host: "{{ .context.instance_id }}.db"
     service_port: "{{ optional .infra `port` 5432 }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

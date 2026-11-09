@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata: { name: paramsub-bad-release, environment: local, version: "1.0.0" }
 spec:

@@ -19,7 +19,7 @@ import (
 func TestWorkloadProjection_SuspendRidesABI(t *testing.T) {
 	t.Parallel()
 	for _, suspend := range []bool{true, false} {
-		w := types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: WorkloadFormScheduled, Schedule: "@daily", Suspend: suspend}
+		w := types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: WorkloadFormScheduled, Schedule: "@daily", Suspend: suspend}
 		w.Containers.Set("main", types.ContainerSpec{Image: "app:1.0"})
 		proj := WorkloadProjection{Workload: w}
 
@@ -55,7 +55,7 @@ func TestWorkloadProjection_SuspendRidesABI(t *testing.T) {
 func TestValidateWorkloadForm_SuspendOnScheduled(t *testing.T) {
 	t.Parallel()
 	for _, suspend := range []bool{true, false} {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: WorkloadFormScheduled, Schedule: "0 3 * * *", Suspend: suspend}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: WorkloadFormScheduled, Schedule: "0 3 * * *", Suspend: suspend}
 		if err := ValidateWorkloadForm(w, "node"); err != nil {
 			t.Errorf("scheduled with suspend=%v should pass, got %v", suspend, err)
 		}

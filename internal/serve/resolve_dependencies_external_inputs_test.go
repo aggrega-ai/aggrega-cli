@@ -93,7 +93,7 @@ data:
 		fmt.Sprintf(`{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":%q}`, schemaURL))
 
 	recipePath := filepath.Join(ws, "catalog", "recipes", "server.yaml")
-	writeFixtureFile(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-synthesized

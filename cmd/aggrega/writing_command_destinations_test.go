@@ -70,7 +70,7 @@ func TestEveryWritingCommandWritesWhereItsDestinationSays(t *testing.T) {
 		t.Fatalf("write the linter guest: %v", err)
 	}
 	overlayPath := filepath.Join(inputs, "overlay.yaml")
-	writeFixture(t, overlayPath, "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: publishing-linter\n"+
+	writeFixture(t, overlayPath, "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: publishing-linter\n"+
 		"spec:\n  runtime:\n    maxMemoryPages: 4096\n    timeoutMs: 300000\n")
 	sourcePath := filepath.Join(inputs, "demo-source.txt")
 	writeFixture(t, sourcePath, demoSourceBody)
@@ -129,7 +129,7 @@ func TestEveryWritingCommandWritesWhereItsDestinationSays(t *testing.T) {
 			}
 			writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), "workspace: {}\n")
 			writeFixture(t, filepath.Join(root, "catalog", "local", "recipe.yaml"),
-				"apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: local\n  version: \"1.0.0\"\n"+
+				"apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: local\n  version: \"1.0.0\"\n"+
 					"spec:\n  capability: helm\n  implements: local\n  source: ./chart\n")
 			writeFixture(t, filepath.Join(root, "catalog", "local", "chart", "Chart.yaml"),
 				"apiVersion: v2\nname: local\nversion: 1.0.0\n")

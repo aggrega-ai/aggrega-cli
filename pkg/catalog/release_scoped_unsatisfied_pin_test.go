@@ -25,7 +25,7 @@ import (
 // unsatisfiedPinComponent renders a Component at version 1.0.0 that extends parent,
 // or extends nothing when parent is empty.
 func unsatisfiedPinComponent(name, parent string) string {
-	doc := `apiVersion: aggrega.ai/v1alpha1
+	doc := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: ` + name + `

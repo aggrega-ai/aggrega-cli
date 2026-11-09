@@ -138,7 +138,7 @@ func TestValidatePublishesADependencyFailureOnlyOnAggregaDocuments(t *testing.T)
 		".github/workflows/ci.yml": "name: package-and-publish\non:\n  push:\n    tags: [\"v*\"]\n" +
 			"jobs:\n  package:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n",
 		"compose.yaml": "services:\n  web:\n    image: registry.example/web:1.0.0\n    ports: [\"8080:8080\"]\n",
-		"gadget.yaml":  "apiVersion: aggrega.ai/v1alpha1\nkind: Gadget\nmetadata:\n  name: not-a-kind\n",
+		"gadget.yaml":  "apiVersion: aggrega.ai/v1beta1\nkind: Gadget\nmetadata:\n  name: not-a-kind\n",
 	}
 	for rel, content := range foreign {
 		if err := os.MkdirAll(filepath.Dir(at(rel)), 0o755); err != nil {

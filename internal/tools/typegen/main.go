@@ -80,19 +80,19 @@ type kindSource struct {
 }
 
 var kindSources = map[string]kindSource{
-	"feature_gen.go":         {"Feature", schemas.FeatureV1alpha1},
-	"manifest_gen.go":        {"Manifest", schemas.ManifestV1alpha1},
-	"recipe_gen.go":          {"Recipe", schemas.RecipeV1alpha1},
-	"featurerecipe_gen.go":   {"FeatureRecipe", schemas.FeatureRecipeV1alpha1},
-	"schemalibrary_gen.go":   {"SchemaLibrary", schemas.SchemaLibraryV1alpha1},
-	"mappinglibrary_gen.go":  {"MappingLibrary", schemas.MappingLibraryV1alpha1},
-	"workloadlibrary_gen.go": {"WorkloadLibrary", schemas.WorkloadLibraryV1alpha1},
-	"artifactlibrary_gen.go": {"ArtifactLibrary", schemas.ArtifactLibraryV1alpha1},
-	"aggregate_gen.go":       {"Aggregate", schemas.AggregateV1alpha1},
-	"release_gen.go":         {"Release", schemas.ReleaseV1alpha1},
-	"component_gen.go":       {"Component", schemas.ComponentV1alpha1},
-	"plugin_gen.go":          {"Plugin", schemas.PluginV1alpha1},
-	"workload_gen.go":        {"Workload", schemas.WorkloadV1alpha1},
+	"feature_gen.go":         {"Feature", schemas.FeatureV1beta1},
+	"manifest_gen.go":        {"Manifest", schemas.ManifestV1beta1},
+	"recipe_gen.go":          {"Recipe", schemas.RecipeV1beta1},
+	"featurerecipe_gen.go":   {"FeatureRecipe", schemas.FeatureRecipeV1beta1},
+	"schemalibrary_gen.go":   {"SchemaLibrary", schemas.SchemaLibraryV1beta1},
+	"mappinglibrary_gen.go":  {"MappingLibrary", schemas.MappingLibraryV1beta1},
+	"workloadlibrary_gen.go": {"WorkloadLibrary", schemas.WorkloadLibraryV1beta1},
+	"artifactlibrary_gen.go": {"ArtifactLibrary", schemas.ArtifactLibraryV1beta1},
+	"aggregate_gen.go":       {"Aggregate", schemas.AggregateV1beta1},
+	"release_gen.go":         {"Release", schemas.ReleaseV1beta1},
+	"component_gen.go":       {"Component", schemas.ComponentV1beta1},
+	"plugin_gen.go":          {"Plugin", schemas.PluginV1beta1},
+	"workload_gen.go":        {"Workload", schemas.WorkloadV1beta1},
 }
 
 // enumSource binds an output filename to a string-enum-const emission: the
@@ -131,8 +131,8 @@ type enumSource struct {
 
 var enumSources = map[string]enumSource{
 	"plugin_enums_gen.go": {
-		schema:     schemas.PluginV1alpha1,
-		schemaFile: "plugin-v1alpha1.schema.json",
+		schema:     schemas.PluginV1beta1,
+		schemaFile: "plugin-v1beta1.schema.json",
 		pkg:        "types",
 		fields:     []string{"operates", "scope", "is"},
 		regen:      "// Regenerate with `go generate ./pkg/types/...`.\n",
@@ -160,24 +160,24 @@ var enumSources = map[string]enumSource{
 	// travelling the other way carries a halting condition's identifiers under
 	// condition_code and condition_short_code, which are a different vocabulary.
 	"hostfunc_error_enums_gen.go": {
-		schema:     schemas.WasmHostfuncErrorV1alpha1,
-		schemaFile: "wasm-hostfunc-error-v1alpha1.schema.json",
+		schema:     schemas.WasmHostfuncErrorV1beta1,
+		schemaFile: "wasm-hostfunc-error-v1beta1.schema.json",
 		pkg:        "abi",
 		fields:     []string{"code"},
 		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
 		doc:        hostfuncErrorEnumDoc,
 	},
 	"hostfunc_error_enums_gen.rs": {
-		schema:     schemas.WasmHostfuncErrorV1alpha1,
-		schemaFile: "wasm-hostfunc-error-v1alpha1.schema.json",
+		schema:     schemas.WasmHostfuncErrorV1beta1,
+		schemaFile: "wasm-hostfunc-error-v1beta1.schema.json",
 		fields:     []string{"code"},
 		lang:       "rust",
 		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
 		doc:        hostfuncErrorEnumDoc,
 	},
 	"hostfunc_error_enums_gen.ts": {
-		schema:     schemas.WasmHostfuncErrorV1alpha1,
-		schemaFile: "wasm-hostfunc-error-v1alpha1.schema.json",
+		schema:     schemas.WasmHostfuncErrorV1beta1,
+		schemaFile: "wasm-hostfunc-error-v1beta1.schema.json",
 		fields:     []string{"code"},
 		lang:       "ts",
 		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
@@ -190,24 +190,24 @@ var enumSources = map[string]enumSource{
 	// it. The three plugin kits re-export the generated const instead of
 	// declaring their own copy, so bumping the ABI is a one-line schema edit.
 	"abi_version_enums_gen.go": {
-		schema:     schemas.WasmDescribeV1alpha1,
-		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		schema:     schemas.WasmDescribeV1beta1,
+		schemaFile: "wasm-describe-v1beta1.schema.json",
 		pkg:        "abi",
 		fields:     []string{"abi_version"},
 		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
 		doc:        abiVersionEnumDoc,
 	},
 	"abi_version_enums_gen.rs": {
-		schema:     schemas.WasmDescribeV1alpha1,
-		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		schema:     schemas.WasmDescribeV1beta1,
+		schemaFile: "wasm-describe-v1beta1.schema.json",
 		fields:     []string{"abi_version"},
 		lang:       "rust",
 		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
 		doc:        abiVersionEnumDoc,
 	},
 	"abi_version_enums_gen.ts": {
-		schema:     schemas.WasmDescribeV1alpha1,
-		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		schema:     schemas.WasmDescribeV1beta1,
+		schemaFile: "wasm-describe-v1beta1.schema.json",
 		fields:     []string{"abi_version"},
 		lang:       "ts",
 		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
@@ -221,30 +221,55 @@ var enumSources = map[string]enumSource{
 	// one set, and the compiler re-exports these consts rather than declaring its
 	// own copies.
 	"diagnostic_enums_gen.go": {
-		schema:     schemas.WasmDiagnosticV1alpha1,
-		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
+		schema:     schemas.WasmDiagnosticV1beta1,
+		schemaFile: "wasm-diagnostic-v1beta1.schema.json",
 		pkg:        "abi",
 		fields:     []string{"severity"},
 		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
 		doc:        diagnosticSeverityEnumDoc,
 	},
 	"diagnostic_enums_gen.rs": {
-		schema:     schemas.WasmDiagnosticV1alpha1,
-		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
+		schema:     schemas.WasmDiagnosticV1beta1,
+		schemaFile: "wasm-diagnostic-v1beta1.schema.json",
 		fields:     []string{"severity"},
 		lang:       "rust",
 		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
 		doc:        diagnosticSeverityEnumDoc,
 	},
 	"diagnostic_enums_gen.ts": {
-		schema:     schemas.WasmDiagnosticV1alpha1,
-		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
+		schema:     schemas.WasmDiagnosticV1beta1,
+		schemaFile: "wasm-diagnostic-v1beta1.schema.json",
 		fields:     []string{"severity"},
 		lang:       "ts",
 		regen:      "// Regenerate with `go generate ./internal/tools/typegen` from the\n// aggrega-cli checkout.\n",
 		doc:        diagnosticSeverityEnumDoc,
 	},
+
+	// The API version a document declares — every entity kind's schema pins its
+	// apiVersion to one constant, so the schema is the one place the version is
+	// written and every writer in this module that drafts a document reads the
+	// const generated here rather than spelling the value.
+	"apiversion_gen.go": {
+		schema:     schemas.AggregateV1beta1,
+		schemaFile: "aggregate-v1beta1.schema.json",
+		pkg:        "apiversion",
+		fields:     []string{"apiVersion"},
+		regen:      "// Regenerate with `go generate ./internal/tools/typegen`.\n",
+		doc:        apiVersionDoc,
+	},
 }
+
+// apiVersionDoc is the file-level doc for the generated API version constant.
+const apiVersionDoc = "APIVersion is the apiVersion every document this compiler reads declares,\n" +
+	"generated from the Aggregate schema's apiVersion constant. Every entity kind's\n" +
+	"schema pins the same value, and the document-envelope tests hold each of them\n" +
+	"to this const.\n" +
+	"\n" +
+	"Everything in this module that drafts a document — the importers, the entity\n" +
+	"synthesis, the single-entity check, the editor's completion list — writes\n" +
+	"this const rather than the value, so a move to a new API version is a schema\n" +
+	"edit and a regeneration. The plugin kit is a separate module and carries its\n" +
+	"own copy, pinned to this const by a test in this module."
 
 // abiVersionEnumDoc is the shared file-level doc for the three plugin-ABI-version
 // targets, so the Go/Rust/TS files carry one explanation.
@@ -269,7 +294,7 @@ const abiVersionEnumDoc = "This const is the plugin ABI version, generated from 
 	"\n" +
 	"It is unrelated to the IR payload's schema version, which travels in an IR\n" +
 	"graph's provenance and versions the graph shape rather than the plugin ABI.\n" +
-	"The two spell the same string today and are separate vocabularies."
+	"The two are separate vocabularies."
 
 // diagnosticSeverityEnumDoc is the shared file-level doc for the three
 // diagnostic-severity enum targets, so the Go/Rust/TS files carry one
@@ -987,24 +1012,24 @@ var importGuestVocabulary = map[string]string{}
 
 var codecTargets = map[string]codecTarget{
 	"frp_gen.go": {
-		schema:           schemas.WasmFrpStepV1alpha1,
-		schemaFile:       "wasm-frp-step-v1alpha1.schema.json",
+		schema:           schemas.WasmFrpStepV1beta1,
+		schemaFile:       "wasm-frp-step-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       frpGuestNeutralVocabulary,
 		helpers:          true, // FRP owns the shared streaming-decode helpers in package abi
 		externalDefTypes: []string{"Diagnostic"},
 	},
 	"frp_gen.rs": {
-		schema:           schemas.WasmFrpStepV1alpha1,
-		schemaFile:       "wasm-frp-step-v1alpha1.schema.json",
+		schema:           schemas.WasmFrpStepV1beta1,
+		schemaFile:       "wasm-frp-step-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       frpGuestNeutralVocabulary,
 		lang:             "rust",
 		externalDefTypes: []string{"Diagnostic"},
 	},
 	"frp_gen.ts": {
-		schema:           schemas.WasmFrpStepV1alpha1,
-		schemaFile:       "wasm-frp-step-v1alpha1.schema.json",
+		schema:           schemas.WasmFrpStepV1beta1,
+		schemaFile:       "wasm-frp-step-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       frpGuestNeutralVocabulary,
 		lang:             "ts",
@@ -1022,8 +1047,8 @@ var codecTargets = map[string]codecTarget{
 	// a byte-string of its JSON document, which no kit writes. Without it a step
 	// built with a kit could not report a diagnostic the host reads.
 	"frp_host_gen.go": {
-		schema:               schemas.WasmFrpStepV1alpha1,
-		schemaFile:           "wasm-frp-step-v1alpha1.schema.json",
+		schema:               schemas.WasmFrpStepV1beta1,
+		schemaFile:           "wasm-frp-step-v1beta1.schema.json",
 		pkg:                  "featurerecipe_pipeline",
 		vocabulary:           frpHostVocabulary,
 		helpers:              true, // the host feature-recipe-pipeline codec is alone in its package
@@ -1043,21 +1068,21 @@ var codecTargets = map[string]codecTarget{
 	// Emitted once into package abi; the abi Go codec references the helpers FRP
 	// owns in package abi (helpers: false, the default).
 	"diagnostic_gen.go": {
-		schema:     schemas.WasmDiagnosticV1alpha1,
-		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
+		schema:     schemas.WasmDiagnosticV1beta1,
+		schemaFile: "wasm-diagnostic-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: diagnosticGuestVocabulary,
 	},
 	"diagnostic_gen.rs": {
-		schema:     schemas.WasmDiagnosticV1alpha1,
-		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
+		schema:     schemas.WasmDiagnosticV1beta1,
+		schemaFile: "wasm-diagnostic-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: diagnosticGuestVocabulary,
 		lang:       "rust",
 	},
 	"diagnostic_gen.ts": {
-		schema:     schemas.WasmDiagnosticV1alpha1,
-		schemaFile: "wasm-diagnostic-v1alpha1.schema.json",
+		schema:     schemas.WasmDiagnosticV1beta1,
+		schemaFile: "wasm-diagnostic-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: diagnosticGuestVocabulary,
 		lang:       "ts",
@@ -1069,21 +1094,21 @@ var codecTargets = map[string]codecTarget{
 	// the socket carries an input shape only. The abi Go codec references the
 	// helpers FRP owns in package abi (helpers: false, the default).
 	"cli_gen.go": {
-		schema:     schemas.WasmCliV1alpha1,
-		schemaFile: "wasm-cli-v1alpha1.schema.json",
+		schema:     schemas.WasmCliV1beta1,
+		schemaFile: "wasm-cli-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: cliGuestVocabulary,
 	},
 	"cli_gen.rs": {
-		schema:     schemas.WasmCliV1alpha1,
-		schemaFile: "wasm-cli-v1alpha1.schema.json",
+		schema:     schemas.WasmCliV1beta1,
+		schemaFile: "wasm-cli-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: cliGuestVocabulary,
 		lang:       "rust",
 	},
 	"cli_gen.ts": {
-		schema:     schemas.WasmCliV1alpha1,
-		schemaFile: "wasm-cli-v1alpha1.schema.json",
+		schema:     schemas.WasmCliV1beta1,
+		schemaFile: "wasm-cli-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: cliGuestVocabulary,
 		lang:       "ts",
@@ -1101,28 +1126,28 @@ var codecTargets = map[string]codecTarget{
 	// list of which fields those are; naming the kinds rather than the fields keeps
 	// this from going stale as the descriptor grows.
 	"describe_gen.go": {
-		schema:     schemas.WasmDescribeV1alpha1,
-		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		schema:     schemas.WasmDescribeV1beta1,
+		schemaFile: "wasm-describe-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: describeGuestVocabulary,
 	},
 	"describe_gen.rs": {
-		schema:     schemas.WasmDescribeV1alpha1,
-		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		schema:     schemas.WasmDescribeV1beta1,
+		schemaFile: "wasm-describe-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: describeGuestVocabulary,
 		lang:       "rust",
 	},
 	"describe_gen.ts": {
-		schema:     schemas.WasmDescribeV1alpha1,
-		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		schema:     schemas.WasmDescribeV1beta1,
+		schemaFile: "wasm-describe-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: describeGuestVocabulary,
 		lang:       "ts",
 	},
 	"describe_host_gen.go": {
-		schema:     schemas.WasmDescribeV1alpha1,
-		schemaFile: "wasm-describe-v1alpha1.schema.json",
+		schema:     schemas.WasmDescribeV1beta1,
+		schemaFile: "wasm-describe-v1beta1.schema.json",
 		pkg:        "wasm",
 		vocabulary: describeHostVocabulary,
 		helpers:    true, // the host describe codec is alone in package wasm
@@ -1133,28 +1158,28 @@ var codecTargets = map[string]codecTarget{
 	// helpers FRP owns in package abi (helpers: false); the topology host codec
 	// is alone in its package and owns its helpers (helpers: true).
 	"mutator_gen.go": {
-		schema:     schemas.WasmMutatorV1alpha1,
-		schemaFile: "wasm-mutator-v1alpha1.schema.json",
+		schema:     schemas.WasmMutatorV1beta1,
+		schemaFile: "wasm-mutator-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: mutatorGuestVocabulary,
 	},
 	"mutator_gen.rs": {
-		schema:     schemas.WasmMutatorV1alpha1,
-		schemaFile: "wasm-mutator-v1alpha1.schema.json",
+		schema:     schemas.WasmMutatorV1beta1,
+		schemaFile: "wasm-mutator-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: mutatorGuestVocabulary,
 		lang:       "rust",
 	},
 	"mutator_gen.ts": {
-		schema:     schemas.WasmMutatorV1alpha1,
-		schemaFile: "wasm-mutator-v1alpha1.schema.json",
+		schema:     schemas.WasmMutatorV1beta1,
+		schemaFile: "wasm-mutator-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: mutatorGuestVocabulary,
 		lang:       "ts",
 	},
 	"wasm_types_gen.go": {
-		schema:     schemas.WasmMutatorV1alpha1,
-		schemaFile: "wasm-mutator-v1alpha1.schema.json",
+		schema:     schemas.WasmMutatorV1beta1,
+		schemaFile: "wasm-mutator-v1beta1.schema.json",
 		pkg:        "topology",
 		vocabulary: mutatorHostVocabulary,
 		helpers:    true, // the host mutator codec is alone in package topology
@@ -1173,28 +1198,28 @@ var codecTargets = map[string]codecTarget{
 	// host codec is alone in its package for this schema and owns its helpers
 	// (helpers: true).
 	"annotationtransform_gen.go": {
-		schema:     schemas.WasmAnnotationTransformV1alpha1,
-		schemaFile: "wasm-annotation-transform-v1alpha1.schema.json",
+		schema:     schemas.WasmAnnotationTransformV1beta1,
+		schemaFile: "wasm-annotation-transform-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: annotationTransformGuestVocabulary,
 	},
 	"annotationtransform_gen.rs": {
-		schema:     schemas.WasmAnnotationTransformV1alpha1,
-		schemaFile: "wasm-annotation-transform-v1alpha1.schema.json",
+		schema:     schemas.WasmAnnotationTransformV1beta1,
+		schemaFile: "wasm-annotation-transform-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: annotationTransformGuestVocabulary,
 		lang:       "rust",
 	},
 	"annotationtransform_gen.ts": {
-		schema:     schemas.WasmAnnotationTransformV1alpha1,
-		schemaFile: "wasm-annotation-transform-v1alpha1.schema.json",
+		schema:     schemas.WasmAnnotationTransformV1beta1,
+		schemaFile: "wasm-annotation-transform-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: annotationTransformGuestVocabulary,
 		lang:       "ts",
 	},
 	"annotationtransform_host_gen.go": {
-		schema:     schemas.WasmAnnotationTransformV1alpha1,
-		schemaFile: "wasm-annotation-transform-v1alpha1.schema.json",
+		schema:     schemas.WasmAnnotationTransformV1beta1,
+		schemaFile: "wasm-annotation-transform-v1beta1.schema.json",
 		pkg:        "pipeline",
 		vocabulary: annotationTransformHostVocabulary,
 		helpers:    true, // the host annotation-transform codec is alone in package pipeline
@@ -1213,23 +1238,23 @@ var codecTargets = map[string]codecTarget{
 	// Policies struct, so the configuration crosses as the same structural map
 	// whichever side writes it.
 	"linter_gen.go": {
-		schema:           schemas.WasmLinterV1alpha1,
-		schemaFile:       "wasm-linter-v1alpha1.schema.json",
+		schema:           schemas.WasmLinterV1beta1,
+		schemaFile:       "wasm-linter-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       linterGuestVocabulary,
 		externalDefTypes: []string{"Diagnostic"},
 	},
 	"linter_gen.rs": {
-		schema:           schemas.WasmLinterV1alpha1,
-		schemaFile:       "wasm-linter-v1alpha1.schema.json",
+		schema:           schemas.WasmLinterV1beta1,
+		schemaFile:       "wasm-linter-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       linterGuestVocabulary,
 		lang:             "rust",
 		externalDefTypes: []string{"Diagnostic"},
 	},
 	"linter_gen.ts": {
-		schema:           schemas.WasmLinterV1alpha1,
-		schemaFile:       "wasm-linter-v1alpha1.schema.json",
+		schema:           schemas.WasmLinterV1beta1,
+		schemaFile:       "wasm-linter-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       linterGuestVocabulary,
 		lang:             "ts",
@@ -1246,8 +1271,8 @@ var codecTargets = map[string]codecTarget{
 	// the codec generated beside the published type, rather than as a byte-string
 	// of its JSON document, which no guest writes.
 	"linter_host_gen.go": {
-		schema:               schemas.WasmLinterV1alpha1,
-		schemaFile:           "wasm-linter-v1alpha1.schema.json",
+		schema:               schemas.WasmLinterV1beta1,
+		schemaFile:           "wasm-linter-v1beta1.schema.json",
 		pkg:                  "validator",
 		vocabulary:           linterHostVocabulary,
 		helpers:              true, // the host linter codec is alone in package validator
@@ -1264,21 +1289,21 @@ var codecTargets = map[string]codecTarget{
 	// them json.RawMessage); the one reference cycle — field provenance pointing at
 	// the annotation contribution it suppressed — is broken by a pointer.
 	"ir_gen.go": {
-		schema:     schemas.IRSchemaV1alpha1,
-		schemaFile: "ir-v1alpha1.schema.json",
+		schema:     schemas.IRSchemaV1beta1,
+		schemaFile: "ir-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: irGuestVocabulary,
 	},
 	"ir_gen.rs": {
-		schema:     schemas.IRSchemaV1alpha1,
-		schemaFile: "ir-v1alpha1.schema.json",
+		schema:     schemas.IRSchemaV1beta1,
+		schemaFile: "ir-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: irGuestVocabulary,
 		lang:       "rust",
 	},
 	"ir_gen.ts": {
-		schema:     schemas.IRSchemaV1alpha1,
-		schemaFile: "ir-v1alpha1.schema.json",
+		schema:     schemas.IRSchemaV1beta1,
+		schemaFile: "ir-v1beta1.schema.json",
 		pkg:        "abi",
 		vocabulary: irGuestVocabulary,
 		lang:       "ts",
@@ -1300,8 +1325,8 @@ var codecTargets = map[string]codecTarget{
 	// the shape the guest side already decodes — rather than as a byte-string of
 	// JSON bytes.
 	"ir_host_gen.go": {
-		schema:          schemas.IRSchemaV1alpha1,
-		schemaFile:      "ir-v1alpha1.schema.json",
+		schema:          schemas.IRSchemaV1beta1,
+		schemaFile:      "ir-v1beta1.schema.json",
 		pkg:             "types",
 		vocabulary:      irHostVocabulary,
 		helpers:         true,
@@ -1314,23 +1339,23 @@ var codecTargets = map[string]codecTarget{
 	// package; externalDefTypes makes the Go codec dispatch directly to IRGraph's
 	// generated codec rather than through a reflective json.Marshal.
 	"policy_gen.go": {
-		schema:           schemas.WasmPolicyV1alpha1,
-		schemaFile:       "wasm-policy-v1alpha1.schema.json",
+		schema:           schemas.WasmPolicyV1beta1,
+		schemaFile:       "wasm-policy-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       policyGuestVocabulary,
 		externalDefTypes: []string{"IRGraph", "Diagnostic"},
 	},
 	"policy_gen.rs": {
-		schema:           schemas.WasmPolicyV1alpha1,
-		schemaFile:       "wasm-policy-v1alpha1.schema.json",
+		schema:           schemas.WasmPolicyV1beta1,
+		schemaFile:       "wasm-policy-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       policyGuestVocabulary,
 		lang:             "rust",
 		externalDefTypes: []string{"IRGraph", "Diagnostic"},
 	},
 	"policy_gen.ts": {
-		schema:           schemas.WasmPolicyV1alpha1,
-		schemaFile:       "wasm-policy-v1alpha1.schema.json",
+		schema:           schemas.WasmPolicyV1beta1,
+		schemaFile:       "wasm-policy-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       policyGuestVocabulary,
 		lang:             "ts",
@@ -1371,8 +1396,8 @@ var codecTargets = map[string]codecTarget{
 	// serving. The table lists a row per role because the shapes differ, not
 	// because the names collide.
 	"policy_host_gen.go": {
-		schema:               schemas.WasmPolicyV1alpha1,
-		schemaFile:           "wasm-policy-v1alpha1.schema.json",
+		schema:               schemas.WasmPolicyV1beta1,
+		schemaFile:           "wasm-policy-v1beta1.schema.json",
 		pkg:                  "analyzer",
 		vocabulary:           policyHostVocabulary,
 		helpers:              true,
@@ -1405,23 +1430,23 @@ var codecTargets = map[string]codecTarget{
 	// socket's codec target distinctly; the generator dispatches by basename, so a
 	// descriptive stem keeps this codec target unambiguous against other basenames.
 	"providerrender_gen.go": {
-		schema:           schemas.WasmProviderV1alpha1,
-		schemaFile:       "wasm-provider-v1alpha1.schema.json",
+		schema:           schemas.WasmProviderV1beta1,
+		schemaFile:       "wasm-provider-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       providerGuestVocabulary,
 		externalDefTypes: []string{"Diagnostic"},
 	},
 	"providerrender_gen.rs": {
-		schema:           schemas.WasmProviderV1alpha1,
-		schemaFile:       "wasm-provider-v1alpha1.schema.json",
+		schema:           schemas.WasmProviderV1beta1,
+		schemaFile:       "wasm-provider-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       providerGuestVocabulary,
 		lang:             "rust",
 		externalDefTypes: []string{"Diagnostic"},
 	},
 	"providerrender_gen.ts": {
-		schema:           schemas.WasmProviderV1alpha1,
-		schemaFile:       "wasm-provider-v1alpha1.schema.json",
+		schema:           schemas.WasmProviderV1beta1,
+		schemaFile:       "wasm-provider-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       providerGuestVocabulary,
 		lang:             "ts",
@@ -1444,8 +1469,8 @@ var codecTargets = map[string]codecTarget{
 	// built with a kit could not report a diagnostic the host reads, nor read the
 	// diagnostics a contributor's render carries into its assembly.
 	"providerrender_host_gen.go": {
-		schema:               schemas.WasmProviderV1alpha1,
-		schemaFile:           "wasm-provider-v1alpha1.schema.json",
+		schema:               schemas.WasmProviderV1beta1,
+		schemaFile:           "wasm-provider-v1beta1.schema.json",
 		pkg:                  "rendercore",
 		vocabulary:           providerHostVocabulary,
 		helpers:              true, // the host provider render codec is alone in package rendercore
@@ -1470,8 +1495,8 @@ var codecTargets = map[string]codecTarget{
 	// rather than a role's default, so the entry names the plugin type and that
 	// export.
 	"parse_gen.go": {
-		schema:           schemas.WasmParseV1alpha1,
-		schemaFile:       "wasm-parse-v1alpha1.schema.json",
+		schema:           schemas.WasmParseV1beta1,
+		schemaFile:       "wasm-parse-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       parseGuestVocabulary,
 		externalDefTypes: []string{"Diagnostic"},
@@ -1481,16 +1506,16 @@ var codecTargets = map[string]codecTarget{
 		},
 	},
 	"parse_gen.rs": {
-		schema:           schemas.WasmParseV1alpha1,
-		schemaFile:       "wasm-parse-v1alpha1.schema.json",
+		schema:           schemas.WasmParseV1beta1,
+		schemaFile:       "wasm-parse-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       parseGuestVocabulary,
 		lang:             "rust",
 		externalDefTypes: []string{"Diagnostic"},
 	},
 	"parse_gen.ts": {
-		schema:           schemas.WasmParseV1alpha1,
-		schemaFile:       "wasm-parse-v1alpha1.schema.json",
+		schema:           schemas.WasmParseV1beta1,
+		schemaFile:       "wasm-parse-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       parseGuestVocabulary,
 		lang:             "ts",
@@ -1515,8 +1540,8 @@ var codecTargets = map[string]codecTarget{
 	// export rather than a role's default, so the entry names the plugin type and
 	// that export.
 	"import_gen.go": {
-		schema:           schemas.WasmImportV1alpha1,
-		schemaFile:       "wasm-import-v1alpha1.schema.json",
+		schema:           schemas.WasmImportV1beta1,
+		schemaFile:       "wasm-import-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       importGuestVocabulary,
 		externalDefTypes: []string{"Diagnostic"},
@@ -1526,16 +1551,16 @@ var codecTargets = map[string]codecTarget{
 		},
 	},
 	"import_gen.rs": {
-		schema:           schemas.WasmImportV1alpha1,
-		schemaFile:       "wasm-import-v1alpha1.schema.json",
+		schema:           schemas.WasmImportV1beta1,
+		schemaFile:       "wasm-import-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       importGuestVocabulary,
 		lang:             "rust",
 		externalDefTypes: []string{"Diagnostic"},
 	},
 	"import_gen.ts": {
-		schema:           schemas.WasmImportV1alpha1,
-		schemaFile:       "wasm-import-v1alpha1.schema.json",
+		schema:           schemas.WasmImportV1beta1,
+		schemaFile:       "wasm-import-v1beta1.schema.json",
 		pkg:              "abi",
 		vocabulary:       importGuestVocabulary,
 		lang:             "ts",
@@ -1566,8 +1591,8 @@ var codecTargets = map[string]codecTarget{
 	// a guest plugin never speaks this wire. A CBOR codec emitted here would be a
 	// second encoding of every message that nothing at either end reads.
 	"servewire_gen.ts": {
-		schema:     schemas.ServeWireV1alpha1,
-		schemaFile: "serve-wire-v1alpha1.schema.json",
+		schema:     schemas.ServeWireV1beta1,
+		schemaFile: "serve-wire-v1beta1.schema.json",
 		lang:       "ts",
 		skipCBOR:   true,
 	},
@@ -2937,7 +2962,7 @@ func emitCodecHelpers(b *strings.Builder) {
 // The generated header line and the refusals below both name it, so it is
 // derived in one place rather than spelled out at each.
 func entitySchemaFile(typeName string) string {
-	return strings.ToLower(typeName) + "-v1alpha1.schema.json"
+	return strings.ToLower(typeName) + "-v1beta1.schema.json"
 }
 
 // generate produces the formatted Go source for one entity kind: its struct

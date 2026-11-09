@@ -60,7 +60,7 @@ func releaseWith(t *testing.T, boundaries string) string {
 	if err != nil {
 		t.Fatalf("resolve the manifest's path: %v", err)
 	}
-	body := fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	body := fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod-release

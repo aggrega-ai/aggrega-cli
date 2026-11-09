@@ -1,7 +1,7 @@
 documents:
   - path: components/imported-ai-model-chatinput.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-model/chatinput
@@ -24,7 +24,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-model-chatoutput.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-model/chatoutput
@@ -47,7 +47,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-agent-agent.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-agent/agent
@@ -89,7 +89,7 @@ documents:
             additionalProperties: false
   - path: components/imported-component-prompt.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/component/prompt
@@ -110,7 +110,7 @@ documents:
             additionalProperties: false
   - path: components/imported-component-remixdocumentation.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/component/remixdocumentation
@@ -127,7 +127,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-model-embeddingmodel.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-model/embeddingmodel
@@ -158,7 +158,7 @@ documents:
             additionalProperties: false
   - path: components/imported-component-faiss.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/component/faiss
@@ -183,7 +183,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-tool-mcptools.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-tool/mcptools
@@ -204,7 +204,7 @@ documents:
             additionalProperties: false
   - path: aggregate.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Aggregate
       metadata:
         name: imported/flow

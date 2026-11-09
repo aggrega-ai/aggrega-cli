@@ -37,7 +37,7 @@ func perReleaseLintWorkspace(t *testing.T) (root, offending string) {
 `)
 	for _, r := range []string{"release-a.yaml", "release-b.yaml", "release-b2.yaml", "release-off.yaml"} {
 		writeFixtureFile(t, filepath.Join(root, r),
-			"apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: probe/"+strings.TrimSuffix(r, ".yaml")+"\n  version: 1.0.0\nspec: {}\n")
+			"apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: probe/"+strings.TrimSuffix(r, ".yaml")+"\n  version: 1.0.0\nspec: {}\n")
 	}
 	writeFixtureFile(t, filepath.Join(root, "variant-a", "component", "svc.yaml"), conventionsCleanComponent)
 	offending = filepath.Join("variant-b", "component", "svc.yaml")
@@ -130,7 +130,7 @@ func TestLintRequestOverASingleCatalogCarriesNoPasses(t *testing.T) {
 	t.Parallel()
 	root, _ := conventionsWorkspace(t, conventionsBadComponent)
 	writeFixtureFile(t, filepath.Join(root, "release.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: probe/one\n  version: 1.0.0\nspec: {}\n")
+		"apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: probe/one\n  version: 1.0.0\nspec: {}\n")
 	srv := conventionsServer(t, root, false)
 
 	raw := rawLintAnswer(t, srv, lintParams{})

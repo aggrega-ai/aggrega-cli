@@ -21,7 +21,7 @@ import (
 // The `keep` sibling is a well-formed constraint declared beside it. It is what
 // would go unenforced were the contract passed over, so it is the reason the
 // refusal is worth more than the constraints it costs.
-const unusableContractComponent = `apiVersion: aggrega.ai/v1alpha1
+const unusableContractComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/unusable

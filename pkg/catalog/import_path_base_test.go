@@ -94,7 +94,7 @@ func assertResolvesBesideEntity(t *testing.T, field, resolved string) {
 // are the fields this test was added for; artifacts and source are included so
 // a later change cannot narrow the shared base to a subset of them.
 func TestRecipeImportPathsResolveAgainstRecipeDirectory(t *testing.T) {
-	path := importBaseFixture(t, "recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	path := importBaseFixture(t, "recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: import-base
@@ -138,7 +138,7 @@ spec:
 // FeatureRecipe half. Both kinds route through the same resolution, so a
 // change that reaches one and not the other is what this pins.
 func TestFeatureRecipeImportPathsResolveAgainstRecipeDirectory(t *testing.T) {
-	path := importBaseFixture(t, "featurerecipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	path := importBaseFixture(t, "featurerecipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: import-base-fr
@@ -179,7 +179,7 @@ spec:
 // not the other is visible. An absolute path is not among these values: it names
 // a file outside the entity and is refused, which the containment tests cover.
 func TestImportPathsThatAreNotLocalPathsSurviveResolution(t *testing.T) {
-	path := importBaseFixture(t, "recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	path := importBaseFixture(t, "recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: import-untouched
@@ -223,7 +223,7 @@ spec:
 // below is attributable to the host alone rather than to anything else the
 // fixture happens to say.
 func TestAuthoredRegistryHostImportHaltsAtLoad(t *testing.T) {
-	const body = `apiVersion: aggrega.ai/v1alpha1
+	const body = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: import-host-refused

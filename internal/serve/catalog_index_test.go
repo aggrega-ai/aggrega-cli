@@ -33,24 +33,24 @@ func writeCatalogFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	files := map[string]string{
-		"00-recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"00-recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-helm
   labels:
     provider: helm
 `,
-		"10-feature.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"10-feature.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: tls
 `,
-		"20-component-b.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"20-component-b.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: db
 `,
-		"30-component-a.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"30-component-a.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: api
@@ -59,13 +59,13 @@ metadata:
     tier: edge
     component.aggrega.ai/type: service
 `,
-		"40-aggregate.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"40-aggregate.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
   description: the storefront
 `,
-		"nested/50-component-c.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"nested/50-component-c.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: mid
@@ -77,7 +77,7 @@ image:
 `,
 		// An aggrega kind with no metadata.name is not addressable, so
 		// the index cannot report anything a caller could refer to.
-		"90-unnamed.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"90-unnamed.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   description: nameless
@@ -192,8 +192,8 @@ func TestCatalogIndexReportsWorkspaceEntitiesThroughTheRealDispatchPath(t *testi
 		if got["name"] != w.name {
 			t.Errorf("entities[%d][name] = %v, want %q", i, got["name"], w.name)
 		}
-		if got["apiVersion"] != "aggrega.ai/v1alpha1" {
-			t.Errorf("entities[%d][apiVersion] = %v, want %q", i, got["apiVersion"], "aggrega.ai/v1alpha1")
+		if got["apiVersion"] != "aggrega.ai/v1beta1" {
+			t.Errorf("entities[%d][apiVersion] = %v, want %q", i, got["apiVersion"], "aggrega.ai/v1beta1")
 		}
 		if got["description"] != w.description {
 			t.Errorf("entities[%d][description] = %v, want %q", i, got["description"], w.description)
@@ -252,13 +252,13 @@ func writeAPIGroupFixture(t *testing.T) string {
 	root := t.TempDir()
 	files := map[string]string{
 		// Declares Aggrega's own group: an entity.
-		"declared.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"declared.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: declared
 `,
 		// Declares a subgroup of it: also ours.
-		"subgroup.yaml": `apiVersion: extensions.aggrega.ai/v1alpha1
+		"subgroup.yaml": `apiVersion: extensions.aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: subgroup
@@ -349,8 +349,8 @@ func TestCatalogIndexReportsTheAPIVersionItAdmittedOn(t *testing.T) {
 	body, entities := catalogIndexOverWire(t, srv)
 
 	want := map[string]string{
-		"declared": "aggrega.ai/v1alpha1",
-		"subgroup": "extensions.aggrega.ai/v1alpha1",
+		"declared": "aggrega.ai/v1beta1",
+		"subgroup": "extensions.aggrega.ai/v1beta1",
 		"draft":    "",
 	}
 	seen := map[string]bool{}
@@ -429,7 +429,7 @@ func TestCatalogIndexReportsTheEditorBufferRatherThanDisk(t *testing.T) {
 	root := writeCatalogFixture(t)
 	srv := newTestServer(t, root, &bytes.Buffer{}, &bytes.Buffer{})
 
-	buffer := `apiVersion: aggrega.ai/v1alpha1
+	buffer := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: api-v2
@@ -471,7 +471,7 @@ func TestCatalogIndexExcludesDocumentsOutsideTheWorkspaceRoot(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "elsewhere.yaml")
 	srv := newTestServer(t, root, &bytes.Buffer{}, &bytes.Buffer{})
 
-	content := `apiVersion: aggrega.ai/v1alpha1
+	content := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: elsewhere

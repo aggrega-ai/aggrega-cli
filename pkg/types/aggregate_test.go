@@ -20,7 +20,7 @@ import (
 func TestAggregateSubsystem_AnnotationsParse(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -66,7 +66,7 @@ func TestAggregateSubsystem_NullAnnotationParsesAsNilPointer(t *testing.T) {
 	//   - opted-out (null) → nil pointer entry
 	//   - absent → no entry at all
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -114,7 +114,7 @@ func TestAggregateComponentInstance_AnnotationsParse(t *testing.T) {
 	// components and Subsystem-nested components carry the same struct
 	// type, so the test covers both surfaces through the nested case.
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -171,7 +171,7 @@ func TestAggregateTopLevelComponent_AnnotationsParse(t *testing.T) {
 	// (no enclosing subsystem). The Annotations field surfaces at this
 	// top-level scope by virtue of sharing the ComponentInstance struct.
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test

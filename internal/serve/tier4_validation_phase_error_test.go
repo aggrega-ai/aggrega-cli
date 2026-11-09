@@ -36,7 +36,7 @@ import (
 // assertion never holds, so every instance of it fails the assertion phase. It
 // is otherwise the fixture catalog's own contract for this type, so the fault
 // this fixture carries is the assertion and nothing else.
-const serveFailingAssertionOverlayComponent = `apiVersion: aggrega.ai/v1alpha1
+const serveFailingAssertionOverlayComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server

@@ -29,7 +29,7 @@ const (
 )
 
 const descentRelease = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -65,7 +65,7 @@ func (f *fakeAggLoader) LoadAggregate(uri, version, digest string) (*types.Aggre
 // (and optionally one component) under author-ordered spec blocks.
 func subAggregate(t *testing.T, name string, withComponent bool, subURIs ...string) *types.Aggregate {
 	t.Helper()
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: " + name + "\n  version: 1.0.0\nspec:\n"
+	src := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: " + name + "\n  version: 1.0.0\nspec:\n"
 	if withComponent {
 		src += "  components:\n    svc:\n      type: " + uriSvc + "\n"
 	}

@@ -47,7 +47,7 @@ func twoReleaseWorkspace(t *testing.T) (ws, fulfilled, violating string) {
 
 	// The sibling Release: same Aggregate, same Manifest, a port the contract
 	// admits. Its metadata.name differs so the two are independent documents.
-	ok := []byte(`apiVersion: aggrega.ai/v1alpha1
+	ok := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: tier4-param-fulfilled-release
@@ -283,7 +283,7 @@ func TestValidateWithNoReleaseRunsTheDocumentHalfAndNotTheSemanticOne(t *testing
 	// And the document half REPORTS rather than merely running: a
 	// document-envelope violation in the same workspace, named against no
 	// Release, still reaches the caller.
-	badRelease := `apiVersion: aggrega.ai/v1alpha1
+	badRelease := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: r

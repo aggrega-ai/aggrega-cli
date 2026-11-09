@@ -25,7 +25,7 @@ func withSource(r *types.Recipe) *types.Recipe {
 
 // withWorkload returns r carrying an inline workload body.
 func withWorkload(r *types.Recipe) *types.Recipe {
-	r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"}
+	r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1beta1\nkind: Workload"}
 	return r
 }
 

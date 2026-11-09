@@ -467,7 +467,7 @@ func TestRenderWorkloadForDisplay_SubstitutesThroughTheOneWalker(t *testing.T) {
 	values.Set("name", "shop")
 	ctx := &types.TemplateContext{Values: values}
 	keys := redact.Keys{Values: map[string]bool{"password": true}}
-	text := "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: shop:1.0\n" +
+	text := "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: shop:1.0\n" +
 		"    variables:\n      SECRET: '{{ .values.password }}'\n      NAME: '{{ .values.name }}'\n"
 
 	shown, produced := renderWorkloadForDisplay("shop", text, ctx, keys, validator.WorkloadSlots{})

@@ -104,7 +104,7 @@ workspace:
 `)
 
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "libraries", "base-types.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "libraries", "base-types.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseTypes
@@ -114,7 +114,7 @@ spec:
     PortSpec:
       port: { type: integer, default: 8080 }
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "components", "web.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "web.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/web
@@ -128,7 +128,7 @@ spec:
       ports:
         $ref: "BaseTypes:1.0.0#/schemas/PortSpec"
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "web.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "web.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-web-helm
@@ -137,7 +137,7 @@ spec:
   capability: helm
   implements: demo/web
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -148,7 +148,7 @@ spec:
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: shop
@@ -160,7 +160,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: shop-manifest
@@ -171,7 +171,7 @@ spec:
       type:
         demo/web: demo-web-helm
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: shop-release

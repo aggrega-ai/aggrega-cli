@@ -155,18 +155,18 @@ func probeReleaseWorkspace(t *testing.T) (wsRoot, releasePath, catalogDir string
 	if err := os.MkdirAll(filepath.Join(catalogDir, "components"), 0o755); err != nil {
 		t.Fatalf("create the probe catalog: %v", err)
 	}
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), "apiVersion: aggrega.ai/v1alpha1\n"+
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), "apiVersion: aggrega.ai/v1beta1\n"+
 		"kind: Aggregate\nmetadata:\n  name: probe\n  version: \"1.0.0\"\n"+
 		"spec:\n  components:\n    api:\n      type: server\n")
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), "apiVersion: aggrega.ai/v1alpha1\n"+
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), "apiVersion: aggrega.ai/v1beta1\n"+
 		"kind: Manifest\nmetadata:\n  name: probe\n  version: \"1.0.0\"\n"+
 		"spec:\n  mappings: {}\n")
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, "apiVersion: aggrega.ai/v1alpha1\nkind: Release\n"+
+	writeFixture(t, releasePath, "apiVersion: aggrega.ai/v1beta1\nkind: Release\n"+
 		"metadata:\n  name: probe\n  environment: testing\n  version: \"1.0.0\"\n"+
 		"spec:\n  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n"+
 		"  boundaries:\n    main:\n      directory: ./dist/main\n      components:\n        api: {}\n")
-	writeFixture(t, filepath.Join(catalogDir, "components", "server.yaml"), "apiVersion: aggrega.ai/v1alpha1\n"+
+	writeFixture(t, filepath.Join(catalogDir, "components", "server.yaml"), "apiVersion: aggrega.ai/v1beta1\n"+
 		"kind: Component\nmetadata:\n  name: server\n  version: \"1.0.0\"\n  labels:\n"+
 		"    component.aggrega.ai/type: \"server\"\nspec:\n  schema:\n    values: {}\n")
 	writeWorkspaceConfig(t, root, "workspace:\n  catalog_dirs: []\n")

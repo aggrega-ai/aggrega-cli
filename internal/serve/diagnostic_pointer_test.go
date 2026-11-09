@@ -224,7 +224,7 @@ func TestDiagnosticOmitsEveryIdentifierWhenNothingIsNamed(t *testing.T) {
 	var in, out bytes.Buffer
 	in.Write(framedRequest(1, "aggrega/validate", validateParams{
 		File:    filepath.Join(tmp, "aggregate.yaml"),
-		Content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n  bad: [unclosed\n",
+		Content: "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n  bad: [unclosed\n",
 	}))
 	resp := runOneRequest(t, srv, &in, &out)
 	if resp.Error != nil {

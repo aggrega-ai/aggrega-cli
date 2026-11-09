@@ -35,7 +35,7 @@ func TestServeValidateVerifiesCacheAgainstPinBeforeTier4(t *testing.T) {
 	cacheDir := ".aggrega/cache"
 	const compURI = "demo/server:1.0.0"
 
-	pinnedComponent := []byte(`apiVersion: aggrega.ai/v1alpha1
+	pinnedComponent := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/server
@@ -47,7 +47,7 @@ spec:
     provides:
       host: { type: string, required: true }
 `)
-	cachedComponent := []byte(`apiVersion: aggrega.ai/v1alpha1
+	cachedComponent := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/server
@@ -77,7 +77,7 @@ spec:
 
 	// Catalog dir carries the Recipe + Provider; the Component itself is absent.
 	catalogDir := filepath.Join(tmp, "catalog")
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -88,7 +88,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -98,7 +98,7 @@ spec:
 
 	// Versioned type so the Component's resolution URI is the versioned form the
 	// Tier-2 cache is keyed by.
-	writeFixtureFile(t, filepath.Join(tmp, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(tmp, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-release
@@ -113,7 +113,7 @@ spec:
       components:
         app: {}
 `)
-	aggBody := `apiVersion: aggrega.ai/v1alpha1
+	aggBody := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-agg
@@ -124,7 +124,7 @@ spec:
       type: "demo/server:1.0.0"
 `
 	writeFixtureFile(t, filepath.Join(tmp, "app-agg.yaml"), aggBody)
-	writeFixtureFile(t, filepath.Join(tmp, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(tmp, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest

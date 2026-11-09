@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: BaseWorkloads
@@ -6,7 +6,7 @@ metadata:
 spec:
   workloads:
     SimpleServer: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Workload
       replicas: 1
       containers:

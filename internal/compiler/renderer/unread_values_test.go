@@ -144,7 +144,7 @@ func TestUnreadValueWarnings_PerEdgeIsConsumerAttributed(t *testing.T) {
 func TestUnreadValueWarnings_SocketValueSchemaIsNeverReported(t *testing.T) {
 	t.Parallel()
 
-	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
+	const componentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api

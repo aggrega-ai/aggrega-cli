@@ -13,7 +13,7 @@ import (
 )
 
 // placementRoot imports one module, data, which itself imports inner.
-const placementRoot = `apiVersion: aggrega.ai/v1alpha1
+const placementRoot = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -25,7 +25,7 @@ spec:
 
 // placementData declares its components out of sorted order, so a placement
 // that sorted rather than kept the module's own order would be seen.
-const placementData = `apiVersion: aggrega.ai/v1alpha1
+const placementData = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: data
@@ -40,7 +40,7 @@ spec:
       type: ./inner.yaml
 `
 
-const placementInner = `apiVersion: aggrega.ai/v1alpha1
+const placementInner = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: inner
@@ -90,7 +90,7 @@ func declaredIDs(b types.Boundary) []string {
 // them, under its local name and in the order the module declares them, so the
 // boundary holds them under the ids the graph gives them.
 func TestPlaceRoutedComponents_NamesABareEntrysComponents(t *testing.T) {
-	release, _, _ := placedRelease(t, `apiVersion: aggrega.ai/v1alpha1
+	release, _, _ := placedRelease(t, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -121,7 +121,7 @@ spec:
 // for it, written where the author wrote none, and that entry names its
 // components, so the boundary holds them under their nested id.
 func TestPlaceRoutedComponents_FillsANestedModule(t *testing.T) {
-	release, _, _ := placedRelease(t, `apiVersion: aggrega.ai/v1alpha1
+	release, _, _ := placedRelease(t, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -152,7 +152,7 @@ spec:
 // and in the module's own order, while the entry the author wrote keeps its
 // place and its body.
 func TestPlaceRoutedComponents_FillsAPartlyNamedEntry(t *testing.T) {
-	release, _, _ := placedRelease(t, `apiVersion: aggrega.ai/v1alpha1
+	release, _, _ := placedRelease(t, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -185,7 +185,7 @@ spec:
 // qualified id is not placed a second time on the routed axis.
 func TestPlaceRoutedComponents_LeavesWhatTheAuthorNamed(t *testing.T) {
 	t.Run("a routing entry naming some components", func(t *testing.T) {
-		release, _, _ := placedRelease(t, `apiVersion: aggrega.ai/v1alpha1
+		release, _, _ := placedRelease(t, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -209,7 +209,7 @@ spec:
 		}
 	})
 	t.Run("a component named directly beside a bare routing entry", func(t *testing.T) {
-		release, _, _ := placedRelease(t, `apiVersion: aggrega.ai/v1alpha1
+		release, _, _ := placedRelease(t, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -241,7 +241,7 @@ spec:
 // TestPlaceRoutedComponents_RoutingNothingLoadsNothing proves a Release routing
 // no module asks for no walk: nothing is loaded and the Release is untouched.
 func TestPlaceRoutedComponents_RoutingNothingLoadsNothing(t *testing.T) {
-	release, _, loads := placedRelease(t, `apiVersion: aggrega.ai/v1alpha1
+	release, _, loads := placedRelease(t, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -268,7 +268,7 @@ func TestPlaceRoutedComponents_AFailedWalkPlacesNothing(t *testing.T) {
 	modules := NewModuleLoads(func(string, map[string]any) (*types.Aggregate, string, map[string]any, error) {
 		return nil, "", nil, errors.New("unavailable")
 	})
-	release := types.NormalizeRelease(mustRelease(t, `apiVersion: aggrega.ai/v1alpha1
+	release := types.NormalizeRelease(mustRelease(t, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -292,7 +292,7 @@ spec:
 // the documents the placement loaded, and composes the same nodes it composes
 // with no placement in front of it.
 func TestModuleLoads_LoadsEachModuleOnce(t *testing.T) {
-	const releaseYAML = `apiVersion: aggrega.ai/v1alpha1
+	const releaseYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod

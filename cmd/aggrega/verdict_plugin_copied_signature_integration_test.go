@@ -60,7 +60,7 @@ func TestIntegration_LintAndValidateRefuseAVerdictPluginSignatureCopiedFromAnoth
 	pubws := t.TempDir()
 	writeWorkspaceConfig(t, pubws, "workspace:\n  catalog_dirs: []\noffline: false\ndefault_registry: \""+host+"\"\n")
 	governancePath := filepath.Join(pubws, "plugin", "governance", "copy-gate", "1.0.0", "plugin.yaml")
-	writeFixture(t, governancePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, governancePath, `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: copy-gate

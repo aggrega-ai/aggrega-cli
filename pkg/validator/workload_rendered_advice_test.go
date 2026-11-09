@@ -28,7 +28,7 @@ const adviceOpening = "YAML read this unquoted value as a"
 // the caller supplies it. Everything else is held fixed so each case fails on
 // its own fault and on no other.
 func renderedWorkload(cpu string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\n" +
+	return "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Workload\n" +
 		"containers:\n" +
 		"  main:\n" +
@@ -83,7 +83,7 @@ func TestWorkloadBytes_UnquotedSizingQuantityIsRefusedAndSaysWhatToChange(t *tes
 // the same advice with the type word that actually applies.
 func TestWorkloadBytes_UnquotedBooleanIsRefusedAndSaysWhatToChange(t *testing.T) {
 	t.Parallel()
-	document := "apiVersion: aggrega.ai/v1alpha1\n" +
+	document := "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Workload\n" +
 		"containers:\n" +
 		"  main:\n" +
@@ -103,7 +103,7 @@ func TestWorkloadBytes_UnquotedBooleanIsRefusedAndSaysWhatToChange(t *testing.T)
 // would be noise a reader has to learn to ignore.
 func TestWorkloadBytes_ARefusedTextValueCarriesNoQuotingAdvice(t *testing.T) {
 	t.Parallel()
-	document := "apiVersion: aggrega.ai/v1alpha1\n" +
+	document := "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Workload\n" +
 		"containers:\n" +
 		"  main:\n" +

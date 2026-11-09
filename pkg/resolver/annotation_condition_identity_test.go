@@ -82,7 +82,7 @@ func assertNoCategoryToken(t *testing.T, rendered string) {
 func TestAnnotationBindingTargetUnresolved_CatalogMiss_RendersItsOutput(t *testing.T) {
 	t.Parallel()
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -132,7 +132,7 @@ spec:
 func TestAnnotationBindingTargetUnresolved_PathNotDeclared_RendersItsOutput(t *testing.T) {
 	t.Parallel()
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -270,7 +270,7 @@ func TestAnnotationSidePillarMismatch_RendersItsOutput(t *testing.T) {
 	// the Aggregate writes the infra-routed key and the Release the
 	// values-routed one, which are the two crossings the condition exists for.
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -326,7 +326,7 @@ spec:
 func TestAnnotationBindingPillarOverlap_RendersItsOutput(t *testing.T) {
 	t.Parallel()
 	manifest := manifestFromYAML(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -380,7 +380,7 @@ func TestAnnotationScalarNotRoutable_RendersItsOutput(t *testing.T) {
 	// has three places to go, while an empty one routes through the single infra
 	// path.
 	const mixedManifest = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -401,7 +401,7 @@ spec:
 	// One path in each document's own pillar, so each side has a bare value its
 	// binding routes.
 	const singlePathManifest = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -626,7 +626,7 @@ func TestExpandAnnotations_UnroutableRefusalsNameNoCondition(t *testing.T) {
 func TestAnnotationSidePillarMismatch_SaysTheCategoryOnce(t *testing.T) {
 	t.Parallel()
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test

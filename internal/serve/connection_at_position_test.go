@@ -557,7 +557,7 @@ func TestConnectionAtPositionAnswersForAnImportedModulesOwnDocument(t *testing.T
 			t.Fatal(err)
 		}
 	}
-	const releaseDoc = `apiVersion: aggrega.ai/v1alpha1
+	const releaseDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: r
@@ -567,7 +567,7 @@ spec:
       components:
         gateway: {}
 `
-	const moduleDoc = `apiVersion: aggrega.ai/v1alpha1
+	const moduleDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: edge
@@ -582,7 +582,7 @@ spec:
 `
 	write("release.yaml", releaseDoc)
 	write("modules/edge.yaml", moduleDoc)
-	write("aggregate.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nspec: {}\n")
+	write("aggregate.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nspec: {}\n")
 
 	var rel types.Release
 	if err := yaml.Unmarshal([]byte(releaseDoc), &rel); err != nil {
@@ -611,7 +611,7 @@ spec:
 			want: ConnectionAtPositionResult{GraphNode: "edge.web",
 				Connection: &ConnectionCoordinate{Socket: "db", Alias: "primary", Document: "aggregate"}}},
 		{name: "the same place in the Aggregate, which the graph records no such node in", file: "aggregate.yaml",
-			content: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nspec: {}\n", linePrefix: "spec:", text: "spec",
+			content: "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nspec: {}\n", linePrefix: "spec:", text: "spec",
 			want: ConnectionAtPositionResult{NoConnectionReason: NoConnectionReasonNoEntry}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

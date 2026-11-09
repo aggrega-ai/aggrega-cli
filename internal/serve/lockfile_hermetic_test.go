@@ -57,7 +57,7 @@ func libraryRefWorkspace(t *testing.T) (ws, releaseRel string) {
 	t.Helper()
 	ws = t.TempDir()
 	catalogDir := filepath.Join(ws, "catalog")
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -70,7 +70,7 @@ spec:
       storage:
         $ref: "DbSizing#/schemas/Storage"
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "schemalibraries", "dbsizing.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "schemalibraries", "dbsizing.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -80,7 +80,7 @@ spec:
     Storage:
       size: { type: string, default: "10Gi" }
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -89,14 +89,14 @@ spec:
   capability: helm
   implements: demo/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: demo-server:latest
 `)
-	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -107,7 +107,7 @@ spec:
       type:
         demo/svc: demo-server-synthesized
 `)
-	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-agg
@@ -118,7 +118,7 @@ spec:
       type: "demo/svc:1.0.0"
 `)
 	relPath := filepath.Join(ws, "app-release.yaml")
-	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release
@@ -390,7 +390,7 @@ func multiProviderRenderWorkspace(t *testing.T) (ws, releaseRel string) {
 	ws = t.TempDir()
 	catalogDir := filepath.Join(ws, "catalog")
 
-	const svcComponent = `apiVersion: aggrega.ai/v1alpha1
+	const svcComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -403,7 +403,7 @@ spec:
       host: { type: string, required: true }
 `
 	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), svcComponent)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -414,7 +414,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -422,7 +422,7 @@ spec:
         image: demo-server:latest
 `)
 	// The selected provider Plugin — its embed-backed guest renders the node.
-	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm
@@ -441,7 +441,7 @@ spec:
 `)
 	// A competing provider Plugin serving the SAME capability under a different
 	// identity, making a bare by-name lookup ambiguous.
-	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-alt.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-alt.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm-alt
@@ -458,7 +458,7 @@ spec:
     maxMemoryPages: 4096
     timeoutMs: 300000
 `)
-	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -469,7 +469,7 @@ spec:
       type:
         demo/svc: demo-server-synthesized
 `)
-	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-agg
@@ -480,7 +480,7 @@ spec:
       type: "demo/svc:1.0.0"
 `)
 	relPath := filepath.Join(ws, "app-release.yaml")
-	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release
@@ -577,7 +577,7 @@ func transitiveSubAggregateWorkspace(t *testing.T) (ws, releaseRel string) {
 	ws = t.TempDir()
 	catalogDir := filepath.Join(ws, "catalog")
 
-	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "serve-top.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "serve-top.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: serve-top
@@ -590,7 +590,7 @@ spec:
     mid:
       type: serve-mid
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "serve-mid.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "serve-mid.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: serve-mid
@@ -605,7 +605,7 @@ spec:
 `)
 	// The leaf's component type is named BARE here and mapped VERSIONED in the
 	// Manifest, so the bare entity enters the closure only by re-walking this body.
-	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "serve-leaf.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "serve-leaf.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: serve-leaf
@@ -616,7 +616,7 @@ spec:
       type: serve-worker
 `)
 	for _, comp := range []string{"serve-front", "serve-worker"} {
-		writeFixtureFile(t, filepath.Join(catalogDir, "components", comp+".yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixtureFile(t, filepath.Join(catalogDir, "components", comp+".yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: `+comp+`
@@ -628,7 +628,7 @@ spec:
     values:
       port: { type: integer, default: 8080 }
 `)
-		writeFixtureFile(t, filepath.Join(catalogDir, "recipes", comp+".yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixtureFile(t, filepath.Join(catalogDir, "recipes", comp+".yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: `+comp+`
@@ -637,7 +637,7 @@ spec:
   capability: helm
   implements: `+comp+`
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -645,7 +645,7 @@ spec:
         image: "test-server:latest"
 `)
 	}
-	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -658,7 +658,7 @@ spec:
         serve-worker:1.0.0: serve-worker:1.0.0
 `)
 	relPath := filepath.Join(ws, "app-release.yaml")
-	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release

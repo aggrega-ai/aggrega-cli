@@ -20,7 +20,7 @@ import (
 // cursorVariantComponent is a Component document the catalog loads, carrying the
 // description a test reads back to tell one variant from another.
 func cursorVariantComponent(name, description string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: " + name +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: " + name +
 		"\n  version: \"1.0.0\"\n  description: " + description +
 		"\n  labels:\n    component.aggrega.ai/type: \"stateful-server\"\nspec:\n  schema:\n" +
 		"    provides:\n      host: { type: string, required: true }\n"
@@ -29,13 +29,13 @@ func cursorVariantComponent(name, description string) string {
 // cursorVariantRecipe is a Recipe implementing component, which is all the
 // implementations and references walks read of it.
 func cursorVariantRecipe(name, component string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: " + name +
 		"\n  version: \"1.0.0\"\nspec:\n  capability: helm\n  implements: " + component + "\n"
 }
 
 // cursorVariantAggregate is the document the cursor requests are made from. Each
 // component's type sits on its own line, at the line cursorRefLines names.
-const cursorVariantAggregate = "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: demo-app\n" +
+const cursorVariantAggregate = "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: demo-app\n" +
 	"  version: \"1.0.0\"\nspec:\n  components:\n" +
 	"    store:\n      type: demo/datastore/db\n" +
 	"    edge:\n      type: demo/net/edge\n" +
@@ -104,7 +104,7 @@ func cursorVariantWorkspace(t *testing.T) cursorVariants {
 	v.outsideDB = filepath.Join(v.outside, "component", "db.yaml")
 	v.edgeOutB = filepath.Join(v.outsideB, "component", "edge.yaml")
 	release := func(name string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: " + name +
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: " + name +
 			"\n  version: \"1.0.0\"\nspec:\n  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n"
 	}
 	files := map[string]string{
@@ -259,7 +259,7 @@ func TestCursorRequestsAnswerInTheTermsOfTheReleaseNamed(t *testing.T) {
 // cursorShadowAggregate is the document the precedence proofs make their cursor
 // requests from; each component's type sits on the line cursorShadowLines names,
 // its value starting at character 12.
-const cursorShadowAggregate = "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: app\n" +
+const cursorShadowAggregate = "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: app\n" +
 	"  version: \"1.0.0\"\nspec:\n  components:\n" +
 	"    db:\n      type: demo/db\n" +
 	"    svc:\n      type: demo/svc\n" +
@@ -311,7 +311,7 @@ func cursorShadowWorkspace(t *testing.T) cursorShadows {
 		releaseOverride: filepath.Join(root, "release-o.yaml"),
 	}
 	release := func(name string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: " + name +
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: " + name +
 			"\n  version: \"1.0.0\"\nspec:\n  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n"
 	}
 	writeCursorFiles(t, map[string]string{

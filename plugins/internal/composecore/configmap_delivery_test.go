@@ -17,7 +17,7 @@ import (
 // volume at /etc/app and one persistent volume, so the emitted output carries a
 // configs: reference alongside a volumes: entry.
 func configMapVolumeWorkload() *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("http", types.PortSpec{Port: 8080})
 	c.VolumeMounts = []types.VolumeMount{
@@ -110,7 +110,7 @@ func TestComposeAssemble_ConfigDeclaredByAnotherNodeResolves(t *testing.T) {
 
 	consumer := makeFragment(t, "api", configMapVolumeWorkload(), nil)
 
-	producerW := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	producerW := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	producerW.Containers.Set("main", types.ContainerSpec{Image: "seeder:1.0"})
 	producer := makeFragment(t, "seeder", producerW, nil)
 	producer = append(producer, artifactConfigFragment("app-settings", "mode: production"))
@@ -136,7 +136,7 @@ func TestComposeAssemble_UnresolvedConfigsReportedDeterministically(t *testing.T
 	t.Parallel()
 
 	build := func(nodeID, configName, path string) []renderer.EmittedFile {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 		c := types.ContainerSpec{Image: "app:1.0"}
 		c.VolumeMounts = []types.VolumeMount{{Name: "settings", Path: path}}
 		w.Containers.Set("main", c)
@@ -216,7 +216,7 @@ configs:
 func TestSynthesizeWorkload_SecretFileVolumeStaysBindMount(t *testing.T) {
 	t.Parallel()
 
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.VolumeMounts = []types.VolumeMount{
 		{Name: "settings", Path: "/etc/app"},

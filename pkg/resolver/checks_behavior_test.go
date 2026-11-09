@@ -350,7 +350,7 @@ func TestOneComponentInTwoBoundariesIsRefusedWhenTheDocumentIsRead(t *testing.T)
 	// Both documents below are complete and well-formed apart from the one fault
 	// under test, so the refusal is attributable to the second placement rather
 	// than to an earlier gate rejecting something else.
-	const twoBoundaries = `apiVersion: aggrega.ai/v1alpha1
+	const twoBoundaries = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: attachment-merge
@@ -390,7 +390,7 @@ spec:
 	// The positive control: the same document with the second placement removed
 	// must load, or the refusal above would be reporting some other fault and
 	// this test would pass for the wrong reason.
-	const oneBoundary = `apiVersion: aggrega.ai/v1alpha1
+	const oneBoundary = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: attachment-merge
@@ -789,7 +789,7 @@ func socketAggregate(features types.OrderedMap[types.FeatureInstance]) *types.Ag
 // is read through the real loader below, and a row carrying a second fault in
 // the envelope would be refused before the rule under test was ever reached.
 func releaseDocument(boundaries string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: socket-names

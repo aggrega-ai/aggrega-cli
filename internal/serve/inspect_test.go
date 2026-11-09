@@ -35,7 +35,7 @@ func inspectByNameWorkspace(t *testing.T) (ws string, srv *Server) {
 	ws = t.TempDir()
 	catalogDir := filepath.Join(ws, "catalog")
 
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "base.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "base.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/base
@@ -52,7 +52,7 @@ spec:
 	// from and never what they are. That is what makes the merge observable
 	// below: the field the resolved definition carries appears in no line of
 	// this file.
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -63,7 +63,7 @@ spec:
   extends: demo/base
   schema: inherited
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "features", "metrics.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "features", "metrics.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: demo/metrics
@@ -73,7 +73,7 @@ spec:
     values:
       port: { type: integer, required: false }
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -82,7 +82,7 @@ spec:
   capability: helm
   implements: demo/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -92,7 +92,7 @@ spec:
 	// A Manifest is a workspace document with a metadata.name that no catalog
 	// accessor addresses by identity. Asking for it by name therefore resolves
 	// nothing while the workspace plainly declares it — the third outcome.
-	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest

@@ -21,7 +21,7 @@ import (
 // trees is the load-bearing property here (a library-imported workload renders
 // identically to the equivalent inline workload, and the remote pin/pull path
 // does not perturb output).
-const proofWorkloadImportRecipe = `apiVersion: aggrega.ai/v1alpha1
+const proofWorkloadImportRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: store-recipe
@@ -33,7 +33,7 @@ spec:
     $import: BaseWorkloads#/workloads/StatelessService
 `
 
-const proofWorkloadInlineRecipe = `apiVersion: aggrega.ai/v1alpha1
+const proofWorkloadInlineRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: store-recipe
@@ -42,7 +42,7 @@ spec:
   capability: helm
   implements: core/store
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
@@ -52,7 +52,7 @@ spec:
           web: {{ .values.port }}
 `
 
-const proofWorkloadLibrary = `apiVersion: aggrega.ai/v1alpha1
+const proofWorkloadLibrary = `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: BaseWorkloads
@@ -60,7 +60,7 @@ metadata:
 spec:
   workloads:
     StatelessService: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Workload
       replicas: {{ .infra.replicas | default 1 }}
       containers:
@@ -78,7 +78,7 @@ spec:
 func writeWorkloadProofWorkspace(t *testing.T, root, recipeYAML string, authorLibrary bool) string {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: proof
@@ -90,7 +90,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: proof-release
@@ -107,7 +107,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: proof-manifest
@@ -118,7 +118,7 @@ spec:
       type:
         core/store: store-recipe:1.0.0
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "store.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/store

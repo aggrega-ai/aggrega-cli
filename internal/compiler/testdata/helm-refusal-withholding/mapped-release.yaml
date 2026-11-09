@@ -1,5 +1,5 @@
 # A values mapping writes the declared value into a chart value its schema refuses.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: helm-refusal-mapped-release

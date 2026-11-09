@@ -33,7 +33,7 @@ import (
 // is what makes the target ambiguous and the binding load-bearing.
 func providerBindingFixture(t *testing.T, root string, altPlugin bool) (releasePath, catalogRoot string) {
 	t.Helper()
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: binding-smoke
@@ -45,7 +45,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: binding-smoke-release
@@ -62,7 +62,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: binding-smoke-manifest
@@ -75,7 +75,7 @@ spec:
 `)
 
 	catalogRoot = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -92,7 +92,7 @@ spec:
 	if altPlugin {
 		// A second publisher serving the SAME target through a different provider
 		// .wasm identity — makes "helm" ambiguous, so a binding must select one.
-		writeFixture(t, filepath.Join(catalogRoot, "base", "providers", "helm-renderer-alt.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogRoot, "base", "providers", "helm-renderer-alt.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm-renderer-alt
@@ -119,7 +119,7 @@ spec:
 		}
 		writeFixtureBytes(t, filepath.Join(catalogRoot, "base", "providers", pluginpath.PluginLeaf("provider/helm-renderer-alt")), composeGuest)
 	}
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -128,7 +128,7 @@ spec:
   capability: helm
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:

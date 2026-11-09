@@ -45,7 +45,7 @@ func writeToolFixture(t *testing.T, path, content string) {
 // a payload that reported the absolute path for every input, contained or not,
 // would satisfy the outside row and this test would assert nothing.
 func TestDescribeSpellsTheReportedPathByContainment(t *testing.T) {
-	const aggregate = `apiVersion: aggrega.ai/v1alpha1
+	const aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: probe-module

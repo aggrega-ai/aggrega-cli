@@ -18,7 +18,7 @@ use serde_json::json;
 
 fn plugin(spec: serde_json::Value) -> serde_json::Value {
     json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Plugin",
         "metadata": {"name": "core/example", "version": "1.0.0"},
         "spec": spec,
@@ -92,7 +92,7 @@ fn silent_when_timeout_ms_set() {
 fn silent_for_non_plugin_kind() {
     // A Component with no runtime must not trip the rule.
     let component = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "example", "version": "1.0.0"},
         "spec": {"schema": {"type": "object"}},

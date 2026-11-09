@@ -497,13 +497,13 @@ func writeCatalogEntity(t *testing.T, dir, rel, body string) {
 // Recipe declares to pass load validation, on a capability no provider serves —
 // enough for a resolution-only test, which renders nothing.
 func recipeYAML(name, implements string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: " + name +
 		"\n  version: 1.0.0\nspec:\n  capability: probe\n  implements: " + implements +
 		"\n  artifacts:\n    probe.txt: \"probe\"\n"
 }
 
 func featureRecipeYAML(name, implements string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
 		"\n  version: 1.0.0\nspec:\n  capability: probe\n  implements: " + implements + "\n"
 }
 

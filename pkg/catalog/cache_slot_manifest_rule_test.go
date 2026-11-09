@@ -58,7 +58,7 @@ func TestAnEntitySlotWithoutItsManifestIsAMissToEveryReader(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	const bare, version = "test/app", "1.0.0"
 	slotURI := bare + ":" + version
-	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: test/app\n  version: \"1.0.0\"\n" +
+	body := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: test/app\n  version: \"1.0.0\"\n" +
 		"  labels:\n    component.aggrega.ai/type: server\nspec: {}\n")
 
 	for _, shape := range slotShapes() {

@@ -36,7 +36,7 @@ func TestLintAdvisoryReadsTheGuestBesideTheLintedEntity(t *testing.T) {
 	t.Parallel()
 
 	const reference = "pipeline-step/lint-beside-entity-probe"
-	entity := []byte(`apiVersion: aggrega.ai/v1alpha1
+	entity := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: lint-beside-entity-probe

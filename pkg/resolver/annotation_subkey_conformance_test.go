@@ -17,7 +17,7 @@ import (
 func subkeyConformanceManifest(t *testing.T) *types.Manifest {
 	t.Helper()
 	return loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test

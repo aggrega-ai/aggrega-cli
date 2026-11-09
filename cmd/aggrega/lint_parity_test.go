@@ -48,7 +48,7 @@ func captureStderr(t *testing.T, fn func()) string {
 	return <-done
 }
 
-const parityBadComponent = `apiVersion: aggrega.ai/v1alpha1
+const parityBadComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: BadName

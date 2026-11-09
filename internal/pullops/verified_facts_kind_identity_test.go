@@ -40,13 +40,13 @@ func TestAFactAPassLearnsAboutAnAggregateStaysOffTheManifestOfTheSameName(t *tes
 	)
 	ctx := context.Background()
 	store := memory.New()
-	aggregateBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: imported/flow\n")
+	aggregateBody := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: imported/flow\n")
 	aggregateDg := digest.ContentDigest(aggregateBody)
 	manifestDg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeAggregate, aggregateBody, nil)
 	if err != nil {
 		t.Fatalf("Push: %v", err)
 	}
-	manifestBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported/flow\n")
+	manifestBody := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: imported/flow\n")
 	manifestContentDg := digest.ContentDigest(manifestBody)
 
 	privPEM, pubPEM, err := signing.GenerateKeyedPEM()

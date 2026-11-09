@@ -198,7 +198,7 @@ func TestEveryPerRequestResultCarriesTheEnvelope(t *testing.T) {
 func readFixtureServer(t *testing.T) *server {
 	t.Helper()
 	s, ws := coldDocsWorkspace(t)
-	body := "apiVersion: aggrega.ai/v1alpha1\n" +
+	body := "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Component\n" +
 		"metadata:\n" +
 		"  name: core/compute/api-server\n" +

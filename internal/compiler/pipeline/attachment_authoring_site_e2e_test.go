@@ -32,7 +32,7 @@ import (
 // must be filled, and Features that fail an applicability, fit the slot, and
 // require a value no Release can write.
 var authoringSiteEntities = map[string]string{
-	"components/site-app.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"components/site-app.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: site/app
@@ -47,7 +47,7 @@ spec:
     provides:
       host: { type: string, required: true }
 `,
-	"components/site-strict.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"components/site-strict.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: site/strict
@@ -62,7 +62,7 @@ spec:
     provides:
       host: { type: string, required: true }
 `,
-	"recipes/site-app-recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"recipes/site-app-recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: site-app-recipe
@@ -73,13 +73,13 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: app:1.0
 `,
-	"recipes/site-strict-recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"recipes/site-strict-recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: site-strict-recipe
@@ -90,13 +90,13 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: strict:1.0
 `,
-	"features/site-workers-only.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"features/site-workers-only.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: feature.site/workers-only
@@ -107,7 +107,7 @@ spec:
     infra:
       interval: { type: string }
 `,
-	"features/site-managed.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"features/site-managed.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: feature.site/managed
@@ -119,7 +119,7 @@ spec:
     values:
       note: { type: string }
 `,
-	"features/site-needs-level.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"features/site-needs-level.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: feature.site/needs-level
@@ -133,7 +133,7 @@ spec:
 
 // authoringSiteManifest maps the two component types the rows place. No
 // Feature is mapped: the validation entry point reads no FeatureRecipe.
-const authoringSiteManifest = `apiVersion: aggrega.ai/v1alpha1
+const authoringSiteManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: authoring-sites-manifest
@@ -174,9 +174,9 @@ func authoringSiteWorkspace(t *testing.T, aggregateSpec, boundaryFeatures, appEn
 	}
 	documents := map[string]string{
 		filepath.Join(dir, "manifest.yaml"): authoringSiteManifest,
-		filepath.Join(dir, "aggregate.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n" +
+		filepath.Join(dir, "aggregate.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n" +
 			"metadata:\n  name: authoring-sites\n  version: \"1.0.0\"\nspec:\n" + aggregateSpec,
-		filepath.Join(dir, "release.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Release\n" +
+		filepath.Join(dir, "release.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Release\n" +
 			"metadata:\n  name: authoring-sites-release\n  environment: local\n  version: \"1.0.0\"\n" +
 			"spec:\n  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n  boundaries:\n" +
 			"    cluster:\n      directory: ./dist/cluster\n" + boundaryFeatures +

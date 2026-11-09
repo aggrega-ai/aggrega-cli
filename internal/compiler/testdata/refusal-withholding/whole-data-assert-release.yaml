@@ -1,5 +1,5 @@
 # A Recipe assertion hands on the whole of its data.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: refusal-whole-data-assert-release

@@ -258,7 +258,7 @@ func TestClosureLookupLocalPluginEntityWinsOverTheBinary(t *testing.T) {
 	// A local Plugin entity at the same coordinate the binary carries, at a version
 	// the binary does not.
 	name := identity[len("provider/"):]
-	body := "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: " + name +
+	body := "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: " + name +
 		"\n  pluginType: provider\n  version: 9.9.9\nspec:\n  abiVersion: v1alpha1\n"
 	dir := t.TempDir()
 	writeYAMLToCatalog(t, dir, "wasm-plugins/local-provider.yaml", body)

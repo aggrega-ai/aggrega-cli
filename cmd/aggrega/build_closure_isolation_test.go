@@ -20,7 +20,7 @@ import (
 // and catalog paths.
 func writeValidWorkspace(t *testing.T, root string) (releasePath, catalogRoot string) {
 	t.Helper()
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: iso-smoke
@@ -32,7 +32,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: iso-smoke-release
@@ -49,7 +49,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: iso-smoke-manifest
@@ -61,7 +61,7 @@ spec:
         core/server: server-recipe:1.0.0
 `)
 	catalogRoot = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -74,7 +74,7 @@ spec:
       port: { type: integer, default: 8080 }
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -83,7 +83,7 @@ spec:
   capability: helm
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
@@ -109,7 +109,7 @@ func writeBrokenOutOfClosureEntities(t *testing.T, catalogRoot string) {
 	t.Helper()
 	// Broken Recipe: helm provider with no implements and no input kind — fails
 	// ValidateRecipe, so a tolerant Pass-1 skips it.
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "broken.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "broken.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: broken-recipe
@@ -118,7 +118,7 @@ spec:
   capability: helm
 `)
 	// Broken SchemaLibrary: forbidden $dynamicAnchor — fails the per-entity resolve.
-	writeFixture(t, filepath.Join(catalogRoot, "base", "libs", "broken-lib.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "libs", "broken-lib.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BrokenLib
@@ -131,7 +131,7 @@ spec:
 `)
 	// Broken Component: a dangling cross-document $ref. Parses at Pass-1 (kept), but
 	// would fail closure-scoped Pass-2 AND library discovery if it were in scope.
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "broken-comp.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "broken-comp.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/broken
@@ -222,7 +222,7 @@ func TestBuild_InClosureSchemaInvalidStillFails(t *testing.T) {
 	releasePath, catalogRoot := writeValidWorkspace(t, root)
 
 	// Corrupt the IN-closure core/server component with a dangling $ref.
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -255,7 +255,7 @@ func TestBuild_InClosureUnparseableReplaysSkip(t *testing.T) {
 
 	// Replace the in-closure recipe with one that fails load-time shape validation
 	// (helm provider, no implements, no input kind) — skipped at tolerant Pass-1.
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -335,7 +335,7 @@ func TestPull_InClosureUnparseableFails(t *testing.T) {
 	t.Chdir(root)
 	releasePath, catalogRoot := writeValidWorkspace(t, root)
 
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe

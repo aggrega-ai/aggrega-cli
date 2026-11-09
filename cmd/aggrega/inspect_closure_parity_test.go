@@ -124,7 +124,7 @@ func closureFindingsWorkspace(t *testing.T, withMarker bool) (root, releasePath 
 	root = t.TempDir()
 	catalogDir := filepath.Join(root, "catalog")
 
-	writeClosureFixture(t, filepath.Join(catalogDir, "libraries", "base-types.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeClosureFixture(t, filepath.Join(catalogDir, "libraries", "base-types.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseTypes
@@ -134,7 +134,7 @@ spec:
     PortSpec:
       port: { type: integer, default: 8080 }
 `)
-	const svcComponent = `apiVersion: aggrega.ai/v1alpha1
+	const svcComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -150,7 +150,7 @@ spec:
       host: { type: string, required: true }
 `
 	writeClosureFixture(t, filepath.Join(catalogDir, "components", "svc.yaml"), svcComponent)
-	writeClosureFixture(t, filepath.Join(catalogDir, "components", "other.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeClosureFixture(t, filepath.Join(catalogDir, "components", "other.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/other
@@ -162,7 +162,7 @@ spec:
     infra:
       port: { type: integer, default: 8080 }
 `)
-	writeClosureFixture(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeClosureFixture(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -173,14 +173,14 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: demo-server:latest
 `)
-	writeClosureFixture(t, filepath.Join(catalogDir, "recipes", "unrelated.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeClosureFixture(t, filepath.Join(catalogDir, "recipes", "unrelated.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-unrelated
@@ -189,14 +189,14 @@ spec:
   capability: helm
   implements: demo/something-else
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: something-else:latest
 `)
-	writeClosureFixture(t, filepath.Join(root, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeClosureFixture(t, filepath.Join(root, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -208,7 +208,7 @@ spec:
         demo/svc: demo-server-synthesized
         demo/other: demo-unrelated:1.0.0
 `)
-	writeClosureFixture(t, filepath.Join(root, "app-agg.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeClosureFixture(t, filepath.Join(root, "app-agg.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-agg
@@ -219,7 +219,7 @@ spec:
       type: "demo/svc:1.0.0"
 `)
 	releasePath = filepath.Join(root, "app-release.yaml")
-	writeClosureFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeClosureFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release

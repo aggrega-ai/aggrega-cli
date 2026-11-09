@@ -59,7 +59,7 @@ func TestEnvOrderParity_ComposeMatchesHelm(t *testing.T) {
 	expected := []string{"DB_PASSWORD", "API_TOKEN", "ZEBRA", "ALPHA", "MIDDLE"}
 
 	makeWorkload := func() *types.Workload {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 		c := types.ContainerSpec{Image: "app:1.0"}
 		c.Variables.Set("ZEBRA", "z")
 		c.Variables.Set("ALPHA", "a")

@@ -362,7 +362,7 @@ func TestStep1a_NestedPropertiesRecursion(t *testing.T) {
 func TestStep1a_LoadAggregateParameterContract_ShallowParse(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: shallow-parse

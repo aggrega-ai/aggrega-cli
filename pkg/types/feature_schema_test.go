@@ -17,7 +17,7 @@ import (
 func TestFeature_SchemaField_RoundTripInlineContent(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/monitoring/scrape
@@ -56,7 +56,7 @@ func TestFeature_SchemaField_OmitemptyEludesZeroValue(t *testing.T) {
 	t.Parallel()
 
 	f := Feature{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Feature",
 		Metadata: FeatureMetadata{
 			Name:    "core/monitoring/scrape",

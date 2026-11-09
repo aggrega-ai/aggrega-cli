@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: withhold-gateway-recipe
@@ -12,7 +12,7 @@ spec:
   # own, and the credential its attachment delivers — so a withholding that
   # reached the graph the render reads would change these bytes.
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

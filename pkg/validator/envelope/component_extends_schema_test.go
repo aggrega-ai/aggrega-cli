@@ -12,7 +12,7 @@ import (
 // componentExtendsDoc builds a Component document whose spec carries the given
 // extends line and schema block, each already indented for the spec body.
 func componentExtendsDoc(specBody string) []byte {
-	return []byte(`apiVersion: aggrega.ai/v1alpha1
+	return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acc/subject
@@ -156,7 +156,7 @@ func TestEnvelope_ExtendingComponentMarkerIsExact(t *testing.T) {
 // its own, so it authors pillar content and does not write the marker.
 func TestEnvelope_FeatureExtendsUnaffected(t *testing.T) {
 	t.Parallel()
-	doc := []byte(`apiVersion: aggrega.ai/v1alpha1
+	doc := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: acc/child-feature

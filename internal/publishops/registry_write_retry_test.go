@@ -50,7 +50,7 @@ func (f *failsFirstUpload) Push(ctx context.Context, desc ocispec.Descriptor, r 
 
 // retriedPluginEntity is a Plugin entity whose authored claims agree with the
 // frp-step-go fixture's own report, so its publication reaches the registry.
-const retriedPluginEntity = `apiVersion: aggrega.ai/v1alpha1
+const retriedPluginEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: patch

@@ -19,7 +19,7 @@ import (
 func TestDefaultScopeRelease_SynthesizedDefaultBuildsFlat(t *testing.T) {
 	t.Parallel()
 	wf := baseWorkspaceFiles()
-	wf.release = `apiVersion: aggrega.ai/v1alpha1
+	wf.release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -67,7 +67,7 @@ spec:
 func TestDefaultScopeRelease_MultiBoundaryBuilds(t *testing.T) {
 	t.Parallel()
 	wf := baseWorkspaceFiles()
-	wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+	wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -81,7 +81,7 @@ spec:
     worker:
       type: core/server
 `
-	wf.release = `apiVersion: aggrega.ai/v1alpha1
+	wf.release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -129,7 +129,7 @@ spec:
 func TestDefaultScopeRelease_DeclaredDefaultBoundarySegregates(t *testing.T) {
 	t.Parallel()
 	wf := baseWorkspaceFiles()
-	wf.release = `apiVersion: aggrega.ai/v1alpha1
+	wf.release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel

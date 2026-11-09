@@ -14,7 +14,7 @@ import (
 // windowsNamesEntity is a Component whose two schema pillars are imported from
 // `aux/x.yaml`, under a directory named after a device, and `report.`, ending in a
 // full stop — two entries Windows cannot hold as written.
-const windowsNamesEntity = `apiVersion: aggrega.ai/v1alpha1
+const windowsNamesEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/windows-names

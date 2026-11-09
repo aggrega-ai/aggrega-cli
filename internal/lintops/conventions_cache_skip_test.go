@@ -32,7 +32,7 @@ func TestWalkCatalogEntityFiles_SkipsArtifactCache(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 
 	authored := filepath.Join(ws, "authored-component.yaml")
-	mustWriteFile(t, authored, `apiVersion: aggrega.ai/v1alpha1
+	mustWriteFile(t, authored, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/authored-app
@@ -49,7 +49,7 @@ spec:
 		t.Fatalf("mkdir cache slot: %v", err)
 	}
 	cached := filepath.Join(cacheSlot, "library.yaml")
-	mustWriteFile(t, cached, `apiVersion: aggrega.ai/v1alpha1
+	mustWriteFile(t, cached, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing

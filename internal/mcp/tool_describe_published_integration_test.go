@@ -79,9 +79,9 @@ func publishDescribeFixtures(t *testing.T, host string) (component, recipe publi
 		}
 		return p
 	}
-	componentDoc := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: test/svc\n  version: \"1.0.0\"\n" +
+	componentDoc := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: test/svc\n  version: \"1.0.0\"\n" +
 		"  description: A service published for a reader.\nspec:\n  schema:\n    infra:\n      port: { type: integer, default: 8080 }\n"
-	recipeDoc := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: svc\n  version: \"1.0.0\"\n" +
+	recipeDoc := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: svc\n  version: \"1.0.0\"\n" +
 		"spec:\n  capability: helm\n  implements: test/svc\n"
 	componentPath := write("component/test/svc/1.0.0/component.yaml", componentDoc)
 	recipePath := write("recipe/helm/svc/1.0.0/recipe.yaml", recipeDoc)

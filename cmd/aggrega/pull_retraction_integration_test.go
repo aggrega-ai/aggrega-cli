@@ -52,7 +52,7 @@ func componentSubject() retractionSubject {
 		repoPath: "component/test/svc",
 		filename: "component.yaml",
 		body: func(version string) string {
-			return `apiVersion: aggrega.ai/v1alpha1
+			return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -75,7 +75,7 @@ func schemaLibrarySubject() retractionSubject {
 		repoPath: "schemalibrary/dbsizing",
 		filename: "schemalibrary.yaml",
 		body: func(version string) string {
-			return `apiVersion: aggrega.ai/v1alpha1
+			return `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -96,7 +96,7 @@ func aggregateSubject() retractionSubject {
 		repoPath: "aggregate/test/app-agg",
 		filename: "aggregate.yaml",
 		body: func(version string) string {
-			return `apiVersion: aggrega.ai/v1alpha1
+			return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test/app-agg

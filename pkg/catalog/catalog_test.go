@@ -104,7 +104,7 @@ func TestLoad_SchemaLibrary(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(libPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	body := `apiVersion: aggrega.ai/v1alpha1
+	body := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Probes
@@ -154,7 +154,7 @@ func TestLoad_MappingLibrary(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(libPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	body := `apiVersion: aggrega.ai/v1alpha1
+	body := `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BaseMappings
@@ -195,7 +195,7 @@ func TestLoad_WorkloadLibrary(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(libPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	body := `apiVersion: aggrega.ai/v1alpha1
+	body := `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: BaseWorkloads
@@ -235,7 +235,7 @@ func TestLazyLookup_WorkloadLibraries_LocalFold(t *testing.T) {
 
 	dir := t.TempDir()
 	libPath := filepath.Join(dir, "BaseWorkloads.yaml")
-	body := `apiVersion: aggrega.ai/v1alpha1
+	body := `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: BaseWorkloads
@@ -272,7 +272,7 @@ func TestLoad_MappingLibrary_NonScalarEntryRejected(t *testing.T) {
 
 	dir := t.TempDir()
 	libPath := filepath.Join(dir, "library.yaml")
-	body := `apiVersion: aggrega.ai/v1alpha1
+	body := `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BadEntry
@@ -309,7 +309,7 @@ func TestLoad_SchemaLibrary_TemplateBodyForbiddenKeywordRejectedAtLoad(t *testin
 
 	dir := t.TempDir()
 	libPath := filepath.Join(dir, "library.yaml")
-	body := `apiVersion: aggrega.ai/v1alpha1
+	body := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BadTemplate
@@ -348,7 +348,7 @@ func TestLoad_SchemaLibrary_ForbiddenKeywordRejected(t *testing.T) {
 
 	dir := t.TempDir()
 	libPath := filepath.Join(dir, "library.yaml")
-	body := `apiVersion: aggrega.ai/v1alpha1
+	body := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Forbidden
@@ -483,7 +483,7 @@ func TestLoadAll_MergesAcrossDirs(t *testing.T) {
 	dirA := t.TempDir()
 	dirB := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(dirA, "recipe.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := os.WriteFile(filepath.Join(dirA, "recipe.yaml"), []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: recipe-a
@@ -496,7 +496,7 @@ spec:
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dirB, "recipe.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := os.WriteFile(filepath.Join(dirB, "recipe.yaml"), []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: recipe-b
@@ -526,7 +526,7 @@ func TestResolveAllExtends_ComponentChain(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "base.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := os.WriteFile(filepath.Join(dir, "base.yaml"), []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/server
@@ -540,7 +540,7 @@ spec:
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "api.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := os.WriteFile(filepath.Join(dir, "api.yaml"), []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api
@@ -609,7 +609,7 @@ func TestLoad_RelativeRecipeSourceResolvedToAbsPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	recipePath := filepath.Join(recipeDir, "recipe.yaml")
-	if err := os.WriteFile(recipePath, []byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := os.WriteFile(recipePath, []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: rel

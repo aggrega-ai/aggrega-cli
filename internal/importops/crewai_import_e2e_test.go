@@ -506,12 +506,12 @@ func crewaiBuildPaths() []string {
 // Release's path, which replaces the drafted Release.
 func writeCrewRelease(t *testing.T, dir string, agents []crewAgent, models []string) string {
 	t.Helper()
-	manifest := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported-crewai\n" +
+	manifest := "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: imported-crewai\n" +
 		"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n" +
 		"        core/ai-agent/crewai:1.0.0: helm/crewai:1.0.0\n        core/ai-model/openai:1.0.0: helm/openai:1.0.0\n" +
 		"    features:\n      type:\n        core/referenced-secret:1.0.0: helm/k8s-existing-secret:1.0.0\n"
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: imported-crewai\n" +
+	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: imported-crewai\n" +
 		"  environment: production\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n" +
 		"  manifest: imported-crewai\n  boundaries:\n    main:\n      directory: ./dist/helm\n      components:\n")
 	for _, m := range models {

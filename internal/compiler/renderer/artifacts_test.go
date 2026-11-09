@@ -74,7 +74,7 @@ func newArtifactsCtx() (*types.TemplateContext, *PhaseBState, NodeRenderContext)
 		Infra:   types.OrderedMap[any]{},
 	}
 	r := &types.Recipe{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Recipe",
 		Metadata:   types.RecipeMetadata{Name: "api-server-helm", Version: "1.0.0"},
 		Spec:       types.RecipeSpec{Capability: "helm", Implements: "core/api-server:1.0.0"},

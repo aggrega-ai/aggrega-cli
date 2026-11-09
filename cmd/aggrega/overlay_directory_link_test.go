@@ -51,7 +51,7 @@ func TestAnOverlayDirectoryTypedThroughALinkIsReadWhereItLeads(t *testing.T) {
 			for _, uri := range uris {
 				leaf := uri[strings.LastIndex(uri, "/")+1:]
 				writeFixture(t, filepath.Join(base, "overlays", leaf+".yaml"),
-					"apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: "+leaf+
+					"apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: "+leaf+
 						"\nspec:\n  runtime:\n    maxMemoryPages: 4321\n    timeoutMs: 300000\n")
 			}
 			if err := os.Symlink(filepath.Join(base, "overlays"), filepath.Join(base, "via")); err != nil {

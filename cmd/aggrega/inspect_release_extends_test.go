@@ -14,7 +14,7 @@ import (
 
 // inspectExtendsChild is a Release that names its parent and nothing else, so its
 // Aggregate and Manifest are the parent's and reach it only through the fold.
-const inspectExtendsChild = `apiVersion: aggrega.ai/v1alpha1
+const inspectExtendsChild = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel-child
@@ -41,7 +41,7 @@ func TestInspectFoldsAnExtendingRelease(t *testing.T) {
 		inspectReferencesRelease("  aggregate: ./app.yaml\n  manifest: ./manifest.yaml\n"))
 	writeFixture(t, filepath.Join(root, "release-child.yaml"), inspectExtendsChild)
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -54,7 +54,7 @@ spec:
       port: { type: integer }
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -63,7 +63,7 @@ spec:
   capability: helm
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       c:
@@ -111,7 +111,7 @@ spec:
 // component type, so the Feature's realization reaches the child only by
 // inheritance.
 const (
-	inspectManifestExtendsBase = `apiVersion: aggrega.ai/v1alpha1
+	inspectManifestExtendsBase = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: inspect-manifest-base
@@ -125,7 +125,7 @@ spec:
       type:
         feature.test/db-credential: db-credential-compose:1.0.0
 `
-	inspectManifestExtendsChild = `apiVersion: aggrega.ai/v1alpha1
+	inspectManifestExtendsChild = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: inspect-manifest-child
@@ -142,7 +142,7 @@ spec:
 // inspectManifestExtendsRelease is a Release extending nothing that names its
 // Manifest by path.
 func inspectManifestExtendsRelease(manifest string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: manifest-extends-release

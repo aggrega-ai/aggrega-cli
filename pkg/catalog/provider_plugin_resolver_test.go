@@ -15,7 +15,7 @@ import (
 // providerPlugin renders a minimal schema-conforming pluginType: provider Plugin
 // entity claiming the given provider name in its targets.
 func providerPlugin(name, version, provider string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: ` + name + `
@@ -49,7 +49,7 @@ func TestProviderPluginByNameResolvesShippedProviders(t *testing.T) {
 	// meaning (the provider a pipeline step renders alongside), not a render-engine
 	// claim. It must be excluded: if it counted, "acme" would be claimed by two
 	// distinct plugin names and resolve to (_, false).
-	writeYAMLToCatalog(t, dir, "plugins/acme-pipeline-step.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeYAMLToCatalog(t, dir, "plugins/acme-pipeline-step.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: acme-pipeline-step

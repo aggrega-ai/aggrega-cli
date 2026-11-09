@@ -65,7 +65,7 @@ func runAggrega(t *testing.T, args ...string) (cobraOut string, err error) {
 // root, and the recipe's own path (the entity-scope target).
 func composeUnsupportedFieldWorkspace(t *testing.T, root string) (releaseFile, catalogRoot, recipeFile string) {
 	t.Helper()
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: warn-smoke
@@ -77,7 +77,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: warn-smoke-release
@@ -94,7 +94,7 @@ spec:
           infra:
             replicas: 2
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: warn-smoke-manifest
@@ -107,7 +107,7 @@ spec:
 `)
 
 	catalogRoot = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -123,7 +123,7 @@ spec:
 	// the lockfile walk finds it in this catalog rather than reaching for a registry.
 	seedEmbeddedPlugins(t, filepath.Join(catalogRoot, "providers"), "provider/compose")
 	recipeFile = filepath.Join(catalogRoot, "recipes", "compose", "server.yaml")
-	writeFixture(t, recipeFile, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipeFile, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-compose-recipe
@@ -132,7 +132,7 @@ spec:
   capability: compose
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:

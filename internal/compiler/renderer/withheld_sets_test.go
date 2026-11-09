@@ -168,7 +168,7 @@ func ownDeclarationsContext() *types.TemplateContext {
 // ownDeclarationsWorkload reads every position ownDeclarationsContext carries
 // except the node's own declared values leaf, so the re-render is triggered by the
 // node's own attachment and its provides alone.
-const ownDeclarationsWorkload = "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: router:1.0\n" +
+const ownDeclarationsWorkload = "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: router:1.0\n" +
 	"    variables:\n" +
 	"      OWN_ORIGIN: '{{ .features.admin_key.values.origin }}'\n" +
 	"      OWN_KEY: '{{ .features.admin_key.values.key }}'\n" +

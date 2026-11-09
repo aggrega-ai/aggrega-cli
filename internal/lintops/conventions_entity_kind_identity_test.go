@@ -34,7 +34,7 @@ func TestTheConventionsWalkLintsAComponentOnlyForAnEntityCollectedAsOne(t *testi
 			t.Parallel()
 			ws := t.TempDir()
 			path := filepath.Join(ws, "web.yaml")
-			mustWriteFile(t, path, `apiVersion: aggrega.ai/v1alpha1
+			mustWriteFile(t, path, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/web

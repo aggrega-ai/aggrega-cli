@@ -38,7 +38,7 @@ const resolveOrderRuns = 20
 // naming the same file.
 const shadowNoticeMarker = "is shadowed (first-win precedence)"
 
-const orderComponentDoc = `apiVersion: aggrega.ai/v1alpha1
+const orderComponentDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/zeta
@@ -51,7 +51,7 @@ spec:
       port: { type: integer, default: 8080 }
 `
 
-const orderFeatureDoc = `apiVersion: aggrega.ai/v1alpha1
+const orderFeatureDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/alpha
@@ -115,7 +115,7 @@ func TestTheWalkResolvesReferencesInAnOrderTheInputFixes(t *testing.T) {
 			// The Aggregate is walked before the Release's attachments, so the
 			// Component is recorded first and the Feature second.
 			aggregate: `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
@@ -126,7 +126,7 @@ spec:
       type: test/zeta:1.0.0
 `,
 			release: `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -165,7 +165,7 @@ spec:
 			// Attachments are recorded in the order they are written, so
 			// test/zz-absent is recorded first and test/aa-absent second.
 			release: `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod

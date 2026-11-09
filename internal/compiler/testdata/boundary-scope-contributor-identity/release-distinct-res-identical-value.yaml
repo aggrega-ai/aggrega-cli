@@ -2,7 +2,7 @@
 # same Feature under the same instance name. Each render authors its own stack
 # resource name, so the resource comparison has nothing to report — and each
 # publishes the same entry name with the same value.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: bs-distinct-res-identical-value

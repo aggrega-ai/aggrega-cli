@@ -23,7 +23,7 @@ import (
 // well as its own). Every values pillar carries a default and one model version
 // an infra pillar, so the payload can be shown to carry neither.
 var projectionFixture = map[string]string{
-	"internal-llm-1.0.0.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"internal-llm-1.0.0.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/ai-model/internal-llm
@@ -37,7 +37,7 @@ spec:
     values:
       model_name: { type: string, default: "zero-model-default" }
 `,
-	"internal-llm-1.2.0.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"internal-llm-1.2.0.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/ai-model/internal-llm
@@ -58,7 +58,7 @@ spec:
       model_id: { type: string }
       api_base: { type: string }
 `,
-	"internal-llm-2.0.0-rc.1.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"internal-llm-2.0.0-rc.1.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/ai-model/internal-llm
@@ -72,7 +72,7 @@ spec:
     values:
       prerelease_only: { type: string }
 `,
-	"support-agent.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"support-agent.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/ai-agent/support-agent
@@ -95,7 +95,7 @@ spec:
     provides:
       endpoint: { type: string }
 `,
-	"support-agent-plus.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"support-agent-plus.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/ai-agent/support-agent-plus

@@ -54,7 +54,7 @@ func authoredDocuments() map[string]string {
 		// site a locator over that module names is this one key — the whole of what
 		// this document says about it.
 		"aggregate.yaml": `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: storefront
@@ -116,7 +116,7 @@ spec:
 		// ".spec.aggregates.billing.aggregates.ledger" would resolve in no file at
 		// all.
 		"billing/aggregate.yaml": `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: billing
@@ -189,7 +189,7 @@ spec:
 		// refuses one document carrying both: a Release either names boundaries
 		// or lists components at its own spec level, never both.
 		"release.yaml": `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: storefront-prod
@@ -328,7 +328,7 @@ spec:
 		// the Aggregate document above. One attachment, two pillars, two
 		// documents — which is what the pillar axis carries a file for.
 		"release-flat.yaml": `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: storefront-single-scope
@@ -376,7 +376,7 @@ spec:
 		// has to resolve it in. A document with no such key would fail the walk while
 		// the axis stayed correct, which is the one thing this corpus must not do.
 		"recipes/web.yaml": `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: web
@@ -415,7 +415,7 @@ spec:
 		//
 		// It writes a boundary block for the reason the Recipe above does.
 		"recipes/api.yaml": `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api
@@ -449,7 +449,7 @@ spec:
 		// boundary-rooted enumeration does not carry at all, so a locator over one
 		// resolving here is what shows the two axes are separate enumerations.
 		"featurerecipes/tls.yaml": `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: tls
@@ -472,7 +472,7 @@ spec:
 		// ordinary authoring rather than a contrived collision — and it is what makes
 		// the attachment coordinate load-bearing on both axes.
 		"featurerecipes/logging.yaml": `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: logging
@@ -496,7 +496,7 @@ spec:
 		// shapes and a document holding only one of them would leave the other's
 		// locator unresolved against any real file.
 		"featurerecipes/shared-db.yaml": `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: shared-db

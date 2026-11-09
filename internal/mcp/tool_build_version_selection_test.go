@@ -51,7 +51,7 @@ func versionSelectionWorkspace(t *testing.T) (s *server, root string, digests ma
 	}
 	write(workspaceconfig.ConfigFilename, "workspace:\n  catalog_dirs:\n    - ./catalog\noffline: true\n")
 	for _, v := range []string{"1.0.0", "2.0.0"} {
-		versioned("test/svc@"+v, "catalog/component/test/svc/"+v+"/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+		versioned("test/svc@"+v, "catalog/component/test/svc/"+v+"/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -65,7 +65,7 @@ spec:
     infra:
       replicas: { type: integer, default: 1 }
 `)
-		versioned("test/tag@"+v, "catalog/feature/test/tag/"+v+"/feature.yaml", `apiVersion: aggrega.ai/v1alpha1
+		versioned("test/tag@"+v, "catalog/feature/test/tag/"+v+"/feature.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/tag
@@ -75,7 +75,7 @@ spec:
     values:
       label: { type: string, default: "tag-`+v+`" }
 `)
-		versioned("test/sub@"+v, "catalog/aggregate/test/sub/"+v+"/aggregate.yaml", `apiVersion: aggrega.ai/v1alpha1
+		versioned("test/sub@"+v, "catalog/aggregate/test/sub/"+v+"/aggregate.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test/sub
@@ -88,7 +88,7 @@ spec:
         greeting: sub-`+v+`
 `)
 	}
-	write("catalog/component/test/inner/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("catalog/component/test/inner/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/inner
@@ -103,7 +103,7 @@ spec:
       replicas: { type: integer, default: 1 }
 `)
 	for _, r := range []struct{ name, implements string }{{"svc", "test/svc"}, {"inner", "test/inner"}} {
-		write("catalog/recipe/helm/"+r.name+"/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+		write("catalog/recipe/helm/"+r.name+"/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: `+r.name+`
@@ -112,7 +112,7 @@ spec:
   capability: helm
   implements: `+r.implements+`
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `+"`replicas`"+` 1 }}
     containers:
@@ -122,7 +122,7 @@ spec:
           GREETING: "{{ .values.greeting }}"
 `)
 	}
-	write("catalog/feature-recipe/helm/tag/1.0.0/feature-recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("catalog/feature-recipe/helm/tag/1.0.0/feature-recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: tag
@@ -140,7 +140,7 @@ spec:
         label: "{{ .values.label }}"
 `)
 	for _, f := range buildToolVersionForms {
-		write("aggregate-"+f.id+".yaml", `apiVersion: aggrega.ai/v1alpha1
+		write("aggregate-"+f.id+".yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-`+f.id+`
@@ -156,7 +156,7 @@ spec:
     sub:
       type: test/sub`+f.suffix+`
 `)
-		write("manifest-"+f.id+".yaml", `apiVersion: aggrega.ai/v1alpha1
+		write("manifest-"+f.id+".yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest-`+f.id+`
@@ -171,7 +171,7 @@ spec:
       type:
         test/tag`+f.suffix+`: helm/tag:1.0.0
 `)
-		write("release-"+f.id+".yaml", `apiVersion: aggrega.ai/v1alpha1
+		write("release-"+f.id+".yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel-`+f.id+`

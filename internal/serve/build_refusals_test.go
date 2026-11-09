@@ -529,7 +529,7 @@ func TestAValidationStoppedByItsDocumentKeepsTheBuildsEntries(t *testing.T) {
 		{
 			name: "a buffer that does not parse",
 			buffer: func(string) string {
-				return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: [unclosed\n"
+				return "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: [unclosed\n"
 			},
 			own: "yaml:",
 		},

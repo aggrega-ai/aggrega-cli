@@ -27,7 +27,7 @@ import (
 func TestRunBuild_Step4bAssertionFailureHaltsCLI(t *testing.T) {
 	root := t.TempDir()
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: cli-smoke
@@ -40,7 +40,7 @@ spec:
         port: 8080
 `)
 
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cli-smoke-release
@@ -58,7 +58,7 @@ spec:
             replicas: 1
 `)
 
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: cli-smoke-manifest
@@ -71,7 +71,7 @@ spec:
 `)
 
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -88,7 +88,7 @@ spec:
 
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
 
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -97,7 +97,7 @@ spec:
   capability: helm
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
@@ -145,7 +145,7 @@ spec:
 func TestRunBuild_VerifyDeterminismSucceedsOverDeterministicGuest(t *testing.T) {
 	root := t.TempDir()
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: verify-smoke
@@ -158,7 +158,7 @@ spec:
         port: 8080
 `)
 
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: verify-smoke-release
@@ -176,7 +176,7 @@ spec:
             replicas: 1
 `)
 
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: verify-smoke-manifest
@@ -189,7 +189,7 @@ spec:
 `)
 
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -204,7 +204,7 @@ spec:
 
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
 
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -213,7 +213,7 @@ spec:
   capability: helm
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
@@ -301,7 +301,7 @@ func providesContractFixture(t *testing.T, recipeProvides string) string {
 	t.Helper()
 	root := t.TempDir()
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: provides-smoke
@@ -314,7 +314,7 @@ spec:
         port: 8080
 `)
 
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: provides-smoke-release
@@ -332,7 +332,7 @@ spec:
             replicas: 1
 `)
 
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: provides-smoke-manifest
@@ -345,7 +345,7 @@ spec:
 `)
 
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "store.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/store
@@ -363,7 +363,7 @@ spec:
 
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
 
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "store.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: store-recipe
@@ -373,7 +373,7 @@ spec:
   implements: core/store
 `+recipeProvides+`
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
@@ -460,7 +460,7 @@ func featureProvidesContractFixture(t *testing.T, frProvides string) string {
 	t.Helper()
 	root := t.TempDir()
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: feat-provides-smoke
@@ -476,7 +476,7 @@ spec:
           type: core/metrics
 `)
 
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: feat-provides-smoke-release
@@ -494,7 +494,7 @@ spec:
             replicas: 1
 `)
 
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: feat-provides-smoke-manifest
@@ -510,7 +510,7 @@ spec:
 `)
 
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "store.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/store
@@ -523,7 +523,7 @@ spec:
       port: { type: integer, default: 8080 }
 `)
 
-	writeFixture(t, filepath.Join(catalogRoot, "base", "features", "metrics.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "features", "metrics.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/metrics
@@ -537,7 +537,7 @@ spec:
 
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
 
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "store.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: store-recipe
@@ -546,7 +546,7 @@ spec:
   capability: helm
   implements: core/store
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
@@ -561,7 +561,7 @@ spec:
           web: {{ .values.port }}
 `)
 
-	writeFixture(t, filepath.Join(catalogRoot, "feature-recipes", "helm", "metrics.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "feature-recipes", "helm", "metrics.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: metrics-fr

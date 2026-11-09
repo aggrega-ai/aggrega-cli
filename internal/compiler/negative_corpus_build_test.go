@@ -34,7 +34,7 @@ import (
 // declare an allowlist, or the empty string for the Black-Box declaration that
 // permits no dictation.
 func socketedCorpusComponent(injectLine string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -56,7 +56,7 @@ spec:
 // providingCorpusRecipe is the base Recipe publishing the `endpoint` key the
 // socketed Component declares, so a connection reading it reads a key the target
 // both declares and publishes.
-const providingCorpusRecipe = `apiVersion: aggrega.ai/v1alpha1
+const providingCorpusRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -67,7 +67,7 @@ spec:
   provides:
     endpoint: "{{ .context.instance_id }}:8080"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -81,7 +81,7 @@ spec:
 // target publishes, which is the only kind of entry a connection carries, so the
 // document exercises the socket's delivery allowlist and nothing else.
 func dictatingCorpusAggregate(mechanism string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -115,7 +115,7 @@ spec:
 // the base Release would therefore carry a second, incidental fault and would
 // halt on that one instead, so it would keep failing while covering nothing.
 func dictatingCorpusRelease() string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -141,7 +141,7 @@ spec:
 // provider, wired through a one-line Aggregate / Manifest / Release. The
 // base builds green (proven by the positive control below).
 const (
-	baseAggregate = `apiVersion: aggrega.ai/v1alpha1
+	baseAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -153,7 +153,7 @@ spec:
       values:
         port: 8080
 `
-	baseManifest = `apiVersion: aggrega.ai/v1alpha1
+	baseManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: corpus-manifest
@@ -164,7 +164,7 @@ spec:
       type:
         core/server: server-recipe:1.0.0
 `
-	baseRelease = `apiVersion: aggrega.ai/v1alpha1
+	baseRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -181,7 +181,7 @@ spec:
           infra:
             replicas: 1
 `
-	baseComponent = `apiVersion: aggrega.ai/v1alpha1
+	baseComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -193,7 +193,7 @@ spec:
     values:
       port: { type: integer }
 `
-	baseRecipe = `apiVersion: aggrega.ai/v1alpha1
+	baseRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -202,7 +202,7 @@ spec:
   capability: compose
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -215,7 +215,7 @@ spec:
 	// digest-free spec.plugin identity resolves, keyed on the repository
 	// reference, to the exact bytes compiled into the binary), so the minimal base
 	// workspace renders through the compose guest.
-	baseComposeRendererPlugin = `apiVersion: aggrega.ai/v1alpha1
+	baseComposeRendererPlugin = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: compose
@@ -321,7 +321,7 @@ func buildCorpusRows() []buildRow {
 		// Build (catalog load) + lint together evidence the one gate across
 		// the two surfaces that take a catalog-entity subject. ---
 		{name: "xsurface-component-unknown-key", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
-			wf.component = `apiVersion: aggrega.ai/v1alpha1
+			wf.component = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -340,7 +340,7 @@ spec:
 		// daemon diagnostic. Build + serve together evidence the one gate
 		// across the two surfaces that take an Aggregate subject. ---
 		{name: "xsurface-aggregate-component-infra", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
-			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+			wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -364,7 +364,7 @@ spec:
 		// about it; naming `worker` in a boundary would assert a Release for a
 		// reading of the document the product never forms.
 		{name: "aggregate-components-and-subsystems-both", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
-			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+			wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -383,7 +383,7 @@ spec:
 `
 		}},
 		{name: "aggregate-unknown-spec-key", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
-			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+			wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -398,7 +398,7 @@ spec:
 `
 		}},
 		{name: "manifest-missing-required-mappings", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
-			wf.manifest = `apiVersion: aggrega.ai/v1alpha1
+			wf.manifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: corpus-manifest
@@ -436,7 +436,7 @@ spec: {}
 		// envelope gate (the schema's not/allOf XOR). No new sentinel — the
 		// envelope reject carries it.
 		{name: "release-components-and-boundaries-both", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
-			wf.release = `apiVersion: aggrega.ai/v1alpha1
+			wf.release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -460,7 +460,7 @@ spec:
 		}},
 		// --- Invariant-5 ban set (permanent rows, each loud) ---
 		{name: "inv5-release-values-on-boundary-component", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
-			wf.release = `apiVersion: aggrega.ai/v1alpha1
+			wf.release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -479,7 +479,7 @@ spec:
 `
 		}},
 		{name: "inv5-release-aggregate-with-extends", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
-			wf.release = `apiVersion: aggrega.ai/v1alpha1
+			wf.release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -498,7 +498,7 @@ spec:
 `
 		}},
 		{name: "inv5-release-values-on-edge", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
-			wf.release = `apiVersion: aggrega.ai/v1alpha1
+			wf.release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -523,7 +523,7 @@ spec:
 `
 		}},
 		{name: "inv5-from-family-on-boundary-component", want: envelope.ErrEntityEnvelope(), mutate: func(wf *workspaceFiles) {
-			wf.release = `apiVersion: aggrega.ai/v1alpha1
+			wf.release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -546,7 +546,7 @@ spec:
 		{name: "pillar-canary-value-type-mismatch", want: resolver.ErrSchemaConformance(), mutate: func(wf *workspaceFiles) {
 			// port is declared integer; author a string. Envelope passes
 			// (values is an open map); the Step-1 content gate rejects.
-			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+			wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -563,7 +563,7 @@ spec:
 }
 
 func injectReleaseSpecKey() string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel

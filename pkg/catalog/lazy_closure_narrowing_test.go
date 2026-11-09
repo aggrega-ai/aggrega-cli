@@ -19,7 +19,7 @@ import (
 // Parent constrains values.x and values.y (minimum 5). The children extend it and
 // REDECLARE those properties with a lower minimum (1 < 5) — widening an inherited
 // constraint, which the merger flags as a non-halting narrowing notice.
-const narrowParentYAML = `apiVersion: aggrega.ai/v1alpha1
+const narrowParentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/narrow-parent
@@ -34,7 +34,7 @@ spec:
 `
 
 // aaa-narrow widens one inherited constraint (x); zzz-narrow widens two (x, y).
-const narrowChildAYAML = `apiVersion: aggrega.ai/v1alpha1
+const narrowChildAYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/aaa-narrow
@@ -48,7 +48,7 @@ spec:
       x: { type: integer, minimum: 1 }
 `
 
-const narrowChildZYAML = `apiVersion: aggrega.ai/v1alpha1
+const narrowChildZYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/zzz-narrow
@@ -64,7 +64,7 @@ spec:
 `
 
 // A child that redeclares x at the SAME minimum — no widening, no narrowing.
-const narrowChildCleanYAML = `apiVersion: aggrega.ai/v1alpha1
+const narrowChildCleanYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/clean-narrow

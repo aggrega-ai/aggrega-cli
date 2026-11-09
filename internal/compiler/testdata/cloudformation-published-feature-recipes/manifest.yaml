@@ -1,6 +1,6 @@
 # Ops mapping for the CloudFormation target. Every component type and every
 # attached Feature binds to the published Recipe that implements it there.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: cloudformation-published-feature-recipes-manifest

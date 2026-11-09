@@ -134,7 +134,7 @@ func (p questionRecordingProvider) NameBound(_ context.Context, in NameBoundInpu
 // per key, each Service exposing the one container port.
 func questionSiteWorkload(form string, keys ...string) string {
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Workload\n")
+	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Workload\n")
 	b.WriteString("form: " + form + "\n")
 	b.WriteString("containers:\n  main:\n    image: owner:latest\n    ports:\n      p: 8080\n")
 	b.WriteString("services:\n")

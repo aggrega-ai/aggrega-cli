@@ -15,7 +15,7 @@
 #   aggrega.ai/namespace       — read on both paths, so no node can miss it
 #   aggrega.ai/cluster-domain  — named by no entry in the claim, so no node reads
 #                                it, whatever it declares
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod-release-annotation-support-multi-kind

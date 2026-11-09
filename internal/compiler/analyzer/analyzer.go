@@ -325,7 +325,7 @@ func AnalyzeContext(ctx context.Context, graph *types.IRGraph) (*AnalysisResult,
 
 // assemblePolicyInput assembles the [PolicyInput] ABI payload from the
 // IR graph. The policy socket sees the full provider-agnostic IR graph
-// (single-sourced from ir-v1alpha1.schema.json) rather than a narrow
+// (single-sourced from ir-v1beta1.schema.json) rather than a narrow
 // projection, so the graph is forwarded whole — the plugin reasons over the same
 // node, edge, and attachment detail the compiler holds. The graph carries its
 // own author-order determinism through the OrderedMap types it is built from;

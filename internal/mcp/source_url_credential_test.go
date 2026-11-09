@@ -33,7 +33,7 @@ func credentialRecipe(url, credential string) string {
 	if credential != "" {
 		url = strings.Replace(url, "://", "://"+credential+"@", 1)
 	}
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\n" +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\n" +
 		"metadata:\n  name: server\n  version: \"1.0.0\"\nspec:\n  capability: helm\n  implements: server\n" +
 		"  source:\n    kind: helm-https-chart\n    url: " + url + "\n    version: \"1.0.0\"\n"
 }

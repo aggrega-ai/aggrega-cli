@@ -19,7 +19,7 @@ import (
 // selectorViolatingAggregate attaches two Features to the worker component,
 // whose labels neither Feature's appliesTo admits, so a Release over it carries
 // two selector violations, each positioned at the attachment that wrote it.
-const selectorViolatingAggregate = `apiVersion: aggrega.ai/v1alpha1
+const selectorViolatingAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: selector-surface-attach

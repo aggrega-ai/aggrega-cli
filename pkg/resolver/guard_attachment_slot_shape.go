@@ -311,7 +311,7 @@ var slotInjectMechanisms = sync.OnceValue(func() []string {
 			} `json:"spec"`
 		} `json:"properties"`
 	}
-	if err := json.Unmarshal([]byte(schemas.ComponentV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.ComponentV1beta1), &doc); err != nil {
 		return nil
 	}
 	return doc.Properties.Spec.Properties.FeaturesSchema.AdditionalProperties.Properties.Inject.Items.Enum

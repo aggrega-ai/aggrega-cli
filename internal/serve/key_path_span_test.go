@@ -28,12 +28,12 @@ const licenceHeader = "# SPDX-License-Identifier: Apache-2.0\n# Copyright 2026 C
 // written on — so the table cannot agree with the code under test by construction.
 func TestKeyPathSpanDrawsAFindingItCannotPlaceOnTheKeyNamingTheDocument(t *testing.T) {
 	t.Parallel()
-	full := licenceHeader + "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: broker\n" +
+	full := licenceHeader + "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: broker\n" +
 		"spec:\n  assertions:\n    ready: 'ok'\n"
-	noKind := licenceHeader + "apiVersion: aggrega.ai/v1alpha1\nmetadata:\n  name: broker\nspec: {}\n"
+	noKind := licenceHeader + "apiVersion: aggrega.ai/v1beta1\nmetadata:\n  name: broker\nspec: {}\n"
 	// metadata is declared and carries no name, so neither anchor is written as
 	// such: the metadata key is not what the fall-back names.
-	neither := licenceHeader + "apiVersion: aggrega.ai/v1alpha1\nmetadata:\n  version: \"1.0.0\"\nspec: {}\n"
+	neither := licenceHeader + "apiVersion: aggrega.ai/v1beta1\nmetadata:\n  version: \"1.0.0\"\nspec: {}\n"
 
 	for _, row := range []struct {
 		name    string

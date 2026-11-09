@@ -9,7 +9,7 @@
 # This variant upper-cases the database host it reads directly off the
 # connection, which the build refuses because it changes the value.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: db-reader

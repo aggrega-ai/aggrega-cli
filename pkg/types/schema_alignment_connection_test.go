@@ -128,9 +128,9 @@ func namesMinus(a, b []string) []string {
 func TestConnectionShapesMirrorTheirSchemaPositions(t *testing.T) {
 	t.Parallel()
 
-	agg := decodeSchema(t, "aggregate", schemas.AggregateV1alpha1)
-	rel := decodeSchema(t, "release", schemas.ReleaseV1alpha1)
-	comp := decodeSchema(t, "component", schemas.ComponentV1alpha1)
+	agg := decodeSchema(t, "aggregate", schemas.AggregateV1beta1)
+	rel := decodeSchema(t, "release", schemas.ReleaseV1beta1)
+	comp := decodeSchema(t, "component", schemas.ComponentV1beta1)
 
 	connectionEntry := func(root map[string]any, def string) map[string]any {
 		return schemaAt(t, root, "$defs", def, "patternProperties", entryPattern, "anyOf", 1, "patternProperties", entryPattern)
@@ -209,8 +209,8 @@ func nilIfEmpty(s []string) []string {
 func TestFeatureSocketRefusesComponentOnlySocketFields(t *testing.T) {
 	t.Parallel()
 
-	comp := decodeSchema(t, "component", schemas.ComponentV1alpha1)
-	feat := decodeSchema(t, "feature", schemas.FeatureV1alpha1)
+	comp := decodeSchema(t, "component", schemas.ComponentV1beta1)
+	feat := decodeSchema(t, "feature", schemas.FeatureV1beta1)
 	componentFields := propertyNames(t, schemaAt(t, comp, "properties", "spec", "properties", "usesSchema", "patternProperties", entryPattern))
 	featureFields := propertyNames(t, schemaAt(t, feat, "properties", "spec", "properties", "usesSchema", "patternProperties", entryPattern))
 	componentOnly := namesMinus(componentFields, featureFields)
@@ -228,7 +228,7 @@ func TestFeatureSocketRefusesComponentOnlySocketFields(t *testing.T) {
 		"featuresSchema": "      featuresSchema:\n        credential:\n          selector: \"feature.aggrega.ai/kind=secret\"\n",
 	}
 	doc := func(extra string) []byte {
-		return []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: core/socket-probe\n  version: 1.0.0\nspec:\n" +
+		return []byte("apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: core/socket-probe\n  version: 1.0.0\nspec:\n" +
 			"  usesSchema:\n    peers:\n      selector: \"component.aggrega.ai/type=db\"\n" + extra)
 	}
 	for _, field := range append(append([]string{}, featureFields...), componentOnly...) {

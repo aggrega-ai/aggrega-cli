@@ -17,7 +17,7 @@ import (
 // catalogPassFeature is a Feature whole-catalog correctness accepts; with extends
 // naming an identity no catalog holds it is one the extends gate refuses.
 func catalogPassFeature(extends string) string {
-	doc := `apiVersion: aggrega.ai/v1alpha1
+	doc := `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/secret-value
@@ -72,7 +72,7 @@ func catalogPassesWorkspace(t *testing.T) string {
 `)
 	for _, r := range []string{"release-a.yaml", "release-b.yaml", "release-elsewhere.yaml", "release-off.yaml"} {
 		put(filepath.Join(root, r),
-			"apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: probe/"+strings.TrimSuffix(r, ".yaml")+"\n  version: 1.0.0\nspec: {}\n")
+			"apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: probe/"+strings.TrimSuffix(r, ".yaml")+"\n  version: 1.0.0\nspec: {}\n")
 	}
 	put(filepath.Join(root, "variant-a", "feature", "secret-value.yaml"), catalogPassFeature(""))
 	put(filepath.Join(root, "variant-b", "feature", "secret-value.yaml"), catalogPassFeature("core/no-such-parent"))

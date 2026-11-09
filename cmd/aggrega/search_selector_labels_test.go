@@ -40,7 +40,7 @@ func publishAndIndexLabelledComponent(t *testing.T) *workspaceconfig.ResolvedWor
 		"registries:\n  - host: hub.aggrega.ai\n    name: hub\n")
 
 	entityPath := filepath.Join(root, "1.0.0", "entity.yaml")
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server

@@ -6,6 +6,7 @@ package langgraphimport
 import (
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -36,7 +37,7 @@ var (
 func renderAggregate(name string, read []*application, parts []*datastorePart, unread []string) string {
 	var b strings.Builder
 	writeHeader(&b, read, unread)
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	b.WriteString("kind: Aggregate\n")
 	b.WriteString("metadata:\n")
 	b.WriteString("  name: " + name + "\n")
@@ -200,7 +201,7 @@ func aggregateText(text string) string {
 // Release; the plugin kit renders none.
 func renderRelease(name string, read []*application, parts []*datastorePart) string {
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	b.WriteString("kind: Release\n")
 	b.WriteString("metadata:\n")
 	b.WriteString("  name: " + name + "\n")
@@ -301,7 +302,7 @@ func renderDatastore(name string, b backend) string {
 	var s strings.Builder
 	s.WriteString("# A Recipe running " + b.product + " and publishing its host and port is left for the author: the " +
 		"LangGraph agent's checkpointer_db connection reads both.\n")
-	s.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	s.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	s.WriteString("kind: Component\n")
 	s.WriteString("metadata:\n")
 	s.WriteString("  name: " + name + "\n")

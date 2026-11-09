@@ -27,7 +27,7 @@ import (
 // would leave one node's identity on the recipe every later node reads, and no
 // single-node test could see it.
 
-const olPromotionWorkload = `apiVersion: aggrega.ai/v1alpha1
+const olPromotionWorkload = `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

@@ -483,7 +483,7 @@ func TestABuildSentWriteIsHeldWhereTheCommandLineIsHeld(t *testing.T) {
 		fx := newWriteFixture(t)
 		// The Manifest maps the Component onto a Recipe nobody declares, so the
 		// build refuses before anything renders.
-		writeRenderFixture(t, filepath.Join(fx.root, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeRenderFixture(t, filepath.Join(fx.root, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest

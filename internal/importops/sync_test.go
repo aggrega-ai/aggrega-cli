@@ -24,7 +24,7 @@ import (
 // syncPrevious is a drafted platform Aggregate as an import last wrote it: a
 // platform carrying a flow, a model part and a store part, each wired, with the
 // comments an import writes above the keys they belong to.
-const syncPrevious = `apiVersion: aggrega.ai/v1alpha1
+const syncPrevious = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: imported/flow
@@ -53,7 +53,7 @@ spec:
 // syncFresh is what the source drafts now: it dropped the store part, gained a
 // tool part, changed the flow, and the comment the import writes above the
 // platform names the tool's address too.
-const syncFresh = `apiVersion: aggrega.ai/v1alpha1
+const syncFresh = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: imported/flow
@@ -509,7 +509,7 @@ func TestTheRecordListsEveryEntryOfADraftedAggregate(t *testing.T) {
 
 // draftedRelease is a Release as an import drafts it beside its Aggregate: the
 // environment left for its author in a comment, one server's settings.
-const draftedRelease = `apiVersion: aggrega.ai/v1alpha1
+const draftedRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: imported/flow

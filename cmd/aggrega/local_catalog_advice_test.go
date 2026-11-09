@@ -26,7 +26,7 @@ const (
 // in the two shapes that decide whether a count is reported: a document
 // declaring an entity kind, and one declaring nothing this product reads.
 const (
-	rootEntityDocument  = "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: loose/at-the-root\n"
+	rootEntityDocument  = "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: loose/at-the-root\n"
 	rootForeignDocument = "services:\n  web:\n    image: nginx\n"
 )
 

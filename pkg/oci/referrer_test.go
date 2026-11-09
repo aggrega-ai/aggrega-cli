@@ -28,7 +28,7 @@ func TestAttachReferrerAttachesToSubject(t *testing.T) {
 	ctx := context.Background()
 	store := memory.New()
 
-	artifact := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/api-server\n  version: 1.0.0\n")
+	artifact := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/api-server\n  version: 1.0.0\n")
 	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, artifact, nil); err != nil {
 		t.Fatalf("Push: %v", err)
 	}

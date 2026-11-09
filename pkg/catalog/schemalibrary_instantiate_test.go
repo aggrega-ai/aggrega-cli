@@ -101,7 +101,7 @@ func entryScalarAt(t *testing.T, entry types.SchemaEntry, path ...string) *yaml.
 func TestSchemaLibraryInstantiate_Resolves(t *testing.T) {
 	t.Parallel()
 
-	lib, err := loadLibraryFixture(t, `apiVersion: aggrega.ai/v1alpha1
+	lib, err := loadLibraryFixture(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -160,7 +160,7 @@ spec:
 func TestSchemaLibraryInstantiate_PreservesAuthorOrder(t *testing.T) {
 	t.Parallel()
 
-	lib, err := loadLibraryFixture(t, `apiVersion: aggrega.ai/v1alpha1
+	lib, err := loadLibraryFixture(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -283,7 +283,7 @@ func TestSchemaLibraryInstantiate_Rejections(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			src := `apiVersion: aggrega.ai/v1alpha1
+			src := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -328,7 +328,7 @@ spec:
 func TestSchemaLibraryInstantiate_ForbiddenKeywordViaArgs(t *testing.T) {
 	t.Parallel()
 
-	_, err := loadLibraryFixture(t, `apiVersion: aggrega.ai/v1alpha1
+	_, err := loadLibraryFixture(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing

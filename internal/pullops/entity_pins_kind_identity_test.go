@@ -40,11 +40,11 @@ func TestThePinStepHoldsOnlyTheEntityAnInstanceUsesWhenTwoKindsShareItsName(t *t
 	ws := t.TempDir()
 	cat := filepath.Join(ws, "catalog")
 	writeEntityDocument(t, filepath.Join(cat, "shared-recipe", "recipe.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: shared\n  version: \"1.0.0\"\n"+
+		"apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: shared\n  version: \"1.0.0\"\n"+
 			"spec:\n  capability: helm\n  implements: shared\n"+
 			"  source:\n    kind: helm-https-chart\n    url: https://example.invalid/recipe.tgz\n    version: \"1.0.0\"\n")
 	writeEntityDocument(t, filepath.Join(cat, "shared-feature", "featurerecipe.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: shared\n  version: \"1.0.0\"\n"+
+		"apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: shared\n  version: \"1.0.0\"\n"+
 			"spec:\n  capability: helm\n  implements: shared\n"+
 			"  source:\n    kind: helm-https-chart\n    url: https://example.invalid/feature.tgz\n    version: \"2.0.0\"\n")
 

@@ -17,7 +17,7 @@ import (
 // round-trip tests. The .wasm body is a minimal fake — these tests exercise the
 // OCI packing/unpacking primitive, not the wasm runtime.
 var (
-	testPluginEntity = []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\nspec:\n  plugin: \"oci://hub.aggrega.ai/plugin/frp/patch:1.0.0\"\n")
+	testPluginEntity = []byte("apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\nspec:\n  plugin: \"oci://hub.aggrega.ai/plugin/frp/patch:1.0.0\"\n")
 	testPluginWasm   = []byte("\x00asm\x01\x00\x00\x00fake-wasm-body")
 )
 

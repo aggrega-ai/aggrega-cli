@@ -147,7 +147,7 @@ func TestLintPrePublishMatrixComponent(t *testing.T) {
 // downgraded to warn severity.
 func TestLintDefaultModeEmitsWarnings(t *testing.T) {
 	pluginPath := wasmtest.EnsureFixtureBuilt(t, "publishing-linter.wasm")
-	yaml := []byte(`apiVersion: aggrega.ai/v1alpha1
+	yaml := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: BadName
@@ -188,7 +188,7 @@ func TestLintFirstPublicationPassesWithoutPrevious(t *testing.T) {
 
 	// Use a name-shape-compliant entity so we isolate the
 	// first-publication behavior; other rules shouldn't fire.
-	yaml := []byte(`apiVersion: aggrega.ai/v1alpha1
+	yaml := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server

@@ -129,7 +129,7 @@ func TestNonconformingProvider_RenderFactNotAList(t *testing.T) {
 	if !ok {
 		t.Fatalf("the provider adapter does not synthesize workloads (%T), so no synthesis crosses the guest", engine)
 	}
-	workload := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	workload := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	container := types.ContainerSpec{Image: "app:1.0"}
 	workload.Containers.Set("main", container)
 

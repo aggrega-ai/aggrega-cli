@@ -17,10 +17,10 @@ import (
 )
 
 // TestPolicyInput_RoundTrip exercises the b-full policy input: the
-// graph is the full types.IRGraph (single-sourced from ir-v1alpha1), so the
+// graph is the full types.IRGraph (single-sourced from ir-v1beta1), so the
 // fixture is a real IR graph rather than a narrow projection. The input's wire
 // shape is schema-validated cross-language in aggrega-abi (the policy schema
-// references ir-v1alpha1 — a cross-file $ref the host validator does not resolve
+// references ir-v1beta1 — a cross-file $ref the host validator does not resolve
 // here); this test pins the Go round-trip: the full IR graph survives marshal /
 // unmarshal with its OrderedMap author-order intact.
 func TestPolicyInput_RoundTrip(t *testing.T) {
@@ -78,7 +78,7 @@ func TestPolicyInput_RoundTrip(t *testing.T) {
 
 // TestPolicyOutput_RoundTrip pins the Go round-trip of the
 // PolicyOutput envelope. The wire shape is schema-validated
-// cross-language in aggrega-abi (the policy schema references ir-v1alpha1 — a
+// cross-language in aggrega-abi (the policy schema references ir-v1beta1 — a
 // cross-file $ref the host validator does not resolve without a loader), so the
 // host test exercises marshal / unmarshal equality.
 //
@@ -124,7 +124,7 @@ func TestPolicyOutput_RoundTrip(t *testing.T) {
 func TestPolicyTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	t.Parallel()
 	var raw map[string]any
-	if err := json.Unmarshal([]byte(schemas.WasmPolicyV1alpha1), &raw); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmPolicyV1beta1), &raw); err != nil {
 		t.Fatalf("unmarshal policy schema: %v", err)
 	}
 	defs, ok := raw["$defs"].(map[string]any)
@@ -162,7 +162,7 @@ func TestPolicyTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	}
 
 	// The envelope types carry local $defs. The graph field is a $ref to
-	// ir-v1alpha1's IRGraph (not a local projection), so it has no local $def to
+	// ir-v1beta1's IRGraph (not a local projection), so it has no local $def to
 	// field-cover here — the IR graph's field coverage is the IR schema's concern.
 	assertGoStructPropertiesIn(t, reflect.TypeOf(analyzer.PolicyInput{}), "PolicyInput")
 	assertGoStructPropertiesIn(t, reflect.TypeOf(abi.PolicyOutput{}), "PolicyOutput")
@@ -177,7 +177,7 @@ func TestPolicyTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	// shape reads clean while every field it omits is silently discarded at the
 	// decode boundary. The reverse walk is what refuses a subset.
 	var diagRaw map[string]any
-	if err := json.Unmarshal([]byte(schemas.WasmDiagnosticV1alpha1), &diagRaw); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmDiagnosticV1beta1), &diagRaw); err != nil {
 		t.Fatalf("unmarshal diagnostic schema: %v", err)
 	}
 	diagDefs, ok := diagRaw["$defs"].(map[string]any)

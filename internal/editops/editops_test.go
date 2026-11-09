@@ -27,7 +27,7 @@ func reportDelivery() authoredcontent.Delivery { return authoredcontent.Delivery
 const authoredAggregate = `# The storefront application.
 #
 # The ordering below is deliberate: the web tier reads first.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: storefront        # the module's own name

@@ -15,7 +15,7 @@ import (
 func TestWorkloadTemplate_RoundTripInline(t *testing.T) {
 	t.Parallel()
 	in := `workload: |
-  apiVersion: aggrega.ai/v1alpha1
+  apiVersion: aggrega.ai/v1beta1
   kind: Workload
   containers:
     main:

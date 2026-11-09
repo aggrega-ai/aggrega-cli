@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-const dupBoundaryRelease = `apiVersion: aggrega.ai/v1alpha1
+const dupBoundaryRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -72,7 +72,7 @@ func TestLoadRelease_DuplicateBoundaryComponentHalts(t *testing.T) {
 // boundaries declaring one name diverge the same way and are rejected too.
 func TestLoadRelease_DuplicateBoundaryComponentSiblingBoundariesHalt(t *testing.T) {
 	t.Parallel()
-	siblings := `apiVersion: aggrega.ai/v1alpha1
+	siblings := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -105,7 +105,7 @@ spec:
 // nested boundaries, and one name declared once, both load clean.
 func TestLoadRelease_DistinctComponentsPerBoundaryAccepted(t *testing.T) {
 	t.Parallel()
-	ok := `apiVersion: aggrega.ai/v1alpha1
+	ok := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -137,7 +137,7 @@ spec:
 // in one synthesized boundary, so each name is declared exactly once.
 func TestLoadRelease_SynthesizedDefaultIsNotADuplicate(t *testing.T) {
 	t.Parallel()
-	rootOnly := `apiVersion: aggrega.ai/v1alpha1
+	rootOnly := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -164,7 +164,7 @@ spec:
 // each place one node twice. They are separate fixtures because the diagnostic has
 // to phrase the fault in the terms of whichever axes produced it — two routings,
 // or one routing against one named component.
-const dupRoutedModuleRelease = `apiVersion: aggrega.ai/v1alpha1
+const dupRoutedModuleRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -184,7 +184,7 @@ spec:
         data: {}
 `
 
-const dupRoutedAncestorRelease = `apiVersion: aggrega.ai/v1alpha1
+const dupRoutedAncestorRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -206,7 +206,7 @@ spec:
             inner: {}
 `
 
-const dupRoutedAndNamedRelease = `apiVersion: aggrega.ai/v1alpha1
+const dupRoutedAndNamedRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -291,7 +291,7 @@ func TestLoadRelease_RoutedModuleAndNamedComponentHalts(t *testing.T) {
 // would look like three successes.
 func TestLoadRelease_RoutedModuleAndNamedComponentInOneBoundaryBuilds(t *testing.T) {
 	t.Parallel()
-	const release = `apiVersion: aggrega.ai/v1alpha1
+	const release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -319,7 +319,7 @@ spec:
 // this is a fault even though the two agree on the boundary.
 func TestLoadRelease_RoutedComponentNamedTwiceInOneBoundaryHalts(t *testing.T) {
 	t.Parallel()
-	const release = `apiVersion: aggrega.ai/v1alpha1
+	const release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod

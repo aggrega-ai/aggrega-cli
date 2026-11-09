@@ -31,7 +31,7 @@ func featureRecipeWithValuesMapping(fr *types.FeatureRecipe) *types.FeatureRecip
 
 // featureRecipeWithWorkload returns fr carrying an inline workload body.
 func featureRecipeWithWorkload(fr *types.FeatureRecipe) *types.FeatureRecipe {
-	fr.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"}
+	fr.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1beta1\nkind: Workload"}
 	return fr
 }
 

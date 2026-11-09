@@ -13,7 +13,7 @@ import (
 // entityBody returns a minimal schema-valid document of the named kind, used only
 // to give the catalog walk something with a readable header.
 func entityBody(kind entitykind.Kind, name, body string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: " + string(kind) +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: " + string(kind) +
 		"\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n" + body
 }
 

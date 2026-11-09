@@ -112,7 +112,7 @@ func sortedComposePaths(files map[string]composeFileShape) []string {
 // probeEchoFeature and probeEchoFeatureRecipe are a Feature and a boundary-scope
 // compose FeatureRecipe that publish one value and deliver nothing: a boundary
 // attachment that is not the bridge.
-const probeEchoFeature = `apiVersion: aggrega.ai/v1alpha1
+const probeEchoFeature = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: probe/echo
@@ -124,7 +124,7 @@ spec:
       $ref: "BaseComponents#/schemas/BaseFeatureParameter"
 `
 
-const probeEchoFeatureRecipe = `apiVersion: aggrega.ai/v1alpha1
+const probeEchoFeatureRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: probe-echo-fr

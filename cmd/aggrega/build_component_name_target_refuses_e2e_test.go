@@ -54,7 +54,7 @@ func helmCapitalsFixture(t *testing.T, root, compName string) string {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
 	writeCapitalsWorkspace(t, root, compName)
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -79,7 +79,7 @@ data:
   releaseName: {{ .Release.Name | quote }}
 `)
 	recipePath := filepath.Join(catalogRoot, "recipes", "server.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -102,7 +102,7 @@ func composeCapitalsFixture(t *testing.T, root, compName string) string {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
 	writeCapitalsWorkspace(t, root, compName)
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -114,7 +114,7 @@ spec:
     values: {}
 `)
 	seedEmbeddedPlugins(t, filepath.Join(catalogRoot, "providers"), "provider/compose")
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -123,7 +123,7 @@ spec:
   capability: compose
   implements: server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -136,7 +136,7 @@ spec:
 // both fixtures, with the component authored under compName.
 func writeCapitalsWorkspace(t *testing.T, root, compName string) {
 	t.Helper()
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -146,7 +146,7 @@ spec:
     %s:
       type: server
 `, compName))
-	writeFixture(t, filepath.Join(root, "release.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: caps-rel
@@ -163,7 +163,7 @@ spec:
           infra:
             replicas: 1
 `, compName))
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest

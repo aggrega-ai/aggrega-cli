@@ -113,9 +113,9 @@ func TestADriftedSlotIsPassedOverOnlyForAnAuthoredCopyOfItsOwnKind(t *testing.T)
 	featurePath := filepath.Join(cat, "featurerecipe", "helm", "shared", "1.0.0", "recipe.yaml")
 	aggregatePath := filepath.Join(cat, "aggregate", "helm", "shared", "aggregate.yaml")
 	for path, body := range map[string]string{
-		featurePath: "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: shared\n  version: 1.0.0\n" +
+		featurePath: "apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: shared\n  version: 1.0.0\n" +
 			"spec:\n  capability: helm\n  implements: core/shared-feature:1.0.0\n",
-		aggregatePath: "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: helm/shared\n  version: \"1.0.0\"\n" +
+		aggregatePath: "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: helm/shared\n  version: \"1.0.0\"\n" +
 			"spec:\n  components:\n    app:\n      type: core/web\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -127,7 +127,7 @@ func TestADriftedSlotIsPassedOverOnlyForAnAuthoredCopyOfItsOwnKind(t *testing.T)
 	}
 	// The slot holds an Aggregate body other than the authored one.
 	drifted := writePinnedSlot(t, ws, cacheDir, slot, oci.MediaTypeAggregate, []byte(
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: helm/shared\n  version: \"1.0.0\"\n"+
+		"apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: helm/shared\n  version: \"1.0.0\"\n"+
 			"spec:\n  components:\n    app:\n      type: core/api\n"))
 
 	view := NewLazyLookup(ws, cacheDir, []string{cat}, nil)

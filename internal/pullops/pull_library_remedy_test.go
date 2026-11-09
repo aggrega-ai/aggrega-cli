@@ -37,7 +37,7 @@ func mustLibrarySlot(t *testing.T, ws, cacheDir string) string {
 // cache holding nothing to name, is returned unchanged.
 func TestWithPullLibraryRemedy_NamesTheActionForThePosture(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
-	const library = `apiVersion: aggrega.ai/v1alpha1
+	const library = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Sizing

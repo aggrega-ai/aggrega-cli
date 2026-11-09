@@ -108,7 +108,7 @@ func governanceRolesTheSchemaDeclares(t *testing.T) []string {
 	path := []string{"$defs", "PluginRef", "properties", "role", "enum"}
 
 	var cur any
-	if err := json.Unmarshal([]byte(schemas.AggregaConfigV1alpha1), &cur); err != nil {
+	if err := json.Unmarshal([]byte(schemas.AggregaConfigV1beta1), &cur); err != nil {
 		t.Fatalf("parse the configuration schema: %v", err)
 	}
 	for _, key := range path {

@@ -190,8 +190,8 @@ func TestTheSignatureFactIsDeclaredAlikeInBothRecords(t *testing.T) {
 		}
 		return withoutDescriptions(def)
 	}
-	lock := declaration(t, "lockfile", schemas.LockfileV1alpha1)
-	trust := declaration(t, "plugin trust record", schemas.PluginsTrustV1alpha1)
+	lock := declaration(t, "lockfile", schemas.LockfileV1beta1)
+	trust := declaration(t, "plugin trust record", schemas.PluginsTrustV1beta1)
 	// Calibration: a declaration reduced to nothing would make the comparison below
 	// hold over two empty values.
 	props, _ := lock.(map[string]any)["properties"].(map[string]any)
@@ -217,7 +217,7 @@ func TestTheSignatureFactIsDeclaredAlikeInBothRecords(t *testing.T) {
 			} `json:"plugins"`
 		} `json:"properties"`
 	}
-	if err := json.Unmarshal([]byte(schemas.PluginsTrustV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.PluginsTrustV1beta1), &doc); err != nil {
 		t.Fatalf("decode the plugin trust record schema: %v", err)
 	}
 	if ref := doc.Properties.Plugins.Items.Properties["signature"].Ref; ref != "#/$defs/VerifiedSignature" {

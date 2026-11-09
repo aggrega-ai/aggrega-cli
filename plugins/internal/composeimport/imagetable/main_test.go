@@ -106,7 +106,7 @@ func writeRecipes(t *testing.T, recipes map[string]string) string {
 // workload, indented as a Recipe's literal block holds it, with locals.
 func recipeDoc(component, locals, workload string) string {
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: r\n  version: 1.0.0\nspec:\n")
+	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: r\n  version: 1.0.0\nspec:\n")
 	b.WriteString("  capability: compose\n  implements: " + component + ":1.0.0\n")
 	if locals != "" {
 		b.WriteString("  locals:\n" + locals)
@@ -128,7 +128,7 @@ func recipeDoc(component, locals, workload string) string {
 func TestTheMainContainersImageIsReadLiterally(t *testing.T) {
 	t.Parallel()
 	containers := func(image string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ninitContainers:\n  - name: pull\n" +
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ninitContainers:\n  - name: pull\n" +
 			"    image: \"python:3.12-slim\"\ncontainers:\n  main:\n    image: " + image + "\n  sidecar:\n" +
 			"    image: \"nginx:{{ .locals.tag }}\"\n"
 	}
@@ -299,7 +299,7 @@ func TestARowWhoseComponentTheHubDoesNotHoldIsRefused(t *testing.T) {
 // naming one repository for one Component, one row.
 func TestTwoRecipesNamingOneRepositoryForDifferentComponentsAreRefused(t *testing.T) {
 	t.Parallel()
-	workload := "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: \"acme/db:{{ .infra.v }}\"\n"
+	workload := "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: \"acme/db:{{ .infra.v }}\"\n"
 	dir := writeRecipes(t, map[string]string{"a": recipeDoc("core/x/a", "", workload), "b": recipeDoc("core/x/b", "", workload)})
 	rows, _, err := generate(dir)
 	if err == nil || rows != nil {

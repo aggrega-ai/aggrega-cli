@@ -218,7 +218,7 @@ func TestCollectRenderedNamesTellsTheProviderWhichInputKindsANodeDeclares(t *tes
 		graph.Spec.Nodes.Set(id, types.IRNode{})
 	}
 	source := "oci://charts.example/app"
-	workload := types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\n"}
+	workload := types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1beta1\nkind: Workload\n"}
 	recipes := map[string]*types.Recipe{
 		"chart":  {Spec: types.RecipeSpec{Capability: "helm", Source: source}},
 		"synth":  {Spec: types.RecipeSpec{Capability: "helm", Workload: workload}},

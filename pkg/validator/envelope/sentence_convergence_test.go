@@ -33,7 +33,7 @@ func TestEveryRaisePathOpensWithTheSameSentence(t *testing.T) {
 
 	// The structured-violation path: a well-formed document the schema rejects.
 	_, schemaErr := ValidateBytes(KindComponent, []byte(
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Component\nstrayTopLevelKey: nope\n",
+		"apiVersion: aggrega.ai/v1beta1\nkind: Component\nstrayTopLevelKey: nope\n",
 	), "subject.yaml")
 	if schemaErr == nil {
 		t.Fatal("a document carrying an unknown top-level key must fail the envelope")
@@ -43,7 +43,7 @@ func TestEveryRaisePathOpensWithTheSameSentence(t *testing.T) {
 	// so the engine cannot run. The document itself is beyond reproach, which
 	// is exactly why advice about correcting it would be wrong here.
 	_, engineErr := ValidateBytes(Kind("KindWithNoEmbeddedSchema"), []byte(
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/compute/api\n  version: 1.0.0\n",
+		"apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/compute/api\n  version: 1.0.0\n",
 	), "subject.yaml")
 	if engineErr == nil {
 		t.Fatal("a kind with no embedded schema must fail the envelope")
@@ -80,7 +80,7 @@ func TestErrorRendersOccurrenceAndFindingsAfterTheSentence(t *testing.T) {
 	t.Parallel()
 
 	_, err := ValidateBytes(KindComponent, []byte(
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/probe\n  version: \"1.0.0\"\n  labels:\n    component.aggrega.ai/type: server\nspec:\n  secretNames: [old_key]\n",
+		"apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/probe\n  version: \"1.0.0\"\n  labels:\n    component.aggrega.ai/type: server\nspec:\n  secretNames: [old_key]\n",
 	), "component.yaml")
 	if err == nil {
 		t.Fatal("the retired key must fail the envelope")
@@ -109,7 +109,7 @@ func TestErrorOmitsAnOccurrenceValueItWasNotGiven(t *testing.T) {
 	t.Parallel()
 
 	_, err := ValidateBytes(KindComponent, []byte(
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Component\nstrayTopLevelKey: nope\n",
+		"apiVersion: aggrega.ai/v1beta1\nkind: Component\nstrayTopLevelKey: nope\n",
 	), "")
 	if err == nil {
 		t.Fatal("a document carrying an unknown top-level key must fail the envelope")

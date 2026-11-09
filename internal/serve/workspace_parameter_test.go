@@ -39,24 +39,24 @@ func twoWorkspaces(t *testing.T) (rootA, rootB string) {
 	}
 	rootA, rootB = t.TempDir(), t.TempDir()
 	write(rootA, map[string]string{
-		"alpha-component.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"alpha-component.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: alpha-only
 `,
-		"releases/alpha.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"releases/alpha.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: alpha-release
 `,
 	})
 	write(rootB, map[string]string{
-		"beta-component.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"beta-component.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: beta-only
 `,
-		"releases/beta.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"releases/beta.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: beta-release
@@ -85,7 +85,7 @@ func twoWorkspacesWithABrokenRelease(t *testing.T) (rootA, rootB, relA, relB str
 	// cascade then reports zero candidates rather than one that failed. So the
 	// document is well-formed YAML declaring a Release, and it is the schema that
 	// refuses it: `aggregate` names a document, and a number names none.
-	const broken = `apiVersion: aggrega.ai/v1alpha1
+	const broken = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: broken

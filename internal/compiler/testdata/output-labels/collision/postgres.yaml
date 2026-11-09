@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: helm-postgres-synthesized-with-artifacts
@@ -13,7 +13,7 @@ spec:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "5432"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `replicas` 1 }}
     containers:

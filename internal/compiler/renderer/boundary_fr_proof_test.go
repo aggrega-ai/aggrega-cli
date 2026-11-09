@@ -29,7 +29,7 @@ func composeFactory(t *testing.T) renderer.EngineFactory {
 // SynthesizeWorkload at Phase B.4 produces the Intermediate=true fragment
 // the per-(path, provider) compose AssembleBoundary then merges.
 func composeWorkloadRecipe(name, image string, port int) *types.Recipe {
-	body := `apiVersion: aggrega.ai/v1alpha1
+	body := `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -578,7 +578,7 @@ func TestDispatchBoundaryScopeFR_SynthesizesWorkload(t *testing.T) {
 			Capability:     "compose",
 			Implements:     "core/compose-bridge:1.0.0",
 			ExecutionScope: "boundary",
-			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

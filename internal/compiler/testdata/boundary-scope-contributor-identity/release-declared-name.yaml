@@ -1,7 +1,7 @@
 # One boundary with one boundary-scope attachment, beside a component whose own
 # published endpoint reaches the stack Output name the attachment's render
 # declared. Both land in one dispatch group and one assembled stack.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: bs-declared-name

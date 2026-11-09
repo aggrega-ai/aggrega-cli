@@ -188,7 +188,7 @@ func TestSoleRefusalFor_MatchesOnlyTheDeclaredIdentity(t *testing.T) {
 func TestNewSkippedEntity_RecoversTheWholeDeclaredIdentity(t *testing.T) {
 	t.Parallel()
 
-	doc := []byte(`apiVersion: aggrega.ai/v1alpha1
+	doc := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe

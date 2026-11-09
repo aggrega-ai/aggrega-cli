@@ -26,7 +26,7 @@ import (
 // publishComponentBody is the entity every publication test publishes. Its
 // metadata.version matches the per-version directory the fixture writes it into,
 // which the transport requires.
-const publishComponentBody = `apiVersion: aggrega.ai/v1alpha1
+const publishComponentBody = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server
@@ -536,8 +536,8 @@ func TestPublishEntityToolRefusesAnUnpinnedRecipeInItsOwnWords(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("make the recipe directory: %v", err)
 	}
-	recipe := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: server\n  version: 1.0.0\nspec:\n" +
-		"  capability: helm\n  implements: server\n  workload: |\n    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n" +
+	recipe := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: server\n  version: 1.0.0\nspec:\n" +
+		"  capability: helm\n  implements: server\n  workload: |\n    apiVersion: aggrega.ai/v1beta1\n    kind: Workload\n" +
 		"  artifacts:\n    extra.yaml:\n      $import: ./extra.yaml\n"
 	if err := os.WriteFile(filepath.Join(dir, "recipe.yaml"), []byte(recipe), 0o644); err != nil {
 		t.Fatalf("write the recipe: %v", err)

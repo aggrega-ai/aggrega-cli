@@ -83,7 +83,7 @@ func sensitivityFeature(name string, marked bool) string {
 		byValue = "      literalPassword: { type: string, sensitive: true }\n"
 		provided = "      password: { type: string, required: true, sensitive: true }\n"
 	}
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: ` + name + `
@@ -102,7 +102,7 @@ spec:
 // Feature's provides contract so the attachment's delivery mapping has something
 // to deliver.
 func sensitivityFeatureRecipe(recipeName, featureName string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: ` + recipeName + `
@@ -133,7 +133,7 @@ func sensitivityAggregate(name, featureType string, byValue bool) string {
 	if byValue {
 		leaves += "            literalPassword: password-in-the-clear\n"
 	}
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: ` + name + `
@@ -159,7 +159,7 @@ spec:
 // aggregateFile into its own output directory, so two arms of one proof cannot
 // read each other's rendered artifacts.
 func sensitivityRelease(name, aggregateFile, outDir string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: ` + name + `
@@ -209,7 +209,7 @@ func sensitivityWorkspace(t *testing.T) (root, catalogDir string) {
 	root = t.TempDir()
 	catalogDir = filepath.Join(root, "catalog")
 
-	writeFixture(t, filepath.Join(catalogDir, "components", "app.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "components", "app.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: gov/app
@@ -229,7 +229,7 @@ spec:
     provides:
       host: { type: string, required: true }
 `)
-	writeFixture(t, filepath.Join(catalogDir, "recipes", "app-recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipes", "app-recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: gov-app-recipe
@@ -240,7 +240,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -266,7 +266,7 @@ spec:
 		sensitivityFeatureRecipe("gov-db-credential-compose", "feature.gov/db-credential"))
 	writeFixture(t, filepath.Join(catalogDir, "feature-recipes", "db-credential-unmarked.yaml"),
 		sensitivityFeatureRecipe("gov-db-credential-unmarked-compose", "feature.gov/db-credential-unmarked"))
-	writeFixture(t, filepath.Join(catalogDir, "plugins", "compose.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "plugins", "compose.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: compose
@@ -286,7 +286,7 @@ spec:
     timeoutMs: 300000
 `)
 
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: sensitivity-manifest
@@ -398,7 +398,7 @@ func regoSensitivityConfig(t *testing.T, catalogDir string) string {
 // It declares the exports the guest's own self-report declares, because the host
 // refuses to call an export a plugin did not declare and cross-checks the entity
 // against the artifact it resolved.
-const housePolicyEntity = `apiVersion: aggrega.ai/v1alpha1
+const housePolicyEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: house-policy

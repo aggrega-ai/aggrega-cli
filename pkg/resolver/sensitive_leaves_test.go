@@ -264,7 +264,7 @@ values:
           zz_branch_secret: { type: string, sensitive: true }
           alpha_branch_public: { type: string }
 `, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Vault
@@ -390,7 +390,7 @@ values:
   declaring: { $ref: "Vault#/schemas/Declaring" }
   silent: { $ref: "Vault#/schemas/Silent" }
 `, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Vault

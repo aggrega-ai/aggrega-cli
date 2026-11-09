@@ -18,7 +18,7 @@ import (
 // failureTextComponent is the one Component the rows below deploy. Its infra pillar
 // refers to a SchemaLibrary when the row hands it one, which is a reference only the
 // library fold reads: the closure walk resolves the Component without it.
-const failureTextComponent = `apiVersion: aggrega.ai/v1alpha1
+const failureTextComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/web
@@ -35,7 +35,7 @@ const failureTextLibraryRef = `      storage:
         $ref: "Absent#/schemas/Storage"
 `
 
-const failureTextAggregate = `apiVersion: aggrega.ai/v1alpha1
+const failureTextAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: failure-text-app
@@ -46,7 +46,7 @@ spec:
       type: %TYPE%
 `
 
-const failureTextManifest = `apiVersion: aggrega.ai/v1alpha1
+const failureTextManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: failure-text-manifest
@@ -57,7 +57,7 @@ spec:
       type: {}
 `
 
-const failureTextRelease = `apiVersion: aggrega.ai/v1alpha1
+const failureTextRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: failure-text-release

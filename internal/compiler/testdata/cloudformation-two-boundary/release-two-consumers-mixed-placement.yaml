@@ -3,7 +3,7 @@
 # imports the export; stack C declares another account, so its application reads
 # the producer stack's output across accounts instead. The producer stack still
 # publishes the key's export once.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-mixed-placement

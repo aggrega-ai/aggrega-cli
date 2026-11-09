@@ -119,7 +119,7 @@ func (p *fakeRemoteLibraryPuller) PullLibrary(_ context.Context, _, _, floorVers
 	if p.metadataVersion != "" {
 		bodyVersion = p.metadataVersion
 	}
-	body := []byte(fmt.Sprintf("apiVersion: aggrega.ai/v1alpha1\n"+
+	body := []byte(fmt.Sprintf("apiVersion: aggrega.ai/v1beta1\n"+
 		"kind: SchemaLibrary\nmetadata:\n  name: DbSizing\n  version: \"%s\"\n"+
 		"spec:\n  schemas:\n    Storage:\n      size: { type: string, default: \"10Gi\" }\n", bodyVersion))
 	// Return the resolved TAG (version); the body carries bodyVersion. When they
@@ -240,7 +240,7 @@ func TestPullFetchesRemoteLibraryViaTier3(t *testing.T) {
 func remoteLibraryFixture(t *testing.T, root string) string {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -252,7 +252,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: smoke-rel
@@ -269,7 +269,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -283,7 +283,7 @@ spec:
 	// The server Component's infra.storage field is sourced by a host-less
 	// bare-name cross-document $ref into the DbSizing SchemaLibrary; the library
 	// entry declares the default the build must materialize.
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -301,7 +301,7 @@ spec:
 `)
 	writeFixture(t, filepath.Join(catalogRoot, "schemalibraries", "dbsizing.yaml"), dbSizingLibrarySource)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -310,7 +310,7 @@ spec:
   capability: helm
   implements: server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -322,7 +322,7 @@ spec:
 	return filepath.Join(root, "release.yaml")
 }
 
-const dbSizingLibrarySource = `apiVersion: aggrega.ai/v1alpha1
+const dbSizingLibrarySource = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -519,7 +519,7 @@ func TestPullSourceTemplateReadsBridgedLibraryDefault(t *testing.T) {
 
 	// Sourced-mode Recipe whose source: version reads the library-$ref-composed
 	// infra default; replaces the workload Recipe from the fixture.
-	writeFixture(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server

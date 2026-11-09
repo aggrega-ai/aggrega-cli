@@ -24,7 +24,7 @@ func TestPullPushBareYAMLRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	source := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n")
+	source := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n")
 
 	store := memory.New()
 	digest, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, source, nil)
@@ -57,7 +57,7 @@ func TestPullDigestMismatchSurfacesErrFetchIntegrity(t *testing.T) {
 	// content. The Pull path's digest verification step then
 	// surfaces ErrFetchIntegrity.
 	store := memory.New()
-	source := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\n")
+	source := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\n")
 	if _, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, source, nil); err != nil {
 		t.Fatalf("initial Push: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestPullDigestMismatchSurfacesErrFetchIntegrity(t *testing.T) {
 	// content digest differs from what was claimed at Push time,
 	// and Pull catches the mismatch.
 	tamperedStore := memory.New()
-	tampered := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: ComponentDIFFERENT\n")
+	tampered := []byte("apiVersion: aggrega.ai/v1beta1\nkind: ComponentDIFFERENT\n")
 	if _, err := oci.Push(ctx, tamperedStore, "1.0.0", oci.MediaTypeComponent, tampered, nil); err != nil {
 		t.Fatalf("tampered Push: %v", err)
 	}

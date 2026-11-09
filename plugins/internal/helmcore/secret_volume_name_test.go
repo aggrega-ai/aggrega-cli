@@ -133,7 +133,7 @@ func TestSynthesizeWorkload_SecretFileVolumeNameWritesTheSlotOut(t *testing.T) {
 				}
 			}
 
-			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+			w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 			app := types.ContainerSpec{Image: "router:1.0"}
 			for _, e := range tc.main {
 				app.Attachments.Set(e.key, types.AttachmentRef{From: e.slot, As: "file", Path: e.path})

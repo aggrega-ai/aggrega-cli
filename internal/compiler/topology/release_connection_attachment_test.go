@@ -32,7 +32,7 @@ func releaseFor(throughModule bool, gwBlock, extra string) string {
 	if gwBlock != "" {
 		gw = at + "gw:\n" + indentBlock(gwBlock, pad+2)
 	}
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -277,7 +277,7 @@ func TestReleaseComponentKeySpellingAConnectionAttachmentHalts(t *testing.T) {
 // releaseWithBoundaries writes a Release whose spec.boundaries block is body,
 // already indented under it.
 func releaseWithBoundaries(body string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod

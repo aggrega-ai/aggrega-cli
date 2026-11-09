@@ -95,13 +95,13 @@ func TestAConfiguredReleaseThroughALinkResolvesTheNamesBesideIt(t *testing.T) {
 }
 
 // linkedReleaseDocument is a Release naming its Aggregate and its Manifest by name.
-const linkedReleaseDocument = "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: linked-release\n" +
+const linkedReleaseDocument = "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: linked-release\n" +
 	"  version: \"1.0.0\"\n  environment: production\nspec:\n  aggregate: linked-app\n  manifest: linked-manifest\n"
 
 // linkedReleaseAggregate is the Aggregate the Release names, kept beside it.
-const linkedReleaseAggregate = "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: linked-app\n" +
+const linkedReleaseAggregate = "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: linked-app\n" +
 	"  version: \"1.0.0\"\nspec:\n  components: {}\n"
 
 // linkedReleaseManifest is the Manifest the Release names, kept beside it.
-const linkedReleaseManifest = "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: linked-manifest\n" +
+const linkedReleaseManifest = "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: linked-manifest\n" +
 	"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type: {}\n"

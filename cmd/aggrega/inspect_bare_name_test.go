@@ -15,7 +15,7 @@ import (
 // bareNameComponentFixture is a minimal catalog Component. The schema is
 // authored in object form because the catalog loader validates each entity
 // against its envelope schema, which requires spec.schema to be an object.
-const bareNameComponentFixture = `apiVersion: aggrega.ai/v1alpha1
+const bareNameComponentFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server
@@ -30,7 +30,7 @@ spec:
 
 // bareNameFeatureFixture is a minimal catalog Feature in object-schema form,
 // for the same envelope-validation reason as the Component above.
-const bareNameFeatureFixture = `apiVersion: aggrega.ai/v1alpha1
+const bareNameFeatureFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/metrics
@@ -117,13 +117,13 @@ func TestInspectBareName_ComponentHonoursYAMLOutput(t *testing.T) {
 		absent     []string
 	}{
 		{name: "a Component under --output yaml", identifier: "core/api-server", yaml: true,
-			want:   []string{"apiVersion: aggrega.ai/v1alpha1\n", "kind: Component\n", "name: core/api-server\n"},
+			want:   []string{"apiVersion: aggrega.ai/v1beta1\n", "kind: Component\n", "name: core/api-server\n"},
 			absent: []string{"Component: core/api-server", "Schema:"}},
 		{name: "control: a Component under the default format", identifier: "core/api-server",
 			want:   []string{"Component: core/api-server:1.0.0\n", "Schema:"},
 			absent: []string{"kind: Component"}},
 		{name: "control: a Feature under --output yaml", identifier: "core/metrics", yaml: true,
-			want:   []string{"apiVersion: aggrega.ai/v1alpha1\n", "kind: Feature\n", "name: core/metrics\n"},
+			want:   []string{"apiVersion: aggrega.ai/v1beta1\n", "kind: Feature\n", "name: core/metrics\n"},
 			absent: []string{"Feature: core/metrics"}},
 	} {
 		t.Run(row.name, func(t *testing.T) {
@@ -173,7 +173,7 @@ func TestInspectBareName_Feature(t *testing.T) {
 // bareNameAggregateFixture is a minimal catalog Aggregate whose single component
 // names the Component fixture above, so the topology pass its inspector runs has
 // a resolvable reference.
-const bareNameAggregateFixture = `apiVersion: aggrega.ai/v1alpha1
+const bareNameAggregateFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: storefront

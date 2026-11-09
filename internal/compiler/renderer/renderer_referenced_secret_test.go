@@ -194,7 +194,7 @@ func referencedSecretWorkloadFixture(asMode string) (renderer.RendererInput, ren
 	if asMode == "file" {
 		secretEntry = "from: password\n        as: file\n        path: /etc/secret/password"
 	}
-	workload := "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: postgres:16\n    attachments:\n      POSTGRES_PASSWORD:\n        " + secretEntry + "\n"
+	workload := "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: postgres:16\n    attachments:\n      POSTGRES_PASSWORD:\n        " + secretEntry + "\n"
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, _ string) (*types.Recipe, bool) {

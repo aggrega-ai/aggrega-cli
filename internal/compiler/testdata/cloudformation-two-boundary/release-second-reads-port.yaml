@@ -2,7 +2,7 @@
 # provides key the first does not: the database assembles into stack A, and both
 # applications into stack B. The producer stack publishes the host's export once,
 # for the first edge, and the port's for the second.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-second-reads-port

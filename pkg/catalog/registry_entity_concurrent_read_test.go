@@ -18,7 +18,7 @@ import (
 
 // concurrentComponentDoc is a Component published as its document alone, the shape
 // whose concurrent resolution from one pinned slot the per-request views exercise.
-const concurrentComponentDoc = `apiVersion: aggrega.ai/v1alpha1
+const concurrentComponentDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/compute/shared

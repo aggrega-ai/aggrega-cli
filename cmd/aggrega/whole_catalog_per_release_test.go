@@ -23,7 +23,7 @@ import (
 // set to an identity no catalog holds it is one the extends gate refuses. The two
 // sit in two catalog variants of one workspace, each read by its own Release.
 func perReleaseFeature(extends string) string {
-	doc := `apiVersion: aggrega.ai/v1alpha1
+	doc := `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/secret-value
@@ -64,7 +64,7 @@ func perReleaseCatalogWorkspace(t *testing.T, config string, releases []string, 
 	}
 	put(workspaceconfig.ConfigFilename, config)
 	for _, r := range releases {
-		put(r, "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: probe/"+strings.TrimSuffix(r, ".yaml")+"\n  version: 1.0.0\nspec: {}\n")
+		put(r, "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: probe/"+strings.TrimSuffix(r, ".yaml")+"\n  version: 1.0.0\nspec: {}\n")
 	}
 	for rel, body := range docs {
 		put(rel, body)

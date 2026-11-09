@@ -31,11 +31,11 @@ import (
 func TestSchemaPluginTypeEnumsMatchRegistry(t *testing.T) {
 	want := registryTypeStrings()
 
-	entityEnum := extractEnum(t, "entity (metadata.pluginType)", []byte(schemas.PluginV1alpha1),
+	entityEnum := extractEnum(t, "entity (metadata.pluginType)", []byte(schemas.PluginV1beta1),
 		"properties", "metadata", "properties", "pluginType", "enum")
 	assertEnumEqualsRegistry(t, "entity (metadata.pluginType)", entityEnum, want)
 
-	wireEnum := extractEnum(t, "wire (plugin_type)", []byte(schemas.WasmDescribeV1alpha1),
+	wireEnum := extractEnum(t, "wire (plugin_type)", []byte(schemas.WasmDescribeV1beta1),
 		"$defs", "PluginDescriptor", "properties", "plugin_type", "enum")
 	assertEnumEqualsRegistry(t, "wire (plugin_type)", wireEnum, want)
 }

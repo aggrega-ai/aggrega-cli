@@ -40,7 +40,7 @@ import (
 // document its entity contract accepts, so a refusal reported below concerns the
 // delivery entry rather than a missing field elsewhere.
 func referenceShapeAggregate(deliveryEntry string) []byte {
-	return []byte(`apiVersion: aggrega.ai/v1alpha1
+	return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: inject-reference-shape-probe

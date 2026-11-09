@@ -268,7 +268,7 @@ func TestValidateToolCatalogScopeCoreParity(t *testing.T) {
 	t.Run("fail", func(t *testing.T) {
 		s := newTestServer(t)
 		dir := t.TempDir()
-		writeCatalogFile(t, filepath.Join(dir, "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeCatalogFile(t, filepath.Join(dir, "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-helmchart
@@ -277,10 +277,10 @@ spec:
   capability: helm-chart
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
 `)
-		writeCatalogFile(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeCatalogFile(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm-chart-renderer
@@ -337,7 +337,7 @@ spec:
 	t.Run("unloadable document", func(t *testing.T) {
 		s := newTestServer(t)
 		dir := t.TempDir()
-		writeCatalogFile(t, filepath.Join(dir, "component", "broken.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeCatalogFile(t, filepath.Join(dir, "component", "broken.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/broken
@@ -345,7 +345,7 @@ metadata:
 spec:
   schema: values: [
 `)
-		writeCatalogFile(t, filepath.Join(dir, "component", "listed.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeCatalogFile(t, filepath.Join(dir, "component", "listed.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   - name: core/compute/listed

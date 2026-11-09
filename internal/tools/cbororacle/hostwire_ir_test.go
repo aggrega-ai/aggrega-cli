@@ -159,7 +159,7 @@ func irFixture(t *testing.T) types.IRGraph {
 				),
 			),
 			Provenance: types.IRProvenance{
-				SchemaVersion:    "v1alpha1",
+				SchemaVersion:    "v1beta1",
 				CompilerVersion:  "test",
 				AggregateVersion: "1.0.0",
 				ManifestVersion:  "1.0.0",

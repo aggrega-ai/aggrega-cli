@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: helm-web-ui-synthesized
@@ -7,7 +7,7 @@ spec:
   capability: helm
   implements: core/compute/web-ui
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `replicas` 1 }}
     containers:

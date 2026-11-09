@@ -27,7 +27,7 @@ func moduleGuardCatalog(t *testing.T) CatalogLookup {
 		}
 		return c
 	}
-	envOnly := parse(`apiVersion: aggrega.ai/v1alpha1
+	envOnly := parse(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/env-only
@@ -42,7 +42,7 @@ spec:
     provides:
       host: { type: string }
 `)
-	twoMechanisms := parse(`apiVersion: aggrega.ai/v1alpha1
+	twoMechanisms := parse(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/two-mechanisms
@@ -50,14 +50,14 @@ metadata:
 spec:
   inject: [env, file]
 `)
-	sealed := parse(`apiVersion: aggrega.ai/v1alpha1
+	sealed := parse(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/sealed
   version: "1.0.0"
 spec: {}
 `)
-	broken := parse(`apiVersion: aggrega.ai/v1alpha1
+	broken := parse(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/broken-contract
@@ -69,7 +69,7 @@ spec:
         $ref: "NoSuchLibrary#/schemas/Nothing"
 `)
 	var scrape types.Feature
-	if err := yaml.Unmarshal([]byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := yaml.Unmarshal([]byte(`apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: app/scrape
@@ -104,7 +104,7 @@ spec: {}
 // moduleDocument wraps a spec block into a whole module document named
 // mods/data.
 func moduleDocument(spec string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: mods/data\nspec:\n" + indent(spec, 2)
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: mods/data\nspec:\n" + indent(spec, 2)
 }
 
 // TestRunModuleGuardsAsksEachRuleOfAModuleDocument proves each rule the module

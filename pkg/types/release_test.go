@@ -27,7 +27,7 @@ import (
 func TestBoundary_AnnotationsTristateRoundTrip(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -87,7 +87,7 @@ spec:
 func TestBoundaryFeature_TypedDecodeWithUses(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test

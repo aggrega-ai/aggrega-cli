@@ -17,7 +17,7 @@ import (
 // projection. PrecalculatedPaths carries the routing paths the analyzer
 // enumerates alongside so policies can reason about reachability without
 // re-walking the graph. The wire shape is single-sourced from
-// ir-v1alpha1.schema.json (referenced by wasm-policy-v1alpha1.schema.json); the
+// ir-v1beta1.schema.json (referenced by wasm-policy-v1beta1.schema.json); the
 // generated guest codec in aggrega-abi mirrors it.
 //
 // assemblePolicyInput populates the structure on every build; the Step-4

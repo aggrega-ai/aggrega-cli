@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: sized-worker-recipe
@@ -10,7 +10,7 @@ spec:
     at-most-ten: |
       {{- if gt .values.replicas 10.5 -}}{{- fail "replicas must be at most 10" -}}{{- end -}}
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     form: stateless
     replicas: 1

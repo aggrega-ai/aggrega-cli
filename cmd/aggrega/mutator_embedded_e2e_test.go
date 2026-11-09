@@ -48,7 +48,7 @@ func writeComposeComponentRecipe(t *testing.T, catalogDir, compType, recipeLeaf 
 	for k, v := range labels {
 		labelBlock += "    " + k + ": \"" + v + "\"\n"
 	}
-	writeFixtureEntity(t, catalogDir, "component/"+compType+"/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "component/"+compType+"/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: `+compType+`
@@ -58,7 +58,7 @@ metadata:
   schema:
     values: {}
 `)
-	writeFixtureEntity(t, catalogDir, "recipe/compose/"+recipeLeaf+"/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "recipe/compose/"+recipeLeaf+"/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: `+recipeLeaf+`
@@ -67,7 +67,7 @@ spec:
   capability: compose
   implements: `+compType+`
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -85,7 +85,7 @@ spec:
 func writeMutatorPluginEntities(t *testing.T, catalogDir string) {
 	t.Helper()
 	for _, name := range []string{"label-injector", "selector-tagger"} {
-		writeFixtureEntity(t, catalogDir, "plugin/governance/"+name+"/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
+		writeFixtureEntity(t, catalogDir, "plugin/governance/"+name+"/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: `+name+`
@@ -107,7 +107,7 @@ spec:
 func singleComponentWorkspace(t *testing.T) (root, catalogDir string) {
 	t.Helper()
 	root = t.TempDir()
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -117,7 +117,7 @@ spec:
     app:
       type: test/svc
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -128,7 +128,7 @@ spec:
       type:
         test/svc:1.0.0: compose/svc:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel
@@ -249,7 +249,7 @@ func TestMutatorEmbedded_SelectorTaggerApplies(t *testing.T) {
 	})
 	writeMutatorPluginEntities(t, catalogDir)
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -261,7 +261,7 @@ spec:
     db:
       type: test/db
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -273,7 +273,7 @@ spec:
         test/web:1.0.0: compose/web:1.0.0
         test/db:1.0.0: compose/db:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel
@@ -346,7 +346,7 @@ func TestMutatorEmbedded_LabelDrivesFeatureAttachment(t *testing.T) {
 
 	// A Feature that applies only to nodes labelled role.aggrega.ai/kind=cache —
 	// a label test/svc does not carry until the mutator injects it.
-	writeFixtureEntity(t, catalogDir, "feature/core/mutator-gate/1.0.0/feature.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "feature/core/mutator-gate/1.0.0/feature.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/mutator-gate
@@ -359,7 +359,7 @@ spec:
 `)
 	// A FeatureRecipe implementing it; renders no resources — the feature's
 	// presence is observed through the consuming node's .features context.
-	writeFixtureEntity(t, catalogDir, "feature-recipe/compose/mutator-gate/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "feature-recipe/compose/mutator-gate/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: mutator-gate-compose
@@ -369,7 +369,7 @@ spec:
   implements: core/mutator-gate
 `)
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -382,7 +382,7 @@ spec:
         gate:
           type: core/mutator-gate
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -396,7 +396,7 @@ spec:
       type:
         core/mutator-gate: mutator-gate-compose:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

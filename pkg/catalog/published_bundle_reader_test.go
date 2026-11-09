@@ -71,7 +71,7 @@ func entityVersionOf(t *testing.T, body string) string {
 	return v
 }
 
-const bundledRecipeBody = `apiVersion: aggrega.ai/v1alpha1
+const bundledRecipeBody = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: service
@@ -80,14 +80,14 @@ spec:
   capability: helm
   implements: example/compute/service
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
 `
 
 // bundledSchemaLibraryBody is a library its own schema admits, because the
 // library tier puts a fetched body through that schema before it caches it.
-const bundledSchemaLibraryBody = `apiVersion: aggrega.ai/v1alpha1
+const bundledSchemaLibraryBody = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: SharedSchemas
@@ -98,7 +98,7 @@ spec:
       type: integer
 `
 
-const bundledAggregateBody = `apiVersion: aggrega.ai/v1alpha1
+const bundledAggregateBody = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: db-module

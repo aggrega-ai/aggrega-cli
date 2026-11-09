@@ -47,7 +47,7 @@ const celGovernanceURI = "governance/cel"
 // the bare governance/cel coordinate; the entity is what the closure walk pins.
 func writeCelPluginEntity(t *testing.T, catalogDir string) {
 	t.Helper()
-	writeFixtureEntity(t, catalogDir, "plugin/governance/cel/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "plugin/governance/cel/1.0.0/plugin.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: cel
@@ -399,7 +399,7 @@ func celSelectorWorkspace(t *testing.T) (root, catalogDir string) {
 	})
 	writeCelPluginEntity(t, catalogDir)
 
-	writeFixtureEntity(t, catalogDir, "feature/core/label-gate/1.0.0/feature.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "feature/core/label-gate/1.0.0/feature.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/label-gate
@@ -410,7 +410,7 @@ spec:
     values:
       enabled: { type: boolean, default: true }
 `)
-	writeFixtureEntity(t, catalogDir, "feature-recipe/compose/label-gate/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "feature-recipe/compose/label-gate/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: label-gate-compose
@@ -419,7 +419,7 @@ spec:
   capability: compose
   implements: core/label-gate
 `)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -432,7 +432,7 @@ spec:
         gate:
           type: core/label-gate
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -446,7 +446,7 @@ spec:
       type:
         core/label-gate: label-gate-compose:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

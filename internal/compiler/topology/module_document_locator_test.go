@@ -85,7 +85,7 @@ features:
 				t.Errorf("locator = %q; want %q", found.Field, tc.wantLocator)
 			}
 			// The module document exactly as the composition read it.
-			src := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: mods/data\nspec:\n" + tc.spec
+			src := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: mods/data\nspec:\n" + tc.spec
 			var doc yaml.Node
 			if err := yaml.Unmarshal([]byte(src), &doc); err != nil {
 				t.Fatalf("module document parse: %v", err)

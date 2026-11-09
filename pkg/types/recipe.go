@@ -6,7 +6,7 @@ package types
 //go:generate go run ../../internal/tools/typegen recipe_gen.go
 
 // Recipe's struct declarations (Recipe, RecipeMetadata, RecipeSpec) are
-// generated into recipe_gen.go from the published recipe-v1alpha1 schema;
+// generated into recipe_gen.go from the published recipe-v1beta1 schema;
 // their godoc is the schema's descriptions. The content-shape and shared
 // types the generated spec references stay hand-written with their
 // marshalers — ValuesMapping (valuesmapping.go), WorkloadTemplate

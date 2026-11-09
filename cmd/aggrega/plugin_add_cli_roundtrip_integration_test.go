@@ -40,7 +40,7 @@ import (
 // manifest. The add path reads the .wasm content layer and its describe()
 // self-report, not this blob, so it only needs to be a plausible CLI Plugin
 // entity for the single-manifest publish shape.
-const cliPluginEntityYAML = `apiVersion: aggrega.ai/v1alpha1
+const cliPluginEntityYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: greet

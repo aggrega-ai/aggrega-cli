@@ -6,7 +6,7 @@
 # than a same-account stack-export import (Fn::ImportValue). The topology is the
 # sibling aggregate/manifest unchanged — only the boundary placement annotations
 # differ from release.yaml.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-cross-account

@@ -26,7 +26,7 @@ import (
 const (
 	// conventionsBadComponent breaks the naming shape: a Component's name carries
 	// the namespace/category/name form, and a bare word carries none of it.
-	conventionsBadComponent = `apiVersion: aggrega.ai/v1alpha1
+	conventionsBadComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: BadName
@@ -43,7 +43,7 @@ spec:
 	// in the directory its category mirrors. It has to be genuinely clean rather
 	// than a quieter violation — a fixture that broke some other rule would report
 	// findings and every no-over-fire assertion would be measuring the wrong thing.
-	conventionsCleanComponent = `apiVersion: aggrega.ai/v1alpha1
+	conventionsCleanComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/api-server
@@ -61,7 +61,7 @@ spec:
 	// Aggregate is authoring-side rather than published catalog content, so the
 	// kind gate passes it over — which is what keeps an editor session quiet about
 	// the documents an author spends most of their time in.
-	conventionsAggregate = `apiVersion: aggrega.ai/v1alpha1
+	conventionsAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: conventions-app
@@ -424,7 +424,7 @@ func TestConventionsLayerClearsWhatWasFixed(t *testing.T) {
 // twice and read as two problems.
 func TestConventionsAndCorrectnessFindingsAreTellableApart(t *testing.T) {
 	t.Parallel()
-	root, rel := conventionsWorkspace(t, `apiVersion: aggrega.ai/v1alpha1
+	root, rel := conventionsWorkspace(t, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: BadName
@@ -440,7 +440,7 @@ spec:
 	// The Release the request names. Only its catalog directories are read — the
 	// workspace's own list, since the configuration gives it none of its own — and
 	// none of them holds the library, so the check of the entity fails on it.
-	writeFixtureFile(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: conventions-release

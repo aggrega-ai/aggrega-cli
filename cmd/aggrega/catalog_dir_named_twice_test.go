@@ -15,7 +15,7 @@ import (
 // namedTwiceComponent is the one Component the fixture's catalog variant carries,
 // with marker as its image default so two files declaring the identity differ.
 func namedTwiceComponent(marker string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -38,7 +38,7 @@ spec:
 func namedTwiceWorkspace(t *testing.T, root, config string) {
 	t.Helper()
 	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), config)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: named-twice
@@ -48,7 +48,7 @@ spec:
     only:
       type: core/server
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: named-twice-manifest
@@ -59,7 +59,7 @@ spec:
       type:
         core/server: server-compose-recipe:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: named-twice-release
@@ -79,7 +79,7 @@ spec:
 	variant := filepath.Join(root, "variant")
 	writeFixture(t, filepath.Join(variant, "components", "server.yaml"), namedTwiceComponent("from-variant"))
 	seedEmbeddedPlugins(t, filepath.Join(variant, "providers"), "provider/compose")
-	writeFixture(t, filepath.Join(variant, "recipes", "compose", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(variant, "recipes", "compose", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-compose-recipe
@@ -88,7 +88,7 @@ spec:
   capability: compose
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       server:

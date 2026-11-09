@@ -9,7 +9,7 @@
 # It is the control on the over-warning side. A check that fired whenever the
 # annotation was merely present would satisfy every firing assertion elsewhere in
 # this corpus and would be caught only here.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: ann-release-all-honoured

@@ -85,7 +85,7 @@ func writeHermeticClosureFixture(t *testing.T, root, chartURL, schemaURL string)
 	t.Helper()
 	catalogDir := filepath.Join(root, "catalog")
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: hermetic-aggregate
@@ -103,7 +103,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: hermetic-release
@@ -126,7 +126,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: hermetic-manifest
@@ -140,7 +140,7 @@ spec:
         core/queue: queue-recipe
 `)
 
-	writeFixture(t, filepath.Join(catalogDir, "components", "api.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "components", "api.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api
@@ -153,7 +153,7 @@ spec:
     infra:
       replicas: { type: integer, default: 1 }
 `)
-	writeFixture(t, filepath.Join(catalogDir, "components", "cache.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "components", "cache.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/cache
@@ -171,7 +171,7 @@ spec:
 	// $ref into a SchemaLibrary, which is what puts that library in the closure —
 	// and the workload below echoes the resolved default, so the library's
 	// contribution is observable in the rendered artifact rather than only in a pin.
-	writeFixture(t, filepath.Join(catalogDir, "components", "queue.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "components", "queue.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/queue
@@ -188,7 +188,7 @@ spec:
         $ref: "DbSizing#/schemas/Storage"
 `)
 
-	writeFixture(t, filepath.Join(catalogDir, "schemalibraries", "dbsizing.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "schemalibraries", "dbsizing.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -198,7 +198,7 @@ spec:
     Storage:
       size: { type: string, default: "10Gi" }
 `)
-	writeFixture(t, filepath.Join(catalogDir, "mappinglibraries", "helmhelpers.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "mappinglibraries", "helmhelpers.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: HelmHelpers
@@ -208,7 +208,7 @@ spec:
     CacheValues: |
       image: "hermetic-cache:{{ .values.tag }}"
 `)
-	writeFixture(t, filepath.Join(catalogDir, "workloadlibraries", "baseworkloads.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "workloadlibraries", "baseworkloads.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: BaseWorkloads
@@ -216,7 +216,7 @@ metadata:
 spec:
   workloads:
     StatelessService: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Workload
       replicas: {{ .infra.replicas | default 1 }}
       containers:
@@ -228,7 +228,7 @@ spec:
           ports:
             web: {{ .values.port }}
 `)
-	writeFixture(t, filepath.Join(catalogDir, "artifactlibraries", "sharedartifacts.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "artifactlibraries", "sharedartifacts.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: ArtifactLibrary
 metadata:
   name: SharedArtifacts
@@ -246,7 +246,7 @@ spec:
 `)
 
 	writeHelmRendererPlugin(t, filepath.Join(catalogDir, "providers"))
-	writeFixture(t, filepath.Join(catalogDir, "plugins", "label-injector.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "plugins", "label-injector.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: label-injector
@@ -262,7 +262,7 @@ spec:
 	// rendered document exists only if the cached archive served the offline build.
 	// Each Recipe sits in a directory of its own, because the pull below pins, and
 	// a pin writes the one lock its entity's directory holds.
-	writeFixture(t, filepath.Join(catalogDir, "recipes", "api", "api.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipes", "api", "api.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-recipe
@@ -294,7 +294,7 @@ data:
 `)
 	writeFixture(t, filepath.Join(cacheChart, "values.schema.json"),
 		fmt.Sprintf(`{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":%q}`, schemaURL))
-	writeFixture(t, filepath.Join(catalogDir, "recipes", "cache", "cache.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipes", "cache", "cache.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: cache-recipe
@@ -310,7 +310,7 @@ spec:
 	// The queue Recipe is sourceless: its workload and its extra artifacts each
 	// come from a library, which is what puts those two library kinds in the
 	// closure.
-	writeFixture(t, filepath.Join(catalogDir, "recipes", "queue", "queue.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipes", "queue", "queue.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: queue-recipe

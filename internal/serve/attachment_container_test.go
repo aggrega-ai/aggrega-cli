@@ -60,7 +60,7 @@ func attachmentContainerWorkspace(t *testing.T) (ws string, nestedRel, flatRel s
 	ws = t.TempDir()
 	catalogDir := filepath.Join(ws, "catalog")
 
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "edge.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "edge.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/edge
@@ -72,7 +72,7 @@ spec:
     provides:
       host: { type: string, required: true }
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "store.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/store
@@ -88,7 +88,7 @@ spec:
 	// the module is imported under "store", so its "primary" instance becomes
 	// "store.primary" — and the document an attachment for it belongs in is this
 	// file rather than the Aggregate the Release names.
-	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "store-module.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "store-module.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo/store-module
@@ -98,7 +98,7 @@ spec:
     primary:
       type: demo/store
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "edge.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "edge.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-edge-synthesized
@@ -109,14 +109,14 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: demo-edge:latest
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "store.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-store-synthesized
@@ -127,14 +127,14 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: demo-store:latest
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm
@@ -152,7 +152,7 @@ spec:
     timeoutMs: 300000
 `)
 
-	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -167,7 +167,7 @@ spec:
 
 	// The subsystem shape. "ledger" sits two levels down and "gateway" one, so
 	// one document covers both a nested scope and a shallow one.
-	writeFixtureFile(t, filepath.Join(ws, "nested-agg.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "nested-agg.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: nested-agg
@@ -186,7 +186,7 @@ spec:
           type: "demo/edge:1.0.0"
 `)
 	nestedPath := filepath.Join(ws, "nested-release.yaml")
-	writeFixtureFile(t, nestedPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, nestedPath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: nested-release
@@ -204,7 +204,7 @@ spec:
 `)
 
 	// The top-level shape, plus the imported module.
-	writeFixtureFile(t, filepath.Join(ws, "flat-agg.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "flat-agg.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: flat-agg
@@ -218,7 +218,7 @@ spec:
       type: "demo/edge:1.0.0"
 `)
 	flatPath := filepath.Join(ws, "flat-release.yaml")
-	writeFixtureFile(t, flatPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, flatPath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: flat-release

@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: compose-api-synthesized
@@ -10,7 +10,7 @@ spec:
     host: "{{ .context.instance_id }}"
     service_port: "{{ optional .infra `port` 8080 }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `replicas` 1 }}
     containers:

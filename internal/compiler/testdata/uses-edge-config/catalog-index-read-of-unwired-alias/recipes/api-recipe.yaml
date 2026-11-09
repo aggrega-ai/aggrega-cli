@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-recipe
@@ -15,7 +15,7 @@ spec:
   # alias, so that read halts. Listed ahead of catalog/base, this Recipe shadows
   # the one there and is the only difference between the two builds.
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

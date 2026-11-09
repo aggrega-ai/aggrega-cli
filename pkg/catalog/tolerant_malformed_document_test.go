@@ -16,7 +16,7 @@ import (
 
 // malformedAggregaDocument declares the Aggrega envelope on a line of its own
 // and then fails to parse, so its header cannot be unmarshalled at all.
-const malformedAggregaDocument = `apiVersion: aggrega.ai/v1alpha1
+const malformedAggregaDocument = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata: [
   name: acc/broken
@@ -33,7 +33,7 @@ metadata: [
 
 // cleanComponentDocument is the positive control: a document the walk indexes,
 // so a walk that recorded nothing because it read nothing cannot pass.
-const cleanComponentDocument = `apiVersion: aggrega.ai/v1alpha1
+const cleanComponentDocument = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acc/clean

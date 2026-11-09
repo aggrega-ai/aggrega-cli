@@ -35,7 +35,7 @@ func rootedWorkspace(t *testing.T) string {
 	root := t.TempDir()
 	files := map[string]string{
 		".aggrega-config.yaml": "workspace: {}\noffline: true\n",
-		"parts/green.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"parts/green.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: the-launched-workspaces-release

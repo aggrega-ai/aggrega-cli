@@ -12,7 +12,7 @@ import (
 // reported as missing, never as the enclosing key the walk reached.
 func TestKeyRange_ReportsAKeyOnlyWhereTheDocumentCarriesIt(t *testing.T) {
 	t.Parallel()
-	const content = "# a comment\napiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  version: \"1.0.0\"\nspec: [1, 2]\n"
+	const content = "# a comment\napiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  version: \"1.0.0\"\nspec: [1, 2]\n"
 	doc := parseFieldDoc(t, content)
 	idx := BuildLineIndexWithEncoding([]byte(content), PositionEncodingUTF8)
 

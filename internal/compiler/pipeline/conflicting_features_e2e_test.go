@@ -39,9 +39,9 @@ func conflictingWorkspace(t *testing.T, aggregateSpec, releaseSpec string) pipel
 	}
 	documents := map[string]string{
 		"manifest.yaml": string(manifest),
-		"aggregate.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n" +
+		"aggregate.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n" +
 			"metadata:\n  name: conflict-app\n  version: \"1.0.0\"\nspec:\n" + aggregateSpec,
-		"release.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Release\n" +
+		"release.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Release\n" +
 			"metadata:\n  name: conflict-release\n  environment: local\n  version: \"1.0.0\"\n" +
 			"spec:\n  aggregate: conflict-app\n  manifest: conflicting-features-manifest\n" + releaseSpec,
 	}

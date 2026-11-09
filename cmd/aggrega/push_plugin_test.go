@@ -50,7 +50,7 @@ func (p *memStorePuller) RegistryPrefix() string { return "hub.aggrega.ai" }
 // operates=patch, scope=own, no custom host functions). Its bare identity
 // (metadata.name) is its artifact reference; the entity carries no separate
 // artifact field.
-const agreeingPluginEntity = `apiVersion: aggrega.ai/v1alpha1
+const agreeingPluginEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: patch
@@ -202,7 +202,7 @@ func TestPushPluginDescribeMismatchHaltsNoBytes(t *testing.T) {
 	t.Chdir(root)
 	entityPath := filepath.Join(root, "frp-step-patch.yaml")
 	// scope=host disagrees with the fixture's describe() (scope=own).
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: patch
@@ -389,7 +389,7 @@ func writeLargeGuestPlugin(t *testing.T, runtimeBlock string) (wsRoot, entityPat
 	}
 	entityPath = filepath.Join(root, "helm-plugin.yaml")
 	version := embeddedGuestVersion(t, largeGuestURI(t))
-	writeEntityFixture(t, entityPath, fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm-renderer
@@ -503,7 +503,7 @@ func writeProviderPluginWithContract(t *testing.T, specTail string) (wsRoot, ent
 	}
 	entityPath = filepath.Join(root, "helm-plugin.yaml")
 	version := embeddedGuestVersion(t, largeGuestURI(t))
-	writeEntityFixture(t, entityPath, fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm-renderer

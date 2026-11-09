@@ -14,7 +14,7 @@ import (
 
 // The workload body carries a template expression (.values.tag) so the proof
 // exercises the full resolve → EvalTemplate → parse path, not a static string.
-const wlLibraryBody = `apiVersion: aggrega.ai/v1alpha1
+const wlLibraryBody = `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

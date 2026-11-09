@@ -16,7 +16,7 @@ import (
 // included because the two are what a caller of this field pairs in practice,
 // and their independence is part of what the assertions pin.
 func hostNetworkWorkload(hostNetwork bool) *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", HostNetwork: hostNetwork}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", HostNetwork: hostNetwork}
 	c := types.ContainerSpec{Image: "media:1.0"}
 	c.Ports.Set("rtp", types.PortSpec{Port: 7881, Protocol: "UDP"})
 	w.Containers.Set("main", c)

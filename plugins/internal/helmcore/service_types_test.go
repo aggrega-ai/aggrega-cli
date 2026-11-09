@@ -25,7 +25,7 @@ type serviceTypeEntry struct {
 // declares two ports and whose services are exactly the given entries, in the
 // given order.
 func serviceTypeWorkload(form string, entries ...serviceTypeEntry) *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: form}
 	c := types.ContainerSpec{Image: "prometheus:3.0"}
 	c.Ports.Set("http", types.PortSpec{Port: 8080})
 	c.Ports.Set("admin", types.PortSpec{Port: 9090})

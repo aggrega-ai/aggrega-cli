@@ -248,7 +248,7 @@ func irZeroScaffold() *types.IRGraph {
 	nodes.Set("producer", types.IRNode{Labels: labels, Component: "core/producer", ResolvedVersion: "1.0.0"})
 
 	return &types.IRGraph{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "IR",
 		Metadata:   types.IRMetadata{AggregateName: "zero-value-scaffold"},
 		Spec: types.IRSpec{
@@ -264,7 +264,7 @@ func irZeroScaffold() *types.IRGraph {
 			InfraMapping:         types.OrderedMap[json.RawMessage]{},
 			FeatureValuesMapping: types.OrderedMap[types.OrderedMap[types.IRFeatureEntry]]{},
 			Provenance: types.IRProvenance{
-				SchemaVersion:    "v1alpha1",
+				SchemaVersion:    "v1beta1",
 				CompilerVersion:  "scaffold",
 				AggregateVersion: "1.0.0",
 				ManifestVersion:  "1.0.0",
@@ -304,7 +304,7 @@ func irZeroValidate(t *testing.T, g *types.IRGraph) []jsonvalidator.Finding {
 func irSchemaRequiredSets(t *testing.T) map[string][]string {
 	t.Helper()
 	var doc any
-	if err := json.Unmarshal([]byte(schemas.IRSchemaV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.IRSchemaV1beta1), &doc); err != nil {
 		t.Fatalf("decode embedded IR schema: %v", err)
 	}
 	out := map[string][]string{}

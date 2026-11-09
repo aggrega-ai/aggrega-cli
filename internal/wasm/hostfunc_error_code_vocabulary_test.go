@@ -37,7 +37,7 @@ func hostfuncErrorCodes(t *testing.T) []string {
 			} `json:"code"`
 		} `json:"properties"`
 	}
-	if err := json.Unmarshal([]byte(schemas.WasmHostfuncErrorV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmHostfuncErrorV1beta1), &doc); err != nil {
 		t.Fatalf("unmarshal host-function error schema: %v", err)
 	}
 	if len(doc.Properties.Code.Enum) == 0 {
@@ -56,7 +56,7 @@ func hostfuncErrorCodeDescription(t *testing.T) string {
 			} `json:"code"`
 		} `json:"properties"`
 	}
-	if err := json.Unmarshal([]byte(schemas.WasmHostfuncErrorV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmHostfuncErrorV1beta1), &doc); err != nil {
 		t.Fatalf("unmarshal host-function error schema: %v", err)
 	}
 	if doc.Properties.Code.Description == "" {

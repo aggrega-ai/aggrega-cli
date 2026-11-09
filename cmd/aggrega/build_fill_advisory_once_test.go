@@ -53,7 +53,7 @@ func twoRunFillWorkspace(t *testing.T, root string) {
 	t.Helper()
 	lintOnceWorkspace(t, root)
 	catalog := filepath.Join(root, workspaceconfig.ConventionalCatalogDir)
-	writeFixture(t, filepath.Join(catalog, "component", "test", "svc", "1.0.0", "component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalog, "component", "test", "svc", "1.0.0", "component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -67,7 +67,7 @@ spec:
     infra:
       replicas: { type: integer, default: 1 }
 `)
-	writeFixture(t, filepath.Join(catalog, "recipe", "helm", "svc", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalog, "recipe", "helm", "svc", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -76,7 +76,7 @@ spec:
   capability: helm
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:

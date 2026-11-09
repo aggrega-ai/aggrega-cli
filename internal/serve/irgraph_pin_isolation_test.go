@@ -35,7 +35,7 @@ func pinIsolationWorkspace(t *testing.T) (ws, releaseA, releaseB string) {
 	ws = t.TempDir()
 	const cacheDir = ".aggrega/cache"
 
-	componentV1 := []byte(`apiVersion: aggrega.ai/v1alpha1
+	componentV1 := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -47,7 +47,7 @@ spec:
     provides:
       host: { type: string, required: true }
 `)
-	componentV2 := []byte(`apiVersion: aggrega.ai/v1alpha1
+	componentV2 := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -81,7 +81,7 @@ spec:
 	// A single recipe + provider in the catalog dir so the closure resolves and
 	// the pipeline renders. The recipe implements demo/svc (version-agnostic).
 	catalogDir := filepath.Join(ws, "catalog")
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -92,7 +92,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -100,7 +100,7 @@ spec:
         image: demo-server:latest
 `)
 
-	manifest := `apiVersion: aggrega.ai/v1alpha1
+	manifest := `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -116,7 +116,7 @@ spec:
 	// same component. Distinct names so closure compute treats them independently.
 	makeRelease := func(name, version string) string {
 		aggName := name + "-agg"
-		writeFixtureFile(t, filepath.Join(ws, aggName+".yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+		writeFixtureFile(t, filepath.Join(ws, aggName+".yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: %s
@@ -127,7 +127,7 @@ spec:
       type: "demo/svc:%s"
 `, aggName, version))
 		relPath := filepath.Join(ws, name+".yaml")
-		writeFixtureFile(t, relPath, fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+		writeFixtureFile(t, relPath, fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: %s

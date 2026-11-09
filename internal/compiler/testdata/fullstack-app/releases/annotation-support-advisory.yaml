@@ -10,7 +10,7 @@
 #
 # The middle one is the case an author most needs told about: a platform key that
 # reaches nothing and, without a word, is indistinguishable from a typo.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod-release-annotation-support-advisory

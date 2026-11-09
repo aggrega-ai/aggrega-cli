@@ -47,7 +47,7 @@ func TestIntegration_LintRelease_ClosureScoped(t *testing.T) {
 	// Closure-scoping: a schema-broken entity OUTSIDE the Release's closure (an
 	// unresolvable cross-document $ref — parses + indexes, fails Pass-2) is never
 	// reached by the closure walk, so lint --release still passes...
-	writeFixture(t, filepath.Join(composeCatalog, "component", "orphan.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(composeCatalog, "component", "orphan.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/orphan-out-of-closure

@@ -18,7 +18,7 @@ import (
 // wording is compared.
 //
 // The document is deliberately ASCII — see the position pin below for why.
-const envelopeParityDocument = `apiVersion: aggrega.ai/v1alpha1
+const envelopeParityDocument = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: r
@@ -169,7 +169,7 @@ func TestEnvelopeSentenceParityAcrossSurfaces(t *testing.T) {
 func TestEnvelopeErrorTextCarriesPosition(t *testing.T) {
 	t.Parallel()
 
-	content := []byte(`apiVersion: aggrega.ai/v1alpha1
+	content := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/probe

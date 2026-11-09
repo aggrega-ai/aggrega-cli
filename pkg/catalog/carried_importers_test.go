@@ -23,7 +23,7 @@ import (
 // identity and version it was handed.
 func carriedImporterEntity(name, version, description string) types.Plugin {
 	return types.Plugin{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Plugin",
 		Metadata: types.PluginMetadata{
 			Name: name, Version: version, PluginType: importerPluginType, Description: description,

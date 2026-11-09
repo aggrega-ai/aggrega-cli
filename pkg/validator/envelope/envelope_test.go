@@ -14,7 +14,7 @@ import (
 func TestEnvelope_ValidComponentPasses(t *testing.T) {
 	t.Parallel()
 	doc := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api
@@ -40,7 +40,7 @@ spec:
 func TestEnvelope_CompactInjectRefused(t *testing.T) {
 	t.Parallel()
 	doc := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: compact-refusal
@@ -71,7 +71,7 @@ spec:
 	}
 	// The verbose form of the same edge passes.
 	good := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: compact-refusal
@@ -103,7 +103,7 @@ spec:
 func TestEnvelope_ReleaseValuesBanLoud(t *testing.T) {
 	t.Parallel()
 	doc := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: ban-values
@@ -139,7 +139,7 @@ spec:
 func TestEnvelope_ReleaseAggregatePointerWithExtendsLoud(t *testing.T) {
 	t.Parallel()
 	doc := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: ban-extends-aggregate
@@ -170,7 +170,7 @@ spec:
 func TestEnvelope_AggregateComponentInfraRefused(t *testing.T) {
 	t.Parallel()
 	doc := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: infra-refusal
@@ -208,7 +208,7 @@ func TestEnvelope_AggregateEdgeInfraRefused(t *testing.T) {
 	t.Parallel()
 	doc := func(pillar string) []byte {
 		return []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: edge-infra-refusal
@@ -251,7 +251,7 @@ spec:
 func TestEnvelope_BareStringUsesTargetRefused(t *testing.T) {
 	t.Parallel()
 	doc := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: bare-string-refusal
@@ -283,7 +283,7 @@ spec:
 func TestEnvelope_TemplateBearingValuesTolerated(t *testing.T) {
 	t.Parallel()
 	doc := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: template-bearing
@@ -312,7 +312,7 @@ spec:
 func TestEnvelope_StraySecretNamesRefused(t *testing.T) {
 	t.Parallel()
 	doc := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/stray
@@ -338,7 +338,7 @@ spec:
 // spec.workload is a single-key `$import:` map carrying imp.
 func frWorkloadImportDoc(imp string) []byte {
 	return []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: fr-workload-import

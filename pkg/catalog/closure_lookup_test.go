@@ -49,7 +49,7 @@ func writeYAMLToCatalog(t *testing.T, dir, relpath, content string) {
 func TestClosureLookupResolvesEntitiesFromCatalog(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	compBody := `apiVersion: aggrega.ai/v1alpha1
+	compBody := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: api-server
@@ -105,7 +105,7 @@ spec:
 func TestClosureLookupRoutesRecipeURIToMetadataName(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	recipeBody := `apiVersion: aggrega.ai/v1alpha1
+	recipeBody := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -114,7 +114,7 @@ spec:
   capability: helm
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -182,7 +182,7 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 
 	// A valid Component: the registry tier puts a fetched body through its kind's
 	// schema before it caches it, so the served document must be one its schema admits.
-	compBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: api-server\n  version: 2.0.0\n" +
+	compBody := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: api-server\n  version: 2.0.0\n" +
 		"  labels:\n    component.aggrega.ai/type: server\nspec: {}\n")
 
 	store := memory.New()
@@ -252,7 +252,7 @@ func TestPullWritesSchemaLibraryAsLibraryYAML(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	libBody := []byte(`apiVersion: aggrega.ai/v1alpha1
+	libBody := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Probes
@@ -301,7 +301,7 @@ func TestPullWritesMappingLibraryAsLibraryYAML(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	libBody := []byte(`apiVersion: aggrega.ai/v1alpha1
+	libBody := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BaseMappings
@@ -347,7 +347,7 @@ func TestResolvePluginVersionTagRoundTrip(t *testing.T) {
 	}
 
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 version-tag round-trip fixture")
-	entityYAML := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\n")
+	entityYAML := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\n")
 	contentDigest := digest.ContentDigest(wasmBytes)
 	const identity = "frp/patch"
 	const version = "1.0.0"
@@ -441,7 +441,7 @@ func TestResolvePluginManifestSelfVerify(t *testing.T) {
 	}
 
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 manifest self-verify fixture")
-	entityYAML := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\n")
+	entityYAML := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\n")
 	contentDigest := digest.ContentDigest(wasmBytes)
 	const identity = "frp/patch"
 	const version = "1.0.0"
@@ -537,7 +537,7 @@ func TestResolvePluginManifestAuthorityBeatsForgedContentPin(t *testing.T) {
 	}
 
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 authority fixture")
-	entityYAML := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/authority\n  version: 1.0.0\n")
+	entityYAML := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: frp/authority\n  version: 1.0.0\n")
 	origDigest := digest.ContentDigest(wasmBytes)
 	const identity = "frp/authority"
 	const version = "1.0.0"

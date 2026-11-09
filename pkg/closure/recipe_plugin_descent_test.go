@@ -29,7 +29,7 @@ const (
 // providerDescentRelease names a manifest so the computed closure carries a Recipe
 // entity (via the components-mapping value) whose spec the descent reads.
 const providerDescentRelease = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: prod
@@ -41,7 +41,7 @@ spec:
 `
 
 const providerDescentManifest = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app
@@ -81,7 +81,7 @@ const (
 // reference is the derived identity coordinate (<pluginType>/<name>).
 func pluginEntity(t *testing.T, name, pluginType string) *types.Plugin {
 	t.Helper()
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: " + name +
+	src := "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: " + name +
 		"\n  version: 1.0.0\n  pluginType: " + pluginType + "\nspec:\n  abiVersion: v1alpha1\n"
 	var wp types.Plugin
 	if err := yaml.Unmarshal([]byte(src), &wp); err != nil {
@@ -95,7 +95,7 @@ func pluginEntity(t *testing.T, name, pluginType string) *types.Plugin {
 // RecipeLoader.
 func recipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI string) *types.Recipe {
 	t.Helper()
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name +
+	src := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: " + name +
 		"\n  version: 1.0.0\nspec:\n  capability: " + provider + "\n  implements: core/svc\n" +
 		"  pipeline:\n    - id: patch\n      plugin: " + pluginEntityURI + "\n      function: step\n"
 	var r types.Recipe
@@ -111,7 +111,7 @@ func recipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI stri
 // FeatureRecipe axis.
 func featureRecipeWithPipelinePlugin(t *testing.T, name, provider, pluginEntityURI string) *types.FeatureRecipe {
 	t.Helper()
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
+	src := "apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
 		"\n  version: 1.0.0\nspec:\n  capability: " + provider + "\n  implements: core/cred\n" +
 		"  pipeline:\n    - id: patch\n      plugin: " + pluginEntityURI + "\n      function: step\n"
 	var fr types.FeatureRecipe
@@ -331,7 +331,7 @@ const (
 // closure carries a FeatureRecipe entity (via the features-mapping value) whose
 // pipeline plugins the descent reads.
 const featureRecipeDescentManifest = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app

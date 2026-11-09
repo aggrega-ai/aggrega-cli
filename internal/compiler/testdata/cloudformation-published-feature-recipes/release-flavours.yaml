@@ -17,7 +17,7 @@
 # That is deliberate: the tier is what proves each boundary's parameter carries
 # its own resolved settings rather than a copy of one render, and identical
 # values would satisfy a presence check while proving nothing.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-published-feature-recipes

@@ -19,7 +19,7 @@ import (
 // walkLinksComponent is the one entity a row lays, named so that reading it shows
 // up by name.
 func walkLinksComponent(name string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: " + name +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: " + name +
 		"\n  version: \"1.0.0\"\n  labels:\n    component.aggrega.ai/type: server\nspec: {}\n"
 }
 

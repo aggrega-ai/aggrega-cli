@@ -76,7 +76,7 @@ func (r *movingReferenceResolver) Resolve(spec closure.SourceSpec) (*closure.Res
 func writeGitRefWorkspace(t *testing.T, root string) (releasePath, catalogRoot string) {
 	t.Helper()
 	releasePath, catalogRoot = writeValidWorkspace(t, root)
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -91,7 +91,7 @@ spec:
     ref: "v1.0.0"
     module_subdir: modules/alpha
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:

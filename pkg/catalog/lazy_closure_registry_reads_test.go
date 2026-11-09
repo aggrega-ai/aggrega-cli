@@ -110,7 +110,7 @@ func (p *kindRecordingPuller) reset() {
 
 // extendingChildYAML is a local Component whose extends chain names a parent no
 // local tier holds, so the chain's parent is the one read that reaches a registry.
-const extendingChildYAML = `apiVersion: aggrega.ai/v1alpha1
+const extendingChildYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/extending-child

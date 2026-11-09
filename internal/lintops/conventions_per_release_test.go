@@ -18,7 +18,7 @@ import (
 // prefix. The two are the side-by-side variants of one entity a workspace keeps
 // when each Release reads a catalog of its own.
 const (
-	perReleaseComponent = `apiVersion: aggrega.ai/v1alpha1
+	perReleaseComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/api-server
@@ -31,7 +31,7 @@ spec:
     values:
       type: object
 `
-	plantedComponent = `apiVersion: aggrega.ai/v1alpha1
+	plantedComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/api-server
@@ -64,7 +64,7 @@ func perReleaseWorkspace(t *testing.T, config string, releases []string, entitie
 	}
 	put(workspaceconfig.ConfigFilename, config)
 	for _, r := range releases {
-		put(r, "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: probe/"+strings.TrimSuffix(r, ".yaml")+"\n  version: 1.0.0\nspec: {}\n")
+		put(r, "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: probe/"+strings.TrimSuffix(r, ".yaml")+"\n  version: 1.0.0\nspec: {}\n")
 	}
 	for rel, body := range entities {
 		put(rel, body)

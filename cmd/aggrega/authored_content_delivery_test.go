@@ -213,7 +213,7 @@ func TestGeneratingCatalogEntitiesReportsContentAndWritesNothing(t *testing.T) {
 	}
 	overlayPath := filepath.Join(root, "overlay.yaml")
 	writeFixture(t, overlayPath, `# SPDX-License-Identifier: Apache-2.0
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: publishing-linter
@@ -267,7 +267,7 @@ spec:
 
 // machineStateEntity is a Plugin entity carrying neither machine-owned record, so
 // bringing it into step with its module is a real write rather than a no-op.
-const machineStateEntity = `apiVersion: aggrega.ai/v1alpha1
+const machineStateEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: publishing-linter

@@ -21,7 +21,7 @@ func parseFieldDoc(t *testing.T, content string) *yaml.Node {
 func TestFieldNode_TopLevelKey(t *testing.T) {
 	t.Parallel()
 	doc := parseFieldDoc(t,
-		`apiVersion: aggrega.ai/v1alpha1
+		`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 spec:
   components:
@@ -43,7 +43,7 @@ spec:
 func TestFieldNode_NestedParameterKey(t *testing.T) {
 	t.Parallel()
 	doc := parseFieldDoc(t,
-		`apiVersion: aggrega.ai/v1alpha1
+		`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 spec:
   parameters:
@@ -64,7 +64,7 @@ spec:
 func TestFieldNode_ComponentExtendsValue(t *testing.T) {
 	t.Parallel()
 	doc := parseFieldDoc(t,
-		`apiVersion: aggrega.ai/v1alpha1
+		`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 spec:
   components:
@@ -89,7 +89,7 @@ spec:
 func TestFieldNode_LeadingDotIsOptional(t *testing.T) {
 	t.Parallel()
 	doc := parseFieldDoc(t,
-		`apiVersion: aggrega.ai/v1alpha1
+		`apiVersion: aggrega.ai/v1beta1
 kind: Component
 spec:
   schema:
@@ -113,7 +113,7 @@ spec:
 func TestFieldNode_FirstSegmentMismatchReturnsNil(t *testing.T) {
 	t.Parallel()
 	doc := parseFieldDoc(t,
-		`apiVersion: aggrega.ai/v1alpha1
+		`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 spec:
   components: {}

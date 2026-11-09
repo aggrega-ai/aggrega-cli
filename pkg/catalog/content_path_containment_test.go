@@ -42,7 +42,7 @@ type containmentSurface struct {
 const containmentPathMarker = "__PATH__"
 
 func containmentSurfaces() []containmentSurface {
-	const recipeHead = `apiVersion: aggrega.ai/v1alpha1
+	const recipeHead = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: contained
@@ -51,7 +51,7 @@ spec:
   capability: helm
   implements: core/compute/server:1.0.0
 `
-	const featureRecipeHead = `apiVersion: aggrega.ai/v1alpha1
+	const featureRecipeHead = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: contained-fr
@@ -60,7 +60,7 @@ spec:
   capability: helm
   implements: example/sidecar:1.0.0
 `
-	const componentHead = `apiVersion: aggrega.ai/v1alpha1
+	const componentHead = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: contained
@@ -69,7 +69,7 @@ metadata:
     component.aggrega.ai/type: server
 spec:
 `
-	const featureHead = `apiVersion: aggrega.ai/v1alpha1
+	const featureHead = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/contained

@@ -1,7 +1,7 @@
 documents:
   - path: components/imported-ai-model-chatopenai.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-model/chatopenai
@@ -24,7 +24,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-tool-httprequest.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-tool/httprequest
@@ -42,7 +42,7 @@ documents:
             additionalProperties: false
   - path: aggregate.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Aggregate
       metadata:
         name: imported/flow

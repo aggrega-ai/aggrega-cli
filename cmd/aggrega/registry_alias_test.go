@@ -119,7 +119,7 @@ func TestPushResolvesAlias(t *testing.T) {
 	t.Parallel()
 	rw := resolveWorkspaceWithAlias(t, "dev.local:5000", "dev")
 	entityPath := filepath.Join(t.TempDir(), "1.0.0", "entity.yaml")
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server

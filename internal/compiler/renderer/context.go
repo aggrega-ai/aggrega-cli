@@ -9,7 +9,7 @@ import (
 )
 
 // AssembleNodeContext builds the TemplateContext for one node, matching
-// template-context-v1alpha1.schema.json. The context is the projection Recipe
+// template-context-v1beta1.schema.json. The context is the projection Recipe
 // and FeatureRecipe templates are written against — a view assembled in memory
 // for the duration of the render and never persisted — so what this function
 // puts on it is exactly what a template can read.

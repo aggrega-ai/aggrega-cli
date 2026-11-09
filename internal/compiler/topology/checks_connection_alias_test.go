@@ -30,7 +30,7 @@ import (
 
 const aliasSharedCatalog = "../pipeline/testdata/delivery-key-origin/catalog/base"
 
-const aliasConsumer = `apiVersion: aggrega.ai/v1alpha1
+const aliasConsumer = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/consumer
@@ -48,7 +48,7 @@ spec:
       host: { type: string, required: true }
 `
 
-const aliasMarker = `apiVersion: aggrega.ai/v1alpha1
+const aliasMarker = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/marker
@@ -63,7 +63,7 @@ spec:
       selector: "component.aggrega.ai/type=stateful-server"
 `
 
-const aliasConsumerRecipe = `apiVersion: aggrega.ai/v1alpha1
+const aliasConsumerRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: consumer-recipe
@@ -74,7 +74,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -83,7 +83,7 @@ spec:
           p: 8080
 `
 
-const aliasMarkerRecipe = `apiVersion: aggrega.ai/v1alpha1
+const aliasMarkerRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: marker-compose
@@ -93,7 +93,7 @@ spec:
   implements: core/marker
 `
 
-const aliasManifest = `apiVersion: aggrega.ai/v1alpha1
+const aliasManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: alias-manifest
@@ -163,7 +163,7 @@ func indented(block string, spaces int) string {
 }
 
 func (c aliasCase) aggregate() string {
-	head := `apiVersion: aggrega.ai/v1alpha1
+	head := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: alias-app
@@ -179,7 +179,7 @@ spec:
 }
 
 func (c aliasCase) release() string {
-	doc := `apiVersion: aggrega.ai/v1alpha1
+	doc := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: alias-release

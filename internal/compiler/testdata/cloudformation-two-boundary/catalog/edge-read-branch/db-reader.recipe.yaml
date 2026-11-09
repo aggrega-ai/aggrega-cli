@@ -10,7 +10,7 @@
 # connection, which the build refuses because the branch would be decided
 # against the placeholder rather than the value.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: db-reader

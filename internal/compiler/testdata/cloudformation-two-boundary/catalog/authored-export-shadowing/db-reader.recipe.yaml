@@ -17,7 +17,7 @@
 # boundary, and the Outputs entry below spells that same name. The two exports
 # would reach the deployment target competing for one name, so the build halts.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: db-reader

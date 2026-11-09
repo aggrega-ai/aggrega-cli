@@ -32,7 +32,7 @@ import (
 
 // twoSubsystemsOneName declares `backend` in two subsystems. Both take the
 // identity `backend`, because a subsystem contributes nothing to it.
-const twoSubsystemsOneName = `apiVersion: aggrega.ai/v1alpha1
+const twoSubsystemsOneName = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: fullstack-app
@@ -80,7 +80,7 @@ spec:
 // the subsystem arrangement. Renaming the second declaration instead would leave
 // a component the Release places nowhere, and the placement rule ahead of this
 // one would halt on that — a different fault, proving nothing about this one.
-const twoSubsystemsDistinctNames = `apiVersion: aggrega.ai/v1alpha1
+const twoSubsystemsDistinctNames = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: fullstack-app

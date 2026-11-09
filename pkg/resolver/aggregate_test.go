@@ -32,7 +32,7 @@ func loadAggregate(t *testing.T, src string) *types.Aggregate {
 func TestWalkAggregate_FlatComponentNoAnnotations(t *testing.T) {
 	t.Parallel()
 	agg := loadAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -57,7 +57,7 @@ spec:
 func TestWalkAggregate_TopLevelComponentAnnotation(t *testing.T) {
 	t.Parallel()
 	agg := loadAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -86,7 +86,7 @@ spec:
 func TestWalkAggregate_SubsystemAnnotationPropagates(t *testing.T) {
 	t.Parallel()
 	agg := loadAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -125,7 +125,7 @@ spec:
 func TestWalkAggregate_ComponentAnnotationOverridesSubsystem(t *testing.T) {
 	t.Parallel()
 	agg := loadAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -161,7 +161,7 @@ spec:
 func TestWalkAggregate_NestedSubsystemCascade(t *testing.T) {
 	t.Parallel()
 	agg := loadAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -194,7 +194,7 @@ spec:
 func TestWalkAggregate_NullOptOutAtComponentLevel(t *testing.T) {
 	t.Parallel()
 	agg := loadAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -232,7 +232,7 @@ spec:
 func TestWalkAggregate_NullOptOutAtSubsystemLevel(t *testing.T) {
 	t.Parallel()
 	agg := loadAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -281,7 +281,7 @@ spec:
 func TestWalkAggregate_DeterministicIteration(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -357,7 +357,7 @@ func orderedKeys(m types.OrderedMap[string]) []string {
 func TestWalkAggregate_StructuredAnnotationParses_AndIsOmittedFromScalarProjection(t *testing.T) {
 	t.Parallel()
 	agg := loadAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -407,7 +407,7 @@ func TestWalkAggregate_StructuredAnnotationPerSubkeyOptOut(t *testing.T) {
 	// per-subkey opt-out — the merged effective value drops the
 	// opted-out subkey while sibling subkeys stand.
 	agg := loadAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test

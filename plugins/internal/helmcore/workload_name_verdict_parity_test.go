@@ -37,7 +37,7 @@ func TestWorkloadNameVerdicts_MeasureTheNamesTheSynthesizerEmits(t *testing.T) {
 
 	keys := []string{"default", "metricsexporter"}
 	workload := &types.Workload{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Workload",
 		Form:       rendercore.WorkloadFormScheduled,
 		Schedule:   "@daily",

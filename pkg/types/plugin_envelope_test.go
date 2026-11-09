@@ -14,7 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
-const validPlugin = `apiVersion: aggrega.ai/v1alpha1
+const validPlugin = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: publishing-linter
@@ -87,7 +87,7 @@ func TestPlugin_RoundTripPreservesConfigKVOrder(t *testing.T) {
 // the reason the nested blocks are pointer-typed.
 func TestPlugin_OmittedOptionalBlocksRoundTripClean(t *testing.T) {
 	t.Parallel()
-	const minimal = `apiVersion: aggrega.ai/v1alpha1
+	const minimal = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: p
@@ -120,19 +120,19 @@ spec:
 func TestPlugin_EnvelopeRejectsMalformed(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"unknown pluginType": `apiVersion: aggrega.ai/v1alpha1
+		"unknown pluginType": `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: nonexistent}
 spec:
   abiVersion: v1alpha1
 `,
-		"unknown abiVersion": `apiVersion: aggrega.ai/v1alpha1
+		"unknown abiVersion": `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
   abiVersion: v2
 `,
-		"unknown spec sibling": `apiVersion: aggrega.ai/v1alpha1
+		"unknown spec sibling": `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
@@ -155,7 +155,7 @@ spec:
 	}
 }
 
-const pluginWithExports = `apiVersion: aggrega.ai/v1alpha1
+const pluginWithExports = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: publishing-linter
@@ -188,7 +188,7 @@ func TestPlugin_EnvelopeAcceptsExports(t *testing.T) {
 // existing Plugin documents authored before the block stay valid.
 func TestPlugin_ExportsAreAdditive(t *testing.T) {
 	t.Parallel()
-	const withoutExports = `apiVersion: aggrega.ai/v1alpha1
+	const withoutExports = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: publishing-linter
@@ -241,7 +241,7 @@ func TestPlugin_ExportsRoundTripPreservesOrder(t *testing.T) {
 func TestPlugin_EnvelopeRejectsBadExportEnum(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"bad operates": `apiVersion: aggrega.ai/v1alpha1
+		"bad operates": `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
@@ -250,7 +250,7 @@ spec:
     - name: lint_naming
       operates: rewrite
 `,
-		"bad scope": `apiVersion: aggrega.ai/v1alpha1
+		"bad scope": `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
@@ -259,7 +259,7 @@ spec:
     - name: lint_naming
       scope: cluster
 `,
-		"export missing name": `apiVersion: aggrega.ai/v1alpha1
+		"export missing name": `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
@@ -267,7 +267,7 @@ spec:
   exports:
     - operates: patch
 `,
-		"unknown export sibling": `apiVersion: aggrega.ai/v1alpha1
+		"unknown export sibling": `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
@@ -295,7 +295,7 @@ spec:
 // pluginWithCommandFlag renders a CLI Plugin whose one mirrored command carries
 // the given flag entry, written as a YAML flow mapping.
 func pluginWithCommandFlag(flag string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata: {name: greet, version: 1.0.0, pluginType: cli}
 spec:

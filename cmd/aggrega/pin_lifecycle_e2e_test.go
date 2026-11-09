@@ -42,7 +42,7 @@ func pinLifecycleWorkspace(t *testing.T, root, chartURL, config string, withRele
 	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\n"+config)
 	recipeDir := filepath.Join(root, "catalog", "recipe", "helm", "server", "1.0.0")
 	recipePath = filepath.Join(recipeDir, "recipe.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -62,7 +62,7 @@ spec:
 	if !withRelease {
 		return recipePath
 	}
-	writeFixture(t, filepath.Join(root, "catalog", "component", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "catalog", "component", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -75,7 +75,7 @@ spec:
       port: { type: integer, default: 8080 }
 `)
 	writeHelmRendererPlugin(t, filepath.Join(root, "catalog", "providers"))
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -87,7 +87,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -98,7 +98,7 @@ spec:
       type:
         server: helm/server:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: pin-rel
@@ -308,10 +308,10 @@ func TestPinSourcesOverridesItsOwnKeyInBothDirections(t *testing.T) {
 // and returns its document path.
 func holdFixtureRecipe(t *testing.T, root, name, source string) string {
 	t.Helper()
-	body := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n" +
+	body := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n" +
 		"spec:\n  capability: helm\n  implements: " + name + "\n" + source
 	if source == "" {
-		body += "  workload: |\n    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n    containers:\n      main:\n        image: demo:1\n"
+		body += "  workload: |\n    apiVersion: aggrega.ai/v1beta1\n    kind: Workload\n    containers:\n      main:\n        image: demo:1\n"
 	}
 	path := filepath.Join(root, "catalog", "recipe", "helm", name, "1.0.0", "recipe.yaml")
 	writeFixture(t, path, body)

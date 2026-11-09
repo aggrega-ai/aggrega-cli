@@ -7,7 +7,7 @@
 # a real assertion: a realization that rendered per component rather than per
 # boundary would emit two parameters in a boundary holding two components, and a
 # fixture with one component per boundary could not tell the two apart.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: cloudformation-published-feature-recipes

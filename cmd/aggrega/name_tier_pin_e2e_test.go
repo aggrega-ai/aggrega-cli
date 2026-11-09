@@ -34,7 +34,7 @@ import (
 func nameTierFixture(t *testing.T, root string) (catalogDir, releasePath string) {
 	t.Helper()
 	catalogDir = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogDir, "component/example/compute/greeter/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/example/compute/greeter/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/greeter
@@ -54,7 +54,7 @@ spec:
         default: 8080
 `)
 	for _, colour := range []string{"blue", "green"} {
-		writeFixture(t, filepath.Join(catalogDir, "recipe/compose/greeter-"+colour+"/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogDir, "recipe/compose/greeter-"+colour+"/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: greeter-`+colour+`
@@ -63,7 +63,7 @@ spec:
   capability: compose
   implements: example/compute/greeter:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -74,7 +74,7 @@ spec:
           http: {{ optional .infra `+"`port`"+` 8080 }}
 `)
 	}
-	writeFixture(t, filepath.Join(catalogDir, "feature/example/banner/1.0.0/feature.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "feature/example/banner/1.0.0/feature.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/banner
@@ -90,7 +90,7 @@ spec:
         type: string
 `)
 	for _, tone := range []string{"plain", "loud"} {
-		writeFixture(t, filepath.Join(catalogDir, "feature-recipe/compose/banner-"+tone+"/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogDir, "feature-recipe/compose/banner-"+tone+"/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: banner-`+tone+`
@@ -102,7 +102,7 @@ spec:
     banner: "{{ .values.text }}-`+tone+`"
 `)
 	}
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: greeters
@@ -120,7 +120,7 @@ spec:
         loud-banner:
           type: example/banner
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: greeters-manifest
@@ -139,7 +139,7 @@ spec:
         loud-banner: compose/banner-loud:1.0.0
 `)
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: greeters-release

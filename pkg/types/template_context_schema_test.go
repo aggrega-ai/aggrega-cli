@@ -139,7 +139,7 @@ func resolveContextSchema(node any, defs map[string]any) (map[string]any, bool) 
 }
 
 // TestTemplateContextMirrorsItsSchema holds the render context, the connection view
-// and the attachment shape to template-context-v1alpha1.schema.json in both
+// and the attachment shape to template-context-v1beta1.schema.json in both
 // directions. The two control rows walk a type that drops a declared field and a
 // type that adds an undeclared one against the same definitions, and must be
 // reported exactly — so a clean result on the real rows comes from a walk that
@@ -147,7 +147,7 @@ func resolveContextSchema(node any, defs map[string]any) (map[string]any, bool) 
 func TestTemplateContextMirrorsItsSchema(t *testing.T) {
 	t.Parallel()
 	var doc map[string]any
-	if err := json.Unmarshal([]byte(schemas.TemplateContextV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.TemplateContextV1beta1), &doc); err != nil {
 		t.Fatalf("decode the template-context schema: %v", err)
 	}
 	defs, _ := doc["$defs"].(map[string]any)

@@ -28,9 +28,9 @@ func TestTheIgnoreAdvisoryReadsEachEntityAsTheKindItWasCollectedAs(t *testing.T)
 	ws := t.TempDir()
 	cat := filepath.Join(ws, "catalog")
 	documents := map[string]string{
-		"recipe/helm/demo/1.0.0/recipe.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: demo\n  version: 1.0.0\n" +
+		"recipe/helm/demo/1.0.0/recipe.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: demo\n  version: 1.0.0\n" +
 			"spec:\n  capability: helm\n  implements: core/demo:1.0.0\n  source: ./chart\n",
-		"featurerecipe/helm/demo/1.0.0/recipe.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: demo\n  version: 1.0.0\n" +
+		"featurerecipe/helm/demo/1.0.0/recipe.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: demo\n  version: 1.0.0\n" +
 			"spec:\n  capability: helm\n  implements: core/demo-feature:1.0.0\n  source: ./chart\n",
 	}
 	other := types.IgnorePlugin{Name: "provider/other-helm", Patterns: []string{"only-this/"}}

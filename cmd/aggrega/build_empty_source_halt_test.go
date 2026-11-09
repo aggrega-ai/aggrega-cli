@@ -30,7 +30,7 @@ import (
 func writeEmptySourceWorkspace(t *testing.T, root, sourceLine string) (releasePath, catalogRoot string) {
 	t.Helper()
 	releasePath, catalogRoot = writeValidWorkspace(t, root)
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -39,7 +39,7 @@ spec:
   capability: helm
   implements: core/server
 `+sourceLine+`  workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:

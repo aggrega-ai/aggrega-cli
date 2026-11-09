@@ -23,7 +23,7 @@ import (
 const editableAggregate = `# The storefront application.
 #
 # The ordering below is deliberate: the web tier reads first.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: storefront        # the module's own name
@@ -60,7 +60,7 @@ spec:
 // operator concerns only, so a request asking it to carry a developer value
 // composes a document the schema refuses.
 const editableRelease = `# The production deployment.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: storefront-prod

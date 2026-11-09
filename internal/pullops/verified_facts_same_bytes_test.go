@@ -82,13 +82,13 @@ func TestTheFactsAPassVerifiesReachEveryRowPinningTheSameBytes(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			store := memory.New()
-			body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: test/svc\n")
+			body := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: test/svc\n")
 			contentDg := digest.ContentDigest(body)
 			manifestDg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, body, nil)
 			if err != nil {
 				t.Fatalf("Push: %v", err)
 			}
-			otherBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: test/other\n")
+			otherBody := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: test/other\n")
 			otherContentDg := digest.ContentDigest(otherBody)
 			otherManifestDg, err := oci.Push(ctx, memory.New(), "1.0.0", oci.MediaTypeComponent, otherBody, nil)
 			if err != nil {

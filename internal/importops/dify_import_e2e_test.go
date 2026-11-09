@@ -342,13 +342,13 @@ const difySecretName = "dify-test-credentials"
 func writeDifyBuild(t *testing.T, dir, parameters string) string {
 	t.Helper()
 	var manifest strings.Builder
-	manifest.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported/flow\n" +
+	manifest.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: imported/flow\n" +
 		"  version: 0.1.0\nspec:\n  mappings:\n    components:\n      type:\n")
 	for _, c := range difyBuildComponents {
 		manifest.WriteString("        " + c.component + ": helm/" + c.recipe + "\n")
 	}
 	manifest.WriteString("    features:\n      type:\n        core/referenced-secret: helm/k8s-existing-secret\n")
-	release := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: imported/flow\n" +
+	release := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: imported/flow\n" +
 		"  environment: development\n  version: 0.1.0\nspec:\n  aggregate: imported/flow\n  manifest: imported/flow\n"
 	if parameters != "" {
 		release += "  parameters:\n" + parameters

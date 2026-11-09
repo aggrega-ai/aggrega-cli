@@ -7,7 +7,7 @@ package types
 
 // FeatureRecipe's struct declarations (FeatureRecipe, FeatureRecipeMetadata,
 // FeatureRecipeSpec) are generated into featurerecipe_gen.go from the
-// published featurerecipe-v1alpha1 schema; their godoc is the schema's
+// published featurerecipe-v1beta1 schema; their godoc is the schema's
 // descriptions. The content-shape and shared types the generated spec
 // references stay hand-written with their marshalers — ValuesMapping
 // (valuesmapping.go), WorkloadTemplate (workload_template.go), ArtifactEntry

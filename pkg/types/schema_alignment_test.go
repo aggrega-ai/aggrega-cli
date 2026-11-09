@@ -184,7 +184,7 @@ func alignmentCases() []alignmentCase {
 	return []alignmentCase{
 		{
 			kind:   envelope.KindComponent,
-			schema: schemas.ComponentV1alpha1,
+			schema: schemas.ComponentV1beta1,
 			roots:  []reflect.Type{reflect.TypeOf(types.Component{})},
 			exceptions: map[string]string{
 				"component.aggrega.ai/type": labelKeyException,
@@ -193,7 +193,7 @@ func alignmentCases() []alignmentCase {
 		},
 		{
 			kind:   envelope.KindFeature,
-			schema: schemas.FeatureV1alpha1,
+			schema: schemas.FeatureV1beta1,
 			roots:  []reflect.Type{reflect.TypeOf(types.Feature{})},
 			exceptions: map[string]string{
 				"feature.aggrega.ai/kind": labelKeyException,
@@ -202,42 +202,42 @@ func alignmentCases() []alignmentCase {
 		},
 		{
 			kind:       envelope.KindRecipe,
-			schema:     schemas.RecipeV1alpha1,
+			schema:     schemas.RecipeV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(types.Recipe{})},
 			exceptions: map[string]string{"$import": importException},
 			maximals:   []any{maximalRecipe()},
 		},
 		{
 			kind:       envelope.KindFeatureRecipe,
-			schema:     schemas.FeatureRecipeV1alpha1,
+			schema:     schemas.FeatureRecipeV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(types.FeatureRecipe{})},
 			exceptions: map[string]string{"$import": importException},
 			maximals:   []any{maximalFeatureRecipe()},
 		},
 		{
 			kind:       envelope.KindPlugin,
-			schema:     schemas.PluginV1alpha1,
+			schema:     schemas.PluginV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(types.Plugin{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalPlugin()},
 		},
 		{
 			kind:       envelope.KindSchemaLibrary,
-			schema:     schemas.SchemaLibraryV1alpha1,
+			schema:     schemas.SchemaLibraryV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(types.SchemaLibrary{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalSchemaLibrary()},
 		},
 		{
 			kind:       envelope.KindMappingLibrary,
-			schema:     schemas.MappingLibraryV1alpha1,
+			schema:     schemas.MappingLibraryV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(types.MappingLibrary{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalMappingLibrary()},
 		},
 		{
 			kind:       envelope.KindWorkloadLibrary,
-			schema:     schemas.WorkloadLibraryV1alpha1,
+			schema:     schemas.WorkloadLibraryV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(types.WorkloadLibrary{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalWorkloadLibrary()},
@@ -250,14 +250,14 @@ func alignmentCases() []alignmentCase {
 			// field is deliberately yaml:"-" — the filenames are data, not
 			// struct fields.
 			kind:       envelope.KindArtifactLibrary,
-			schema:     schemas.ArtifactLibraryV1alpha1,
+			schema:     schemas.ArtifactLibraryV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(types.ArtifactLibrary{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalArtifactLibrary()},
 		},
 		{
 			kind:   envelope.KindAggregate,
-			schema: schemas.AggregateV1alpha1,
+			schema: schemas.AggregateV1beta1,
 			// ParameterContract folded in: Aggregate.Spec.Parameters is
 			// OrderedMap[any] (raw-decoded), so the compact-form parameter
 			// vocabulary is reachable only through the on-demand
@@ -274,14 +274,14 @@ func alignmentCases() []alignmentCase {
 		},
 		{
 			kind:       envelope.KindManifest,
-			schema:     schemas.ManifestV1alpha1,
+			schema:     schemas.ManifestV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(types.Manifest{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalManifest()},
 		},
 		{
 			kind:   envelope.KindRelease,
-			schema: schemas.ReleaseV1alpha1,
+			schema: schemas.ReleaseV1beta1,
 			roots:  []reflect.Type{reflect.TypeOf(types.Release{})},
 			exceptions: map[string]string{
 				"$import": importException,
@@ -299,7 +299,7 @@ func alignmentCases() []alignmentCase {
 			// build reproducible, a dropped pin field reads as a clean build —
 			// which is why this kind is aligned here rather than trusted.
 			kind:       envelope.KindLockfile,
-			schema:     schemas.LockfileV1alpha1,
+			schema:     schemas.LockfileV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(lockfile.Lockfile{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalLockfile()},
@@ -312,7 +312,7 @@ func alignmentCases() []alignmentCase {
 			// is what holds one pin shape to one schema while it is declared in two
 			// places.
 			kind:       envelope.KindEntityLock,
-			schema:     schemas.EntityLockV1alpha1,
+			schema:     schemas.EntityLockV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(recipepin.Lock{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalEntityLock()},
@@ -325,7 +325,7 @@ func alignmentCases() []alignmentCase {
 			// and since the record is what a later resolution is compared against, a
 			// dropped field reads as agreement.
 			kind:       envelope.KindPluginsTrust,
-			schema:     schemas.PluginsTrustV1alpha1,
+			schema:     schemas.PluginsTrustV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(pluginstrust.Trust{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalPluginsTrust()},
@@ -335,7 +335,7 @@ func alignmentCases() []alignmentCase {
 			// top-level keys — so its walk root is the configuration root type
 			// rather than an entity struct.
 			kind:       envelope.KindAggregaConfig,
-			schema:     schemas.AggregaConfigV1alpha1,
+			schema:     schemas.AggregaConfigV1beta1,
 			roots:      []reflect.Type{reflect.TypeOf(workspaceconfig.Config{})},
 			exceptions: map[string]string{},
 			maximals:   []any{maximalAggregaConfig()},

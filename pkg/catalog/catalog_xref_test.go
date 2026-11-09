@@ -27,7 +27,7 @@ func TestSchemaLibraryLookup_ByMetadataName(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	libYAML := []byte(`apiVersion: aggrega.ai/v1alpha1
+	libYAML := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseComponents
@@ -90,7 +90,7 @@ func TestSchemaLibraryLookup_UnregisteredNameReturnsZeroValue(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	libYAML := []byte(`apiVersion: aggrega.ai/v1alpha1
+	libYAML := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: WebPrimitives

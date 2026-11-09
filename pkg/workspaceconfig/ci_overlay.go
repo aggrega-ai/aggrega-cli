@@ -12,7 +12,7 @@ import (
 )
 
 // loadCIOverlay reads a CI-owned additive overlay file, validates it against
-// the same aggrega-config-v1alpha1 schema as the base config, and returns the
+// the same aggrega-config-v1beta1 schema as the base config, and returns the
 // typed Config together with the wire paths of any non-additive keys it
 // declared. Those keys carry no additive meaning, so the caller ignores them
 // and surfaces them as resolution warnings rather than applying them — the

@@ -62,11 +62,11 @@ func TestAVerifyHoldsARecipeAndAFeatureRecipeOfOneNameEachToItsOwnLock(t *testin
 			ws := t.TempDir()
 			cat := filepath.Join(ws, "catalog")
 			recipePath := filepath.Join(cat, "shared-recipe", "recipe.yaml")
-			writeEntityDocument(t, recipePath, "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: shared\n  version: \"1.0.0\"\n"+
+			writeEntityDocument(t, recipePath, "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: shared\n  version: \"1.0.0\"\n"+
 				"spec:\n  capability: helm\n  implements: shared\n"+
 				"  source:\n    kind: helm-https-chart\n    url: "+recipeURL+"\n    version: \"1.0.0\"\n")
 			featurePath := filepath.Join(cat, "shared-feature", "featurerecipe.yaml")
-			writeEntityDocument(t, featurePath, "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: shared\n  version: \"1.0.0\"\n"+
+			writeEntityDocument(t, featurePath, "apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: shared\n  version: \"1.0.0\"\n"+
 				"spec:\n  capability: helm\n  implements: shared\n"+
 				"  source:\n    kind: helm-https-chart\n    url: "+featureURL+"\n    version: \"2.0.0\"\n")
 			if _, err := recipepin.WriteLock(recipePath, recipepin.Pins{SourceDigests: []types.SourceDigest{

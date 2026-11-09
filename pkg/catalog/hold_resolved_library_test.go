@@ -15,7 +15,7 @@ import (
 // resolution has just resolved from a registry: present in the cache, named by no
 // pin yet.
 const (
-	heldSchemaLibraryYAML = `apiVersion: aggrega.ai/v1alpha1
+	heldSchemaLibraryYAML = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Held
@@ -25,7 +25,7 @@ spec:
     Settings:
       level: { type: string, default: "held" }
 `
-	heldMappingLibraryYAML = `apiVersion: aggrega.ai/v1alpha1
+	heldMappingLibraryYAML = `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: HeldMappings

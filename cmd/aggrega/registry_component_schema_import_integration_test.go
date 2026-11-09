@@ -21,7 +21,7 @@ import (
 // importedSchemaPublisher is a publisher tree whose Component takes its whole
 // contract from a file beside it, bound by a Recipe carrying a local chart.
 var importedSchemaPublisher = map[string]string{
-	"component/acme/compute/imported/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"component/acme/compute/imported/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/compute/imported
@@ -37,7 +37,7 @@ spec:
   greeting: { type: string, default: hello }
   replicas: { type: integer, minimum: 1, default: 1 }
 `,
-	"recipe/helm/imported-local/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"recipe/helm/imported-local/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: imported-local
@@ -65,7 +65,7 @@ data:
 // identity only.
 func importedSchemaConsumer(values string) map[string]string {
 	return map[string]string{
-		"aggregate.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"aggregate.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -76,7 +76,7 @@ spec:
       type: acme/compute/imported:1.0.0
       values:
 ` + values,
-		"manifest.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"manifest.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -87,7 +87,7 @@ spec:
       type:
         acme/compute/imported:1.0.0: helm/imported-local:1.0.0
 `,
-		"release.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"release.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: dev

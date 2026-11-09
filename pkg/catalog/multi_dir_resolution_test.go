@@ -14,7 +14,7 @@ import (
 // last-win one. Identity (the merge key) is fixed per kind.
 var dupKindBodies = map[string]func(desc string) string{
 	"Component": func(d string) string {
-		return `apiVersion: aggrega.ai/v1alpha1
+		return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: dup/thing
@@ -27,7 +27,7 @@ spec:
 `
 	},
 	"Feature": func(d string) string {
-		return `apiVersion: aggrega.ai/v1alpha1
+		return `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/dup-feature
@@ -37,7 +37,7 @@ spec: {}
 `
 	},
 	"Recipe": func(d string) string {
-		return `apiVersion: aggrega.ai/v1alpha1
+		return `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: dup-recipe
@@ -49,7 +49,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -57,7 +57,7 @@ spec:
 `
 	},
 	"FeatureRecipe": func(d string) string {
-		return `apiVersion: aggrega.ai/v1alpha1
+		return `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: dup-fr

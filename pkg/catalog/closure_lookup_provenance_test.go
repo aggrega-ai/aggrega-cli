@@ -23,7 +23,7 @@ import (
 // by URI, and each has exactly one true answer to "where did this come from",
 // whichever lookup construction is asked.
 const (
-	provenanceAuthoredPluginYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenanceAuthoredPluginYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: authored-step
@@ -36,7 +36,7 @@ spec:
       operates: patch
       scope: own
 `
-	provenanceColocatedPluginYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenanceColocatedPluginYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: colocated-step
@@ -49,7 +49,7 @@ spec:
       operates: patch
       scope: own
 `
-	provenancePulledPluginYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenancePulledPluginYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: pulled-step
@@ -62,7 +62,7 @@ spec:
       operates: patch
       scope: own
 `
-	provenanceAuthoredFeatureRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenanceAuthoredFeatureRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: authored-secret
@@ -71,7 +71,7 @@ spec:
   capability: compose
   implements: "core/secret-value"
 `
-	provenanceAuthoredRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenanceAuthoredRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: authored-db
@@ -80,13 +80,13 @@ spec:
   capability: compose
   implements: "core/datastore/mariadb"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: demo:1
 `
-	provenanceUnpinnedRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenanceUnpinnedRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: unpinned-db
@@ -95,20 +95,20 @@ spec:
   capability: compose
   implements: "core/datastore/mariadb"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: demo:1
 `
-	provenanceAuthoredAggregateYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenanceAuthoredAggregateYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: example/authored-app
   version: "1.0.0"
 spec: {}
 `
-	provenanceAuthoredSchemaLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenanceAuthoredSchemaLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: AuthoredSizing
@@ -118,7 +118,7 @@ spec:
     Storage:
       size: { type: string, default: "10Gi" }
 `
-	provenanceAuthoredMappingLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenanceAuthoredMappingLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: AuthoredMappings
@@ -127,7 +127,7 @@ spec:
   mappings:
     SimpleValues: 'image: {{ .Values.image }}'
 `
-	provenanceAuthoredWorkloadLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenanceAuthoredWorkloadLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: AuthoredWorkloads
@@ -136,7 +136,7 @@ spec:
   workloads:
     SimpleService: 'kind: Deployment'
 `
-	provenanceAuthoredArtifactLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenanceAuthoredArtifactLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: ArtifactLibrary
 metadata:
   name: AuthoredArtifacts
@@ -146,7 +146,7 @@ spec:
     WidgetCRD:
       widget-config.yaml: "kind: ConfigMap"
 `
-	provenancePinnedArtifactLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	provenancePinnedArtifactLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: ArtifactLibrary
 metadata:
   name: PinnedArtifacts

@@ -42,7 +42,7 @@ func mustAggregateYAML(t *testing.T, src string) *types.Aggregate {
 func TestFlattenAggregate_NodesCarryTheAggregateAnnotationCascade(t *testing.T) {
 	t.Parallel()
 	root := mustAggregateYAML(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: root
@@ -79,7 +79,7 @@ spec:
       type: modules/data
 `)
 	child := mustAggregateYAML(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: data
@@ -156,7 +156,7 @@ spec:
 func TestFlattenSubsystems_AggregateAnnotationsUnderARootPath(t *testing.T) {
 	t.Parallel()
 	agg := mustAggregateYAML(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: root

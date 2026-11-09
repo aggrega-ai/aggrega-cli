@@ -85,7 +85,7 @@ func TestWorkloadJSONSchemaExtendedResourcesAndRuntimeClass(t *testing.T) {
 		{
 			name:   "extended gpu limit plus runtimeClassName",
 			wantOK: true,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"stateless",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","form":"stateless",
 				"runtimeClassName":"nvidia",
 				"containers":{"main":{"image":"x",
 					"resources":{"limits":{"cpu":"2","memory":"8Gi","nvidia.com/gpu":"1"},
@@ -94,37 +94,37 @@ func TestWorkloadJSONSchemaExtendedResourcesAndRuntimeClass(t *testing.T) {
 		{
 			name:   "amd extended resource",
 			wantOK: true,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload",
 				"containers":{"main":{"image":"x","resources":{"limits":{"amd.com/gpu":"2"}}}}}`,
 		},
 		{
 			name:   "multi-dot domain accepted structurally",
 			wantOK: true,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload",
 				"containers":{"main":{"image":"x","resources":{"limits":{"feature.node.kubernetes.io/foo":"1"}}}}}`,
 		},
 		{
 			name:   "cpu memory only unaffected",
 			wantOK: true,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload",
 				"containers":{"main":{"image":"x","resources":{"limits":{"cpu":"1","memory":"1Gi"}}}}}`,
 		},
 		{
 			name:   "bare key without slash rejected",
 			wantOK: false,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload",
 				"containers":{"main":{"image":"x","resources":{"limits":{"gpu":"1"}}}}}`,
 		},
 		{
 			name:   "dotless domain rejected",
 			wantOK: false,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload",
 				"containers":{"main":{"image":"x","resources":{"limits":{"nvidia/gpu":"1"}}}}}`,
 		},
 		{
 			name:   "runtimeClassName forbidden on reference form",
 			wantOK: false,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"reference",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","form":"reference",
 				"endpoint":"db.example.com","runtimeClassName":"nvidia"}`,
 		},
 	}
@@ -177,37 +177,37 @@ func TestWorkloadJSONSchemaHostNetwork(t *testing.T) {
 		{
 			name:   "declared true on a compute workload",
 			wantOK: true,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","hostNetwork":true,
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","hostNetwork":true,
 				"containers":{"main":{"image":"x"}}}`,
 		},
 		{
 			name:   "declared false on a compute workload",
 			wantOK: true,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","hostNetwork":false,
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","hostNetwork":false,
 				"containers":{"main":{"image":"x"}}}`,
 		},
 		{
 			name:   "absent is the shape every workload authored before it carries",
 			wantOK: true,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload",
 				"containers":{"main":{"image":"x"}}}`,
 		},
 		{
 			name:   "a string is rejected rather than coerced",
 			wantOK: false,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","hostNetwork":"true",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","hostNetwork":"true",
 				"containers":{"main":{"image":"x"}}}`,
 		},
 		{
 			name:   "forbidden on reference form",
 			wantOK: false,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"reference",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","form":"reference",
 				"endpoint":"db.example.com","hostNetwork":true}`,
 		},
 		{
 			name:   "a near-miss spelling halts on the closed root",
 			wantOK: false,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","hostNetworking":true,
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","hostNetworking":true,
 				"containers":{"main":{"image":"x"}}}`,
 		},
 	}
@@ -271,7 +271,7 @@ func TestWorkloadJSONSchemaServiceType(t *testing.T) {
 			if err != nil {
 				t.Fatalf("encode type: %v", err)
 			}
-			doc := `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload",
+			doc := `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload",
 				"containers":{"main":{"image":"x","ports":{"admin":9090}}},
 				"services":{"local":{"type":` + string(typeJSON) + `,"ports":{"admin":9090}}}}`
 			var instance any
@@ -318,31 +318,31 @@ func TestWorkloadJSONSchemaSuspend(t *testing.T) {
 		{
 			name:   "declared true on a scheduled workload",
 			wantOK: true,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"scheduled",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","form":"scheduled",
 				"schedule":"@daily","suspend":true,"containers":{"main":{"image":"x"}}}`,
 		},
 		{
 			name:   "declared false on a scheduled workload",
 			wantOK: true,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"scheduled",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","form":"scheduled",
 				"schedule":"@daily","suspend":false,"containers":{"main":{"image":"x"}}}`,
 		},
 		{
 			name:   "absent on a scheduled workload",
 			wantOK: true,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"scheduled",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","form":"scheduled",
 				"schedule":"@daily","containers":{"main":{"image":"x"}}}`,
 		},
 		{
 			name:   "a string is rejected rather than coerced",
 			wantOK: false,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"scheduled",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","form":"scheduled",
 				"schedule":"@daily","suspend":"true","containers":{"main":{"image":"x"}}}`,
 		},
 		{
 			name:   "a near-miss spelling halts on the closed root",
 			wantOK: false,
-			doc: `{"apiVersion":"aggrega.ai/v1alpha1","kind":"Workload","form":"scheduled",
+			doc: `{"apiVersion":"aggrega.ai/v1beta1","kind":"Workload","form":"scheduled",
 				"schedule":"@daily","suspended":true,"containers":{"main":{"image":"x"}}}`,
 		},
 	}

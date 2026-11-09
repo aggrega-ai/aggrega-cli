@@ -201,7 +201,7 @@ func TestInspect_UnknownKind_ReturnsError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	sprocketPath := filepath.Join(root, "sprocket.yaml")
-	writeFixture(t, sprocketPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, sprocketPath, `apiVersion: aggrega.ai/v1beta1
 kind: Sprocket
 metadata:
   name: test-sprocket
@@ -247,7 +247,7 @@ func TestInspect_ComponentFilePath_RendersSchema(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	compPath := filepath.Join(root, "component.yaml")
-	writeFixture(t, compPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, compPath, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server

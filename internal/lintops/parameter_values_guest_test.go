@@ -123,7 +123,7 @@ func assertPlanted(t *testing.T, doc string, planted []string) {
 // beside content that is no parameter value: a component description naming the
 // mark, which reads a parameter as template text.
 func plantedAggregate(version, mark string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: echo-app
@@ -175,7 +175,7 @@ func keptAggregateContent(mark string) []string {
 // level and under properties, items and valuesType, each holding a value spelled
 // from mark, beside a component description naming the mark.
 func plantedDraftAggregate(mark string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: echo-draft
@@ -210,7 +210,7 @@ spec:
 // plantedRelease is a Release supplying a parameter value spelled from mark,
 // beside a boundary whose directory names the mark and is no parameter value.
 func plantedRelease(mark string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: echo-release

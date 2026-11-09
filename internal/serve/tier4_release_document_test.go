@@ -205,22 +205,22 @@ func compositionFindingWorkspace(t *testing.T, extraConnection, releaseGateway s
 		t.Fatalf("read the workspace manifest: %v", err)
 	}
 	for path, body := range map[string]string{
-		filepath.Join(catalogDir, "components", "gateway.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Component\n" +
+		filepath.Join(catalogDir, "components", "gateway.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Component\n" +
 			"metadata:\n  name: conn/gateway\n  version: \"1.0.0\"\n  labels:\n    component.aggrega.ai/type: \"server\"\n" +
 			"spec:\n  featuresSchema:\n    db_password:\n      sensitive: true\n" +
 			"  usesSchema:\n    models:\n      selector: \"component.aggrega.ai/category=model\"\n" +
 			"      infraSchema:\n        timeout: { type: integer }\n" +
 			"      featuresSchema:\n        credential:\n          sensitive: true\n" +
 			"  schema:\n    values:\n      region: { type: string }\n    provides:\n      host: { type: string, required: true }\n",
-		filepath.Join(catalogDir, "features", "token.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\n" +
+		filepath.Join(catalogDir, "features", "token.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Feature\n" +
 			"metadata:\n  name: feature.conn/token\n  version: \"1.0.0\"\n  labels:\n    feature.aggrega.ai/kind: secret\n" +
 			"spec:\n  schema:\n    values:\n      key: { type: string }\n" +
 			"    infra:\n      tier: { type: string, enum: [standard, premium] }\n" +
 			"    provides:\n      key: { type: string, required: true }\n",
-		filepath.Join(catalogDir, "features", "identity.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\n" +
+		filepath.Join(catalogDir, "features", "identity.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Feature\n" +
 			"metadata:\n  name: feature.conn/identity\n  version: \"1.0.0\"\n  labels:\n    feature.aggrega.ai/kind: secret\n" +
 			"spec:\n  schema:\n    values:\n      key: { type: string }\n    provides:\n      key: { type: string, required: true }\n",
-		filepath.Join(catalogDir, "feature-recipes", "identity-compose.yaml"): "apiVersion: aggrega.ai/v1alpha1\n" +
+		filepath.Join(catalogDir, "feature-recipes", "identity-compose.yaml"): "apiVersion: aggrega.ai/v1beta1\n" +
 			"kind: FeatureRecipe\nmetadata:\n  name: conn-identity-compose\n  version: \"1.0.0\"\n" +
 			"spec:\n  capability: compose\n  implements: feature.conn/identity\n  provides:\n    key: \"{{ .values.key }}\"\n",
 		filepath.Join(ws, "manifest.yaml"): string(manifest) + "        feature.conn/identity: conn-identity-compose:1.0.0\n",
@@ -281,14 +281,14 @@ func requiredSocketSlotWorkspace(t *testing.T, extraConnection, releaseGateway s
 		gatewayEntry = "        gateway:\n" + releaseGateway
 	}
 	for path, body := range map[string]string{
-		gateway: "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: conn/gateway\n" +
+		gateway: "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: conn/gateway\n" +
 			"  version: \"1.0.0\"\n  labels:\n    component.aggrega.ai/type: \"server\"\n" +
 			"spec:\n  featuresSchema:\n    db_password:\n      sensitive: true\n" +
 			"  usesSchema:\n    models:\n      selector: \"component.aggrega.ai/category=model\"\n" +
 			"      featuresSchema:\n        credential:\n          sensitive: true\n          required: true\n" +
 			"  schema:\n    values:\n      region: { type: string }\n    provides:\n      host: { type: string, required: true }\n",
 		filepath.Join(ws, "manifest.yaml"): string(manifest),
-		filepath.Join(ws, "aggregate.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n" +
+		filepath.Join(ws, "aggregate.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n" +
 			"metadata:\n  name: connection-attachment-app\n  version: \"1.0.0\"\nspec:\n  components:\n" +
 			"    gateway:\n      type: conn/gateway\n      values:\n        region: eu\n" +
 			"      features:\n        db_password:\n          type: feature.conn/token\n" +
@@ -299,7 +299,7 @@ func requiredSocketSlotWorkspace(t *testing.T, extraConnection, releaseGateway s
 			"                values:\n                  key: gpt-key\n" +
 			extraConnection +
 			"    model:\n      type: conn/model\n",
-		filepath.Join(ws, "release.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Release\n" +
+		filepath.Join(ws, "release.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Release\n" +
 			"metadata:\n  name: connection-attachment-release\n  environment: local\n  version: \"1.0.0\"\n" +
 			"spec:\n  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n  boundaries:\n" +
 			"    cluster:\n      directory: ./dist/cluster\n      components:\n" + gatewayEntry + "        model: {}\n",

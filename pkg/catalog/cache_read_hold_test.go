@@ -24,7 +24,7 @@ const (
 	cacheReadLibraryVersion = "1.0.0"
 )
 
-var cacheReadLibraryBody = []byte("apiVersion: aggrega.ai/v1alpha1\n" +
+var cacheReadLibraryBody = []byte("apiVersion: aggrega.ai/v1beta1\n" +
 	"kind: SchemaLibrary\nmetadata:\n  name: CacheRead\n  version: 1.0.0\n" +
 	"spec:\n  schemas:\n    Storage: {}\n")
 
@@ -222,7 +222,7 @@ func TestTheBuildsPinGateHaltsOnASlotTheReadHoldRefuses(t *testing.T) {
 func TestTheCachedLibrariesARemedyNamesAreReadOnlyFromInsideTheCache(t *testing.T) {
 	const cacheDir = ".aggrega/cache"
 	library := func(name string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\nmetadata:\n  name: " + name + "\n  version: 1.0.0\n"
+		return "apiVersion: aggrega.ai/v1beta1\nkind: SchemaLibrary\nmetadata:\n  name: " + name + "\n  version: 1.0.0\n"
 	}
 	put := func(t *testing.T, path, body string) {
 		t.Helper()

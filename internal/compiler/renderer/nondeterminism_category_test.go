@@ -130,7 +130,7 @@ func TestRenderNondeterministic_OneCategoryAcrossEveryCrossing(t *testing.T) {
 			name: "workload synthesis",
 			spec: types.RecipeSpec{
 				Capability: "compose",
-				Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+				Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -302,7 +302,7 @@ func TestFeatureRecipeRender_CategoryFollowsTheCondition(t *testing.T) {
 			name: "workload synthesis, provider fault",
 			spec: types.FeatureRecipeSpec{
 				Capability: "compose",
-				Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+				Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -420,7 +420,7 @@ func TestBoundaryScopeFeatureRecipeRender_CategoryFollowsTheCondition(t *testing
 		},
 		{
 			name: "workload synthesis, provider fault",
-			spec: boundaryScope(types.FeatureRecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+			spec: boundaryScope(types.FeatureRecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

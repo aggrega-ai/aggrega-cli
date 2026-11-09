@@ -1,6 +1,6 @@
 # The sibling of the identical-value variant: the two renders publish the same
 # entry name with different values.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: bs-distinct-res-differing-value

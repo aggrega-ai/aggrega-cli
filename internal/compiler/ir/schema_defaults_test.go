@@ -21,7 +21,7 @@ import (
 // materialization a rendered template reads when the Aggregate omits the key.
 func TestComponentPillarDefaults_RealSchema(t *testing.T) {
 	t.Parallel()
-	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
+	const componentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb
@@ -90,7 +90,7 @@ spec:
 // `#/$defs/` inlining and allOf/oneOf/anyOf remain the deferred remainder.
 func TestComponentPillarDefaults_WholePillarRefYieldsNothing(t *testing.T) {
 	t.Parallel()
-	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
+	const componentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/server
@@ -145,7 +145,7 @@ func loadSchemaLibraryFixture(t *testing.T, y string) types.SchemaLibrary {
 func TestComponentPillarDefaults_CrossLibraryRefMaterializes(t *testing.T) {
 	t.Parallel()
 	libs := map[string]types.SchemaLibrary{
-		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1alpha1
+		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseComponents
@@ -157,7 +157,7 @@ spec:
       collation: { type: string, default: utf8mb4_general_ci }
 `),
 	}
-	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
+	const componentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb
@@ -195,7 +195,7 @@ spec:
 func TestComponentPillarDefaults_BaseFlavorMaterializes(t *testing.T) {
 	t.Parallel()
 	libs := map[string]types.SchemaLibrary{
-		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1alpha1
+		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseComponents
@@ -206,7 +206,7 @@ spec:
       charset: { type: string, default: utf8mb4 }
 `),
 	}
-	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
+	const componentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb-flavored
@@ -246,7 +246,7 @@ spec:
 func TestComponentPillarDefaults_ModelComponentPatternMaterializes(t *testing.T) {
 	t.Parallel()
 	libs := map[string]types.SchemaLibrary{
-		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1alpha1
+		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseComponents
@@ -257,7 +257,7 @@ spec:
       temperature: { type: string, default: "1.0" }
 `),
 	}
-	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
+	const componentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ai-model/openai
@@ -300,7 +300,7 @@ spec:
 func TestComponentPillarDefaults_CrossLibraryDeterministic(t *testing.T) {
 	t.Parallel()
 	libs := map[string]types.SchemaLibrary{
-		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1alpha1
+		"BaseComponents": loadSchemaLibraryFixture(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseComponents
@@ -313,7 +313,7 @@ spec:
       engine: { type: string, default: innodb }
 `),
 	}
-	const componentYAML = `apiVersion: aggrega.ai/v1alpha1
+	const componentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb

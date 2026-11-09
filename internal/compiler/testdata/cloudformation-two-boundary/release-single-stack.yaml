@@ -4,7 +4,7 @@
 # pipe and stores it as an intra-stack Fn::GetAtt. This variant needs no
 # cross-boundary reference wiring, so it exercises the fragment conversion, the
 # provides-to-Outputs projection, and the intra-stack reference end-to-end.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-single-stack

@@ -36,7 +36,7 @@ func trustFixture(t *testing.T) (*catalog.LazyLookup, string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir catalog: %v", err)
 	}
-	entity := `apiVersion: aggrega.ai/v1alpha1
+	entity := `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: publishing

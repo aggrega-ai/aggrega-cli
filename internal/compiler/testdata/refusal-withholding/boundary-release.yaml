@@ -1,5 +1,5 @@
 # A boundary-scope FeatureRecipe's locals entry refuses, reading the infra the Release writes.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: refusal-boundary-release

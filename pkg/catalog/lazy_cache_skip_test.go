@@ -27,7 +27,7 @@ const cacheUnderCatalogDir = ".aggrega/cache"
 // the REVERSE of their semantic order: "1.10.0" sorts before "1.9.0" byte-wise,
 // so a directory walk visits the newer one first and the older one last.
 const (
-	staleLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	staleLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -37,7 +37,7 @@ spec:
     Storage:
       size: { type: string, default: "STALE" }
 `
-	pinnedLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	pinnedLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -47,7 +47,7 @@ spec:
     Storage:
       size: { type: string, default: "PINNED" }
 `
-	authoredMappingLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	authoredMappingLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BaseMappings
@@ -56,7 +56,7 @@ spec:
   mappings:
     SimpleValues: 'image: {{ .Values.authored }}'
 `
-	cachedMappingLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	cachedMappingLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BaseMappings
@@ -65,7 +65,7 @@ spec:
   mappings:
     SimpleValues: 'image: {{ .Values.cached }}'
 `
-	verifiedLibYAML = `apiVersion: aggrega.ai/v1alpha1
+	verifiedLibYAML = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Verified
@@ -75,7 +75,7 @@ spec:
     Storage:
       size: { type: string, default: "VERIFIED" }
 `
-	authoredComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+	authoredComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/authored-app
@@ -371,7 +371,7 @@ func TestValidateClosurePillars_RemedyOnlyConsultedOnFailure(t *testing.T) {
 	// map — the shape a reference to a library that never resolved produces.
 	dir := t.TempDir()
 	writeFixture(t, dir, "library.yaml", verifiedLibYAML)
-	writeFixture(t, dir, "consumer.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "consumer.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/needs-lib

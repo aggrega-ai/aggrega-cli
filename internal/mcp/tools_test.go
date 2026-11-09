@@ -145,7 +145,7 @@ func TestScaffoldTool(t *testing.T) {
 	// The skeleton is derived from the schema: the fixed apiVersion/kind are
 	// filled from their const values, and the seeded name lands in metadata.
 	for _, want := range []string{
-		"apiVersion: aggrega.ai/v1alpha1",
+		"apiVersion: aggrega.ai/v1beta1",
 		"kind: Component",
 		"name: my/svc",
 	} {

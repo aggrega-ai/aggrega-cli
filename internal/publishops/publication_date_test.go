@@ -20,7 +20,7 @@ import (
 
 // datedComponentBody is a Component the publication path reads and bundles
 // unchanged.
-const datedComponentBody = `apiVersion: aggrega.ai/v1alpha1
+const datedComponentBody = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server

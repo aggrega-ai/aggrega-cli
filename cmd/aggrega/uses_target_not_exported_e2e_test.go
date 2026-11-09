@@ -28,7 +28,7 @@ import (
 func exportWorkspace(t *testing.T, root, app, releaseApp string) (catalogDir, releasePath string) {
 	t.Helper()
 	catalogDir = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogDir, "component/acme/db/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/acme/db/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/db
@@ -39,7 +39,7 @@ spec:
   schema:
     values: {}
 `)
-	writeFixture(t, filepath.Join(catalogDir, "component/acme/consumer/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/acme/consumer/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/consumer
@@ -58,7 +58,7 @@ spec:
 		{"db", "acme/db:1.0.0"},
 		{"consumer", "acme/consumer:1.0.0"},
 	} {
-		writeFixture(t, filepath.Join(catalogDir, "recipe/compose/"+r.name+"/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogDir, "recipe/compose/"+r.name+"/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: `+r.name+`
@@ -67,14 +67,14 @@ spec:
   capability: compose
   implements: `+r.implements+`
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: "`+r.name+`:1"
 `)
 	}
-	writeFixture(t, filepath.Join(catalogDir, "aggregate/finance-db/1.0.0/aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "aggregate/finance-db/1.0.0/aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: finance-db
@@ -88,7 +88,7 @@ spec:
   exportedComponents:
     primary_db: internal-pg-primary
 `)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: billing
@@ -101,7 +101,7 @@ spec:
     billing-api:
       type: acme/consumer:1.0.0
 `+app)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: billing-manifest
@@ -118,7 +118,7 @@ spec:
 		entry = "        billing-api:\n" + releaseApp
 	}
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: billing

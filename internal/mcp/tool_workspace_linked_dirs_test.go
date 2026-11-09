@@ -31,7 +31,7 @@ import (
 // line naming the links exactly where the field names any, and no such line where
 // it names none.
 func TestTheReleaseListingNamesEachLinkedDirectoryOutsideTheWorkspace(t *testing.T) {
-	const release = "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: probe\n  version: \"1.0.0\"\n"
+	const release = "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: probe\n  version: \"1.0.0\"\n"
 	const linesOpening = "No Release inside these links is listed"
 
 	machineWide := filepath.Join(t.TempDir(), "machine-wide.yaml")

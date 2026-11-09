@@ -33,7 +33,7 @@ const registryReferenceVersion = "1.0.0"
 // registryOnlyEntities are the Components and Features the registry serves, keyed
 // by kind and identity. No catalog directory holds any of them.
 var registryOnlyEntities = map[string]string{
-	"Component example/compute/caller": `apiVersion: aggrega.ai/v1alpha1
+	"Component example/compute/caller": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/caller
@@ -54,7 +54,7 @@ spec:
         credential:
           description: The credential the caller presents to the peer this connection reaches.
 `,
-	"Component example/compute/peer": `apiVersion: aggrega.ai/v1alpha1
+	"Component example/compute/peer": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/peer
@@ -69,7 +69,7 @@ spec:
         type: string
         default: "peer"
 `,
-	"Feature example/token": `apiVersion: aggrega.ai/v1alpha1
+	"Feature example/token": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/token
@@ -84,7 +84,7 @@ spec:
       key:
         type: string
 `,
-	"Feature example/badge": `apiVersion: aggrega.ai/v1alpha1
+	"Feature example/badge": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/badge
@@ -106,7 +106,7 @@ spec:
 // in-process registry test keeps them in the workspace's catalog directory; the
 // test against a real registry publishes them beside the entities above.
 var registryReferenceRealizations = map[string]string{
-	"recipe/compose/caller/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"recipe/compose/caller/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: caller
@@ -115,7 +115,7 @@ spec:
   capability: compose
   implements: example/compute/caller:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -123,7 +123,7 @@ spec:
         variables:
           MESSAGE: "{{ .values.message }}"
 `,
-	"recipe/compose/peer/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"recipe/compose/peer/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: peer
@@ -132,7 +132,7 @@ spec:
   capability: compose
   implements: example/compute/peer:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -140,7 +140,7 @@ spec:
         variables:
           MESSAGE: "{{ .values.message }}"
 `,
-	"feature-recipe/compose/token-plain/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"feature-recipe/compose/token-plain/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: token-plain
@@ -151,7 +151,7 @@ spec:
   provides:
     key: "{{ .values.key }}"
 `,
-	"feature-recipe/compose/badge-plain/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"feature-recipe/compose/badge-plain/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: badge-plain
@@ -202,7 +202,7 @@ func writtenBareKind(uri string) string {
 func registryReferenceRelease(t *testing.T, root string, forms registryReferenceForms) string {
 	t.Helper()
 	c, f := forms.component, forms.feature
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: callers
@@ -227,7 +227,7 @@ spec:
     peer-b:
       type: example/compute/peer`+c+`
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: callers-manifest
@@ -245,7 +245,7 @@ spec:
         first.credential: compose/token-plain:1.0.0
 `)
 	releasePath := filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: callers-release

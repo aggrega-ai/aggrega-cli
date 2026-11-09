@@ -303,20 +303,20 @@ metadata:
 func TestDeclarationVocabularyIsTheAggregateSchemas(t *testing.T) {
 	t.Parallel()
 	var root map[string]any
-	if err := json.Unmarshal([]byte(schemas.AggregateV1alpha1), &root); err != nil {
+	if err := json.Unmarshal([]byte(schemas.AggregateV1beta1), &root); err != nil {
 		t.Fatalf("unmarshal the Aggregate schema: %v", err)
 	}
 	node := any(root)
 	for _, key := range []string{"properties", "spec", "properties", "parameters", "additionalProperties", "properties"} {
 		m, ok := node.(map[string]any)
 		if !ok {
-			t.Fatalf("aggregate-v1alpha1.schema.json: no %q on the path to a parameter declaration's properties", key)
+			t.Fatalf("aggregate-v1beta1.schema.json: no %q on the path to a parameter declaration's properties", key)
 		}
 		node = m[key]
 	}
 	admitted, ok := node.(map[string]any)
 	if !ok || len(admitted) == 0 {
-		t.Fatal("aggregate-v1alpha1.schema.json: a parameter declaration admits no properties, so there is nothing to compare")
+		t.Fatal("aggregate-v1beta1.schema.json: a parameter declaration admits no properties, so there is nothing to compare")
 	}
 	for _, key := range slices.Sorted(maps.Keys(admitted)) {
 		if !declarationKeys[key] {

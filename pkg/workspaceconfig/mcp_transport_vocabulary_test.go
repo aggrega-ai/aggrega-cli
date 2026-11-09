@@ -31,7 +31,7 @@ import (
 func TestTheTransportEnumAgreesWithTheTransportConstants(t *testing.T) {
 	t.Parallel()
 
-	declared, err := configSchemaEnum(schemas.AggregaConfigV1alpha1, "the transport setting",
+	declared, err := configSchemaEnum(schemas.AggregaConfigV1beta1, "the transport setting",
 		[]string{"properties", "mcp", "properties", "transport"})
 	if err != nil {
 		t.Fatalf("read the transport enum: %v", err)

@@ -144,7 +144,7 @@ func dryRunFixture(t *testing.T, root, schemaRef string) (releasePath, catalogDi
 	t.Helper()
 	catalogDir = filepath.Join(root, "catalog")
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: dry-run-aggregate
@@ -154,7 +154,7 @@ spec:
     webapp:
       type: server
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: dry-run-release
@@ -171,7 +171,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: dry-run-manifest
@@ -182,7 +182,7 @@ spec:
       type:
         server: server
 `)
-	writeFixture(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -212,7 +212,7 @@ data:
 	}
 
 	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server

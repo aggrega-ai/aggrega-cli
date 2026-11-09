@@ -478,7 +478,7 @@ func originCoverageReach(rows []originSchemaRow, exemptions []originExemption) s
 // test rather than returning an error.
 func originSchemaRowsOrFail(t *testing.T) []originSchemaRow {
 	t.Helper()
-	rows, err := originSchemaRows(schemas.AggregaConfigV1alpha1)
+	rows, err := originSchemaRows(schemas.AggregaConfigV1beta1)
 	if err != nil {
 		t.Fatalf("walk the configuration schema: %v", err)
 	}

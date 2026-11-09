@@ -26,7 +26,7 @@ const nestedCacheDir = "sub/.cache"
 // nestedAuthoredComponentYAML is the authored entity that must survive the skip.
 // It carries the type label the whole-catalog load requires, so a failure in
 // these tests reports on the cache anchor rather than on a rejected fixture.
-const nestedAuthoredComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+const nestedAuthoredComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/authored-app

@@ -40,7 +40,7 @@ resource "aws_s3_bucket" "logs" {
 // cascade's embed tier.
 func hclParserEntity() types.Plugin {
 	return types.Plugin{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Plugin",
 		Metadata:   types.PluginMetadata{Name: "hcl", Version: "0.0.0-test", PluginType: "parser"},
 		Spec: types.PluginSpec{

@@ -21,7 +21,7 @@ import (
 // withdrawalAggregateFixture is the Aggregate arm of the per-kind corpus. Its one
 // component names the Component fixture below, so the topology pass this kind's
 // inspector runs has a resolvable reference.
-const withdrawalAggregateFixture = `apiVersion: aggrega.ai/v1alpha1
+const withdrawalAggregateFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: storefront

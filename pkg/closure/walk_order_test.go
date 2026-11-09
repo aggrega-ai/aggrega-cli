@@ -42,7 +42,7 @@ const walkOrderGeneratedAt = "2000-01-01T00:00:00Z"
 
 // walkOrderLibraryDoc is the one library a catalog directory holds, authored at its
 // full version.
-const walkOrderLibraryDoc = `apiVersion: aggrega.ai/v1alpha1
+const walkOrderLibraryDoc = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Base

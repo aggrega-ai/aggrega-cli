@@ -76,7 +76,7 @@ func TestSynthesizeWorkload_PublishesServicePortOntoNamedContainerPort(t *testin
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+			w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 			c := types.ContainerSpec{Image: "web:1.0"}
 			portName := tc.entries[0].name
 			c.Ports.Set(portName, tc.container)

@@ -3,7 +3,7 @@
 
 # The database in one stack and, in another, the application whose attachment's
 # inject mapping reads the database host directly off the connection.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-two-boundary

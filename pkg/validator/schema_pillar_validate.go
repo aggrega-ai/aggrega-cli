@@ -19,7 +19,7 @@ import (
 
 // allowedSchemaPillars enumerates the canonical free-form pillar keys for
 // a Component or Feature spec.schema body. The corresponding contract is
-// stated on feature-v1alpha1.schema.json and component-v1alpha1.schema.json
+// stated on feature-v1beta1.schema.json and component-v1beta1.schema.json
 // (the spec.schema description), and on vocabulary/data-pillars.md.
 var allowedSchemaPillars = map[string]bool{
 	"values":   true,
@@ -31,7 +31,7 @@ var allowedSchemaPillars = map[string]bool{
 // declares spec.extends: the entity's pillars are its base's, as the base
 // authored them, and the entity authors none of its own. It is the fourth
 // content-shape mode of spec.schema documented on
-// component-v1alpha1.schema.json, beside inline content, {$import: <path>}
+// component-v1beta1.schema.json, beside inline content, {$import: <path>}
 // and {$ref: <Library>#/schemas/<name>} — a scalar where those three are
 // maps.
 const InheritedSchemaMarker = "inherited"

@@ -25,7 +25,7 @@ import (
 func recipeEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal([]byte(schemas.RecipeV1alpha1), schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.RecipeV1beta1), schema); err != nil {
 		t.Fatalf("unmarshal envelope schema: %v", err)
 	}
 	v, err := jsonvalidator.New(schema)
@@ -38,7 +38,7 @@ func recipeEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 func featureRecipeEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal([]byte(schemas.FeatureRecipeV1alpha1), schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.FeatureRecipeV1beta1), schema); err != nil {
 		t.Fatalf("unmarshal envelope schema: %v", err)
 	}
 	v, err := jsonvalidator.New(schema)
@@ -91,7 +91,7 @@ func TestRecipeEnvelope_AcceptsInlineValuesMapping(t *testing.T) {
 	t.Parallel()
 	v := recipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: inline-recipe
@@ -121,7 +121,7 @@ func TestRecipeEnvelope_AcceptsImportValuesMapping(t *testing.T) {
 	t.Parallel()
 	v := recipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: import-recipe
@@ -149,7 +149,7 @@ func TestRecipeEnvelope_AcceptsWorkloadImport(t *testing.T) {
 	t.Parallel()
 	v := recipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: workload-import
@@ -179,7 +179,7 @@ func TestRecipeEnvelope_RejectsWorkloadOCIImport(t *testing.T) {
 	t.Parallel()
 	v := recipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: workload-oci-import
@@ -206,7 +206,7 @@ func TestRecipeEnvelope_RejectsArtifactsOCIImport(t *testing.T) {
 	t.Parallel()
 	v := recipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: artifacts-oci-import
@@ -241,7 +241,7 @@ func TestRecipeEnvelope_AcceptsWorkloadBareNameLibraryImport(t *testing.T) {
 	t.Parallel()
 	v := recipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: workload-bare-name-import
@@ -272,7 +272,7 @@ func TestRecipeEnvelope_AcceptsArtifactsBareNameLibraryImport(t *testing.T) {
 	t.Parallel()
 	v := recipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: artifacts-bare-name-import
@@ -304,7 +304,7 @@ func TestRecipeEnvelope_AcceptsAssertions(t *testing.T) {
 	t.Parallel()
 	v := recipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: bitnami/datastore/mariadb/k8s
@@ -346,7 +346,7 @@ func TestRecipeEnvelope_RejectsNonStringAssertionValue(t *testing.T) {
 	t.Parallel()
 	v := recipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: bitnami/datastore/mariadb/k8s
@@ -402,7 +402,7 @@ func TestRecipeEnvelope_RejectsArtifactKeyOutsideFilenameAlphabet(t *testing.T) 
 			t.Parallel()
 			v := recipeEnvelopeValidator(t)
 
-			src := `apiVersion: aggrega.ai/v1alpha1
+			src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: artifact-key-alphabet
@@ -460,7 +460,7 @@ func TestRecipeEnvelope_AcceptsArtifactKeyInFilenameAlphabet(t *testing.T) {
 			t.Parallel()
 			v := recipeEnvelopeValidator(t)
 
-			src := `apiVersion: aggrega.ai/v1alpha1
+			src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: artifact-key-alphabet

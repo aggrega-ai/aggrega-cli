@@ -59,7 +59,7 @@ type releaseParityCase struct {
 	overlay   map[string]string
 }
 
-const releaseParityBackendAggregate = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityBackendAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: parity-app
@@ -70,7 +70,7 @@ spec:
       type: core/compute/api-server
 `
 
-const releaseParityCleanManifest = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityCleanManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -82,7 +82,7 @@ spec:
         core/compute/api-server: helm-api-server-synthesized-with-artifacts:1.0.0
 `
 
-const releaseParityEmptyManifest = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityEmptyManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -97,7 +97,7 @@ spec:
 // web-ui recipe, whose spec.implements names a different type. Both entities live
 // in the shared catalog, so the mapping resolves and is judged rather than skipped
 // — which is what makes the resulting finding real.
-const releaseParityMappingInconsistentManifest = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityMappingInconsistentManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -109,7 +109,7 @@ spec:
         core/compute/api-server: helm-web-ui-synthesized-with-artifacts:1.0.0
 `
 
-const releaseParityDefaultRelease = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityDefaultRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: parity-release
@@ -127,7 +127,7 @@ spec:
             port: 8080
 `
 
-const releaseParityEmptyBoundaryRelease = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityEmptyBoundaryRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: parity-release
@@ -145,7 +145,7 @@ spec:
 // releaseParityExtendsOverlayComponent shadows the standard api-server with one
 // whose spec.extends names a parent absent from the catalog — a dangling extends
 // the closure-scoped extends gate reports.
-const releaseParityExtendsOverlayComponent = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityExtendsOverlayComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -161,7 +161,7 @@ spec:
 // releaseParityPillarOverlayComponent shadows the standard api-server with one
 // whose infra pillar $refs a SchemaLibrary absent from the catalog — a schema
 // compile failure the closure-scoped schema-pillar gate reports.
-const releaseParityPillarOverlayComponent = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityPillarOverlayComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -179,7 +179,7 @@ spec:
       service_port: { type: string, required: true }
 `
 
-const releaseParityResolveFailingAggregate = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityResolveFailingAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: parity-app
@@ -192,7 +192,7 @@ spec:
   components: {}
 `
 
-const releaseParityInputKindManifest = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityInputKindManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -207,7 +207,7 @@ spec:
 // releaseParityInputKindRecipe declares a synthesized workload but binds a
 // capability whose serving plugin supports only the sourced input kind, so the
 // input-kind capability check reports it.
-const releaseParityInputKindRecipe = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityInputKindRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-sourceonly
@@ -219,7 +219,7 @@ spec:
     host: "{{ .context.instance_id }}.svc"
     service_port: "8080"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -227,7 +227,7 @@ spec:
         image: x:latest
 `
 
-const releaseParityInputKindPlugin = `apiVersion: aggrega.ai/v1alpha1
+const releaseParityInputKindPlugin = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: sourced-only-renderer

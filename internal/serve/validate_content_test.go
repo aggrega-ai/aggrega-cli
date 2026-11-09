@@ -16,7 +16,7 @@ import (
 const (
 	contentProbeConfig           = "offline: true\n"
 	contentProbeConfigUnknownKey = "offline: true\nnot_a_config_key: 1\n"
-	contentProbeAggregate        = `apiVersion: aggrega.ai/v1alpha1
+	contentProbeAggregate        = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: probe

@@ -17,23 +17,23 @@ import (
 // would be silently skipped at every such call site. This test is what fails
 // instead.
 //
-// The five cases are the five failure returns ValidateBytes has: a document
-// that will not parse, an empty document, a document that violates its
-// schema, an engine that could not run, and a document the schema accepts
-// whose pipeline repeats a step id. A sixth return path added later with no
-// sentinel is caught here only if it is also added to this table, so the
-// table is deliberately exhaustive over the function's returns rather than
-// over interesting inputs.
+// The cases are the failure returns ValidateBytes has: a document that will
+// not parse, an empty document, a document that violates its schema, an engine
+// that could not run, a document the schema accepts whose pipeline repeats a
+// step id, and a document declaring an API version the compiler no longer
+// reads. A further return path added later with no sentinel is caught here
+// only if it is also added to this table, so the table is deliberately
+// exhaustive over the function's returns rather than over interesting inputs.
 //
 // Every return opens with the sentence of the condition it reports. For four
-// of them that is ErrEntityEnvelope's; the repeated step id reports a
-// condition of its own, whose sentence it opens with instead, and it matches
-// ErrEntityEnvelope all the same.
+// of them that is ErrEntityEnvelope's; the repeated step id and the retired
+// API version each report a condition of their own, whose sentence they open
+// with instead, and they match ErrEntityEnvelope all the same.
 func TestValidateBytes_EveryFailureCarriesTheSentinel(t *testing.T) {
 	t.Parallel()
 
 	valid := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api
@@ -60,7 +60,7 @@ spec:
 			// node re-parse, which is what reaches the parse return.
 			name:                "parse failure",
 			kind:                KindComponent,
-			doc:                 []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n\t- mixed tabs and spaces"),
+			doc:                 []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n\t- mixed tabs and spaces"),
 			wantMessageFragment: "envelope: parse",
 		},
 		{
@@ -72,7 +72,7 @@ spec:
 		{
 			name:                "schema findings",
 			kind:                KindComponent,
-			doc:                 []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nstrayTopLevelKey: nope\n"),
+			doc:                 []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nstrayTopLevelKey: nope\n"),
 			wantMessageFragment: adviceCorrectDocument,
 		},
 		{
@@ -93,6 +93,13 @@ spec:
 			doc:                 []byte(duplicateStepRecipe),
 			wantMessageFragment: adviceDistinctStepIDs,
 			wantCondition:       ErrDuplicatePipelineStepID(),
+		},
+		{
+			name:                "retired api version",
+			kind:                KindComponent,
+			doc:                 []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\n"),
+			wantMessageFragment: "change the apiVersion line",
+			wantCondition:       ErrRetiredAPIVersion(),
 		},
 	}
 
@@ -145,7 +152,7 @@ func TestValidateBytes_FindinglessFailuresCarryNoDocumentAdvice(t *testing.T) {
 	t.Parallel()
 
 	doc := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api

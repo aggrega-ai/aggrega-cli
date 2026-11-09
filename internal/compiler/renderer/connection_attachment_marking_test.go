@@ -174,7 +174,7 @@ func TestRenderedKeyMarking_ReachesAConnectionSlotThroughTheFold(t *testing.T) {
 				connectionLine = "\n        connection: \"" + tc.connection + "\""
 			}
 			r := minimalRecipe("gateway")
-			r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+			r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

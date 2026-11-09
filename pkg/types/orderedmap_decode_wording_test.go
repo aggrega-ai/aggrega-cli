@@ -24,19 +24,19 @@ func TestOrderedMap_DecodeFailuresNameWhatWasWritten(t *testing.T) {
 	}{
 		{
 			name: "volume mounts written as a map",
-			src: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: nginx\n" +
+			src: "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: nginx\n" +
 				"    volumeMounts:\n      config: /etc/config\n",
 			want: []string{`under key "main" (line 5)`, "line 7: a map is written where a list of volume mounts is expected"},
 		},
 		{
 			name: "a service key written twice",
-			src: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: nginx\n" +
+			src: "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: nginx\n" +
 				"services:\n  http:\n    type: ClusterIP\n  http:\n    type: ClusterIP\n",
 			want: []string{`line 9: duplicate key "http": a key is written once in a map`},
 		},
 		{
 			name: "ports written as a number",
-			src: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: nginx\n" +
+			src: "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: nginx\n" +
 				"    ports: 8080\n",
 			want: []string{"line 6: a number is written where a map is expected"},
 		},

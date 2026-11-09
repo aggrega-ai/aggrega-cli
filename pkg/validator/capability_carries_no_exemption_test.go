@@ -25,7 +25,7 @@ import (
 // capabilityRecipeDoc renders a Recipe binding capability, publishing one value,
 // with whatever the body adds.
 func capabilityRecipeDoc(capability, body string) []byte {
-	return []byte(`apiVersion: aggrega.ai/v1alpha1
+	return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: probe
@@ -41,7 +41,7 @@ spec:
 // capabilityFeatureRecipeDoc renders a FeatureRecipe binding capability, with
 // whatever the body adds.
 func capabilityFeatureRecipeDoc(capability, body string) []byte {
-	return []byte(`apiVersion: aggrega.ai/v1alpha1
+	return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: probe

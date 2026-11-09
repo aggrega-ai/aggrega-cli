@@ -20,7 +20,7 @@ func TestEnvelope_ConnectionAttachments(t *testing.T) {
 	t.Parallel()
 
 	aggregate := func(attachment, featureUses string) []byte {
-		return []byte(`apiVersion: aggrega.ai/v1alpha1
+		return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: connection-attachments
@@ -50,7 +50,7 @@ spec:
 ` + featureUses)
 	}
 	subsystem := func(featureUses string) []byte {
-		return []byte(`apiVersion: aggrega.ai/v1alpha1
+		return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: connection-attachments
@@ -71,7 +71,7 @@ spec:
 `)
 	}
 	release := func(attachment string) []byte {
-		return []byte(`apiVersion: aggrega.ai/v1alpha1
+		return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: connection-attachments-prod
@@ -92,7 +92,7 @@ spec:
 ` + attachment)
 	}
 	component := func(socketField string) []byte {
-		return []byte(`apiVersion: aggrega.ai/v1alpha1
+		return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/gateway/probe
@@ -116,7 +116,7 @@ spec:
 `)
 	}
 	feature := func(socketField string) []byte {
-		return []byte(`apiVersion: aggrega.ai/v1alpha1
+		return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/bridge-probe

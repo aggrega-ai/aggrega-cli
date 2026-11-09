@@ -50,7 +50,7 @@ func (p *questionRecordingPuller) questions() []string {
 	return append([]string(nil), p.asked...)
 }
 
-const childComponentDoc = `apiVersion: aggrega.ai/v1alpha1
+const childComponentDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/child
@@ -62,7 +62,7 @@ spec:
   schema: inherited
 `
 
-const baseComponentDoc = `apiVersion: aggrega.ai/v1alpha1
+const baseComponentDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/base
@@ -198,7 +198,7 @@ func TestTheRefusalRecordTellsAShadowFromARefusal(t *testing.T) {
 		{
 			name: "a document no walk can index is recorded with the load's refusal",
 			layout: layout{dirs: []string{"a"}, files: map[string]string{
-				"a/broken.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: test/broken\n  version: \"1.0.0\"\nspec: not-a-mapping\n",
+				"a/broken.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: test/broken\n  version: \"1.0.0\"\nspec: not-a-mapping\n",
 			}},
 			subject:    "a/broken.yaml",
 			wantRecord: true,
@@ -221,7 +221,7 @@ func TestTheRefusalRecordTellsAShadowFromARefusal(t *testing.T) {
 		{
 			name: "a Component refused on its read carries the load's frame",
 			layout: layout{dirs: []string{"a"}, files: map[string]string{
-				"a/refused.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: test/refused\n  version: \"1.0.0\"\nspec:\n  schema: {}\n",
+				"a/refused.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: test/refused\n  version: \"1.0.0\"\nspec:\n  schema: {}\n",
 			}},
 			read:       "test/refused:1.0.0",
 			subject:    "a/refused.yaml",

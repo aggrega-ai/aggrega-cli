@@ -34,7 +34,7 @@ func lintBindingMaps(manifest *types.Manifest) []*ResolverError {
 func TestLintAnnotationBindingMaps_NoOverlap_NoWarning(t *testing.T) {
 	t.Parallel()
 	manifest := manifestFromYAML(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -60,7 +60,7 @@ spec:
 func TestLintAnnotationBindingMaps_SinglePathOverlap_OneWarning(t *testing.T) {
 	t.Parallel()
 	manifest := manifestFromYAML(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -117,7 +117,7 @@ spec:
 func TestLintAnnotationBindingMaps_UndottedKey_LocatorNamesTheKey(t *testing.T) {
 	t.Parallel()
 	manifest := manifestFromYAML(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -151,7 +151,7 @@ func TestLintAnnotationBindingMaps_MultiplePathOverlap_StableOrder(t *testing.T)
 	// drops — so the fixture is authored to fail against any implementation that
 	// sorts or that walks the infra side.
 	manifest := manifestFromYAML(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -190,7 +190,7 @@ func TestLintAnnotationBindingMaps_MultipleBindings_AuthorOrder(t *testing.T) {
 	// author-declared binding order (b-key first, then a-key —
 	// OrderedMap preserves author order, not lexical order).
 	manifest := manifestFromYAML(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test

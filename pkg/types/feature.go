@@ -14,7 +14,7 @@ import (
 //go:generate go run ../../internal/tools/typegen feature_gen.go
 
 // Feature's struct declarations (Feature, FeatureMetadata, FeatureSpec)
-// are generated into feature_gen.go from the published feature-v1alpha1
+// are generated into feature_gen.go from the published feature-v1beta1
 // schema; their godoc is the schema's descriptions. This hand-written
 // companion holds the polymorphic SelectorTerm (with its custom
 // marshalers — the generator emits a []SelectorTerm field referencing it
@@ -30,7 +30,7 @@ import (
 // matched by equality only. Marshalling re-emits the authored arm — a
 // scalar stays a scalar, a map stays a map with author-ordered keys — so
 // re-emission of parsed catalog content is deterministic.
-// Schema: feature-v1alpha1.schema.json#/properties/spec/properties/appliesToAnyOf/items
+// Schema: feature-v1beta1.schema.json#/properties/spec/properties/appliesToAnyOf/items
 type SelectorTerm struct {
 	// Selector is the string-form arm. Meaningful only when IsMap
 	// reports false.

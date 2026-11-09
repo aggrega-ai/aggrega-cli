@@ -48,8 +48,8 @@ func hoverRequest(t *testing.T, srv *Server, uri string, line, char int) hoverRe
 func TestHoverComponentRendersExtendsTarget(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFile(t, dir, "parent.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/web-server\n  version: 1.0.0\n  description: Web server base.\nspec: {}\n")
-	childPath := writeFile(t, dir, "child.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: app/api\n  version: 1.0.0\nspec:\n  extends: core/web-server\n")
+	writeFile(t, dir, "parent.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/web-server\n  version: 1.0.0\n  description: Web server base.\nspec: {}\n")
+	childPath := writeFile(t, dir, "child.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: app/api\n  version: 1.0.0\nspec:\n  extends: core/web-server\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, childPath, mustRead(t, childPath))
@@ -70,8 +70,8 @@ func TestHoverComponentRendersExtendsTarget(t *testing.T) {
 func TestHoverFeatureRendersExtendsTarget(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFile(t, dir, "parent.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: feature/base\n  version: 1.0.0\nspec: {}\n")
-	childPath := writeFile(t, dir, "child.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: feature/derived\n  version: 1.0.0\nspec:\n  extends: feature/base\n")
+	writeFile(t, dir, "parent.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: feature/base\n  version: 1.0.0\nspec: {}\n")
+	childPath := writeFile(t, dir, "child.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: feature/derived\n  version: 1.0.0\nspec:\n  extends: feature/base\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, childPath, mustRead(t, childPath))
@@ -88,8 +88,8 @@ func TestHoverFeatureRendersExtendsTarget(t *testing.T) {
 func TestHoverRecipeRendersImplementsTarget(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFile(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/cache\n  version: 1.0.0\nspec: {}\n")
-	recipePath := writeFile(t, dir, "recipe.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: cache-recipe\n  version: 1.0.0\nspec:\n  implements: core/cache\n  capability: helm\n")
+	writeFile(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/cache\n  version: 1.0.0\nspec: {}\n")
+	recipePath := writeFile(t, dir, "recipe.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: cache-recipe\n  version: 1.0.0\nspec:\n  implements: core/cache\n  capability: helm\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, recipePath, mustRead(t, recipePath))
@@ -106,8 +106,8 @@ func TestHoverRecipeRendersImplementsTarget(t *testing.T) {
 func TestHoverFeatureRecipeRendersImplementsTarget(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFile(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: feature/scaling\n  version: 1.0.0\nspec: {}\n")
-	frPath := writeFile(t, dir, "fr.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: scaling-fr\n  version: 1.0.0\nspec:\n  implements: feature/scaling\n  capability: helm\n")
+	writeFile(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: feature/scaling\n  version: 1.0.0\nspec: {}\n")
+	frPath := writeFile(t, dir, "fr.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: scaling-fr\n  version: 1.0.0\nspec:\n  implements: feature/scaling\n  capability: helm\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, frPath, mustRead(t, frPath))
@@ -124,8 +124,8 @@ func TestHoverFeatureRecipeRendersImplementsTarget(t *testing.T) {
 func TestHoverComponentsTypeRendersTarget(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFile(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n")
-	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: core/server\n")
+	writeFile(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n")
+	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: core/server\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, aggPath, mustRead(t, aggPath))
@@ -143,8 +143,8 @@ func TestHoverComponentsTypeRendersTarget(t *testing.T) {
 func TestHoverFeaturesTypeRendersTarget(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFile(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: feature/autoscaler\n  version: 1.0.0\nspec: {}\n")
-	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: core/api\n      features:\n        scaling:\n          type: feature/autoscaler\n")
+	writeFile(t, dir, "target.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: feature/autoscaler\n  version: 1.0.0\nspec: {}\n")
+	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: core/api\n      features:\n        scaling:\n          type: feature/autoscaler\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, aggPath, mustRead(t, aggPath))
@@ -162,8 +162,8 @@ func TestHoverFeaturesTypeRendersTarget(t *testing.T) {
 func TestHoverAggregateRendersFromReleaseAggregatePath(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFile(t, dir, "app.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n")
-	releasePath := writeFile(t, dir, "release.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  aggregate: app\n  manifest: prod-manifest\n")
+	writeFile(t, dir, "app.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n")
+	releasePath := writeFile(t, dir, "release.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  aggregate: app\n  manifest: prod-manifest\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, releasePath, mustRead(t, releasePath))
@@ -181,8 +181,8 @@ func TestHoverAggregateRendersFromReleaseAggregatePath(t *testing.T) {
 func TestHoverManifestRendersFromReleaseManifestPath(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFile(t, dir, "prod-manifest.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: prod-manifest\n  version: 1.0.0\nspec:\n  mappings:\n    components:\n      type:\n        core/server: recipes/helm-server\n")
-	releasePath := writeFile(t, dir, "release.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  aggregate: app\n  manifest: prod-manifest\n")
+	writeFile(t, dir, "prod-manifest.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: prod-manifest\n  version: 1.0.0\nspec:\n  mappings:\n    components:\n      type:\n        core/server: recipes/helm-server\n")
+	releasePath := writeFile(t, dir, "release.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  aggregate: app\n  manifest: prod-manifest\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, releasePath, mustRead(t, releasePath))
@@ -200,8 +200,8 @@ func TestHoverManifestRendersFromReleaseManifestPath(t *testing.T) {
 func TestHoverManifestRecipeReferenceRendersRecipe(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFile(t, dir, "recipe.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: recipes/helm-server\n  version: 1.0.0\nspec:\n  implements: core/server\n  capability: helm\n")
-	manifestPath := writeFile(t, dir, "manifest.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  mappings:\n    components:\n      type:\n        core/server: recipes/helm-server\n")
+	writeFile(t, dir, "recipe.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: recipes/helm-server\n  version: 1.0.0\nspec:\n  implements: core/server\n  capability: helm\n")
+	manifestPath := writeFile(t, dir, "manifest.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  mappings:\n    components:\n      type:\n        core/server: recipes/helm-server\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, manifestPath, mustRead(t, manifestPath))
@@ -219,7 +219,7 @@ func TestHoverManifestRecipeReferenceRendersRecipe(t *testing.T) {
 func TestHoverUsesTargetRendersComponentInstance(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n      description: The database.\n    api:\n      type: core/api\n      uses:\n        backend:\n          primary:\n            target: db\n")
+	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n      description: The database.\n    api:\n      type: core/api\n      uses:\n        backend:\n          primary:\n            target: db\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, aggPath, mustRead(t, aggPath))
@@ -240,7 +240,7 @@ func TestHoverUsesTargetRendersComponentInstance(t *testing.T) {
 func TestHoverUsesTargetSimpleListRendersComponentInstance(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n    api:\n      type: core/api\n      uses:\n        backend:\n          - db\n")
+	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n    api:\n      type: core/api\n      uses:\n        backend:\n          - db\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, aggPath, mustRead(t, aggPath))
@@ -258,7 +258,7 @@ func TestHoverUsesTargetSimpleListRendersComponentInstance(t *testing.T) {
 func TestHoverUsesTargetBareStringShorthandRendersComponentInstance(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n    api:\n      type: core/api\n      uses:\n        backend:\n          hr-db: db\n")
+	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n    api:\n      type: core/api\n      uses:\n        backend:\n          hr-db: db\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, aggPath, mustRead(t, aggPath))
@@ -276,7 +276,7 @@ func TestHoverUsesTargetBareStringShorthandRendersComponentInstance(t *testing.T
 func TestHoverUsesTargetMissingReturnsNullContents(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: core/api\n      uses:\n        backend:\n          primary:\n            target: nonexistent\n")
+	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: core/api\n      uses:\n        backend:\n          primary:\n            target: nonexistent\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, aggPath, mustRead(t, aggPath))
@@ -292,8 +292,8 @@ func TestHoverReleaseAggregatePathRendersWarningOnKindMismatch(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	// File at "app" is actually a Manifest (operator typo).
-	writeFile(t, dir, "app.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: misnamed\n  version: 1.0.0\nspec:\n  mappings: {}\n")
-	releasePath := writeFile(t, dir, "release.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  aggregate: app\n")
+	writeFile(t, dir, "app.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: misnamed\n  version: 1.0.0\nspec:\n  mappings: {}\n")
+	releasePath := writeFile(t, dir, "release.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: prod\n  version: 1.0.0\nspec:\n  aggregate: app\n")
 	srv := newTestServer(t, dir, nil, nil)
 	stderr := captureStderr(srv)
 	validateFile(t, srv, releasePath, mustRead(t, releasePath))
@@ -317,7 +317,7 @@ func TestHoverReleaseAggregatePathRendersWarningOnKindMismatch(t *testing.T) {
 func TestHoverReturnsNullContentsForSchemaPropertyCursor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	compPath := writeFile(t, dir, "comp.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec:\n  schema:\n    properties:\n      port:\n        type: integer\n")
+	compPath := writeFile(t, dir, "comp.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec:\n  schema:\n    properties:\n      port:\n        type: integer\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, compPath, mustRead(t, compPath))
@@ -332,7 +332,7 @@ func TestHoverReturnsNullContentsForSchemaPropertyCursor(t *testing.T) {
 func TestHoverCursorOnUsesAliasKeyReturnsNullContents(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n    api:\n      type: core/api\n      uses:\n        backend:\n          hr-db: db\n")
+	aggPath := writeFile(t, dir, "aggregate.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n    api:\n      type: core/api\n      uses:\n        backend:\n          hr-db: db\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, aggPath, mustRead(t, aggPath))
@@ -347,7 +347,7 @@ func TestHoverCursorOnUsesAliasKeyReturnsNullContents(t *testing.T) {
 func TestHoverReturnsNullContentsWhenCursorNotOnReferenceShape(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	compPath := writeFile(t, dir, "comp.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n")
+	compPath := writeFile(t, dir, "comp.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n")
 	srv := newTestServer(t, dir, nil, nil)
 	srv.stderr = drainStderr()
 	validateFile(t, srv, compPath, mustRead(t, compPath))

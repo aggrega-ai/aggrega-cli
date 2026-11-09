@@ -6,7 +6,7 @@
 # the connection, through .context.uses, rather than receiving them injected. A
 # Release placing the two in different stacks therefore exports a value only
 # because the application's template read it.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: cloudformation-two-boundary

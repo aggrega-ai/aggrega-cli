@@ -42,7 +42,7 @@ const (
 // cacheAnchorPluginEntity is the governance Plugin entity the recorded attachment
 // names. It exists so the entity-fronted cascade gets PAST its front and reaches
 // the content-cache tier, which is the tier under test.
-const cacheAnchorPluginEntity = `apiVersion: aggrega.ai/v1alpha1
+const cacheAnchorPluginEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: cache-anchor-probe

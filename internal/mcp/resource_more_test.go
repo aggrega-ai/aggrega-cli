@@ -49,7 +49,7 @@ func TestServeSchemaInline(t *testing.T) {
 func TestServeCatalogEntity(t *testing.T) {
 	t.Parallel()
 	ws := t.TempDir()
-	body := "apiVersion: aggrega.ai/v1alpha1\n" +
+	body := "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Component\n" +
 		"metadata:\n" +
 		"  name: core/compute/api-server\n" +

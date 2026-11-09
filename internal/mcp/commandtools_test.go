@@ -452,7 +452,7 @@ func TestGeneratedCommandToolIsInvocableByName(t *testing.T) {
 func TestGeneratedCommandToolReturnsTheCommandsBytesVerbatim(t *testing.T) {
 	// Shapes a reshaping transport disturbs: two-space indentation, interior
 	// newlines, and a trailing newline the structured writer always emits.
-	const document = "{\n  \"apiVersion\": \"aggrega.ai/v1alpha1\",\n  \"kind\": \"IR\",\n  \"spec\": {\n    \"nodes\": {}\n  }\n}\n"
+	const document = "{\n  \"apiVersion\": \"aggrega.ai/v1beta1\",\n  \"kind\": \"IR\",\n  \"spec\": {\n    \"nodes\": {}\n  }\n}\n"
 
 	s := newCommandToolServer(t, func(_ context.Context, _ string, _ []string, stdout, stderr io.Writer) error {
 		_, _ = io.WriteString(stdout, document)

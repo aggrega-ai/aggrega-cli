@@ -17,7 +17,7 @@ import (
 func TestIndexFile_FeatureUnmarshalError(t *testing.T) {
 	t.Parallel()
 	c := makeEmptyCatalog()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 spec: [not, a, mapping]
 `
@@ -31,7 +31,7 @@ spec: [not, a, mapping]
 func TestIndexFile_RecipeUnmarshalError(t *testing.T) {
 	t.Parallel()
 	c := makeEmptyCatalog()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 spec: [not, a, mapping]
 `
@@ -45,7 +45,7 @@ spec: [not, a, mapping]
 func TestIndexFile_FeatureRecipeUnmarshalError(t *testing.T) {
 	t.Parallel()
 	c := makeEmptyCatalog()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 spec: [not, a, mapping]
 `
@@ -59,7 +59,7 @@ spec: [not, a, mapping]
 func TestIndexFile_AggregateUnmarshalError(t *testing.T) {
 	t.Parallel()
 	c := makeEmptyCatalog()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 spec: [not, a, mapping]
 `
@@ -73,7 +73,7 @@ spec: [not, a, mapping]
 func TestIndexFile_SchemaLibraryUnmarshalError(t *testing.T) {
 	t.Parallel()
 	c := makeEmptyCatalog()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 spec: [not, a, mapping]
 `
@@ -87,7 +87,7 @@ spec: [not, a, mapping]
 func TestIndexFile_MappingLibraryUnmarshalError(t *testing.T) {
 	t.Parallel()
 	c := makeEmptyCatalog()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 spec: [not, a, mapping]
 `
@@ -102,7 +102,7 @@ spec: [not, a, mapping]
 func TestIndexFile_RecipeWithStringValuesMapping(t *testing.T) {
 	t.Parallel()
 	c := makeEmptyCatalog()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: myco/r
@@ -141,7 +141,7 @@ func TestLoadAll_DuplicateKeysFirstWins(t *testing.T) {
 	tmp1 := t.TempDir()
 	tmp2 := t.TempDir()
 	comp := func(desc string) string {
-		return `apiVersion: aggrega.ai/v1alpha1
+		return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: shared

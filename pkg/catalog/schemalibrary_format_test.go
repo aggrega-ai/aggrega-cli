@@ -20,7 +20,7 @@ import (
 func writeSchemaLibrary(t *testing.T, name, body string) string {
 	t.Helper()
 	dir := t.TempDir()
-	src := "apiVersion: aggrega.ai/v1alpha1\n" +
+	src := "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: SchemaLibrary\n" +
 		"metadata:\n" +
 		"  name: " + name + "\n" +

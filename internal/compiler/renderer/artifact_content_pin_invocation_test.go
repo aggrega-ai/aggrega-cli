@@ -50,7 +50,7 @@ func pinImportFile(t *testing.T, body string) (string, string) {
 	return p, digest.ContentDigest([]byte(body))
 }
 
-const pinWorkload = `apiVersion: aggrega.ai/v1alpha1
+const pinWorkload = `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

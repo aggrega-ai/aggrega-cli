@@ -435,7 +435,7 @@ func TestPluginDefaultLimits(t *testing.T) {
 	})
 
 	// A Plugin with an explicit non-zero runtime cap is silent.
-	withCap := []byte(`apiVersion: aggrega.ai/v1alpha1
+	withCap := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: capped-renderer

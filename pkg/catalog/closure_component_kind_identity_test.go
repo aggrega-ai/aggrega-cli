@@ -41,7 +41,7 @@ func TestAClosureEntityOfAnotherKindReadsNoComponentOfItsName(t *testing.T) {
 			ws, cd := unsatisfiedPinWorkspace(t)
 			// A Component whose schema names a library no catalog holds: closure-scoped
 			// pillar validation refuses it wherever it reads it.
-			writeCatalogFile(t, cd, "broken-ref.yaml", `apiVersion: aggrega.ai/v1alpha1
+			writeCatalogFile(t, cd, "broken-ref.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/broken-ref

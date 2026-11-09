@@ -487,7 +487,7 @@ func localCatalogNoteRelease(t *testing.T) (root, release string) {
 	t.Helper()
 	root = t.TempDir()
 	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename), "workspace: {}\noffline: true\n")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
@@ -497,7 +497,7 @@ spec:
     web:
       type: example/compute/missing:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -509,7 +509,7 @@ spec:
         example/compute/missing:1.0.0: compose/missing:1.0.0
 `)
 	release = filepath.Join(root, "release.yaml")
-	writeFixture(t, release, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, release, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release

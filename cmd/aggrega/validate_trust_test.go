@@ -44,7 +44,7 @@ const trustGateDigest = "sha256:111111111111111111111111111111111111111111111111
 // the plugin part of the verdict attachment set the record is compared against
 // without requiring any guest bytes to exist. Presence, which is what the dropped-
 // gate refusal is about, is decided before anything is loaded.
-const trustGatePluginEntity = `apiVersion: aggrega.ai/v1alpha1
+const trustGatePluginEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: ` + trustGateName + `

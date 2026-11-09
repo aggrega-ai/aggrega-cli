@@ -36,7 +36,7 @@ type packedPlugin struct {
 
 func packPlugin(t *testing.T, name string, wasm []byte) packedPlugin {
 	t.Helper()
-	entity := "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: " + name +
+	entity := "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: " + name +
 		"\n  version: \"1.0.0\"\n  pluginType: governance\nspec:\n  abiVersion: v1alpha1\n  exports:\n    - name: verdict_ir\n"
 	store := memory.New()
 	if _, err := oci.PushPluginManifest(context.Background(), store, "1.0.0", []byte(entity), wasm, nil); err != nil {

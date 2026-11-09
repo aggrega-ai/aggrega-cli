@@ -69,7 +69,7 @@ func sourceAnchorCatalog(t *testing.T, authored string) string {
 		}
 	}
 	entities := map[string]string{
-		"recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: anchored-source
@@ -83,7 +83,7 @@ spec:
   valuesMapping: |
     { "image": "app:latest" }
 `,
-		"featurerecipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"featurerecipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: anchored-source-fr

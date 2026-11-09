@@ -55,7 +55,7 @@ func TestDefaultSubsystem_NodeIdentityPreserved(t *testing.T) {
 func TestDefaultSubsystem_MultiSubsystemBuilds(t *testing.T) {
 	t.Parallel()
 	wf := baseWorkspaceFiles()
-	wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+	wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -73,7 +73,7 @@ spec:
         worker:
           type: core/server
 `
-	wf.release = `apiVersion: aggrega.ai/v1alpha1
+	wf.release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -116,7 +116,7 @@ spec:
 func TestDefaultSubsystem_DeclaredDefaultNotSynthesized(t *testing.T) {
 	t.Parallel()
 	wf := baseWorkspaceFiles()
-	wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+	wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app

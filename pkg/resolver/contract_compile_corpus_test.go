@@ -35,7 +35,7 @@ import (
 // row replaces the Component document and nothing else, so a row's refusal is
 // attributable to the contract it broke.
 const (
-	contractCorpusAggregate = `apiVersion: aggrega.ai/v1alpha1
+	contractCorpusAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: contract-corpus-app
@@ -47,7 +47,7 @@ spec:
       values:
         port: 8080
 `
-	contractCorpusManifest = `apiVersion: aggrega.ai/v1alpha1
+	contractCorpusManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: contract-corpus-manifest
@@ -58,7 +58,7 @@ spec:
       type:
         core/server: server-recipe:1.0.0
 `
-	contractCorpusRelease = `apiVersion: aggrega.ai/v1alpha1
+	contractCorpusRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: contract-corpus-rel
@@ -73,7 +73,7 @@ spec:
       components:
         api: {}
 `
-	contractCorpusRecipe = `apiVersion: aggrega.ai/v1alpha1
+	contractCorpusRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -82,7 +82,7 @@ spec:
   capability: compose
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -90,7 +90,7 @@ spec:
         ports:
           p: 8080
 `
-	contractCorpusPlugin = `apiVersion: aggrega.ai/v1alpha1
+	contractCorpusPlugin = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: compose
@@ -119,7 +119,7 @@ spec:
 // differ in something else without the difference being visible in the diff.
 func contractCorpusComponent(valueSchema, infraSchema, entitySchema string) string {
 	var b strings.Builder
-	b.WriteString(`apiVersion: aggrega.ai/v1alpha1
+	b.WriteString(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -505,7 +505,7 @@ const contractCorpusUnusableBody = "bad: { type: array, items: nonsense }"
 // has nothing to check and must build. Without it, the refusal could be firing
 // on the presence of a socket or of a schema field rather than on a contract
 // nothing can be built from, and every positive row would still pass.
-const contractCorpusSchemalessComponent = `apiVersion: aggrega.ai/v1alpha1
+const contractCorpusSchemalessComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -523,7 +523,7 @@ spec:
 // contract the row's Component declares. The rest of the workspace is untouched,
 // which is what keeps a row's verdict attributable to the payload it wrote.
 func contractCorpusAggregateWithValues(values string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: contract-corpus-app

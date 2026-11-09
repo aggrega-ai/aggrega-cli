@@ -26,7 +26,7 @@ import (
 // nameMappingManifestYAML is the fixture's Manifest with the two name-tier keys
 // given.
 func nameMappingManifestYAML(componentKey, featureKey string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: greeters-manifest

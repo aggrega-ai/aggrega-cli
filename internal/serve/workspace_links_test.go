@@ -18,16 +18,16 @@ import (
 // The documents the link tests lay: a Component of their own name, and a Feature
 // that declares no applicability, so every label set offers it as a candidate.
 func linkTestComponent(name string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: " + name + "\nspec: {}\n"
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: " + name + "\nspec: {}\n"
 }
 
 func linkTestFeature(name string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: " + name + "\nspec: {}\n"
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: " + name + "\nspec: {}\n"
 }
 
 // linkTestConsumer is the Component whose one socket accepts any Component, so the
 // connection candidates it is offered are every Component the workspace reads.
-const linkTestConsumer = "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: api\n" +
+const linkTestConsumer = "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: api\n" +
 	"spec:\n  usesSchema:\n    store: {}\n"
 
 // TestTheEntityIndexLeavesOutAndNamesEachLinkLeadingOutOfTheRoot drives

@@ -16,7 +16,7 @@
 #
 # Both fold to PaymentsDbStorageHeadroom. Every other derived name in this build
 # stays distinct, so the resource name space is the only one that meets.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: cloudformation-published-feature-recipes-fold-collision

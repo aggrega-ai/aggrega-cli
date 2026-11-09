@@ -324,7 +324,7 @@ func flattenAuthored(t *testing.T, aggYAML string, params map[string]any) (*flat
 func TestActiveToggleThroughTheProducerChain(t *testing.T) {
 	t.Parallel()
 
-	const doc = `apiVersion: aggrega.ai/v1alpha1
+	const doc = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -432,7 +432,7 @@ spec:
 func TestSubAggregateActiveToggleThroughTheProducerChain(t *testing.T) {
 	t.Parallel()
 
-	const doc = `apiVersion: aggrega.ai/v1alpha1
+	const doc = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo

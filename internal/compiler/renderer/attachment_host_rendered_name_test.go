@@ -107,7 +107,7 @@ metadata:
 	spec := types.RecipeSpec{Capability: "helm", Implements: hostNameProbeComponent, Artifacts: artifacts}
 	switch kind {
 	case hostSynthesized:
-		spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+		spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

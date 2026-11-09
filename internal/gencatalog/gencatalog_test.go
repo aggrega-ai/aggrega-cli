@@ -43,7 +43,7 @@ func writeEmbeddedOverlays(t *testing.T, dir string) {
 			leaf = leaf[i+1:]
 		}
 		overlay := `# SPDX-License-Identifier: Apache-2.0
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: ` + leaf + `
@@ -300,7 +300,7 @@ func TestGenCatalogFromOneGuestCarriesTheDescriptionItReports(t *testing.T) {
 	wasmPath := filepath.Join(dir, "json.wasm")
 	writeFixture(t, wasmPath, string(guest))
 	overlay := filepath.Join(dir, "json.yaml")
-	writeFixture(t, overlay, "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: json\n")
+	writeFixture(t, overlay, "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: json\n")
 	outDir := t.TempDir()
 
 	opts := Options{PluginPath: wasmPath, OutputDir: outDir, OverlayPath: overlay}
@@ -385,7 +385,7 @@ func TestGenCatalogRejectsInvalidWorkloadSchema(t *testing.T) {
 		name = name[i+1:]
 	}
 	invalid := `# SPDX-License-Identifier: Apache-2.0
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: ` + name + `

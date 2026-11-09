@@ -25,11 +25,11 @@ func linkRootWorkspace(t *testing.T) string {
 	realDir := filepath.Join(base, "real")
 	outside := filepath.Join(base, "outside")
 	release := func(name string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n"
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n"
 	}
 	for path, body := range map[string]string{
 		filepath.Join(realDir, workspaceconfig.ConfigFilename): "workspace: {}\n",
-		filepath.Join(realDir, "aggregate.yaml"):               "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: app\nspec:\n  components: {}\n",
+		filepath.Join(realDir, "aggregate.yaml"):               "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: app\nspec:\n  components: {}\n",
 		filepath.Join(realDir, "release-a.yaml"):               release("a"),
 		filepath.Join(realDir, "release-b.yaml"):               release("b"),
 		filepath.Join(outside, "release-out.yaml"):             release("out"),

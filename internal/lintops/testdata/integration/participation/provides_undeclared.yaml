@@ -1,7 +1,7 @@
 # A Recipe that publishes one provides key beyond what its Component declares.
 # Paired with provides_undeclared_component.yaml, which declares endpoint and
 # model and nothing else.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: broker-gateway
@@ -17,7 +17,7 @@ spec:
     model: "{{ .values.model }}"
     provider: "{{ .values.provider_name }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     form: reference
     endpoint: "{{ .infra.endpoint }}"

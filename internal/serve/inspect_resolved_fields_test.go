@@ -204,7 +204,7 @@ func TestEntityDefinitionCarriesAnAuthoredDocumentByReferenceNotByValue(t *testi
 // Asserting the absolute spelling rather than merely a non-empty one is the other
 // half — the climb is non-empty too.
 func TestEntityDefinitionSpellsTheReportedPathByContainment(t *testing.T) {
-	const aggregate = `apiVersion: aggrega.ai/v1alpha1
+	const aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: probe-module

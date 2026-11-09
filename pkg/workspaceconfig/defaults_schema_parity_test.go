@@ -35,7 +35,7 @@ import (
 // two sides agree — only a run that executed these checks is.
 //
 // The schema is read from the exported string the schemas module embeds, and
-// the reference to schemas.AggregaConfigV1alpha1 below is what makes those
+// the reference to schemas.AggregaConfigV1beta1 below is what makes those
 // bytes an input the build accounts for: the schema is compiled into this test
 // binary rather than read from disk at run time, so a schema edit changes this
 // binary and a previously recorded result cannot be reused for it.
@@ -412,7 +412,7 @@ func codeSeededDefaults() (map[string]any, error) {
 func TestConfigSchemaDefaultsMatchCodeDefaults(t *testing.T) {
 	t.Parallel()
 
-	declared, err := configSchemaDefaults(schemas.AggregaConfigV1alpha1)
+	declared, err := configSchemaDefaults(schemas.AggregaConfigV1beta1)
 	if err != nil {
 		t.Fatalf("read the defaults the configuration schema declares: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestCodeSeededDefaultsAreDeclaredInSchema(t *testing.T) {
 			"the comparison in %s reported nothing rather than finding nothing", defaultsCoverageLocation)
 	}
 
-	declared, err := configSchemaDefaults(schemas.AggregaConfigV1alpha1)
+	declared, err := configSchemaDefaults(schemas.AggregaConfigV1beta1)
 	if err != nil {
 		t.Fatalf("read the defaults the configuration schema declares: %v", err)
 	}

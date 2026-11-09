@@ -18,7 +18,7 @@ import (
 
 // entityDoc authors a minimal document of kind named name.
 func entityDoc(kind, name string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n"
+	return "apiVersion: aggrega.ai/v1beta1\nkind: " + kind + "\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n"
 }
 
 // TestRefuseSharedDirectoryReadsOnlyWhichEntitiesSitBeside drives the one

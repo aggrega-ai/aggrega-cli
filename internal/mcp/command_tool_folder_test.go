@@ -353,7 +353,7 @@ func TestACallsCatalogDirectoriesAreReadFromTheRootItResolvedFirst(t *testing.T)
 		writeLinkedDirsFile(t, filepath.Join(subject, ".aggrega-config.yaml"), "workspace: {}\n")
 		release := filepath.Join(subject, "release.yaml")
 		writeLinkedDirsFile(t, release,
-			"apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: only\n  version: \"1.0.0\"\n")
+			"apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: only\n  version: \"1.0.0\"\n")
 		t.Chdir(startedIn)
 
 		s := &server{out: io.Discard, logw: io.Discard, transport: transportStdio}

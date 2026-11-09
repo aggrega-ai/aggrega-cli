@@ -18,7 +18,7 @@ import (
 func TestLazyLookup_ResolvesSchemaLibrariesViaWalk(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFixture(t, dir, "library.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "library.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseComponents

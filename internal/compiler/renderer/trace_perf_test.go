@@ -113,7 +113,7 @@ func TestTrace_NonBlockingContract_50Nodes(t *testing.T) {
 		Metadata: types.RecipeMetadata{Name: "perf-bench-recipe", Version: "1.0.0"},
 		Spec: types.RecipeSpec{
 			Capability: "helm",
-			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

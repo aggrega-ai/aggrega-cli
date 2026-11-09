@@ -22,7 +22,7 @@ import (
 // indexes and resolves, so the high-pool fan-out exercises the lazy
 // lookup's Tier-1 index build + hot-cache populate races, not just the
 // parse cache and diagnostics map.
-const concurrencyComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+const concurrencyComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/x

@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: cw-router-refused-recipe
@@ -9,7 +9,7 @@ spec:
   # Two refused entries and one admitted beside them: a connection the router
   # does not draw, and a slot the socket does not declare.
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

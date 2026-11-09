@@ -23,7 +23,7 @@
 # names the build actually derives: a name in the derived shape for a key no
 # edge injects is not a collision, and neither is a near miss.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: db-reader

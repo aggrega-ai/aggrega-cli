@@ -17,7 +17,7 @@ import (
 // pillar content, which the Component envelope refuses by a named rule: an
 // extending Component inherits its base's pillars verbatim and declares the
 // inheritance marker instead of authoring its own.
-const refusedComponentDoc = `apiVersion: aggrega.ai/v1alpha1
+const refusedComponentDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acc/refused
@@ -32,7 +32,7 @@ spec:
       host: { type: string, required: true }
 `
 
-const refusedFeatureDoc = `apiVersion: aggrega.ai/v1alpha1
+const refusedFeatureDoc = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: acc/refused-feature
@@ -169,7 +169,7 @@ func TestLazyLookup_RefusedFeatureRecordedNotDiscarded(t *testing.T) {
 func TestLazyLookup_ResolvableEntityRecordsNoSkip(t *testing.T) {
 	ws := t.TempDir()
 	dir := filepath.Join(ws, "catalog")
-	writeRefusedFixture(t, filepath.Join(dir, "components", "clean.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeRefusedFixture(t, filepath.Join(dir, "components", "clean.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acc/clean

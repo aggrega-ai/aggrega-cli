@@ -85,12 +85,12 @@ func TestDiscoveryRenderIsPinnedToTheLockfileItRecords(t *testing.T) {
 	ws := t.TempDir()
 
 	// The recipe body the lockfile records and a build re-hashes.
-	recorded := []byte("apiVersion: aggrega.ai/v1alpha1\n" +
+	recorded := []byte("apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Recipe\nmetadata:\n  name: database\n  version: 1.0.0\n" +
 		"spec:\n  capability: helm\n")
 	// A different body, standing in for whatever the view was left holding. Only
 	// its digest is used; the bytes need to differ and nothing more.
-	divergent := []byte("apiVersion: aggrega.ai/v1alpha1\n" +
+	divergent := []byte("apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Recipe\nmetadata:\n  name: database\n  version: 1.0.0\n" +
 		"spec: {}\n")
 

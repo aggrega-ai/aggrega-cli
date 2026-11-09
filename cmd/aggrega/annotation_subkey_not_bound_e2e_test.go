@@ -23,7 +23,7 @@ import (
 func annotationBindingWorkspace(t *testing.T, releaseValue, aggregateValue string) (catalogRoot, releasePath string) {
 	t.Helper()
 	root := t.TempDir()
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
@@ -37,7 +37,7 @@ spec:
         api:
           type: core/server:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel
@@ -54,7 +54,7 @@ spec:
 `+releaseValue+`      components:
         api: {}
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -79,7 +79,7 @@ spec:
               - max_connections
 `)
 	catalogRoot = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -91,7 +91,7 @@ spec:
     values:
       image: { type: string, default: "registry.example/server:1.0" }
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "base", "features", "db-pool.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "features", "db-pool.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/db-pool
@@ -106,7 +106,7 @@ spec:
       max_connections: { type: integer, default: 1 }
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -115,7 +115,7 @@ spec:
   capability: helm
   implements: core/server:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       server:
@@ -128,7 +128,7 @@ spec:
         ports:
           web: 8080
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "feature-recipes", "helm", "db-pool.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "feature-recipes", "helm", "db-pool.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: db-pool-helm

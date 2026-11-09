@@ -3,7 +3,7 @@
 # Feature under the same instance name, and the FeatureRecipe's body references
 # nothing about the boundary — so two contributors render byte-identical
 # fragments and each declares one endpoint.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: bs-identical-bodies

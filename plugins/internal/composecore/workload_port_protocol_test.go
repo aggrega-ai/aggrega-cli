@@ -17,7 +17,7 @@ import (
 // transport. Only a NodePort or LoadBalancer entry publishes on compose, so
 // this is the shape in which a transport can reach compose's output at all.
 func publishedPortWorkload(protocol string) *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "resolver:1.0"}
 	c.Ports.Set("dns", types.PortSpec{Port: 53, Protocol: protocol})
 	w.Containers.Set("main", c)
@@ -105,7 +105,7 @@ func TestSynthesizeWorkload_UnspellableTransportHalts(t *testing.T) {
 // author would be refused for a port the target never emits.
 func TestSynthesizeWorkload_UnpublishedPortTransportIsNotAHalt(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "resolver:1.0"}
 	c.Ports.Set("dns", types.PortSpec{Port: 53, Protocol: "SCTP"})
 	w.Containers.Set("main", c)

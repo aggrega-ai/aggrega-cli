@@ -9,7 +9,7 @@
 # This variant renders the database host its attachment's inject mapping
 # delivered, which the mapping read directly off the connection.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: db-reader

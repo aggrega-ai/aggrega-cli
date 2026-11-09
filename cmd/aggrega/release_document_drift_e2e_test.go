@@ -171,7 +171,7 @@ func TestEditedExtendedReleaseIsDrift(t *testing.T) {
 	relA, _ := sharedRecipeTwoReleasesFixture(t, root, srv.URL)
 	catalogDir := filepath.Join(root, "catalog")
 	child := filepath.Join(root, "release-child.yaml")
-	writeFixture(t, child, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, child, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: release-child

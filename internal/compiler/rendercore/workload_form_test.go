@@ -25,7 +25,7 @@ func TestWorkloadProjection_FormRidesABI(t *testing.T) {
 		WorkloadFormScheduled,
 		WorkloadFormTask,
 	} {
-		w := types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form}
+		w := types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: form}
 		c := types.ContainerSpec{Image: "app:1.0"}
 		w.Containers.Set("main", c)
 
@@ -51,7 +51,7 @@ func TestValidateWorkloadForm(t *testing.T) {
 	t.Parallel()
 
 	withPersistentTemplate := func(form string) *types.Workload {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: form}
 		w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "1Gi"}})
 		return w
 	}
@@ -69,7 +69,7 @@ func TestValidateWorkloadForm(t *testing.T) {
 	}
 
 	// stateless with no persistentTemplate → allowed.
-	plain := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	plain := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	plain.Volumes.Set("data", types.VolumeSpec{Persistent: &types.PersistentVolume{Size: "1Gi"}})
 	if err := ValidateWorkloadForm(plain, "node"); err != nil {
 		t.Errorf("stateless with plain persistent volume should pass, got %v", err)
@@ -83,7 +83,7 @@ func TestValidateWorkloadForm_Schedule(t *testing.T) {
 	t.Parallel()
 
 	scheduled := func(schedule string) *types.Workload {
-		return &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: WorkloadFormScheduled, Schedule: schedule}
+		return &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: WorkloadFormScheduled, Schedule: schedule}
 	}
 
 	// scheduled + valid macro → allowed.
@@ -107,7 +107,7 @@ func TestValidateWorkloadForm_Schedule(t *testing.T) {
 
 	// schedule set on a non-scheduled form → ErrScheduleRequiresScheduledForm.
 	for _, form := range []string{"", WorkloadFormStateless, WorkloadFormStateful, WorkloadFormDaemon, WorkloadFormTask} {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form, Schedule: "@daily"}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: form, Schedule: "@daily"}
 		if err := ValidateWorkloadForm(w, "node"); !errors.Is(err, ErrScheduleRequiresScheduledForm()) {
 			t.Errorf("form %q with a schedule: want ErrScheduleRequiresScheduledForm, got %v", form, err)
 		}

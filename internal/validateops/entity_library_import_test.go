@@ -16,7 +16,7 @@ import (
 
 // probeArtifactLibrary is an ArtifactLibrary carrying one bundle of one file,
 // whose content holds a marker the rendered output is searched for.
-const probeArtifactLibrary = `apiVersion: aggrega.ai/v1alpha1
+const probeArtifactLibrary = `apiVersion: aggrega.ai/v1beta1
 kind: ArtifactLibrary
 metadata:
   name: ProbeArtifacts
@@ -35,7 +35,7 @@ spec:
 
 // probeWorkloadLibrary is a WorkloadLibrary carrying one workload for the probe
 // Component, whose image holds a marker the rendered output is searched for.
-const probeWorkloadLibrary = `apiVersion: aggrega.ai/v1alpha1
+const probeWorkloadLibrary = `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: ProbeWorkloads
@@ -43,7 +43,7 @@ metadata:
 spec:
   workloads:
     Server: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Workload
       replicas: 1
       containers:
@@ -60,7 +60,7 @@ spec:
 
 // probeRecipeHeader is the probe Recipe up to its workload, which each row
 // writes itself.
-const probeRecipeHeader = `apiVersion: aggrega.ai/v1alpha1
+const probeRecipeHeader = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: probe

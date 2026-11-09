@@ -29,7 +29,7 @@ import (
 // full resolve → EvalTemplate → synthesize path, not a static string. `printf`
 // is a Go-template builtin, so no external values context is needed for the
 // expression to evaluate.
-const frWorkloadBody = `apiVersion: aggrega.ai/v1alpha1
+const frWorkloadBody = `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -38,7 +38,7 @@ containers:
 
 func frWorkloadLibraryFixture(name, entry, body string) types.WorkloadLibrary {
 	wl := types.WorkloadLibrary{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "WorkloadLibrary",
 		Metadata:   types.WorkloadLibraryMetadata{Name: name, Version: "1.0.0"},
 	}
@@ -86,7 +86,7 @@ func renderFRWorkload(t *testing.T, w types.WorkloadTemplate, wlibs map[string]t
 		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe"},
-				Spec:     types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: api:latest\n"}},
+				Spec:     types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: api:latest\n"}},
 			}, true
 		},
 		FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {

@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: store-recipe
@@ -12,7 +12,7 @@ spec:
   # A health: block, so the synthesized service declares a healthcheck and a
   # wave-derived dependency on it can be gated on its health.
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

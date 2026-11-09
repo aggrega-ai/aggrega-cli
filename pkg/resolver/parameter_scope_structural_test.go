@@ -31,7 +31,7 @@ func TestResolveAndUse_ParametersLiveForTheWholeCallback(t *testing.T) {
 	var b types.OrderedMap[types.Boundary]
 	b.Set("default", types.Boundary{Synthesized: true})
 	rel.Spec.Boundaries = b
-	agg := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n  parameters:\n    region:\n      type: string\n  components: {}\n")
+	agg := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n  parameters:\n    region:\n      type: string\n  components: {}\n")
 	var inline types.OrderedMap[any]
 	inline.Set("region", "eu-west-1")
 	rel.Spec.Parameters.Inline = inline
@@ -68,7 +68,7 @@ func TestResolveAndUse_CallbackErrorPropagates(t *testing.T) {
 	var b types.OrderedMap[types.Boundary]
 	b.Set("default", types.Boundary{Synthesized: true})
 	rel.Spec.Boundaries = b
-	agg := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n  parameters:\n    region:\n      type: string\n  components: {}\n")
+	agg := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n  parameters:\n    region:\n      type: string\n  components: {}\n")
 	var inline types.OrderedMap[any]
 	inline.Set("region", "eu-west-1")
 	rel.Spec.Parameters.Inline = inline

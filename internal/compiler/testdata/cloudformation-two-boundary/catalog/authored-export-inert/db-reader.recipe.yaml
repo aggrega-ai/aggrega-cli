@@ -16,7 +16,7 @@
 # Outputs entry is ordinary authoring, and one that meets nothing publishes
 # unremarked.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: db-reader

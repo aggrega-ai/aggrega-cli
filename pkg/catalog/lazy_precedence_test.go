@@ -6,7 +6,7 @@ package catalog
 import "testing"
 
 func componentBody(desc string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/thing
@@ -22,7 +22,7 @@ spec:
 }
 
 func featureBody(desc string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/thing-feature

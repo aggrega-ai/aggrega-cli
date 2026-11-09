@@ -15,7 +15,7 @@ import (
 // duplicateStepRecipe is a Recipe its schema accepts whose pipeline declares
 // the id write_retry_count on both of its steps: the first `id` key sits at
 // line 13, column 7, and the repeat at line 16, column 7.
-const duplicateStepRecipe = `apiVersion: aggrega.ai/v1alpha1
+const duplicateStepRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: probe
@@ -24,7 +24,7 @@ spec:
   capability: helm
   implements: example/compute/probe
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
   pipeline:
     - id: write_retry_count
@@ -41,7 +41,7 @@ spec:
 // down.
 func featureRecipeWithSteps(ids ...string) string {
 	var b strings.Builder
-	b.WriteString(`apiVersion: aggrega.ai/v1alpha1
+	b.WriteString(`apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: retry-policy

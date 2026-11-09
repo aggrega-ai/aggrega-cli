@@ -27,7 +27,7 @@ import (
 func TestADocumentTheClientHoldsIsAnsweredFromWhatTheClientSent(t *testing.T) {
 	t.Parallel()
 
-	const parses = "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: probe/held\n" +
+	const parses = "apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: probe/held\n" +
 		"  version: \"1.0.0\"\nspec: {}\n"
 	const doesNotParse = "kind: [unclosed\n"
 

@@ -10,7 +10,7 @@
 # The parameter names are placeholders for any typed parameter, not exemplary
 # authoring of those specific concepts.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: unread-params-multi

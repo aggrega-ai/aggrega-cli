@@ -16,7 +16,7 @@ import (
 // transport. An empty protocol declares none, which is the shape every port
 // authored before the transport existed carries.
 func portProtocolWorkload(protocol string) *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "resolver:1.0"}
 	c.Ports.Set("dns", types.PortSpec{Port: 53, Protocol: protocol})
 	w.Containers.Set("main", c)
@@ -111,7 +111,7 @@ func TestSynthesizeWorkload_PortProtocolReachesTheEmittedBytes(t *testing.T) {
 // have come from the container port the entry names.
 func TestSynthesizeWorkload_ServicePortTakesTheContainerPortTransport(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "gateway:1.0"}
 	c.Ports.Set("api", types.PortSpec{Port: 8080})
 	c.Ports.Set("dns", types.PortSpec{Port: 53, Protocol: "UDP"})

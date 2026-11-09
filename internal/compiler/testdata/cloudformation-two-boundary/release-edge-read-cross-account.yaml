@@ -4,7 +4,7 @@
 # The edge-read Release with the two stacks placed in different accounts: a value
 # the application's template copies off the connection reaches its stack as a
 # read of the database stack's output rather than as an import.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-cross-account

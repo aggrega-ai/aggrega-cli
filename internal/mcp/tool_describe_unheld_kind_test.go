@@ -23,7 +23,7 @@ func TestDescribeNamesAFileOfAKindNoCatalogHolds(t *testing.T) {
 	t.Parallel()
 	root := releaseVariantWorkspace(t)
 	misspelled := filepath.Join(root, "catalog-a", "component", "cache-misspelled.yaml")
-	if err := os.WriteFile(misspelled, []byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := os.WriteFile(misspelled, []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Componnent
 metadata:
   name: demo/datastore/cache

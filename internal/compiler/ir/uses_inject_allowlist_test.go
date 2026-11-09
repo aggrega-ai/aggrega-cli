@@ -43,7 +43,7 @@ const allowlistSharedCatalog = "../pipeline/testdata/delivery-key-origin/catalog
 //   - emptied   inject: []            — the same declaration written explicitly
 //
 // `wild` is declared on neither entity: it is the ad-hoc case.
-const allowlistConsumer = `apiVersion: aggrega.ai/v1alpha1
+const allowlistConsumer = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/consumer
@@ -72,7 +72,7 @@ spec:
 // connection its attachment draws. `peer` is declared here and on no Component;
 // `open` shadows a Component socket that carries an allowlist while declaring
 // none itself, which is the interior cell a per-axis reading never reaches.
-const allowlistSidecar = `apiVersion: aggrega.ai/v1alpha1
+const allowlistSidecar = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/sidecar
@@ -88,7 +88,7 @@ spec:
       selector: "component.aggrega.ai/type=stateful-server"
 `
 
-const allowlistConsumerRecipe = `apiVersion: aggrega.ai/v1alpha1
+const allowlistConsumerRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: consumer-recipe
@@ -99,7 +99,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -108,7 +108,7 @@ spec:
           p: 8080
 `
 
-const allowlistSidecarRecipe = `apiVersion: aggrega.ai/v1alpha1
+const allowlistSidecarRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: sidecar-compose
@@ -118,7 +118,7 @@ spec:
   implements: core/sidecar
 `
 
-const allowlistManifest = `apiVersion: aggrega.ai/v1alpha1
+const allowlistManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: allowlist-manifest
@@ -134,7 +134,7 @@ spec:
         core/sidecar: sidecar-compose:1.0.0
 `
 
-const allowlistRelease = `apiVersion: aggrega.ai/v1alpha1
+const allowlistRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: allowlist-release
@@ -226,7 +226,7 @@ func allowlistAggregate(connections ...connection) string {
 		}
 	}
 
-	doc := `apiVersion: aggrega.ai/v1alpha1
+	doc := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: allowlist-app

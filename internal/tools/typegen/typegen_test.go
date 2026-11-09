@@ -93,6 +93,7 @@ var enumTargetPaths = map[string][]string{
 	"diagnostic_enums_gen.go":     {"..", "..", "..", "..", "aggrega-abi", "go", "pkg", "abi"},
 	"diagnostic_enums_gen.rs":     {"..", "..", "..", "..", "aggrega-abi", "rust", "src"},
 	"diagnostic_enums_gen.ts":     {"..", "..", "..", "..", "aggrega-abi", "typescript", "src"},
+	"apiversion_gen.go":           {"..", "..", "apiversion"},
 }
 
 // codecTargetPaths maps each codec target's output basename to the directory
@@ -492,7 +493,7 @@ func TestBindingsCoverEverySubjectSchema(t *testing.T) {
 // a suffix that stopped matching the distribution leaves the trim a no-op, no
 // kind token resolves, and every entry fails at once rather than one quietly
 // passing.
-const schemaFileSuffix = "-v1alpha1.schema.json"
+const schemaFileSuffix = "-v1beta1.schema.json"
 
 // TestTargetSchemaFileAgreesWithItsSchemaBytes asserts that the two references
 // each target entry carries name the same schema. An entry records its schema

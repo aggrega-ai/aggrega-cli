@@ -78,7 +78,7 @@ func configSchemaEnum(schema, subject string, steps []string) ([]string, error) 
 func TestTheDenyReachEnumAgreesWithTheOperationVocabulary(t *testing.T) {
 	t.Parallel()
 
-	declared, err := denyReachEnum(schemas.AggregaConfigV1alpha1)
+	declared, err := denyReachEnum(schemas.AggregaConfigV1beta1)
 	if err != nil {
 		t.Fatalf("read the deny_reach enum: %v", err)
 	}

@@ -228,7 +228,7 @@ func advisoryGraphWorkspace(t *testing.T) (ws, releaseRel string) {
 	ws = t.TempDir()
 
 	catalogDir := filepath.Join(ws, "catalog")
-	const svcComponent = `apiVersion: aggrega.ai/v1alpha1
+	const svcComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -241,7 +241,7 @@ spec:
       host: { type: string, required: true }
 `
 	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), svcComponent)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -252,14 +252,14 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: demo-server:latest
 `)
-	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -271,7 +271,7 @@ spec:
         demo/svc: demo-server-synthesized
 `)
 	// The unread declaration is the advisory this workspace exists to raise.
-	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-agg
@@ -285,7 +285,7 @@ spec:
       type: "demo/svc:1.0.0"
 `)
 	relPath := filepath.Join(ws, "app-release.yaml")
-	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release

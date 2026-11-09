@@ -93,7 +93,7 @@ func TestScanRefusesAShippedProviderWithNoPublishedEntity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(catalog, "plugin-overlays", "provider", "alpha.yaml"),
-		[]byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: alpha\n"), 0o644); err != nil {
+		[]byte("apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: alpha\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, err := scan(fixtureModule, catalog)
@@ -301,7 +301,7 @@ func TestScanRefusesAShippedDeclarationWithNoScope(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		body := "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: " + name + "\n"
+		body := "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: " + name + "\n"
 		if name == "alpha" {
 			body += "spec:\n  provider:\n    wellKnownAnnotations:\n      - key: aggrega.ai/unscoped\n        purpose: No scope declared.\n"
 		}
@@ -309,7 +309,7 @@ func TestScanRefusesAShippedDeclarationWithNoScope(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(entity, "plugin.yaml"),
-			[]byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: "+name+"\nspec:\n  provider:\n    contract:\n      inputKinds:\n        sourced: true\n"), 0o644); err != nil {
+			[]byte("apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: "+name+"\nspec:\n  provider:\n    contract:\n      inputKinds:\n        sourced: true\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

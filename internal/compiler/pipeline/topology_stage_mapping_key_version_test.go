@@ -30,7 +30,7 @@ import (
 // carries the version mismatch, every way of resolving it, and types served
 // through their base.
 
-const keyVersionComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+const keyVersionComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/postgres
@@ -53,7 +53,7 @@ spec:
         type: string
 `
 
-const keyVersionExtendingComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+const keyVersionExtendingComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/pg
@@ -66,7 +66,7 @@ spec:
   schema: inherited
 `
 
-const keyVersionRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+const keyVersionRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: %NAME%
@@ -77,7 +77,7 @@ spec:
   provides:
     host: "{{ .context.rendered_name }}-db"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     form: stateless
     replicas: 1
@@ -93,7 +93,7 @@ spec:
           db: 5432
 `
 
-const keyVersionReleaseYAML = `apiVersion: aggrega.ai/v1alpha1
+const keyVersionReleaseYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: pg-release
@@ -114,7 +114,7 @@ spec:
 // keyVersionAggregate is an Aggregate declaring one instance, main-db, of the type
 // given.
 func keyVersionAggregate(componentType string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: pg-app
@@ -129,7 +129,7 @@ spec:
 // keyVersionManifest is a Manifest whose components type tier maps one key to one
 // reference.
 func keyVersionManifest(key, reference string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: pg-manifest

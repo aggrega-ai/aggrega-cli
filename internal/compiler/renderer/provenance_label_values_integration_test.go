@@ -74,7 +74,7 @@ func TestIntegration_ASlashNamedAggregateRendersKubernetesValidLabels(t *testing
 		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "r"},
-				Spec: types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+				Spec: types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

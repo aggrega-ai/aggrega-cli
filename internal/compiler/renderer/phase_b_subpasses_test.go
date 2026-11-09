@@ -28,7 +28,7 @@ func minimalCtx() *types.TemplateContext {
 
 func minimalRecipe(name string) *types.Recipe {
 	return &types.Recipe{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Recipe",
 		Metadata:   types.RecipeMetadata{Name: name, Version: "1.0.0"},
 		Spec:       types.RecipeSpec{Capability: "helm", Implements: "core/test:1.0.0"},
@@ -108,7 +108,7 @@ func TestPhaseB_ContextAvailabilityMatrix_WorkloadPopulates(t *testing.T) {
 
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
-	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -155,7 +155,7 @@ func TestPhaseB2_WorkloadValidationFlow_ValidPasses(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
-	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -192,7 +192,7 @@ func TestPhaseB2_WorkloadValidationFlow_BadServiceTypeFails(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
-	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -227,7 +227,7 @@ func TestPhaseB2_WorkloadTemplateStrayTopLevelKeyFails(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
-	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 replicaz: 3
 containers:
@@ -260,7 +260,7 @@ func TestPhaseB2_WorkloadTemplateEmptyRequiredValueFails(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
-	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -286,7 +286,7 @@ func TestPhaseB2_WorkloadValidationFlow_FeaturesSchemaFails(t *testing.T) {
 	t.Parallel()
 	ctx := minimalCtx()
 	r := minimalRecipe("test")
-	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+	r.Spec.Workload = types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -376,7 +376,7 @@ func envPairRender(t *testing.T, ctx *types.TemplateContext, workload string) (*
 // pair never reaches a provider.
 func TestTheWorkloadEnvironmentRuleHaltsAPairPhaseB2Admits(t *testing.T) {
 	t.Parallel()
-	state, err := envPairRender(t, minimalCtx(), `apiVersion: aggrega.ai/v1alpha1
+	state, err := envPairRender(t, minimalCtx(), `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -419,7 +419,7 @@ containers:
 // exactly one of its two lists.
 func TestTheWorkloadEnvironmentRulePassesAGuardedPair(t *testing.T) {
 	t.Parallel()
-	const guarded = `apiVersion: aggrega.ai/v1alpha1
+	const guarded = `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

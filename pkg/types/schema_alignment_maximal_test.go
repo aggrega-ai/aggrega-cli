@@ -45,7 +45,7 @@ func om[V any](pairs ...any) types.OrderedMap[V] {
 
 func maximalComponent() types.Component {
 	return types.Component{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Component",
 		Metadata: types.ComponentMetadata{
 			Name:        "core/compute/api-server",
@@ -90,7 +90,7 @@ func maximalComponent() types.Component {
 
 func maximalFeature() types.Feature {
 	return types.Feature{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Feature",
 		Metadata: types.FeatureMetadata{
 			Name:    "core/data-masking",
@@ -112,7 +112,7 @@ func maximalFeature() types.Feature {
 
 func maximalRecipe() types.Recipe {
 	return types.Recipe{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Recipe",
 		Metadata:   types.RecipeMetadata{Name: "mariadb", Version: "1.0.0"},
 		Spec: types.RecipeSpec{
@@ -121,7 +121,7 @@ func maximalRecipe() types.Recipe {
 			Source:     "oci://example/chart:1.0.0",
 			Locals:     om[string]("svc", "{{ .context.instance_id }}"),
 			Provides:   om[string]("host", "{{ .context.instance_id }}"),
-			Workload:   types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: x:1"},
+			Workload:   types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: x:1"},
 			Pipeline:   []types.PipelineStep{{ID: "s1", Plugin: "p.wasm", Function: "render", With: "{}", Optional: true}},
 			Omits:      []types.OmitEntry{{Kind: "Secret", Name: "{{ .context.rendered_name }}-token", Namespace: "apps", Subchart: "auth", When: "{{ true }}"}},
 			Boundary: types.RecipeSpecBoundary{
@@ -134,7 +134,7 @@ func maximalRecipe() types.Recipe {
 
 func maximalFeatureRecipe() types.FeatureRecipe {
 	return types.FeatureRecipe{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "FeatureRecipe",
 		Metadata:   types.FeatureRecipeMetadata{Name: "dotenv-secret", Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{
@@ -154,7 +154,7 @@ func maximalFeatureRecipe() types.FeatureRecipe {
 func maximalPlugin() types.Plugin {
 	cfg := om[string]("LOG_LEVEL", "info")
 	return types.Plugin{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Plugin",
 		Metadata: types.PluginMetadata{
 			Name:        "publishing-linter",
@@ -229,7 +229,7 @@ func maximalPlugin() types.Plugin {
 
 func maximalSchemaLibrary() types.SchemaLibrary {
 	return types.SchemaLibrary{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "SchemaLibrary",
 		Metadata:   types.SchemaLibraryMetadata{Name: "BaseComponents", Version: "1.0.0"},
 		Spec: types.SchemaLibrarySpec{
@@ -241,7 +241,7 @@ func maximalSchemaLibrary() types.SchemaLibrary {
 
 func maximalMappingLibrary() types.MappingLibrary {
 	return types.MappingLibrary{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "MappingLibrary",
 		Metadata:   types.MappingLibraryMetadata{Name: "BaseMappings", Version: "1.0.0"},
 		Spec: types.MappingLibrarySpec{
@@ -252,11 +252,11 @@ func maximalMappingLibrary() types.MappingLibrary {
 
 func maximalWorkloadLibrary() types.WorkloadLibrary {
 	return types.WorkloadLibrary{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "WorkloadLibrary",
 		Metadata:   types.WorkloadLibraryMetadata{Name: "BaseWorkloads", Version: "1.0.0"},
 		Spec: types.WorkloadLibrarySpec{
-			Workloads: om[types.WorkloadEntry]("Frag", types.WorkloadEntry{Body: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"}),
+			Workloads: om[types.WorkloadEntry]("Frag", types.WorkloadEntry{Body: "apiVersion: aggrega.ai/v1beta1\nkind: Workload"}),
 		},
 	}
 }
@@ -269,7 +269,7 @@ func maximalWorkloadLibrary() types.WorkloadLibrary {
 // optional field the schema must admit rather than only the required two.
 func maximalArtifactLibrary() types.ArtifactLibrary {
 	return types.ArtifactLibrary{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "ArtifactLibrary",
 		Metadata: types.ArtifactLibraryMetadata{
 			Name:        "BaseArtifacts",
@@ -291,7 +291,7 @@ func maximalArtifactLibrary() types.ArtifactLibrary {
 
 func maximalAggregate() types.Aggregate {
 	return types.Aggregate{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Aggregate",
 		Metadata:   types.AggregateMetadata{Name: "app", Version: "1.0.0"},
 		Spec: types.AggregateSpec{
@@ -324,7 +324,7 @@ func maximalManifest() types.Manifest {
 	comp := &types.MappingTier{}
 	comp.Type.Set("core/datastore/mariadb:1.0.0", "compose/mariadb:1.0.0")
 	return types.Manifest{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Manifest",
 		Metadata:   types.ManifestMetadata{Name: "prod", Version: "1.0.0"},
 		Spec: types.ManifestSpec{
@@ -335,7 +335,7 @@ func maximalManifest() types.Manifest {
 
 func maximalRelease() types.Release {
 	return types.Release{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Release",
 		Metadata:   types.ReleaseMetadata{Name: "prod", Environment: "production", Version: "1.0.0"},
 		Spec: types.ReleaseSpec{
@@ -379,7 +379,7 @@ func ptr[T any](v T) *T { return &v }
 // of an exactly-one disjunction and is rejected.
 func maximalWorkloadCompute() types.Workload {
 	return types.Workload{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Workload",
 		Form:       "stateful",
 		Schedule:   "@daily",
@@ -478,7 +478,7 @@ func maximalWorkloadCompute() types.Workload {
 // declare — without it, they would be checked in neither direction.
 func maximalWorkloadReference() types.Workload {
 	return types.Workload{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Workload",
 		Form:       "reference",
 		Endpoint:   "db.managed.example.com",

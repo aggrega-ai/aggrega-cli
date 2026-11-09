@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata: { name: ann-aux-workload-helm, version: "1.0.0" }
 spec:
@@ -8,7 +8,7 @@ spec:
   # kind, which the target's claim DOES cover for the authored annotation. It is
   # the control that catches a check warning whenever the key is merely present.
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

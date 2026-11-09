@@ -27,7 +27,7 @@ import (
 func TestPullDiscoveryFailureNoticeCarriesTheConditionCode(t *testing.T) {
 	root := t.TempDir()
 	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\noffline: true\n")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -39,7 +39,7 @@ spec:
     worker:
       type: test/worker
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -51,7 +51,7 @@ spec:
         test/svc:1.0.0: compose/svc:1.0.0
 `)
 	releasePath := filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel
@@ -69,7 +69,7 @@ spec:
 `)
 	catalogDir := filepath.Join(root, "catalog")
 	for _, typ := range []string{"svc", "worker"} {
-		writeFixture(t, filepath.Join(catalogDir, "component", "test", typ, "1.0.0", "component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogDir, "component", "test", typ, "1.0.0", "component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/`+typ+`
@@ -82,7 +82,7 @@ spec:
 `)
 	}
 	for recipe, implements := range map[string]string{"svc": "test/svc", "worker-recipe": "test/worker"} {
-		writeFixture(t, filepath.Join(catalogDir, "recipe", "compose", recipe, "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogDir, "recipe", "compose", recipe, "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: `+recipe+`
@@ -91,7 +91,7 @@ spec:
   capability: compose
   implements: `+implements+`
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

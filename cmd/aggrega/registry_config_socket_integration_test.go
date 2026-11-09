@@ -65,7 +65,7 @@ func publishSocketPluginEntity(t *testing.T, host, socketName, version, pluginPa
 	// the guest's describe() (operates/scope omitted for a mutator / policy guest,
 	// which self-reports neither), so the publish cross-check passes.
 	bareName := filepath.Base(socketName)
-	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: `+bareName+`
@@ -91,7 +91,7 @@ spec:
 func configSocketFixtureCatalog(t *testing.T, host string) {
 	t.Helper()
 	cat := t.TempDir()
-	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -107,7 +107,7 @@ spec:
 	// surfaces deterministically in the rendered docker-compose — an observable
 	// witness that the mutator guest ran, independent of any renderer-specific
 	// label propagation.
-	writeFixtureEntity(t, cat, "recipe/compose/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "recipe/compose/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -116,7 +116,7 @@ spec:
   capability: compose
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -134,7 +134,7 @@ spec:
 func writeConfigSocketWorkspace(t *testing.T, host, pluginsBlock string, autoPull bool) string {
 	t.Helper()
 	ws := t.TempDir()
-	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -144,7 +144,7 @@ spec:
     app:
       type: test/svc
 `)
-	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -155,7 +155,7 @@ spec:
       type:
         test/svc:1.0.0: compose/svc:1.0.0
 `)
-	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

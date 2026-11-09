@@ -155,7 +155,7 @@ func keylessSignedLibrary(t *testing.T, authority *signingtest.KeylessAuthority,
 	t.Helper()
 	ctx := context.Background()
 	store := memory.New()
-	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\n# signed more than once\n")
+	body := []byte("apiVersion: aggrega.ai/v1beta1\nkind: SchemaLibrary\n# signed more than once\n")
 	contentDg := digest.ContentDigest(body)
 	manifestDg, err := oci.Push(ctx, store, libTestVersion, oci.MediaTypeSchemaLibrary, body, nil)
 	if err != nil {

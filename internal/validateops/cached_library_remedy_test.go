@@ -25,7 +25,7 @@ const remedyCacheDir = ".aggrega/cache"
 
 // remedyConsumer is a Component whose infra pillar composes a schema from the
 // Sizing library, so it validates only where that library resolves.
-const remedyConsumer = `apiVersion: aggrega.ai/v1alpha1
+const remedyConsumer = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/needs-sizing
@@ -40,7 +40,7 @@ spec:
 `
 
 // remedyLibrary is the Sizing library remedyConsumer refers to.
-const remedyLibrary = `apiVersion: aggrega.ai/v1alpha1
+const remedyLibrary = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Sizing

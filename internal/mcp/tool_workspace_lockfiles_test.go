@@ -29,7 +29,7 @@ import (
 // two apart; the map builder's own table in the serve package carries the name that does.
 func TestTheReleaseListingNamesEachReturnedReleasesLockfile(t *testing.T) {
 	root := t.TempDir()
-	const release = "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: probe\n  version: \"1.0.0\"\n"
+	const release = "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: probe\n  version: \"1.0.0\"\n"
 	for _, rel := range []string{"app-release.yaml", "envs/prod.yaml", "staging.yml"} {
 		full := filepath.Join(root, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {

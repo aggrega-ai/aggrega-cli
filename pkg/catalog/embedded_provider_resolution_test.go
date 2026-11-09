@@ -68,7 +68,7 @@ func helmChainCatalog() *catalog.Catalog {
 	return &catalog.Catalog{
 		Plugins: map[string]types.Plugin{
 			helmPluginEntity: {
-				APIVersion: "aggrega.ai/v1alpha1",
+				APIVersion: "aggrega.ai/v1beta1",
 				Kind:       "Plugin",
 				Metadata:   types.PluginMetadata{Name: "helm", Version: testCorePluginVersion, PluginType: "provider"},
 				Spec: types.PluginSpec{

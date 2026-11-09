@@ -30,7 +30,7 @@ var errWorkloadEntryNotScalar = cerrors.Register("workload-entry-not-scalar", ce
 
 // WorkloadLibrary's struct declarations (WorkloadLibrary, WorkloadLibraryMetadata,
 // WorkloadLibrarySpec) are generated into workloadlibrary_gen.go from the
-// published workloadlibrary-v1alpha1 schema; their godoc is the schema's
+// published workloadlibrary-v1beta1 schema; their godoc is the schema's
 // descriptions. This hand-written companion holds the WorkloadEntry type the
 // generated spec references — its custom UnmarshalYAML/MarshalYAML captures the
 // Workload-template fragment body verbatim — plus the ErrWorkloadEntryNotScalar

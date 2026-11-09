@@ -7,7 +7,7 @@
 # which authoring surface declared the default. Split across boundaries, each
 # half would be a separate stack and the comparison would rest on the reader
 # joining two artifacts.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-attachment-defaults

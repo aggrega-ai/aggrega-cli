@@ -5,7 +5,7 @@
 # the specific parameter names are placeholders for any parameter, not
 # exemplary authoring of those specific concepts.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: param-app

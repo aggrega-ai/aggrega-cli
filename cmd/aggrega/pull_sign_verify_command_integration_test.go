@@ -39,7 +39,7 @@ func publishSignedPluginEntity(t *testing.T, host, name, version, pluginPath str
 
 	entityDir := t.TempDir()
 	entityPath := filepath.Join(entityDir, "plugin.yaml")
-	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: `+name+`
@@ -81,7 +81,7 @@ spec:
 func writePipelinePluginConsumerWorkspace(t *testing.T, host, pluginURI string, pinnedPubPEM []byte, catalogSigner signing.Signer) string {
 	t.Helper()
 	cat := t.TempDir()
-	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -94,7 +94,7 @@ spec:
       port: { type: integer, default: 8080 }
       replicas: { type: integer, default: 1 }
 `)
-	writeFixtureEntity(t, cat, "recipe/helm/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "recipe/helm/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -103,7 +103,7 @@ spec:
   capability: helm
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `+"`replicas`"+` 1 }}
     containers:
@@ -128,7 +128,7 @@ spec:
 	}
 
 	ws := t.TempDir()
-	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -138,7 +138,7 @@ spec:
     app:
       type: test/svc
 `)
-	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -149,7 +149,7 @@ spec:
       type:
         test/svc:1.0.0: helm/svc:1.0.0
 `)
-	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

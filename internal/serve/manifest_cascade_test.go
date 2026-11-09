@@ -20,7 +20,7 @@ import (
 // matching-name siblings; tests that don't load downstream entities
 // can ignore these.
 func releaseYAML(name string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: ` + name + `
@@ -278,7 +278,7 @@ func TestManifestCascadeStep3SingleReleaseLoadFailureWarns(t *testing.T) {
 	t.Parallel()
 	ws := t.TempDir()
 	// A Release header the walk counts, over a body the loader rejects.
-	broken := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nspec: \"not-an-object\"\n"
+	broken := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nspec: \"not-an-object\"\n"
 	if err := os.WriteFile(filepath.Join(ws, "broken.yaml"), []byte(broken), 0o644); err != nil {
 		t.Fatalf("write broken release: %v", err)
 	}
@@ -586,7 +586,7 @@ func TestCascadeReasonReadsAsSentences(t *testing.T) {
 func TestCascadeReasonNamesASharedFailureOnce(t *testing.T) {
 	t.Parallel()
 	// A Release header the walk counts, over a body the loader rejects.
-	broken := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nspec: \"not-an-object\"\n"
+	broken := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nspec: \"not-an-object\"\n"
 
 	cases := []struct {
 		name       string

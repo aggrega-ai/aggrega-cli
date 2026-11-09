@@ -8,14 +8,14 @@ import "go.yaml.in/yaml/v3"
 //go:generate go run ../../internal/tools/typegen component_gen.go
 
 // Component's struct declarations (Component, ComponentMetadata, ComponentSpec)
-// are generated into component_gen.go from the published component-v1alpha1
+// are generated into component_gen.go from the published component-v1beta1
 // schema; their godoc is the schema's descriptions. This hand-written companion
 // holds the value types the generated spec references — UsesSchemaEntry (its
 // per-socket valueSchema/infraSchema content-shape yaml.Node fields) and
 // AttachmentSlot — both shared with Feature's usesSchema / featuresSchema.
 
 // UsesSchemaEntry defines one socket category in a Component or Feature usesSchema.
-// Schema: component-v1alpha1.schema.json#/properties/spec/properties/usesSchema
+// Schema: component-v1beta1.schema.json#/properties/spec/properties/usesSchema
 //
 // It is one type for both kinds, and the Component's socket is the wider of the
 // two: Required, ValueSchema, InfraSchema and FeaturesSchema are declarable only
@@ -117,7 +117,7 @@ func (e *UsesSchemaEntry) ContractNodes() []*yaml.Node {
 // a Feature's slot the field is a declaration only: an attachment carries no
 // nested attachment block, so a Feature's own slots have no surface to be bound
 // from.
-// Schema: component-v1alpha1.schema.json#/properties/spec/properties/featuresSchema
+// Schema: component-v1beta1.schema.json#/properties/spec/properties/featuresSchema
 type AttachmentSlot struct {
 	Required    bool     `json:"required,omitempty" yaml:"required,omitempty"`
 	Inject      []string `json:"inject,omitempty" yaml:"inject,omitempty"`

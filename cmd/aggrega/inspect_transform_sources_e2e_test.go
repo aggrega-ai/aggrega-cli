@@ -73,7 +73,7 @@ annotations contains {
 func extendWithAnnotationBinding(t *testing.T, root string) {
 	t.Helper()
 	catalogDir := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogDir, "feature", "core", "annotation-gate", "1.0.0", "feature.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "feature", "core", "annotation-gate", "1.0.0", "feature.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/annotation-gate
@@ -83,7 +83,7 @@ spec:
     infra:
       tier: { type: string }
 `)
-	writeFixture(t, filepath.Join(catalogDir, "feature-recipe", "compose", "annotation-gate", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "feature-recipe", "compose", "annotation-gate", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: annotation-gate-compose
@@ -92,7 +92,7 @@ spec:
   capability: compose
   implements: core/annotation-gate
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest

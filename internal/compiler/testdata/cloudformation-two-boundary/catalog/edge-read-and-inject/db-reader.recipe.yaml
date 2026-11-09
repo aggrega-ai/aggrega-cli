@@ -9,7 +9,7 @@
 # This variant receives the database host by inject and also reads it directly
 # off the connection, each into its own parameter.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: db-reader

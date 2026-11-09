@@ -24,7 +24,7 @@ import (
 // is the smallest declaration that makes an entity carry a file, and two of them
 // let one entity carry two names of different classes.
 func windowsNamesComponent(valuesImport, infraImport string) string {
-	body := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/windows-names\n" +
+	body := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/windows-names\n" +
 		"  version: 1.0.0\n  labels:\n    component.aggrega.ai/type: server\nspec:\n  schema:\n"
 	if valuesImport == "" && infraImport == "" {
 		return body + "    values:\n      greeting: { type: string, default: hello }\n"

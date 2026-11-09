@@ -28,7 +28,7 @@ import (
 func parameterBoundsWorkspace(t *testing.T, root, declaration, value string) (catalogDir, releasePath string) {
 	t.Helper()
 	catalogDir = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogDir, "component/acme/web/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/acme/web/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/web
@@ -39,7 +39,7 @@ spec:
   schema:
     values: {}
 `)
-	writeFixture(t, filepath.Join(catalogDir, "recipe/compose/web/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipe/compose/web/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: web
@@ -48,13 +48,13 @@ spec:
   capability: compose
   implements: acme/web:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: "web:1"
 `)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: bounds-app
@@ -67,7 +67,7 @@ spec:
     web:
       type: acme/web:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: bounds-manifest
@@ -79,7 +79,7 @@ spec:
         acme/web:1.0.0: compose/web:1.0.0
 `)
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: bounds

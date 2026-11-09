@@ -38,7 +38,7 @@ func writeSourceCredentialWorkspace(t *testing.T, source string) (root, release,
 	root = t.TempDir()
 	writeFixture(t, filepath.Join(root, workspaceconfig.ConfigFilename),
 		"workspace:\n  catalog_dirs:\n    - ./catalog\noffline: true\nauto_pull: true\n")
-	writeFixture(t, filepath.Join(root, "catalog/component/test/svc/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "catalog/component/test/svc/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -51,7 +51,7 @@ spec:
       replicas: { type: integer, default: 1 }
 `)
 	recipe = filepath.Join(root, "catalog/recipe/helm/svc/1.0.0/recipe.yaml")
-	writeFixture(t, recipe, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipe, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -64,7 +64,7 @@ spec:
   valuesMapping: |
     {}
 `)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
@@ -74,7 +74,7 @@ spec:
     app:
       type: test/svc
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -86,7 +86,7 @@ spec:
         test/svc: helm/svc:1.0.0
 `)
 	release = filepath.Join(root, "release.yaml")
-	writeFixture(t, release, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, release, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

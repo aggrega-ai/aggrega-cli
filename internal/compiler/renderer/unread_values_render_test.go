@@ -34,7 +34,7 @@ func uvrEdgeInput(edgeValues types.OrderedMap[any]) renderer.RendererInput {
 // supplied text, and the target a Recipe with no mapping of its own — so every
 // warning the render produces is attributable to the consumer.
 func uvrLookup(consumerMapping string) renderer.RecipeLookup {
-	const workload = `apiVersion: aggrega.ai/v1alpha1
+	const workload = `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

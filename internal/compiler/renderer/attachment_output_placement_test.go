@@ -75,7 +75,7 @@ func placementLookup(fr *types.FeatureRecipe, featureType string) renderer.Recip
 				Spec: types.RecipeSpec{
 					Capability: "helm",
 					Implements: "core/compute/api-server",
-					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -155,7 +155,7 @@ func placementMultiTypeLookup(hostCapability, frCapability string, featureTypes 
 				Spec: types.RecipeSpec{
 					Capability: hostCapability,
 					Implements: "core/compute/api-server",
-					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -491,7 +491,7 @@ func TestRenderAll_AttachmentPlacementIsOneShapeAcrossInputKinds(t *testing.T) {
 		Spec: types.FeatureRecipeSpec{
 			Capability: "helm",
 			Implements: featureType,
-			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

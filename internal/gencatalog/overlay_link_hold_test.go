@@ -61,7 +61,7 @@ func TestTheOverlaysBeneathAnOverlayDirectoryAreHeldToTheRootItPicks(t *testing.
 	// linkedOverlay writes the first guest's overlay, carrying linkedPages, at path.
 	linkedOverlay := func(t *testing.T, path string) {
 		t.Helper()
-		writeFixture(t, path, "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: "+leaf+
+		writeFixture(t, path, "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: "+leaf+
 			"\nspec:\n  runtime:\n    maxMemoryPages: "+strconv.Itoa(linkedPages)+"\n    timeoutMs: 300000\n")
 	}
 	rows := []struct {

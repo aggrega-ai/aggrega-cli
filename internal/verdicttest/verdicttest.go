@@ -20,6 +20,7 @@ import (
 
 	"oras.land/oras-go/v2/content/memory"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -36,7 +37,7 @@ var HeaderOnlyWasm = []byte{0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00}
 // PluginEntityYAML is a schema-valid Plugin entity for a verdict-socket plugin
 // at the given socket, bare name and version.
 func PluginEntityYAML(socket, name, version string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\n" +
+	return "apiVersion: " + apiversion.APIVersion + "\n" +
 		"kind: Plugin\n" +
 		"metadata:\n" +
 		"  name: " + name + "\n" +

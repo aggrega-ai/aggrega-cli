@@ -15,7 +15,7 @@ import (
 )
 
 // ValidateWorkload validates a parsed Workload against the embedded
-// aggrega.ai/v1alpha1 Workload JSON Schema 2020-12. Returns nil when
+// aggrega.ai/v1beta1 Workload JSON Schema 2020-12. Returns nil when
 // the value satisfies every constraint; otherwise returns a
 // *WorkloadValidationError with one finding per violation.
 //
@@ -146,7 +146,7 @@ func (v workloadValidation) adviceInstance(instance any) any {
 
 // ValidateWorkloadBytes validates a raw Workload document — the bytes as
 // authored or as a template produced them — against the embedded
-// aggrega.ai/v1alpha1 Workload JSON Schema 2020-12. Returns nil when the
+// aggrega.ai/v1beta1 Workload JSON Schema 2020-12. Returns nil when the
 // document satisfies every constraint; otherwise returns a
 // *WorkloadValidationError in the same shape ValidateWorkload produces, so
 // both entry points are indistinguishable to a caller formatting the result.

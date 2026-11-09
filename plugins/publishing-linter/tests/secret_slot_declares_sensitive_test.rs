@@ -29,7 +29,7 @@ use serde_json::{json, Value};
 
 fn entity(kind: &str, slots: Value) -> Value {
     json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": kind,
         "metadata": {"name": "core/datastore/example", "version": "1.0.0"},
         "spec": {"featuresSchema": slots},
@@ -229,7 +229,7 @@ fn every_pinning_slot_is_reported_and_declared_ones_are_skipped() {
 /// socket rather than on the entity's own block.
 fn classify_spec(kind: &str, spec: Value) -> Vec<String> {
     let entity = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": kind,
         "metadata": {"name": "core/gateway/example", "version": "1.0.0"},
         "spec": spec,

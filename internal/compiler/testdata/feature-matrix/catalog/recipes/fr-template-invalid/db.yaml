@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: feature-matrix-db-fr-invalid
@@ -10,7 +10,7 @@ spec:
     host: "{{ .context.instance_id }}"
     port: "{{ optional .infra `port` 3306 }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:

@@ -37,7 +37,7 @@ import (
 // because the lock beside an entity is scoped by the directory it sits in.
 func sourcePinIdentityWorkspace(t *testing.T, root string) (releasePath, catalogDir, templatedRecipe, authoredRecipe string) {
 	t.Helper()
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: pin-identity
@@ -57,7 +57,7 @@ spec:
       values:
         port: 9091
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: pin-identity-release
@@ -80,7 +80,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: pin-identity-manifest
@@ -97,7 +97,7 @@ spec:
 		{"server.yaml", "core/server", "server"},
 		{"worker.yaml", "core/worker", "worker"},
 	} {
-		writeFixture(t, filepath.Join(catalogDir, "base", "components", c.file), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogDir, "base", "components", c.file), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: `+c.name+`
@@ -112,7 +112,7 @@ spec:
 	}
 	writeHelmRendererPlugin(t, filepath.Join(catalogDir, "base", "providers"))
 	workload := `  workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
@@ -127,7 +127,7 @@ spec:
           web: {{ .values.port }}
 `
 	templatedRecipe = filepath.Join(catalogDir, "recipes", "templated", "server.yaml")
-	writeFixture(t, templatedRecipe, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, templatedRecipe, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -141,7 +141,7 @@ spec:
     version: "{{ optional .infra `+"`source_version`"+` \"1.2.3\" }}"
 `+workload)
 	authoredRecipe = filepath.Join(catalogDir, "recipes", "authored", "worker.yaml")
-	writeFixture(t, authoredRecipe, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, authoredRecipe, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: worker-recipe

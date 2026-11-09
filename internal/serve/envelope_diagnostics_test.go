@@ -44,7 +44,7 @@ func parseDoc(t *testing.T, s string) *yaml.Node {
 func TestEnvelopeDiagnosticsForBuffer_PositionBetterThan1To1(t *testing.T) {
 	t.Parallel()
 	srv := newTestServer(t, t.TempDir(), nil, nil)
-	content := []byte(`apiVersion: aggrega.ai/v1alpha1
+	content := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: r
@@ -83,7 +83,7 @@ func TestEnvelopeDiagnosticsForBuffer_NonAggregaGuard(t *testing.T) {
 	cases := map[string]string{
 		"k8s-manifest": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: x\n",
 		"compose-file": "services:\n  web:\n    image: nginx\n",
-		"unknown-kind": "apiVersion: aggrega.ai/v1alpha1\nkind: Nonsense\nspec: {}\n",
+		"unknown-kind": "apiVersion: aggrega.ai/v1beta1\nkind: Nonsense\nspec: {}\n",
 		"bare-yaml":    "just: data\n",
 	}
 	for name, content := range cases {
@@ -104,7 +104,7 @@ func TestEnvelopeDiagnosticsForBuffer_NonAggregaGuard(t *testing.T) {
 func TestEnvelopeDiagnosticsForBuffer_CleanFallsThrough(t *testing.T) {
 	t.Parallel()
 	srv := newTestServer(t, t.TempDir(), nil, nil)
-	content := []byte(`apiVersion: aggrega.ai/v1alpha1
+	content := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: a
@@ -322,7 +322,7 @@ func TestEnvelopeDiagnosticsForBuffer_ClassifiedKindsProduceDiagnostics(t *testi
 	// Each fixture is YAML-valid (so it parses and classifies) and
 	// schema-invalid (so the envelope has something to report).
 	cases := map[string]string{
-		"Component": `apiVersion: aggrega.ai/v1alpha1
+		"Component": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: c
@@ -330,7 +330,7 @@ metadata:
 spec:
   notAComponentField: true
 `,
-		"Plugin": `apiVersion: aggrega.ai/v1alpha1
+		"Plugin": `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: broken

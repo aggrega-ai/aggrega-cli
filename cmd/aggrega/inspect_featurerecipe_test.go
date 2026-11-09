@@ -34,7 +34,7 @@ func TestInspectFeatureRecipe_NamesEachRenderFactsDeclaration(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			doc := "apiVersion: aggrega.ai/v1alpha1\n" +
+			doc := "apiVersion: aggrega.ai/v1beta1\n" +
 				"kind: FeatureRecipe\n" +
 				"metadata:\n  name: fact-reader\n  version: 1.0.0\n" +
 				"spec:\n  capability: helm\n  implements: example/fact-reader:1.0.0\n" + tc.keys

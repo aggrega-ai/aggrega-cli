@@ -11,7 +11,7 @@
 //! so rule modules read `input.policies` directly.
 //!
 //! Schema contract: the wire shape is pinned by
-//! `aggrega-schemas/json/wasm-linter-v1alpha1.schema.json`
+//! `aggrega-schemas/json/wasm-linter-v1beta1.schema.json`
 //! at `#/$defs/Policies`. A host-side round-trip test asserts a
 //! Go-marshaled `PublishingDisciplineConfig` deserialises into the
 //! Rust `Policies` struct without field loss.

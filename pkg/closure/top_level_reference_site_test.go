@@ -27,7 +27,7 @@ import (
 // entity no catalog holds: it names the same path.
 func TestTheWalkRecordsATopLevelComponentAtThePathItsAuthorWrote(t *testing.T) {
 	t.Parallel()
-	const head = "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n"
+	const head = "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n"
 	type pin struct {
 		kind           string
 		referencedFrom []string

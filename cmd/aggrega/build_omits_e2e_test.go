@@ -44,7 +44,7 @@ const (
 func omitsWorkspace(t *testing.T, root string, chart omitsChart, recipeTail string) (releasePath, catalogDir string) {
 	t.Helper()
 	catalogDir = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -54,7 +54,7 @@ spec:
     app:
       type: server
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: omits-rel
@@ -69,7 +69,7 @@ spec:
       components:
         app: {}
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -80,7 +80,7 @@ spec:
       type:
         server: server
 `)
-	writeFixture(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -119,7 +119,7 @@ data:
   level: info
 `)
 	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -306,15 +306,15 @@ func TestBuild_OmitsOnAProviderThatRendersNothingAtBuildTimeIsRefused(t *testing
 			t.Parallel()
 			root := t.TempDir()
 			catalogDir := filepath.Join(root, "catalog")
-			writeFixture(t, filepath.Join(root, "aggregate.yaml"), "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n"+
+			writeFixture(t, filepath.Join(root, "aggregate.yaml"), "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n"+
 				"metadata:\n  name: aggregate\n  version: \"1.0.0\"\nspec:\n  components:\n    app:\n      type: server\n")
-			writeFixture(t, filepath.Join(root, "release.yaml"), "apiVersion: aggrega.ai/v1alpha1\nkind: Release\n"+
+			writeFixture(t, filepath.Join(root, "release.yaml"), "apiVersion: aggrega.ai/v1beta1\nkind: Release\n"+
 				"metadata:\n  name: omits-refused\n  environment: testing\n  version: \"1.0.0\"\nspec:\n"+
 				"  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n  boundaries:\n    main:\n"+
 				"      directory: ./dist/main\n      components:\n        app: {}\n")
-			writeFixture(t, filepath.Join(root, "manifest.yaml"), "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\n"+
+			writeFixture(t, filepath.Join(root, "manifest.yaml"), "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\n"+
 				"metadata:\n  name: manifest\n  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n        server: server\n")
-			writeFixture(t, filepath.Join(catalogDir, "components", "server.yaml"), "apiVersion: aggrega.ai/v1alpha1\n"+
+			writeFixture(t, filepath.Join(catalogDir, "components", "server.yaml"), "apiVersion: aggrega.ai/v1beta1\n"+
 				"kind: Component\nmetadata:\n  name: server\n  version: \"1.0.0\"\n  labels:\n"+
 				"    component.aggrega.ai/type: \"server\"\nspec:\n  schema:\n    values: {}\n")
 			seedEmbeddedPlugins(t, filepath.Join(catalogDir, "providers"), "provider/"+tc.capability)
@@ -322,7 +322,7 @@ func TestBuild_OmitsOnAProviderThatRendersNothingAtBuildTimeIsRefused(t *testing
 				writeFixture(t, filepath.Join(catalogDir, "recipes", "source", filepath.FromSlash(rel)), content)
 			}
 			recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")
-			writeFixture(t, recipePath, "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: server\n"+
+			writeFixture(t, recipePath, "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: server\n"+
 				"  version: \"1.0.0\"\nspec:\n  capability: "+tc.capability+"\n  implements: server\n  source: ./source\n"+
 				"  omits:\n    - kind: Secret\n      name: token\n")
 
@@ -361,14 +361,14 @@ func TestValidate_TheOmitsKeyNegativeCorpus(t *testing.T) {
 	t.Parallel()
 
 	recipe := func(spec string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: corpus\n  version: \"1.0.0\"\nspec:\n" + spec
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: corpus\n  version: \"1.0.0\"\nspec:\n" + spec
 	}
 	featureRecipe := func(spec string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: corpus\n  version: \"1.0.0\"\nspec:\n" + spec
+		return "apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: corpus\n  version: \"1.0.0\"\nspec:\n" + spec
 	}
 	const entries = "  omits:\n    - kind: Secret\n      name: token\n"
 	const sourced = "  capability: helm\n  implements: server\n  source: ./chart\n"
-	const workloadSpec = "  capability: helm\n  implements: server\n  workload: |\n    apiVersion: aggrega.ai/v1alpha1\n" +
+	const workloadSpec = "  capability: helm\n  implements: server\n  workload: |\n    apiVersion: aggrega.ai/v1beta1\n" +
 		"    kind: Workload\n    containers:\n      main:\n        image: x:1\n"
 
 	for _, tc := range []struct {

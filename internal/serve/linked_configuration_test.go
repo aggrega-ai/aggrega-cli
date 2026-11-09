@@ -46,9 +46,9 @@ func layLinkedConfiguration(t *testing.T, linkRoot, linkCI, ignored bool) linked
 	}
 	writeRelease(t, l.root, "release.yaml", "release/only")
 	plantFile(t, filepath.Join(l.root, "aggregate.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: only\nspec:\n  components: {}\n")
+		"apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: only\nspec:\n  components: {}\n")
 	plantFile(t, filepath.Join(l.outside, "cat", "feature.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: local/listed-outside\n  version: 1.0.0\n"+
+		"apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: local/listed-outside\n  version: 1.0.0\n"+
 			"spec:\n  appliesTo: \"component.aggrega.ai/category=datastore\"\n")
 	config := "workspace:\n  catalog_dirs:\n    - " + filepath.Join(l.outside, "cat") + "\n"
 	configPath := filepath.Join(l.root, workspaceconfig.ConfigFilename)

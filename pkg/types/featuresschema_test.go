@@ -12,7 +12,7 @@ import (
 func TestFeaturesSchema_YAMLRoundTrip(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/postgres
@@ -64,7 +64,7 @@ spec:
 func TestFeaturesSchema_UnknownSecretNamesKeyIgnoredAtParse(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/stray

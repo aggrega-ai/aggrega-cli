@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -55,7 +56,7 @@ func MergeForPublish(desc wasm.PluginDescriptor, description string, hostFunctio
 	}
 
 	entity := types.Plugin{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: apiversion.APIVersion,
 		Kind:       "Plugin",
 		Metadata:   overlay.Metadata,
 		Spec:       types.PluginSpec{},

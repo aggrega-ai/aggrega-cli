@@ -18,7 +18,7 @@ import (
 // memory and an extended resource), an init container's requests, and one
 // volume of each sized variant.
 func quantityWorkload() *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "stateful"}
 
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
@@ -228,7 +228,7 @@ func carries(body, key, value string) bool {
 // quantity it happens to carry is not judged.
 func TestSynthesizeWorkload_ReferenceFormChecksNoQuantity(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "reference", Endpoint: "db.example.net"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "reference", Endpoint: "db.example.net"}
 	w.Volumes.Set("data", types.VolumeSpec{Persistent: &types.PersistentVolume{Size: "lots"}})
 
 	if _, err := synthNoPanic(t, w); err != nil {

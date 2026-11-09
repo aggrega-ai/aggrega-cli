@@ -11,7 +11,7 @@ import (
 // one authored value, written exactly as the caller supplies it. The caller
 // decides the quoting, which is the property under test.
 func aggregateWithHoistedValue(authored string) []byte {
-	return []byte(`apiVersion: aggrega.ai/v1alpha1
+	return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: quoting

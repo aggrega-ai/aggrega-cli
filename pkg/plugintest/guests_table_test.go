@@ -157,7 +157,7 @@ func TestValidateEntity_Mutator(t *testing.T) {
 		t.Fatalf("embedded guest %q reports no describe() version", uri)
 	}
 	entity := types.Plugin{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Plugin",
 		Metadata: types.PluginMetadata{
 			Name:       uri,

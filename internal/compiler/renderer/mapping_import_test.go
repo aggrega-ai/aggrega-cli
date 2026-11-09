@@ -16,7 +16,7 @@ import (
 // pairs, inserting in sorted-name order for stable iteration.
 func mappingLibraryFixture(name string, entries map[string]string) types.MappingLibrary {
 	ml := types.MappingLibrary{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "MappingLibrary",
 		Metadata:   types.MappingLibraryMetadata{Name: name, Version: "1.0.0"},
 	}

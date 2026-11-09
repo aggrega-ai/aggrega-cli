@@ -43,7 +43,7 @@ const inspectTransformGuestLabel = "proof.aggrega/touched"
 // the origin under test.
 func writeInspectTransformCatalog(t *testing.T, catalogDir string) {
 	t.Helper()
-	writeFixtureEntity(t, catalogDir, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -54,7 +54,7 @@ spec:
   schema:
     values: {}
 `)
-	writeFixtureEntity(t, catalogDir, "recipe/compose/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, catalogDir, "recipe/compose/svc/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -63,7 +63,7 @@ spec:
   capability: compose
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -79,7 +79,7 @@ spec:
 // everything from the catalog directory and reaches no network at all.
 func writeInspectTransformWorkspace(t *testing.T, root, registryHost, pluginsBlock string) {
 	t.Helper()
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -89,7 +89,7 @@ spec:
     app:
       type: test/svc
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -100,7 +100,7 @@ spec:
       type:
         test/svc:1.0.0: compose/svc:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

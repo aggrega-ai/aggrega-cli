@@ -12,7 +12,7 @@ import (
 // which is the fixture that separates a MEASURED step from an imposed one. A
 // conventional two-space default would land the entry at the wrong column here,
 // and the document would no longer parse the entry as a child.
-const wideIndentAggregate = `apiVersion: aggrega.ai/v1alpha1
+const wideIndentAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
     name: storefront
@@ -78,7 +78,7 @@ func TestTheNestingStepIsReadFromTheDocument(t *testing.T) {
 // name search cannot resolve and a path resolves exactly. Each row edits one of
 // them and asserts the other is untouched.
 func TestTheEntryLandsUnderTheNodeTheRequestNames(t *testing.T) {
-	const twoLevels = `apiVersion: aggrega.ai/v1alpha1
+	const twoLevels = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: storefront

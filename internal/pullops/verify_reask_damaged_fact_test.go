@@ -41,7 +41,7 @@ func signedReaskStore(t *testing.T) (store *memory.Store, manifestDg, contentDg 
 	t.Helper()
 	ctx := context.Background()
 	store = memory.New()
-	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: test/svc\n")
+	body := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: test/svc\n")
 	contentDg = digest.ContentDigest(body)
 	manifestDg, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, body, nil)
 	if err != nil {

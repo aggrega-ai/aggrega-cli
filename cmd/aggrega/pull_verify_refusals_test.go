@@ -23,7 +23,7 @@ import (
 // cannot resolve to the other.
 const refusalComponentURI = "test/app"
 
-const refusalComponent = `apiVersion: aggrega.ai/v1alpha1
+const refusalComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/app
@@ -61,7 +61,7 @@ func writeRefusalFixture(t *testing.T) refusalFixture {
 	catalogDir := filepath.Join(root, "catalog")
 	componentPath := filepath.Join(catalogDir, "component", "test", "app", "1.0.0", "component.yaml")
 	writeFixture(t, componentPath, refusalComponent)
-	writeFixture(t, filepath.Join(catalogDir, "recipe", "helm", "app", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipe", "helm", "app", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: app
@@ -70,7 +70,7 @@ spec:
   capability: helm
   implements: test/app
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -79,7 +79,7 @@ spec:
         ports:
           web: 8080
 `)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -89,7 +89,7 @@ spec:
     api:
       type: test/app
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -100,7 +100,7 @@ spec:
       type:
         test/app: helm/app:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

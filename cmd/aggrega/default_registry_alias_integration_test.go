@@ -59,7 +59,7 @@ func TestIntegration_ADefaultRegistryNamingAnEntryPublishesToAndPullsFromItsHost
 	pub := t.TempDir()
 	writeWorkspaceConfig(t, pub, aliasConfig)
 	componentPath := filepath.Join(pub, "component/test/svc/1.0.0/component.yaml")
-	writeFixture(t, componentPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, componentPath, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -73,7 +73,7 @@ spec:
       replicas: { type: integer, default: 1 }
 `)
 	recipePath := filepath.Join(pub, "recipe/helm/svc/1.0.0/recipe.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -82,7 +82,7 @@ spec:
   capability: helm
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `+"`replicas`"+` 1 }}
     containers:
@@ -111,7 +111,7 @@ spec:
 	consumer := func(t *testing.T, signingBlock string) string {
 		t.Helper()
 		ws := t.TempDir()
-		writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -121,7 +121,7 @@ spec:
     app:
       type: test/svc
 `)
-		writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -132,7 +132,7 @@ spec:
       type:
         test/svc:1.0.0: helm/svc:1.0.0
 `)
-		writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

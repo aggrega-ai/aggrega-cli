@@ -370,7 +370,7 @@ func writePlatformRelease(t *testing.T, dir string, r platformRelease) string {
 		secret, realization, environment = "core/secret-value", "compose/dotenv-secret", "development"
 		origin = func(_, onCompose string) string { return "${" + onCompose + "}" }
 	}
-	manifest := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n" +
+	manifest := "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n" +
 		"spec:\n  mappings:\n    components:\n      type:\n" +
 		"        core/ai-agent/" + r.platform + ":1.0.0: " + r.target + "/" + r.platform + ":1.0.0\n" +
 		"        core/ai-model/openai:1.0.0: " + r.target + "/openai:1.0.0\n" +
@@ -378,7 +378,7 @@ func writePlatformRelease(t *testing.T, dir string, r platformRelease) string {
 		"    features:\n      type:\n        " + secret + ":1.0.0: " + realization + ":1.0.0\n"
 
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: " + name + "\n  environment: " +
+	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: " + name + "\n  environment: " +
 		environment + "\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n  manifest: " + name + "\n" +
 		"  boundaries:\n    main:\n      directory: ./dist/" + r.target + "\n      components:\n")
 	for _, part := range r.parts {

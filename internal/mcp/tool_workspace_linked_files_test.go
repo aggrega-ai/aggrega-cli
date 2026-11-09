@@ -31,7 +31,7 @@ import (
 // line naming the linked files exactly where the field names any, closing the
 // answer, and no such line where it names none.
 func TestTheReleaseListingNamesEachLinkedFileOutsideTheWorkspace(t *testing.T) {
-	const release = "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: probe\n  version: \"1.0.0\"\n"
+	const release = "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: probe\n  version: \"1.0.0\"\n"
 	const filesOpening = "No Release behind these links is listed"
 	const dirsLine = "No Release inside these links is listed, because each leads to a directory outside the workspace " +
 		"and none is searched: "

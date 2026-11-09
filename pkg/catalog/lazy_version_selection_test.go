@@ -39,7 +39,7 @@ func multiVersionDocs() []versionedFixtureDoc {
 	var docs []versionedFixtureDoc
 	for _, v := range []string{"1.0.0", "2.0.0"} {
 		docs = append(docs,
-			versionedFixtureDoc{"Component", "test/svc", v, "component/test/svc/" + v + "/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+			versionedFixtureDoc{"Component", "test/svc", v, "component/test/svc/" + v + "/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -52,7 +52,7 @@ spec:
     values:
       greeting: { type: string, default: "svc-` + v + `" }
 `},
-			versionedFixtureDoc{"Feature", "test/tag", v, "feature/test/tag/" + v + "/feature.yaml", `apiVersion: aggrega.ai/v1alpha1
+			versionedFixtureDoc{"Feature", "test/tag", v, "feature/test/tag/" + v + "/feature.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/tag
@@ -63,7 +63,7 @@ spec:
     values:
       label: { type: string, default: "tag-` + v + `" }
 `},
-			versionedFixtureDoc{"Aggregate", "test/sub", v, "aggregate/test/sub/" + v + "/aggregate.yaml", `apiVersion: aggrega.ai/v1alpha1
+			versionedFixtureDoc{"Aggregate", "test/sub", v, "aggregate/test/sub/" + v + "/aggregate.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test/sub
@@ -74,7 +74,7 @@ spec:
     inner:
       type: test/svc
 `},
-			versionedFixtureDoc{"Plugin", "pipeline-step/patch", v, "plugin/pipeline-step/patch/" + v + "/plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
+			versionedFixtureDoc{"Plugin", "pipeline-step/patch", v, "plugin/pipeline-step/patch/" + v + "/plugin.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: patch
@@ -395,7 +395,7 @@ func TestLazyIndexIsFirstWinPerIdentityAcrossDirectories(t *testing.T) {
 	ws := t.TempDir()
 	dirA, dirB := filepath.Join(ws, "a"), filepath.Join(ws, "b")
 	component := func(version, desc string) string {
-		return `apiVersion: aggrega.ai/v1alpha1
+		return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -489,7 +489,7 @@ func TestClosureScopedPillarsValidateTheSelectedVersion(t *testing.T) {
 	t.Parallel()
 	ws := t.TempDir()
 	catalogDir := filepath.Join(ws, "catalog")
-	writeCatalogFile(t, catalogDir, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeCatalogFile(t, catalogDir, "component/test/svc/1.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -501,7 +501,7 @@ spec:
     values:
       greeting: { type: string }
 `)
-	writeCatalogFile(t, catalogDir, "component/test/svc/2.0.0/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeCatalogFile(t, catalogDir, "component/test/svc/2.0.0/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc

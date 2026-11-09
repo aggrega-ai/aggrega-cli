@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-recipe
@@ -17,7 +17,7 @@ spec:
   # guards keep rendering clean when an edge or pillar is absent (the fields are
   # omitempty in the enriched edge).
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

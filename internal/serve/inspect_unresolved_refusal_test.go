@@ -46,7 +46,7 @@ func unresolvedRefusalWorkspace(t *testing.T, workspaceBlock string) (string, *S
 
 	// Two documents at the root, declaring kinds whose articles differ, so one
 	// fixture drives both and a hardcoded article fails on one of them.
-	writeFixtureFile(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo-aggregate
@@ -56,7 +56,7 @@ spec:
     web:
       type: demo/server
 `)
-	writeFixtureFile(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: demo-manifest
@@ -69,7 +69,7 @@ spec:
 `)
 	// One entity the catalog does resolve, so a refusal here reports a name the
 	// search missed rather than a search that found nothing at all.
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/server
@@ -178,14 +178,14 @@ func refusedDocumentWorkspace(t *testing.T) *Server {
 	catalogDir := filepath.Join(ws, "catalog")
 	writeFixtureFile(t, filepath.Join(ws, workspaceconfig.ConfigFilename), "workspace:\n  catalog_dirs:\n    - ./catalog\n")
 	// The one fault is the missing metadata.version.
-	writeFixtureFile(t, filepath.Join(catalogDir, "feature", "nightly-backup.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "feature", "nightly-backup.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: local/nightly-backup
 spec:
   appliesTo: "component.aggrega.ai/category=datastore"
 `)
-	writeFixtureFile(t, filepath.Join(ws, "feature-at-root.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "feature-at-root.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: local/at-root

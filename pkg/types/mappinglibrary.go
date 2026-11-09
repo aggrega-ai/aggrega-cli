@@ -30,7 +30,7 @@ var errMappingEntryNotScalar = cerrors.Register("mapping-entry-not-scalar", cerr
 
 // MappingLibrary's struct declarations (MappingLibrary, MappingLibraryMetadata,
 // MappingLibrarySpec) are generated into mappinglibrary_gen.go from the
-// published mappinglibrary-v1alpha1 schema; their godoc is the schema's
+// published mappinglibrary-v1beta1 schema; their godoc is the schema's
 // descriptions. This hand-written companion holds the MappingEntry type the
 // generated spec references — its custom UnmarshalYAML/MarshalYAML captures the
 // Go-template fragment body verbatim — plus the ErrMappingEntryNotScalar

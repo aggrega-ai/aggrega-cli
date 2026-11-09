@@ -63,7 +63,7 @@ func assertEntityRoundTrip[T any](t *testing.T, src []byte, keysAfterRoundTrip f
 
 func TestAggregate_RoundTripIdempotent(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -86,7 +86,7 @@ spec:
 
 func TestRelease_RoundTripIdempotent(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -112,7 +112,7 @@ spec:
 
 func TestComponent_RoundTripIdempotent(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -139,7 +139,7 @@ spec:
 
 func TestFeature_RoundTripIdempotent(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/test-feature
@@ -162,7 +162,7 @@ spec:
 
 func TestRecipe_RoundTripIdempotent(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: helm/test-recipe
@@ -184,7 +184,7 @@ spec:
 
 func TestFeatureRecipe_RoundTripIdempotent(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: helm/test-fr
@@ -206,7 +206,7 @@ spec:
 
 func TestManifest_RoundTripIdempotent(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -233,7 +233,7 @@ spec:
 // must survive a marshal / unmarshal / marshal cycle byte-identically.
 func TestManifest_NestedOrderedMapRoundTrip(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: nested-test

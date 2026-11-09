@@ -118,7 +118,7 @@ func attachOnTheBackendInstance(t *testing.T, aggregate []byte, names ...string)
 // both components by inheritance and is written on neither.
 func attachOnASubsystem(t *testing.T, name string) []byte {
 	t.Helper()
-	return []byte(`apiVersion: aggrega.ai/v1alpha1
+	return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: fullstack-app

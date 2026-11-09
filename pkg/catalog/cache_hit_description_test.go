@@ -90,7 +90,7 @@ func TestACachedPluginArtifactIsReportedAsServedFromTheCache(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	wasmBytes := []byte("\x00asm\x01\x00\x00\x00 cached-artifact fixture")
-	entityYAML := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/cached\n  version: 1.0.0\n")
+	entityYAML := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: frp/cached\n  version: 1.0.0\n")
 	const artifactURI = "frp/cached"
 	const version = "1.0.0"
 	store := memory.New()

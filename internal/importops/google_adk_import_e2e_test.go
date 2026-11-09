@@ -578,11 +578,11 @@ func googleADKBuildPaths() []string {
 // path, which replaces the drafted Release.
 func writeGoogleADKRelease(t *testing.T, dir, key, part string) string {
 	t.Helper()
-	manifest := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported-google-adk\n" +
+	manifest := "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: imported-google-adk\n" +
 		"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n" +
 		"        core/ai-agent/google-adk:1.0.0: helm/google-adk:1.0.0\n        core/ai-model/gemini:1.0.0: helm/gemini:1.0.0\n" +
 		"    features:\n      type:\n        core/referenced-secret:1.0.0: helm/k8s-existing-secret:1.0.0\n"
-	release := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: imported-google-adk\n" +
+	release := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: imported-google-adk\n" +
 		"  environment: production\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n" +
 		"  manifest: imported-google-adk\n  boundaries:\n    main:\n      directory: ./dist/helm\n      components:\n" +
 		"        " + part + ": {}\n" +
@@ -688,10 +688,10 @@ func TestAGoogleADKDraftNamingALiteLLMModelHaltsNamingItsModelSocket(t *testing.
 		t.Errorf("the Aggregate does not say %q:\n%s", want, text)
 	}
 
-	manifest := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported-google-adk\n" +
+	manifest := "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: imported-google-adk\n" +
 		"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n" +
 		"        core/ai-agent/google-adk:1.0.0: helm/google-adk:1.0.0\n        core/ai-model/gemini:1.0.0: helm/gemini:1.0.0\n"
-	release := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: imported-google-adk\n" +
+	release := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: imported-google-adk\n" +
 		"  environment: production\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n" +
 		"  manifest: imported-google-adk\n  boundaries:\n    main:\n      directory: ./dist/helm\n      components:\n" +
 		"        " + key + ":\n          infra:\n            image: " + googleADKImage + "\n"

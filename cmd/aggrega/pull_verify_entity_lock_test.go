@@ -273,7 +273,7 @@ func TestPullVerifyRefusesASourcePinTheLockfileDisagreesWith(t *testing.T) {
 	t.Chdir(root)
 	releasePath, catalogDir := writeValidWorkspace(t, root)
 	recipePath := filepath.Join(catalogDir, "recipes", "helm", "server.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -286,7 +286,7 @@ spec:
     url: oci://example.invalid/charts/server
     version: "1.2.3"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:

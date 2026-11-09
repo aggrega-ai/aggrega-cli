@@ -4,7 +4,7 @@
 # producer stack publishes that key's export once and both consuming stacks
 # import the one name. No placement annotations, so all three stacks share an
 # account and region.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-two-consumer-stacks

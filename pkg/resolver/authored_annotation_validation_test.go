@@ -48,7 +48,7 @@ func authoredAnnotationRefusal(
 func aggregateAnnotating(t *testing.T, annotations string) *types.Aggregate {
 	t.Helper()
 	return loadTestAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -67,7 +67,7 @@ spec:
 func releaseAnnotating(t *testing.T, annotations string) *types.Release {
 	t.Helper()
 	return loadTestRelease(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -115,7 +115,7 @@ func indentAnnotationBlock(block string, spaces int) string {
 func TestAuthoredAnnotationRulesEnumerateEveryAuthoredSite(t *testing.T) {
 	t.Parallel()
 	release := loadTestRelease(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -133,7 +133,7 @@ spec:
             feature.myco/rewrite-host: "component.example"
 `)
 	aggregate := loadTestAggregate(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test

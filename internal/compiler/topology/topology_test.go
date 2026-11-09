@@ -211,7 +211,7 @@ func scopeUsesEdges(edges []NormalizedEdge, target, originFeature, originInstanc
 func TestBuild_SubsystemFeatureUsesProjectsPerComponent(t *testing.T) {
 	t.Parallel()
 	const aggYAML = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test-app
@@ -266,7 +266,7 @@ spec:
 func TestBuild_BoundaryFeatureUsesProjectsPerComponent(t *testing.T) {
 	t.Parallel()
 	const aggYAML = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test-app
@@ -281,7 +281,7 @@ spec:
       type: core/redis
 `
 	const relYAML = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test

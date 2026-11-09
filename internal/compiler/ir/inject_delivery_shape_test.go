@@ -132,7 +132,7 @@ func TestInjectDelivery_APayloadThatIsNotAListContributesNothing(t *testing.T) {
 // schema accepts, so a finding reported below concerns the inject surface rather
 // than a missing field elsewhere.
 func injectShapeAggregate(injectBody string) []byte {
-	return []byte(`apiVersion: aggrega.ai/v1alpha1
+	return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: inject-delivery-shape-probe

@@ -21,7 +21,7 @@ import (
 // supplied by the caller, so two fixtures differ in the one field a consumer
 // asks for an entity by.
 func anchorRecipeBody(name string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: ` + name + `
@@ -30,7 +30,7 @@ spec:
   capability: helm
   implements: core/` + name + `
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
 `
 }
@@ -55,7 +55,7 @@ func TestPublishedRecipeYieldsItsEntityWhateverTheFileIsNamed(t *testing.T) {
 	recipeDir := filepath.Join(root, "recipes", "mariadb", "1.0.0")
 	// The Recipe declares its chart, which is what makes it publish as an archive:
 	// a file beside it that it did not declare would not travel at all.
-	body := `apiVersion: aggrega.ai/v1alpha1
+	body := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: mariadb

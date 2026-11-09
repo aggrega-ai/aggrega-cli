@@ -31,7 +31,7 @@ import (
 func TestSubModulePlacementIsReadAcrossBothAxes(t *testing.T) {
 	t.Parallel()
 
-	const rootAggregate = `apiVersion: aggrega.ai/v1alpha1
+	const rootAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -40,7 +40,7 @@ spec:
     mod:
       type: ./mod.yaml
 `
-	const rootAggregateInactiveModule = `apiVersion: aggrega.ai/v1alpha1
+	const rootAggregateInactiveModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -52,7 +52,7 @@ spec:
 `
 	// The module binds its own required socket, so a fixture built on it halts
 	// only for the rule under test.
-	const module = `apiVersion: aggrega.ai/v1alpha1
+	const module = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -67,7 +67,7 @@ spec:
     store:
       type: app/db:1.0.0
 `
-	const emptyModule = `apiVersion: aggrega.ai/v1alpha1
+	const emptyModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -75,7 +75,7 @@ spec:
   components: {}
 `
 
-	const boundaryPlacingNothing = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryPlacingNothing = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -84,7 +84,7 @@ spec:
     prod:
       directory: ./out
 `
-	const boundaryRoutingTheModule = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryRoutingTheModule = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -95,7 +95,7 @@ spec:
       aggregates:
         mod: {}
 `
-	const boundaryNamingEveryComponent = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryNamingEveryComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -112,7 +112,7 @@ spec:
 	// did not name is then placed by nothing, so such a fixture would halt for a
 	// fault the row is not about. The one-component shape keeps the row to the
 	// single question it asks.
-	const oneComponentModule = `apiVersion: aggrega.ai/v1alpha1
+	const oneComponentModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -124,7 +124,7 @@ spec:
 	// The module's component named under the id it carries once the composition
 	// is flattened, and no routing entry at all — which is the half of the rule
 	// that a reading keyed on the routing block would get wrong.
-	const boundaryNamingTheDottedComponent = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryNamingTheDottedComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -210,7 +210,7 @@ spec:
 func TestSubModulePlacementLocatesAtTheImportingDocument(t *testing.T) {
 	t.Parallel()
 
-	const rootAggregate = `apiVersion: aggrega.ai/v1alpha1
+	const rootAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -219,7 +219,7 @@ spec:
     mod:
       type: ./mod.yaml
 `
-	const module = `apiVersion: aggrega.ai/v1alpha1
+	const module = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -228,7 +228,7 @@ spec:
     store:
       type: app/db:1.0.0
 `
-	const releasePlacingNothing = `apiVersion: aggrega.ai/v1alpha1
+	const releasePlacingNothing = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -280,7 +280,7 @@ spec:
 func TestSubModulePlacementAcrossNesting(t *testing.T) {
 	t.Parallel()
 
-	const rootAggregate = `apiVersion: aggrega.ai/v1alpha1
+	const rootAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -289,7 +289,7 @@ spec:
     outer:
       type: ./outer.yaml
 `
-	const outerModule = `apiVersion: aggrega.ai/v1alpha1
+	const outerModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: outer
@@ -298,7 +298,7 @@ spec:
     inner:
       type: ./inner.yaml
 `
-	const innerModule = `apiVersion: aggrega.ai/v1alpha1
+	const innerModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: inner
@@ -307,7 +307,7 @@ spec:
     store:
       type: app/db:1.0.0
 `
-	const placingNothing = `apiVersion: aggrega.ai/v1alpha1
+	const placingNothing = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -316,7 +316,7 @@ spec:
     prod:
       directory: ./out
 `
-	const routingTheOuterModule = `apiVersion: aggrega.ai/v1alpha1
+	const routingTheOuterModule = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -430,7 +430,7 @@ spec:
 func TestPlacementRulesDivideTheGroundAndEachReportsOnce(t *testing.T) {
 	t.Parallel()
 
-	const rootWithModule = `apiVersion: aggrega.ai/v1alpha1
+	const rootWithModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -441,7 +441,7 @@ spec:
 `
 	// Two components, so a rule reporting per component rather than per module
 	// would report twice where one report is right.
-	const twoComponentModule = `apiVersion: aggrega.ai/v1alpha1
+	const twoComponentModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -458,7 +458,7 @@ spec:
 `
 	// No module at all: both components are the Aggregate's own, and the
 	// boundary names one of them.
-	const rootWithOwnComponents = `apiVersion: aggrega.ai/v1alpha1
+	const rootWithOwnComponents = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -473,7 +473,7 @@ spec:
     db:
       type: app/db:1.0.0
 `
-	const boundaryPlacingNothing = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryPlacingNothing = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -482,7 +482,7 @@ spec:
     prod:
       directory: ./out
 `
-	const boundaryNamingOnlyTheConsumer = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryNamingOnlyTheConsumer = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -493,7 +493,7 @@ spec:
       components:
         api: {}
 `
-	const boundaryNamingOneModuleComponent = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryNamingOneModuleComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -506,7 +506,7 @@ spec:
 `
 	// Three components, none of which binds a socket, so the only thing the count
 	// row can be measuring is how many orphans the rule reports.
-	const threeComponentModule = `apiVersion: aggrega.ai/v1alpha1
+	const threeComponentModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -519,7 +519,7 @@ spec:
     gamma:
       type: app/db:1.0.0
 `
-	const boundaryNamingOneOfThree = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryNamingOneOfThree = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -631,7 +631,7 @@ spec:
 func TestNestedModulePlacementIsReadPerModuleAndNotPerComposition(t *testing.T) {
 	t.Parallel()
 
-	const rootAggregate = `apiVersion: aggrega.ai/v1alpha1
+	const rootAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -643,7 +643,7 @@ spec:
 	// The outer module carries a component of its own as well as the nested
 	// module, so the Release can place the outer module without placing
 	// anything the inner one contributed.
-	const outerModule = `apiVersion: aggrega.ai/v1alpha1
+	const outerModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: outer
@@ -655,7 +655,7 @@ spec:
     inner:
       type: ./inner.yaml
 `
-	const innerModule = `apiVersion: aggrega.ai/v1alpha1
+	const innerModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: inner
@@ -666,7 +666,7 @@ spec:
     cache:
       type: app/db:1.0.0
 `
-	const namingTheOuterComponentOnly = `apiVersion: aggrega.ai/v1alpha1
+	const namingTheOuterComponentOnly = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -677,7 +677,7 @@ spec:
       components:
         outer.edge: {}
 `
-	const namingTheOuterComponentAndOneInnerOne = `apiVersion: aggrega.ai/v1alpha1
+	const namingTheOuterComponentAndOneInnerOne = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -689,7 +689,7 @@ spec:
         outer.edge: {}
         outer.inner.store: {}
 `
-	const namingEveryComponent = `apiVersion: aggrega.ai/v1alpha1
+	const namingEveryComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -796,7 +796,7 @@ spec:
 func TestBoundaryComponentResolutionReadsBothAxesAndNotTheSpelling(t *testing.T) {
 	t.Parallel()
 
-	const rootWithSubsystem = `apiVersion: aggrega.ai/v1alpha1
+	const rootWithSubsystem = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -807,7 +807,7 @@ spec:
         reader:
           type: app/db:1.0.0
 `
-	const rootWithModule = `apiVersion: aggrega.ai/v1alpha1
+	const rootWithModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -816,7 +816,7 @@ spec:
     mod:
       type: ./mod.yaml
 `
-	const rootWithDeactivatedComponent = `apiVersion: aggrega.ai/v1alpha1
+	const rootWithDeactivatedComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -826,7 +826,7 @@ spec:
       type: app/db:1.0.0
       active: "false"
 `
-	const module = `apiVersion: aggrega.ai/v1alpha1
+	const module = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -845,7 +845,7 @@ spec:
 	// addresses nothing AND leaves the component it was meant to place in no
 	// boundary — and a fixture carrying both proves nothing about this rule,
 	// because the placement rule reports such a document first.
-	const boundaryNamingASubsystemQualifiedId = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryNamingASubsystemQualifiedId = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -857,7 +857,7 @@ spec:
         reader: {}
         data.reader: {}
 `
-	const boundaryNamingTheFlattenedId = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryNamingTheFlattenedId = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -868,7 +868,7 @@ spec:
       components:
         reader: {}
 `
-	const boundaryRoutingAndNamingAComponentTheModuleLacks = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryRoutingAndNamingAComponentTheModuleLacks = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -881,7 +881,7 @@ spec:
           components:
             reader: {}
 `
-	const boundaryRoutingAndNamingAComponentTheModuleDeclares = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryRoutingAndNamingAComponentTheModuleDeclares = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -894,7 +894,7 @@ spec:
           components:
             store: {}
 `
-	const boundaryNamingTheModuleComponentByQualifiedId = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryNamingTheModuleComponentByQualifiedId = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -905,7 +905,7 @@ spec:
       components:
         mod.store: {}
 `
-	const boundaryNamingTheDeactivatedComponent = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryNamingTheDeactivatedComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -997,7 +997,7 @@ spec:
 func TestBoundaryComponentResolutionNamesTheKeyAndTheIdItAddressed(t *testing.T) {
 	t.Parallel()
 
-	const rootWithSubsystem = `apiVersion: aggrega.ai/v1alpha1
+	const rootWithSubsystem = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -1008,7 +1008,7 @@ spec:
         reader:
           type: app/db:1.0.0
 `
-	const rootWithModule = `apiVersion: aggrega.ai/v1alpha1
+	const rootWithModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -1017,7 +1017,7 @@ spec:
     mod:
       type: ./mod.yaml
 `
-	const module = `apiVersion: aggrega.ai/v1alpha1
+	const module = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -1027,7 +1027,7 @@ spec:
       type: app/db:1.0.0
 `
 
-	const dottedIdUnderANestedBoundary = `apiVersion: aggrega.ai/v1alpha1
+	const dottedIdUnderANestedBoundary = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -1041,7 +1041,7 @@ spec:
             reader: {}
             data.reader: {}
 `
-	const bareIdUnderANamedBoundary = `apiVersion: aggrega.ai/v1alpha1
+	const bareIdUnderANamedBoundary = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -1053,7 +1053,7 @@ spec:
         reader: {}
         raeder: {}
 `
-	const localNameInsideARoutingEntry = `apiVersion: aggrega.ai/v1alpha1
+	const localNameInsideARoutingEntry = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -1070,7 +1070,7 @@ spec:
 	// The Release writes its entries at its own top level, which normalization
 	// folds into a boundary the author never wrote. The locator has to name the
 	// site the author did write.
-	const topLevelEntries = `apiVersion: aggrega.ai/v1alpha1
+	const topLevelEntries = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -1163,7 +1163,7 @@ func TestPlacementIsReportedBeforeResolution(t *testing.T) {
 
 	// The subsystem-qualified entry is both faults at once: it addresses nothing,
 	// and the component it was meant to place is left in no boundary.
-	const rootWithSubsystem = `apiVersion: aggrega.ai/v1alpha1
+	const rootWithSubsystem = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -1174,7 +1174,7 @@ spec:
         reader:
           type: app/db:1.0.0
 `
-	const boundaryNamingASubsystemQualifiedId = `apiVersion: aggrega.ai/v1alpha1
+	const boundaryNamingASubsystemQualifiedId = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod

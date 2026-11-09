@@ -111,7 +111,7 @@ func renderCustomSelfInject(t *testing.T, mode trace.Mode) (string, map[string]r
 			}
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "custom-self-inject-recipe"},
-				Spec: types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+				Spec: types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

@@ -4,7 +4,7 @@
 # the same provides key, so the producer stack publishes that key's export once
 # and both consumers import the one name. The topology is the sibling
 # aggregate/manifest unchanged — only the placement differs from release.yaml.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-two-consumers

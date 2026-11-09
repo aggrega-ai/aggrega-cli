@@ -31,7 +31,7 @@ var errArtifactLibraryEntryShape = cerrors.Register("artifact-library-entry-shap
 
 // ArtifactLibrary's struct declarations (ArtifactLibrary, ArtifactLibraryMetadata,
 // ArtifactLibrarySpec) are generated into artifactlibrary_gen.go from the
-// published artifactlibrary-v1alpha1 schema; their godoc is the schema's
+// published artifactlibrary-v1beta1 schema; their godoc is the schema's
 // descriptions. This hand-written companion holds the ArtifactLibraryEntry type
 // the generated spec references — its custom UnmarshalYAML/MarshalYAML captures a
 // bundle of artifact file bodies verbatim — plus the ErrArtifactLibraryEntryShape

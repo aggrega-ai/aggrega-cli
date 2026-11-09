@@ -57,7 +57,7 @@ const loopbackEntry = `      local:
 func loopbackFixture(t *testing.T, root, provider, services string) (catalogDir, releasePath string) {
 	t.Helper()
 	catalogDir = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogDir, "component/example/compute/web/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/example/compute/web/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/web
@@ -72,7 +72,7 @@ spec:
         type: string
         default: "nginx:1.27"
 `)
-	writeFixture(t, filepath.Join(catalogDir, "recipe/"+provider+"/web/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipe/"+provider+"/web/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: web
@@ -81,7 +81,7 @@ spec:
   capability: `+provider+`
   implements: example/compute/web:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -93,7 +93,7 @@ spec:
             port: 5514
             protocol: UDP
 `+services)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: site
@@ -103,7 +103,7 @@ spec:
     web:
       type: example/compute/web
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: site-manifest
@@ -115,7 +115,7 @@ spec:
         example/compute/web:1.0.0: `+provider+`/web:1.0.0
 `)
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: site-release

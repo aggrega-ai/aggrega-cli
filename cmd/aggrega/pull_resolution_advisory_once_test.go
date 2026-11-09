@@ -20,7 +20,7 @@ const unreadParameterAdvisory = `  lint: declared parameter is read by no refere
 func unreadParameterWorkspace(t *testing.T, root string) {
 	t.Helper()
 	lintOnceWorkspace(t, root)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: lint-once

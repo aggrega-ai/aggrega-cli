@@ -257,7 +257,7 @@ func TestHostGuestWireParity_Linter(t *testing.T) {
 			in: validator.LinterInput{
 				RuleID:     "schema-evolution",
 				EntityKind: "Component",
-				Proposed:   json.RawMessage(`{"apiVersion":"aggrega.ai/v1alpha1"}`),
+				Proposed:   json.RawMessage(`{"apiVersion":"aggrega.ai/v1beta1"}`),
 				SourcePath: "core/compute/web-service/1.0.0/component.yaml",
 			},
 		},

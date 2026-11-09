@@ -51,7 +51,7 @@ func writeConnectionFixture(t *testing.T) string {
 		// The consuming entity. Socket order here is the author order the
 		// response is asserted to preserve, and it is deliberately not
 		// alphabetical.
-		"consumer.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"consumer.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: api
@@ -72,7 +72,7 @@ spec:
 `,
 		// A target satisfying `store` and `two-term`'s first requirement
 		// only. 90- so path order reverses name order.
-		"90-postgres.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"90-postgres.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: postgres
@@ -82,7 +82,7 @@ metadata:
 `,
 		// A second target satisfying `store`, so the socket's answer is a
 		// set rather than a single entity.
-		"80-mysql.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"80-mysql.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: mysql
@@ -92,7 +92,7 @@ metadata:
 `,
 		// Satisfies no declared constraint but is still a candidate for the
 		// unconstrained socket.
-		"70-cache.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"70-cache.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: keyvalue
@@ -102,7 +102,7 @@ metadata:
 		// A Feature. Its sockets are closed, so it is the entity that
 		// reports adHocSocketsAccepted false. It is not a candidate target
 		// either, however its labels read.
-		"60-mesh.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"60-mesh.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: mesh
@@ -592,7 +592,7 @@ func TestConnectionCandidatesExcludesDocumentsOutsideTheWorkspaceRoot(t *testing
 	outside := filepath.Join(t.TempDir(), "elsewhere.yaml")
 	srv := newTestServer(t, root, &bytes.Buffer{}, &bytes.Buffer{})
 
-	content := `apiVersion: aggrega.ai/v1alpha1
+	content := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: elsewhere

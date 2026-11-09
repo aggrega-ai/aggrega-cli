@@ -13,7 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
 )
 
-const artifactLibraryYAML = `apiVersion: aggrega.ai/v1alpha1
+const artifactLibraryYAML = `apiVersion: aggrega.ai/v1beta1
 kind: ArtifactLibrary
 metadata:
   name: SharedCRDs
@@ -81,7 +81,7 @@ func TestArtifactLibrary_LoadBundleValidatesAndPreservesFileOrder(t *testing.T) 
 func TestArtifactLibrary_RejectsNonMappingEntry(t *testing.T) {
 	t.Parallel()
 
-	const src = `apiVersion: aggrega.ai/v1alpha1
+	const src = `apiVersion: aggrega.ai/v1beta1
 kind: ArtifactLibrary
 metadata:
   name: Bad

@@ -53,7 +53,7 @@ func isSubdomainName(s string) bool {
 // is the author's own budget against the length a name allows; what this fixture
 // exercises is the part of every name the identity contributes.
 func namingWorkload(form string, fileSlots ...string) *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: form}
 	if form == rendercore.WorkloadFormReference {
 		w.Endpoint = "https://db.example.com:5432"
 		w.Port = 5432

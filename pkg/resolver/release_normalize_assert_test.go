@@ -50,7 +50,7 @@ func TestResolveFromInputs_NormalizedReleaseClearsAssert(t *testing.T) {
 	var b types.OrderedMap[types.Boundary]
 	b.Set("default", types.Boundary{Synthesized: true, Components: bcomps("api")})
 	rel.Spec.Boundaries = b
-	agg := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n  components: {}\n")
+	agg := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n  components: {}\n")
 
 	err := resolver.ResolveAndUse(context.Background(), resolver.ResolveInputs{Release: rel, Manifest: &types.Manifest{}, AggregateRawBytes: agg}, func(*resolver.ResolveResult) error { return nil })
 	if errors.Is(err, resolver.ErrUnnormalizedRelease()) {

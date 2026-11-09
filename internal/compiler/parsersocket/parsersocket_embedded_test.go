@@ -28,7 +28,7 @@ func embeddedParserCatalog() *catalog.Catalog {
 	for _, format := range []string{"hcl", "toml", "yaml", "json"} {
 		key := "parser/" + format + ":0.0.0-test"
 		plugins[key] = types.Plugin{
-			APIVersion: "aggrega.ai/v1alpha1",
+			APIVersion: "aggrega.ai/v1beta1",
 			Kind:       "Plugin",
 			Metadata:   types.PluginMetadata{Name: format, Version: "0.0.0-test", PluginType: "parser"},
 			Spec: types.PluginSpec{
@@ -107,7 +107,7 @@ func TestEmbeddedParsers_ResolveAndRun(t *testing.T) {
 func TestTheJSONWithCommentsParserYieldsTheJSONParsersTree(t *testing.T) {
 	cat := embeddedParserCatalog()
 	cat.Plugins["parser/jsonc:0.0.0-test"] = types.Plugin{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Plugin",
 		Metadata:   types.PluginMetadata{Name: "jsonc", Version: "0.0.0-test", PluginType: "parser"},
 		Spec: types.PluginSpec{

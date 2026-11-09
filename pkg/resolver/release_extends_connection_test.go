@@ -19,7 +19,7 @@ import (
 // The base also writes the same attachment on the component's own block, and the
 // child redeclares it there exactly as it redeclares the connection's, so the
 // two surfaces can be compared on identical input.
-const connectionFoldBase = `apiVersion: aggrega.ai/v1alpha1
+const connectionFoldBase = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: base-release
@@ -56,7 +56,7 @@ spec:
                   rotation: daily
 `
 
-const connectionFoldChild = `apiVersion: aggrega.ai/v1alpha1
+const connectionFoldChild = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: child-release

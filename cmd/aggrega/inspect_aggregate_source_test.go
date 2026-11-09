@@ -16,7 +16,7 @@ import (
 // in one values block, alongside values that are not references at all. Neither
 // spelling can render a value — the document declares no Release supplying
 // one — so what each must print is the expression the author wrote.
-const bothSpellingsAggregate = `apiVersion: aggrega.ai/v1alpha1
+const bothSpellingsAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: spelling
@@ -125,7 +125,7 @@ func TestInspectAggregate_ReferenceRendersNoInternalKeyOrValue(t *testing.T) {
 // that no template wrote. It shares the shape a reference takes, so it pins that
 // recovery is bounded to expressions rather than to every mapping the structural
 // read cannot carry.
-const complexKeyAggregate = `apiVersion: aggrega.ai/v1alpha1
+const complexKeyAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: complex

@@ -27,7 +27,7 @@ type loopbackService struct {
 // four ports — two with no transport, one datagram and one message-oriented —
 // and whose services are exactly the given entries, in the given order.
 func loopbackWorkload(services ...loopbackService) *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "prometheus:3.0"}
 	c.Ports.Set("http", types.PortSpec{Port: 8080})
 	c.Ports.Set("admin", types.PortSpec{Port: 9090})

@@ -28,7 +28,7 @@ func catalogLocalPluginWorkspace(t *testing.T, guest []byte) (releasePath, plugi
 	catalogDir := filepath.Join(root, "catalog")
 
 	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace:\n  catalog_dirs:\n    - ./catalog\noffline: true\n")
-	writeFixture(t, filepath.Join(catalogDir, "component", "test", "svc", "1.0.0", "component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component", "test", "svc", "1.0.0", "component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -40,7 +40,7 @@ spec:
     infra:
       replicas: { type: integer, default: 1 }
 `)
-	writeFixture(t, filepath.Join(catalogDir, "recipe", "helm", "svc", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipe", "helm", "svc", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -49,7 +49,7 @@ spec:
   capability: helm
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `+"`replicas`"+` 1 }}
     containers:
@@ -61,7 +61,7 @@ spec:
       function: step
 `)
 	pluginDir = filepath.Join(catalogDir, "plugin", "pipeline-step", "patch", "1.0.0")
-	writeFixture(t, filepath.Join(pluginDir, "plugin.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(pluginDir, "plugin.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: patch
@@ -77,7 +77,7 @@ spec:
 	if guest != nil {
 		writeFixtureBytes(t, filepath.Join(pluginDir, pluginpath.PluginLeaf("pipeline-step/patch")), guest)
 	}
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -87,7 +87,7 @@ spec:
     app:
       type: test/svc
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -99,7 +99,7 @@ spec:
         test/svc:1.0.0: helm/svc:1.0.0
 `)
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

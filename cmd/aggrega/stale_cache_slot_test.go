@@ -41,7 +41,7 @@ const staleSlotEntry = staleSlotComponentURI + ":1.0.0"
 // staleSlotPinnedBody is the body the first catalog directory holds and a pull
 // pins. It sources part of its infra from a SchemaLibrary, so the lockfile pins a
 // library as well as the Component, as the workspace this reproduces does.
-const staleSlotPinnedBody = `apiVersion: aggrega.ai/v1alpha1
+const staleSlotPinnedBody = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb
@@ -61,7 +61,7 @@ spec:
 
 // staleSlotCachedBody is the older body of the same name and version the cache
 // slot holds.
-const staleSlotCachedBody = `apiVersion: aggrega.ai/v1alpha1
+const staleSlotCachedBody = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb
@@ -80,7 +80,7 @@ spec:
 
 // staleSlotShadowedBody is the body a catalog directory read after the first
 // declares under the same identity.
-const staleSlotShadowedBody = `apiVersion: aggrega.ai/v1alpha1
+const staleSlotShadowedBody = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb
@@ -145,7 +145,7 @@ func writeStaleSlotFixture(t *testing.T, opts staleSlotOptions) staleSlotFixture
 	writeFixture(t, componentPath, staleSlotPinnedBody)
 	writeFixture(t, filepath.Join(catalogDir, "schemalibrary", "db-sizing.yaml"), dbSizingLibrarySource)
 	writeHelmRendererPlugin(t, filepath.Join(catalogDir, "providers"))
-	writeFixture(t, filepath.Join(catalogDir, "recipe", "helm", "mariadb-chart", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipe", "helm", "mariadb-chart", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: mariadb-chart
@@ -154,7 +154,7 @@ spec:
   capability: helm
   implements: core/datastore/mariadb
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -169,7 +169,7 @@ spec:
 		writeFixture(t, filepath.Join(hubDir, "component", "core", "datastore", "mariadb", "1.0.0", "component.yaml"), staleSlotShadowedBody)
 		catalogDirs = append(catalogDirs, hubDir)
 	}
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -181,7 +181,7 @@ spec:
       values:
         database: app
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -192,7 +192,7 @@ spec:
       type:
         `+opts.mappingKey+`: helm/mariadb-chart:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

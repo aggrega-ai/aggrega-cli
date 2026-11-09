@@ -52,7 +52,7 @@ func loadedEntityExists(t *testing.T, cat *Catalog, kind, uri string) bool {
 	}
 }
 
-const lockBearingRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+const lockBearingRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: pinned-recipe
@@ -63,7 +63,7 @@ spec:
   source: https://example.invalid/c.tgz
 `
 
-const lockBearingFeatureRecipeYAML = `apiVersion: aggrega.ai/v1alpha1
+const lockBearingFeatureRecipeYAML = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: pinned-feature-recipe

@@ -1,7 +1,7 @@
 # The sibling of the declared-name variant: the component's own published
 # endpoint reaches the stack Output name the assembled stack actually carries for
 # the boundary-scope attachment, rather than the one that render declared.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: bs-minted-name

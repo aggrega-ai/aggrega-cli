@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: feature-matrix-api-path-collision
@@ -10,7 +10,7 @@ spec:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "{{ optional .infra `port` 8080 }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:

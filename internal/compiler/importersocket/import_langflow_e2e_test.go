@@ -41,7 +41,7 @@ import (
 // carrying the labels a Component of its category carries and the value keys the
 // cases' nodes are scored against.
 var standardComponents = map[string]string{
-	"openai.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"openai.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ai-model/openai
@@ -58,7 +58,7 @@ spec:
       temperature: { type: number }
       strict_response_format: { type: boolean }
 `,
-	"anthropic.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"anthropic.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ai-model/anthropic
@@ -74,7 +74,7 @@ spec:
       model: { type: string }
       temperature: { type: number }
 `,
-	"openai-embedding.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"openai-embedding.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ai-model/openai-embedding
@@ -89,7 +89,7 @@ spec:
     values:
       model: { type: string }
 `,
-	"retrieval.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"retrieval.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ai-tool/retrieval
@@ -104,7 +104,7 @@ spec:
       top_k: { type: integer }
       side_effects: { type: string }
 `,
-	"http-request.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"http-request.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ai-tool/http-request
@@ -119,7 +119,7 @@ spec:
       method: { type: string }
       payload_schema_ref: { type: string }
 `,
-	"langflow.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"langflow.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ai-agent/langflow
@@ -134,7 +134,7 @@ spec:
       flow_id: { type: string }
       tweaks: { type: object }
 `,
-	"flowise.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"flowise.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ai-agent/flowise

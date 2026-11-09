@@ -19,7 +19,7 @@ import (
 // one slot and whose "logs" socket declares none, and a component to connect to.
 func connectionCatalog(t *testing.T) resolver.CatalogLookup {
 	t.Helper()
-	const gwYAML = `apiVersion: aggrega.ai/v1alpha1
+	const gwYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/gateway
@@ -35,7 +35,7 @@ spec:
     logs:
       selector: "component.aggrega.ai/category=sink"
 `
-	const modelYAML = `apiVersion: aggrega.ai/v1alpha1
+	const modelYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/model
@@ -108,7 +108,7 @@ const twoFilledConnections = `models:
 `
 
 // moduleRoot is an Aggregate composing one sub-module under the prefix "mod".
-const moduleRoot = `apiVersion: aggrega.ai/v1alpha1
+const moduleRoot = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -119,7 +119,7 @@ spec:
 `
 
 func moduleDocument(uses string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -129,7 +129,7 @@ spec:
 }
 
 func rootDocument(uses string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -276,7 +276,7 @@ func TestModuleConnectionAttachmentSlotsAreRefusedOnce(t *testing.T) {
 			pad = 12
 		}
 		at := strings.Repeat(" ", pad)
-		return `apiVersion: aggrega.ai/v1alpha1
+		return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod

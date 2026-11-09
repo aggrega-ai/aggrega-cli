@@ -216,7 +216,7 @@ func TestRenderWorkloadForDisplay_FoldsAsTheEmittedDocumentIs(t *testing.T) {
 		{name: "a connection the component does not draw", connection: "claude"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			text := `apiVersion: aggrega.ai/v1alpha1
+			text := `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

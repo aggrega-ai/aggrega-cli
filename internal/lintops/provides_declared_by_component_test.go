@@ -213,7 +213,7 @@ func seedProvidesWorkspace(t *testing.T, docs map[string]string) *workspaceconfi
 	return rw
 }
 
-const providesBaseComponent = `apiVersion: aggrega.ai/v1alpha1
+const providesBaseComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ai-model/broker-base
@@ -236,7 +236,7 @@ spec:
 // providesExtendingComponent authors no pillar content of its own: it writes the
 // inheritance marker and takes its contract from the base. Reading its file
 // alone would find no provides pillar at all.
-const providesExtendingComponent = `apiVersion: aggrega.ai/v1alpha1
+const providesExtendingComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/ai-model/broker
@@ -251,7 +251,7 @@ spec:
 
 func providesRecipe(keys map[string]string) string {
 	var b strings.Builder
-	b.WriteString(`apiVersion: aggrega.ai/v1alpha1
+	b.WriteString(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: broker-gateway
@@ -266,7 +266,7 @@ spec:
 		b.WriteString("    " + k + ": \"" + keys[k] + "\"\n")
 	}
 	b.WriteString(`  workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     form: reference
     endpoint: "{{ .infra.endpoint }}"

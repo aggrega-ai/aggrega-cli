@@ -18,7 +18,7 @@ import (
 // suspendWorkload builds the scheduled workload the form-scheduled golden was
 // rendered from, holding its schedule or not.
 func suspendWorkload(suspend bool) *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "scheduled", Schedule: "@daily", Suspend: suspend}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "scheduled", Schedule: "@daily", Suspend: suspend}
 	w.Containers.Set("main", types.ContainerSpec{Image: "reporter:1.0", Command: []string{"/report"}})
 	return w
 }

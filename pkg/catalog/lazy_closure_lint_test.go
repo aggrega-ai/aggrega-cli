@@ -15,7 +15,7 @@ import (
 // A Component whose schema declares the same property ("port") in both the
 // values and infra pillars at the same depth — the schema-pillar-overlap the
 // lint flags.
-const overlapComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+const overlapComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/overlap-comp
@@ -34,7 +34,7 @@ spec:
 
 // A second overlap component (alphabetically before overlap-comp) for the
 // deterministic-order assertion.
-const overlapComponentBYAML = `apiVersion: aggrega.ai/v1alpha1
+const overlapComponentBYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/aaa-overlap
@@ -52,7 +52,7 @@ spec:
 `
 
 // A clean Component — disjoint pillars, no overlap, no warning.
-const cleanComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+const cleanComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/clean-comp

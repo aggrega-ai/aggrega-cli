@@ -47,7 +47,7 @@ const remoteParentIdentity = "demo/remote-base"
 func extendingFillWorkspace(t *testing.T, registryHost string) (ws, releaseRel string) {
 	t.Helper()
 	ws, releaseRel = renderDialWorkspace(t)
-	writeFixtureFile(t, filepath.Join(ws, "catalog", "components", "svc.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "catalog", "components", "svc.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc

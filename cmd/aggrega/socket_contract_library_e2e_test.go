@@ -33,7 +33,7 @@ func socketContractLibraryWorkspace(t *testing.T, root, contract, edgeValues str
 	// resolution alone and never by a registry the machine may or may not reach.
 	writeWorkspaceConfig(t, root, "workspace: {}\noffline: true")
 	catalogDir = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogDir, "component/acme/api/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/acme/api/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/api
@@ -49,7 +49,7 @@ spec:
   schema:
     values: {}
 `)
-	writeFixture(t, filepath.Join(catalogDir, "component/acme/pg/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/acme/pg/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/pg
@@ -61,7 +61,7 @@ spec:
     values: {}
 `)
 	for _, r := range []struct{ name, implements string }{{"api", "acme/api"}, {"pg", "acme/pg"}} {
-		writeFixture(t, filepath.Join(catalogDir, "recipe/compose", r.name, "1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogDir, "recipe/compose", r.name, "1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: `+r.name+`
@@ -70,7 +70,7 @@ spec:
   capability: compose
   implements: `+r.implements+`:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -78,7 +78,7 @@ spec:
 `)
 	}
 	if withLibrary {
-		writeFixture(t, filepath.Join(catalogDir, "schemalibrary/probe-lib/1.0.0/library.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogDir, "schemalibrary/probe-lib/1.0.0/library.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: ProbeLib
@@ -91,7 +91,7 @@ spec:
         mode: { type: string, enum: [strict, lax] }
 `)
 	}
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: socket-app
@@ -109,7 +109,7 @@ spec:
             values:
               `+edgeValues+`
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: socket-manifest
@@ -122,7 +122,7 @@ spec:
         acme/pg:1.0.0: compose/pg:1.0.0
 `)
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: socket-release

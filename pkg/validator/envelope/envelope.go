@@ -97,7 +97,7 @@ const (
 	// ValidateInstance with it, so it creates no runtime gate (a gate is
 	// a call site, never map membership). It exists so that emission-side
 	// conformance checks can validate a REAL emitted IR instance against
-	// ir-v1alpha1 through the one validation component. The bidirectional
+	// ir-v1beta1 through the one validation component. The bidirectional
 	// schema↔struct alignment suite deliberately excludes this kind and
 	// cannot cover it: the IR types are json-tagged, and that suite's
 	// schema-to-Go direction reads yaml tags. Do not wire it into a parse
@@ -108,24 +108,24 @@ const (
 
 // schemaSource maps each kind to its embedded schema document.
 var schemaSource = map[Kind]string{
-	KindComponent:       schemas.ComponentV1alpha1,
-	KindFeature:         schemas.FeatureV1alpha1,
-	KindRecipe:          schemas.RecipeV1alpha1,
-	KindFeatureRecipe:   schemas.FeatureRecipeV1alpha1,
-	KindPlugin:          schemas.PluginV1alpha1,
-	KindPluginsTrust:    schemas.PluginsTrustV1alpha1,
-	KindSchemaLibrary:   schemas.SchemaLibraryV1alpha1,
-	KindMappingLibrary:  schemas.MappingLibraryV1alpha1,
-	KindWorkloadLibrary: schemas.WorkloadLibraryV1alpha1,
-	KindArtifactLibrary: schemas.ArtifactLibraryV1alpha1,
-	KindAggregate:       schemas.AggregateV1alpha1,
-	KindManifest:        schemas.ManifestV1alpha1,
-	KindRelease:         schemas.ReleaseV1alpha1,
-	KindAggregaConfig:   schemas.AggregaConfigV1alpha1,
-	KindLockfile:        schemas.LockfileV1alpha1,
-	KindEntityLock:      schemas.EntityLockV1alpha1,
+	KindComponent:       schemas.ComponentV1beta1,
+	KindFeature:         schemas.FeatureV1beta1,
+	KindRecipe:          schemas.RecipeV1beta1,
+	KindFeatureRecipe:   schemas.FeatureRecipeV1beta1,
+	KindPlugin:          schemas.PluginV1beta1,
+	KindPluginsTrust:    schemas.PluginsTrustV1beta1,
+	KindSchemaLibrary:   schemas.SchemaLibraryV1beta1,
+	KindMappingLibrary:  schemas.MappingLibraryV1beta1,
+	KindWorkloadLibrary: schemas.WorkloadLibraryV1beta1,
+	KindArtifactLibrary: schemas.ArtifactLibraryV1beta1,
+	KindAggregate:       schemas.AggregateV1beta1,
+	KindManifest:        schemas.ManifestV1beta1,
+	KindRelease:         schemas.ReleaseV1beta1,
+	KindAggregaConfig:   schemas.AggregaConfigV1beta1,
+	KindLockfile:        schemas.LockfileV1beta1,
+	KindEntityLock:      schemas.EntityLockV1beta1,
 	KindWorkload:        clischemas.WorkloadJSONSchema,
-	KindIR:              schemas.IRSchemaV1alpha1,
+	KindIR:              schemas.IRSchemaV1beta1,
 }
 
 // Kinds returns every document family this package validates, in lexical
@@ -368,6 +368,11 @@ func (e *envelopeFailure) Unwrap() []error { return []error{e.cause, ErrEntityEn
 // failure and an engine failure have no per-field findings, so the sentence is
 // followed by the underlying failure's own message and nothing else.
 //
+// A document declaring an API version this compiler no longer reads returns
+// *Error under ErrRetiredAPIVersion before its schema is consulted, one finding
+// positioned at its `apiVersion` line naming the version it declares and the
+// version the compiler reads; that error matches ErrEntityEnvelope as well.
+//
 // A Recipe or FeatureRecipe the schema accepts is then held to the one rule its
 // schema cannot state: no two steps of its pipeline share an id. A document
 // breaking it returns *Error under ErrDuplicatePipelineStepID, one finding per
@@ -417,6 +422,12 @@ func validateBytes(key compiledKey, data []byte, path string) (any, error) {
 		return nil, &Error{Kind: kind, Path: path, Findings: []jsonvalidator.Finding{{Message: "document is empty"}}}
 	}
 	instance = NormaliseYAML(instance)
+	// A document declaring a version this compiler no longer reads is told so
+	// before anything else is said about it: every other finding would be one
+	// about a version of the document the compiler does not read.
+	if err := retiredAPIVersion(key, path, data, instance); err != nil {
+		return instance, err
+	}
 	findings, err := validateInstance(key, instance)
 	if err != nil {
 		return instance, &envelopeFailure{cause: err}

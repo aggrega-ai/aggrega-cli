@@ -18,7 +18,7 @@ import (
 // providerEntity renders a provider Plugin entity declaring one well-known
 // annotation at scopes, against an input-kind claim of sourced only.
 func providerEntity(scopes string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: probe

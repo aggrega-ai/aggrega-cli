@@ -17,7 +17,7 @@
 # materialise, so a build in which it is empty means the fixture is broken
 # rather than that the subject regressed — which is what makes the other two
 # readable as statements about the attachment surface specifically.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: cloudformation-attachment-defaults

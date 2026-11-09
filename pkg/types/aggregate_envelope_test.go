@@ -20,7 +20,7 @@ import (
 func aggregateEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal([]byte(schemas.AggregateV1alpha1), schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.AggregateV1beta1), schema); err != nil {
 		t.Fatalf("unmarshal envelope schema: %v", err)
 	}
 	v, err := jsonvalidator.New(schema)
@@ -38,7 +38,7 @@ func TestAggregateEnvelope_RejectsShorthandParameters(t *testing.T) {
 	t.Parallel()
 	v := aggregateEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: shorthand-params
@@ -65,7 +65,7 @@ func TestAggregateEnvelope_AcceptsTypedContractParameters(t *testing.T) {
 	t.Parallel()
 	v := aggregateEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: typed-params
@@ -103,7 +103,7 @@ func TestAggregateEnvelope_RejectsUnknownVocabulary(t *testing.T) {
 	t.Parallel()
 	v := aggregateEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: unknown-vocab
@@ -131,7 +131,7 @@ func TestAggregateEnvelope_RejectsMixedForms(t *testing.T) {
 	t.Parallel()
 	v := aggregateEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mixed-params
@@ -160,7 +160,7 @@ func TestAggregateEnvelope_AcceptsNestedProperties(t *testing.T) {
 	t.Parallel()
 	v := aggregateEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: nested-params

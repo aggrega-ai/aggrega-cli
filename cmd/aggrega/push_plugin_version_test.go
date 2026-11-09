@@ -29,7 +29,7 @@ func versionedStepEntity(version string, withABI bool) string {
 	if !withABI {
 		abi = ""
 	}
-	return fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	return fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: patch

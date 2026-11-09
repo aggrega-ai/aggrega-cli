@@ -6,6 +6,7 @@ package agentframeworkimport
 import (
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -50,7 +51,7 @@ func renderAggregate(name string, agents []*agent, parts []*modelPart) string {
 	b.WriteString(commentLine("", "Not read: the application's code, which loads each declarative agent and binds the functions of "+
 		"its function tools; the application runs in the image the Release names for each instance, and loads its "+
 		"declarative agents itself."))
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	b.WriteString("kind: Aggregate\n")
 	b.WriteString("metadata:\n")
 	b.WriteString("  name: " + name + "\n")
@@ -220,7 +221,7 @@ func aggregateText(text string) string {
 // its own Release; the plugin kit renders none.
 func renderRelease(name string, agents []*agent, parts []*modelPart) string {
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	b.WriteString("kind: Release\n")
 	b.WriteString("metadata:\n")
 	b.WriteString("  name: " + name + "\n")
@@ -321,7 +322,7 @@ func writePartEntry(b *strings.Builder, p *modelPart) {
 func renderModel(name string) string {
 	var b strings.Builder
 	b.WriteString("# A Recipe publishing this Component's endpoint and its model is left for the author.\n")
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	b.WriteString("kind: Component\n")
 	b.WriteString("metadata:\n")
 	b.WriteString("  name: " + name + "\n")

@@ -14,7 +14,7 @@ import (
 
 // Plugin's top-level struct declarations (Plugin,
 // PluginMetadata, PluginSpec) are generated into
-// plugin_gen.go from the published plugin-v1alpha1 schema, as are the provider
+// plugin_gen.go from the published plugin-v1beta1 schema, as are the provider
 // block and everything under it (the block itself, its render-behavior
 // contract, and that contract's input-kind claim); their
 // godoc is the schema's descriptions. This hand-written companion holds

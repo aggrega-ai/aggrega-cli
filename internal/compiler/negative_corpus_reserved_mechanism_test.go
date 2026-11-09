@@ -34,7 +34,7 @@ const reservedMechanismReason = `"all" is the merged view of every delivery mech
 // dependency socket whose allowlist the feature-socket row varies. An empty
 // injectLine declares no allowlist.
 func reservedCorpusFeature(injectLine string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/marker
@@ -46,7 +46,7 @@ spec:
 ` + injectLine
 }
 
-const reservedCorpusFeatureRecipe = `apiVersion: aggrega.ai/v1alpha1
+const reservedCorpusFeatureRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: marker-compose
@@ -56,7 +56,7 @@ spec:
   implements: core/marker
 `
 
-const reservedCorpusManifest = `apiVersion: aggrega.ai/v1alpha1
+const reservedCorpusManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: corpus-manifest
@@ -96,7 +96,7 @@ func reservedRows() []reservedRow {
 			wf := baseWorkspaceFiles()
 			// The component admits exactly the twin's mechanism, so the twin builds
 			// and the reserved name is refused before any allowlist is consulted.
-			wf.component = `apiVersion: aggrega.ai/v1alpha1
+			wf.component = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -109,7 +109,7 @@ spec:
     values:
       port: { type: integer }
 `
-			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+			wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -137,7 +137,7 @@ spec:
 		}},
 		{name: "aggregate-attachment", wantPath: "spec.components.api.features.marker.inject", write: func(m string) (workspaceFiles, map[string]string) {
 			wf := baseWorkspaceFiles()
-			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+			wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -158,7 +158,7 @@ spec:
 		}},
 		{name: "aggregate-attachment-connection", wantPath: "spec.components.api.features.marker.uses.peer", write: func(m string) (workspaceFiles, map[string]string) {
 			wf := baseWorkspaceFiles()
-			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+			wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -183,7 +183,7 @@ spec:
 		}},
 		{name: "aggregate-subsystem-attachment", wantPath: "spec.subsystems.edge.features.marker.inject", write: func(m string) (workspaceFiles, map[string]string) {
 			wf := baseWorkspaceFiles()
-			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+			wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -206,7 +206,7 @@ spec:
 		}},
 		{name: "release-connection", wantPath: "spec.boundaries.main.components.api.features.marker.uses.peer", write: func(m string) (workspaceFiles, map[string]string) {
 			wf := baseWorkspaceFiles()
-			wf.release = `apiVersion: aggrega.ai/v1alpha1
+			wf.release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -236,7 +236,7 @@ spec:
 		}},
 		{name: "component-own-allowlist", wantPath: "spec.inject[1]", builds: true, write: func(m string) (workspaceFiles, map[string]string) {
 			wf := baseWorkspaceFiles()
-			wf.component = `apiVersion: aggrega.ai/v1alpha1
+			wf.component = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -260,7 +260,7 @@ spec:
 		{name: "feature-socket-allowlist", wantPath: "spec.usesSchema.peer.inject[1]", builds: true, write: func(m string) (workspaceFiles, map[string]string) {
 			wf := baseWorkspaceFiles()
 			wf.manifest = reservedCorpusManifest
-			wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+			wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app

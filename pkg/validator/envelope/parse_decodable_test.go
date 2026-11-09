@@ -17,7 +17,7 @@ import (
 // content and declared references beside it, so a test can tell what the repair
 // touches from what it must leave alone.
 const templateBearingDoc = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: template-bearing
@@ -116,7 +116,7 @@ func TestParseDecodable_RepairsAKeyReachedThroughAnAlias(t *testing.T) {
 	t.Parallel()
 
 	doc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aliased-key
@@ -163,7 +163,7 @@ func TestParseDecodable_RefusesAnAnchorAliasedInsideItsOwnContent(t *testing.T) 
 	t.Parallel()
 
 	doc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: recursive
@@ -190,7 +190,7 @@ func TestParseDecodable_LeavesADocumentWithoutTemplatesAlone(t *testing.T) {
 	t.Parallel()
 
 	doc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: plain

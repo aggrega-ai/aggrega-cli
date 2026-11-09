@@ -81,7 +81,7 @@ func renderBaseWithSlot(t *testing.T, compSlots types.OrderedMap[types.Attachmen
 		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "pgprobe-helm"},
-				Spec: types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+				Spec: types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -196,7 +196,7 @@ func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.AttachmentS
 		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe"},
-				Spec:     types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: api:latest\n"}},
+				Spec:     types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: api:latest\n"}},
 			}, true
 		},
 		FeatureRecipe: func(_, ft string) (*types.FeatureRecipe, bool) {
@@ -206,7 +206,7 @@ func renderFRWithSlot(t *testing.T, featSlots types.OrderedMap[types.AttachmentS
 					Spec: types.FeatureRecipeSpec{
 						Capability: "helm",
 						Implements: "core/frprobe:1.0.0",
-						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

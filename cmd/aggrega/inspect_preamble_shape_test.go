@@ -17,7 +17,7 @@ import (
 func TestInspectPathRefusesAKindWrittenAsAListInTheAuthorsWords(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "kind-list.yaml")
-	doc := "apiVersion: aggrega.ai/v1alpha1\nkind:\n  - Component\nmetadata:\n  name: example/compute/probe\n"
+	doc := "apiVersion: aggrega.ai/v1beta1\nkind:\n  - Component\nmetadata:\n  name: example/compute/probe\n"
 	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}

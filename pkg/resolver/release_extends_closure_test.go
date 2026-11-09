@@ -24,7 +24,7 @@ type closureFixtureFile struct{ name, content string }
 const (
 	// closureChainHead extends a sibling that extends it back, so the chain
 	// closes on itself.
-	closureChainHead = `apiVersion: aggrega.ai/v1alpha1
+	closureChainHead = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: closure-child
@@ -33,7 +33,7 @@ metadata:
 spec:
   extends: ./base.yaml
 `
-	closureChainBase = `apiVersion: aggrega.ai/v1alpha1
+	closureChainBase = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: closure-base
@@ -43,7 +43,7 @@ spec:
   extends: ./child.yaml
 `
 	// closureMissingParentHead names a file that is not beside it.
-	closureMissingParentHead = `apiVersion: aggrega.ai/v1alpha1
+	closureMissingParentHead = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: closure-child

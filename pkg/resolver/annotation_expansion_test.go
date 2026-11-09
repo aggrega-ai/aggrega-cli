@@ -20,7 +20,7 @@ import (
 // spec.schema.infra.upstream declaration.
 
 const testManifestYAML = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -59,7 +59,7 @@ func loadTestRelease(t *testing.T, src string) *types.Release {
 func TestExpandAnnotations_BoundaryCascade_AllComponentsInherit(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -106,7 +106,7 @@ spec:
 func TestExpandAnnotations_ComponentOverride_ComponentValueWins(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -149,7 +149,7 @@ spec:
 func TestExpandAnnotations_RoutesToBindingSingleSubkey(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -191,7 +191,7 @@ func TestExpandAnnotations_ScalarRoutesToNestedPath(t *testing.T) {
 	// it walks. The synthetic Feature's Infra carries the value at the
 	// dotted leaf.
 	manifestSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -209,7 +209,7 @@ spec:
               - ingress.host
 `
 	releaseSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -268,7 +268,7 @@ spec:
 func TestExpandAnnotations_RecursiveNestedBoundariesCascade(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -319,7 +319,7 @@ func TestExpandAnnotations_ScalarMultiMap_ReturnsOpsError(t *testing.T) {
 	// routing unambiguously — which path receives the value? Expansion
 	// halts with an OPS_ERROR naming the binding and its declared paths.
 	manifestSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -338,7 +338,7 @@ spec:
               - timeout
 `
 	releaseSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -386,7 +386,7 @@ spec:
 func TestExpandAnnotations_RefusalNamesTheInjectingPlugin(t *testing.T) {
 	t.Parallel()
 	const manifestSrc = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -405,7 +405,7 @@ spec:
               - timeout
 `
 	const releaseSrc = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -466,7 +466,7 @@ spec:
 func TestExpandAnnotations_NoBindings_NoOp(t *testing.T) {
 	t.Parallel()
 	manifestSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -478,7 +478,7 @@ spec:
         core/server: server-helm:1.0.0
 `
 	releaseSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -520,7 +520,7 @@ func TestExpandAnnotations_ScalarValue_DefaultsNotMergedHere(t *testing.T) {
 	// same default-fill path downstream. This test pins the policy so
 	// future readers can't silently flip it.
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -562,7 +562,7 @@ func TestExpandAnnotations_EmptyStringValue_EmptyInfra(t *testing.T) {
 	// layer carries only the fields the author populated through the
 	// annotation value.
 	manifestSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -580,7 +580,7 @@ spec:
               - upstream
 `
 	releaseSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -621,7 +621,7 @@ spec:
 func TestExpandAnnotations_ExplicitFeaturePreserved_NoOverwrite(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -656,7 +656,7 @@ spec:
 func TestExpandAnnotations_RecordsProvenance_BoundaryLevel(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -699,7 +699,7 @@ spec:
 func TestExpandAnnotations_RecordsProvenance_ComponentLevel(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -737,7 +737,7 @@ spec:
 func TestExpandAnnotations_RecordsProvenance_ComponentOverrideUpdatesSource(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -779,7 +779,7 @@ spec:
 func TestExpandAnnotations_NullOptOut_BoundaryToComponent(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -833,7 +833,7 @@ spec:
 func TestExpandAnnotations_NullOptOut_NoInheritance_IsNoOp(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -871,7 +871,7 @@ spec:
 func TestExpandAnnotations_NullOptOut_PreservesOtherKeys(t *testing.T) {
 	t.Parallel()
 	manifestSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -895,7 +895,7 @@ spec:
               - endpoint
 `
 	releaseSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -965,7 +965,7 @@ func keysOf(m map[string]AnnotationProvenance) []string {
 // WireAggregateAnnotations and ExpandAnnotations.
 
 const testValuesManifestYAML = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -1009,7 +1009,7 @@ func loadValuesManifest(t *testing.T) *types.Manifest {
 func TestExpand_AggregateSide_ScalarAnnotation_RoutesToValues(t *testing.T) {
 	t.Parallel()
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1059,7 +1059,7 @@ func TestExpand_AggregateSide_BindingMapsToInfra_ErrorsLoud(t *testing.T) {
 	// below names the operator's, and the pair is what shows the two
 	// wraps follow their own documents.
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1106,7 +1106,7 @@ func TestExpand_ReleaseSide_BindingMapsToValues_ErrorsLoud(t *testing.T) {
 	// Release-side annotation paired with a binding that declares
 	// only values paths: the symmetric mismatch halts the build.
 	releaseSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -1154,7 +1154,7 @@ func TestExpand_ScalarRoutesToNestedAggregateValuesPath(t *testing.T) {
 	// values leaf; the synthesized FeatureInstance carries nested
 	// OrderedMap intermediates with the leaf value at the named tip.
 	manifestSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -1172,7 +1172,7 @@ spec:
               - ingress.host
 `
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1226,7 +1226,7 @@ func TestExpand_AggregateSide_NullOptOut_SubsystemSuppressesContribution(t *test
 	// `key: null` opts the component out. Sibling components in the same
 	// subsystem retain inheritance.
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1275,7 +1275,7 @@ func TestExpand_AggregateSide_ExplicitFeaturePreserved_NoOverwrite(t *testing.T)
 	// same key as a registered binding keeps the explicit attachment;
 	// expansion does not overwrite.
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1320,7 +1320,7 @@ func TestExpand_AggregateSide_TopLevelComponent(t *testing.T) {
 	// canonical component path in the provenance side-table is
 	// "subsystems.default.components.<name>".
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1375,7 +1375,7 @@ spec:
 func TestExpand_AggregateSide_FailureNamesTheAuthoredComponent(t *testing.T) {
 	t.Parallel()
 	const manifest = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -1441,7 +1441,7 @@ spec:
 			if err := yaml.Unmarshal([]byte(manifest), &m); err != nil {
 				t.Fatalf("manifest unmarshal: %v", err)
 			}
-			src := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: test\n  version: \"1.0.0\"\nspec:\n" + tc.spec
+			src := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: test\n  version: \"1.0.0\"\nspec:\n" + tc.spec
 			rr := &ResolveResult{
 				Manifest:             &m,
 				Aggregate:            loadTestAggregate(t, src),
@@ -1478,7 +1478,7 @@ func TestExpand_RecordsAggregateProvenance(t *testing.T) {
 	// subsystem authoring path (the cascade reports the deepest authoring
 	// scope, not the consuming scope).
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1522,7 +1522,7 @@ func TestExpand_AggregateSide_DeeplyNestedSubsystemExpansion(t *testing.T) {
 	// canonical component path is rooted at "subsystems.<outer>." and
 	// chained through ".subsystems.<middle>." down to the leaf.
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1582,7 +1582,7 @@ spec:
 func TestExpand_CrossWalkerConsistency(t *testing.T) {
 	t.Parallel()
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1664,7 +1664,7 @@ spec:
 // ExpandAnnotations.
 
 const structuredManifestYAML = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -1716,7 +1716,7 @@ infra:
 func TestExpand_StructuredAggregateSide_RoutesAllValuesSubkeys(t *testing.T) {
 	t.Parallel()
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1758,7 +1758,7 @@ spec:
 func TestExpand_StructuredReleaseSide_RoutesAllInfraSubkeys(t *testing.T) {
 	t.Parallel()
 	releaseSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -1814,7 +1814,7 @@ spec:
 func TestExpand_StructuredCrossSidePartition_AggregateOnlyValuesSubkeysFire(t *testing.T) {
 	t.Parallel()
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1861,7 +1861,7 @@ spec:
 func TestExpand_StructuredSubkeyNotInBindingMap_Errors(t *testing.T) {
 	t.Parallel()
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -1921,7 +1921,7 @@ spec:
 func TestExpand_StructuredSubkeyNotInBindingMap_ReleaseSide_Errors(t *testing.T) {
 	t.Parallel()
 	releaseSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -1974,7 +1974,7 @@ func TestExpand_StructuredSubkeyValueMismatchesFeatureSchemaType_Errors(t *testi
 	// validation. read_replicas is declared as integer; passing a
 	// string fails too. Both errors accumulate per collect-and-emit-all.
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -2023,7 +2023,7 @@ func TestExpand_StructuredCollectAllErrors_NotOnlyFirst(t *testing.T) {
 	// chain; the orchestrator's error printer renders each on its own
 	// line via Unwrap() []error.
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -2063,7 +2063,7 @@ func TestExpand_StructuredScalarValueRoutesCompatibly(t *testing.T) {
 	// Regression: after the AnnotationValue type lift, scalar values
 	// continue to route through the scalar path correctly.
 	manifestSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -2081,7 +2081,7 @@ spec:
               - db_name
 `
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -2130,7 +2130,7 @@ func TestExpand_StructuredErrorsImplementUnwrapSlice_OrchestratorRendersEachLine
 	// a string-concatenating wrapper would pass a substring check
 	// but fail this assertion.
 	aggSrc := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test

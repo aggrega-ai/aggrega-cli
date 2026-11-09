@@ -12,7 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 )
 
-const cyclicExtendsCompAYAML = `apiVersion: aggrega.ai/v1alpha1
+const cyclicExtendsCompAYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/loop/cyc-a
@@ -24,7 +24,7 @@ spec:
   schema: inherited
 `
 
-const cyclicExtendsCompBYAML = `apiVersion: aggrega.ai/v1alpha1
+const cyclicExtendsCompBYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/loop/cyc-b
@@ -36,7 +36,7 @@ spec:
   schema: inherited
 `
 
-const cyclicExtendsFeatAYAML = `apiVersion: aggrega.ai/v1alpha1
+const cyclicExtendsFeatAYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/loop/feat-a
@@ -47,7 +47,7 @@ spec:
   extends: core/loop/feat-b
 `
 
-const cyclicExtendsFeatBYAML = `apiVersion: aggrega.ai/v1alpha1
+const cyclicExtendsFeatBYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/loop/feat-b

@@ -35,7 +35,7 @@ func writeCatalogFile(t *testing.T, dir, relpath, content string) {
 	}
 }
 
-const twoProviderRecipeFmt = `apiVersion: aggrega.ai/v1alpha1
+const twoProviderRecipeFmt = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: mariadb-rds
@@ -44,7 +44,7 @@ spec:
   capability: %s
   implements: core/datastore/mariadb:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:

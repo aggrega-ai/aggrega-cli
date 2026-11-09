@@ -26,7 +26,7 @@ func TestClosureEntityFilesCoversEveryLibraryAxis(t *testing.T) {
 	// One locally-authored library per axis, each with a distinct name so the
 	// returned path identifies which axis produced it.
 	bodies := map[string]string{
-		"schema.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"schema.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: ProbeSchemas
@@ -36,7 +36,7 @@ spec:
     Storage:
       size: { type: string, default: "10Gi" }
 `,
-		"mapping.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"mapping.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: ProbeMappings
@@ -46,7 +46,7 @@ spec:
     Simple: |
       key: value
 `,
-		"workload.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"workload.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: ProbeWorkloads
@@ -56,7 +56,7 @@ spec:
     Deploy: |
       kind: Deployment
 `,
-		"artifacts.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"artifacts.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: ArtifactLibrary
 metadata:
   name: ProbeArtifacts

@@ -18,7 +18,7 @@ func probeSuccessThresholdWorkspace(t *testing.T, root, extra string) (releaseFi
 	// Offline, so every reference is answered by the local catalog alone and the
 	// result cannot depend on a registry the machine may or may not reach.
 	writeWorkspaceConfig(t, root, "workspace: {}\noffline: true")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: probe-app
@@ -28,7 +28,7 @@ spec:
     only:
       type: core/server
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: probe-release
@@ -43,7 +43,7 @@ spec:
       components:
         only: {}
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: probe-manifest
@@ -55,7 +55,7 @@ spec:
         core/server: server-compose-recipe:1.0.0
 `)
 	catalogRoot = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -67,7 +67,7 @@ spec:
     values: {}
 `)
 	seedEmbeddedPlugins(t, filepath.Join(catalogRoot, "providers"), "provider/compose")
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "compose", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "compose", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-compose-recipe
@@ -76,7 +76,7 @@ spec:
   capability: compose
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       server:

@@ -12,7 +12,7 @@ import (
 //go:generate go run ../../internal/tools/typegen manifest_gen.go
 
 // Manifest's struct declarations (Manifest, ManifestMetadata, ManifestSpec)
-// are generated into manifest_gen.go from the published manifest-v1alpha1
+// are generated into manifest_gen.go from the published manifest-v1beta1
 // schema; their godoc is the schema's descriptions. This hand-written
 // companion holds the mapping types the generated spec references —
 // ManifestMappings (with its custom UnmarshalYAML/MarshalYAML), MappingTier,
@@ -57,7 +57,7 @@ import (
 // its compatible subset. Cross-side path routing mismatches halt the
 // build with a clear error.
 //
-// Schema: manifest-v1alpha1.schema.json#/properties/spec/properties/mappings/properties/features/properties/annotations/additionalProperties
+// Schema: manifest-v1beta1.schema.json#/properties/spec/properties/mappings/properties/features/properties/annotations/additionalProperties
 type AnnotationBinding struct {
 	// Feature is the Feature URI this annotation routes to (for example
 	// `core/rewrite-host:1.0.0`). The referenced type must also appear
@@ -150,7 +150,7 @@ func (m AnnotationBindingMaps) Lookup(path string) (string, bool) {
 // completeness pass — mappings are explicit, and the resolver never
 // walks spec.implements to bind a build.
 //
-// Schema: manifest-v1alpha1.schema.json#/properties/spec/properties/mappings
+// Schema: manifest-v1beta1.schema.json#/properties/spec/properties/mappings
 type ManifestMappings struct {
 	Components *MappingTier `json:"components,omitempty" yaml:"components,omitempty"`
 	Features   *MappingTier `json:"features,omitempty" yaml:"features,omitempty"`
@@ -236,7 +236,7 @@ func (m ManifestMappings) MarshalYAML() (any, error) {
 
 // MappingTier implements two-tier resolution: type for bulk DRY mapping, name for granular overrides.
 // Resolution order: name wins over type. Versioned type keys win over unversioned.
-// Schema: manifest-v1alpha1.schema.json#/$defs/mapping_tier
+// Schema: manifest-v1beta1.schema.json#/$defs/mapping_tier
 type MappingTier struct {
 	Type OrderedMap[string] `json:"type,omitempty,omitzero" yaml:"type,omitempty"`
 	Name OrderedMap[string] `json:"name,omitempty,omitzero" yaml:"name,omitempty"`

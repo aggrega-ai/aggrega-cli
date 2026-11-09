@@ -43,7 +43,7 @@ func transitiveSubAggregateFixture(t *testing.T, root string) string {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
 
-	writeFixture(t, filepath.Join(catalogRoot, "aggregates", "parity-top.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "aggregates", "parity-top.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: parity-top
@@ -58,7 +58,7 @@ spec:
     mid:
       type: parity-mid
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "aggregates", "parity-mid.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "aggregates", "parity-mid.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: parity-mid
@@ -73,7 +73,7 @@ spec:
     leaf:
       type: parity-leaf
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "aggregates", "parity-leaf.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "aggregates", "parity-leaf.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: parity-leaf
@@ -85,7 +85,7 @@ spec:
       values:
         port: 9190
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: parity-rel
@@ -110,7 +110,7 @@ spec:
 `)
 	// The leaf's component type is mapped by a VERSIONED key; the Aggregates name
 	// it bare. See the fixture doc for why that asymmetry is deliberate.
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -123,7 +123,7 @@ spec:
         parity-worker:1.0.0: parity-worker:1.0.0
 `)
 	for _, comp := range []string{"server", "parity-worker"} {
-		writeFixture(t, filepath.Join(catalogRoot, "components", comp+".yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogRoot, "components", comp+".yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: `+comp+`
@@ -135,7 +135,7 @@ spec:
     values:
       port: { type: integer, default: 8080 }
 `)
-		writeFixture(t, filepath.Join(catalogRoot, "recipes", comp+".yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(catalogRoot, "recipes", comp+".yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: `+comp+`
@@ -144,7 +144,7 @@ spec:
   capability: helm
   implements: `+comp+`
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:

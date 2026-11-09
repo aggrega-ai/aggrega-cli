@@ -15,7 +15,7 @@ import (
 // catalogIndexLinksFeature is a Feature a row lays, under its own name so that
 // reading it shows up by name.
 func catalogIndexLinksFeature(name string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: " + name +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: " + name +
 		"\n  version: \"1.0.0\"\nspec: {}\n"
 }
 

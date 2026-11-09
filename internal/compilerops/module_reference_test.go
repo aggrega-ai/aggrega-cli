@@ -16,7 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-const moduleRefComponent = `apiVersion: aggrega.ai/v1alpha1
+const moduleRefComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/web
@@ -31,7 +31,7 @@ spec:
 
 // moduleRefStore is the module a Release reaches, with its one component's type
 // left to the row.
-const moduleRefStore = `apiVersion: aggrega.ai/v1alpha1
+const moduleRefStore = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: example/store
@@ -44,7 +44,7 @@ spec:
 
 // moduleRefOuter is a module that imports the store module, so a row can place
 // the reference one module further in.
-const moduleRefOuter = `apiVersion: aggrega.ai/v1alpha1
+const moduleRefOuter = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: example/outer
@@ -57,7 +57,7 @@ spec:
 
 // moduleRefRoot is the Release's own Aggregate: one component of its own and one
 // module, both left to the row.
-const moduleRefRoot = `apiVersion: aggrega.ai/v1alpha1
+const moduleRefRoot = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: module-reference-app
@@ -71,7 +71,7 @@ spec:
       type: %s
 `
 
-const moduleRefManifest = `apiVersion: aggrega.ai/v1alpha1
+const moduleRefManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: module-reference-manifest
@@ -82,7 +82,7 @@ spec:
       type: {}
 `
 
-const moduleRefRelease = `apiVersion: aggrega.ai/v1alpha1
+const moduleRefRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: module-reference-release

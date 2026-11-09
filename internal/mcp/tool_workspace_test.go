@@ -27,7 +27,7 @@ import (
 //   - values.yaml               foreign YAML declaring no kind at all
 //   - notes/unnamed.yaml        a kind with no name, so nothing to address it by
 const (
-	discoveryComponent = `apiVersion: aggrega.ai/v1alpha1
+	discoveryComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/web-server
@@ -41,7 +41,7 @@ spec:
       port: { type: integer, default: 8080 }
 `
 
-	discoveryRelease = `apiVersion: aggrega.ai/v1alpha1
+	discoveryRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: unconventionally-named-release
@@ -51,7 +51,7 @@ spec:
   manifest: ./manifest.yaml
 `
 
-	discoveryLookalike = `apiVersion: aggrega.ai/v1alpha1
+	discoveryLookalike = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/not-a-release
@@ -68,7 +68,7 @@ image:
   tag: "1.25"
 `
 
-	discoveryKindWithoutName = `apiVersion: aggrega.ai/v1alpha1
+	discoveryKindWithoutName = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 spec:
   schema: {}
@@ -233,7 +233,7 @@ func newMixedProjectWorkspace(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	for path, content := range map[string]string{
-		"parts/api.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"parts/api.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/api
@@ -508,7 +508,7 @@ func TestTheDiscoveryToolsAnswerWithTheSummaryWhenNoShapeIsNamed(t *testing.T) {
 
 // discoveryPlantedKind is a kind the rest of the fixture does not declare, so a
 // breakdown that reports it can only have read it out of the document.
-const discoveryPlantedKind = `apiVersion: aggrega.ai/v1alpha1
+const discoveryPlantedKind = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: example/planted-manifest
@@ -669,7 +669,7 @@ func TestADetailedListingIsBoundedAndContinues(t *testing.T) {
 func TestADetailedListingWithNoLimitIsStillBounded(t *testing.T) {
 	root := t.TempDir()
 	for i := 0; i < listingPageDefault+7; i++ {
-		doc := fmt.Sprintf("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: example/compute/c%03d\n  version: \"1.0.0\"\nspec:\n  schema: {}\n", i)
+		doc := fmt.Sprintf("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: example/compute/c%03d\n  version: \"1.0.0\"\nspec:\n  schema: {}\n", i)
 		if err := os.WriteFile(filepath.Join(root, fmt.Sprintf("c%03d.yaml", i)), []byte(doc), 0o644); err != nil {
 			t.Fatalf("write fixture %d: %v", i, err)
 		}
@@ -695,7 +695,7 @@ func TestADetailedListingWithNoLimitIsStillBounded(t *testing.T) {
 
 // discoveryCatalogFeature lives in a catalog directory OUTSIDE the workspace, so
 // the only path it has is one on the machine the server runs on.
-const discoveryCatalogFeature = `apiVersion: aggrega.ai/v1alpha1
+const discoveryCatalogFeature = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/telemetry

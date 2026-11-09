@@ -54,7 +54,7 @@ func publishSocketPluginEntitySigned(t *testing.T, host, socketName, version, pl
 	entityDir := t.TempDir()
 	entityPath := filepath.Join(entityDir, "plugin.yaml")
 	bareName := filepath.Base(socketName)
-	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: `+bareName+`
@@ -90,7 +90,7 @@ spec:
 func writeVerifyIfPresentConfigSocketWorkspace(t *testing.T, host string, pinnedPubPEM []byte, pluginsBlock string) string {
 	t.Helper()
 	ws := t.TempDir()
-	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -100,7 +100,7 @@ spec:
     app:
       type: test/svc
 `)
-	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -111,7 +111,7 @@ spec:
       type:
         test/svc:1.0.0: compose/svc:1.0.0
 `)
-	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

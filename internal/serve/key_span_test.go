@@ -23,7 +23,7 @@ import (
 // four bytes long, and a key on the line after a multi-line value.
 func TestAKeyNodeIsDrawnAsTheFieldPathWalkDrawsIt(t *testing.T) {
 	t.Parallel()
-	const doc = "apiVersion: aggrega.ai/v1alpha1\n" +
+	const doc = "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Component\n" +
 		"metadata:\n" +
 		"  name: my-service\n" +

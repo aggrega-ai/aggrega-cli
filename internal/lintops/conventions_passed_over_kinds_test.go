@@ -39,7 +39,7 @@ func seedWorkspace(t *testing.T) string {
 	return ws
 }
 
-const passedOverProbeComponent = `apiVersion: aggrega.ai/v1alpha1
+const passedOverProbeComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -52,7 +52,7 @@ spec:
       port: { type: integer, default: 8080 }
 `
 
-const passedOverProbeAggregate = `apiVersion: aggrega.ai/v1alpha1
+const passedOverProbeAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: probe/app
@@ -116,7 +116,7 @@ func TestWalkCountsOnlyRecognisedKindsAsPassedOver(t *testing.T) {
 	ws := t.TempDir()
 	mustWriteFile(t, filepath.Join(ws, "server.yaml"), passedOverProbeComponent)
 	mustWriteFile(t, filepath.Join(ws, "app.yaml"), passedOverProbeAggregate)
-	mustWriteFile(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	mustWriteFile(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: probe/prod

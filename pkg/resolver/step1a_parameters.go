@@ -81,7 +81,7 @@ func LoadAggregateParameterContractFromBytes(data []byte, sourcePath string) (ty
 		}
 	}
 	// Second-line-of-defense: envelope-validate the shallow-loaded contract
-	// against the canonical aggregate-v1alpha1 sub-schema. Catches malformed
+	// against the canonical aggregate-v1beta1 sub-schema. Catches malformed
 	// contracts (wrong type for min:, invalid enum shape, etc.) at workspace
 	// load rather than as contract-violation failures at parameter-contract
 	// validation.

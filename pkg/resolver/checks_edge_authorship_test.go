@@ -21,7 +21,7 @@ import (
 // reason.
 func authorshipCatalog(t *testing.T) CatalogLookup {
 	t.Helper()
-	const svcYAML = `apiVersion: aggrega.ai/v1alpha1
+	const svcYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/svc
@@ -36,7 +36,7 @@ spec:
       infraSchema:
         storage_class: { type: string, required: true }
 `
-	const dbYAML = `apiVersion: aggrega.ai/v1alpha1
+	const dbYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/db
@@ -69,7 +69,7 @@ spec: {}
 // replica, both reaching db and both authoring the required per-edge value. Their
 // developer half therefore conforms, so anything the per-edge rules report for
 // these components comes from the Release's own edge surface.
-const twoConnectionAggregate = `apiVersion: aggrega.ai/v1alpha1
+const twoConnectionAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -215,7 +215,7 @@ func TestTheDeveloperPerEdgeContractIsJudgedWhereItWasWritten(t *testing.T) {
 	t.Parallel()
 	cat := authorshipCatalog(t)
 
-	authoredEmpty := parseAggregate(t, `apiVersion: aggrega.ai/v1alpha1
+	authoredEmpty := parseAggregate(t, `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -244,7 +244,7 @@ spec:
 	// and the Release's entry authors the key its own contract requires, so
 	// the operator half is silent too and a report here could only be the
 	// developer half speaking where it was not written.
-	oneConnection := parseAggregate(t, `apiVersion: aggrega.ai/v1alpha1
+	oneConnection := parseAggregate(t, `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -313,7 +313,7 @@ func TestNoPerEdgeReportNamesAnAliasTheFileDoesNotContain(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			agg := parseAggregate(t, `apiVersion: aggrega.ai/v1alpha1
+			agg := parseAggregate(t, `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo

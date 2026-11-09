@@ -112,7 +112,7 @@ func TestCommandHaltsNameTheCategoryOnce(t *testing.T) {
 	}
 
 	aggregatePath := filepath.Join(dir, "aggregate.yaml")
-	if err := os.WriteFile(aggregatePath, []byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := os.WriteFile(aggregatePath, []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: a
@@ -160,7 +160,7 @@ spec:
 }
 
 const categoryOnceValuesManifest = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -177,7 +177,7 @@ spec:
 `
 
 const categoryOnceInfraManifest = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -229,7 +229,7 @@ func TestAnnotationExpansionHaltNamesTheCategoryOnce(t *testing.T) {
 		t.Parallel()
 		var rel types.Release
 		if err := yaml.Unmarshal([]byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -269,7 +269,7 @@ spec:
 		t.Parallel()
 		var agg types.Aggregate
 		if err := yaml.Unmarshal([]byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test

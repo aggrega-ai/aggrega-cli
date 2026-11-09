@@ -36,7 +36,7 @@ import (
 // genuinely clean entity rather than a quieter violation — a fixture that merely
 // broke a different rule would report findings and the assertion would then be
 // measuring the wrong thing.
-const lintStructuredCleanComponent = `apiVersion: aggrega.ai/v1alpha1
+const lintStructuredCleanComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/api-server

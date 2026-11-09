@@ -48,7 +48,7 @@ type registryResolutionPublication struct {
 // whose workspace declares none of its own resolves the provider from there, so
 // the registry holds only what the Release's own references name.
 var registryResolutionPublisher = []registryResolutionPublication{
-	{path: "schemalibrary/basetypes/1.0.0/library.yaml", body: `apiVersion: aggrega.ai/v1alpha1
+	{path: "schemalibrary/basetypes/1.0.0/library.yaml", body: `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseTypes
@@ -58,7 +58,7 @@ spec:
     PortSpec:
       port: { type: integer, default: 8080 }
 `},
-	{path: "component/demo/web/1.0.0/component.yaml", body: `apiVersion: aggrega.ai/v1alpha1
+	{path: "component/demo/web/1.0.0/component.yaml", body: `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/web
@@ -72,7 +72,7 @@ spec:
       ports:
         $ref: "BaseTypes:1.0.0#/schemas/PortSpec"
 `},
-	{path: "recipe/helm/demo-web-helm/1.0.0/recipe.yaml", body: `apiVersion: aggrega.ai/v1alpha1
+	{path: "recipe/helm/demo-web-helm/1.0.0/recipe.yaml", body: `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-web-helm
@@ -81,7 +81,7 @@ spec:
   capability: helm
   implements: demo/web:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -129,7 +129,7 @@ func writeRegistryResolutionConsumer(t *testing.T, root, host string) string {
 default_registry: "`+host+`"
 offline: false
 `)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: shop
@@ -141,7 +141,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: shop-manifest
@@ -152,7 +152,7 @@ spec:
       type:
         demo/web:1.0.0: helm/demo-web-helm:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: shop-release

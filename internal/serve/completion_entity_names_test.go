@@ -37,7 +37,7 @@ func entityNamesFixture(t *testing.T) (root, catalogDir string) {
 	root = t.TempDir()
 	catalogDir = t.TempDir()
 	doc := func(kind, name, version, extra string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: " + name +
+		return "apiVersion: aggrega.ai/v1beta1\nkind: " + kind + "\nmetadata:\n  name: " + name +
 			"\n  version: \"" + version + "\"\nspec:" + extra + "\n"
 	}
 	files := map[string]string{
@@ -85,7 +85,7 @@ func TestEntityNamesDrawOnTheWorkspaceAndTheCatalogDirectories(t *testing.T) {
 	// An unsaved buffer the editor is holding, which no file on disk carries: the
 	// workspace half of the answer reads it first.
 	var buffer yaml.Node
-	if err := yaml.Unmarshal([]byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: buffer/only\n"), &buffer); err != nil {
+	if err := yaml.Unmarshal([]byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: buffer/only\n"), &buffer); err != nil {
 		t.Fatalf("parse the unsaved buffer: %v", err)
 	}
 	overlay := []workspaceDoc{{path: filepath.Join(root, "unsaved.yaml"), node: &buffer}}
@@ -171,13 +171,13 @@ func TestCompletionOffersTheCatalogDirectoriesAtAComponentAndAFeatureType(t *tes
 	t.Parallel()
 	root, catalogDir := entityNamesFixture(t)
 
-	agg := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: shop\n  version: 1.0.0\nspec:\n" +
+	agg := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: shop\n  version: 1.0.0\nspec:\n" +
 		"  components:\n    api:\n      type: placeholder\n      features:\n        backup:\n          type: placeholder\n" +
 		"    cache:\n      type: cat/\n"
 	aggPath := writeCompletionFixture(t, root, "shop.yaml", agg)
-	child := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: ws/child\n  version: 1.0.0\nspec:\n  extends: placeholder\n"
+	child := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: ws/child\n  version: 1.0.0\nspec:\n  extends: placeholder\n"
 	childPath := writeCompletionFixture(t, root, "child.yaml", child)
-	recipe := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: probe-recipe\n  version: 1.0.0\nspec:\n  capability: helm\n  implements: placeholder\n"
+	recipe := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: probe-recipe\n  version: 1.0.0\nspec:\n  capability: helm\n  implements: placeholder\n"
 	recipePath := writeCompletionFixture(t, root, "probe-recipe.yaml", recipe)
 
 	srv := newTestServer(t, root, nil, nil)

@@ -51,7 +51,7 @@ data:
 		}
 
 		recipes[nodeID] = &types.Recipe{
-			APIVersion: "aggrega.ai/v1alpha1",
+			APIVersion: "aggrega.ai/v1beta1",
 			Kind:       "Recipe",
 			Metadata:   types.RecipeMetadata{Name: fmt.Sprintf("recipe-%03d", i), Version: "1.0.0"},
 			Spec: types.RecipeSpec{

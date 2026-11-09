@@ -121,7 +121,7 @@ func TestSearchableMetadataAnnotationsOmitsEmpty(t *testing.T) {
 func TestManifestDigestMatchesPushWithAnnotations(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
+	content := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/compute/api-server\n  version: 1.0.0\n")
 	ann := mustAnnotations(t, oci.SearchableMetadata{
 		Description: "The API server component.",
 		Category:    "compute",
@@ -157,7 +157,7 @@ func TestManifestDigestMatchesPushWithAnnotations(t *testing.T) {
 func TestPluginManifestDigestMatchesPushWithAnnotations(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	entity := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\n")
+	entity := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\n")
 	wasm := []byte("\x00asm\x01\x00\x00\x00fake-wasm-body")
 	ann := mustAnnotations(t, oci.SearchableMetadata{
 		Description:  "A patch step plugin.",
@@ -212,7 +212,7 @@ func TestPluginSearchableMetadataProjectsTheEntity(t *testing.T) {
 	// wrong one, and a capability list with two entries so the joined rendering is
 	// exercised over more than a single element.
 	entity := types.Plugin{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Plugin",
 		Metadata: types.PluginMetadata{
 			Name:        "compose",

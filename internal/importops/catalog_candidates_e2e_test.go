@@ -43,7 +43,7 @@ type catalogComponent struct {
 var enterpriseModel = catalogComponent{
 	name:    "acme/ai-model/internal-llm",
 	version: "1.2.0",
-	body: `apiVersion: aggrega.ai/v1alpha1
+	body: `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/ai-model/internal-llm
@@ -73,7 +73,7 @@ spec:
 var enterpriseStore = catalogComponent{
 	name:    "acme/datastore/kv",
 	version: "0.3.0",
-	body: `apiVersion: aggrega.ai/v1alpha1
+	body: `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/datastore/kv

@@ -667,7 +667,7 @@ func wireSchemaDocument(t *testing.T) map[string]any {
 	t.Helper()
 
 	var doc map[string]any
-	if err := json.Unmarshal([]byte(schemas.ServeWireV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.ServeWireV1beta1), &doc); err != nil {
 		t.Fatalf("the shipped serve-wire schema does not decode as JSON: %v", err)
 	}
 	return doc
@@ -680,7 +680,7 @@ func compileWireSchema(t *testing.T) (map[string]any, *jsonschema.Compiler) {
 
 	doc := wireSchemaDocument(t)
 
-	resource, err := jsonschema.UnmarshalJSON(bytes.NewReader([]byte(schemas.ServeWireV1alpha1)))
+	resource, err := jsonschema.UnmarshalJSON(bytes.NewReader([]byte(schemas.ServeWireV1beta1)))
 	if err != nil {
 		t.Fatalf("the shipped serve-wire schema is not a usable schema resource: %v", err)
 	}

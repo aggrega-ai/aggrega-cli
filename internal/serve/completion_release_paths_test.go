@@ -28,9 +28,9 @@ func TestReleasePathCompletionsAreSlashSeparated(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	files := map[string]string{
-		filepath.Join(root, "catalog", "apps", "shop.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n" +
+		filepath.Join(root, "catalog", "apps", "shop.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n" +
 			"metadata:\n  name: shop\n",
-		filepath.Join(root, "releases", "manifests", "prod.yml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\n" +
+		filepath.Join(root, "releases", "manifests", "prod.yml"): "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\n" +
 			"metadata:\n  name: prod\n",
 	}
 	for p, body := range files {

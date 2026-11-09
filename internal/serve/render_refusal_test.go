@@ -406,7 +406,7 @@ func TestAGraphRefusalOfAnAttachmentIsPublishedOnTheDocumentThatWroteIt(t *testi
 		row := row
 		t.Run(row.name, func(t *testing.T) {
 			ws, releaseRel := renderDialWorkspace(t)
-			writeFixtureFile(t, filepath.Join(ws, "catalog", "features", "check.yaml"), `apiVersion: aggrega.ai/v1alpha1
+			writeFixtureFile(t, filepath.Join(ws, "catalog", "features", "check.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: demo/check

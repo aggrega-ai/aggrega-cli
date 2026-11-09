@@ -30,7 +30,7 @@ func TestTheIgnoreAdvisoryNamesBothPluginsWhereTheirRulesDiffer(t *testing.T) {
 	dir := filepath.Join(cat, "recipe", "helm", "demo", "1.0.0")
 	doc := filepath.Join(dir, "recipe.yaml")
 	for rel, body := range map[string]string{
-		"recipe.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: demo\n  version: 1.0.0\n" +
+		"recipe.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: demo\n  version: 1.0.0\n" +
 			"spec:\n  capability: helm\n  implements: core/demo:1.0.0\n  source: ./chart\n",
 		"chart/Chart.yaml": "apiVersion: v2\nname: demo\nversion: 0.1.0\n",
 	} {
@@ -102,7 +102,7 @@ func TestTheIgnoreAdvisoryNamesTheRecordedPluginByItsName(t *testing.T) {
 	dir := filepath.Join(cat, "recipe", "terraform", "demo", "1.0.0")
 	doc := filepath.Join(dir, "recipe.yaml")
 	for rel, body := range map[string]string{
-		"recipe.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: demo\n  version: 1.0.0\n" +
+		"recipe.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: demo\n  version: 1.0.0\n" +
 			"spec:\n  capability: terraform\n  implements: core/demo:1.0.0\n  source: ./module\n",
 		"module/main.tf": "variable \"name\" {}\n",
 	} {

@@ -15,7 +15,7 @@ import (
 // bare-named Component living in two distinct versioned Tier-2 cache slots. A
 // view pinned to v1 must resolve v1's bytes; a view pinned to v2 must resolve
 // v2's — proving the pin set, not shared session state, decides what a view sees.
-const forRequestComponentV1 = `apiVersion: aggrega.ai/v1alpha1
+const forRequestComponentV1 = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -28,7 +28,7 @@ spec:
       host: { type: string, required: true }
 `
 
-const forRequestComponentV2 = `apiVersion: aggrega.ai/v1alpha1
+const forRequestComponentV2 = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc

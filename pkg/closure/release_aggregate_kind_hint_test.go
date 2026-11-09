@@ -32,7 +32,7 @@ func (r *hintRecordingLookup) ResolveAggregate(ctx context.Context, uri string) 
 }
 
 func releaseNaming(aggregate string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: prod\n  environment: prod\n  version: 1.0.0\nspec:\n  aggregate: " +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: prod\n  environment: prod\n  version: 1.0.0\nspec:\n  aggregate: " +
 		aggregate + "\n"
 }
 
@@ -100,12 +100,12 @@ func TestTheReleasesHintYieldsToASubAggregateAndStandsBesideAnotherKind(t *testi
 	}{
 		{
 			name: "a sub-aggregate reference to the same identity",
-			top:  "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: top\n  version: 1.0.0\nspec:\n  aggregates:\n    again:\n      type: " + ref + "\n",
+			top:  "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: top\n  version: 1.0.0\nspec:\n  aggregates:\n    again:\n      type: " + ref + "\n",
 			want: map[string]string{closure.KindAggregate: "aggregate"},
 		},
 		{
 			name: "a component instance of the same identity",
-			top:  "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: top\n  version: 1.0.0\nspec:\n  components:\n    app:\n      type: " + ref + "\n",
+			top:  "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: top\n  version: 1.0.0\nspec:\n  components:\n    app:\n      type: " + ref + "\n",
 			want: map[string]string{
 				closure.KindAggregate: closure.ReleaseAggregateKindHint,
 				closure.KindComponent: closure.KindComponent,

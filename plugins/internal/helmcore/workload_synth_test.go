@@ -69,7 +69,7 @@ func nodeCtxFor(nodeID string) renderer.NodeRenderContext {
 // ClusterIP service — the smoke-test smallest end-to-end case.
 func minimalWorkload() *types.Workload {
 	w := &types.Workload{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Workload",
 	}
 	c := types.ContainerSpec{Image: "app:1.0"}
@@ -111,7 +111,7 @@ func TestSynthesizeWorkload_MinimalDeploymentClusterIP(t *testing.T) {
 
 func TestSynthesizeWorkload_GPUExtendedResourceAndRuntimeClass(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	w.RuntimeClassName = "nvidia"
 
 	c := types.ContainerSpec{Image: "vllm:latest"}
@@ -164,7 +164,7 @@ func nodeCtxWithAnnotations(nodeID string, ann map[string]string) renderer.NodeR
 // saWorkload builds a single-container Workload exposing one ClusterIP service,
 // with Workload.ServiceAccount set to field (empty leaves it unset).
 func saWorkload(field string) *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
@@ -271,7 +271,7 @@ func TestSynthesizeWorkload_ServiceAccountAnnotationWinsOverField(t *testing.T) 
 func TestSynthesizeWorkload_ImageRegistryAnnotation(t *testing.T) {
 	t.Parallel()
 	build := func() *types.Workload {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 		main := types.ContainerSpec{Image: "docker.io/library/postgres:16"}
 		main.Ports.Set("db", types.PortSpec{Port: 5432})
 		w.Containers.Set("main", main)
@@ -317,7 +317,7 @@ func TestSynthesizeWorkload_ImageRegistryAnnotation(t *testing.T) {
 func TestSynthesizeWorkload_ImagePullSecretAnnotation(t *testing.T) {
 	t.Parallel()
 	build := func(field []string) *types.Workload {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 		c := types.ContainerSpec{Image: "app:1.0"}
 		c.Ports.Set("web", types.PortSpec{Port: 8080})
 		w.Containers.Set("main", c)
@@ -372,7 +372,7 @@ func TestSynthesizeWorkload_ImagePullSecretAnnotation(t *testing.T) {
 // image-pull-secret unions after the recipe-declared pull secret.
 func TestSynthesizeWorkload_ImageAnnotationsCombined(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	main := types.ContainerSpec{Image: "docker.io/library/postgres:16"}
 	main.Ports.Set("db", types.PortSpec{Port: 5432})
 	w.Containers.Set("main", main)
@@ -397,7 +397,7 @@ func TestSynthesizeWorkload_ImageAnnotationsCombined(t *testing.T) {
 
 func TestSynthesizeWorkload_MultiContainer(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	main := types.ContainerSpec{Image: "main:1.0"}
 	main.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", main)
@@ -421,7 +421,7 @@ func TestSynthesizeWorkload_MultiContainer(t *testing.T) {
 
 func TestSynthesizeWorkload_AllVolumeVariants(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
@@ -446,7 +446,7 @@ func TestSynthesizeWorkload_AllVolumeVariants(t *testing.T) {
 
 func TestSynthesizeWorkload_PersistentTemplateTriggersStatefulSet(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "stateful"}
 	c := types.ContainerSpec{Image: "db:1.0"}
 	c.Ports.Set("db", types.PortSpec{Port: 5432})
 	w.Containers.Set("main", c)
@@ -480,7 +480,7 @@ func TestSynthesizeWorkload_PersistentTemplateTriggersStatefulSet(t *testing.T) 
 // Workload with no headless Service can't name a governing Service → halt.
 func TestSynthesizeWorkload_StatefulSetNoHeadless_Halts(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "stateful"}
 	c := types.ContainerSpec{Image: "db:1.0"}
 	c.Ports.Set("db", types.PortSpec{Port: 5432})
 	w.Containers.Set("main", c)
@@ -506,7 +506,7 @@ func TestSynthesizeWorkload_StatefulSetNoHeadless_Halts(t *testing.T) {
 // Workload with two headless Services has an ambiguous governing Service → halt.
 func TestSynthesizeWorkload_StatefulSetMultipleHeadless_Halts(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "stateful"}
 	c := types.ContainerSpec{Image: "db:1.0"}
 	c.Ports.Set("db", types.PortSpec{Port: 5432})
 	w.Containers.Set("main", c)
@@ -531,7 +531,7 @@ func TestSynthesizeWorkload_StatefulSetMultipleHeadless_Halts(t *testing.T) {
 
 func TestSynthesizeWorkload_AllProbeShapes(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	timeout := 5
@@ -558,7 +558,7 @@ func TestSynthesizeWorkload_AllProbeShapes(t *testing.T) {
 // TRANSLATION_ERROR.
 func TestSynthesizeWorkload_HTTPProbeNoNamedPort_TranslationError(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	// No ports declared.
 	c.Health = &types.HealthSpec{Ready: &types.ProbeSpec{HTTP: "/healthz"}}
@@ -574,7 +574,7 @@ func TestSynthesizeWorkload_HTTPProbeNoNamedPort_TranslationError(t *testing.T) 
 
 func TestSynthesizeWorkload_SchedulingAndPodSecurity(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
@@ -605,7 +605,7 @@ func TestSynthesizeWorkload_SchedulingAndPodSecurity(t *testing.T) {
 
 func TestSynthesizeWorkload_InitContainers(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	w.InitContainers = []types.ContainerSpec{
 		{Image: "migrator:1.0", Command: []string{"/migrate"}},
 	}
@@ -631,7 +631,7 @@ func TestSynthesizeWorkload_InitContainers(t *testing.T) {
 // second is unnamed and lands at position 1, so it renders as init-1.
 func TestSynthesizeWorkload_InitContainersNamed(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	w.InitContainers = []types.ContainerSpec{
 		{Name: "prepare", Image: "prep:1.0", Command: []string{"/prepare"}},
 		{Image: "migrator:1.0", Command: []string{"/migrate"}},
@@ -683,7 +683,7 @@ func TestSynthesizeWorkload_InitContainersNamed(t *testing.T) {
 // rather than being silently dropped.
 func TestSynthesizeWorkload_NamedInitContainerParseValidateSynth(t *testing.T) {
 	t.Parallel()
-	const src = `apiVersion: aggrega.ai/v1alpha1
+	const src = `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 initContainers:
   - name: prepare
@@ -738,7 +738,7 @@ containers:
 // silently dropped.
 func TestSynthesizeWorkload_VolumeMountSubPathParseValidateSynth(t *testing.T) {
 	t.Parallel()
-	const src = `apiVersion: aggrega.ai/v1alpha1
+	const src = `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 volumes:
   config:
@@ -804,7 +804,7 @@ services:
 // existing Workloads byte-identical to a build without the field.
 func TestSynthesizeWorkload_VolumeMountNoSubPathOmitted(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	c.VolumeMounts = []types.VolumeMount{{Name: "config", Path: "/etc/app"}}
@@ -828,7 +828,7 @@ func TestSynthesizeWorkload_VolumeMountNoSubPathOmitted(t *testing.T) {
 
 func TestSynthesizeWorkload_SecretsEnvAndFile(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	c.Attachments.Set("DB_PASSWORD", types.AttachmentRef{From: "db-password", As: "env"})
@@ -862,7 +862,7 @@ func TestSynthesizeWorkload_SecretsEnvAndFile(t *testing.T) {
 // data key it reads.
 func TestSynthesizeWorkload_SecretsMultiKeyOneSlot(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	c.Attachments.Set("APP_DB_USER", types.AttachmentRef{From: "app-credentials", As: "env", Key: "db_username"})
@@ -892,7 +892,7 @@ func TestSynthesizeWorkload_SecretsMultiKeyOneSlot(t *testing.T) {
 
 func TestSynthesizeWorkload_LoadBalancerService(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "gateway:1.0"}
 	c.Ports.Set("https", types.PortSpec{Port: 8443})
 	w.Containers.Set("main", c)
@@ -914,7 +914,7 @@ func TestSynthesizeWorkload_LoadBalancerService(t *testing.T) {
 // no replicas).
 func TestSynthesizeWorkload_FormDaemon(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "daemon"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "daemon"}
 	c := types.ContainerSpec{Image: "agent:1.0"}
 	c.Ports.Set("metrics", types.PortSpec{Port: 9100})
 	w.Containers.Set("main", c)
@@ -937,7 +937,7 @@ func TestSynthesizeWorkload_FormDaemon(t *testing.T) {
 // Job-valid pod restartPolicy.
 func TestSynthesizeWorkload_FormTask(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "task"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "task"}
 	c := types.ContainerSpec{Image: "migrator:1.0", Command: []string{"/migrate"}}
 	w.Containers.Set("main", c)
 
@@ -958,7 +958,7 @@ func TestSynthesizeWorkload_FormTask(t *testing.T) {
 // OnFailure restartPolicy survives into the Job pod template.
 func TestSynthesizeWorkload_FormTaskOnFailurePreserved(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "task"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "task"}
 	c := types.ContainerSpec{Image: "worker:1.0", RestartPolicy: "OnFailure"}
 	w.Containers.Set("main", c)
 
@@ -976,7 +976,7 @@ func TestSynthesizeWorkload_FormTaskOnFailurePreserved(t *testing.T) {
 // needs a schedule to emit a CronJob.
 func TestSynthesizeWorkload_FormScheduledHalts(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "scheduled"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "scheduled"}
 	c := types.ContainerSpec{Image: "reporter:1.0"}
 	w.Containers.Set("main", c)
 
@@ -991,7 +991,7 @@ func TestSynthesizeWorkload_FormScheduledHalts(t *testing.T) {
 // verbatim.
 func TestSynthesizeWorkload_FormScheduled(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "scheduled", Schedule: "@daily"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "scheduled", Schedule: "@daily"}
 	c := types.ContainerSpec{Image: "reporter:1.0", Command: []string{"/report"}}
 	w.Containers.Set("main", c)
 
@@ -1015,7 +1015,7 @@ func TestSynthesizeWorkload_FormScheduled(t *testing.T) {
 // path renders into spec.schedule.
 func TestSynthesizeWorkload_FormScheduledFiveField(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "scheduled", Schedule: "0 0 * * *"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "scheduled", Schedule: "0 0 * * *"}
 	c := types.ContainerSpec{Image: "reporter:1.0"}
 	w.Containers.Set("main", c)
 
@@ -1033,7 +1033,7 @@ func TestSynthesizeWorkload_FormScheduledFiveField(t *testing.T) {
 // schedule on form: scheduled halts on the shared cron structural check.
 func TestSynthesizeWorkload_FormScheduledMalformedHalts(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "scheduled", Schedule: "0 0 * * * *"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "scheduled", Schedule: "0 0 * * * *"}
 	c := types.ContainerSpec{Image: "reporter:1.0"}
 	w.Containers.Set("main", c)
 
@@ -1047,7 +1047,7 @@ func TestSynthesizeWorkload_FormScheduledMalformedHalts(t *testing.T) {
 // a non-scheduled form halts on the reverse companion rule.
 func TestSynthesizeWorkload_ScheduleOnNonScheduledFormHalts(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateless", Schedule: "@daily"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "stateless", Schedule: "@daily"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	w.Containers.Set("main", c)
 
@@ -1063,7 +1063,7 @@ func TestSynthesizeWorkload_ScheduleOnNonScheduledFormHalts(t *testing.T) {
 func TestSynthesizeWorkload_PersistentTemplateRequiresStateful(t *testing.T) {
 	t.Parallel()
 	for _, form := range []string{"", "daemon"} {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: form}
 		c := types.ContainerSpec{Image: "db:1.0"}
 		w.Containers.Set("main", c)
 		w.Volumes.Set("data", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "10Gi"}})
@@ -1115,7 +1115,7 @@ func TestSynthesizeWorkload_ByteIdenticalAcrossRuns(t *testing.T) {
 // per-source prefix).
 func TestSynthesizeWorkload_ImagePullPolicyAndEnvFrom(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0", ImagePullPolicy: "IfNotPresent"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	c.EnvFrom = []types.EnvFromSource{
@@ -1146,7 +1146,7 @@ func TestSynthesizeWorkload_PodLevelFieldsAndAccessModes(t *testing.T) {
 	t.Parallel()
 	grace := 45
 	w := &types.Workload{
-		APIVersion:                    "aggrega.ai/v1alpha1",
+		APIVersion:                    "aggrega.ai/v1beta1",
 		Kind:                          "Workload",
 		Form:                          "stateful",
 		ImagePullSecrets:              []string{"regcred", "regcred-2"},
@@ -1190,7 +1190,7 @@ func TestSynthesizeWorkload_PodLevelFieldsAndAccessModes(t *testing.T) {
 func TestSynthesizeWorkload_ReferenceExternalName(t *testing.T) {
 	t.Parallel()
 	w := &types.Workload{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Workload",
 		Form:       "reference",
 		Endpoint:   "https://api.anthropic.com:443/v1",
@@ -1210,7 +1210,7 @@ func TestSynthesizeWorkload_ReferenceExternalName(t *testing.T) {
 // endpoint halts on the shared companion validation.
 func TestSynthesizeWorkload_ReferenceRequiresEndpoint(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "reference"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "reference"}
 	_, err := SynthesizeWorkloadCore(w, renderer.AttachmentProvidesFromContext(nil), nodeCtxFor("x"))
 	if !errors.Is(err, rendercore.ErrReferenceFormRequiresEndpoint()) {
 		t.Errorf("expected ErrReferenceFormRequiresEndpoint, got %v", err)
@@ -1248,7 +1248,7 @@ func TestSynthesizeWorkload_ConditionalFormBranches(t *testing.T) {
 		{"stateless", "Deployment"},
 	}
 	for _, tc := range cases {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: tc.form}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: tc.form}
 		c := types.ContainerSpec{Image: "db:1.0"}
 		c.Ports.Set("db", types.PortSpec{Port: 5432})
 		if tc.form == "stateful" {

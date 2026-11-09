@@ -23,7 +23,7 @@ import (
 //     required-socket rule.
 func edgeCoverageCatalog(t *testing.T) CatalogLookup {
 	t.Helper()
-	const svcYAML = `apiVersion: aggrega.ai/v1alpha1
+	const svcYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/svc
@@ -40,7 +40,7 @@ spec:
       valueSchema:
         pool_size: { type: integer, required: true }
 `
-	const dbYAML = `apiVersion: aggrega.ai/v1alpha1
+	const dbYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/db
@@ -92,7 +92,7 @@ var nodePlacements = []struct {
 	{
 		name: "top level",
 		wrap: func(block string) string {
-			return "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: demo\nspec:\n  components:\n" + indent(block, 4)
+			return "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: demo\nspec:\n  components:\n" + indent(block, 4)
 		},
 		field:  `.spec.components["api"]`,
 		dotted: ".spec.components.api",
@@ -100,7 +100,7 @@ var nodePlacements = []struct {
 	{
 		name: "declared subsystem",
 		wrap: func(block string) string {
-			return "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: demo\nspec:\n  subsystems:\n    data:\n      components:\n" + indent(block, 8)
+			return "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: demo\nspec:\n  subsystems:\n    data:\n      components:\n" + indent(block, 8)
 		},
 		field:  `.spec.subsystems.data.components["api"]`,
 		dotted: ".spec.subsystems.data.components.api",
@@ -108,7 +108,7 @@ var nodePlacements = []struct {
 	{
 		name: "nested subsystem",
 		wrap: func(block string) string {
-			return "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: demo\nspec:\n  subsystems:\n    data:\n      subsystems:\n        inner:\n          components:\n" + indent(block, 12)
+			return "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: demo\nspec:\n  subsystems:\n    data:\n      subsystems:\n        inner:\n          components:\n" + indent(block, 12)
 		},
 		field:  `.spec.subsystems.data.subsystems.inner.components["api"]`,
 		dotted: ".spec.subsystems.data.subsystems.inner.components.api",
@@ -156,7 +156,7 @@ db:
 // on node "api" under the given socket and alias.
 func releaseNaming(t *testing.T, socket, alias, body string) *types.Release {
 	t.Helper()
-	return parseRelease(t, `apiVersion: aggrega.ai/v1alpha1
+	return parseRelease(t, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -311,7 +311,7 @@ func TestTheConnectionConfigurationRuleMeasuresAnEmptyEdgeInEitherAuthoringForm(
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			agg := parseAggregate(t, `apiVersion: aggrega.ai/v1alpha1
+			agg := parseAggregate(t, `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo

@@ -1,7 +1,7 @@
 # The control for the declared-name variant. Nothing here reaches a name anything
 # else reaches, so the build completes and the stack Output name the
 # boundary-scope attachment actually lands under is readable from the bytes.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: bs-declared-name-control

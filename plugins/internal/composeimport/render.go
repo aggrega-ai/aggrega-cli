@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -48,7 +49,7 @@ func aggregateText(text string) string {
 func renderAggregate(name string, read []*project, types map[*service]string) string {
 	var b strings.Builder
 	writeFilesRead(&b, read)
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	b.WriteString("kind: Aggregate\n")
 	b.WriteString("metadata:\n")
 	b.WriteString("  name: " + name + "\n")
@@ -201,7 +202,7 @@ func writeFilesRead(b *strings.Builder, read []*project) {
 // plugin kit renders none.
 func renderRelease(name string, read []*project, types map[*service]string) string {
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	b.WriteString("kind: Release\n")
 	b.WriteString("metadata:\n")
 	b.WriteString("  name: " + name + "\n")
@@ -365,7 +366,7 @@ func contextSizeText(raw json.RawMessage) (text string, number, ok bool) {
 // Compose model is written with.
 func renderModel(name string) string {
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	b.WriteString("kind: Component\n")
 	b.WriteString("metadata:\n")
 	b.WriteString("  name: " + name + "\n")

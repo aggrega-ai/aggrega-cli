@@ -48,7 +48,7 @@ type serveReleaseParityCase struct {
 	overlay   map[string]string
 }
 
-const serveBackendAggregate = `apiVersion: aggrega.ai/v1alpha1
+const serveBackendAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: parity-app
@@ -59,7 +59,7 @@ spec:
       type: core/compute/api-server
 `
 
-const serveCleanManifest = `apiVersion: aggrega.ai/v1alpha1
+const serveCleanManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -71,7 +71,7 @@ spec:
         core/compute/api-server: helm-api-server-synthesized-with-artifacts:1.0.0
 `
 
-const serveEmptyManifest = `apiVersion: aggrega.ai/v1alpha1
+const serveEmptyManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -82,7 +82,7 @@ spec:
       type: {}
 `
 
-const serveDefaultRelease = `apiVersion: aggrega.ai/v1alpha1
+const serveDefaultRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: parity-release
@@ -100,7 +100,7 @@ spec:
             port: 8080
 `
 
-const serveEmptyBoundaryRelease = `apiVersion: aggrega.ai/v1alpha1
+const serveEmptyBoundaryRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: parity-release
@@ -115,7 +115,7 @@ spec:
       components: {}
 `
 
-const serveExtendsOverlayComponent = `apiVersion: aggrega.ai/v1alpha1
+const serveExtendsOverlayComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -128,7 +128,7 @@ spec:
   schema: inherited
 `
 
-const servePillarOverlayComponent = `apiVersion: aggrega.ai/v1alpha1
+const servePillarOverlayComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -156,7 +156,7 @@ spec:
 // declared-contract condition covers. A row for only the first would leave the
 // editor's handling of the second unproven, and the second is the one that used
 // to reach no gate at all.
-const serveUnusablePillarOverlayComponent = `apiVersion: aggrega.ai/v1alpha1
+const serveUnusablePillarOverlayComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -173,7 +173,7 @@ spec:
       service_port: { type: string, required: true }
 `
 
-const serveResolveFailingAggregate = `apiVersion: aggrega.ai/v1alpha1
+const serveResolveFailingAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: parity-app
@@ -186,7 +186,7 @@ spec:
   components: {}
 `
 
-const serveInputKindManifest = `apiVersion: aggrega.ai/v1alpha1
+const serveInputKindManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -198,7 +198,7 @@ spec:
         core/compute/api-server: api-sourceonly:1.0.0
 `
 
-const serveInputKindRecipe = `apiVersion: aggrega.ai/v1alpha1
+const serveInputKindRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-sourceonly
@@ -210,7 +210,7 @@ spec:
     host: "{{ .context.instance_id }}.svc"
     service_port: "8080"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -218,7 +218,7 @@ spec:
         image: x:latest
 `
 
-const serveInputKindPlugin = `apiVersion: aggrega.ai/v1alpha1
+const serveInputKindPlugin = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: sourced-only-renderer

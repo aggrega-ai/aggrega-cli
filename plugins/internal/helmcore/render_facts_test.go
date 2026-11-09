@@ -566,7 +566,7 @@ spec:
 
 	t.Run("a synthesized Workload", func(t *testing.T) {
 		t.Parallel()
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 		c := types.ContainerSpec{Image: "example/app:1"}
 		c.Ports.Set("web", types.PortSpec{Port: 8080})
 		w.Containers.Set("main", c)
@@ -836,7 +836,7 @@ func TestReportEmitted_ASynthesizedWorkloadCarriesTheNamespaceItsNodeRendersInto
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+			w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 			c := types.ContainerSpec{Image: "example/app:1"}
 			c.Ports.Set("web", types.PortSpec{Port: 8080})
 			w.Containers.Set("main", c)

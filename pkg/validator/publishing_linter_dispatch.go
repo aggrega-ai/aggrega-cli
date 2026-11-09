@@ -12,7 +12,7 @@ import (
 )
 
 // The LinterInput / LinterOutput wire types are generated from
-// wasm-linter-v1alpha1 into linter_host_gen.go, single-sourcing the wire shape
+// wasm-linter-v1beta1 into linter_host_gen.go, single-sourcing the wire shape
 // with the portable guest codec in aggrega-abi and the PDKs: the
 // publishing-discipline configuration is the same typed Policies object on both
 // sides, and a finding is the shared [abi.Diagnostic] every socket carries.

@@ -33,7 +33,7 @@ import (
 func registriesThroughDefinition(t *testing.T) *jsonschema.Schema {
 	t.Helper()
 	var s jsonschema.Schema
-	if err := json.Unmarshal([]byte(schemas.AggregaConfigV1alpha1), &s); err != nil {
+	if err := json.Unmarshal([]byte(schemas.AggregaConfigV1beta1), &s); err != nil {
 		t.Fatalf("decode the configuration schema: %v", err)
 	}
 	return &s
@@ -46,7 +46,7 @@ func registriesThroughDefinition(t *testing.T) *jsonschema.Schema {
 func registriesThroughProperty(t *testing.T) *jsonschema.Schema {
 	t.Helper()
 	var document map[string]any
-	if err := json.Unmarshal([]byte(schemas.AggregaConfigV1alpha1), &document); err != nil {
+	if err := json.Unmarshal([]byte(schemas.AggregaConfigV1beta1), &document); err != nil {
 		t.Fatalf("decode the configuration schema: %v", err)
 	}
 
@@ -342,23 +342,23 @@ func TestNoShippedSchemaCarriesAPositionThatCannotBeStoodUp(t *testing.T) {
 	t.Parallel()
 
 	corpus := map[string]string{
-		"AggregaConfig":   schemas.AggregaConfigV1alpha1,
-		"Aggregate":       schemas.AggregateV1alpha1,
-		"ArtifactLibrary": schemas.ArtifactLibraryV1alpha1,
-		"CacheMetadata":   schemas.CacheMetadataV1alpha1,
-		"Component":       schemas.ComponentV1alpha1,
-		"Feature":         schemas.FeatureV1alpha1,
-		"FeatureRecipe":   schemas.FeatureRecipeV1alpha1,
-		"IR":              schemas.IRSchemaV1alpha1,
-		"Lockfile":        schemas.LockfileV1alpha1,
-		"Manifest":        schemas.ManifestV1alpha1,
-		"MappingLibrary":  schemas.MappingLibraryV1alpha1,
-		"Plugin":          schemas.PluginV1alpha1,
-		"Recipe":          schemas.RecipeV1alpha1,
-		"Release":         schemas.ReleaseV1alpha1,
-		"SchemaLibrary":   schemas.SchemaLibraryV1alpha1,
-		"Workload":        schemas.WorkloadV1alpha1,
-		"WorkloadLibrary": schemas.WorkloadLibraryV1alpha1,
+		"AggregaConfig":   schemas.AggregaConfigV1beta1,
+		"Aggregate":       schemas.AggregateV1beta1,
+		"ArtifactLibrary": schemas.ArtifactLibraryV1beta1,
+		"CacheMetadata":   schemas.CacheMetadataV1beta1,
+		"Component":       schemas.ComponentV1beta1,
+		"Feature":         schemas.FeatureV1beta1,
+		"FeatureRecipe":   schemas.FeatureRecipeV1beta1,
+		"IR":              schemas.IRSchemaV1beta1,
+		"Lockfile":        schemas.LockfileV1beta1,
+		"Manifest":        schemas.ManifestV1beta1,
+		"MappingLibrary":  schemas.MappingLibraryV1beta1,
+		"Plugin":          schemas.PluginV1beta1,
+		"Recipe":          schemas.RecipeV1beta1,
+		"Release":         schemas.ReleaseV1beta1,
+		"SchemaLibrary":   schemas.SchemaLibraryV1beta1,
+		"Workload":        schemas.WorkloadV1beta1,
+		"WorkloadLibrary": schemas.WorkloadLibraryV1beta1,
 	}
 	for kind, source := range corpus {
 		var s jsonschema.Schema

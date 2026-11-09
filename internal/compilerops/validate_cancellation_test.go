@@ -18,7 +18,7 @@ import (
 // the sourced input kind, so the synthesized workload target trips the
 // input-kind capability detector and Validate returns a non-empty
 // InputKindErrors on a non-cancelled run.
-const cancelBackendAggregate = `apiVersion: aggrega.ai/v1alpha1
+const cancelBackendAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: cancel-app
@@ -29,7 +29,7 @@ spec:
       type: core/compute/api-server
 `
 
-const cancelInputKindManifest = `apiVersion: aggrega.ai/v1alpha1
+const cancelInputKindManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: cancel-manifest
@@ -41,7 +41,7 @@ spec:
         core/compute/api-server: api-sourceonly:1.0.0
 `
 
-const cancelDefaultRelease = `apiVersion: aggrega.ai/v1alpha1
+const cancelDefaultRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cancel-release
@@ -59,7 +59,7 @@ spec:
             port: 8080
 `
 
-const cancelInputKindRecipe = `apiVersion: aggrega.ai/v1alpha1
+const cancelInputKindRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-sourceonly
@@ -71,7 +71,7 @@ spec:
     host: "{{ .context.instance_id }}.svc"
     service_port: "8080"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -79,7 +79,7 @@ spec:
         image: x:latest
 `
 
-const cancelInputKindPlugin = `apiVersion: aggrega.ai/v1alpha1
+const cancelInputKindPlugin = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: sourced-only-renderer

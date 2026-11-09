@@ -440,7 +440,7 @@ func TestTheIncrementalFillDoesNotRefuseUnderTheOfflinePosture(t *testing.T) {
 // offline-friendly form of publishing rather than a conflict with the posture,
 // and it has to keep working.
 func TestPublicationRefusesUnderEveryOfflineLayerAndDryRunDoesNot(t *testing.T) {
-	entity := `apiVersion: aggrega.ai/v1alpha1
+	entity := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server

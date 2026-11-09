@@ -91,7 +91,7 @@ func TestResourceListNoExtendedByteIdentical(t *testing.T) {
 // TestWorkloadRuntimeClassNameRoundTrip proves runtimeClassName parses and
 // re-marshals on both surfaces.
 func TestWorkloadRuntimeClassNameRoundTrip(t *testing.T) {
-	src := "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\nruntimeClassName: nvidia\n"
+	src := "apiVersion: aggrega.ai/v1beta1\nkind: Workload\nruntimeClassName: nvidia\n"
 	var w Workload
 	if err := yaml.Unmarshal([]byte(src), &w); err != nil {
 		t.Fatalf("yaml.Unmarshal: %v", err)

@@ -31,7 +31,7 @@ func writeSubAggregateConsumerWorkspace(t *testing.T, host string, pinnedPubPEM 
 	cat := t.TempDir()
 
 	componentPath := filepath.Join(cat, "component/test/svc/1.0.0/component.yaml")
-	writeFixture(t, componentPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, componentPath, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -45,7 +45,7 @@ spec:
       replicas: { type: integer, default: 1 }
 `)
 	recipePath := filepath.Join(cat, "recipe/helm/svc/1.0.0/recipe.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -54,7 +54,7 @@ spec:
   capability: helm
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `+"`replicas`"+` 1 }}
     containers:
@@ -67,7 +67,7 @@ spec:
 	// identity, importing the registry Component. Its per-version subdirectory
 	// (1.0.0) matches metadata.version, satisfying the publish-path guard.
 	subAggPath := filepath.Join(cat, "aggregate/mysub/1.0.0/aggregate.yaml")
-	writeFixture(t, subAggPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, subAggPath, `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mysub
@@ -88,7 +88,7 @@ spec:
 	// A LOCAL parent aggregate imports the sub-aggregate by bare identity. The
 	// parent is not registry-resolved (it is a ./file), so it carries no
 	// signature; the sub-aggregate it names is registry-resolved and must verify.
-	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: top
@@ -98,7 +98,7 @@ spec:
     mysub:
       type: mysub
 `)
-	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -109,7 +109,7 @@ spec:
       type:
         test/svc:1.0.0: helm/svc:1.0.0
 `)
-	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

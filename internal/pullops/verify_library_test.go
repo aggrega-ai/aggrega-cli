@@ -47,7 +47,7 @@ func signedLibraryStore(t *testing.T) (store *memory.Store, manifestDigest, cont
 	ctx := context.Background()
 	store = memory.New()
 
-	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\n")
+	body := []byte("apiVersion: aggrega.ai/v1beta1\nkind: SchemaLibrary\n")
 	contentDigest = digest.ContentDigest(body)
 	manifestDigest, err := oci.Push(ctx, store, libTestVersion, oci.MediaTypeSchemaLibrary, body, nil)
 	if err != nil {
@@ -152,7 +152,7 @@ func TestVerifyClosureLibraryUnsignedHalts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	store := memory.New()
-	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\n")
+	body := []byte("apiVersion: aggrega.ai/v1beta1\nkind: SchemaLibrary\n")
 	contentDg := digest.ContentDigest(body)
 	manifestDg, err := oci.Push(ctx, store, libTestVersion, oci.MediaTypeSchemaLibrary, body, nil)
 	if err != nil {

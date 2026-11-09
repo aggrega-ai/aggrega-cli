@@ -182,7 +182,7 @@ func wantAbsentAt(t *testing.T, m types.OrderedMap[any], path ...string) {
 // to equal what the child writes, or what something downstream would default to,
 // makes "inherited" and "replaced" render identically, and the assertion then
 // passes whichever one the fold did.
-const foldBaseRelease = `apiVersion: aggrega.ai/v1alpha1
+const foldBaseRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: base-release
@@ -219,7 +219,7 @@ spec:
             replicas: 5
 `
 
-const foldChildRelease = `apiVersion: aggrega.ai/v1alpha1
+const foldChildRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: child-release
@@ -479,7 +479,7 @@ func TestResolveReleaseExtends_NullRemovesWhatWasInheritedAndLeavesSiblings(t *t
 		t.Parallel()
 		dir := t.TempDir()
 		head := writeFoldChain(t, dir,
-			foldFixture{"child.yaml", `apiVersion: aggrega.ai/v1alpha1
+			foldFixture{"child.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: child-release
@@ -496,7 +496,7 @@ spec:
             resources:
               cpu: null
 `},
-			foldFixture{"base.yaml", `apiVersion: aggrega.ai/v1alpha1
+			foldFixture{"base.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: base-release
@@ -540,7 +540,7 @@ spec:
 		t.Parallel()
 		dir := t.TempDir()
 		head := writeFoldChain(t, dir,
-			foldFixture{"child.yaml", `apiVersion: aggrega.ai/v1alpha1
+			foldFixture{"child.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: child-release
@@ -553,7 +553,7 @@ spec:
     db:
       size: null
 `},
-			foldFixture{"base.yaml", `apiVersion: aggrega.ai/v1alpha1
+			foldFixture{"base.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: base-release
@@ -607,7 +607,7 @@ spec:
 func TestResolveReleaseExtends_ChainDisagreeingAboutRoutingShapeIsRefused(t *testing.T) {
 	t.Parallel()
 
-	const boundariesBase = `apiVersion: aggrega.ai/v1alpha1
+	const boundariesBase = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: base-release
@@ -623,7 +623,7 @@ spec:
           infra:
             replicas: 3
 `
-	const componentsBase = `apiVersion: aggrega.ai/v1alpha1
+	const componentsBase = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: base-release
@@ -637,7 +637,7 @@ spec:
       infra:
         replicas: 3
 `
-	const boundariesChild = `apiVersion: aggrega.ai/v1alpha1
+	const boundariesChild = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: child-release
@@ -652,7 +652,7 @@ spec:
           infra:
             replicas: 1
 `
-	const componentsChild = `apiVersion: aggrega.ai/v1alpha1
+	const componentsChild = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: child-release
@@ -780,7 +780,7 @@ func TestResolveReleaseExtends_InheritedLiteralDirectoryAdvisesWithoutHalting(t 
 	t.Parallel()
 
 	baseWith := func(directory string) string {
-		return `apiVersion: aggrega.ai/v1alpha1
+		return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: base-release
@@ -798,7 +798,7 @@ spec:
             replicas: 3
 `
 	}
-	const childInheritingEverything = `apiVersion: aggrega.ai/v1alpha1
+	const childInheritingEverything = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: child-release
@@ -807,7 +807,7 @@ metadata:
 spec:
   extends: ./base.yaml
 `
-	const childWritingItsOwnDirectory = `apiVersion: aggrega.ai/v1alpha1
+	const childWritingItsOwnDirectory = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: child-release
@@ -1010,7 +1010,7 @@ db:
   size: DECOY-SIZE
   replicas: 999
 `)
-	writeReleaseFile(t, baseDir, "base.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeReleaseFile(t, baseDir, "base.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: base-release
@@ -1022,7 +1022,7 @@ spec:
   parameters:
     $import: ./params.yaml
 `)
-	writeReleaseFile(t, dir, "child.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeReleaseFile(t, dir, "child.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: child-release
@@ -1131,7 +1131,7 @@ func TestParametersBlockModesAreExclusivePerDocument(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
-			writeReleaseFile(t, dir, "release.yaml", `apiVersion: aggrega.ai/v1alpha1
+			writeReleaseFile(t, dir, "release.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: solo-release

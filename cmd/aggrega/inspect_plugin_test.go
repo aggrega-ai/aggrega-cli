@@ -144,7 +144,7 @@ func TestInspectRawPlugin_DescribeBestEffort(t *testing.T) {
 // capability claims (operates /
 // scope / selector), and an explicit runtime block (both limits set, a stamped
 // host-function record). It drives the golden harness across all four render levels.
-const pluginFixture = `apiVersion: aggrega.ai/v1alpha1
+const pluginFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm-renderer
@@ -212,7 +212,7 @@ func TestInspectPlugin_SurfacesExportsAndRuntime(t *testing.T) {
 
 // pluginNoRuntimeFixture omits the runtime block entirely, so every cap
 // falls back to the platform default.
-const pluginNoRuntimeFixture = `apiVersion: aggrega.ai/v1alpha1
+const pluginNoRuntimeFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: linter
@@ -248,7 +248,7 @@ func TestInspectPlugin_NoRuntime_DefaultApplies(t *testing.T) {
 
 // pluginPartialRuntimeFixture sets one limit and leaves the other unset, so
 // the rendered runtime mixes an authored value with a platform-default fallback.
-const pluginPartialRuntimeFixture = `apiVersion: aggrega.ai/v1alpha1
+const pluginPartialRuntimeFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: step

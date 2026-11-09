@@ -130,7 +130,7 @@ func TestIRSchemaRootConstraintsReachTheInstanceRoot(t *testing.T) {
 func irMirrorSchemaDocument(t *testing.T) map[string]any {
 	t.Helper()
 	var doc map[string]any
-	if err := json.Unmarshal([]byte(schemas.IRSchemaV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.IRSchemaV1beta1), &doc); err != nil {
 		t.Fatalf("decode the embedded IR schema: %v", err)
 	}
 	return doc

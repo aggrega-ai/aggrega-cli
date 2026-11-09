@@ -20,7 +20,7 @@ import (
 // catalog loader produces them.
 func edgeSchemaCatalog(t *testing.T) CatalogLookup {
 	t.Helper()
-	const compYAML = `apiVersion: aggrega.ai/v1alpha1
+	const compYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/svc

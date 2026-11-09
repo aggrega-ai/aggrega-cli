@@ -169,7 +169,7 @@ func TestSchemaLibraryNameShape_MatchesPascalCase(t *testing.T) {
 
 func TestMappingLibraryNameShape_MatchesPascalCase(t *testing.T) {
 	// No hub fixtures available; pattern matches the JSON Schema
-	// envelope at mappinglibrary-v1alpha1.schema.json.
+	// envelope at mappinglibrary-v1beta1.schema.json.
 	re := regexp.MustCompile(MappingLibraryNameShape)
 	cases := []struct {
 		input string

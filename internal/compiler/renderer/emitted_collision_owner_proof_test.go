@@ -119,7 +119,7 @@ const (
 )
 
 // collisionWorkload is the workload body a site declaring one carries.
-const collisionWorkload = `apiVersion: aggrega.ai/v1alpha1
+const collisionWorkload = `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -190,7 +190,7 @@ func collisionLookup(site collisionSite) RecipeLookup {
 				return nil, false
 			}
 			return &types.Recipe{
-				APIVersion: "aggrega.ai/v1alpha1",
+				APIVersion: "aggrega.ai/v1beta1",
 				Kind:       "Recipe",
 				Metadata:   types.RecipeMetadata{Name: collisionHostRecipeName, Version: "1.0.0"},
 				Spec: types.RecipeSpec{

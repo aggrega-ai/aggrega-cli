@@ -44,7 +44,7 @@ func unheldPluginWorkspace(t *testing.T, guest []byte) (root, releasePath, plugi
 	root = t.TempDir()
 	catalogDir := filepath.Join(root, "catalog")
 	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace:\n  catalog_dirs:\n    - ./catalog\noffline: true\n")
-	writeFixture(t, filepath.Join(catalogDir, "component", "test", "svc", "1.0.0", "component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component", "test", "svc", "1.0.0", "component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -56,7 +56,7 @@ spec:
     infra:
       replicas: { type: integer, default: 1 }
 `)
-	writeFixture(t, filepath.Join(catalogDir, "recipe", "helm", "svc", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipe", "helm", "svc", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -65,7 +65,7 @@ spec:
   capability: helm
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `+"`replicas`"+` 1 }}
     containers:
@@ -74,7 +74,7 @@ spec:
         ports:
           web: 8080
 `)
-	writeFixture(t, filepath.Join(catalogDir, "feature", "test", "control", "1.0.0", "feature.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "feature", "test", "control", "1.0.0", "feature.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: test/control
@@ -85,7 +85,7 @@ spec:
   schema:
     values: {}
 `)
-	writeFixture(t, filepath.Join(catalogDir, "feature-recipe", "helm", "control", "1.0.0", "feature-recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "feature-recipe", "helm", "control", "1.0.0", "feature-recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: control
@@ -108,7 +108,7 @@ spec:
 `)
 	pluginDir = filepath.Join(catalogDir, "plugin", "pipeline-step", "gateway-step", "1.0.0")
 	if guest != nil {
-		writeFixture(t, filepath.Join(pluginDir, "plugin.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(pluginDir, "plugin.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: gateway-step
@@ -123,7 +123,7 @@ spec:
 `)
 		writeFixtureBytes(t, filepath.Join(pluginDir, pluginpath.PluginLeaf("pipeline-step/gateway-step")), guest)
 	}
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -136,7 +136,7 @@ spec:
         control:
           type: test/control
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -151,7 +151,7 @@ spec:
         test/control:1.0.0: helm/control:1.0.0
 `)
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

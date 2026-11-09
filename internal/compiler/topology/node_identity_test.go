@@ -26,7 +26,7 @@ import (
 // Release lookup on a string the Release never writes.
 func TestFlattenedNodeIdentity(t *testing.T) {
 	t.Parallel()
-	const rootYAML = `apiVersion: aggrega.ai/v1alpha1
+	const rootYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -45,7 +45,7 @@ spec:
     mod:
       type: ./mod.yaml
 `
-	const modYAML = `apiVersion: aggrega.ai/v1alpha1
+	const modYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod

@@ -1,7 +1,7 @@
 documents:
   - path: components/imported-component-pinecone.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/component/pinecone
@@ -28,7 +28,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-model-openaiembeddings.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-model/openaiembeddings
@@ -55,7 +55,7 @@ documents:
             additionalProperties: false
   - path: components/imported-component-pinecone.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/component/pinecone
@@ -82,7 +82,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-model-openaiembeddings.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-model/openaiembeddings
@@ -109,7 +109,7 @@ documents:
             additionalProperties: false
   - path: components/imported-component-buffermemory.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/component/buffermemory
@@ -126,7 +126,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-tool-retrievertool.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-tool/retrievertool
@@ -145,7 +145,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-tool-retrievertool.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-tool/retrievertool
@@ -164,7 +164,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-model-chatopenai.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-model/chatopenai
@@ -196,7 +196,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-tool-toolagent.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-tool/toolagent
@@ -214,7 +214,7 @@ documents:
             additionalProperties: false
   - path: aggregate.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Aggregate
       metadata:
         name: imported/flow

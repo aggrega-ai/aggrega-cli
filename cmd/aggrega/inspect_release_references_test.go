@@ -18,7 +18,7 @@ import (
 // its name. Its file is called app.yaml and its name is not app, so a reading of
 // the name as a file name finds nothing, while the resolution every build makes —
 // a name looked up among the documents beside the Release — finds it.
-const inspectReferencesAggregate = `apiVersion: aggrega.ai/v1alpha1
+const inspectReferencesAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: insp-references
@@ -31,7 +31,7 @@ spec:
         port: 8080
 `
 
-const inspectReferencesManifest = `apiVersion: aggrega.ai/v1alpha1
+const inspectReferencesManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: insp-manifest
@@ -45,7 +45,7 @@ spec:
 
 // inspectReferencesRelease names the Aggregate and the Manifest by head.
 func inspectReferencesRelease(head string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel
@@ -96,7 +96,7 @@ func TestInspectResolvesAReleasesReferencesAsABuildDoes(t *testing.T) {
 			}
 			writeFixture(t, filepath.Join(root, "release.yaml"), inspectReferencesRelease(row.head))
 			catalogRoot := filepath.Join(root, "catalog")
-			writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+			writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -109,7 +109,7 @@ spec:
       port: { type: integer }
 `)
 			writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
-			writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+			writeFixture(t, filepath.Join(catalogRoot, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -118,7 +118,7 @@ spec:
   capability: helm
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       c:

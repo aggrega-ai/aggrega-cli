@@ -19,7 +19,7 @@ import (
 func TestResolve_PlacesRoutedComponentsBeforeWiringTheBoundaries(t *testing.T) {
 	t.Parallel()
 
-	raw := []byte("apiVersion: aggrega.ai/v1alpha1\n" +
+	raw := []byte("apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Aggregate\n" +
 		"metadata:\n" +
 		"  name: a\n" +

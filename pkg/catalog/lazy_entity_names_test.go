@@ -25,7 +25,7 @@ func writeEntityNamesFixture(t *testing.T) string {
 		// DISAGREE, per kind: the file sorting first carries the name that sorts
 		// last. A returned order that matched the walk rather than the names would
 		// therefore be visible.
-		filepath.Join(dir, "a-second.yaml"): `apiVersion: aggrega.ai/v1alpha1
+		filepath.Join(dir, "a-second.yaml"): `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/zeta
@@ -33,14 +33,14 @@ metadata:
 spec:
   appliesTo: tier=edge
 `,
-		filepath.Join(dir, "z-first.yaml"): `apiVersion: aggrega.ai/v1alpha1
+		filepath.Join(dir, "z-first.yaml"): `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/alpha
   version: "1.0.0"
 spec: {}
 `,
-		filepath.Join(dir, "b-component-second.yaml"): `apiVersion: aggrega.ai/v1alpha1
+		filepath.Join(dir, "b-component-second.yaml"): `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/omega
@@ -49,7 +49,7 @@ metadata:
     component.aggrega.ai/type: server
 spec: {}
 `,
-		filepath.Join(dir, "y-component-first.yaml"): `apiVersion: aggrega.ai/v1alpha1
+		filepath.Join(dir, "y-component-first.yaml"): `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/beta
@@ -60,7 +60,7 @@ spec: {}
 `,
 		// A Recipe the directory index holds no index for, so no kind's
 		// enumeration may offer it.
-		filepath.Join(dir, "recipe.yaml"): `apiVersion: aggrega.ai/v1alpha1
+		filepath.Join(dir, "recipe.yaml"): `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: example-recipe
@@ -71,7 +71,7 @@ spec:
 `,
 		// A Feature with no metadata.name is not addressable afterwards, so it
 		// is not something the enumeration can offer.
-		filepath.Join(dir, "nameless.yaml"): `apiVersion: aggrega.ai/v1alpha1
+		filepath.Join(dir, "nameless.yaml"): `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   version: "1.0.0"

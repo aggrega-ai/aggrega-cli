@@ -60,7 +60,7 @@ type acceptanceFixture struct {
 // directions: a kind the answer names with no document here fails, and so does a
 // document for a kind the answer no longer names.
 var acceptanceFixtures = map[string]acceptanceFixture{
-	"Component": {name: "rowops/probe-server", document: `apiVersion: aggrega.ai/v1alpha1
+	"Component": {name: "rowops/probe-server", document: `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: rowops/probe-server
@@ -71,7 +71,7 @@ spec:
   schema:
     values: {}
 `},
-	"Feature": {name: "rowops/probe-metrics", document: `apiVersion: aggrega.ai/v1alpha1
+	"Feature": {name: "rowops/probe-metrics", document: `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: rowops/probe-metrics
@@ -81,7 +81,7 @@ spec:
     values:
       port: { type: integer, required: false }
 `},
-	"Recipe": {name: "helm/rowops-probe-server", document: `apiVersion: aggrega.ai/v1alpha1
+	"Recipe": {name: "helm/rowops-probe-server", document: `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: rowops-probe-server
@@ -90,14 +90,14 @@ spec:
   capability: helm
   implements: rowops/probe-server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: probe-server:1.0.0
 `},
-	"FeatureRecipe": {name: "helm/rowops-probe-metrics", document: `apiVersion: aggrega.ai/v1alpha1
+	"FeatureRecipe": {name: "helm/rowops-probe-metrics", document: `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: rowops-probe-metrics
@@ -106,7 +106,7 @@ spec:
   capability: helm
   implements: rowops/probe-metrics
 `},
-	"SchemaLibrary": {name: "RowopsProbeTypes", document: `apiVersion: aggrega.ai/v1alpha1
+	"SchemaLibrary": {name: "RowopsProbeTypes", document: `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: RowopsProbeTypes
@@ -116,7 +116,7 @@ spec:
     Storage:
       size: { type: string, default: "10Gi" }
 `},
-	"MappingLibrary": {name: "RowopsProbeMappings", document: `apiVersion: aggrega.ai/v1alpha1
+	"MappingLibrary": {name: "RowopsProbeMappings", document: `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: RowopsProbeMappings
@@ -125,7 +125,7 @@ spec:
   mappings:
     SimpleValues: 'image: {{ .Values.image }}'
 `},
-	"WorkloadLibrary": {name: "RowopsProbeWorkloads", document: `apiVersion: aggrega.ai/v1alpha1
+	"WorkloadLibrary": {name: "RowopsProbeWorkloads", document: `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: RowopsProbeWorkloads
@@ -134,7 +134,7 @@ spec:
   workloads:
     SimpleService: 'kind: Deployment'
 `},
-	"ArtifactLibrary": {name: "RowopsProbeArtifacts", document: `apiVersion: aggrega.ai/v1alpha1
+	"ArtifactLibrary": {name: "RowopsProbeArtifacts", document: `apiVersion: aggrega.ai/v1beta1
 kind: ArtifactLibrary
 metadata:
   name: RowopsProbeArtifacts
@@ -144,7 +144,7 @@ spec:
     Support:
       support.yaml: "kind: ConfigMap"
 `},
-	"Aggregate": {name: "rowops/probe-app", document: `apiVersion: aggrega.ai/v1alpha1
+	"Aggregate": {name: "rowops/probe-app", document: `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: rowops/probe-app
@@ -154,7 +154,7 @@ spec:
     server:
       type: rowops/probe-server
 `},
-	"Plugin": {name: "linter/rowops-probe", document: `apiVersion: aggrega.ai/v1alpha1
+	"Plugin": {name: "linter/rowops-probe", document: `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: rowops-probe
@@ -163,7 +163,7 @@ metadata:
 spec:
   abiVersion: v1alpha1
 `},
-	"Manifest": {name: "rowops-probe-manifest", document: `apiVersion: aggrega.ai/v1alpha1
+	"Manifest": {name: "rowops-probe-manifest", document: `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: rowops-probe-manifest
@@ -174,7 +174,7 @@ spec:
       type:
         rowops/probe-server: helm/rowops-probe-server
 `},
-	"Release": {name: "rowops-probe-release", document: `apiVersion: aggrega.ai/v1alpha1
+	"Release": {name: "rowops-probe-release", document: `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rowops-probe-release

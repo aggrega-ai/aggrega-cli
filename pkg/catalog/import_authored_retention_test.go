@@ -53,7 +53,7 @@ func retentionCatalog(t *testing.T, artifactImport string) string {
 		}
 	}
 	entities := map[string]string{
-		"recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: retained-import
@@ -65,7 +65,7 @@ spec:
     policy.yaml:
       $import: ` + artifactImport + `
 `,
-		"featurerecipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"featurerecipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: retained-import-fr

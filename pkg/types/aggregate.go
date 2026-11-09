@@ -83,7 +83,7 @@ func (a *ActiveFlag) UnmarshalJSON(data []byte) error {
 }
 
 // Aggregate's struct declarations (Aggregate, AggregateMetadata, AggregateSpec)
-// are generated into aggregate_gen.go from the published aggregate-v1alpha1
+// are generated into aggregate_gen.go from the published aggregate-v1beta1
 // schema; their godoc is the schema's descriptions. This hand-written companion
 // holds the per-instance entry types the generated spec references —
 // SubAggregate, Subsystem, and ComponentInstance — which carry the
@@ -92,7 +92,7 @@ func (a *ActiveFlag) UnmarshalJSON(data []byte) error {
 // no top-level Annotations.
 
 // SubAggregate is a nested aggregate acting as an imported module.
-// Schema: aggregate-v1alpha1.schema.json#/properties/spec/properties/aggregates
+// Schema: aggregate-v1beta1.schema.json#/properties/spec/properties/aggregates
 type SubAggregate struct {
 	Type string `json:"type" yaml:"type"`
 	// Active is the module's presence toggle; nil means omitted, so the module
@@ -102,7 +102,7 @@ type SubAggregate struct {
 }
 
 // Subsystem is a logical grouping of developer intent. Recursive via nested Subsystems.
-// Schema: aggregate-v1alpha1.schema.json#/$defs/subsystem
+// Schema: aggregate-v1beta1.schema.json#/$defs/subsystem
 type Subsystem struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 
@@ -149,7 +149,7 @@ type Subsystem struct {
 }
 
 // ComponentInstance is one logical node in the aggregate topology (Developer-authored).
-// Schema: aggregate-v1alpha1.schema.json#/$defs/component_instance
+// Schema: aggregate-v1beta1.schema.json#/$defs/component_instance
 type ComponentInstance struct {
 	Type string `json:"type" yaml:"type"`
 	// Active is the component's presence toggle; nil means omitted, so the

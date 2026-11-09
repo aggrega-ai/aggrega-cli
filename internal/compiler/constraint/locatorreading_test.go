@@ -16,7 +16,7 @@ import (
 //
 // It is a real authoring shape rather than a contrived one: an artifacts key is
 // an output filename, so a dot in it is the ordinary case and not an edge one.
-const locatorReadingRecipe = `apiVersion: aggrega.ai/v1alpha1
+const locatorReadingRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: example/app

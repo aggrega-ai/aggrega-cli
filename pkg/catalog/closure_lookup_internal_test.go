@@ -94,8 +94,8 @@ func TestSchemaLibraryNameFromURI_TakesLastSegment(t *testing.T) {
 func TestTheReleasesOwnEntitiesAreRegisteredAndFoundByTheOneListOfThem(t *testing.T) {
 	t.Parallel()
 	const name = "imported/flow"
-	aggregate := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: imported/flow\n")
-	manifest := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported/flow\n")
+	aggregate := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: imported/flow\n")
+	manifest := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: imported/flow\n")
 	rel := &types.Release{}
 	rel.Spec.Aggregate, rel.Spec.Manifest = name, name
 	externals := lockfile.ExternalEntitiesFromBytes(rel, aggregate, manifest)

@@ -60,7 +60,7 @@ func writeReleaseFile(t *testing.T, dir, name, content string) {
 // that expects a condition other than that one depends on this.
 func releaseDoc(name, extends string) string {
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: ")
+	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: ")
 	b.WriteString(name)
 	b.WriteString("\n  environment: dev\n  version: \"1.0.0\"\nspec:\n")
 	if extends != "" {

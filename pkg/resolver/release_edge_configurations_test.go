@@ -37,9 +37,9 @@ func TestTheReadingOfTheDocumentsNamesEachReleaseEntryWhereItWasWritten(t *testi
 		},
 	}
 
-	agg := parseAggregate(t, "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: demo\n"+
+	agg := parseAggregate(t, "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: demo\n"+
 		"spec:\n  components:\n    api:\n      type: app/svc:1.0.0\n    db:\n      type: app/db:1.0.0\n")
-	const head = "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: demo-prod\nspec:\n"
+	const head = "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: demo-prod\nspec:\n"
 
 	for _, row := range []struct {
 		name     string

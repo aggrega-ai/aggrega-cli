@@ -24,7 +24,7 @@ import (
 func mutatorSchemaValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal([]byte(schemas.WasmMutatorV1alpha1), schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmMutatorV1beta1), schema); err != nil {
 		t.Fatalf("unmarshal mutator schema: %v", err)
 	}
 	v, err := jsonvalidator.New(schema)
@@ -151,7 +151,7 @@ func TestMutatorOutput_RoundTripJSONSchema(t *testing.T) {
 func TestMutatorTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	t.Parallel()
 	var raw map[string]any
-	if err := json.Unmarshal([]byte(schemas.WasmMutatorV1alpha1), &raw); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmMutatorV1beta1), &raw); err != nil {
 		t.Fatalf("unmarshal mutator schema: %v", err)
 	}
 	defs, ok := raw["$defs"].(map[string]any)

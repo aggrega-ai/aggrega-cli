@@ -44,7 +44,7 @@ type cachedImportLayout struct {
 
 // demoImporterEntity is the Plugin entity the fixture's catalog advertises the
 // demo importer through. Its coordinate is what the module is cached under.
-const demoImporterEntity = `apiVersion: aggrega.ai/v1alpha1
+const demoImporterEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: demo-importer

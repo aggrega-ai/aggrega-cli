@@ -237,7 +237,7 @@ func TestResolve_ParametersImportFromFile(t *testing.T) {
 	base := filepath.Join("testdata", "parameter-merge-and-fallback")
 
 	dir := t.TempDir()
-	releaseYAML := `apiVersion: aggrega.ai/v1alpha1
+	releaseYAML := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: param-release
@@ -401,7 +401,7 @@ func TestResolve_SprigDefaultFallback(t *testing.T) {
 	dir := t.TempDir()
 
 	// Release WITHOUT cache_ttl_seconds — should fall back to default "3000"
-	releaseYAML := `apiVersion: aggrega.ai/v1alpha1
+	releaseYAML := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: minimal

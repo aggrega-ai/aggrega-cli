@@ -26,7 +26,7 @@ import (
 func localSourcePinWorkspace(t *testing.T, root string) (string, string, string) {
 	t.Helper()
 	catalogDir := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -36,7 +36,7 @@ spec:
     app:
       type: server
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: local-source-pin
@@ -48,7 +48,7 @@ spec:
   components:
     app: {}
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -59,7 +59,7 @@ spec:
       type:
         server: server
 `)
-	writeFixture(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -82,7 +82,7 @@ data:
 `)
 	writeFixture(t, filepath.Join(recipeDir, "NOTES.md"), "a note beside the Recipe that nothing declares\n")
 	recipePath := filepath.Join(recipeDir, "recipe.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -215,7 +215,7 @@ func TestALocalSourceIsPinnedAndABuildRefusesItsDrift(t *testing.T) {
 // sourcelessServerRecipe is the Recipe localSourcePinWorkspace writes with its
 // local source taken out: the workload is synthesised, so the Recipe renders and
 // declares no local source for the lock's local source pins to pin.
-const sourcelessServerRecipe = `apiVersion: aggrega.ai/v1alpha1
+const sourcelessServerRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -224,7 +224,7 @@ spec:
   capability: helm
   implements: server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:

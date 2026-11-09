@@ -41,7 +41,7 @@ const envPairAdvice = "Rename one of the two, or write them under complementary 
 const envPairPosition = "recipe.yaml at .spec.workload"
 
 // envPairMain gives the main container the variable both ways, unguarded.
-const envPairMain = `    apiVersion: aggrega.ai/v1alpha1
+const envPairMain = `    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -56,7 +56,7 @@ const envPairMain = `    apiVersion: aggrega.ai/v1alpha1
 
 // envPairInit gives an init container the variable both ways, unguarded, and
 // leaves the main container without a pair.
-const envPairInit = `    apiVersion: aggrega.ai/v1alpha1
+const envPairInit = `    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     initContainers:
       - name: migrate
@@ -76,7 +76,7 @@ const envPairInit = `    apiVersion: aggrega.ai/v1alpha1
 // the attachment only where one is — the way a Recipe falls back to a plain
 // value — so exactly one of the two renders whichever way the condition goes.
 // The fixture attaches the credential, so the attachment is the one rendered.
-const envPairGuarded = `    apiVersion: aggrega.ai/v1alpha1
+const envPairGuarded = `    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -104,7 +104,7 @@ const envPairGuarded = `    apiVersion: aggrega.ai/v1alpha1
 func envPairFixture(t *testing.T, root, provider, workload string) (catalogDir, releasePath string) {
 	t.Helper()
 	catalogDir = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogDir, "component/example/compute/web/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/example/compute/web/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/web
@@ -118,7 +118,7 @@ spec:
       inject: [env]
       description: The database password the application reads from its environment.
 `)
-	writeFixture(t, filepath.Join(catalogDir, "feature/example/credential/1.0.0/feature.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "feature/example/credential/1.0.0/feature.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/credential
@@ -140,7 +140,7 @@ spec:
         type: string
         required: true
 `)
-	writeFixture(t, filepath.Join(catalogDir, "feature-recipe/"+provider+"/credential-ref/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "feature-recipe/"+provider+"/credential-ref/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: credential-ref
@@ -152,7 +152,7 @@ spec:
     name: "{{ .values.origin }}"
     key: "{{ .values.key }}"
 `)
-	writeFixture(t, filepath.Join(catalogDir, "recipe/"+provider+"/web/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipe/"+provider+"/web/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: web
@@ -162,7 +162,7 @@ spec:
   implements: example/compute/web:1.0.0
   workload: |
 `+workload)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: site
@@ -175,7 +175,7 @@ spec:
         credential:
           type: example/credential
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: site-manifest
@@ -190,7 +190,7 @@ spec:
         example/credential:1.0.0: `+provider+`/credential-ref:1.0.0
 `)
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: site-release

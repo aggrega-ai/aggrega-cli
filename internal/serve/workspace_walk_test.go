@@ -42,12 +42,12 @@ func TestWorkspaceWalkHonorsNestedGitignore(t *testing.T) {
 	// Target: tests/.gitignore excludes *.test.yaml. The Component
 	// fixture inside tests/ is the "trap" — it would otherwise match
 	// findReferences but must be excluded.
-	target := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/duplicate\n  version: 1.0.0\nspec: {}\n"
+	target := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/duplicate\n  version: 1.0.0\nspec: {}\n"
 	writeWorkspaceTree(t, dir, map[string]string{
 		"tests/.gitignore":          "*.test.yaml\n",
 		"tests/component.test.yaml": target, // trap: nested .gitignore excludes
-		"app.yaml":                  "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/duplicate\n  version: 1.0.0\nspec: {}\n",
-		"aggregate.yaml":            "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/duplicate\n",
+		"app.yaml":                  "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/duplicate\n  version: 1.0.0\nspec: {}\n",
+		"aggregate.yaml":            "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/duplicate\n",
 	})
 
 	srv := newTestServer(t, dir, nil, nil)
@@ -100,15 +100,15 @@ func TestWorkspaceWalkHonorsNestedGitignore(t *testing.T) {
 func TestWorkspaceWalkParentSkipDirOverridesNestedNegation(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	target := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/important\n  version: 1.0.0\nspec: {}\n"
+	target := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/important\n  version: 1.0.0\nspec: {}\n"
 	writeWorkspaceTree(t, dir, map[string]string{
 		// Root .gitignore excludes build/ (non-hardcoded directory).
 		".gitignore": "build/\n",
 		// Sub-directory .gitignore re-includes important.yaml.
 		"build/.gitignore":     "!important.yaml\n",
 		"build/important.yaml": target,
-		"build/skip.yaml":      "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/skip\n  version: 1.0.0\nspec: {}\n",
-		"aggregate.yaml":       "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/important\n",
+		"build/skip.yaml":      "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/skip\n  version: 1.0.0\nspec: {}\n",
+		"aggregate.yaml":       "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/important\n",
 	})
 
 	srv := newTestServer(t, dir, nil, nil)
@@ -190,7 +190,7 @@ func TestGitignoreWalkerMatchParity(t *testing.T) {
 func TestWorkspaceWalkAncestorPrecedenceDeepestWins(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	target := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/deepest\n  version: 1.0.0\nspec: {}\n"
+	target := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/deepest\n  version: 1.0.0\nspec: {}\n"
 	writeWorkspaceTree(t, dir, map[string]string{
 		// Root .gitignore excludes *.yaml (which would normally
 		// filter everything including the target).
@@ -200,7 +200,7 @@ func TestWorkspaceWalkAncestorPrecedenceDeepestWins(t *testing.T) {
 		"sub/.gitignore":                "# no patterns here\n",
 		"sub/component.deepfilter.yaml": target, // excluded by root
 		"sub/visible.yaml":              target, // not excluded
-		"aggregate.yaml":                "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/deepest\n",
+		"aggregate.yaml":                "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/deepest\n",
 	})
 
 	srv := newTestServer(t, dir, nil, nil)
@@ -319,8 +319,8 @@ func TestWorkspaceWalkAppliesGitignoreToLeadingDoubleDotName(t *testing.T) {
 	dir := t.TempDir()
 	writeWorkspaceTree(t, dir, map[string]string{
 		".gitignore":     "..scratch.yaml\n",
-		"..scratch.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/scratch\n  version: 1.0.0\nspec: {}\n",
-		"app.yaml":       "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/app\n  version: 1.0.0\nspec: {}\n",
+		"..scratch.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/scratch\n  version: 1.0.0\nspec: {}\n",
+		"app.yaml":       "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/app\n  version: 1.0.0\nspec: {}\n",
 	})
 
 	srv := newTestServer(t, dir, nil, nil)
@@ -374,14 +374,14 @@ func TestWorkspaceWalkAppliesGitignoreToLeadingDoubleDotName(t *testing.T) {
 func TestWorkspaceDocTraversalDeliversCachedDocumentsInPathOrder(t *testing.T) {
 	root := t.TempDir()
 	files := map[string]string{
-		"a-first.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"a-first.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: shared
 spec:
   implements: from-a
 `,
-		"b-second.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"b-second.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: shared

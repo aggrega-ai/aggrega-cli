@@ -19,7 +19,7 @@ import (
 
 // shapeRecipe is a Recipe authored with the spec lines the caller supplies.
 func shapeRecipe(spec string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: shaped
@@ -32,7 +32,7 @@ spec:
 
 // shapeComponent is a Component authored with the spec lines the caller supplies.
 func shapeComponent(spec string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/shaped
@@ -96,7 +96,7 @@ func TestAPublicationCarriesExactlyWhatItsEntityDeclares(t *testing.T) {
 			name:   "a stray note beside an entity declaring nothing changes nothing",
 			entity: "recipe/helm/shaped/1.0.0/recipe.yaml",
 			files: map[string]string{
-				"recipe/helm/shaped/1.0.0/recipe.yaml": shapeRecipe("  workload: |\n    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n"),
+				"recipe/helm/shaped/1.0.0/recipe.yaml": shapeRecipe("  workload: |\n    apiVersion: aggrega.ai/v1beta1\n    kind: Workload\n"),
 				"recipe/helm/shaped/1.0.0/README.md":   "a note nothing declares\n",
 			},
 		},
@@ -131,11 +131,11 @@ func TestAPublicationCarriesExactlyWhatItsEntityDeclares(t *testing.T) {
 			name:   "an Aggregate at a workspace root publishes as its document alone",
 			entity: "app.yaml",
 			files: map[string]string{
-				"app.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: app\n  version: 1.0.0\n" +
+				"app.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: app\n  version: 1.0.0\n" +
 					"spec:\n  components:\n    web:\n      type: core/compute/shaped:1.0.0\n",
-				"release.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: dev\n  version: 1.0.0\n" +
+				"release.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: dev\n  version: 1.0.0\n" +
 					"spec:\n  aggregate: app.yaml\n  manifest: manifest.yaml\n",
-				"manifest.yaml":   "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: m\n  version: 1.0.0\n",
+				"manifest.yaml":   "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: m\n  version: 1.0.0\n",
 				"release.lock":    "version: 1\n",
 				"dist/web.yaml":   "rendered: output\n",
 				"parameters.yaml": "replicas: 3\n",

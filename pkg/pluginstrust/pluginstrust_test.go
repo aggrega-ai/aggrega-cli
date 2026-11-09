@@ -409,7 +409,7 @@ func TestCurrentVersionMatchesTheSchemaConstant(t *testing.T) {
 			} `json:"version"`
 		} `json:"properties"`
 	}
-	if err := json.Unmarshal([]byte(schemas.PluginsTrustV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.PluginsTrustV1beta1), &doc); err != nil {
 		t.Fatalf("decode the embedded schema: %v", err)
 	}
 	if doc.Properties.Version.Const == nil {

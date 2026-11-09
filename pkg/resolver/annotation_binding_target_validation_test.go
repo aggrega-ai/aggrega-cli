@@ -72,7 +72,7 @@ func TestValidateBindingTargets_CleanBindings_ReturnsNil(t *testing.T) {
 	// Binding paths resolve cleanly through explicit properties maps
 	// for both pillars.
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -137,7 +137,7 @@ func schemaLibrary(t *testing.T, src string) types.SchemaLibrary {
 func TestValidateBindingTargets_CrossDocRefSchema_ResolvesWithLibraries(t *testing.T) {
 	t.Parallel()
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -166,7 +166,7 @@ infra:
 `)
 	features := map[string]types.Feature{"core/prometheus-exporter:1.0.0": feature}
 	libs := map[string]types.SchemaLibrary{
-		"BaseComponents": schemaLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"BaseComponents": schemaLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseComponents
@@ -196,7 +196,7 @@ func TestValidateBindingTargets_MissingInfraPath_ErrorsLoud(t *testing.T) {
 	// Binding routes through infra path "nonexistent" but the
 	// Feature schema declares only "upstream".
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -241,7 +241,7 @@ infra:
 func TestValidateBindingTargets_MissingValuesPath_ErrorsLoud(t *testing.T) {
 	t.Parallel()
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -286,7 +286,7 @@ func TestValidateBindingTargets_NestedPath_WalksThroughProperties(t *testing.T) 
 	t.Parallel()
 	// Dotted path "ingress.host" walks values.properties.ingress.properties.host.
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -318,7 +318,7 @@ func TestValidateBindingTargets_NestedPath_MissingTerminalSegment_ErrorsLoud(t *
 	t.Parallel()
 	// Schema declares "ingress.host" but binding asks for "ingress.port".
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -356,7 +356,7 @@ func TestValidateBindingTargets_SchemaShapeEscapesWalker_SkipsSoftly(t *testing.
 	// cannot statically prove the path exists or doesn't exist. Soft
 	// no-op; the validator returns nil for this binding.
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -392,7 +392,7 @@ func TestValidateBindingTargets_UnknownFeature_ErrorsLoud(t *testing.T) {
 	t.Parallel()
 	// Binding points at a Feature type the catalog does not carry.
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -440,7 +440,7 @@ spec:
 func TestValidateBindingTargets_NamesEveryUnresolvedBindingAndRoute(t *testing.T) {
 	t.Parallel()
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -530,7 +530,7 @@ values:
 func TestValidateBindingTargets_UnresolvableTargetSchemaIsReportedOncePerFeature(t *testing.T) {
 	t.Parallel()
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test

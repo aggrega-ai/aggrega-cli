@@ -106,7 +106,7 @@ func artifactLibraryFixtureOrdered(lib, bundle string, names, bodies []string) t
 	spec := types.ArtifactLibrarySpec{}
 	spec.Artifacts.Set(bundle, entry)
 	return types.ArtifactLibrary{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "ArtifactLibrary",
 		Metadata:   types.ArtifactLibraryMetadata{Name: lib, Version: "1.0.0"},
 		Spec:       spec,

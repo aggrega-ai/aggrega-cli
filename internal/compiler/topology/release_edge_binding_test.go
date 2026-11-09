@@ -19,7 +19,7 @@ import (
 // can exercise one rule without tripping the other.
 func bindingCatalog(t *testing.T) resolver.CatalogLookup {
 	t.Helper()
-	const svcYAML = `apiVersion: aggrega.ai/v1alpha1
+	const svcYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/svc
@@ -36,7 +36,7 @@ spec:
       valueSchema:
         pool_size: { type: integer, required: true }
 `
-	const dbYAML = `apiVersion: aggrega.ai/v1alpha1
+	const dbYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: app/db
@@ -163,7 +163,7 @@ func buildResultWithCatalog(t *testing.T, catalog resolver.CatalogLookup, aggYAM
 
 // flatAggregate is a two-component Aggregate whose consumer binds its required
 // socket, so a fixture built on it halts only for the reason it is testing.
-const flatAggregate = `apiVersion: aggrega.ai/v1alpha1
+const flatAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -202,7 +202,7 @@ func TestReleaseEdgeConfigMustReachAnEdge(t *testing.T) {
 	}{
 		{
 			name: "configures the edge the developer declared",
-			release: `apiVersion: aggrega.ai/v1alpha1
+			release: `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -222,7 +222,7 @@ spec:
 		},
 		{
 			name: "configures an alias the developer never declared",
-			release: `apiVersion: aggrega.ai/v1alpha1
+			release: `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -242,7 +242,7 @@ spec:
 		},
 		{
 			name: "names a component the Aggregate does not declare",
-			release: `apiVersion: aggrega.ai/v1alpha1
+			release: `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -263,7 +263,7 @@ spec:
 		},
 		{
 			name: "wires the edge it configures, by naming a target",
-			release: `apiVersion: aggrega.ai/v1alpha1
+			release: `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -284,7 +284,7 @@ spec:
 		},
 		{
 			name: "configures an alias the developer never declared, named at the root of the spec",
-			release: `apiVersion: aggrega.ai/v1alpha1
+			release: `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -302,7 +302,7 @@ spec:
 		},
 		{
 			name: "configures the edge the developer declared, named at the root of the spec",
-			release: `apiVersion: aggrega.ai/v1alpha1
+			release: `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -344,7 +344,7 @@ spec:
 // toggle unusable while any Release configured the component.
 func TestReleaseEdgeConfig_PrunedConsumerIsNotAFault(t *testing.T) {
 	t.Parallel()
-	const aggYAML = `apiVersion: aggrega.ai/v1alpha1
+	const aggYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -360,7 +360,7 @@ spec:
     db:
       type: app/db:1.0.0
 `
-	const relYAML = `apiVersion: aggrega.ai/v1alpha1
+	const relYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -398,7 +398,7 @@ spec:
 // do with the target.
 func TestReleaseEdgeConfig_TargetThatNamesNothingIsNotUnboundConfiguration(t *testing.T) {
 	t.Parallel()
-	const relYAML = `apiVersion: aggrega.ai/v1alpha1
+	const relYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -443,7 +443,7 @@ spec:
 // otherwise a rule added for one class would silently disable another.
 func TestReleaseEdgeConfig_UndeclaredSocketKeepsItsOwnDiagnostic(t *testing.T) {
 	t.Parallel()
-	const modYAML = `apiVersion: aggrega.ai/v1alpha1
+	const modYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -458,7 +458,7 @@ spec:
     store:
       type: app/db:1.0.0
 `
-	const aggYAML = `apiVersion: aggrega.ai/v1alpha1
+	const aggYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -467,7 +467,7 @@ spec:
     mod:
       type: ./mod.yaml
 `
-	const relYAML = `apiVersion: aggrega.ai/v1alpha1
+	const relYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -501,7 +501,7 @@ spec:
 // carries a bare id and is inspected before flattening.
 func TestSubAggregateNodesAreInspectedByEveryRule(t *testing.T) {
 	t.Parallel()
-	const aggYAML = `apiVersion: aggrega.ai/v1alpha1
+	const aggYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -512,7 +512,7 @@ spec:
 `
 	// modBoundSocket binds the required socket, so a fixture built on it halts
 	// only for the rule under test.
-	const modBoundSocket = `apiVersion: aggrega.ai/v1alpha1
+	const modBoundSocket = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -527,7 +527,7 @@ spec:
     store:
       type: app/db:1.0.0
 `
-	const modUnboundSocket = `apiVersion: aggrega.ai/v1alpha1
+	const modUnboundSocket = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -538,7 +538,7 @@ spec:
     store:
       type: app/db:1.0.0
 `
-	const modEmptyCacheEdge = `apiVersion: aggrega.ai/v1alpha1
+	const modEmptyCacheEdge = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -556,7 +556,7 @@ spec:
     store:
       type: app/db:1.0.0
 `
-	const modFilledCacheEdge = `apiVersion: aggrega.ai/v1alpha1
+	const modFilledCacheEdge = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -582,7 +582,7 @@ spec:
 	// fault on top of the socket fault it is about — and the positive rows would
 	// halt for a reason they are not testing.
 	releaseOnSocket := func(socket string) string {
-		return `apiVersion: aggrega.ai/v1alpha1
+		return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod

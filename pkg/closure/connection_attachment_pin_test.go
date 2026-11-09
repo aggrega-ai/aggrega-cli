@@ -45,13 +45,13 @@ func connectionLookup() *fakeLookup {
 const connectionModuleURI = "example/gatewaymod:1.0.0"
 
 func connectionManifest(features string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: m\n  version: \"1.0.0\"\nspec:\n  mappings:\n" + features
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: m\n  version: \"1.0.0\"\nspec:\n  mappings:\n" + features
 }
 
 // connectionAggregate is a gateway drawing two connections on its `models`
 // socket; uses is the gateway's whole `uses:` block, written at column zero.
 func connectionAggregate(scope, uses string) string {
-	head := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n"
+	head := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: a\n  version: \"1.0.0\"\nspec:\n"
 	pad := "  "
 	if scope != "" {
 		head += "  subsystems:\n    " + scope + ":\n"
@@ -106,7 +106,7 @@ const (
 // is handed both documents directly, so a reference here would only add two rows
 // every case would have to list.
 func connectionRelease(boundary string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: r\n  environment: test\n  version: \"1.0.0\"\nspec:\n  boundaries:\n    prod:\n" + indentBy(boundary, "      ")
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: r\n  environment: test\n  version: \"1.0.0\"\nspec:\n  boundaries:\n    prod:\n" + indentBy(boundary, "      ")
 }
 
 // TestTheWalkPinsTheFeatureEveryConnectionAttachmentNames holds the walk to every
@@ -289,7 +289,7 @@ func TestTheWalkPinsTheFeatureEveryConnectionAttachmentNames(t *testing.T) {
 // the Aggregate imports is pinned under the module's own authoring path.
 func TestTheSubAggregateDescentPinsTheFeatureAModulesConnectionCarries(t *testing.T) {
 	t.Parallel()
-	top := loadAggregate(t, "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: top\n  version: \"1.0.0\"\nspec:\n  aggregates:\n    mod:\n      type: "+connectionModuleURI+"\n")
+	top := loadAggregate(t, "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: top\n  version: \"1.0.0\"\nspec:\n  aggregates:\n    mod:\n      type: "+connectionModuleURI+"\n")
 	loader := &fakeAggLoader{bodies: map[string]*types.Aggregate{
 		connectionModuleURI: loadAggregate(t, connectionAggregate("", gptCarriesToken)),
 	}}

@@ -42,7 +42,7 @@ func runLocal(t *testing.T, args ...string) (string, error) {
 // contract agree with the parse-go guest's describe() self-report (a parser
 // advertising the parse export). It is the positive entity-form fixture: the
 // entity's contract is cross-checked against the guest and the guest then runs.
-const parserEntity = `apiVersion: aggrega.ai/v1alpha1
+const parserEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: demo-parser
@@ -57,7 +57,7 @@ spec:
 // parserEntityClaimsUndeclaredExport keeps the matching pluginType but claims a
 // second export the guest does not advertise, so the load-time cross-check halts
 // before the guest runs.
-const parserEntityClaimsUndeclaredExport = `apiVersion: aggrega.ai/v1alpha1
+const parserEntityClaimsUndeclaredExport = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: demo-parser
@@ -72,7 +72,7 @@ spec:
 
 // parserEntityWrongType claims a pluginType (governance) the parser guest's
 // describe() does not report, so the type gate halts before the guest runs.
-const parserEntityWrongType = `apiVersion: aggrega.ai/v1alpha1
+const parserEntityWrongType = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: demo-parser

@@ -74,7 +74,7 @@ func TestSynthesizeWorkload_EnvOrderSecretsFirst(t *testing.T) {
 		return c
 	}
 	newWorkload := func() *types.Workload {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 		w.Volumes.Set("data", types.VolumeSpec{ConfigMap: &types.ConfigMapVolume{Source: "app-config"}})
 		return w
 	}

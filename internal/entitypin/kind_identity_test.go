@@ -28,7 +28,7 @@ func TestARecipeAndAFeatureRecipeOfOneNameEachPinTheirOwnDocument(t *testing.T) 
 		"  source:\n    kind: helm-https-chart\n    url: https://example.invalid/recipe.tgz\n    version: \"1.0.0\"\n", true))
 	writeFile(t, filepath.Join(cat, "shared-recipe", "extra.yaml"), "kind: ConfigMap\n")
 	featurePath := filepath.Join(cat, "shared-feature", "featurerecipe.yaml")
-	writeFile(t, featurePath, "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: shared\n  version: \"1.0.0\"\n"+
+	writeFile(t, featurePath, "apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: shared\n  version: \"1.0.0\"\n"+
 		"spec:\n  capability: helm\n  implements: shared\n"+
 		"  source:\n    kind: helm-https-chart\n    url: https://example.invalid/feature.tgz\n    version: \"2.0.0\"\n"+
 		"  artifacts:\n    patch.yaml:\n      $import: ./patch.yaml\n")

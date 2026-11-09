@@ -378,7 +378,7 @@ func TestCheckArrayConstraints_EveryBranch(t *testing.T) {
 func TestAnnotationSubkeyConformance_EveryBranch(t *testing.T) {
 	t.Parallel()
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test

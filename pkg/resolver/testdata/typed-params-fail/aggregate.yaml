@@ -5,7 +5,7 @@
 # parameter names (cache_ttl_seconds, display_name) are placeholders for any
 # typed parameter, not exemplary authoring of those specific concepts.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: typed-params-fail

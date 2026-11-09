@@ -215,7 +215,7 @@ var errAmbiguousRegistryAlias = cerrors.Register("ambiguous-registry-alias", cer
 })
 
 // Load reads the workspace's .aggrega-config.yaml file at path,
-// validates it against the aggrega-config-v1alpha1 JSON Schema, and
+// validates it against the aggrega-config-v1beta1 JSON Schema, and
 // returns the typed Config value.
 //
 // File absence is NOT an error: a workspace without a

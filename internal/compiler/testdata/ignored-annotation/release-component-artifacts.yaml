@@ -5,7 +5,7 @@
 # artifacts and nothing else, so its whole output is imported artifact documents.
 # The boundary authors a platform annotation the target reads only where it builds
 # the manifest itself, so the annotation reaches nothing here.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: ann-release-component-artifacts

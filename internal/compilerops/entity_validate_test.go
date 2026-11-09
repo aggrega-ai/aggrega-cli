@@ -23,7 +23,7 @@ func entityProbeComponent(name string, refused bool) string {
 	if refused {
 		inject = "  inject: env\n"
 	}
-	return "apiVersion: aggrega.ai/v1alpha1\n" +
+	return "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Component\n" +
 		"metadata:\n" +
 		"  name: " + name + "\n" +
@@ -41,7 +41,7 @@ func entityProbeComponent(name string, refused bool) string {
 }
 
 // entityProbeRecipe is a helm Recipe implementing example/compute/probe.
-const entityProbeRecipe = `apiVersion: aggrega.ai/v1alpha1
+const entityProbeRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: probe
@@ -50,7 +50,7 @@ spec:
   capability: helm
   implements: example/compute/probe
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:

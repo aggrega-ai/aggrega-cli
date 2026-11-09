@@ -32,11 +32,11 @@ func TestTheListingsOfAWorkspaceReachedThroughALinkListItsContent(t *testing.T) 
 	realDir := filepath.Join(base, "real")
 	via := filepath.Join(base, "via")
 	release := func(name string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n"
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n"
 	}
 	writeLinkedDirsFile(t, filepath.Join(realDir, workspaceconfig.ConfigFilename), "workspace: {}\noffline: true\n")
 	writeLinkedDirsFile(t, filepath.Join(realDir, "aggregate.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: app\nspec:\n  components: {}\n")
+		"apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: app\nspec:\n  components: {}\n")
 	writeLinkedDirsFile(t, filepath.Join(realDir, "release-a.yaml"), release("a"))
 	writeLinkedDirsFile(t, filepath.Join(realDir, "release-b.yaml"), release("b"))
 	writeLinkedDirsFile(t, filepath.Join(base, "outside", "release-out.yaml"), release("out"))

@@ -7,7 +7,7 @@
 # stay quiet; one attachment declares artifacts and nothing else, which the claim
 # does not cover; a second attachment declares a Workload, so it must stay quiet
 # too. One build therefore carries the case under test beside both silences.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: ann-release-feature-artifacts

@@ -189,7 +189,7 @@ func TestThePluginMethodsRefuseAPathOutsideTheWorkspace(t *testing.T) {
 	srv, _ := pluginWriteFixture(t)
 
 	outside := filepath.Join(t.TempDir(), "elsewhere.yaml")
-	if err := os.WriteFile(outside, []byte("apiVersion: aggrega.ai/v1alpha1\n"), 0o644); err != nil {
+	if err := os.WriteFile(outside, []byte("apiVersion: aggrega.ai/v1beta1\n"), 0o644); err != nil {
 		t.Fatalf("seed the outside file: %v", err)
 	}
 

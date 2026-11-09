@@ -18,7 +18,7 @@ import (
 // implementing the given type, declaring one artifact entry — the least a Recipe
 // declares to pass load validation, which is enough for a resolution-only test.
 func capabilityRecipeYAML(name, capability, implements string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: " + name +
 		"\n  version: 1.0.0\nspec:\n  capability: \"" + capability + "\"\n  implements: " + implements + "\n" +
 		"  artifacts:\n    probe.txt: \"probe\"\n"
 }
@@ -26,7 +26,7 @@ func capabilityRecipeYAML(name, capability, implements string) string {
 // capabilityFeatureRecipeYAML builds a loadable FeatureRecipe binding the given
 // capability and implementing the given type.
 func capabilityFeatureRecipeYAML(name, capability, implements string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: FeatureRecipe\nmetadata:\n  name: " + name +
 		"\n  version: 1.0.0\nspec:\n  capability: \"" + capability + "\"\n  implements: " + implements + "\n"
 }
 

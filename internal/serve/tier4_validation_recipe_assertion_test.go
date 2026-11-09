@@ -25,7 +25,7 @@ const servePortFloorFailure = "port 8080 is below 9000"
 // servePortFloorRecipe implements the fixture catalog's api-server contract and
 // asserts that the port the Release sets is at least 9000, reading its own
 // resolved provides in the failure.
-const servePortFloorRecipe = `apiVersion: aggrega.ai/v1alpha1
+const servePortFloorRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-server-port-floor
@@ -39,7 +39,7 @@ spec:
     host: "{{ .context.instance_id }}.svc.cluster.local"
     service_port: "{{ optional .infra ` + "`port`" + ` 8080 }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -47,7 +47,7 @@ spec:
         image: api-server:latest
 `
 
-const servePortFloorManifest = `apiVersion: aggrega.ai/v1alpha1
+const servePortFloorManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -61,7 +61,7 @@ spec:
 
 // servePortFloorHoldingRelease sets a port the assertion accepts; it is the
 // fixture's default Release otherwise.
-const servePortFloorHoldingRelease = `apiVersion: aggrega.ai/v1alpha1
+const servePortFloorHoldingRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: parity-release

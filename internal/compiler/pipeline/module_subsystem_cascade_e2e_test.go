@@ -30,7 +30,7 @@ func moduleCascadeWorkspace(t *testing.T, moduleSpec string) pipelinetest.Input 
 		t.Fatalf("copy the catalog: %v", err)
 	}
 	entities := map[string]string{
-		"aggregates/site-module.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n" +
+		"aggregates/site-module.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n" +
 			"metadata:\n  name: site-module\n  version: \"1.0.0\"\nspec:\n" + moduleSpec,
 	}
 	for name, body := range authoringSiteEntities {
@@ -50,10 +50,10 @@ func moduleCascadeWorkspace(t *testing.T, moduleSpec string) pipelinetest.Input 
 	}
 	documents := map[string]string{
 		filepath.Join(dir, "manifest.yaml"): authoringSiteManifest,
-		filepath.Join(dir, "aggregate.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n" +
+		filepath.Join(dir, "aggregate.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n" +
 			"metadata:\n  name: module-cascade\n  version: \"1.0.0\"\nspec:\n" +
 			"  aggregates:\n    mod:\n      type: site-module\n",
-		filepath.Join(dir, "release.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Release\n" +
+		filepath.Join(dir, "release.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Release\n" +
 			"metadata:\n  name: module-cascade-release\n  environment: local\n  version: \"1.0.0\"\n" +
 			"spec:\n  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n  boundaries:\n" +
 			"    cluster:\n      directory: ./dist/cluster\n      aggregates:\n        mod: {}\n",

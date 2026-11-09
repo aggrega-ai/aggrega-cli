@@ -18,7 +18,7 @@ import (
 // of the compose-unsupported fields set — the zero baseline the per-field
 // unsupported-field cases mutate.
 func baseDegradeWorkload() *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("http", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
@@ -418,7 +418,7 @@ func TestUnsupportedField_NVIDIAGPUIsTranslatedNotReported(t *testing.T) {
 // class code, distinct from the full-omission wording.
 func TestUnsupportedField_PersistentTemplatePartial(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "stateful"}
 	c := types.ContainerSpec{Image: "store:1.0"}
 	c.Ports.Set("api", types.PortSpec{Port: 9000})
 	c.VolumeMounts = []types.VolumeMount{{Name: "session", Path: "/var/session"}}

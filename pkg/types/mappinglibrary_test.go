@@ -17,7 +17,7 @@ import (
 func TestMappingLibrary_RoundTrip_MinimalEntry(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BaseMappings
@@ -30,8 +30,8 @@ spec:
 	if err := yaml.Unmarshal([]byte(in), &lib); err != nil {
 		t.Fatalf("YAML unmarshal: %v", err)
 	}
-	if lib.APIVersion != "aggrega.ai/v1alpha1" {
-		t.Errorf("APIVersion = %q, want aggrega.ai/v1alpha1", lib.APIVersion)
+	if lib.APIVersion != "aggrega.ai/v1beta1" {
+		t.Errorf("APIVersion = %q, want aggrega.ai/v1beta1", lib.APIVersion)
 	}
 	if lib.Kind != "MappingLibrary" {
 		t.Errorf("Kind = %q, want MappingLibrary", lib.Kind)
@@ -58,7 +58,7 @@ spec:
 func TestMappingLibrary_RoundTrip_MultiEntryAuthorOrder(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: Ordered
@@ -91,7 +91,7 @@ spec:
 func TestMappingLibrary_RemarshalsCleanly(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: RoundTrip
@@ -128,7 +128,7 @@ spec:
 func TestMappingLibrary_MultilineTemplateBody_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: Multiline
@@ -220,7 +220,7 @@ func TestMappingEntry_NonScalarRejected(t *testing.T) {
 	// A mapping shape where the entry's value is a YAML mapping (object)
 	// rather than a scalar. The envelope schema would reject this; the
 	// Go-side UnmarshalYAML also rejects to keep the type-layer honest.
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BadEntry

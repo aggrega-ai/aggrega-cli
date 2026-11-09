@@ -19,7 +19,7 @@ import (
 // composeRecipe returns a minimal compose Recipe implementing the given component
 // type — enough for the closure to resolve and the value-conformance pass to run.
 func composeRecipe(name, implements string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: ` + name + `
@@ -28,7 +28,7 @@ spec:
   capability: compose
   implements: ` + implements + `
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -36,7 +36,7 @@ spec:
 `
 }
 
-const confRelease = `apiVersion: aggrega.ai/v1alpha1
+const confRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel
@@ -150,7 +150,7 @@ func TestIntegration_LintRelease_ValueConformance(t *testing.T) {
 			// contract measures here arrives as the string "3" — so the type is
 			// what this case pins, and the minimum is carried by the two cases
 			// above that author their value directly.
-			aggregate: `apiVersion: aggrega.ai/v1alpha1
+			aggregate: `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -165,7 +165,7 @@ spec:
       values:
         x: "{{ .parameters.size }}"
 `,
-			release: `apiVersion: aggrega.ai/v1alpha1
+			release: `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel
@@ -237,7 +237,7 @@ spec:
 }
 
 func confComp(name, schemaBody string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: ` + name + `
@@ -253,7 +253,7 @@ spec:
 // extending Component authors no pillar content and declares the inheritance
 // marker, receiving its base's pillars exactly as the base authored them.
 func confChild(name, extends string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: ` + name + `
@@ -267,7 +267,7 @@ spec:
 }
 
 func confManifest(typeURI, recipeURI string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -281,7 +281,7 @@ spec:
 }
 
 func confAggregate(typeURI, valuesBody string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate

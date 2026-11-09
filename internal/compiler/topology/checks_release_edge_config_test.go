@@ -33,7 +33,7 @@ import (
 func TestReleaseEdgeConfigReportsEveryOffendingEntry(t *testing.T) {
 	t.Parallel()
 
-	const release = `apiVersion: aggrega.ai/v1alpha1
+	const release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -88,7 +88,7 @@ spec:
 func TestReleaseEdgeConfigReportsBothOffendersInOneBuild(t *testing.T) {
 	t.Parallel()
 
-	const release = `apiVersion: aggrega.ai/v1alpha1
+	const release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -145,7 +145,7 @@ spec:
 func TestReleaseEdgeConfigNamesTheAbsentComponentUnchanged(t *testing.T) {
 	t.Parallel()
 
-	const release = `apiVersion: aggrega.ai/v1alpha1
+	const release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -189,7 +189,7 @@ spec:
 func TestReleaseEdgeConfigurationTraversalEnumeratesALegalRelease(t *testing.T) {
 	t.Parallel()
 
-	const release = `apiVersion: aggrega.ai/v1alpha1
+	const release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod

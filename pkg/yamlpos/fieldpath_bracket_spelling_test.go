@@ -31,7 +31,7 @@ func TestFieldNodeReadsABracketedKeyNoDeeperThanAnAbsentOne(t *testing.T) {
 	t.Parallel()
 
 	doc := parseFieldDoc(t,
-		`apiVersion: aggrega.ai/v1alpha1
+		`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 spec:
   components:

@@ -177,7 +177,7 @@ func newHostLocationFixture(t *testing.T) *hostLocationFixture {
 		t.Fatalf("copy the fixture workspace: %v", err)
 	}
 	for path, content := range map[string]string{
-		fx.outsideEntity: "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n" +
+		fx.outsideEntity: "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n" +
 			"  name: fixture/misc/outside-widget-k9m2\n  version: \"1.0.0\"\n  labels:\n" +
 			"    component.aggrega.ai/type: resource\nspec:\n  schema:\n    values:\n" +
 			"      name: { type: string, default: \"outside-widget\" }\n",

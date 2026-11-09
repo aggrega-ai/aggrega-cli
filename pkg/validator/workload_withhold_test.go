@@ -31,7 +31,7 @@ const renderedSecret = "rendered-secret-9a8b7c"
 
 // withheldWorkload is a single-container document with one line the row supplies.
 func withheldWorkload(line string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\n" +
+	return "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Workload\n" +
 		"containers:\n" +
 		"  main:\n" +
@@ -115,7 +115,7 @@ func TestWorkloadBytes_WithholdRenderedValues(t *testing.T) {
 // validation through both.
 func TestWorkload_WithholdRenderedValuesOnTheTypedEntryPoint(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	w.Containers.Set("main", types.ContainerSpec{Image: "app:1.0", ImagePullPolicy: renderedSecret})
 
 	plain := validator.ValidateWorkload(w, "recipe.yaml", "app", "1.0.0")

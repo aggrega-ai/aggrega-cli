@@ -107,7 +107,7 @@ func customMechanismLinkInput(envFrom string) (renderer.RendererInput, renderer.
 		Recipe: func(_, componentType string) (*types.Recipe, bool) {
 			artifacts := types.OrderedMap[types.ArtifactEntry]{}
 			recipe := &types.Recipe{
-				APIVersion: "aggrega.ai/v1alpha1",
+				APIVersion: "aggrega.ai/v1beta1",
 				Kind:       "Recipe",
 				Spec:       types.RecipeSpec{Capability: "cloudformation", Implements: componentType},
 			}

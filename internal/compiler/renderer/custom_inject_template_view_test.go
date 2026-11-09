@@ -85,7 +85,7 @@ func (f apiServerFixture) lookup() renderer.RecipeLookup {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe"},
 				Spec: types.RecipeSpec{
-					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

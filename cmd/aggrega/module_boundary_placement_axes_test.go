@@ -31,7 +31,7 @@ import (
 // the same per-component sizing and Feature attachment the worked example
 // declares, so the only difference from the committed form is which axis places
 // the documents module.
-const mixedAxisRelease = `apiVersion: aggrega.ai/v1alpha1
+const mixedAxisRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: k8s-helm-synth
@@ -73,7 +73,7 @@ spec:
 // naming each one the Release wants placed. A component the Aggregate's closure
 // contains and no boundary names is not placed by this axis, which is why all
 // five are listed.
-const dottedPathRelease = `apiVersion: aggrega.ai/v1alpha1
+const dottedPathRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: k8s-helm-synth

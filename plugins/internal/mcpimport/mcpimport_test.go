@@ -100,7 +100,7 @@ const (
 // desktopAggregate and desktopRelease are what the Claude Desktop fixture is
 // drafted as with no setting: one instance per server, and each server's command
 // line, launcher and environment carried as written.
-const desktopAggregate = `apiVersion: aggrega.ai/v1alpha1
+const desktopAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: imported/flow
@@ -114,7 +114,7 @@ spec:
       type: core/ai-tool/mcp
 `
 
-const desktopRelease = `apiVersion: aggrega.ai/v1alpha1
+const desktopRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: imported/flow

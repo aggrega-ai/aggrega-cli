@@ -66,7 +66,7 @@ func TestSplitRegistryReference(t *testing.T) {
 // "declares any kind" would admit.
 func TestPublishedHeaderRefusesADocumentThatIsNotAnEntity(t *testing.T) {
 	t.Parallel()
-	header, err := publishedHeader([]byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/test/svc\n  version: \"1.0.0\"\n  description: A service.\n"))
+	header, err := publishedHeader([]byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/test/svc\n  version: \"1.0.0\"\n  description: A service.\n"))
 	if err != nil {
 		t.Fatalf("control: a Component document must be read: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestPublishedHeaderRefusesADocumentThatIsNotAnEntity(t *testing.T) {
 	for name, document := range map[string]string{
 		"prose":        "just some notes, not a document an entity is written in\n",
 		"no kind":      "metadata:\n  name: x\n",
-		"a Release":    "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: rel\n",
+		"a Release":    "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: rel\n",
 		"another kind": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: gw\n",
 	} {
 		if _, err := publishedHeader([]byte(document)); !errors.Is(err, oci.ErrPublishedArtifactNotAnEntity()) {

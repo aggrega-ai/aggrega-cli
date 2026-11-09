@@ -3,10 +3,14 @@
 
 package types
 
-import "encoding/json"
+import (
+	"encoding/json"
 
-// API version constant for IR documents validated against ir-v1alpha1.schema.json.
-const IRAPIVersion = "aggrega.ai/v1alpha1"
+	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
+)
+
+// API version constant for IR documents validated against ir-v1beta1.schema.json.
+const IRAPIVersion = apiversion.APIVersion
 
 // IRKind is the canonical kind value for IR documents.
 const IRKind = "IR"
@@ -16,7 +20,7 @@ const IRKind = "IR"
 // the annotation-driven expansion pass, or — at the attachment top level — a mix
 // of both. It is a distinct string type so the wire shape is unchanged (a plain
 // JSON string) while the value set is single-sourced here rather than re-spelled
-// as string literals across the IR builder. The ir-v1alpha1
+// as string literals across the IR builder. The ir-v1beta1
 // IRFeatureEntry.origin enum is the cross-language contract for the same
 // value set.
 type AttachmentOrigin string
@@ -53,7 +57,7 @@ const (
 // AttachmentBindingFree is the value [IRFeatureEntry.Binding] carries when an
 // attachment fills no declared attachment slot — a free attachment. It is
 // spelled once here so the IR builder, a consumer comparing
-// against it, and the ir-v1alpha1 contract that documents it cannot diverge on
+// against it, and the ir-v1beta1 contract that documents it cannot diverge on
 // the literal.
 //
 // A slot whose declared name is this same string is indistinguishable from a
@@ -62,7 +66,7 @@ const (
 const AttachmentBindingFree = "free"
 
 // IRGraph is the in-memory, provider-agnostic intermediate representation emitted by the
-// topology builder. It strictly mirrors ir-v1alpha1.schema.json.
+// topology builder. It strictly mirrors ir-v1beta1.schema.json.
 type IRGraph struct {
 	APIVersion string     `json:"apiVersion"`
 	Kind       string     `json:"kind"`
@@ -93,7 +97,7 @@ type IRMetadata struct {
 //   - Provenance — compiler / aggregate / release / manifest version
 //     traceability for the IR build.
 //
-// Schema: ir-v1alpha1.schema.json#/properties/spec
+// Schema: ir-v1beta1.schema.json#/properties/spec
 type IRSpec struct {
 	Nodes                OrderedMap[IRNode]                     `json:"nodes"`
 	Edges                []IREdge                               `json:"edges"`
@@ -126,7 +130,7 @@ type IRSpec struct {
 // projection (TemplateAttachment), which carries values, infra and provides
 // together because an Aggregate-side and a Release-side contribution merge into
 // one entry there.
-// Schema: ir-v1alpha1.schema.json#/properties/spec/properties/boundary_features
+// Schema: ir-v1beta1.schema.json#/properties/spec/properties/boundary_features
 type IRBoundaryFeature struct {
 	Type  string          `json:"type"`
 	Infra OrderedMap[any] `json:"infra,omitempty,omitzero"`
@@ -169,7 +173,7 @@ type IRBoundaryFeature struct {
 }
 
 // IRNode is a single node in the IR graph. Purely topological — no opaque payload.
-// Schema: ir-v1alpha1.schema.json#/properties/spec/properties/nodes
+// Schema: ir-v1beta1.schema.json#/properties/spec/properties/nodes
 type IRNode struct {
 	Description     string             `json:"description,omitempty"`
 	Labels          OrderedMap[string] `json:"labels"`
@@ -297,7 +301,7 @@ type IRNode struct {
 }
 
 // CatalogMetadata is the Enterprise Metadata Suite extracted from a catalog entity.
-// Schema: ir-v1alpha1.schema.json node catalog_metadata
+// Schema: ir-v1beta1.schema.json node catalog_metadata
 type CatalogMetadata struct {
 	Maintainers []Maintainer `json:"maintainers,omitempty"`
 	License     string       `json:"license,omitempty"`
@@ -307,7 +311,7 @@ type CatalogMetadata struct {
 }
 
 // IREdge is a directed logical relationship between IR nodes.
-// Schema: ir-v1alpha1.schema.json#/properties/spec/properties/edges/items
+// Schema: ir-v1beta1.schema.json#/properties/spec/properties/edges/items
 type IREdge struct {
 	Source string `json:"source"`
 	Target string `json:"target"`
@@ -396,7 +400,7 @@ type IREdge struct {
 }
 
 // IRFeatureEntry is one attachment on a node in the feature_values_mapping.
-// Schema: ir-v1alpha1.schema.json feature_values_mapping entry
+// Schema: ir-v1beta1.schema.json feature_values_mapping entry
 //
 // Every attachment family carries this shape, so no family gets a lossier
 // projection than another: a credential Feature reads .infra and per-leaf
@@ -702,7 +706,7 @@ type FieldProvenance struct {
 }
 
 // IRProvenance records compiler and source traceability for an IR build.
-// Schema: ir-v1alpha1.schema.json#/properties/spec/properties/provenance
+// Schema: ir-v1beta1.schema.json#/properties/spec/properties/provenance
 type IRProvenance struct {
 	SchemaVersion    string `json:"schema_version"`
 	CompilerVersion  string `json:"compiler_version"`

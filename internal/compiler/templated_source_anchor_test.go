@@ -69,20 +69,20 @@ func anchorWorkspace(t *testing.T, recipeSourceBlock string) (root, releasePath 
 	root = t.TempDir()
 
 	writeAnchorFile(t, filepath.Join(root, "aggregate.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: anchor-app\n  version: \"1.0.0\"\nspec:\n  components:\n    app:\n      type: core/compute/api-server\n")
+		"apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: anchor-app\n  version: \"1.0.0\"\nspec:\n  components:\n    app:\n      type: core/compute/api-server\n")
 
 	writeAnchorFile(t, filepath.Join(root, "manifest.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: anchor-manifest\n  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n        core/compute/api-server: anchored-source:1.0.0\n")
+		"apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: anchor-manifest\n  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n        core/compute/api-server: anchored-source:1.0.0\n")
 
 	releasePath = filepath.Join(root, "release.yaml")
 	writeAnchorFile(t, releasePath,
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: anchor-release\n  environment: production\n  version: \"1.0.0\"\nspec:\n  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n  boundaries:\n    cluster:\n      directory: ./dist/app\n      components:\n        app:\n          infra:\n            port: 8080\n")
+		"apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: anchor-release\n  environment: production\n  version: \"1.0.0\"\nspec:\n  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n  boundaries:\n    cluster:\n      directory: ./dist/app\n      components:\n        app:\n          infra:\n            port: 8080\n")
 
 	// The Recipe sits one directory below the catalog root, so a value resolved
 	// against the Recipe's own directory and one resolved against the catalog root
 	// name different places.
 	writeAnchorFile(t, filepath.Join(root, "catalog", "recipes", "anchored.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: anchored-source\n  version: \"1.0.0\"\nspec:\n  capability: helm-chart\n  implements: core/compute/api-server\n"+
+		"apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: anchored-source\n  version: \"1.0.0\"\nspec:\n  capability: helm-chart\n  implements: core/compute/api-server\n"+
 			recipeSourceBlock+
 			"  provides:\n    host: \"{{ .context.instance_id }}.svc.cluster.local\"\n    service_port: \"{{ .infra.port }}\"\n"+
 			"  valuesMapping: |\n    {\n      \"image\": \"app:latest\",\n      \"port\": {{ .infra.port }}\n    }\n")

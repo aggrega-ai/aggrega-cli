@@ -14,7 +14,7 @@ import (
 
 func minimalWorkload() *types.Workload {
 	w := &types.Workload{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Workload",
 	}
 	w.Containers.Set("main", types.ContainerSpec{Image: "app:1.0"})
@@ -164,7 +164,7 @@ func TestValidateWorkload_AllServiceTypesValid(t *testing.T) {
 		w := minimalWorkload()
 		// The JSON Schema requires services to declare at least one port.
 		// The public Workload schema at
-		// aggrega-schemas/json/workload-v1alpha1.schema.json
+		// aggrega-schemas/json/workload-v1beta1.schema.json
 		// marks ports as required; the new validator honors that. Supply
 		// a representative port per service type so the test verifies
 		// type-discriminant acceptance, not ports-presence.
@@ -293,7 +293,7 @@ func TestValidateWorkload_FindingsCarryFieldPath(t *testing.T) {
 
 func referenceWorkload() *types.Workload {
 	return &types.Workload{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Workload",
 		Form:       "reference",
 		Endpoint:   "https://api.anthropic.com",

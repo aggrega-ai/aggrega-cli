@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: migrator-recipe
@@ -9,7 +9,7 @@ spec:
   # No health: block, so the synthesized service declares no healthcheck. That
   # is the case a wave-derived dependency cannot gate on health.
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

@@ -1,7 +1,7 @@
 documents:
   - path: components/imported-ai-model-openaimodel.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-model/openaimodel
@@ -24,7 +24,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-tool-retrieval.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-tool/retrieval
@@ -42,7 +42,7 @@ documents:
             additionalProperties: false
   - path: components/imported-component-custompythoncomponent.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/component/custompythoncomponent
@@ -58,7 +58,7 @@ documents:
             additionalProperties: false
   - path: aggregate.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Aggregate
       metadata:
         name: imported/flow

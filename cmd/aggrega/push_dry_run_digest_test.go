@@ -31,7 +31,7 @@ import (
 
 // dryRunDigestComponent is a Component naming no file beside its document, so it
 // publishes as that document alone.
-const dryRunDigestComponent = `apiVersion: aggrega.ai/v1alpha1
+const dryRunDigestComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server

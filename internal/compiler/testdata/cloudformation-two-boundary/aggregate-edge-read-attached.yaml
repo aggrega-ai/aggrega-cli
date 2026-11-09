@@ -5,7 +5,7 @@
 # FeatureRecipe's inject mapping reads the database's host directly off the
 # connection and delivers it onto the application's inject pipe, which the
 # application's Recipe then renders.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: cloudformation-two-boundary

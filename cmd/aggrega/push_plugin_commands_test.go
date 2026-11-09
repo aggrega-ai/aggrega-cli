@@ -23,7 +23,7 @@ import (
 // cliCommentedEntity is a hand-authored CLI Plugin entity carrying a comment and
 // a blank line, so the command splice can be shown to be byte-faithful.
 const cliCommentedEntity = `# SPDX-License-Identifier: Apache-2.0
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: greet # the plugin's bare identity
@@ -166,7 +166,7 @@ func TestPushPluginCommandsOutOfSyncHalts(t *testing.T) {
 	entityPath := filepath.Join(root, "greet.yaml")
 	// The guest describes greet-a AND greet-b; a mirror recording only greet-a is
 	// out of sync. The host-function record is in sync so the halt is on commands.
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: greet
@@ -220,7 +220,7 @@ func TestPushPluginUnderDeclarationAdvisoryExitUnchanged(t *testing.T) {
 	}
 	entityPath := filepath.Join(root, "greet.yaml")
 	// No exports declared, so the binary's cli_run export is under-declared.
-	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1alpha1
+	writeEntityFixture(t, entityPath, `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: greet

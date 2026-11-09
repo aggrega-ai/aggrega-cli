@@ -11,7 +11,7 @@ import (
 
 // SchemaLibrary's struct declarations (SchemaLibrary, SchemaLibraryMetadata,
 // SchemaLibrarySpec) are generated into schemalibrary_gen.go from the
-// published schemalibrary-v1alpha1 schema; their godoc is the schema's
+// published schemalibrary-v1beta1 schema; their godoc is the schema's
 // descriptions. This hand-written companion holds the content-shape entry
 // types the generated spec references — SchemaEntry and TemplateEntry (each
 // with custom UnmarshalYAML/MarshalYAML capturing raw yaml.Node content) and

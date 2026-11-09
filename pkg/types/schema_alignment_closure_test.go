@@ -76,7 +76,7 @@ func closureCases() []closureCase {
 			// reproducible, a pin field the schema refuses would surface as a build
 			// that halts on its own lockfile.
 			kind:       envelope.KindLockfile,
-			schema:     schemas.LockfileV1alpha1,
+			schema:     schemas.LockfileV1beta1,
 			root:       reflect.TypeOf(lockfile.Lockfile{}),
 			exceptions: map[string]string{},
 			canaries: []string{
@@ -91,7 +91,7 @@ func closureCases() []closureCase {
 			// schema refuses would surface as a build that halts on a record the
 			// product itself wrote.
 			kind:       envelope.KindPluginsTrust,
-			schema:     schemas.PluginsTrustV1alpha1,
+			schema:     schemas.PluginsTrustV1beta1,
 			root:       reflect.TypeOf(pluginstrust.Trust{}),
 			exceptions: map[string]string{},
 			canaries: []string{
@@ -109,7 +109,7 @@ func closureCases() []closureCase {
 			// as well, and carries no envelope, so its walk root is the
 			// configuration root type rather than an entity struct.
 			kind:   envelope.KindAggregaConfig,
-			schema: schemas.AggregaConfigV1alpha1,
+			schema: schemas.AggregaConfigV1beta1,
 			root:   reflect.TypeOf(workspaceconfig.Config{}),
 			exceptions: map[string]string{
 				// One Go attachment type serves all eight socket lists, and the

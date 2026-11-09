@@ -21,7 +21,7 @@ import (
 func TestOverlaysOfOneNameInTwoSocketsAreMatchedByTheirSocket(t *testing.T) {
 	t.Parallel()
 	overlay := func(name, timeout string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: " + name +
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: " + name +
 			"\nspec:\n  runtime:\n    timeoutMs: " + timeout + "\n"
 	}
 	dir := t.TempDir()

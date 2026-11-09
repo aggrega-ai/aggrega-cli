@@ -48,7 +48,7 @@ import (
 // LOADS and is SELECTED by the orchestrator's keyless branch, and the bundle
 // cache round-trips byte-for-byte.
 
-const e2eComponentBody = "apiVersion: aggrega.ai/v1alpha1\n" +
+const e2eComponentBody = "apiVersion: aggrega.ai/v1beta1\n" +
 	"kind: Component\n" +
 	"metadata:\n  name: core/api-server\n  version: 1.0.0\n"
 

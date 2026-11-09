@@ -42,7 +42,7 @@ func misdeclaredCatalog(t *testing.T, kind, name, version string) (ws, dir strin
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := "apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: " + name + "\n  version: " + version + "\nspec: {}\n"
+	body := "apiVersion: aggrega.ai/v1beta1\nkind: " + kind + "\nmetadata:\n  name: " + name + "\n  version: " + version + "\nspec: {}\n"
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}

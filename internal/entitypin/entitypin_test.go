@@ -53,10 +53,10 @@ func writeFile(t *testing.T, path, body string) {
 // given no source builds a workload instead, so every one it authors is a Recipe
 // the catalog loads.
 func recipeYAML(name, source string, withImport bool) string {
-	body := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n" +
+	body := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n" +
 		"spec:\n  capability: helm\n  implements: " + name + "\n" + source
 	if source == "" {
-		body += "  workload: |\n    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n    containers:\n      main:\n        image: demo:1\n"
+		body += "  workload: |\n    apiVersion: aggrega.ai/v1beta1\n    kind: Workload\n    containers:\n      main:\n        image: demo:1\n"
 	}
 	if withImport {
 		body += "  artifacts:\n    extra.yaml:\n      $import: ./extra.yaml\n"
@@ -224,7 +224,7 @@ func TestHoldAcceptsAnEntityWithNothingToPin(t *testing.T) {
 	ws := t.TempDir()
 	rw := resolvedWorkspace(t, ws)
 	component := filepath.Join(ws, "catalog", "c", "component.yaml")
-	writeFile(t, component, "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: c\n  version: \"1.0.0\"\nspec: {}\n")
+	writeFile(t, component, "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: c\n  version: \"1.0.0\"\nspec: {}\n")
 	templated := filepath.Join(ws, "catalog", "templated", "recipe.yaml")
 	writeFile(t, templated, recipeYAML("templated",
 		"  source:\n    kind: helm-https-chart\n    url: https://example.invalid/t.tgz\n    version: \"{{ .infra.v }}\"\n", false))
@@ -329,7 +329,7 @@ func TestPinReportsAKindWithNothingToPinAndTouchesNothing(t *testing.T) {
 	ws := t.TempDir()
 	rw := resolvedWorkspace(t, ws)
 	component := filepath.Join(ws, "catalog", "c", "component.yaml")
-	writeFile(t, component, "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: c\n  version: \"1.0.0\"\nspec: {}\n")
+	writeFile(t, component, "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: c\n  version: \"1.0.0\"\nspec: {}\n")
 	existing := recipepin.LockPath(component)
 	writeFile(t, existing, "sentinel\n")
 

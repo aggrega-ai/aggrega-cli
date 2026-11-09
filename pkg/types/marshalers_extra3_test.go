@@ -191,7 +191,7 @@ func TestDecodeTypedContract_Direct(t *testing.T) {
 func TestSchemaLibrary_TemplateEntry_RoundTrip(t *testing.T) {
 	t.Parallel()
 	src := `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: TestLib

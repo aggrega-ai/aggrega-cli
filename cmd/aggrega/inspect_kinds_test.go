@@ -71,7 +71,7 @@ func runKindGoldens(t *testing.T, kind, body string) {
 	compareGoldenKind(t, kind, "yaml.golden", buf.Bytes())
 }
 
-const featureFixture = `apiVersion: aggrega.ai/v1alpha1
+const featureFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/metrics
@@ -101,7 +101,7 @@ func TestInspectFeature_Goldens(t *testing.T) {
 	runKindGoldens(t, "feature", featureFixture)
 }
 
-const credentialFeatureFixture = `apiVersion: aggrega.ai/v1alpha1
+const credentialFeatureFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/db-credential
@@ -125,7 +125,7 @@ func TestInspectFeature_CredentialMarker(t *testing.T) {
 	}
 }
 
-const recipeSynthesizedFixture = `apiVersion: aggrega.ai/v1alpha1
+const recipeSynthesizedFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: core/api-server-recipe
@@ -134,13 +134,13 @@ spec:
   capability: helm
   implements: core/api-server:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
   provides:
     endpoint: api-server
 `
 
-const recipeSourcedFixture = `apiVersion: aggrega.ai/v1alpha1
+const recipeSourcedFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: core/redis-recipe
@@ -159,7 +159,7 @@ spec:
 // declared modes being reported as a set: a renderer reporting only the mode a
 // single-mode Recipe would resolve to prints one of these three and hides the
 // rest.
-const recipeThreeModeFixture = `apiVersion: aggrega.ai/v1alpha1
+const recipeThreeModeFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: core/three-mode-recipe
@@ -171,7 +171,7 @@ spec:
   valuesMapping: |
     image: api-server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
   artifacts:
     servicemonitor.yaml: |
@@ -285,7 +285,7 @@ func TestInspectRecipe_ThreeModes_Golden(t *testing.T) {
 	compareGoldenKind(t, "recipe_three_mode", "default.text.golden", buf.Bytes())
 }
 
-const featureRecipeFixture = `apiVersion: aggrega.ai/v1alpha1
+const featureRecipeFixture = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: core/metrics-recipe
@@ -321,7 +321,7 @@ func TestInspectFeatureRecipe_ListArtifactCount(t *testing.T) {
 	}
 }
 
-const mappingLibraryFixture = `apiVersion: aggrega.ai/v1alpha1
+const mappingLibraryFixture = `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: CommonHelmMappings
@@ -360,7 +360,7 @@ func TestInspectMappingLibrary_BareNameUseLine(t *testing.T) {
 	}
 }
 
-const schemaLibraryFixture = `apiVersion: aggrega.ai/v1alpha1
+const schemaLibraryFixture = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: CommonSchemas
@@ -403,7 +403,7 @@ func TestInspectSchemaLibrary_RefUseLineAndTemplates(t *testing.T) {
 	}
 }
 
-const componentDetailFixture = `apiVersion: aggrega.ai/v1alpha1
+const componentDetailFixture = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server
@@ -482,7 +482,7 @@ func TestInspectKind_Determinism(t *testing.T) {
 func TestInspectRecipe_ShowImplements_ResolvesComponent(t *testing.T) {
 	t.Parallel()
 	catDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(catDir, "api-server.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := os.WriteFile(filepath.Join(catDir, "api-server.yaml"), []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server
@@ -545,7 +545,7 @@ func TestInspectRecipe_ShowImplements_MalformedPin(t *testing.T) {
 		t.Fatalf("fixture no longer authors %q; re-point this test at the implements it carries", authored)
 	}
 	catDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(catDir, "api-server.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := os.WriteFile(filepath.Join(catDir, "api-server.yaml"), []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server
@@ -603,7 +603,7 @@ spec:
 func TestInspectFeatureRecipe_ShowImplements_CredentialMarker(t *testing.T) {
 	t.Parallel()
 	catDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(catDir, "db-credential.yaml"), []byte(`apiVersion: aggrega.ai/v1alpha1
+	if err := os.WriteFile(filepath.Join(catDir, "db-credential.yaml"), []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/db-credential
@@ -616,7 +616,7 @@ spec:
 `), 0o644); err != nil {
 		t.Fatalf("write feature: %v", err)
 	}
-	frBody := `apiVersion: aggrega.ai/v1alpha1
+	frBody := `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: core/db-credential-recipe

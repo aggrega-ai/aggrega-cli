@@ -77,7 +77,7 @@ func TestExpand_HappyPath(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"BaseComponents": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"BaseComponents": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseComponents
@@ -136,7 +136,7 @@ func TestExpand_ConsumerOverwritesOnKeyCollision(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"Lib": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"Lib": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Lib
@@ -177,7 +177,7 @@ func TestExpand_RequiredUnion(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"Lib": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"Lib": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Lib
@@ -242,7 +242,7 @@ func TestExpand_UnresolvedEntry(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"Lib": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"Lib": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Lib
@@ -275,7 +275,7 @@ func TestExpand_CycleDetected(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"A": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"A": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: A
@@ -285,7 +285,7 @@ spec:
     Cycle:
       $ref: "B#/schemas/Cycle"
 `),
-		"B": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"B": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: B
@@ -337,7 +337,7 @@ func TestExpand_MixedSpellingCycleKeyedByIdentity(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"A": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"A": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: A
@@ -347,7 +347,7 @@ spec:
     Cycle:
       $ref: "B#/schemas/Cycle"
 `),
-		"B": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"B": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: B
@@ -381,7 +381,7 @@ properties: {}
 func ociLibFixture(t *testing.T) map[string]types.SchemaLibrary {
 	t.Helper()
 	return map[string]types.SchemaLibrary{
-		"DbSizing": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"DbSizing": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -489,7 +489,7 @@ func TestExpand_SiblingAllowlistRejects(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"Lib": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"Lib": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Lib
@@ -520,7 +520,7 @@ func TestExpand_AdditionalPropertiesSiblingPointsToEscape(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"Lib": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"Lib": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Lib
@@ -551,7 +551,7 @@ func TestExpand_ClosureSurvivesOpenLibraryEntry(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"OpenLib": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"OpenLib": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: OpenLib
@@ -587,7 +587,7 @@ func TestExpand_NestedAnnotationRecursion(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"Nested": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"Nested": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Nested
@@ -651,7 +651,7 @@ func TestExpand_MultiEntryLibrarySelectiveMerge(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"MultiLib": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"MultiLib": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: MultiLib
@@ -692,7 +692,7 @@ func TestExpand_NonObjectEntryCompilesToTheEntry(t *testing.T) {
 	t.Parallel()
 
 	libs := map[string]types.SchemaLibrary{
-		"Names": loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+		"Names": loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Names

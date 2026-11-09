@@ -44,7 +44,7 @@ func writeAttachFixture(t *testing.T) string {
 	files := map[string]string{
 		// The node. Its labels are authored in an order no assertion
 		// relies on, since a selector surface reads a label set by key.
-		"node.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"node.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: api
@@ -54,14 +54,14 @@ metadata:
     env: prod
 `,
 		// MATCHES — declares neither surface, so it constrains nothing.
-		"10-metrics.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"10-metrics.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: metrics
 spec: {}
 `,
 		// MATCHES — a single appliesTo requirement the node satisfies.
-		"20-edge-tls.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"20-edge-tls.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: edge-tls
@@ -70,7 +70,7 @@ spec:
 `,
 		// MATCHES — declares only appliesToAnyOf, and the second item's
 		// flat-map arm holds. Exercises the map arm and the disjunction.
-		"30-anyof-only.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"30-anyof-only.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: anyof-only
@@ -80,7 +80,7 @@ spec:
     - tier: edge
 `,
 		// DOES NOT MATCH — a clean miss on a single requirement.
-		"40-db-backup.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"40-db-backup.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: db-backup
@@ -89,7 +89,7 @@ spec:
 `,
 		// DOES NOT MATCH — near-miss on term composition within one
 		// selector string: tier holds, env does not.
-		"50-two-term-miss.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"50-two-term-miss.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: two-term-miss
@@ -99,7 +99,7 @@ spec:
 		// DOES NOT MATCH — near-miss across the two surfaces: appliesTo
 		// holds, appliesToAnyOf does not. Reported as a match by anything
 		// that evaluates only appliesTo.
-		"60-both-surfaces.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"60-both-surfaces.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: both-surfaces
@@ -112,7 +112,7 @@ spec:
 		// DOES NOT MATCH — declares only appliesToAnyOf and satisfies no
 		// item. Reported as a match by anything that evaluates only
 		// appliesTo, because an absent appliesTo constrains nothing.
-		"70-anyof-excludes.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"70-anyof-excludes.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: anyof-excludes
@@ -124,7 +124,7 @@ spec:
 		// DOES NOT MATCH — the selector cannot be parsed at all, so there
 		// is no declaration to evaluate. An unparseable selector must not
 		// widen what is offered.
-		"80-malformed.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"80-malformed.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: malformed
@@ -135,7 +135,7 @@ spec:
 		// string form to evaluate. Reading a non-scalar as absent would let
 		// a mis-authored surface constrain nothing and so be offered
 		// everywhere, which is the wrong direction for malformed input.
-		"85-appliesto-not-scalar.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"85-appliesto-not-scalar.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: appliesto-not-scalar
@@ -145,7 +145,7 @@ spec:
 `,
 		// DOES NOT MATCH — appliesToAnyOf is authored as a scalar rather
 		// than a list, which the selector term cannot read.
-		"86-anyof-not-a-list.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"86-anyof-not-a-list.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: anyof-not-a-list
@@ -154,7 +154,7 @@ spec:
 `,
 		// Not a candidate: a Component is not something that attaches to a
 		// node, however its own labels read.
-		"90-other-component.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"90-other-component.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: sidecar
@@ -522,7 +522,7 @@ func TestAttachCandidatesDistinguishesAnUnknownNodeFromANodeWithNoCandidates(t *
 	// sidecar carries only tier=edge, which satisfies edge-tls, metrics and
 	// anyof-only — so the no-candidate case needs a node of its own.
 	bare := filepath.Join(root, "95-bare.yaml")
-	content := `apiVersion: aggrega.ai/v1alpha1
+	content := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: bare
@@ -585,7 +585,7 @@ func TestAttachCandidatesExcludesDocumentsOutsideTheWorkspaceRoot(t *testing.T) 
 	outside := filepath.Join(t.TempDir(), "elsewhere.yaml")
 	srv := newTestServer(t, root, &bytes.Buffer{}, &bytes.Buffer{})
 
-	content := `apiVersion: aggrega.ai/v1alpha1
+	content := `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: elsewhere

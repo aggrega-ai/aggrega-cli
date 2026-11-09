@@ -65,7 +65,7 @@ func driveIrGraphOn(t *testing.T, srv *Server, out *bytes.Buffer, id int, releas
 // findings to be attributed to.
 func unrenderableRecipe(t *testing.T, ws string) {
 	t.Helper()
-	writeFixtureFile(t, filepath.Join(ws, "catalog", "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "catalog", "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -76,7 +76,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:

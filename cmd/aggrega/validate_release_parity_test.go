@@ -86,7 +86,7 @@ func cliCoreCarriesClass(vr *compilerops.ValidateResult, class cliFindingClass) 
 	return false
 }
 
-const cliBackendAggregate = `apiVersion: aggrega.ai/v1alpha1
+const cliBackendAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: parity-app
@@ -97,7 +97,7 @@ spec:
       type: core/compute/api-server
 `
 
-const cliCleanManifest = `apiVersion: aggrega.ai/v1alpha1
+const cliCleanManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -109,7 +109,7 @@ spec:
         core/compute/api-server: helm-api-server-synthesized-with-artifacts:1.0.0
 `
 
-const cliEmptyManifest = `apiVersion: aggrega.ai/v1alpha1
+const cliEmptyManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -120,7 +120,7 @@ spec:
       type: {}
 `
 
-const cliDefaultRelease = `apiVersion: aggrega.ai/v1alpha1
+const cliDefaultRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: parity-release
@@ -138,7 +138,7 @@ spec:
             port: 8080
 `
 
-const cliEmptyBoundaryRelease = `apiVersion: aggrega.ai/v1alpha1
+const cliEmptyBoundaryRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: parity-release
@@ -153,7 +153,7 @@ spec:
       components: {}
 `
 
-const cliExtendsOverlayComponent = `apiVersion: aggrega.ai/v1alpha1
+const cliExtendsOverlayComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -166,7 +166,7 @@ spec:
   schema: inherited
 `
 
-const cliPillarOverlayComponent = `apiVersion: aggrega.ai/v1alpha1
+const cliPillarOverlayComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -184,7 +184,7 @@ spec:
       service_port: { type: string, required: true }
 `
 
-const cliResolveFailingAggregate = `apiVersion: aggrega.ai/v1alpha1
+const cliResolveFailingAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: parity-app
@@ -197,7 +197,7 @@ spec:
   components: {}
 `
 
-const cliInputKindManifest = `apiVersion: aggrega.ai/v1alpha1
+const cliInputKindManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -209,7 +209,7 @@ spec:
         core/compute/api-server: api-sourceonly:1.0.0
 `
 
-const cliInputKindRecipe = `apiVersion: aggrega.ai/v1alpha1
+const cliInputKindRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-sourceonly
@@ -221,7 +221,7 @@ spec:
     host: "{{ .context.instance_id }}.svc"
     service_port: "8080"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -229,7 +229,7 @@ spec:
         image: x:latest
 `
 
-const cliInputKindPlugin = `apiVersion: aggrega.ai/v1alpha1
+const cliInputKindPlugin = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: sourced-only-renderer
@@ -725,7 +725,7 @@ func TestReleaseFindingFactsNameEveryDroppedFact(t *testing.T) {
 // assertion never holds, so every instance of it fails the assertion phase. It is
 // otherwise the shared catalog's own contract for this type, so the fault this
 // fixture carries is the assertion and nothing else.
-const cliFailingAssertionOverlayComponent = `apiVersion: aggrega.ai/v1alpha1
+const cliFailingAssertionOverlayComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server

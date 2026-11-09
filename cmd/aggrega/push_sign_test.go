@@ -17,7 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing/signingtest"
 )
 
-const signComponentBody = `apiVersion: aggrega.ai/v1alpha1
+const signComponentBody = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server

@@ -23,7 +23,7 @@ func TestLazyRecipeIndex_TolerantSkipsBroken(t *testing.T) {
 	writeFixture(t, dir, "good-b.yaml", recipeYAML("core/recipe-b", "core/b"))
 	// A recipe whose body fails load-time shape validation (no implements, and no
 	// input kind, which ValidateRecipe rejects).
-	writeFixture(t, dir, "broken.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "broken.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: core/recipe-broken
@@ -116,7 +116,7 @@ func TestLazyRecipe_EnumeratesAllImplementers(t *testing.T) {
 func TestValidateClosurePillars_ScopesToSuppliedLibraries(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFixture(t, dir, "library.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "library.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -126,7 +126,7 @@ spec:
     Storage:
       size: { type: string, default: "10Gi" }
 `)
-	writeFixture(t, dir, "consumer.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "consumer.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb
@@ -163,7 +163,7 @@ spec:
 func TestBrokenLibraryRecordedInSkips(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFixture(t, dir, "bad-library.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "bad-library.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Bad
@@ -181,7 +181,7 @@ spec:
 	}
 
 	clean := t.TempDir()
-	writeFixture(t, clean, "good-library.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, clean, "good-library.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Good
@@ -222,7 +222,7 @@ func TestLazyShell_CachedAndResetInvalidated(t *testing.T) {
 func TestLazySubAggregateLoader(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFixture(t, dir, "sub.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "sub.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo/sub
@@ -252,7 +252,7 @@ spec:
 func TestEagerLazyClosureLookupDigestParity(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFixture(t, dir, "comp.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "comp.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -265,7 +265,7 @@ spec:
       port: { type: integer, default: 8080 }
 `)
 	writeFixture(t, dir, "recipe.yaml", recipeYAML("server-recipe", "core/server"))
-	writeFixture(t, dir, "agg.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "agg.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo/agg

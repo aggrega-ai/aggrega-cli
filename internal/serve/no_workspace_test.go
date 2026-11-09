@@ -65,7 +65,7 @@ func TestTheDependencyResolutionsRefusalCarriesTheLocalCatalogNote(t *testing.T)
 	root := t.TempDir()
 	for name, body := range map[string]string{
 		workspaceconfig.ConfigFilename: "workspace: {}\noffline: true\n",
-		"aggregate.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"aggregate.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
@@ -75,7 +75,7 @@ spec:
     web:
       type: example/compute/missing:1.0.0
 `,
-		"manifest.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"manifest.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -86,7 +86,7 @@ spec:
       type:
         example/compute/missing:1.0.0: compose/missing:1.0.0
 `,
-		"release.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"release.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release

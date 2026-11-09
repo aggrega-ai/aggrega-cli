@@ -17,7 +17,7 @@ import (
 func TestWorkloadLibrary_RoundTrip_MinimalEntry(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: BaseWorkloads
@@ -31,8 +31,8 @@ image: {{ .Values.image }}'
 	if err := yaml.Unmarshal([]byte(in), &lib); err != nil {
 		t.Fatalf("YAML unmarshal: %v", err)
 	}
-	if lib.APIVersion != "aggrega.ai/v1alpha1" {
-		t.Errorf("APIVersion = %q, want aggrega.ai/v1alpha1", lib.APIVersion)
+	if lib.APIVersion != "aggrega.ai/v1beta1" {
+		t.Errorf("APIVersion = %q, want aggrega.ai/v1beta1", lib.APIVersion)
 	}
 	if lib.Kind != "WorkloadLibrary" {
 		t.Errorf("Kind = %q, want WorkloadLibrary", lib.Kind)
@@ -57,7 +57,7 @@ image: {{ .Values.image }}'
 func TestWorkloadLibrary_RoundTrip_MultiEntryAuthorOrder(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: Ordered
@@ -90,7 +90,7 @@ spec:
 func TestWorkloadLibrary_RemarshalsCleanly(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: RoundTrip
@@ -126,7 +126,7 @@ spec:
 func TestWorkloadLibrary_MultilineTemplateBody_RoundTrip(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: Multiline
@@ -134,7 +134,7 @@ metadata:
 spec:
   workloads:
     ServiceBlock: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Workload
       spec:
         containers:
@@ -199,7 +199,7 @@ func TestWorkloadEntry_BoundaryCases(t *testing.T) {
 func TestWorkloadEntry_NonScalarRejected(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: WorkloadLibrary
 metadata:
   name: BadEntry

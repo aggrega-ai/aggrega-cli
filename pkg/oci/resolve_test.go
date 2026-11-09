@@ -35,7 +35,7 @@ func TestResolveAbsentTag(t *testing.T) {
 // the same manifest digest the push returned.
 func TestResolvePresentTag(t *testing.T) {
 	ctx := context.Background()
-	content := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/api-server\n  version: 1.0.0\n")
+	content := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/api-server\n  version: 1.0.0\n")
 
 	store := memory.New()
 	pushed, err := oci.Push(ctx, store, "1.0.0", oci.MediaTypeComponent, content, nil)

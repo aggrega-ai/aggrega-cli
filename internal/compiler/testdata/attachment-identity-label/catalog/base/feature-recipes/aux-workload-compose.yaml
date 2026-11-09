@@ -1,11 +1,11 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata: { name: aux-workload-compose, version: "1.0.0" }
 spec:
   capability: compose
   implements: feature.id/aux-workload
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

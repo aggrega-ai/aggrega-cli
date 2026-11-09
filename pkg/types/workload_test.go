@@ -13,7 +13,7 @@ import (
 
 func TestWorkload_MinimalRoundTrip(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -23,7 +23,7 @@ containers:
 	if err := yaml.Unmarshal(src, &w); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if w.APIVersion != "aggrega.ai/v1alpha1" {
+	if w.APIVersion != "aggrega.ai/v1beta1" {
 		t.Errorf("apiVersion: %q", w.APIVersion)
 	}
 	if w.Kind != "Workload" {
@@ -43,7 +43,7 @@ func TestWorkload_ContainerAuthorOrderPreserved(t *testing.T) {
 	// Deliberately non-alphabetical to verify OrderedMap propagation:
 	// envoy precedes main precedes alpine; alphabetical would yield
 	// alpine, envoy, main.
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   envoy:
@@ -66,7 +66,7 @@ containers:
 
 func TestWorkload_VolumeVariantsParseDistinctly(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -117,7 +117,7 @@ volumes:
 
 func TestWorkload_ProbeShapesParseDistinctly(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   app:
@@ -152,7 +152,7 @@ containers:
 
 func TestWorkload_ServiceTypeParses(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   app:
@@ -188,7 +188,7 @@ services:
 
 func TestWorkload_FullSurfaceParses(t *testing.T) {
 	t.Parallel()
-	src := []byte(`apiVersion: aggrega.ai/v1alpha1
+	src := []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Workload
 replicas: 3
 initContainers:

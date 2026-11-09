@@ -60,7 +60,7 @@ func TestNegativeCorpusServe_MalformedAnchoringReleaseDiagnostic(t *testing.T) {
 	// The single fault lives on the Release: values: on a boundary
 	// component (Invariant-5). The Aggregate is valid — single-fault.
 	releasePath := filepath.Join(ws, "release.yaml")
-	write("release.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("release.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -77,7 +77,7 @@ spec:
           values:
             port: 9999
 `)
-	agg := `apiVersion: aggrega.ai/v1alpha1
+	agg := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -220,7 +220,7 @@ func TestNegativeCorpusServe_EnvelopeDiagnostic(t *testing.T) {
 		}
 	}
 	write(".aggrega-config.yaml", "workspace: {}\n")
-	write("manifest.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("manifest.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: corpus-manifest
@@ -231,7 +231,7 @@ spec:
       type:
         core/server: server-recipe:1.0.0
 `)
-	write("release.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("release.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel
@@ -250,7 +250,7 @@ spec:
 `)
 	// The single fault: component-level infra on an Aggregate (Operator
 	// pillar authored on the Developer surface) — rejected by the envelope.
-	agg := `apiVersion: aggrega.ai/v1alpha1
+	agg := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -476,7 +476,7 @@ func serveValidateScanBuffer(t *testing.T, files map[string]string, validateFile
 	return all.String()
 }
 
-const minimalManifest = `apiVersion: aggrega.ai/v1alpha1
+const minimalManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: m
@@ -496,7 +496,7 @@ spec:
 // which is the case a workspace holding two Releases makes concrete.
 func TestNegativeCorpusServe_NonAnchoringReleaseGetsDiagnostic(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess.
-	badRelease := `apiVersion: aggrega.ai/v1alpha1
+	badRelease := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel-b
@@ -513,7 +513,7 @@ spec:
           values:
             port: 9999
 `
-	otherRelease := `apiVersion: aggrega.ai/v1alpha1
+	otherRelease := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel-a
@@ -551,7 +551,7 @@ spec:
 // a per-file validate subject); green with the per-file leg.
 func TestNegativeCorpusServe_CatalogComponentGetsDiagnostic(t *testing.T) {
 	// Not parallel: spawns a daemon subprocess.
-	comp := `apiVersion: aggrega.ai/v1alpha1
+	comp := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -608,7 +608,7 @@ spec:
 // short-circuit Tier-4.
 func TestNegativeCorpusServe_CleanAggregateStillTier4(t *testing.T) {
 	t.Parallel()
-	agg := `apiVersion: aggrega.ai/v1alpha1
+	agg := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: tier4-param-mismatch
@@ -620,7 +620,7 @@ spec:
       required: true
   components: {}
 `
-	release := `apiVersion: aggrega.ai/v1alpha1
+	release := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: tier4-param-mismatch-release
@@ -637,7 +637,7 @@ spec:
       components:
         port: {}
 `
-	manifest := `apiVersion: aggrega.ai/v1alpha1
+	manifest := `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: tier4-param-mismatch-manifest
@@ -676,7 +676,7 @@ spec:
 // way to go red.
 func activeReleaseFixture() map[string]string {
 	return map[string]string{
-		"aggregate.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"aggregate.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: lf-app
@@ -684,7 +684,7 @@ metadata:
 spec:
   components: {}
 `,
-		"release.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"release.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: lf-rel
@@ -698,7 +698,7 @@ spec:
       directory: ./dist/main
       components: {}
 `,
-		"manifest.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"manifest.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: lf-manifest

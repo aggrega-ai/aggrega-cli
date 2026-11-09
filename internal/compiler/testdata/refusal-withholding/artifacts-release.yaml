@@ -1,5 +1,5 @@
 # A node's artifact template refuses.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: refusal-artifacts-release

@@ -55,7 +55,7 @@ func containmentWorkspace(t *testing.T, root, artifactImport string) string {
 	t.Helper()
 	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"),
 		"workspace: {}\nauto_pull: false\ndefault_registry: \""+newRegistryReach(t).host()+"\"\n")
-	writeFixture(t, filepath.Join(root, "catalog", "component", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "catalog", "component", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -71,7 +71,7 @@ spec:
 	recipeDir := filepath.Join(root, containmentRecipeDir)
 	recipePath := filepath.Join(recipeDir, "recipe.yaml")
 	writeContainmentRecipe(t, recipePath, artifactImport)
-	writeFixture(t, filepath.Join(recipeDir, "workload.tmpl"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(recipeDir, "workload.tmpl"), `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 replicas: 1
 containers:
@@ -86,7 +86,7 @@ containers:
 	if err := os.MkdirAll(filepath.Join(recipeDir, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -98,7 +98,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -109,7 +109,7 @@ spec:
       type:
         server: helm/server:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: contained-rel
@@ -133,7 +133,7 @@ spec:
 // import, so a case can rewrite that one line and nothing else.
 func writeContainmentRecipe(t *testing.T, recipePath, artifactImport string) {
 	t.Helper()
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -310,7 +310,7 @@ func schemaImportWorkspace(t *testing.T, root, componentImport, featureImport st
 		}
 	}
 	componentPath := filepath.Join(componentDir, "component.yaml")
-	writeFixture(t, componentPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, componentPath, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/web
@@ -323,7 +323,7 @@ spec:
       $import: `+componentImport+`
 `)
 	featurePath := filepath.Join(featureDir, "feature.yaml")
-	writeFixture(t, featurePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, featurePath, `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: demo/mon
@@ -458,7 +458,7 @@ func TestSingleEntityValidateReadsARecipesFilesFromItsOwnDirectory(t *testing.T)
 // templatedSourceRecipe is a Recipe whose source is a template over a local it
 // declares, so the path it names exists only once the render has evaluated it.
 func templatedSourceRecipe(chartDir string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server

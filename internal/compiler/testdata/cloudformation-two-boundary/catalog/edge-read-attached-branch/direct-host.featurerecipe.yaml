@@ -3,7 +3,7 @@
 
 # Branches on the database protocol it reads directly off the connection,
 # which the build refuses.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: direct-host

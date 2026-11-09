@@ -38,11 +38,11 @@ func layHeldConfiguration(t *testing.T, linkRoot, linkCI, ignored bool) heldConf
 			workspaceconfig.AppendCIConfigFilename+"\n")
 	}
 	writeLinkedDirsFile(t, filepath.Join(l.root, "release.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: only\n  version: \"1.0.0\"\n")
+		"apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: only\n  version: \"1.0.0\"\n")
 	writeLinkedDirsFile(t, filepath.Join(l.root, "aggregate.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: only\nspec:\n  components: {}\n")
+		"apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: only\nspec:\n  components: {}\n")
 	writeLinkedDirsFile(t, filepath.Join(l.outside, "cat", "feature.yaml"),
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: local/listed-outside\n  version: 1.0.0\n"+
+		"apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: local/listed-outside\n  version: 1.0.0\n"+
 			"spec:\n  appliesTo: \"component.aggrega.ai/category=datastore\"\n")
 	config := "workspace:\n  catalog_dirs:\n    - " + filepath.Join(l.outside, "cat") + "\noffline: true\n"
 	configPath := filepath.Join(l.root, workspaceconfig.ConfigFilename)

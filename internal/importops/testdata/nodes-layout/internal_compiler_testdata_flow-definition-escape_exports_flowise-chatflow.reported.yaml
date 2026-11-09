@@ -1,7 +1,7 @@
 documents:
   - path: components/imported-ai-model-chatopenai.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-model/chatopenai
@@ -20,7 +20,7 @@ documents:
             additionalProperties: false
   - path: components/imported-component-prompttemplate.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/component/prompttemplate
@@ -37,7 +37,7 @@ documents:
             additionalProperties: false
   - path: components/imported-ai-model-llmchain.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Component
       metadata:
         name: imported/ai-model/llmchain
@@ -55,7 +55,7 @@ documents:
             additionalProperties: false
   - path: aggregate.yaml
     content: |
-      apiVersion: aggrega.ai/v1alpha1
+      apiVersion: aggrega.ai/v1beta1
       kind: Aggregate
       metadata:
         name: imported/flow

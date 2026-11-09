@@ -38,7 +38,7 @@ const deliveryKeyReadCount = 200
 // mistaken for each other. A fixture written ALPHA, BRAVO, CHARLIE would read
 // identically either way and would prove nothing.
 const deliveryKeyOrderDocument = `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: delivery-key-order

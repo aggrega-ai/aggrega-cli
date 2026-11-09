@@ -33,7 +33,7 @@ import (
 // under its own name).
 func releaseAggregateDocument(name string, components, subs []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: %s\n  version: \"1.0.0\"\nspec:\n", name)
+	fmt.Fprintf(&b, "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: %s\n  version: \"1.0.0\"\nspec:\n", name)
 	if len(components) > 0 {
 		b.WriteString("  components:\n")
 		for _, c := range components {
@@ -145,7 +145,7 @@ func TestIntegration_EveryAggregateAPullFetchesIsHeldToItsSignature(t *testing.T
 			if row.local != "" {
 				writeFixture(t, filepath.Join(ws, "aggregate.yaml"), row.local)
 			}
-			writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+			writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -157,7 +157,7 @@ spec:
         test/svc: helm/svc:1.0.0
 `)
 			var release strings.Builder
-			fmt.Fprintf(&release, "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: rel\n  environment: testing\n"+
+			fmt.Fprintf(&release, "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: rel\n  environment: testing\n"+
 				"  version: \"1.0.0\"\nspec:\n  aggregate: %s\n  manifest: ./manifest.yaml\n  boundaries:\n    main:\n      directory: ./dist/main\n",
 				row.aggregate)
 			if len(row.components) > 0 {

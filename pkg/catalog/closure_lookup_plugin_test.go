@@ -18,7 +18,7 @@ import (
 // localPluginEntity is a minimal schema-conforming Plugin entity authored
 // in a local catalog directory — the Tier-1 case a workspace plugin socket (or a
 // recipe pipeline step) references by entity URI.
-const localPluginEntity = `apiVersion: aggrega.ai/v1alpha1
+const localPluginEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: baseline

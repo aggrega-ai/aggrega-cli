@@ -146,7 +146,7 @@ func TestIntegration_RegistryPipelinePlugin_OnlineVerifyAsksNothingOfTheCachedPl
 // bareReferenceComponent is a registry-published Component the fixture's Aggregate
 // names by bare identity; description tells two publishes of it apart.
 func bareReferenceComponent(version, description string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: remote/db
@@ -174,7 +174,7 @@ func writeBareReferenceFixture(t *testing.T, host string) *bareReferenceFixture 
 	t.Helper()
 	root := t.TempDir()
 	cat := filepath.Join(root, "catalog")
-	writeFixtureEntity(t, cat, "recipe/helm/remote-db/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureEntity(t, cat, "recipe/helm/remote-db/1.0.0/recipe.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: remote-db
@@ -183,7 +183,7 @@ spec:
   capability: helm
   implements: remote/db
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -192,7 +192,7 @@ spec:
         ports:
           pg: 5432
 `)
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
@@ -202,7 +202,7 @@ spec:
     db:
       type: remote/db
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -213,7 +213,7 @@ spec:
       type:
         remote/db: helm/remote-db:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-dev

@@ -96,7 +96,7 @@ func sharedRecipeTwoReleasesFixture(t *testing.T, root, repoRootURL string) (str
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
 	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\n")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -109,7 +109,7 @@ spec:
         port: 8080
 `)
 	release := func(name, dist, chartVersion string) string {
-		writeFixture(t, filepath.Join(root, name+".yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(root, name+".yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: %s
@@ -131,7 +131,7 @@ spec:
 	relA := release("release-a", "a", "0.6.0")
 	relB := release("release-b", "b", "0.7.0")
 
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -142,7 +142,7 @@ spec:
       type:
         server: `+sharedRecipeURI+`
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: server
@@ -155,7 +155,7 @@ spec:
       port: { type: integer, default: 8080 }
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "providers"))
-	writeFixture(t, filepath.Join(catalogRoot, "recipes", "chartuser.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "recipes", "chartuser.yaml"), fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: chartuser
@@ -449,7 +449,7 @@ func TestOneReleaseTwoConsumersOneRecipe(t *testing.T) {
 	catalogDir := filepath.Join(root, "catalog")
 	sharedRecipeTwoReleasesFixture(t, root, srv.URL)
 	// Two components of the same type, so one Recipe binds to both.
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -465,7 +465,7 @@ spec:
       values:
         port: 8081
 `)
-	writeFixture(t, filepath.Join(root, "release-both.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release-both.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: release-both

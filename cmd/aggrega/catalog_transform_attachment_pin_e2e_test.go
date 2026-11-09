@@ -69,7 +69,7 @@ func catalogGovernanceAttachmentWorkspace(t *testing.T, att catalogGovernanceAtt
 
 	writeWorkspaceConfig(t, root, "workspace:\n  catalog_dirs:\n    - ./catalog\n"+configHead+
 		"auto_pull: false\nplugins:\n  governance:\n    - uri: "+att.artifact+":1.0.0\n      role: "+att.role+"\n")
-	writeFixture(t, filepath.Join(catalogDir, "component", "test", "svc", "1.0.0", "component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component", "test", "svc", "1.0.0", "component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/svc
@@ -80,7 +80,7 @@ spec:
   schema:
     values: {}
 `)
-	writeFixture(t, filepath.Join(catalogDir, "recipe", "compose", "svc", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipe", "compose", "svc", "1.0.0", "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: svc
@@ -89,7 +89,7 @@ spec:
   capability: compose
   implements: test/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -98,7 +98,7 @@ spec:
           NODE_LABELS: "{{ range $k, $v := .context.labels }}{{ $v }};{{ end }}"
 `)
 	pluginDir := filepath.Join(catalogDir, "plugin", pluginType, name, "1.0.0")
-	writeFixture(t, filepath.Join(pluginDir, "plugin.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(pluginDir, "plugin.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: `+name+`
@@ -113,7 +113,7 @@ spec:
 	if guest != nil {
 		writeFixtureBytes(t, modulePath, guest)
 	}
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -123,7 +123,7 @@ spec:
     app:
       type: test/svc
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -135,7 +135,7 @@ spec:
         test/svc:1.0.0: compose/svc:1.0.0
 `)
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

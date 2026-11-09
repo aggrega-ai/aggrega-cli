@@ -23,10 +23,10 @@ func TestSyncRefusesAPluginEntityOfTheWrongShapeInTheAuthorsWords(t *testing.T) 
 		want string
 	}{
 		{"memory pages written as text",
-			"apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: probe\n  version: \"1.0.0\"\n  pluginType: provider\nspec:\n  runtime:\n    maxMemoryPages: lots\n",
+			"apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: probe\n  version: \"1.0.0\"\n  pluginType: provider\nspec:\n  runtime:\n    maxMemoryPages: lots\n",
 			"line 9 (spec.runtime.maxMemoryPages): text `lots` is written where a number is expected"},
 		{"metadata written as a list",
-			"apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  - probe\n",
+			"apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  - probe\n",
 			"line 4 (metadata): a list is written where"},
 	}
 	for _, tc := range cases {

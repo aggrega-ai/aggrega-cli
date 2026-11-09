@@ -38,7 +38,7 @@ func TestTheLockfileSchemaEnumeratesExactlyTheDeclaredEntityKinds(t *testing.T) 
 			} `json:"entities"`
 		} `json:"properties"`
 	}
-	if err := json.Unmarshal([]byte(schemas.LockfileV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.LockfileV1beta1), &doc); err != nil {
 		t.Fatalf("parse the lockfile schema: %v", err)
 	}
 	items := doc.Properties.Entities.Items

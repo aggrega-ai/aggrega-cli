@@ -5,7 +5,7 @@
 # the connection in another, both in the same account and region: a value the
 # application's template copies off the connection reaches its stack as an import
 # of an export the database's stack publishes.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-two-boundary

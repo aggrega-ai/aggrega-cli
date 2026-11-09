@@ -16,7 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-const bareRecipe = `apiVersion: aggrega.ai/v1alpha1
+const bareRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server
@@ -33,7 +33,7 @@ spec:
 // indentation, a folded (>) scalar in metadata, a comment, quoted scalars, and a
 // literal (|) block whose body contains an internal blank line. None of it is
 // the pin writer's business, and the assertions below are that none of it moves.
-const mixedRecipe = `apiVersion: aggrega.ai/v1alpha1
+const mixedRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: mixed

@@ -41,7 +41,7 @@ func descriptorSchemaABIVersion(t *testing.T) string {
 			} `json:"PluginDescriptor"`
 		} `json:"$defs"`
 	}
-	if err := json.Unmarshal([]byte(schemas.WasmDescribeV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmDescribeV1beta1), &doc); err != nil {
 		t.Fatalf("unmarshal plugin-descriptor schema: %v", err)
 	}
 	got := doc.Defs.PluginDescriptor.Properties.AbiVersion.Const
@@ -69,7 +69,7 @@ func pluginEntitySchemaABIVersions(t *testing.T) []string {
 			} `json:"spec"`
 		} `json:"properties"`
 	}
-	if err := json.Unmarshal([]byte(schemas.PluginV1alpha1), &doc); err != nil {
+	if err := json.Unmarshal([]byte(schemas.PluginV1beta1), &doc); err != nil {
 		t.Fatalf("unmarshal plugin-entity schema: %v", err)
 	}
 	got := doc.Properties.Spec.Properties.AbiVersion.Enum

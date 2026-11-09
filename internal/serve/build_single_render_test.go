@@ -122,7 +122,7 @@ func unsupportedFieldWorkspace(t *testing.T) (ws, releaseRel string) {
 	ws = t.TempDir()
 
 	catalogDir := filepath.Join(ws, "catalog")
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -134,7 +134,7 @@ spec:
     values:
       port: { type: integer, default: 8080 }
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-compose
@@ -143,7 +143,7 @@ spec:
   capability: compose
   implements: demo/svc
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:
@@ -156,7 +156,7 @@ spec:
 	// compose rendering guest; its digest-free spec.plugin identity resolves
 	// through the plugin-resolution cascade's embed tier with no cache and no
 	// registry.
-	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "compose-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "compose-renderer.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: compose
@@ -174,7 +174,7 @@ spec:
     timeoutMs: 300000
 `)
 
-	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -185,7 +185,7 @@ spec:
       type:
         demo/svc: demo-server-compose
 `)
-	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-agg
@@ -202,7 +202,7 @@ spec:
 	// makes the workload template resolve to a value compose cannot express. With
 	// the default the template falls back to, the render warns about nothing and
 	// this file would count zeroes.
-	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release

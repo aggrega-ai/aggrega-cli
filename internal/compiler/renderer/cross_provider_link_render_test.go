@@ -188,7 +188,7 @@ metadata:
   name: %s-config
 `, node)})
 	return &types.Recipe{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Recipe",
 		Metadata:   types.RecipeMetadata{Name: node + "-recipe"},
 		Spec: types.RecipeSpec{

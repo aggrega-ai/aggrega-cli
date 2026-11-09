@@ -4,6 +4,7 @@
 package completion
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve/standalonekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 )
@@ -89,10 +90,10 @@ func offeredEntityKinds() []string {
 	return out
 }
 
-// APIVersions enumerates the known apiVersion values. Single-item
-// today; future schema iterations may add v1beta1, v2alpha1, etc.
+// APIVersions enumerates the apiVersion values a document may declare: the
+// one version this compiler reads. A retired version is never offered.
 var APIVersions = []string{
-	"aggrega.ai/v1alpha1",
+	apiversion.APIVersion,
 }
 
 // ComponentCategories is the closed-set candidate list for the

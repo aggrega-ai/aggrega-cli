@@ -21,7 +21,7 @@ import (
 // carry a local chart beside them, so a consumer can only render them if it
 // reads the files the published archive carries.
 var carriedFilesPublisher = map[string]string{
-	"component/acme/compute/bannered/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"component/acme/compute/bannered/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/compute/bannered
@@ -37,7 +37,7 @@ spec:
     values:
       greeting: { type: string, default: hello }
 `,
-	"recipe/helm/bannered-local/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"recipe/helm/bannered-local/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: bannered-local
@@ -58,7 +58,7 @@ data:
   greeting: {{ .Values.greeting | quote }}
   carried-by: the-chart-beside-the-recipe
 `,
-	"feature/acme/banner/1.0.0/feature.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"feature/acme/banner/1.0.0/feature.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: acme/banner
@@ -68,7 +68,7 @@ spec:
     values:
       text: { type: string, default: welcome }
 `,
-	"feature-recipe/helm/banner-local/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"feature-recipe/helm/banner-local/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: banner-local
@@ -81,7 +81,7 @@ spec:
     name: "{{ .context.instance_id }}-banner"
     text: "{{ .values.text }}"
 `,
-	"component/acme/compute/templated/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"component/acme/compute/templated/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/compute/templated
@@ -94,7 +94,7 @@ spec:
     values:
       greeting: { type: string, default: hello }
 `,
-	"recipe/helm/templated-local/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"recipe/helm/templated-local/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: templated-local
@@ -131,7 +131,7 @@ data:
 // identity only; its workspace switches the local catalog off, so every entity
 // resolves from the registry.
 var carriedFilesConsumer = map[string]string{
-	"aggregate.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"aggregate.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -150,7 +150,7 @@ spec:
     templated:
       type: acme/compute/templated:1.0.0
 `,
-	"manifest.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"manifest.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -165,7 +165,7 @@ spec:
       type:
         acme/banner:1.0.0: helm/banner-local:1.0.0
 `,
-	"release.yaml": `apiVersion: aggrega.ai/v1alpha1
+	"release.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: dev

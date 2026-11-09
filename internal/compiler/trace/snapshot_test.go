@@ -25,7 +25,7 @@ func makeCtx() *types.TemplateContext {
 			InstanceID: "api",
 		},
 		Source:   "./charts/api",
-		Workload: &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"},
+		Workload: &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"},
 	}
 }
 

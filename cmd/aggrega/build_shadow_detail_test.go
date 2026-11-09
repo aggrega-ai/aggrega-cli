@@ -26,7 +26,7 @@ import (
 func TestBuildDetail_ShadowReportMatchesRenderedWinner(t *testing.T) {
 	root := t.TempDir()
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: shadow-smoke
@@ -37,7 +37,7 @@ spec:
       type: core/server
 `)
 
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: shadow-smoke-release
@@ -55,7 +55,7 @@ spec:
             replicas: 1
 `)
 
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: shadow-smoke-manifest
@@ -71,7 +71,7 @@ spec:
 	// which the recipe emits verbatim. Whichever directory's Component wins,
 	// its image string is what renders.
 	component := func(marker string) string {
-		return `apiVersion: aggrega.ai/v1alpha1
+		return `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -92,7 +92,7 @@ spec:
 
 	// Recipe + provider live only in dir A so they resolve unambiguously.
 	writeHelmRendererPlugin(t, filepath.Join(dirA, "providers"))
-	writeFixture(t, filepath.Join(dirA, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dirA, "recipes", "helm", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -101,7 +101,7 @@ spec:
   capability: helm
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas | default 1 }}
     containers:

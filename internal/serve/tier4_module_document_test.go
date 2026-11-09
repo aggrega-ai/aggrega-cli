@@ -81,7 +81,7 @@ func moduleFindingWorkspace(t *testing.T) string {
 			t.Fatalf("write %s: %v", to, err)
 		}
 	}
-	release := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\n" +
+	release := "apiVersion: aggrega.ai/v1beta1\nkind: Release\n" +
 		"metadata:\n  name: cov-release-contrib-module\n  environment: local\n  version: \"1.0.0\"\n" +
 		"spec:\n  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n  boundaries:\n" +
 		"    cluster:\n      directory: ./dist/cluster\n      components:\n" +

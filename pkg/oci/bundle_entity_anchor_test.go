@@ -19,7 +19,7 @@ import (
 // entityBody is the minimal authored shape every entity document shares: the
 // preamble the anchor reads, plus a name that tells two fixtures apart.
 func entityBody(kind, name string) []byte {
-	return []byte("apiVersion: aggrega.ai/v1alpha1\nkind: " + kind +
+	return []byte("apiVersion: aggrega.ai/v1beta1\nkind: " + kind +
 		"\nmetadata:\n  name: " + name + "\n  version: 1.0.0\n")
 }
 

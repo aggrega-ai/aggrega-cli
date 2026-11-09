@@ -73,7 +73,7 @@ func buildVersionedLinterWasm(t *testing.T, version string) string {
 func genNonEmbeddedLinterEntity(t *testing.T, pluginPath, name string) (entityPath, version string) {
 	t.Helper()
 	overlayPath := filepath.Join(t.TempDir(), "overlay.yaml")
-	writeFixture(t, overlayPath, "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: "+name+"\n")
+	writeFixture(t, overlayPath, "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: "+name+"\n")
 	outDir := t.TempDir()
 	if err := gencatalog.Run(context.Background(), gencatalog.Options{
 		PluginPath:  pluginPath,

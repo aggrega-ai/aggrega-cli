@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
     name: core/api-server-recipe
@@ -7,7 +7,7 @@ spec:
     capability: helm
     implements: core/api-server:1.0.0
     workload: |
-        apiVersion: aggrega.ai/v1alpha1
+        apiVersion: aggrega.ai/v1beta1
         kind: Workload
     provides:
         endpoint: api-server

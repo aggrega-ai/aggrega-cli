@@ -35,7 +35,7 @@ func TestEagerLazyResolutionParity(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeFixture(t, dir, "library.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "library.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing
@@ -45,7 +45,7 @@ spec:
     Storage:
       size: { type: string, default: "10Gi" }
 `)
-	writeFixture(t, dir, "base.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "base.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/base
@@ -59,7 +59,7 @@ spec:
         type: string
         default: shared
 `)
-	writeFixture(t, dir, "child.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "child.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/child
@@ -70,7 +70,7 @@ spec:
   extends: core/base
   schema: inherited
 `)
-	writeFixture(t, dir, "consumer.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "consumer.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb
@@ -83,7 +83,7 @@ spec:
       storage:
         $ref: "DbSizing#/schemas/Storage"
 `)
-	writeFixture(t, dir, "feature.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "feature.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/observability
@@ -95,7 +95,7 @@ spec:
         type: boolean
         default: true
 `)
-	writeFixture(t, dir, "plugin.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, dir, "plugin.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: acme-renderer
@@ -216,7 +216,7 @@ spec:
 	// direct resolution too — the lazy path does not silently accept a library the
 	// build halts on. Proves the parity above is earned, not vacuously green.
 	rejectDir := t.TempDir()
-	writeFixture(t, rejectDir, "bad-library.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, rejectDir, "bad-library.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Bad

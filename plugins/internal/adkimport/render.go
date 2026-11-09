@@ -6,6 +6,7 @@ package adkimport
 import (
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
@@ -36,7 +37,7 @@ var (
 func renderAggregate(name string, apps []*application, parts []*modelPart, unread []string) string {
 	var b strings.Builder
 	writeHeader(&b, apps, unread)
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	b.WriteString("kind: Aggregate\n")
 	b.WriteString("metadata:\n")
 	b.WriteString("  name: " + name + "\n")
@@ -204,7 +205,7 @@ func aggregateText(text string) string {
 // renders none.
 func renderRelease(name string, apps []*application, parts []*modelPart) string {
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	b.WriteString("kind: Release\n")
 	b.WriteString("metadata:\n")
 	b.WriteString("  name: " + name + "\n")
@@ -259,7 +260,7 @@ func renderRelease(name string, apps []*application, parts []*modelPart) string 
 func renderModel(name string) string {
 	var b strings.Builder
 	b.WriteString("# A Recipe publishing this Component's endpoint and its model is left for the author.\n")
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\n")
+	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
 	b.WriteString("kind: Component\n")
 	b.WriteString("metadata:\n")
 	b.WriteString("  name: " + name + "\n")

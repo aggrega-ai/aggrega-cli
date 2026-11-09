@@ -19,7 +19,7 @@ import (
 // attachVariantFeature is a Feature document applying to every node labelled
 // tier=edge, which is what the graph node the proofs below address carries.
 func attachVariantFeature(name string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: " + name +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: " + name +
 		"\n  version: \"1.0.0\"\nspec:\n  appliesTo: tier=edge\n"
 }
 

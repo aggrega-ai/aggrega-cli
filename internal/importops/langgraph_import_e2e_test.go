@@ -525,10 +525,10 @@ const scratchMongoHost = "mongo.example.internal"
 // target, publishing scratchMongoHost and port 27017: the Recipe the drafted
 // Component's comment leaves for the author.
 func scratchMongoRecipe(target string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: mongodb-external\n" +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: mongodb-external\n" +
 		"  version: 0.1.0\nspec:\n  capability: " + target + "\n  implements: imported/datastore/mongodb:0.1.0\n" +
 		"  provides:\n    host: \"" + scratchMongoHost + "\"\n    port: \"27017\"\n  workload: |\n" +
-		"    apiVersion: aggrega.ai/v1alpha1\n    kind: Workload\n    form: reference\n" +
+		"    apiVersion: aggrega.ai/v1beta1\n    kind: Workload\n    form: reference\n" +
 		"    endpoint: \"" + scratchMongoHost + "\"\n    port: 27017\n"
 }
 
@@ -610,14 +610,14 @@ func writeGraphRelease(t *testing.T, dir, local, target string, graphs []string,
 			scratchMongoRecipe(target))
 		mapping = component + ":0.1.0: " + target + "/mongodb-external:0.1.0"
 	}
-	manifest := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported-langgraph\n" +
+	manifest := "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: imported-langgraph\n" +
 		"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n" +
 		"        core/ai-agent/langgraph:1.0.0: " + target + "/langgraph:1.0.0\n" +
 		"        core/ai-model/openai:1.0.0: " + target + "/openai:1.0.0\n" +
 		"        " + mapping + "\n" +
 		"    features:\n      type:\n        " + secret + ":1.0.0: " + realization + ":1.0.0\n"
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: imported-langgraph\n" +
+	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: imported-langgraph\n" +
 		"  environment: " + environment + "\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n" +
 		"  manifest: imported-langgraph\n  boundaries:\n    main:\n      directory: ./dist/" + target + "\n" +
 		"      components:\n        gpt-4o: {}\n        " + datastore + ": {}\n")

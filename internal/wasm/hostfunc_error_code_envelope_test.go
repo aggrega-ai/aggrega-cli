@@ -51,9 +51,9 @@ type envelopeRef struct {
 }
 
 const (
-	providerSchemaID = "https://aggrega.ai/schemas/wasm-provider-v1alpha1.schema.json"
-	parseSchemaID    = "https://aggrega.ai/schemas/wasm-parse-v1alpha1.schema.json"
-	vocabSchemaID    = "https://aggrega.ai/schemas/wasm-hostfunc-error-v1alpha1.schema.json"
+	providerSchemaID = "https://aggrega.ai/schemas/wasm-provider-v1beta1.schema.json"
+	parseSchemaID    = "https://aggrega.ai/schemas/wasm-parse-v1beta1.schema.json"
+	vocabSchemaID    = "https://aggrega.ai/schemas/wasm-hostfunc-error-v1beta1.schema.json"
 )
 
 // hostfuncErrorCodeKey is the reply envelopes' failure-identity key, and
@@ -73,10 +73,10 @@ const (
 // the schemas so an envelope added later cannot go unchecked.
 func hostfuncErrorCodeEnvelopes() []envelopeRef {
 	return []envelopeRef{
-		{"SourcePackResponse", providerSchemaID, "SourcePackResponse", schemas.WasmProviderV1alpha1},
-		{"SourceFileResponse", providerSchemaID, "SourceFileResponse", schemas.WasmProviderV1alpha1},
-		{"FetchExternalInputResponse", providerSchemaID, "FetchExternalInputResponse", schemas.WasmProviderV1alpha1},
-		{"ParseSourceResponse", parseSchemaID, "ParseSourceResponse", schemas.WasmParseV1alpha1},
+		{"SourcePackResponse", providerSchemaID, "SourcePackResponse", schemas.WasmProviderV1beta1},
+		{"SourceFileResponse", providerSchemaID, "SourceFileResponse", schemas.WasmProviderV1beta1},
+		{"FetchExternalInputResponse", providerSchemaID, "FetchExternalInputResponse", schemas.WasmProviderV1beta1},
+		{"ParseSourceResponse", parseSchemaID, "ParseSourceResponse", schemas.WasmParseV1beta1},
 	}
 }
 
@@ -86,10 +86,10 @@ func hostfuncErrorCodeEnvelopes() []envelopeRef {
 // document it reaches is supplied here.
 func referencedSchemas() map[string]string {
 	return map[string]string{
-		vocabSchemaID: schemas.WasmHostfuncErrorV1alpha1,
-		"https://aggrega.ai/schemas/wasm-diagnostic-v1alpha1.schema.json": schemas.WasmDiagnosticV1alpha1,
-		"https://aggrega.ai/schemas/ir-v1alpha1.schema.json":              schemas.IRSchemaV1alpha1,
-		"https://aggrega.ai/schemas/workload-v1alpha1.schema.json":        schemas.WorkloadV1alpha1,
+		vocabSchemaID: schemas.WasmHostfuncErrorV1beta1,
+		"https://aggrega.ai/schemas/wasm-diagnostic-v1beta1.schema.json": schemas.WasmDiagnosticV1beta1,
+		"https://aggrega.ai/schemas/ir-v1beta1.schema.json":              schemas.IRSchemaV1beta1,
+		"https://aggrega.ai/schemas/workload-v1beta1.schema.json":        schemas.WorkloadV1beta1,
 	}
 }
 
@@ -250,7 +250,7 @@ func stripHostfuncErrorCodeRef(t *testing.T, env envelopeRef) string {
 // vocabRefMarker is the reference a closed-catalogue failure identity carries.
 // The socket schemas address the catalogue by a relative document reference
 // rather than by the identity it resolves to, so the marker is the document name.
-const vocabRefMarker = "wasm-hostfunc-error-v1alpha1.schema.json"
+const vocabRefMarker = "wasm-hostfunc-error-v1beta1.schema.json"
 
 // TestHostfuncErrorCodeEnvelopes_CoverEveryDeclaringEnvelope holds the table
 // above to the schemas: every definition in either socket schema that declares a
@@ -288,8 +288,8 @@ func TestHostfuncErrorCodeEnvelopes_CoverEveryDeclaringEnvelope(t *testing.T) {
 
 	conditionChannels := 0
 	for schemaID, source := range map[string]string{
-		providerSchemaID: schemas.WasmProviderV1alpha1,
-		parseSchemaID:    schemas.WasmParseV1alpha1,
+		providerSchemaID: schemas.WasmProviderV1beta1,
+		parseSchemaID:    schemas.WasmParseV1beta1,
 	} {
 		var doc struct {
 			Defs map[string]struct {

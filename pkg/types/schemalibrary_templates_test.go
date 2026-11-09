@@ -16,7 +16,7 @@ import (
 // that references the parameter as `$port` scalar.
 func libraryWithTemplate(t *testing.T) *SchemaLibrary {
 	t.Helper()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Probes
@@ -132,7 +132,7 @@ func TestInstantiateTemplate_UndeclaredArgRejected(t *testing.T) {
 func TestInstantiateTemplate_ParamDefaultApplied(t *testing.T) {
 	t.Parallel()
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Defaults

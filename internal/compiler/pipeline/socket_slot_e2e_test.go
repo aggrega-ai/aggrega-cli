@@ -31,7 +31,7 @@ const connectionAttachmentDir = "../testdata/connection-attachment/"
 // gatewayDeclaring is the gateway Component with the given body under the slot
 // its "models" socket declares, indented to the depth the slot's keys sit at.
 func gatewayDeclaring(slotBody string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: conn/gateway\n" +
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: conn/gateway\n" +
 		"  version: \"1.0.0\"\n  labels:\n    component.aggrega.ai/type: \"server\"\n" +
 		"spec:\n  featuresSchema:\n    db_password:\n      sensitive: true\n" +
 		"  usesSchema:\n    models:\n      selector: \"component.aggrega.ai/category=model\"\n" +
@@ -60,9 +60,9 @@ func socketSlotWorkspace(t *testing.T, slotBody, components, boundaries string) 
 	documents := map[string]string{
 		gateway:                             gatewayDeclaring(slotBody),
 		filepath.Join(dir, "manifest.yaml"): string(manifest),
-		filepath.Join(dir, "aggregate.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n" +
+		filepath.Join(dir, "aggregate.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n" +
 			"metadata:\n  name: connection-attachment-app\n  version: \"1.0.0\"\nspec:\n  components:\n" + components,
-		filepath.Join(dir, "release.yaml"): "apiVersion: aggrega.ai/v1alpha1\nkind: Release\n" +
+		filepath.Join(dir, "release.yaml"): "apiVersion: aggrega.ai/v1beta1\nkind: Release\n" +
 			"metadata:\n  name: connection-attachment-release\n  environment: local\n  version: \"1.0.0\"\n" +
 			"spec:\n  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n  boundaries:\n" + boundaries,
 	}

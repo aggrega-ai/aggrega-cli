@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: cw-router-recipe
@@ -9,7 +9,7 @@ spec:
   # Each connection's credential is delivered by naming the connection beside the
   # slot its socket declares; the router's own credential by naming its own slot.
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

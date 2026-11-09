@@ -47,19 +47,19 @@ func boundaryPinWorkspace(t *testing.T, root, mapping string) (releasePath, cata
 	recipeDir := filepath.Join(catalogDir, "recipes", "gateway")
 	recipePath = filepath.Join(recipeDir, "recipe.yaml")
 	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"), "workspace: {}\nauto_pull: false\n")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n"+
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n"+
 		"metadata:\n  name: aggregate\n  version: \"1.0.0\"\nspec:\n  components:\n    gateway:\n      type: gateway\n")
-	writeFixture(t, filepath.Join(root, "release.yaml"), "apiVersion: aggrega.ai/v1alpha1\nkind: Release\n"+
+	writeFixture(t, filepath.Join(root, "release.yaml"), "apiVersion: aggrega.ai/v1beta1\nkind: Release\n"+
 		"metadata:\n  name: boundary-pin\n  environment: testing\n  version: \"1.0.0\"\nspec:\n"+
 		"  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n"+
 		"  boundaries:\n    main:\n      directory: ./dist/main\n      components:\n        gateway: {}\n")
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\n"+
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\n"+
 		"metadata:\n  name: manifest\n  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n"+
 		"        gateway: "+mapping+"\n")
-	writeFixture(t, filepath.Join(catalogDir, "components", "gateway.yaml"), "apiVersion: aggrega.ai/v1alpha1\n"+
+	writeFixture(t, filepath.Join(catalogDir, "components", "gateway.yaml"), "apiVersion: aggrega.ai/v1beta1\n"+
 		"kind: Component\nmetadata:\n  name: gateway\n  version: \"1.0.0\"\n  labels:\n"+
 		"    component.aggrega.ai/type: \"server\"\nspec:\n  schema:\n    values: {}\n")
-	writeFixture(t, recipePath, "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: gateway\n"+
+	writeFixture(t, recipePath, "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: gateway\n"+
 		"  version: \"1.0.0\"\nspec:\n  capability: terraform\n  implements: gateway\n"+
 		"  artifacts:\n    gateway.tf.json: |\n      {\"output\":{\"gateway\":{\"value\":\"gateway\"}}}\n"+
 		"    providers.tf:\n      $import: ./own-providers.tf\n"+

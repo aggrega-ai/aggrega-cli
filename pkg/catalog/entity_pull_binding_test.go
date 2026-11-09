@@ -56,7 +56,7 @@ type recordingEntityPuller struct {
 // registry tier now puts a fetched body through its kind's schema before caching
 // it. The test asserts only which method bound the reference, so the documents are
 // the minimum each kind's schema accepts.
-const recordingLegacyComponent = `apiVersion: aggrega.ai/v1alpha1
+const recordingLegacyComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/x
@@ -66,7 +66,7 @@ metadata:
 spec: {}
 `
 
-const recordingBoundFeatureRecipe = `apiVersion: aggrega.ai/v1alpha1
+const recordingBoundFeatureRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: dotenv-secret
@@ -134,7 +134,7 @@ func (p locatedDocumentPuller) Pull(context.Context, string, string) (*oci.PullR
 	return &oci.PullResult{Bytes: []byte(p.body), MediaType: p.mediaType}, nil
 }
 
-const locatedAggregate = `apiVersion: aggrega.ai/v1alpha1
+const locatedAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: core/x

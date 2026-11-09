@@ -14,7 +14,7 @@ import (
 // A Component whose schema declares the same property ("port") in both pillars —
 // a schema-pillar overlap, which is advisory (a lint warning), not a validation
 // error, so the catalog still loads and validates clean.
-const lintOverlapComponentYAML = `apiVersion: aggrega.ai/v1alpha1
+const lintOverlapComponentYAML = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/overlap-srv
@@ -54,7 +54,7 @@ func TestLintCatalogWide_SurfacesOverlapAdvisory(t *testing.T) {
 // catalog with no overlap emits no notice and still passes.
 func TestLintCatalogWide_CleanCatalogNoAdvisory(t *testing.T) {
 	dir := t.TempDir()
-	writeFixture(t, filepath.Join(dir, "clean.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dir, "clean.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/clean-srv

@@ -31,7 +31,7 @@ import (
 // as `inner`, holds a consumer `user`, and re-exports `inner.primary` as
 // `reexported`.
 
-const exportDBModule = `apiVersion: aggrega.ai/v1alpha1
+const exportDBModule = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: db-module
@@ -49,7 +49,7 @@ spec:
 // exportOuterModule is the module importing db-module, its consumer wired to
 // userTarget, a name written in this module's own document.
 func exportOuterModule(userTarget string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: outer-module
@@ -108,7 +108,7 @@ func (c exportCase) aggregate() string {
 	if c.outer {
 		module = "    o:\n      type: outer-module:1.0.0\n"
 	}
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: export-app
@@ -126,7 +126,7 @@ func (c exportCase) release() string {
 	if c.outer {
 		module = "o"
 	}
-	doc := `apiVersion: aggrega.ai/v1alpha1
+	doc := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: export-release

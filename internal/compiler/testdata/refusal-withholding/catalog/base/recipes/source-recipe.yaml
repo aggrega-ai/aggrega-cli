@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: refusal-source-recipe
@@ -9,7 +9,7 @@ spec:
   implements: core/refusal-guarded
   source: '{{ fail (printf "the admin password %s must be supplied as a reference" .values.adminPassword) }}'
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

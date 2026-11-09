@@ -51,7 +51,7 @@ func specBlock(t *testing.T, entity types.Plugin, encoding string) map[string]an
 // block, then records capabilities through the setter.
 func providerEntity(capabilities []string) types.Plugin {
 	var entity types.Plugin
-	entity.APIVersion = "aggrega.ai/v1alpha1"
+	entity.APIVersion = "aggrega.ai/v1beta1"
 	entity.Kind = "Plugin"
 	entity.Metadata.Name = "p"
 	entity.Metadata.Version = "1.0.0"
@@ -145,7 +145,7 @@ func TestSetCapabilitiesForEmptyListKeepsAPresentBlock(t *testing.T) {
 			t.Run(block.pluginType+"/"+spelling.name, func(t *testing.T) {
 				t.Parallel()
 				var entity types.Plugin
-				entity.APIVersion = "aggrega.ai/v1alpha1"
+				entity.APIVersion = "aggrega.ai/v1beta1"
 				entity.Kind = "Plugin"
 				entity.Metadata.Name = "p"
 				entity.Metadata.Version = "1.0.0"

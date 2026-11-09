@@ -31,7 +31,7 @@ func volumeDiags(diags []renderctx.Diagnostic, volume string) []renderctx.Diagno
 // still reaches the output, unused.
 func TestUnmountedVolume_PersistentDiagnosed(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "store:1.0"}
 	w.Containers.Set("main", c) // deliberately no volumeMounts
 	w.Volumes.Set("data", types.VolumeSpec{Persistent: &types.PersistentVolume{Size: "10Gi"}})
@@ -76,7 +76,7 @@ func TestUnmountedVolume_PersistentDiagnosed(t *testing.T) {
 // no trace at all — which is exactly why it needs a diagnostic.
 func TestUnmountedVolume_ConfigMapDiagnosed(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	w.Containers.Set("main", c) // deliberately no volumeMounts
 	w.Volumes.Set("settings", types.VolumeSpec{ConfigMap: &types.ConfigMapVolume{Source: "app-config"}})
@@ -132,7 +132,7 @@ func TestUnmountedVolume_MountedVolumesSilent(t *testing.T) {
 		build  func() *types.Workload
 	}{
 		{"mounted by the main container", "data", func() *types.Workload {
-			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+			w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 			c := types.ContainerSpec{Image: "app:1.0"}
 			c.VolumeMounts = []types.VolumeMount{{Name: "data", Path: "/var/data"}}
 			w.Containers.Set("main", c)
@@ -140,7 +140,7 @@ func TestUnmountedVolume_MountedVolumesSilent(t *testing.T) {
 			return w
 		}},
 		{"mounted only by an init container", "settings", func() *types.Workload {
-			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+			w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 			w.Containers.Set("main", types.ContainerSpec{Image: "app:1.0"})
 			initC := types.ContainerSpec{Name: "seed", Image: "seeder:1.0"}
 			initC.VolumeMounts = []types.VolumeMount{{Name: "settings", Path: "/etc/settings"}}
@@ -149,7 +149,7 @@ func TestUnmountedVolume_MountedVolumesSilent(t *testing.T) {
 			return w
 		}},
 		{"mounted by a sidecar", "scratch", func() *types.Workload {
-			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+			w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 			w.Containers.Set("main", types.ContainerSpec{Image: "app:1.0"})
 			side := types.ContainerSpec{Image: "logger:1.0"}
 			side.VolumeMounts = []types.VolumeMount{{Name: "scratch", Path: "/scratch"}}
@@ -182,7 +182,7 @@ func TestUnmountedVolume_MountedVolumesSilent(t *testing.T) {
 func TestUnmountedVolume_PersistentTemplateReportsTwoDistinctFacts(t *testing.T) {
 	t.Parallel()
 	// persistentTemplate is a companion of form: stateful.
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "stateful"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "stateful"}
 	w.Containers.Set("main", types.ContainerSpec{Image: "db:1.0"}) // no volumeMounts
 	w.Volumes.Set("state", types.VolumeSpec{PersistentTemplate: &types.PersistentTemplateVolume{Size: "1Gi"}})
 
@@ -245,7 +245,7 @@ func TestUnmountedVolume_EveryVariantReported(t *testing.T) {
 		tc := tc
 		t.Run(tc.volume, func(t *testing.T) {
 			t.Parallel()
-			w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+			w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 			if tc.stateful {
 				w.Form = "stateful"
 			}

@@ -28,7 +28,7 @@ import (
 // resolve another of the same name or nothing — so the resolution halts on the link
 // before any name is resolved through the catalog, naming it.
 func TestAResolutionHaltsOnALinkLeadingOutOfACatalogDirectory(t *testing.T) {
-	const unrelated = "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: example/unrelated\n" +
+	const unrelated = "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: example/unrelated\n" +
 		"  version: \"1.0.0\"\n  labels:\n    component.aggrega.ai/type: server\nspec: {}\n"
 	for _, row := range []struct {
 		name   string

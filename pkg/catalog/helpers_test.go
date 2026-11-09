@@ -298,13 +298,13 @@ func TestResolveAllExtends_FeatureChain(t *testing.T) {
 		Features:   map[string]types.Feature{},
 	}
 	parent := types.Feature{}
-	parent.APIVersion = "aggrega.ai/v1alpha1"
+	parent.APIVersion = "aggrega.ai/v1beta1"
 	parent.Kind = "Feature"
 	parent.Metadata.Name = "feat/parent"
 	c.Features["feat/parent"] = parent
 
 	child := types.Feature{}
-	child.APIVersion = "aggrega.ai/v1alpha1"
+	child.APIVersion = "aggrega.ai/v1beta1"
 	child.Kind = "Feature"
 	child.Metadata.Name = "feat/child"
 	child.Spec.Extends = "feat/parent"
@@ -352,7 +352,7 @@ func TestIndexFile_NonEntityYAML(t *testing.T) {
 func TestIndexFile_UnknownKind(t *testing.T) {
 	t.Parallel()
 	c := makeEmptyCatalog()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Unknown
 metadata:
   name: thing
@@ -383,7 +383,7 @@ func makeEmptyCatalog() *Catalog {
 func TestIndexFile_ComponentUnmarshalError(t *testing.T) {
 	t.Parallel()
 	c := makeEmptyCatalog()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 spec: [not, a, mapping]
 `
@@ -436,7 +436,7 @@ func TestLoad_RelativeFeatureRecipeSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(srcDir, "Chart.yaml"), []byte("apiVersion: v2\nname: x\nversion: 0.1.0\n"), 0o644); err != nil {
 		t.Fatalf("write chart: %v", err)
 	}
-	frYAML := `apiVersion: aggrega.ai/v1alpha1
+	frYAML := `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: myco/fr

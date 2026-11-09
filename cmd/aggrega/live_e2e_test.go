@@ -99,7 +99,7 @@ func TestLiveE2E_KeylessPublishVerifyRoundTrip(t *testing.T) {
 	// the signature commits to.
 	const repo = "component/core/api-server"
 	const tag = "1.0.0"
-	artifact := []byte("apiVersion: aggrega.ai/v1alpha1\n" +
+	artifact := []byte("apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Component\n" +
 		"metadata:\n  name: core/api-server\n  version: 1.0.0\n")
 

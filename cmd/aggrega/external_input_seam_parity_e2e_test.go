@@ -204,7 +204,7 @@ func writeFetchingProviderWorkspace(t *testing.T, root string) string {
     - ./catalog
 `)
 
-	writeFixture(t, filepath.Join(catalogDir, "components", "fetcher.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "components", "fetcher.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/fetcher
@@ -217,7 +217,7 @@ spec:
       host: { type: string, required: true }
 `)
 
-	writeFixture(t, filepath.Join(catalogDir, "recipes", "fetcher.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipes", "fetcher.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-fetcher-synthesized
@@ -228,7 +228,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -236,7 +236,7 @@ spec:
         image: demo-fetcher:latest
 `)
 
-	writeFixture(t, filepath.Join(catalogDir, "plugins", "fetching-provider.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "plugins", "fetching-provider.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: fetching
@@ -277,7 +277,7 @@ spec:
 		writeFixtureBytes(t, filepath.Join(pluginDir, pluginpath.PluginLeaf(ref)), guestBytes)
 	}
 
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: seam-app
@@ -288,7 +288,7 @@ spec:
       type: "demo/fetcher:1.0.0"
 `)
 
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: seam-manifest
@@ -301,7 +301,7 @@ spec:
 `)
 
 	releasePath := filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: seam-release

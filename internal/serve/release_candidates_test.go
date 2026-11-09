@@ -30,7 +30,7 @@ func TestDispatchReleaseCandidatesByContentKind(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	const release = "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: x\n"
+	const release = "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: x\n"
 	// A Release with no conventional prefix — the glob missed it.
 	writeFile("prod.yaml", release)
 	// A Release in a subdirectory — the shallow glob missed it.

@@ -29,7 +29,7 @@ import (
 // scopeRefusedComponent shadows the fixture catalog's api-server with one that
 // declares extends and then authors pillar content — refused by the rule naming
 // the inheritance marker an extending Component must declare instead.
-const scopeRefusedComponent = `apiVersion: aggrega.ai/v1alpha1
+const scopeRefusedComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server

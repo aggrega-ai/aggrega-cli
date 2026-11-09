@@ -26,7 +26,7 @@ const imageChosenFailure = "choose an image by setting infra.image in the Releas
 func assertionWorkspace(t *testing.T, image string) (root, catalogRoot, releasePath, recipePath string) {
 	t.Helper()
 	root = t.TempDir()
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: assertion-warning
@@ -40,7 +40,7 @@ spec:
 	if image != "" {
 		imageLine = "            image: " + image + "\n"
 	}
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: assertion-warning-release
@@ -57,7 +57,7 @@ spec:
           infra:
             replicas: 1
 `+imageLine)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: assertion-warning-manifest
@@ -69,7 +69,7 @@ spec:
         core/server: server-recipe:1.0.0
 `)
 	catalogRoot = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -84,7 +84,7 @@ spec:
 `)
 	writeHelmRendererPlugin(t, filepath.Join(catalogRoot, "base", "providers"))
 	recipePath = filepath.Join(catalogRoot, "recipes", "helm", "server.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server-recipe
@@ -95,7 +95,7 @@ spec:
   assertions:
     image_chosen: '{{ if eq .infra.image "unset" }}{{ fail "`+imageChosenFailure+`" }}{{ end }}'
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ .infra.replicas }}
     containers:

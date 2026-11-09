@@ -86,14 +86,14 @@ func TestEntryPointKindsAreDeclaredKinds(t *testing.T) {
 	}
 }
 
-func TestCompletionApiVersionReturnsV1Alpha1(t *testing.T) {
+func TestCompletionApiVersionReturnsV1Beta1(t *testing.T) {
 	t.Parallel()
 	items := APIVersion()
 	if len(items) != 1 {
 		t.Fatalf("APIVersion() returned %d items; want 1", len(items))
 	}
-	if items[0].Label != "aggrega.ai/v1alpha1" {
-		t.Errorf("apiVersion label = %q; want aggrega.ai/v1alpha1", items[0].Label)
+	if items[0].Label != "aggrega.ai/v1beta1" {
+		t.Errorf("apiVersion label = %q; want aggrega.ai/v1beta1", items[0].Label)
 	}
 }
 

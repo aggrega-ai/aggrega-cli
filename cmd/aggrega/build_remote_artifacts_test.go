@@ -27,7 +27,7 @@ import (
 // `store-config.yaml` emits `store-config.yaml`. File bodies carry a template
 // expression (.values.port) so the proof exercises the full resolve → EvalTemplate
 // path.
-const proofArtifactsImportRecipe = `apiVersion: aggrega.ai/v1alpha1
+const proofArtifactsImportRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: store-recipe
@@ -40,7 +40,7 @@ spec:
       $import: SharedArtifacts#/artifacts/StoreBundle
 `
 
-const proofArtifactsInlineRecipe = `apiVersion: aggrega.ai/v1alpha1
+const proofArtifactsInlineRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: store-recipe
@@ -63,7 +63,7 @@ spec:
         name: store-{{ .values.port }}-policy
 `
 
-const proofArtifactLibrary = `apiVersion: aggrega.ai/v1alpha1
+const proofArtifactLibrary = `apiVersion: aggrega.ai/v1beta1
 kind: ArtifactLibrary
 metadata:
   name: SharedArtifacts
@@ -92,7 +92,7 @@ spec:
 func writeArtifactsProofWorkspace(t *testing.T, root, recipeYAML string, authorLibrary bool) string {
 	t.Helper()
 	catalogRoot := filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: proof
@@ -104,7 +104,7 @@ spec:
       values:
         port: 8080
 `)
-	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: proof-release
@@ -121,7 +121,7 @@ spec:
           infra:
             replicas: 1
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: proof-manifest
@@ -132,7 +132,7 @@ spec:
       type:
         core/store: store-recipe:1.0.0
 `)
-	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogRoot, "base", "components", "store.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/store

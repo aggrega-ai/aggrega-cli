@@ -220,7 +220,7 @@ func TestBuildAndVerifyBothStandDownOnAPinRecordedUnderAResolvedReference(t *tes
 	releasePath := sourcedPinFixture(t, root, "unused")
 	catalogDir := filepath.Join(root, "catalog")
 	recipePath := filepath.Join(catalogDir, "recipes", "server.yaml")
-	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: server

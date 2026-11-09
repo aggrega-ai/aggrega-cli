@@ -31,7 +31,7 @@ import (
 
 // nameTierManifest binds one component instance and one feature attachment by
 // instance name, beside the type tier every other instance resolves through.
-const nameTierManifest = `apiVersion: aggrega.ai/v1alpha1
+const nameTierManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: m
@@ -88,7 +88,7 @@ func TestTheWalkPinsWhatEitherMappingTierBinds(t *testing.T) {
 		referencedFrom []string
 	}
 	manifestOf := func(mappings string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: m\n  version: \"1.0.0\"\nspec:\n  mappings:\n" + mappings
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: m\n  version: \"1.0.0\"\nspec:\n  mappings:\n" + mappings
 	}
 	cases := []struct {
 		name     string

@@ -507,7 +507,7 @@ func (e templateEval) wrap(stage templateEvalStage, err error) error {
 // The input struct is walked reflectively and converted to a tree of plain
 // Go values (maps / slices / scalars) with lowercase JSON-tag keys, so
 // template authors write `.values.foo` matching the
-// template-context-v1alpha1.schema.json contract.
+// template-context-v1beta1.schema.json contract.
 //
 // OrderedMap values are unwrapped during the walk into plain map[string]any
 // containers. Text/template then iterates them in alphabetical key order
@@ -895,7 +895,7 @@ type templateUntaggedKeys interface {
 // shaped for Go text/template consumption. It is what makes the render context
 // readable the way a Recipe author writes it: templates address fields by their
 // lowercase JSON-tag names — .context.values, .context.infra and so on, exactly
-// as template-context-v1alpha1.schema.json names them — while the Go types
+// as template-context-v1beta1.schema.json names them — while the Go types
 // behind them use exported field names. This walker is the one place that
 // translation happens.
 //

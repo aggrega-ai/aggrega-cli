@@ -75,7 +75,7 @@ func testRecipeLookup() renderer.RecipeLookup {
 						// Synthesized mode (a Workload) is the real compute path
 						// for a helm Recipe; the removed renderSourceless
 						// synth-from-bare-values path is gone (Invariant 4).
-						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -324,7 +324,7 @@ func TestRenderAll_ProvidesResolved(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -341,7 +341,7 @@ containers:
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
 						Provides: provides,
-						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -472,7 +472,7 @@ func TestRenderAll_FeatureRecipeResourceGeneration(t *testing.T) {
 					Spec: types.RecipeSpec{
 						Capability: "helm",
 						Implements: "core/compute/api-server",
-						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -495,7 +495,7 @@ containers:
 					Spec: types.FeatureRecipeSpec{
 						Capability: "helm",
 						Implements: "core/monitoring",
-						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -620,7 +620,7 @@ func TestRenderAll_OneAttachmentNameOnTwoComponentsSynthesizesTwoWorkloads(t *te
 				Spec: types.RecipeSpec{
 					Capability: "helm",
 					Implements: "core/compute/api-server",
-					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -640,7 +640,7 @@ containers:
 				Spec: types.FeatureRecipeSpec{
 					Capability: "helm",
 					Implements: "core/monitoring",
-					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -1058,7 +1058,7 @@ func hostWorkloadRecipeLookup(fr *types.FeatureRecipe) renderer.RecipeLookup {
 					Spec: types.RecipeSpec{
 						Capability: "helm",
 						Implements: "core/compute/api-server",
-						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -1098,7 +1098,7 @@ data:
 		Spec: types.FeatureRecipeSpec{
 			Capability: "helm",
 			Implements: "core/monitoring",
-			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -1149,7 +1149,7 @@ func TestRenderAll_FeatureRecipeUnsupportedInputKindGated(t *testing.T) {
 		Spec: types.FeatureRecipeSpec{
 			Capability: "helm-chart",
 			Implements: "core/monitoring",
-			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+			Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -1213,7 +1213,7 @@ func TestRenderAll_AttachmentInjectReachesConsumerRenderedOutput(t *testing.T) {
 					Spec: types.RecipeSpec{
 						Capability: "helm",
 						Implements: "core/compute/api-server",
-						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

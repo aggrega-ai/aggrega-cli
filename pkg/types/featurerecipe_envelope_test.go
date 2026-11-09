@@ -16,7 +16,7 @@ func TestFeatureRecipeEnvelope_AcceptsAssertions(t *testing.T) {
 	t.Parallel()
 	v := featureRecipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: ops/audit-bitnami
@@ -41,7 +41,7 @@ func TestFeatureRecipeEnvelope_RejectsNonStringAssertionValue(t *testing.T) {
 	t.Parallel()
 	v := featureRecipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: ops/audit-bitnami
@@ -69,7 +69,7 @@ func TestFeatureRecipeEnvelope_AcceptsArtifactsBareNameLibraryImport(t *testing.
 	t.Parallel()
 	v := featureRecipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: ops/audit-bitnami
@@ -97,7 +97,7 @@ func TestFeatureRecipeEnvelope_RejectsArtifactsOCIImport(t *testing.T) {
 	t.Parallel()
 	v := featureRecipeEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: ops/audit-bitnami
@@ -146,7 +146,7 @@ func TestFeatureRecipeEnvelope_RejectsArtifactKeyOutsideFilenameAlphabet(t *test
 			t.Parallel()
 			v := featureRecipeEnvelopeValidator(t)
 
-			src := `apiVersion: aggrega.ai/v1alpha1
+			src := `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: ops/audit-bitnami
@@ -199,7 +199,7 @@ func TestFeatureRecipeEnvelope_AcceptsArtifactKeyInFilenameAlphabet(t *testing.T
 			t.Parallel()
 			v := featureRecipeEnvelopeValidator(t)
 
-			src := `apiVersion: aggrega.ai/v1alpha1
+			src := `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: ops/audit-bitnami

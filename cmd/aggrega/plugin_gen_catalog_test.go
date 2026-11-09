@@ -59,7 +59,7 @@ func TestGenCatalogRoundTripsThroughPushDryRun(t *testing.T) {
 	const registry = "hub.aggrega.ai"
 	overlayPath := filepath.Join(dir, "overlay.yaml")
 	writeFixture(t, overlayPath, `# SPDX-License-Identifier: Apache-2.0
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: publishing-linter
@@ -134,7 +134,7 @@ func TestGenCatalogProviderRoundTripsThroughPushDryRun(t *testing.T) {
 	const registry = "hub.aggrega.ai"
 	overlayPath := filepath.Join(dir, "overlay.yaml")
 	writeFixture(t, overlayPath, `# SPDX-License-Identifier: Apache-2.0
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm

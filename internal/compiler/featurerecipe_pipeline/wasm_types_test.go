@@ -101,7 +101,7 @@ func sampleFRPStepInput(t *testing.T) frp.FRPStepInput {
 				SideEffects: []frp.SideEffect{
 					{
 						Kind: "emit_crd",
-						Crd:  json.RawMessage(`{"apiVersion":"secrets.aggrega.ai/v1alpha1","kind":"VaultSecretFetch","metadata":{"name":"payments-db"}}`),
+						Crd:  json.RawMessage(`{"apiVersion":"secrets.aggrega.ai/v1beta1","kind":"VaultSecretFetch","metadata":{"name":"payments-db"}}`),
 					},
 				},
 			},
@@ -135,7 +135,7 @@ func sampleFRPStepOutput() frp.FRPStepOutput {
 		SideEffects: []frp.SideEffect{
 			{
 				Kind: "emit_crd",
-				Crd:  json.RawMessage(`{"apiVersion":"secrets.aggrega.ai/v1alpha1","kind":"VaultSecretFetch","metadata":{"name":"payments-db"}}`),
+				Crd:  json.RawMessage(`{"apiVersion":"secrets.aggrega.ai/v1beta1","kind":"VaultSecretFetch","metadata":{"name":"payments-db"}}`),
 			},
 			{
 				Kind:  "emit_file",
@@ -533,7 +533,7 @@ func TestWalk_WithEvalIntoStepInput(t *testing.T) {
 func TestFRPTypes_JSONSchemaFieldCoverage(t *testing.T) {
 	t.Parallel()
 	var raw map[string]any
-	if err := json.Unmarshal([]byte(schemas.WasmFrpStepV1alpha1), &raw); err != nil {
+	if err := json.Unmarshal([]byte(schemas.WasmFrpStepV1beta1), &raw); err != nil {
 		t.Fatalf("unmarshal wasm-frp-step schema: %v", err)
 	}
 	defs, ok := raw["$defs"].(map[string]any)

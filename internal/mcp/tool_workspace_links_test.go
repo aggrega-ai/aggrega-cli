@@ -17,13 +17,13 @@ import (
 // linksTestComponent is a Component of the given name, laid where reading it
 // shows up by that name.
 func linksTestComponent(name string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: " + name + "\nspec: {}\n"
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: " + name + "\nspec: {}\n"
 }
 
 // linksTestReleaseNamed is a Release of the given name, laid where reading it
 // shows up by that name.
 func linksTestReleaseNamed(name string) string {
-	return "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n"
+	return "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n"
 }
 
 var linksTestRelease = linksTestReleaseNamed("probe")

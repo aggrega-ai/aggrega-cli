@@ -19,7 +19,7 @@ import (
 // what the entry selects.
 func recipeWithSourceEntry(source any) *types.Recipe {
 	r := newRecipe("helm")
-	r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload"}
+	r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1beta1\nkind: Workload"}
 	r.Spec.Source = source
 	return r
 }

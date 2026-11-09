@@ -16,7 +16,7 @@ import (
 // pluginType, abiVersion). The plugin reference is the digest-free
 // oci://<repo> identity form the schema mandates; the resolved content
 // digest lives in the lockfile, not in the entity.
-const validPlugin = `apiVersion: aggrega.ai/v1alpha1
+const validPlugin = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: naming
@@ -94,7 +94,7 @@ func TestPluginRejectParity(t *testing.T) {
 	t.Parallel()
 
 	// Missing the required spec.plugin field; abiVersion not the accepted value.
-	const malformed = `apiVersion: aggrega.ai/v1alpha1
+	const malformed = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: broken

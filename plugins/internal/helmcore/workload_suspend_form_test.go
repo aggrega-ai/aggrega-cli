@@ -17,7 +17,7 @@ import (
 // rather than rendering a Job that silently drops it.
 func TestSynthesizeWorkload_SuspendOnTaskHalts(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: "task", Suspend: true}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: "task", Suspend: true}
 	w.Containers.Set("main", types.ContainerSpec{Image: "worker:1.0", RestartPolicy: "OnFailure"})
 
 	files, err := SynthesizeWorkloadCore(w, renderer.AttachmentProvidesFromContext(nil), nodeCtxFor("worker"))

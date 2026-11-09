@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
@@ -229,12 +230,18 @@ func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs, n
 // repeated within one pipeline is one — under conditions of their own, and the
 // schema accepts such a document, so labelling that refusal schema would tell the
 // reader the schema refused something it accepts. Those are labelled shape, the
-// stage this report already uses for a kind's rules beyond its schema. A refusal
-// that is not a violation at all — a document that will not parse, an engine
-// that could not run — keeps the schema label it has always had.
+// stage this report already uses for a kind's rules beyond its schema. A
+// document declaring an API version this compiler no longer reads is refused by
+// its schema too, so it keeps the schema label under the condition of its own. A
+// refusal that is not a violation at all — a document that will not parse, an
+// engine that could not run — keeps the schema label it has always had.
 func envelopeStageLabel(refusal error) string {
 	var violation *envelope.Error
-	if errors.As(refusal, &violation) && violation != nil && violation.Condition() != envelope.ErrEntityEnvelope() {
+	if errors.As(refusal, &violation) && violation != nil {
+		switch violation.Condition() {
+		case envelope.ErrEntityEnvelope(), envelope.ErrRetiredAPIVersion():
+			return "schema"
+		}
 		return "shape"
 	}
 	return "schema"
@@ -1083,7 +1090,7 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 		instance["values"] = placeholders.values
 	}
 	aggregate := map[string]any{
-		"apiVersion": "aggrega.ai/v1alpha1",
+		"apiVersion": apiversion.APIVersion,
 		"kind":       "Aggregate",
 		"metadata":   map[string]any{"name": "validate-probe", "version": "1.0.0"},
 		"spec": map[string]any{
@@ -1097,7 +1104,7 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 
 	const aggregatePath = "validate://aggregate.yaml"
 	manifestBytes, err := yaml.Marshal(map[string]any{
-		"apiVersion": "aggrega.ai/v1alpha1",
+		"apiVersion": apiversion.APIVersion,
 		"kind":       "Manifest",
 		"metadata":   map[string]any{"name": "validate-probe", "version": "1.0.0"},
 		"spec": map[string]any{
@@ -1121,7 +1128,7 @@ func buildEntityHarness(implements, recipeURI string, comp *types.Component, loo
 		releaseInstance["infra"] = placeholders.infra
 	}
 	releaseBytes, err := yaml.Marshal(map[string]any{
-		"apiVersion": "aggrega.ai/v1alpha1",
+		"apiVersion": apiversion.APIVersion,
 		"kind":       "Release",
 		"metadata":   map[string]any{"name": "validate-probe", "environment": "validate", "version": "1.0.0"},
 		"spec": map[string]any{

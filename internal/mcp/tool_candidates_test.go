@@ -32,7 +32,7 @@ import (
 // empty answer meaningful: an unconstrained Feature is a candidate for every
 // node, so one in the fixture would make an empty candidate list unreachable.
 const (
-	candidacyWebComponent = `apiVersion: aggrega.ai/v1alpha1
+	candidacyWebComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/web
@@ -51,7 +51,7 @@ spec:
       port: { type: integer, default: 8080 }
 `
 
-	candidacyDBComponent = `apiVersion: aggrega.ai/v1alpha1
+	candidacyDBComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/data/db
@@ -64,7 +64,7 @@ spec:
       host: { type: string, required: true }
 `
 
-	candidacyPlainComponent = `apiVersion: aggrega.ai/v1alpha1
+	candidacyPlainComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/plain
@@ -75,7 +75,7 @@ spec:
       port: { type: integer, default: 9090 }
 `
 
-	candidacyServerFeature = `apiVersion: aggrega.ai/v1alpha1
+	candidacyServerFeature = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/observability/metrics
@@ -87,7 +87,7 @@ spec:
       scrape_port: { type: integer, default: 9100 }
 `
 
-	candidacyDatabaseFeature = `apiVersion: aggrega.ai/v1alpha1
+	candidacyDatabaseFeature = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/data/backup

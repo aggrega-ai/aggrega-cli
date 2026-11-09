@@ -33,7 +33,7 @@ import (
 // envPairWorkload is a Workload whose main container takes name from the slot
 // given and, when pair is set, names it as a plain variable as well.
 func envPairWorkload(image, name, slot string, pair bool) string {
-	w := "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: " + image + "\n"
+	w := "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: " + image + "\n"
 	if pair {
 		w += "    variables:\n      " + name + ": plain\n"
 	} else {
@@ -164,7 +164,7 @@ func renderFeatureRecipeEnvPair(t *testing.T, pair bool) error {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "api-recipe"},
 				Spec: types.RecipeSpec{Workload: types.WorkloadTemplate{
-					Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\ncontainers:\n  main:\n    image: api:latest\n",
+					Inline: "apiVersion: aggrega.ai/v1beta1\nkind: Workload\ncontainers:\n  main:\n    image: api:latest\n",
 				}},
 			}, true
 		},

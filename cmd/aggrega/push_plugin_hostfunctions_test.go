@@ -25,7 +25,7 @@ import (
 // lines, and a runtime block with a maxMemoryPages field and no hostFunctions —
 // the on-disk shape an author commits before recording the machine-owned set.
 const stampCommentedEntity = `# SPDX-License-Identifier: Apache-2.0
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: patch # the plugin's bare identity
@@ -93,7 +93,7 @@ func TestSpliceHostFunctions_PreservesCommentsAndBlanks(t *testing.T) {
 // lands, while preserving the surrounding bytes.
 func TestSpliceHostFunctions_CreatesRuntimeWhenAbsent(t *testing.T) {
 	t.Parallel()
-	const noRuntime = `apiVersion: aggrega.ai/v1alpha1
+	const noRuntime = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: patch
@@ -180,7 +180,7 @@ func TestSpliceHostFunctions_Idempotent(t *testing.T) {
 // nor the command mirror, so a stamp exercises writing both machine-owned
 // records: the cli-multi-guest imports one custom host function and describes two
 // commands.
-const cliStampEntity = `apiVersion: aggrega.ai/v1alpha1
+const cliStampEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: greet
@@ -255,7 +255,7 @@ func TestStampPluginFile_WritesHostFunctionsAndCommands(t *testing.T) {
 // push exercises the host-function verify — the fixture imports no custom host
 // functions, so an empty or absent record is in sync and a non-empty record is
 // out of sync.
-const pushVerifyEntity = `apiVersion: aggrega.ai/v1alpha1
+const pushVerifyEntity = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: patch

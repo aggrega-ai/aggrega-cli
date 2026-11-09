@@ -18,7 +18,7 @@ import (
 // passProbeFeature is a Feature whole-catalog validation accepts; with extends
 // naming an identity no catalog holds it is one the extends gate refuses.
 func passProbeFeature(extends string) string {
-	doc := `apiVersion: aggrega.ai/v1alpha1
+	doc := `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/secret-value
@@ -42,7 +42,7 @@ spec:
 
 // passProbeUnloadable is an Aggrega document whose YAML does not parse, which
 // halts a whole-catalog pass over the directory holding it before anything loads.
-const passProbeUnloadable = `apiVersion: aggrega.ai/v1alpha1
+const passProbeUnloadable = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/broken

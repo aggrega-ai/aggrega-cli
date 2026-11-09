@@ -17,7 +17,7 @@ import (
 func TestOverlayOfTheWrongShapeIsRefusedInTheAuthorsWords(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "probe.yaml")
-	doc := "apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: probe\nspec:\n  runtime:\n    maxMemoryPages: lots\n"
+	doc := "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: probe\nspec:\n  runtime:\n    maxMemoryPages: lots\n"
 	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}

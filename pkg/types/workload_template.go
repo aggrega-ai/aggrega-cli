@@ -27,7 +27,7 @@ var errWorkloadTemplateShape = cerrors.Register("workload-template-shape", cerro
 // vocabulary (chapter 07):
 //
 //   - Mode 1 (inline): a Go template string scalar whose output parses
-//     as 'aggrega.ai/v1alpha1 Workload'. Inline carries the content;
+//     as 'aggrega.ai/v1beta1 Workload'. Inline carries the content;
 //     Import stays empty.
 //   - Mode 2 (file import): a YAML map of exactly one key `$import:
 //     <local-path>` pointing at a Go-template file. Import carries the

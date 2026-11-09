@@ -56,7 +56,7 @@ const decisionLineCasesFile = "../../internal/importops/testdata/decision_line_c
 // a name. Their name, version and the per-version path each is laid at follow the
 // catalog layout.
 var mappingDecisionComponents = []struct{ name, version, body string }{
-	{"acme/ai-model/internal-llm", "1.2.0", `apiVersion: aggrega.ai/v1alpha1
+	{"acme/ai-model/internal-llm", "1.2.0", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/ai-model/internal-llm
@@ -77,7 +77,7 @@ spec:
       endpoint: { type: string }
       model: { type: string }
 `},
-	{"acme/datastore/kv", "0.3.0", `apiVersion: aggrega.ai/v1alpha1
+	{"acme/datastore/kv", "0.3.0", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/datastore/kv
@@ -459,7 +459,7 @@ func TestTheMappingDecisionsReachEverySurfaceAlike(t *testing.T) {
 
 		// The answer validates against the published wire contract's import
 		// result, every decision through the definitions it names.
-		resource, err := jsonschema.UnmarshalJSON(strings.NewReader(schemas.ServeWireV1alpha1))
+		resource, err := jsonschema.UnmarshalJSON(strings.NewReader(schemas.ServeWireV1beta1))
 		if err != nil {
 			t.Fatalf("the shipped session wire schema is not a usable schema resource: %v", err)
 		}
@@ -626,7 +626,7 @@ func TestANodeTheFlowKeepsReadsAsNoChoiceOnEverySurface(t *testing.T) {
 		if !sameDecisions(t, result.Decisions, shared.Decisions) {
 			t.Errorf("the session's decisions are\n%+v\nwant\n%+v", result.Decisions, shared.Decisions)
 		}
-		resource, err := jsonschema.UnmarshalJSON(strings.NewReader(schemas.ServeWireV1alpha1))
+		resource, err := jsonschema.UnmarshalJSON(strings.NewReader(schemas.ServeWireV1beta1))
 		if err != nil {
 			t.Fatalf("the shipped session wire schema is not a usable schema resource: %v", err)
 		}

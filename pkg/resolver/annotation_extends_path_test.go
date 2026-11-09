@@ -74,7 +74,7 @@ func TestAnnotationPath_ExtendsFeature_ValuePath(t *testing.T) {
 	composed, feat := extendsFeatureFixture(t)
 
 	manifest := loadManifest(t, `
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test

@@ -97,7 +97,7 @@ func mediatypeFor(kind string) string {
 
 func makeRecipe(uri string, source any) *types.Recipe {
 	return &types.Recipe{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "Recipe",
 		Metadata:   types.RecipeMetadata{Name: uri, Version: "1.0.0"},
 		Spec: types.RecipeSpec{
@@ -109,7 +109,7 @@ func makeRecipe(uri string, source any) *types.Recipe {
 
 func makeFeatureRecipe(uri string, source any) *types.FeatureRecipe {
 	return &types.FeatureRecipe{
-		APIVersion: "aggrega.ai/v1alpha1",
+		APIVersion: "aggrega.ai/v1beta1",
 		Kind:       "FeatureRecipe",
 		Metadata:   types.FeatureRecipeMetadata{Name: uri, Version: "1.0.0"},
 		Spec: types.FeatureRecipeSpec{

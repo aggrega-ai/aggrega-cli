@@ -34,7 +34,7 @@ func moduleReferenceWorkspace(t *testing.T, moduleType string) (root, catalogDir
 			t.Fatalf("write the fixture: %v", err)
 		}
 	}
-	const component = `apiVersion: aggrega.ai/v1alpha1
+	const component = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/web
@@ -50,7 +50,7 @@ spec:
 	// The file a path-spelled type names exists, so a refusal of that type cannot
 	// be the file's absence.
 	write("components/web.yaml", component)
-	write("catalog/recipes/web.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("catalog/recipes/web.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-web-synthesized
@@ -59,14 +59,14 @@ spec:
   capability: helm
   implements: demo/web
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: demo-web:latest
 `)
-	write("catalog/plugins/helm-renderer.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("catalog/plugins/helm-renderer.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm
@@ -83,7 +83,7 @@ spec:
     maxMemoryPages: 4096
     timeoutMs: 300000
 `)
-	write("catalog/aggregates/store.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("catalog/aggregates/store.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo/store
@@ -93,7 +93,7 @@ spec:
     store:
       type: `+moduleType+`
 `)
-	write("aggregate.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("aggregate.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: module-reference-app
@@ -106,7 +106,7 @@ spec:
     mod:
       type: demo/store
 `)
-	write("manifest.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("manifest.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: module-reference-manifest
@@ -117,7 +117,7 @@ spec:
       type:
         demo/web: demo-web-synthesized
 `)
-	write("release.yaml", `apiVersion: aggrega.ai/v1alpha1
+	write("release.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: module-reference-release

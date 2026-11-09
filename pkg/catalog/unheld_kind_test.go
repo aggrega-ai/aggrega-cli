@@ -28,7 +28,7 @@ func TestHeldKindsAreTheIndexDispatchArms(t *testing.T) {
 	for _, k := range kinds {
 		t.Run(string(k), func(t *testing.T) {
 			t.Parallel()
-			data := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: " + string(k) + "\nmetadata:\n  name: probe/held\n  version: 1.0.0\n")
+			data := []byte("apiVersion: aggrega.ai/v1beta1\nkind: " + string(k) + "\nmetadata:\n  name: probe/held\n  version: 1.0.0\n")
 			c := newPassOneCatalog("")
 			var err error
 			func() {
@@ -81,44 +81,44 @@ func TestUnloadableDocumentReportsAKindNoCatalogHolds(t *testing.T) {
 	}{
 		{
 			name:    "a misspelled kind",
-			data:    "apiVersion: aggrega.ai/v1alpha1\nkind: Componnent\nmetadata:\n  name: example/datastore/mariadb-probe\n",
+			data:    "apiVersion: aggrega.ai/v1beta1\nkind: Componnent\nmetadata:\n  name: example/datastore/mariadb-probe\n",
 			refused: true,
 			written: `kind "Componnent"`,
 		},
 		{
 			name:    "a misspelled kind read through a caller's own header",
-			data:    "apiVersion: aggrega.ai/v1alpha1\nkind: Componnent\nmetadata:\n  name: example/datastore/mariadb-probe\n",
+			data:    "apiVersion: aggrega.ai/v1beta1\nkind: Componnent\nmetadata:\n  name: example/datastore/mariadb-probe\n",
 			header:  func() any { return &lintLikeHeader{} },
 			refused: true,
 			written: `kind "Componnent"`,
 		},
 		{
 			name:    "a kind in the wrong case",
-			data:    "apiVersion: aggrega.ai/v1alpha1\nkind: component\nmetadata:\n  name: probe\n",
+			data:    "apiVersion: aggrega.ai/v1beta1\nkind: component\nmetadata:\n  name: probe\n",
 			refused: true,
 			written: `kind "component"`,
 		},
 		{
 			name: "a Workload file a Recipe imports from its own directory",
-			data: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\nform: stateless\ncontainers:\n  app: { image: \"nginx:1.27\" }\n",
+			data: "apiVersion: aggrega.ai/v1beta1\nkind: Workload\nform: stateless\ncontainers:\n  app: { image: \"nginx:1.27\" }\n",
 		},
 		{
 			name:    "no kind at all",
-			data:    "apiVersion: \"aggrega.ai/v1alpha1\"\nmetadata:\n  name: probe\n",
+			data:    "apiVersion: \"aggrega.ai/v1beta1\"\nmetadata:\n  name: probe\n",
 			refused: true,
 			written: "no kind",
 		},
 		{
 			name: "a held kind",
-			data: "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n",
+			data: "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/server\n  version: 1.0.0\nspec: {}\n",
 		},
 		{
 			name: "a Manifest",
-			data: "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: probe\n",
+			data: "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: probe\n",
 		},
 		{
 			name: "a Release",
-			data: "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: probe\n",
+			data: "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: probe\n",
 		},
 		{
 			name: "a Kubernetes document",
@@ -178,8 +178,8 @@ func TestUnloadableDocumentReportsAKindNoCatalogHolds(t *testing.T) {
 func TestUnloadableDocumentsHaltCarriesBothConditions(t *testing.T) {
 	t.Parallel()
 	found := []error{
-		UnloadableDocument("catalog/z.yaml", []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Componnent\nmetadata:\n  name: z\n"), nil, nil),
-		UnloadableDocument("catalog/a.yaml", []byte("apiVersion: aggrega.ai/v1alpha1\nspec: : [\n"), nil, nil),
+		UnloadableDocument("catalog/z.yaml", []byte("apiVersion: aggrega.ai/v1beta1\nkind: Componnent\nmetadata:\n  name: z\n"), nil, nil),
+		UnloadableDocument("catalog/a.yaml", []byte("apiVersion: aggrega.ai/v1beta1\nspec: : [\n"), nil, nil),
 	}
 	halt := UnloadableDocumentsHalt(found)
 	if !errors.Is(halt, ErrUnknownCatalogDocumentKind()) || !errors.Is(halt, resolver.ErrYAMLLoad()) {
@@ -277,8 +277,8 @@ func unheldKindCatalog(t *testing.T) (ws, dir, misspelled string) {
 		return p
 	}
 	misspelled = write("example/datastore/mariadb-probe/1.0.0/component.yaml",
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Componnent\nmetadata:\n  name: example/datastore/mariadb-probe\n  version: 1.0.0\nspec: {}\n")
-	write("acc/clean/component.yaml", `apiVersion: aggrega.ai/v1alpha1
+		"apiVersion: aggrega.ai/v1beta1\nkind: Componnent\nmetadata:\n  name: example/datastore/mariadb-probe\n  version: 1.0.0\nspec: {}\n")
+	write("acc/clean/component.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acc/clean
@@ -291,9 +291,9 @@ spec:
     provides:
       host: { type: string, required: true }
 `)
-	write("manifests/dev.yaml", "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: dev\n")
+	write("manifests/dev.yaml", "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: dev\n")
 	write("recipe/helm/web/1.0.0/workload/workload.yaml",
-		"apiVersion: aggrega.ai/v1alpha1\nkind: Workload\nform: stateless\ncontainers:\n  app: { image: \"nginx:1.27\" }\n")
+		"apiVersion: aggrega.ai/v1beta1\nkind: Workload\nform: stateless\ncontainers:\n  app: { image: \"nginx:1.27\" }\n")
 	write("charts/web/templates/deploy.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n")
 	return ws, dir, misspelled
 }

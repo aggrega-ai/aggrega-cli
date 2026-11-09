@@ -24,7 +24,7 @@ import (
 // contractCorpusAggregate is the base Aggregate with parameters (the indented
 // body of spec.parameters:) declared ahead of its one component.
 func contractCorpusAggregate(parameters string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app
@@ -42,7 +42,7 @@ spec:
 // contractCorpusRelease is the base Release supplying parameters (the indented
 // body of spec.parameters:).
 func contractCorpusRelease(parameters string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: corpus-rel

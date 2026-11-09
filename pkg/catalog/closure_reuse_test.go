@@ -22,7 +22,7 @@ import (
 const reuseURI = "hub.aggrega.ai/schemalibrary/core/DbSizing:1.0.0"
 
 func reuseLibBody(defaultSize string) []byte {
-	return []byte(`apiVersion: aggrega.ai/v1alpha1
+	return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: DbSizing

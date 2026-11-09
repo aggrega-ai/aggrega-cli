@@ -58,7 +58,7 @@ func TestIntegration_ADefaultRegistryWithARepositoryPathPublishesAndResolvesUnde
 		pub := t.TempDir()
 		writeWorkspaceConfig(t, pub, "workspace:\n  catalog_dirs: []\noffline: false\ndefault_registry: \""+host+"/"+prefixPath+"\"\n")
 		componentPath := filepath.Join(pub, "component/test/"+name+"/1.0.0/component.yaml")
-		writeFixture(t, componentPath, `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, componentPath, `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/`+name+`
@@ -72,7 +72,7 @@ spec:
       replicas: { type: integer, default: 1 }
 `)
 		recipePath := filepath.Join(pub, "recipe/helm/"+name+"/1.0.0/recipe.yaml")
-		writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, recipePath, `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: `+name+`
@@ -81,7 +81,7 @@ spec:
   capability: helm
   implements: test/`+name+`
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: {{ optional .infra `+"`replicas`"+` 1 }}
     containers:
@@ -109,7 +109,7 @@ spec:
 	consumer := func(t *testing.T, prefixPath, name string) string {
 		t.Helper()
 		ws := t.TempDir()
-		writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -119,7 +119,7 @@ spec:
     app:
       type: test/`+name+`
 `)
-		writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -130,7 +130,7 @@ spec:
       type:
         test/`+name+`:1.0.0: helm/`+name+`:1.0.0
 `)
-		writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+		writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

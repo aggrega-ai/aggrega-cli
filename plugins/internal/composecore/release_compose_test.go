@@ -62,7 +62,7 @@ func makeFragment(t *testing.T, nodeID string, w *types.Workload, annotations ma
 
 func TestComposeAssemble_SingleBoundary(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "app:1.0"}
 	c.Ports.Set("web", types.PortSpec{Port: 8080})
 	w.Containers.Set("main", c)
@@ -103,7 +103,7 @@ func TestComposeAssemble_SingleBoundary(t *testing.T) {
 func TestComposeAssemble_MergedPath(t *testing.T) {
 	t.Parallel()
 
-	frontW := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	frontW := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	fc := types.ContainerSpec{Image: "frontend:1.0"}
 	fc.Ports.Set("http", types.PortSpec{Port: 80})
 	frontW.Containers.Set("main", fc)
@@ -111,7 +111,7 @@ func TestComposeAssemble_MergedPath(t *testing.T) {
 	fSvc.Ports.Set("http", 80)
 	frontW.Services.Set("public", fSvc)
 
-	backW := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	backW := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	bc := types.ContainerSpec{Image: "backend:1.0"}
 	bc.Ports.Set("rpc", types.PortSpec{Port: 50051})
 	backW.Containers.Set("main", bc)
@@ -144,7 +144,7 @@ func TestComposeAssemble_MergedPath(t *testing.T) {
 func TestComposeAssemble_DependsOnFromUsesEdges(t *testing.T) {
 	t.Parallel()
 
-	apiW := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	apiW := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	ac := types.ContainerSpec{Image: "api:1.0"}
 	ac.Ports.Set("http", types.PortSpec{Port: 8080})
 	apiW.Containers.Set("main", ac)
@@ -152,7 +152,7 @@ func TestComposeAssemble_DependsOnFromUsesEdges(t *testing.T) {
 	apiSvc.Ports.Set("http", 8080)
 	apiW.Services.Set("api", apiSvc)
 
-	dbW := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	dbW := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	dc := types.ContainerSpec{Image: "postgres:15"}
 	dc.Ports.Set("pg", types.PortSpec{Port: 5432})
 	dbW.Containers.Set("main", dc)
@@ -226,7 +226,7 @@ func TestComposeAssemble_ServiceCollision_Errors(t *testing.T) {
 
 func TestComposeAssemble_NoNamespaceAnnotation_FallsBackToBoundaryPath(t *testing.T) {
 	t.Parallel()
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: "x:1.0"}
 	c.Ports.Set("p", types.PortSpec{Port: 80})
 	w.Containers.Set("main", c)
@@ -387,7 +387,7 @@ func mapKeys(m map[string][]byte) []string {
 // healthcheck when withHealth is set. The healthcheck is what makes the
 // difference between the two wave-derived conditions observable.
 func waveWorkload(image string, port int, withHealth bool) *types.Workload {
-	w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload"}
+	w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload"}
 	c := types.ContainerSpec{Image: image}
 	c.Ports.Set("p", types.PortSpec{Port: port})
 	if withHealth {

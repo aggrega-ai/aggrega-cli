@@ -30,7 +30,7 @@ import (
 // by whole-catalog lint). Violations are produced by replacing a base
 // with a single-fault variant in the row table below.
 var lintBases = map[string]string{
-	"Component": `apiVersion: aggrega.ai/v1alpha1
+	"Component": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -42,7 +42,7 @@ spec:
     values:
       port: { type: integer }
 `,
-	"Feature": `apiVersion: aggrega.ai/v1alpha1
+	"Feature": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/data-masking
@@ -53,7 +53,7 @@ spec:
     values:
       level: { type: string }
 `,
-	"Recipe": `apiVersion: aggrega.ai/v1alpha1
+	"Recipe": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: mariadb
@@ -62,13 +62,13 @@ spec:
   capability: compose
   implements: core/datastore/mariadb
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: x:1
 `,
-	"FeatureRecipe": `apiVersion: aggrega.ai/v1alpha1
+	"FeatureRecipe": `apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: dotenv-secret
@@ -80,7 +80,7 @@ spec:
     env:
       X: "y"
 `,
-	"SchemaLibrary": `apiVersion: aggrega.ai/v1alpha1
+	"SchemaLibrary": `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseComponents
@@ -92,7 +92,7 @@ spec:
       properties:
         x: { type: string }
 `,
-	"MappingLibrary": `apiVersion: aggrega.ai/v1alpha1
+	"MappingLibrary": `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BaseMappings
@@ -116,7 +116,7 @@ type lintRow struct {
 func lintCorpusRows() []lintRow {
 	return []lintRow{
 		// Unknown key at spec (the silent-drop class made loud).
-		{"component-unknown-spec-key", "Component", `apiVersion: aggrega.ai/v1alpha1
+		{"component-unknown-spec-key", "Component", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -130,7 +130,7 @@ spec:
       port: { type: integer }
 `, envelope.ErrEntityEnvelope()},
 		// Retired key (secretNames) — the exact hole the gate was built to close.
-		{"component-retired-secretNames", "Component", `apiVersion: aggrega.ai/v1alpha1
+		{"component-retired-secretNames", "Component", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -144,7 +144,7 @@ spec:
       port: { type: integer }
 `, envelope.ErrEntityEnvelope()},
 		// Missing required metadata field (version).
-		{"component-missing-version", "Component", `apiVersion: aggrega.ai/v1alpha1
+		{"component-missing-version", "Component", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -158,7 +158,7 @@ spec:
 		// *From: family — banned by spec-level closure, rejected as an
 		// unknown key (no dedicated *From sentinel exists; the mechanism
 		// IS unknown-key rejection).
-		{"component-valueFrom-family", "Component", `apiVersion: aggrega.ai/v1alpha1
+		{"component-valueFrom-family", "Component", `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/api-server
@@ -172,7 +172,7 @@ spec:
       port: { type: integer }
 `, envelope.ErrEntityEnvelope()},
 		// Wrong envelope shape: spec authored as a list, not a map.
-		{"feature-wrong-spec-shape", "Feature", `apiVersion: aggrega.ai/v1alpha1
+		{"feature-wrong-spec-shape", "Feature", `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/data-masking
@@ -183,7 +183,7 @@ spec:
   - map
 `, envelope.ErrEntityEnvelope()},
 		// Typo'd key on a Recipe spec.
-		{"recipe-typo-key", "Recipe", `apiVersion: aggrega.ai/v1alpha1
+		{"recipe-typo-key", "Recipe", `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: mariadb
@@ -192,14 +192,14 @@ spec:
   capability: compose
   implments: core/datastore/mariadb
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: x:1
 `, envelope.ErrEntityEnvelope()},
 		// SchemaLibrary missing required (schemas).
-		{"schemalibrary-missing-schemas", "SchemaLibrary", `apiVersion: aggrega.ai/v1alpha1
+		{"schemalibrary-missing-schemas", "SchemaLibrary", `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseComponents
@@ -207,7 +207,7 @@ metadata:
 spec: {}
 `, envelope.ErrEntityEnvelope()},
 		// MappingLibrary unknown key.
-		{"mappinglibrary-unknown-key", "MappingLibrary", `apiVersion: aggrega.ai/v1alpha1
+		{"mappinglibrary-unknown-key", "MappingLibrary", `apiVersion: aggrega.ai/v1beta1
 kind: MappingLibrary
 metadata:
   name: BaseMappings

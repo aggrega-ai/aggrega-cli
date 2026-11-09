@@ -1,7 +1,7 @@
 # The same two-boundary, one-instance-name shape, with a FeatureRecipe whose
 # published value names the boundary it rendered for — so the two contributors'
 # fragments differ.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: bs-differing-bodies

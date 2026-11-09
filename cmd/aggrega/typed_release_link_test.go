@@ -17,7 +17,7 @@ import (
 // typedReleaseByName is the authoring fixture's Release, naming its Aggregate and
 // its Manifest by name rather than by path, so a pull of it looks for them among
 // the documents beside the Release.
-const typedReleaseByName = `apiVersion: aggrega.ai/v1alpha1
+const typedReleaseByName = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: smoke-rel

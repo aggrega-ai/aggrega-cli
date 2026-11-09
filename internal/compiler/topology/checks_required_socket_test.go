@@ -73,7 +73,7 @@ func locatorsOfFindings(findings []*resolver.ResolverError) []string {
 const (
 	// requiredSocketUnbound leaves the required socket the type declares
 	// entirely unwritten.
-	requiredSocketUnbound = `apiVersion: aggrega.ai/v1alpha1
+	requiredSocketUnbound = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -85,7 +85,7 @@ spec:
       type: app/db:1.0.0
 `
 	// requiredSocketVerbose writes the long authoring form.
-	requiredSocketVerbose = `apiVersion: aggrega.ai/v1alpha1
+	requiredSocketVerbose = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -101,7 +101,7 @@ spec:
       type: app/db:1.0.0
 `
 	// requiredSocketCompact writes the short authoring form.
-	requiredSocketCompact = `apiVersion: aggrega.ai/v1alpha1
+	requiredSocketCompact = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -116,7 +116,7 @@ spec:
       type: app/db:1.0.0
 `
 	// requiredSocketEmptyVerbose names the socket and writes no entry under it.
-	requiredSocketEmptyVerbose = `apiVersion: aggrega.ai/v1alpha1
+	requiredSocketEmptyVerbose = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -131,7 +131,7 @@ spec:
 `
 	// optionalSocketUnbound leaves the socket the type declares WITHOUT a
 	// requirement unwritten, and binds the required one.
-	optionalSocketUnbound = `apiVersion: aggrega.ai/v1alpha1
+	optionalSocketUnbound = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -148,7 +148,7 @@ spec:
 	// requiredSocketInDeclaredSubsystem puts the offending component inside a
 	// scope the author declared, alongside the component a Release can wire
 	// it to.
-	requiredSocketInDeclaredSubsystem = `apiVersion: aggrega.ai/v1alpha1
+	requiredSocketInDeclaredSubsystem = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -162,7 +162,7 @@ spec:
           type: app/db:1.0.0
 `
 	// requiredSocketInNestedSubsystem puts it two scopes deep.
-	requiredSocketInNestedSubsystem = `apiVersion: aggrega.ai/v1alpha1
+	requiredSocketInNestedSubsystem = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -179,7 +179,7 @@ spec:
 `
 	// twoConsumersUnbound leaves the requirement unwritten on two components,
 	// so a count assertion has two members and their order is observable.
-	twoConsumersUnbound = `apiVersion: aggrega.ai/v1alpha1
+	twoConsumersUnbound = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -195,7 +195,7 @@ spec:
 	// twoConsumersOneBound carries two components declaring the same
 	// requirement, so a Release binding one of them leaves the other's
 	// socket unpopulated.
-	twoConsumersOneBound = `apiVersion: aggrega.ai/v1alpha1
+	twoConsumersOneBound = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -210,7 +210,7 @@ spec:
 `
 	// requiredSocketCompactEmptyItem writes the short form with an item naming
 	// no target at all.
-	requiredSocketCompactEmptyItem = `apiVersion: aggrega.ai/v1alpha1
+	requiredSocketCompactEmptyItem = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -227,7 +227,7 @@ spec:
 	// componentNamingAnAbsentType names a catalog identity the catalog holds no
 	// entry for, alongside a component that offends so the fixture also shows
 	// the rule being invoked.
-	componentNamingAnAbsentType = `apiVersion: aggrega.ai/v1alpha1
+	componentNamingAnAbsentType = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -241,7 +241,7 @@ spec:
       type: app/db:1.0.0
 `
 	// moduleImport imports the module the loader answers with.
-	moduleImport = `apiVersion: aggrega.ai/v1alpha1
+	moduleImport = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -253,7 +253,7 @@ spec:
 	// moduleLeavingItUnbound is the case only the composed connection set can
 	// answer: the component is declared in the module's own document, which is
 	// read when the composition is flattened.
-	moduleLeavingItUnbound = `apiVersion: aggrega.ai/v1alpha1
+	moduleLeavingItUnbound = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -265,7 +265,7 @@ spec:
       type: app/db:1.0.0
 `
 	// moduleBindingIt writes the connection inside the module.
-	moduleBindingIt = `apiVersion: aggrega.ai/v1alpha1
+	moduleBindingIt = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: mod
@@ -285,7 +285,7 @@ spec:
 // The Release shapes. Each places the module so a routed fixture is not
 // reported for being unplaced.
 const (
-	releasePlacingTheModule = `apiVersion: aggrega.ai/v1alpha1
+	releasePlacingTheModule = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -297,7 +297,7 @@ spec:
         mod: {}
 `
 	// releaseBindingTheSocket creates the connection the Aggregate left out.
-	releaseBindingTheSocket = `apiVersion: aggrega.ai/v1alpha1
+	releaseBindingTheSocket = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -322,7 +322,7 @@ spec:
 	// It places every component its Aggregate declares, so the composition the
 	// rule is asked about is one a Release could really produce: a component
 	// belonging to no boundary halts before any rule about sockets is reached.
-	releaseBindingTheSocketBesideASibling = `apiVersion: aggrega.ai/v1alpha1
+	releaseBindingTheSocketBesideASibling = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -347,7 +347,7 @@ spec:
 	// target AND carrying operator sizing is reported by the rule about sizing
 	// that reaches no connection, which halts the composition before this rule is
 	// asked. Written that way, the fixture would measure the other rule.
-	releaseConfiguringWithoutATarget = `apiVersion: aggrega.ai/v1alpha1
+	releaseConfiguringWithoutATarget = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -366,7 +366,7 @@ spec:
 	// the Aggregate declared inside a scope, addressing it by the bare
 	// instance name — which is how a Release names a component at every
 	// placement.
-	releaseBindingASubsystemComponent = `apiVersion: aggrega.ai/v1alpha1
+	releaseBindingASubsystemComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -384,7 +384,7 @@ spec:
 `
 	// releaseBindingAnotherSocket creates a connection on the socket the type
 	// declares without a requirement.
-	releaseBindingAnotherSocket = `apiVersion: aggrega.ai/v1alpha1
+	releaseBindingAnotherSocket = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -566,7 +566,7 @@ func TestTheRequiredSocketWalkStopsPartwayOnCancellation(t *testing.T) {
 	// A composition wide enough that stopping partway is unambiguous.
 	const total = 40
 	var b strings.Builder
-	b.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: demo\nspec:\n  components:\n")
+	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: demo\nspec:\n  components:\n")
 	b.WriteString("    db:\n      type: app/db:1.0.0\n")
 	for i := 0; i < total; i++ {
 		fmt.Fprintf(&b, "    api-%02d:\n      type: app/svc:1.0.0\n", i)

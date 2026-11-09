@@ -104,7 +104,7 @@ func TestDiscoverWorkloadLibrariesIdentityGate(t *testing.T) {
 	cases := map[string]string{
 		"local-file":   "$import: ./workloads/service.yaml",
 		"host-bearing": "$import: oci://hub.aggrega.ai/LibA#/workloads/Foo",
-		"inline":       "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\n",
+		"inline":       "apiVersion: aggrega.ai/v1beta1\nkind: Workload\n",
 	}
 	for name, tmpl := range cases {
 		tmpl := tmpl

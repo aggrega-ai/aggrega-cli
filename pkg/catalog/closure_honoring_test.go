@@ -47,7 +47,7 @@ func documentRowDigest(document []byte) string {
 // assertions turn on. It is a real entity document because the registry tier now
 // puts a fetched body through its kind's schema before caching it.
 func twoVersionComponent(version string) []byte {
-	return []byte(`apiVersion: aggrega.ai/v1alpha1
+	return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/two-ver
@@ -63,7 +63,7 @@ spec: {}
 // at the given version, since the library tier validates a fetched body against
 // the SchemaLibrary schema too — whose library name is PascalCase.
 func twoVersionSchemaLibrary(version string) []byte {
-	return []byte(`apiVersion: aggrega.ai/v1alpha1
+	return []byte(`apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: TwoVerLib

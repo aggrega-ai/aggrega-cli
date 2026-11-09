@@ -52,7 +52,7 @@ type signedPluginPublication struct {
 // spec.plugin identity (no ":version", no "@sha256:"); the version comes from
 // metadata.version and the .wasm rides inline in the single manifest.
 func pluginEntityYAML(host, name, version string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: ` + name + `

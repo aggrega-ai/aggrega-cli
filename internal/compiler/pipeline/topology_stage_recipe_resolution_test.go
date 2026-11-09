@@ -55,7 +55,7 @@ const (
 // leave that to be read out of a diff.
 func manifestMapping(entries ...string) string {
 	var b strings.Builder
-	b.WriteString(`apiVersion: aggrega.ai/v1alpha1
+	b.WriteString(`apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: prod-manifest
@@ -486,7 +486,7 @@ func TestMappedToAMalformedPinHaltsAsTheMalformation(t *testing.T) {
 // It differs from the committed document in that one type reference and in
 // nothing else, which is what makes the pair of proofs below a test of the
 // INSTANCE's pinning rather than of the mapping table.
-const aggregateWithPinnedBackendType = `apiVersion: aggrega.ai/v1alpha1
+const aggregateWithPinnedBackendType = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: fullstack-app

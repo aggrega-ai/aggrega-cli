@@ -317,7 +317,7 @@ func TestTheDaemonNamesEveryPlaceholderADraftCarries(t *testing.T) {
 func TestAPlaceholdersColumnIsCountedInTheSessionsEncoding(t *testing.T) {
 	t.Parallel()
 	document := func(description string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\n" +
+		return "apiVersion: aggrega.ai/v1beta1\n" +
 			"kind: Component\n" +
 			"metadata: {name: my-service, description: \"" + description + "\", version: \"\", labels: {component.aggrega.ai/type: server}}\n" +
 			"spec: {}\n"
@@ -378,7 +378,7 @@ func TestAPlaceholdersColumnIsCountedInTheSessionsEncoding(t *testing.T) {
 func TestADottedPlaceholderKeyIsDrawnOnTheKeyItself(t *testing.T) {
 	t.Parallel()
 	const typeLabel = "metadata.labels.component.aggrega.ai/type"
-	const afterCafe = "apiVersion: aggrega.ai/v1alpha1\n" +
+	const afterCafe = "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Component\n" +
 		"metadata:\n" +
 		"  name: my-service\n" +
@@ -386,7 +386,7 @@ func TestADottedPlaceholderKeyIsDrawnOnTheKeyItself(t *testing.T) {
 		"  labels: {team: \"café\", component.aggrega.ai/type: \"\"}\n" +
 		"spec: {}\n"
 	afterCafeColumns := map[string][2]int{"utf-16": {26, 51}, "utf-8": {27, 52}}
-	const notAPlaceholder = "apiVersion: aggrega.ai/v1alpha1\n" +
+	const notAPlaceholder = "apiVersion: aggrega.ai/v1beta1\n" +
 		"kind: Component\n" +
 		"metadata:\n" +
 		"  name: my-service\n" +

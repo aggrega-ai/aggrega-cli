@@ -16,7 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
-const guardComponentBody = `apiVersion: aggrega.ai/v1alpha1
+const guardComponentBody = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server

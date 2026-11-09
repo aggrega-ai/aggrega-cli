@@ -31,7 +31,7 @@ const (
 // selectorProbeComponent is a Component declaring one dependency socket, one
 // slot of its own and one slot on the socket, with the three selectors given.
 func selectorProbeComponent(socket, ownSlot, socketSlot string) string {
-	return fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	return fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/selector-probe
@@ -54,7 +54,7 @@ spec:
 // selectorProbeFeature is a Feature declaring one dependency socket and one slot,
 // with the two selectors given.
 func selectorProbeFeature(socket, slot string) string {
-	return fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	return fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/selector-probe-feature

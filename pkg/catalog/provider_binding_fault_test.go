@@ -14,7 +14,7 @@ import (
 // providerPluginServing renders a schema-conforming pluginType: provider Plugin
 // entity serving every capability given, in the order given.
 func providerPluginServing(name, version string, capabilities ...string) string {
-	doc := `apiVersion: aggrega.ai/v1alpha1
+	doc := `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: ` + name + `
@@ -42,7 +42,7 @@ func bindingFaultCatalog(t *testing.T) *catalog.Catalog {
 	writeYAMLToCatalog(t, dir, "plugins/widget-renderer.yaml", providerPluginServing("widget-renderer", "1.0.0", "widget"))
 	writeYAMLToCatalog(t, dir, "plugins/shared-a.yaml", providerPluginServing("shared-a", "1.0.0", "shared"))
 	writeYAMLToCatalog(t, dir, "plugins/shared-b.yaml", providerPluginServing("shared-b", "1.0.0", "shared"))
-	writeYAMLToCatalog(t, dir, "plugins/acme-step.yaml", `apiVersion: aggrega.ai/v1alpha1
+	writeYAMLToCatalog(t, dir, "plugins/acme-step.yaml", `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: acme-step

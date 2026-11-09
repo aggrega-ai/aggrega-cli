@@ -32,7 +32,7 @@ import (
 // reader a byte count is a media type — would pass. The facts come from the
 // operation; only the words are pinned here.
 
-const reportedFactsComponent = `apiVersion: aggrega.ai/v1alpha1
+const reportedFactsComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/api-server
@@ -45,7 +45,7 @@ spec:
       type: object
 `
 
-const reportedFactsFeature = `apiVersion: aggrega.ai/v1alpha1
+const reportedFactsFeature = `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/ingress

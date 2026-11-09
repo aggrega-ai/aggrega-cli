@@ -213,7 +213,7 @@ func recordAttachmentArtifactPillarInvocations(t *testing.T) func() []invocation
 func invocationLookup(
 	hostArtifacts, featureArtifacts types.OrderedMap[types.ArtifactEntry],
 ) renderer.RecipeLookup {
-	const workload = `apiVersion: aggrega.ai/v1alpha1
+	const workload = `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:

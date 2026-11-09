@@ -67,7 +67,7 @@ func TestArchiveEntryNamesAreTheNamesTheArchiveHolds(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			dir := t.TempDir()
 			entityPath := filepath.Join(dir, row.document)
-			writeArchiveFixture(t, entityPath, "apiVersion: aggrega.ai/v1alpha1\nkind: Component\n")
+			writeArchiveFixture(t, entityPath, "apiVersion: aggrega.ai/v1beta1\nkind: Component\n")
 			for _, rel := range row.carried {
 				writeArchiveFixture(t, filepath.Join(dir, filepath.FromSlash(rel)), "content of "+rel+"\n")
 			}

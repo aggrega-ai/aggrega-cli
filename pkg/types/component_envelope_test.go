@@ -20,7 +20,7 @@ import (
 func componentEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal([]byte(schemas.ComponentV1alpha1), schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.ComponentV1beta1), schema); err != nil {
 		t.Fatalf("unmarshal envelope schema: %v", err)
 	}
 	v, err := jsonvalidator.New(schema)
@@ -36,7 +36,7 @@ func TestComponentEnvelope_AcceptsAssertions(t *testing.T) {
 	t.Parallel()
 	v := componentEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb
@@ -72,7 +72,7 @@ func TestComponentEnvelope_RejectsNonStringAssertionValue(t *testing.T) {
 	t.Parallel()
 	v := componentEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/datastore/mariadb

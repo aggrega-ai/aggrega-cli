@@ -17,7 +17,7 @@
 // The workspace file is flat top-level (no apiVersion/kind/metadata
 // envelope), distinguishing it from catalog content which carries
 // the envelope. The Config type and the workspace file's wire
-// format are pinned by the aggrega-config-v1alpha1 JSON Schema in
+// format are pinned by the aggrega-config-v1beta1 JSON Schema in
 // aggrega-schemas/json/.
 //
 // Several documented defaults are NOT the Go zero-value:
@@ -824,7 +824,7 @@ type LintConfig struct {
 // discouragement check.
 //
 // JSON marshalling matches the schema's Policies $def in
-// aggrega-schemas/json/wasm-linter-v1alpha1.schema.json.
+// aggrega-schemas/json/wasm-linter-v1beta1.schema.json.
 // The publishing-linter Wasm plugin consumes a JSON object with the
 // same field set; the symmetry is pinned at unit-test time by
 // pkg/validator's TestPoliciesRoundTripThroughSchema. Adding or

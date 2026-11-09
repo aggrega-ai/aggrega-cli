@@ -27,7 +27,7 @@ import (
 func TestLintCatalogWide_FlagsWorkloadOnHelmChart(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFixture(t, filepath.Join(dir, "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dir, "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-helmchart
@@ -36,10 +36,10 @@ spec:
   capability: helm-chart
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
 `)
-	writeFixture(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm-chart-renderer
@@ -72,7 +72,7 @@ spec:
 func TestLintCatalogWide_AllowsWorkloadOnCompose(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFixture(t, filepath.Join(dir, "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dir, "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-compose
@@ -81,10 +81,10 @@ spec:
   capability: compose
   implements: core/server
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
 `)
-	writeFixture(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: compose-renderer
@@ -120,7 +120,7 @@ spec:
 func TestLintCatalogWide_FlagsSourcePlusWorkloadOnTerraform(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFixture(t, filepath.Join(dir, "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dir, "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-terraform
@@ -130,10 +130,10 @@ spec:
   implements: core/server
   source: oci://registry.example.com/modules/api:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
 `)
-	writeFixture(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: terraform-renderer
@@ -182,7 +182,7 @@ spec:
 func TestLintCatalogWide_SkipsSourcePlusWorkloadWhenPluginDeclaresNoContract(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFixture(t, filepath.Join(dir, "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dir, "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api-terraform
@@ -192,10 +192,10 @@ spec:
   implements: core/server
   source: oci://registry.example.com/modules/api:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
 `)
-	writeFixture(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dir, "plugin.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: terraform-renderer
@@ -243,7 +243,7 @@ func wlRecipe(name, provider string, workload bool) types.Recipe {
 	r.Metadata.Version = "1.0.0"
 	r.Spec.Capability = provider
 	if workload {
-		r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\n"}
+		r.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1beta1\nkind: Workload\n"}
 	}
 	return r
 }
@@ -254,7 +254,7 @@ func wlFeatureRecipe(name, provider string, workload bool) types.FeatureRecipe {
 	fr.Metadata.Version = "1.0.0"
 	fr.Spec.Capability = provider
 	if workload {
-		fr.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1alpha1\nkind: Workload\n"}
+		fr.Spec.Workload = types.WorkloadTemplate{Inline: "apiVersion: aggrega.ai/v1beta1\nkind: Workload\n"}
 	}
 	return fr
 }

@@ -19,12 +19,12 @@ import (
 func TestValidateWorkloadForm_SuspendRequiresScheduled(t *testing.T) {
 	t.Parallel()
 	for _, form := range []string{"", WorkloadFormStateless, WorkloadFormStateful, WorkloadFormDaemon, WorkloadFormTask} {
-		w := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form, Suspend: true}
+		w := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: form, Suspend: true}
 		if err := ValidateWorkloadForm(w, "node"); !errors.Is(err, ErrSuspendRequiresScheduledForm()) {
 			t.Errorf("form %q with suspend: want ErrSuspendRequiresScheduledForm, got %v", form, err)
 		}
 
-		unset := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: form, Suspend: false}
+		unset := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: form, Suspend: false}
 		if err := ValidateWorkloadForm(unset, "node"); err != nil {
 			t.Errorf("form %q with suspend false should pass, got %v", form, err)
 		}
@@ -32,7 +32,7 @@ func TestValidateWorkloadForm_SuspendRequiresScheduled(t *testing.T) {
 
 	// A reference workload carries its endpoint, so the only fault in the row is
 	// the suspend.
-	ref := &types.Workload{APIVersion: "aggrega.ai/v1alpha1", Kind: "Workload", Form: WorkloadFormReference, Endpoint: "db.example.com", Suspend: true}
+	ref := &types.Workload{APIVersion: "aggrega.ai/v1beta1", Kind: "Workload", Form: WorkloadFormReference, Endpoint: "db.example.com", Suspend: true}
 	if err := ValidateWorkloadForm(ref, "node"); !errors.Is(err, ErrSuspendRequiresScheduledForm()) {
 		t.Errorf("reference form with suspend: want ErrSuspendRequiresScheduledForm, got %v", err)
 	}

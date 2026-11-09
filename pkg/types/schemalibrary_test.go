@@ -15,7 +15,7 @@ import (
 func TestSchemaLibrary_RoundTrip_MinimalEntry(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: WebPrimitives
@@ -30,8 +30,8 @@ spec:
 	if err := yaml.Unmarshal([]byte(in), &lib); err != nil {
 		t.Fatalf("YAML unmarshal: %v", err)
 	}
-	if lib.APIVersion != "aggrega.ai/v1alpha1" {
-		t.Errorf("APIVersion = %q, want aggrega.ai/v1alpha1", lib.APIVersion)
+	if lib.APIVersion != "aggrega.ai/v1beta1" {
+		t.Errorf("APIVersion = %q, want aggrega.ai/v1beta1", lib.APIVersion)
 	}
 	if lib.Kind != "SchemaLibrary" {
 		t.Errorf("Kind = %q, want SchemaLibrary", lib.Kind)
@@ -60,7 +60,7 @@ spec:
 func TestSchemaLibrary_RoundTrip_TemplatesDeclared(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Probes
@@ -115,7 +115,7 @@ spec:
 func TestSchemaLibrary_RoundTrip_MultiEntryAuthorOrder(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Mixed
@@ -153,7 +153,7 @@ spec:
 func TestSchemaLibrary_RemarshalsCleanly(t *testing.T) {
 	t.Parallel()
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: RoundTrip
@@ -303,7 +303,7 @@ func contains(haystack, needle string) bool {
 func TestSchemaLibrary_RoundTrip_NoTemplatesOK(t *testing.T) {
 	t.Parallel()
 
-	in := `apiVersion: aggrega.ai/v1alpha1
+	in := `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Simple

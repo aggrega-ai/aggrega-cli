@@ -13,7 +13,7 @@ import (
 
 // kindWrittenAsAList is a document whose kind is written as a list — the one
 // fault every row below carries.
-const kindWrittenAsAList = "apiVersion: aggrega.ai/v1alpha1\nkind:\n  - Component\nmetadata:\n  name: example/compute/probe\n"
+const kindWrittenAsAList = "apiVersion: aggrega.ai/v1beta1\nkind:\n  - Component\nmetadata:\n  name: example/compute/probe\n"
 
 // TestPreambleRefusalNamesTheKindAsWritten holds both validate scopes that read a
 // document's kind before anything else to a refusal in the author's words: the

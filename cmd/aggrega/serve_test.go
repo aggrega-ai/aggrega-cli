@@ -489,7 +489,7 @@ func TestServeLifecycle(t *testing.T) {
 	// Request 1: validate.
 	if _, err := stdin.Write(framedFor(t, cmd, 1, "aggrega/validate", map[string]any{
 		"file":    "x.yaml",
-		"content": "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n",
+		"content": "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n",
 	})); err != nil {
 		t.Fatalf("write request 1: %v", err)
 	}
@@ -505,7 +505,7 @@ func TestServeLifecycle(t *testing.T) {
 	// equivalence — second validate succeeds with the same shape).
 	if _, err := stdin.Write(framedFor(t, cmd, 2, "aggrega/validate", map[string]any{
 		"file":    "x.yaml",
-		"content": "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\n",
+		"content": "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\n",
 	})); err != nil {
 		t.Fatalf("write request 2: %v", err)
 	}
@@ -747,8 +747,8 @@ func TestServeAggregaResolveEndToEnd(t *testing.T) {
 	}
 
 	// Parent Component fixture + child Component extending it.
-	parent := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/web-server\n  version: 1.0.0\nspec: {}\n"
-	child := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: app/api-server\n  version: 1.0.0\nspec:\n  extends: core/web-server\n"
+	parent := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/web-server\n  version: 1.0.0\nspec: {}\n"
+	child := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: app/api-server\n  version: 1.0.0\nspec:\n  extends: core/web-server\n"
 	parentPath := filepath.Join(ws, "parent.yaml")
 	childPath := filepath.Join(ws, "child.yaml")
 	if err := os.WriteFile(parentPath, []byte(parent), 0o644); err != nil {

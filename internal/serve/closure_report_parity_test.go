@@ -143,7 +143,7 @@ func closureFindingsWorkspace(t *testing.T, withMarker bool) (ws, releaseRel str
 	// A shared document, and a Component drawing on it. The library axis is
 	// otherwise empty in a minimal workspace, and an empty axis cannot show whether
 	// it is reported.
-	writeFixtureFile(t, filepath.Join(catalogDir, "libraries", "base-types.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "libraries", "base-types.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseTypes
@@ -153,7 +153,7 @@ spec:
     PortSpec:
       port: { type: integer, default: 8080 }
 `)
-	const svcComponent = `apiVersion: aggrega.ai/v1alpha1
+	const svcComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc
@@ -169,7 +169,7 @@ spec:
       host: { type: string, required: true }
 `
 	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), svcComponent)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-server-synthesized
@@ -180,7 +180,7 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
@@ -191,7 +191,7 @@ spec:
 	// resolves every mapping key, so a key naming nothing refuses the resolution
 	// before the mapping verdict is reached — a different fault, and one that would
 	// leave this fixture unable to raise the class it exists for.
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "other.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "other.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/other
@@ -205,7 +205,7 @@ spec:
 `)
 	// The recipe the second mapping points at implements a type nothing here
 	// extends, which is what the mapping verdict reports.
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "unrelated.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "unrelated.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-unrelated
@@ -214,14 +214,14 @@ spec:
   capability: helm
   implements: demo/something-else
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: something-else:latest
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm
@@ -238,7 +238,7 @@ spec:
     maxMemoryPages: 4096
     timeoutMs: 300000
 `)
-	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -250,7 +250,7 @@ spec:
         demo/svc: demo-server-synthesized
         demo/other: demo-unrelated:1.0.0
 `)
-	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-agg
@@ -262,7 +262,7 @@ spec:
 `)
 	releaseRel = "app-release.yaml"
 	relPath := filepath.Join(ws, releaseRel)
-	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release

@@ -43,7 +43,7 @@ func writeLintParityFixture(t *testing.T, path, content string) {
 	}
 }
 
-const lintParityBadComponent = `apiVersion: aggrega.ai/v1alpha1
+const lintParityBadComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: BadName
@@ -56,7 +56,7 @@ spec:
       type: object
 `
 
-const lintParityAggregate = `apiVersion: aggrega.ai/v1alpha1
+const lintParityAggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: parity-app
@@ -67,7 +67,7 @@ spec:
       type: core/compute/api-server
 `
 
-const lintParityManifest = `apiVersion: aggrega.ai/v1alpha1
+const lintParityManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: parity-manifest
@@ -79,7 +79,7 @@ spec:
         core/compute/api-server: helm-api-server-synthesized-with-artifacts:1.0.0
 `
 
-const lintParityRelease = `apiVersion: aggrega.ai/v1alpha1
+const lintParityRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: parity-release

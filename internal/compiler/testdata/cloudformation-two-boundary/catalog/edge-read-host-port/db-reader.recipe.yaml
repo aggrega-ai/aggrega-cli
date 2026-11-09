@@ -10,7 +10,7 @@
 # each as a whole property value. The port is plain text, so it is written
 # back as the value itself and no export is published for it.
 
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: db-reader

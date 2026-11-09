@@ -20,7 +20,7 @@ import (
 func releaseEnvelopeValidator(t *testing.T) jsonvalidator.Validator {
 	t.Helper()
 	schema := &libschema.Schema{}
-	if err := json.Unmarshal([]byte(schemas.ReleaseV1alpha1), schema); err != nil {
+	if err := json.Unmarshal([]byte(schemas.ReleaseV1beta1), schema); err != nil {
 		t.Fatalf("unmarshal envelope schema: %v", err)
 	}
 	v, err := jsonvalidator.New(schema)
@@ -36,7 +36,7 @@ func TestReleaseEnvelope_AcceptsParametersInline(t *testing.T) {
 	t.Parallel()
 	v := releaseEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: inline-params
@@ -68,7 +68,7 @@ func TestReleaseEnvelope_AcceptsParametersImport(t *testing.T) {
 	t.Parallel()
 	v := releaseEnvelopeValidator(t)
 
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: import-params

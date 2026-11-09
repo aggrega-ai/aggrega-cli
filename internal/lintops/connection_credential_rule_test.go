@@ -32,7 +32,7 @@ const credentialMarker = "PLANTED-CREDENTIAL-MARKER-a91c"
 
 // keyCheckingTarget declares the slot the standard catalog names for the key a
 // server requires of every caller.
-const keyCheckingTarget = `apiVersion: aggrega.ai/v1alpha1
+const keyCheckingTarget = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/ai-model/server
@@ -49,7 +49,7 @@ spec:
 
 // keyPresentingCaller declares the slot a connection on its model socket fills
 // with the key the caller presents.
-const keyPresentingCaller = `apiVersion: aggrega.ai/v1alpha1
+const keyPresentingCaller = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/ai-agent/caller
@@ -70,7 +70,7 @@ spec:
 // reading the given locator; an empty locator leaves that end's slot unfilled.
 func twoEndedAggregate(targetLocator, connectionLocator string) string {
 	var b strings.Builder
-	b.WriteString(`apiVersion: aggrega.ai/v1alpha1
+	b.WriteString(`apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: two-ended
@@ -127,7 +127,7 @@ func runTwoEndedCheck(t *testing.T, aggregateYAML string, resolve func(string, b
 	if err := yaml.Unmarshal([]byte(aggregateYAML), &agg); err != nil {
 		t.Fatalf("parse aggregate: %v", err)
 	}
-	rel := &types.Release{APIVersion: "aggrega.ai/v1alpha1", Kind: "Release"}
+	rel := &types.Release{APIVersion: "aggrega.ai/v1beta1", Kind: "Release"}
 	rel.Metadata.Name = "two-ended-release"
 	rc := &compilerops.ResolvedClosure{Release: rel, Aggregate: &agg, AggBytes: []byte(aggregateYAML), AggregatePath: "aggregate.yaml"}
 

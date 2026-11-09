@@ -14,7 +14,7 @@ import (
 // referenceLibrary holds one entry of each shape a reference can name: a
 // string with a pattern, an object, and an object meant to be referenced as a
 // whole pillar.
-const referenceLibrary = `apiVersion: aggrega.ai/v1alpha1
+const referenceLibrary = `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Names

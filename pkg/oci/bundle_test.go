@@ -30,7 +30,7 @@ func TestPullPushTarGzRecipeRoundTrip(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "source"), 0o755); err != nil {
 		t.Fatalf("mkdir source/: %v", err)
 	}
-	mustWrite(t, filepath.Join(dir, "recipe.yaml"), []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: helm/mariadb-bitnami\n  version: 1.0.0\n"))
+	mustWrite(t, filepath.Join(dir, "recipe.yaml"), []byte("apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: helm/mariadb-bitnami\n  version: 1.0.0\n"))
 	mustWrite(t, filepath.Join(dir, "source", "Chart.yaml"), []byte("name: mariadb\nversion: 25.0.8\n"))
 	mustWrite(t, filepath.Join(dir, "source", "values.yaml"), []byte("primary:\n  replicaCount: 1\n"))
 
@@ -78,7 +78,7 @@ func TestBundleJudgesNoDirectoryName(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	library := func(version string) []byte {
-		return []byte("apiVersion: aggrega.ai/v1alpha1\nkind: SchemaLibrary\nmetadata:\n  name: core/base-types\n  version: " +
+		return []byte("apiVersion: aggrega.ai/v1beta1\nkind: SchemaLibrary\nmetadata:\n  name: core/base-types\n  version: " +
 			version + "\nspec:\n  schemas: {}\n")
 	}
 
@@ -109,7 +109,7 @@ func TestBundleJudgesNoDirectoryName(t *testing.T) {
 	if err := os.MkdirAll(flat, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	recipe := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: server\n  version: 1.0.0\n")
+	recipe := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: server\n  version: 1.0.0\n")
 	mustWrite(t, filepath.Join(flat, "server.yaml"), recipe)
 	data, mediaType, err := oci.Bundle("Recipe", filepath.Join(flat, "server.yaml"), nil)
 	if err != nil {
@@ -164,7 +164,7 @@ func TestBundleBareKindsWhereverTheySit(t *testing.T) {
 		{"ArtifactLibrary", "library.yaml", oci.MediaTypeArtifactLibrary},
 	}
 	body := func(kind string) []byte {
-		return []byte("apiVersion: aggrega.ai/v1alpha1\nkind: " + kind + "\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
+		return []byte("apiVersion: aggrega.ai/v1beta1\nkind: " + kind + "\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
 	}
 	for _, tc := range cases {
 		t.Run(tc.kind+"/in-layout", func(t *testing.T) {
@@ -208,7 +208,7 @@ func TestBundleBareKindsWhereverTheySit(t *testing.T) {
 // second answer is the shape rule's rather than something Plugin-specific.
 func TestBundlePluginIsItsDocumentWhereverItSits(t *testing.T) {
 	t.Parallel()
-	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\nspec:\n  plugin: \"oci://hub.aggrega.ai/plugin/frp/patch:1.0.0\"\n")
+	body := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: frp/patch\n  version: 1.0.0\nspec:\n  plugin: \"oci://hub.aggrega.ai/plugin/frp/patch:1.0.0\"\n")
 
 	// In-layout: the parent dir equals metadata.version, and a publication
 	// carrying nothing is the entity file unchanged.
@@ -249,7 +249,7 @@ func TestBundlePluginIsItsDocumentWhereverItSits(t *testing.T) {
 	// The contrast: a Component in the same directory answers the same way, so
 	// the Plugin answer above is the shape rule's and not something
 	// Plugin-specific.
-	compBody := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
+	compBody := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
 	compPath := filepath.Join(dir, "component.yaml")
 	mustWrite(t, compPath, compBody)
 	compData, _, err := oci.Bundle("Component", compPath, nil)
@@ -288,7 +288,7 @@ func TestEveryKindTakesTheShapeWhatItCarriesDecides(t *testing.T) {
 				t.Fatalf("mkdir: %v", err)
 			}
 			path := filepath.Join(ver, "entity.yaml")
-			body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: " + kind +
+			body := []byte("apiVersion: aggrega.ai/v1beta1\nkind: " + kind +
 				"\nmetadata:\n  name: demo/x\n  version: 1.0.0\n")
 			mustWrite(t, path, body)
 			mustWrite(t, filepath.Join(ver, "carried.yaml"), []byte("carried: true\n"))
@@ -332,7 +332,7 @@ func TestBundleReadsOnlyWhatItIsNamed(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(ver, "chart"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	body := []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: helm/x\n  version: 1.0.0\n")
+	body := []byte("apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: helm/x\n  version: 1.0.0\n")
 	path := filepath.Join(ver, "recipe.yaml")
 	mustWrite(t, path, body)
 	mustWrite(t, filepath.Join(ver, "chart", "Chart.yaml"), []byte("name: x\n"))

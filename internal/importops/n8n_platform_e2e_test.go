@@ -387,14 +387,14 @@ func writeN8nRelease(t *testing.T, dir, target string) string {
 		secret, realization, environment, origin = "core/secret-value", "compose/dotenv-secret", "development",
 			"${OPENAI_API_KEY}"
 	}
-	manifest := "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n" +
+	manifest := "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: " + name + "\n  version: \"1.0.0\"\n" +
 		"spec:\n  mappings:\n    components:\n      type:\n" +
 		"        core/ai-agent/n8n:1.0.0: " + target + "/n8n:1.0.0\n" +
 		"        core/ai-model/openai:1.0.0: " + target + "/openai:1.0.0\n" +
 		"        core/ai-tool/mcp:1.0.0: " + target + "/mcp-remote:1.0.0\n" +
 		"        core/datastore/qdrant:1.0.0: " + target + "/qdrant:1.0.0\n" +
 		"    features:\n      type:\n        " + secret + ":1.0.0: " + realization + ":1.0.0\n"
-	release := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: " + name + "\n  environment: " +
+	release := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: " + name + "\n  environment: " +
 		environment + "\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n  manifest: " + name + "\n" +
 		"  boundaries:\n    main:\n      directory: ./dist/" + target + "\n      components:\n" +
 		"        openai-chat-model: {}\n        knowledge-base: {}\n" +

@@ -18,7 +18,7 @@ import (
 // no way to declare a component the Aggregate did not — so it is the document
 // the invariant refusals below are driven against.
 const authoredRelease = `# The production deployment.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: storefront-prod
@@ -410,12 +410,12 @@ func TestADocumentWithNoUsableKindIsRefused(t *testing.T) {
 	}{
 		{
 			name:    "no kind at all",
-			content: "apiVersion: aggrega.ai/v1alpha1\nspec:\n  components: {}\n",
+			content: "apiVersion: aggrega.ai/v1beta1\nspec:\n  components: {}\n",
 			want:    errNoDocumentKind,
 		},
 		{
 			name:    "a kind this product does not validate",
-			content: "apiVersion: aggrega.ai/v1alpha1\nkind: NotAnAggregaKind\nspec:\n  components:\n    web:\n      type: a/b:1.0.0\n",
+			content: "apiVersion: aggrega.ai/v1beta1\nkind: NotAnAggregaKind\nspec:\n  components:\n    web:\n      type: a/b:1.0.0\n",
 			want:    errUnknownDocumentKind,
 		},
 	} {

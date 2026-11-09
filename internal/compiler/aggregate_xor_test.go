@@ -20,7 +20,7 @@ import (
 func TestAggregateXOR_BothScopesRejected(t *testing.T) {
 	t.Parallel()
 	wf := baseWorkspaceFiles()
-	wf.aggregate = `apiVersion: aggrega.ai/v1alpha1
+	wf.aggregate = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: corpus-app

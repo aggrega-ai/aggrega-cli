@@ -210,9 +210,9 @@ func TestFindReferencesAggregatesAllReferenceShapes(t *testing.T) {
 	targetPath, targetContent := copyFixtureFile(t, "components-type", "target-component.yaml", dir)
 	// Three referencing files in the same workspace; all reference
 	// core/postgres in one of the three URI shapes.
-	aggExtends := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: postgres-replica\n  version: 1.0.0\nspec:\n  extends: core/postgres\n"
-	aggComponentsType := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: app-a\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n"
-	aggRecipeImplements := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: postgres-recipe\n  version: 1.0.0\nspec:\n  implements: core/postgres\n  capability: helm\n"
+	aggExtends := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: postgres-replica\n  version: 1.0.0\nspec:\n  extends: core/postgres\n"
+	aggComponentsType := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: app-a\n  version: 1.0.0\nspec:\n  components:\n    db:\n      type: core/postgres\n"
+	aggRecipeImplements := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: postgres-recipe\n  version: 1.0.0\nspec:\n  implements: core/postgres\n  capability: helm\n"
 	for name, content := range map[string]string{
 		"extends.yaml":           aggExtends,
 		"components-type.yaml":   aggComponentsType,
@@ -261,8 +261,8 @@ func TestFindImplementationsReturnsRecipesPlusChildren(t *testing.T) {
 	dir := t.TempDir()
 	targetPath, targetContent := copyFixtureFile(t, "implements", "target-component.yaml", dir)
 	// One Recipe implementing the target + one Component extending it.
-	recipe := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: my-recipe\n  version: 1.0.0\nspec:\n  implements: core/cache\n  capability: helm\n"
-	child := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: cache-with-metrics\n  version: 1.0.0\nspec:\n  extends: core/cache\n"
+	recipe := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: my-recipe\n  version: 1.0.0\nspec:\n  implements: core/cache\n  capability: helm\n"
+	child := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: cache-with-metrics\n  version: 1.0.0\nspec:\n  extends: core/cache\n"
 	if err := os.WriteFile(filepath.Join(dir, "recipe.yaml"), []byte(recipe), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestWorkspaceWalkExcludesStandardDirs(t *testing.T) {
 	// Plant a reference inside .git/, .aggrega/, node_modules/, vendor/, dist/.
 	// The walker MUST NOT include any of these.
 	excluded := []string{".git", ".aggrega", "node_modules", "vendor", "dist"}
-	planted := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: should-not-be-found\n  version: 1.0.0\nspec:\n  implements: target-uri\n"
+	planted := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: should-not-be-found\n  version: 1.0.0\nspec:\n  implements: target-uri\n"
 	for _, name := range excluded {
 		sub := filepath.Join(dir, name)
 		if err := os.MkdirAll(sub, 0o755); err != nil {
@@ -316,7 +316,7 @@ func TestWorkspaceWalkExcludesStandardDirs(t *testing.T) {
 		}
 	}
 	// Plant the legitimate target file at the workspace root.
-	targetContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: target-uri\n  version: 1.0.0\nspec: {}\n"
+	targetContent := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: target-uri\n  version: 1.0.0\nspec: {}\n"
 	targetPath := filepath.Join(dir, "target.yaml")
 	if err := os.WriteFile(targetPath, []byte(targetContent), 0o644); err != nil {
 		t.Fatalf("write target: %v", err)
@@ -361,11 +361,11 @@ func TestWorkspaceWalkHonorsGitignore(t *testing.T) {
 	if err := os.MkdirAll(ignoredDir, 0o755); err != nil {
 		t.Fatalf("mkdir ignored: %v", err)
 	}
-	planted := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: ignored-recipe\n  version: 1.0.0\nspec:\n  implements: target-uri\n"
+	planted := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: ignored-recipe\n  version: 1.0.0\nspec:\n  implements: target-uri\n"
 	if err := os.WriteFile(filepath.Join(ignoredDir, "trap.yaml"), []byte(planted), 0o644); err != nil {
 		t.Fatalf("write trap: %v", err)
 	}
-	targetContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: target-uri\n  version: 1.0.0\nspec: {}\n"
+	targetContent := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: target-uri\n  version: 1.0.0\nspec: {}\n"
 	targetPath := filepath.Join(dir, "target.yaml")
 	if err := os.WriteFile(targetPath, []byte(targetContent), 0o644); err != nil {
 		t.Fatalf("write target: %v", err)
@@ -578,8 +578,8 @@ func TestResolveManifestRecipeReferenceWithVersionedURI(t *testing.T) {
 func TestResolveExtendsWithVersionedURI(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	parent := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/web-server\n  version: 1.0.0\nspec: {}\n"
-	child := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: app/api-server\n  version: 1.0.0\nspec:\n  extends: core/web-server:1.0.0\n"
+	parent := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/web-server\n  version: 1.0.0\nspec: {}\n"
+	child := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: app/api-server\n  version: 1.0.0\nspec:\n  extends: core/web-server:1.0.0\n"
 	parentPath := filepath.Join(dir, "parent.yaml")
 	childPath := filepath.Join(dir, "child.yaml")
 	if err := os.WriteFile(parentPath, []byte(parent), 0o644); err != nil {
@@ -642,8 +642,8 @@ func TestResolveComponentsTypeWithVersionedURI(t *testing.T) {
 func TestResolveFeaturesTypeWithVersionedURI(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	agg := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: core/api\n      features:\n        scaling:\n          type: feature/autoscaler:1.0.0\n"
-	feat := "apiVersion: aggrega.ai/v1alpha1\nkind: Feature\nmetadata:\n  name: feature/autoscaler\n  version: 1.0.0\nspec: {}\n"
+	agg := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: my-app\n  version: 1.0.0\nspec:\n  components:\n    api:\n      type: core/api\n      features:\n        scaling:\n          type: feature/autoscaler:1.0.0\n"
+	feat := "apiVersion: aggrega.ai/v1beta1\nkind: Feature\nmetadata:\n  name: feature/autoscaler\n  version: 1.0.0\nspec: {}\n"
 	aggPath := filepath.Join(dir, "agg.yaml")
 	featPath := filepath.Join(dir, "feat.yaml")
 	if err := os.WriteFile(aggPath, []byte(agg), 0o644); err != nil {
@@ -678,8 +678,8 @@ func TestResolveFeaturesTypeWithVersionedURI(t *testing.T) {
 func TestResolveRecipeImplementsWithVersionedURI(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	target := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: core/cache\n  version: 1.0.0\nspec: {}\n"
-	recipe := "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: redis-recipe\n  version: 1.0.0\nspec:\n  implements: core/cache:1.0.0\n"
+	target := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: core/cache\n  version: 1.0.0\nspec: {}\n"
+	recipe := "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: redis-recipe\n  version: 1.0.0\nspec:\n  implements: core/cache:1.0.0\n"
 	targetPath := filepath.Join(dir, "target.yaml")
 	recipePath := filepath.Join(dir, "recipe.yaml")
 	if err := os.WriteFile(targetPath, []byte(target), 0o644); err != nil {
@@ -989,13 +989,13 @@ func TestResolveReleasePathFallsBackToDocumentStartWhenMetadataNameAbsent(t *tes
 	dir := t.TempDir()
 	// Release fixture referencing a target Aggregate that lacks
 	// metadata.name (a degenerate but valid YAML).
-	releaseContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: prod-release\n  version: 1.0.0\nspec:\n  aggregate: nameless\n"
+	releaseContent := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: prod-release\n  version: 1.0.0\nspec:\n  aggregate: nameless\n"
 	releasePath := filepath.Join(dir, "release.yaml")
 	if err := os.WriteFile(releasePath, []byte(releaseContent), 0o644); err != nil {
 		t.Fatalf("write release: %v", err)
 	}
 	// Target file has spec but no metadata.name.
-	namelessContent := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nspec: {}\n"
+	namelessContent := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nspec: {}\n"
 	namelessPath := filepath.Join(dir, "nameless.yaml")
 	if err := os.WriteFile(namelessPath, []byte(namelessContent), 0o644); err != nil {
 		t.Fatalf("write nameless: %v", err)

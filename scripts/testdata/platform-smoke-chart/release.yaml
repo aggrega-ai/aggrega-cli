@@ -7,7 +7,7 @@
 # the entity.lock that `aggrega pin` writes. It needs no registry: every entity
 # comes from catalog/ and its provider is the helm provider built into aggrega.
 # After any change to a file of the chart, run `aggrega pin` on the Recipe again.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: smoke-chart

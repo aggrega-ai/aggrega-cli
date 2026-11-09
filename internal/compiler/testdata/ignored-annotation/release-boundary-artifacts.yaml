@@ -9,7 +9,7 @@
 # The node's own Recipe declares a Workload, which the target's claim covers, so
 # the host stays quiet and the only advisory a build may raise here is the
 # boundary attachment's.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: ann-release-boundary-artifacts

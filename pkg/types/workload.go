@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Workload struct surface — the platform-owned `aggrega.ai/v1alpha1` Workload
+// Workload struct surface — the platform-owned `aggrega.ai/v1beta1` Workload
 // kind referenced by Recipes that adopt the synthesized input kind. The Workload
-// declaration is generated from workload-v1alpha1.schema.json in the
+// declaration is generated from workload-v1beta1.schema.json in the
 // aggrega-schemas repo, so it cannot drift from it; the value types it
 // references are hand-written here and mirror that same schema. At runtime the
 // parsed value is constrained by that schema's source, which
@@ -36,7 +36,7 @@ import (
 //go:generate go run ../../internal/tools/typegen workload_gen.go
 
 // Workload's struct declaration is generated into workload_gen.go from the
-// published workload-v1alpha1 schema, and the schema's descriptions become its
+// published workload-v1beta1 schema, and the schema's descriptions become its
 // godoc. This hand-written companion holds the value types that declaration
 // references — ContainerSpec, VolumeSpec, ServiceSpec, Scheduling,
 // PodSecurityContext, DNSConfig and HostAlias, together with the types those

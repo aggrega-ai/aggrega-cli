@@ -21,7 +21,7 @@ import (
 // never enters the catalog. name and version are what its header declares, which
 // is the identity a failing reference is matched against.
 func refusedRecipe(name, version, capability string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: ` + name + `
@@ -147,7 +147,7 @@ func TestPull_RefusalPromotionIsExactOrAbsent(t *testing.T) {
 			name: "the one refusal declares no identity at all",
 			setUp: func(t *testing.T, catalogRoot string) string {
 				writeFixture(t, filepath.Join(catalogRoot, "recipes", "helm", "server.yaml"),
-					"apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nspec:\n  capability: helm\n")
+					"apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nspec:\n  capability: helm\n")
 				return "server-recipe:1.0.0"
 			},
 		},

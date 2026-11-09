@@ -41,7 +41,7 @@ const (
 // buildOfOneWorkload is the probe Recipe's workload with the given image
 // template, in the shape the probe Component's Recipe renders.
 func buildOfOneWorkload(image string) string {
-	return `apiVersion: aggrega.ai/v1alpha1
+	return `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 replicas: 1
 containers:
@@ -63,7 +63,7 @@ services:
 // over the Component's optional infra.note, which no build of one sets. It
 // returns the Recipe and any file it imports, keyed by name.
 func buildOfOneRecipe(image string, imported, assertion bool) (string, map[string]string) {
-	recipe := `apiVersion: aggrega.ai/v1alpha1
+	recipe := `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: probe

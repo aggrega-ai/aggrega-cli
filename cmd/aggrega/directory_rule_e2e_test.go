@@ -34,7 +34,7 @@ import (
 // neighbourRecipe is a second Recipe authored beside the fixture's own, reading
 // no remote source, so a moment that reached for the network before judging the
 // directory would be caught by the fixture's source rather than by this one.
-const neighbourRecipe = `apiVersion: aggrega.ai/v1alpha1
+const neighbourRecipe = `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: neighbour
@@ -43,7 +43,7 @@ spec:
   capability: helm
   implements: neighbour
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -160,11 +160,11 @@ func TestTheDirectoryRuleAdmitsWhatItDoesNotGovern(t *testing.T) {
 	}
 
 	for _, name := range []string{"app", "other"} {
-		writeFixture(t, filepath.Join(root, name+".yaml"), "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: "+
+		writeFixture(t, filepath.Join(root, name+".yaml"), "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: "+
 			name+"\n  version: \"1.0.0\"\nspec:\n  components: {}\n")
 	}
-	writeFixture(t, filepath.Join(root, "release.yaml"), "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: r\n  version: \"1.0.0\"\n")
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), "apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: m\n  version: \"1.0.0\"\n")
+	writeFixture(t, filepath.Join(root, "release.yaml"), "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: r\n  version: \"1.0.0\"\n")
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: m\n  version: \"1.0.0\"\n")
 	for _, name := range []string{"app", "other"} {
 		path := filepath.Join(root, name+".yaml")
 		if err := pushRun(context.Background(), pushConfig{Workspace: ws, EntityPath: path, Registry: "example.com",

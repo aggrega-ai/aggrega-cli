@@ -101,7 +101,7 @@ func parkingWorkspace(t *testing.T) (root, firstPipe, secondPipe string) {
 				"that genuinely blocks there is nothing to compare", err)
 		}
 	}
-	body := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: c-ordinary\n"
+	body := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: c-ordinary\n"
 	if err := os.WriteFile(filepath.Join(root, "c-ordinary.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatalf("write ordinary entity: %v", err)
 	}
@@ -130,7 +130,7 @@ func awaitParkedRead(t *testing.T, path string) *os.File {
 // where a withdrawal is observed.
 func releaseParkedRead(t *testing.T, f *os.File, name string) {
 	t.Helper()
-	body := "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: " + name + "\n"
+	body := "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: " + name + "\n"
 	if _, werr := f.Write([]byte(body)); werr != nil {
 		t.Fatalf("write to the parked pipe: %v", werr)
 	}

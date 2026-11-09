@@ -36,7 +36,7 @@ func cfnShortFormWorkspace(t *testing.T, root, consumerBody string, sourced, two
 	t.Helper()
 	writeWorkspaceConfig(t, root, "workspace: {}\noffline: true\npin_sources_at_pull: true")
 	catalogDir = filepath.Join(root, "catalog")
-	writeFixture(t, filepath.Join(catalogDir, "component/acme/datastore/pg/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/acme/datastore/pg/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/datastore/pg
@@ -48,7 +48,7 @@ spec:
     provides:
       host: { type: string }
 `)
-	writeFixture(t, filepath.Join(catalogDir, "component/acme/compute/api/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "component/acme/compute/api/1.0.0/component.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: acme/compute/api
@@ -61,7 +61,7 @@ spec:
       selector: "component.aggrega.ai/type=stateful-server"
       inject: ["env"]
 `)
-	writeFixture(t, filepath.Join(catalogDir, "recipe/cloudformation/pg/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipe/cloudformation/pg/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: pg
@@ -81,7 +81,7 @@ spec:
       provides:
         host: !GetAtt {{ capitalizedWords .context.instance_id }}.Endpoint.Address
 `)
-	writeFixture(t, filepath.Join(catalogDir, "recipe/cloudformation/api/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(catalogDir, "recipe/cloudformation/api/1.0.0/recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: api
@@ -105,7 +105,7 @@ Resources:
               Value: !Ref DbHost
 `)
 	}
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app
@@ -125,7 +125,7 @@ spec:
                 - in: DB_HOST
                   from: host
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -157,7 +157,7 @@ spec:
 `
 	}
 	releasePath = filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: orders

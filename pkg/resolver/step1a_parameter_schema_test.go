@@ -24,7 +24,7 @@ func TestLoadAggregateParameterContract_EnvelopeRejection_BadType(t *testing.T) 
 	t.Parallel()
 
 	tmp := t.TempDir()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -59,7 +59,7 @@ func TestLoadAggregateParameterContract_EnvelopeRejection_BadMinLength(t *testin
 	t.Parallel()
 
 	tmp := t.TempDir()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -91,7 +91,7 @@ func TestLoadAggregateParameterContract_EnvelopeAccepts_ValidContract(t *testing
 	t.Parallel()
 
 	tmp := t.TempDir()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -142,10 +142,10 @@ spec:
 func TestParameterContractSchema_NoDrift(t *testing.T) {
 	t.Parallel()
 
-	const canonicalSource = "aggregate-v1alpha1.schema.json"
+	const canonicalSource = "aggregate-v1beta1.schema.json"
 
 	var root map[string]any
-	if err := json.Unmarshal([]byte(schemas.AggregateV1alpha1), &root); err != nil {
+	if err := json.Unmarshal([]byte(schemas.AggregateV1beta1), &root); err != nil {
 		t.Fatalf("unmarshal canonical schema: %v", err)
 	}
 	props, _ := root["properties"].(map[string]any)
@@ -187,7 +187,7 @@ func TestParameterFormatEnumIsTheSupportedSet(t *testing.T) {
 	t.Parallel()
 
 	var root map[string]any
-	if err := json.Unmarshal([]byte(schemas.AggregateV1alpha1), &root); err != nil {
+	if err := json.Unmarshal([]byte(schemas.AggregateV1beta1), &root); err != nil {
 		t.Fatalf("unmarshal canonical schema: %v", err)
 	}
 	node := any(root)
@@ -195,13 +195,13 @@ func TestParameterFormatEnumIsTheSupportedSet(t *testing.T) {
 		"additionalProperties", "properties", "format", "enum"} {
 		m, ok := node.(map[string]any)
 		if !ok {
-			t.Fatalf("aggregate-v1alpha1.schema.json: no %q on the path to the parameter format enum", key)
+			t.Fatalf("aggregate-v1beta1.schema.json: no %q on the path to the parameter format enum", key)
 		}
 		node = m[key]
 	}
 	raw, ok := node.([]any)
 	if !ok {
-		t.Fatalf("aggregate-v1alpha1.schema.json: the parameter format carries no enum; got %T", node)
+		t.Fatalf("aggregate-v1beta1.schema.json: the parameter format carries no enum; got %T", node)
 	}
 	inSchema := make([]string, 0, len(raw))
 	for _, v := range raw {
@@ -261,7 +261,7 @@ func TestValidateParameterContractEnvelope_Determinism(t *testing.T) {
 	t.Parallel()
 
 	tmp := t.TempDir()
-	src := `apiVersion: aggrega.ai/v1alpha1
+	src := `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test

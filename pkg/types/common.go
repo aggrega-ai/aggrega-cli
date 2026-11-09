@@ -36,7 +36,7 @@ type Maintainer struct {
 // the lock from the fetched bytes; the build reads them back and verifies the
 // cached source has not drifted. The entity document itself is never written to.
 //
-// Defined in entity-lock-v1alpha1.schema.json#/properties/sourceDigests/items.
+// Defined in entity-lock-v1beta1.schema.json#/properties/sourceDigests/items.
 type SourceDigest struct {
 	Kind           string `json:"kind" yaml:"kind"`
 	URL            string `json:"url" yaml:"url"`
@@ -52,7 +52,7 @@ type SourceDigest struct {
 // artifacts: map key; Digest is the SHA-256 of the imported file's bytes. Inline
 // (literal) artifacts are part of the entity and carry no separate pin.
 //
-// Defined in entity-lock-v1alpha1.schema.json#/properties/artifactDigests/items.
+// Defined in entity-lock-v1beta1.schema.json#/properties/artifactDigests/items.
 type ArtifactDigest struct {
 	Name   string `json:"name" yaml:"name"`
 	Digest string `json:"digest" yaml:"digest"`
@@ -65,7 +65,7 @@ type ArtifactDigest struct {
 // SHA-256 of its bytes. A local source is pinned file by file rather than as one
 // digest, so a build that finds the source changed can name the file that moved.
 //
-// Defined in entity-lock-v1alpha1.schema.json#/properties/localSourceDigests/items.
+// Defined in entity-lock-v1beta1.schema.json#/properties/localSourceDigests/items.
 type LocalSourceDigest struct {
 	Path   string `json:"path" yaml:"path"`
 	Digest string `json:"digest" yaml:"digest"`
@@ -81,7 +81,7 @@ type LocalSourceDigest struct {
 // nothing a publication, a comparison or a render reads until the entity is
 // pinned again. A lock recording none keeps every file under the directory.
 //
-// Defined in entity-lock-v1alpha1.schema.json#/properties/ignore.
+// Defined in entity-lock-v1beta1.schema.json#/properties/ignore.
 type IgnoreRules struct {
 	Plugin *IgnorePlugin `json:"plugin,omitempty" yaml:"plugin,omitempty"`
 	Rules  []IgnoreRule  `json:"rules,omitempty" yaml:"rules,omitempty"`
@@ -96,7 +96,7 @@ type IgnoreRules struct {
 // rules — every reading applies the recorded rules — so a lock pinned again
 // under another release whose rules are the same is byte-identical.
 //
-// Defined in entity-lock-v1alpha1.schema.json#/properties/ignore/properties/plugin.
+// Defined in entity-lock-v1beta1.schema.json#/properties/ignore/properties/plugin.
 type IgnorePlugin struct {
 	Name     string   `json:"name" yaml:"name"`
 	Patterns []string `json:"patterns,omitempty" yaml:"patterns,omitempty"`
@@ -108,7 +108,7 @@ type IgnorePlugin struct {
 // directory), and where it was declared — "plugin", or the path of the ignore file
 // it was read from.
 //
-// Defined in entity-lock-v1alpha1.schema.json#/properties/ignore/properties/rules/items.
+// Defined in entity-lock-v1beta1.schema.json#/properties/ignore/properties/rules/items.
 type IgnoreRule struct {
 	Pattern string `json:"pattern" yaml:"pattern"`
 	Within  string `json:"within" yaml:"within"`
@@ -143,7 +143,7 @@ type WellKnownAnnotation struct {
 }
 
 // ComponentType is the reserved component-type vocabulary declared in
-// component-v1alpha1.schema.json. The schema enumerates the values this key
+// component-v1beta1.schema.json. The schema enumerates the values this key
 // accepts, so this set mirrors that enumeration and changes with it.
 type ComponentType string
 
@@ -182,7 +182,7 @@ const FeatureKindLabel = "feature.aggrega.ai/kind"
 const FeatureKindSecret = "secret"
 
 // InjectBlock is the agnostic injection routing block from
-// aggregate-v1alpha1.schema.json#/$defs/inject_block. Known mechanisms are env,
+// aggregate-v1beta1.schema.json#/$defs/inject_block. Known mechanisms are env,
 // file, arg. Custom mechanisms beyond the core three are routed into Additional
 // preserving author order; the schema's `additionalProperties` slot accepts any
 // mechanism conforming to the inject_delivery shape, and the custom UnmarshalYAML
@@ -434,7 +434,7 @@ func (b InjectBlock) TemplateUntaggedKeys() map[string]any {
 // DecodeVerboseInjectEntry extracts (in, value, from) from a single schema-
 // verbose-form inject entry. The entry is one element of the schema's
 // inject_delivery array — shaped as {in: K, from?: P, value?: V} per the
-// aggregate-v1alpha1 schema. The inner shape can decode as either
+// aggregate-v1beta1 schema. The inner shape can decode as either
 // map[string]any (default YAML/JSON unmarshal) or *OrderedMap[any]
 // (round-trip-fidelity decode path); the helper handles both uniformly
 // so consumer-site decode arms don't asymmetrically skip valid entries
@@ -519,7 +519,7 @@ type FeatureInstance struct {
 }
 
 // PipelineStep is one Wasm plugin invocation in a Recipe or FeatureRecipe pipeline.
-// Defined in recipe-v1alpha1.schema.json#/properties/spec/properties/pipeline/items.
+// Defined in recipe-v1beta1.schema.json#/properties/spec/properties/pipeline/items.
 type PipelineStep struct {
 	ID string `json:"id" yaml:"id"`
 	// Plugin is the URI of the Plugin entity this step runs, always scoped by the
@@ -552,7 +552,7 @@ type PipelineStep struct {
 // chart renders, a service, volume or config a compose file declares, or a resource
 // a CloudFormation template declares — named by its kind, its name and, where the
 // entry gives them, its namespace and the subchart it came from.
-// Defined in recipe-v1alpha1.schema.json#/properties/spec/properties/omits/items,
+// Defined in recipe-v1beta1.schema.json#/properties/spec/properties/omits/items,
 // and identically in the FeatureRecipe schema.
 //
 // Every field is a template, evaluated against the context the entity's values

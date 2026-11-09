@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: app-locals-recipe
@@ -33,7 +33,7 @@ spec:
   # The rendered artifact carries every computed value in the clear, including
   # the withheld ones: the artifact is the deployable and is never redacted.
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:

@@ -35,7 +35,7 @@ const libraryChainVersion = "1.0.0"
 // composes next's Settings through a cross-document $ref and adds prop, or, where
 // next is empty, declares prop alone. Each prop defaults to "from-<name>".
 func libraryChainLibrary(name, next, prop string) string {
-	head := fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	head := fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: %s
@@ -73,7 +73,7 @@ var libraryChainLibraries = map[string]string{
 }
 
 // libraryChainComponent is the Component every row's Release deploys.
-const libraryChainComponent = `apiVersion: aggrega.ai/v1alpha1
+const libraryChainComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: example/compute/app
@@ -92,7 +92,7 @@ spec:
 // libraryChainFeature returns a Feature named name whose values schema is the
 // Settings entry of library.
 func libraryChainFeature(name, library string) string {
-	return fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+	return fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: %s
@@ -140,7 +140,7 @@ const libraryChainCycle = "LoopA#/schemas/Settings -> LoopB#/schemas/Settings ->
 // the attachment's level into the Component's environment, and the Recipe renders it.
 func libraryChainRealizations(row libraryChainRow) map[string]string {
 	return map[string]string{
-		"recipe/compose/app/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"recipe/compose/app/1.0.0/recipe.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: app
@@ -149,7 +149,7 @@ spec:
   capability: compose
   implements: example/compute/app:1.0.0
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
@@ -158,7 +158,7 @@ spec:
           MESSAGE: "{{ .values.message }}"
           LEVEL: "{{ .context.inject.env.LEVEL }}"
 `,
-		"feature-recipe/compose/" + row.short() + "-env/1.0.0/recipe.yaml": fmt.Sprintf(`apiVersion: aggrega.ai/v1alpha1
+		"feature-recipe/compose/" + row.short() + "-env/1.0.0/recipe.yaml": fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: %s-env
@@ -190,7 +190,7 @@ func libraryChainEntities(row libraryChainRow) map[string]string {
 // attaching the row's Feature to the one Component, and returns the Release's path.
 func libraryChainRelease(t *testing.T, root string, row libraryChainRow) string {
 	t.Helper()
-	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: chained
@@ -203,7 +203,7 @@ spec:
         settings:
           type: `+row.feature+`:1.0.0
 `)
-	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: chained-manifest
@@ -218,7 +218,7 @@ spec:
         `+row.feature+`:1.0.0: compose/`+row.short()+`-env:1.0.0
 `)
 	releasePath := filepath.Join(root, "release.yaml")
-	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, releasePath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: chained-release

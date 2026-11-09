@@ -133,7 +133,7 @@ func TestIntegration_InjectMappingDeepMerge(t *testing.T) {
 				return &types.Recipe{
 					Metadata: types.RecipeMetadata{Name: "api-recipe"},
 					Spec: types.RecipeSpec{
-						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -150,7 +150,7 @@ containers:
 					Metadata: types.RecipeMetadata{Name: "pg-recipe"},
 					Spec: types.RecipeSpec{
 						Provides: provides,
-						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+						Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -221,7 +221,7 @@ func TestIntegration_AggregaLabelsPresent(t *testing.T) {
 		Recipe: func(_, _ string) (*types.Recipe, bool) {
 			return &types.Recipe{
 				Metadata: types.RecipeMetadata{Name: "r"},
-				Spec: types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+				Spec: types.RecipeSpec{Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   main:
@@ -299,7 +299,7 @@ func TestIntegration_ValuesAndInfraFlow(t *testing.T) {
 				Spec: types.RecipeSpec{
 					// Synthesized Workload templates read .values.port and
 					// .infra.replicas — the critical values/infra flow.
-					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1alpha1
+					Workload: types.WorkloadTemplate{Inline: `apiVersion: aggrega.ai/v1beta1
 kind: Workload
 replicas: {{ .infra.replicas }}
 containers:

@@ -19,7 +19,7 @@ import (
 func terraformModuleRecipe(t *testing.T, dir string) string {
 	t.Helper()
 	for rel, body := range map[string]string{
-		"recipe.yaml": "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: demo\n  version: 1.0.0\n" +
+		"recipe.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: demo\n  version: 1.0.0\n" +
 			"spec:\n  capability: terraform\n  implements: core/demo:1.0.0\n  source: ./module\n",
 		"module/main.tf":           "variable \"name\" {}\n",
 		"module/.terraform/cached": "a working directory the module plugin leaves out\n",
@@ -42,7 +42,7 @@ func terraformModuleRecipe(t *testing.T, dir string) string {
 func terraformAt(version string) *Catalog {
 	return &Catalog{Plugins: map[string]types.Plugin{
 		"provider/terraform:" + version: {
-			APIVersion: "aggrega.ai/v1alpha1",
+			APIVersion: "aggrega.ai/v1beta1",
 			Kind:       "Plugin",
 			Metadata:   types.PluginMetadata{Name: "terraform", Version: version, PluginType: "provider"},
 			Spec: types.PluginSpec{

@@ -41,7 +41,7 @@ func TestRunTier4Validation_RequiredAttachmentTypeDiagnosticsReachTheEditor(t *t
 
 	// The instance each leg declares, and nothing else, so the class under
 	// assertion is the only one the document can produce.
-	const unmetOnly = `apiVersion: aggrega.ai/v1alpha1
+	const unmetOnly = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: tier4-required-attachment-type
@@ -51,7 +51,7 @@ spec:
     unmonitored:
       type: example/needs-exporter
 `
-	const malformedOnly = `apiVersion: aggrega.ai/v1alpha1
+	const malformedOnly = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: tier4-required-attachment-type
@@ -126,7 +126,7 @@ spec:
 // written per leg because a single release naming both components would, for
 // either leg, name one the aggregate does not declare — see
 // validateMandateFixture for why that is fatal here.
-const mandateRelease = `apiVersion: aggrega.ai/v1alpha1
+const mandateRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: tier4-required-attachment-type-release

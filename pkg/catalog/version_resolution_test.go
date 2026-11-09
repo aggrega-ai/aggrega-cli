@@ -5,7 +5,7 @@ package catalog
 
 import "testing"
 
-const widgetV1 = `apiVersion: aggrega.ai/v1alpha1
+const widgetV1 = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/widget
@@ -21,7 +21,7 @@ spec:
         default: "small"
 `
 
-const widgetV11 = `apiVersion: aggrega.ai/v1alpha1
+const widgetV11 = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/widget

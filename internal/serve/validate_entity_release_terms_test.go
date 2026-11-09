@@ -60,7 +60,7 @@ func entityCheckWorkspace(t *testing.T) (*Server, string) {
 		t.Fatal("the validate fixture's Component no longer has the shape this test splices a required slot into")
 	}
 	recipeRelease := strings.Replace(mustRead(t, filepath.Join(root, "release-sized.yaml")), "name: variant-sized", "name: variant-recipe", 1)
-	aggregate := "apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: entity-check\n  version: \"1.0.0\"\n" +
+	aggregate := "apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: entity-check\n  version: \"1.0.0\"\n" +
 		"spec:\n  components:\n    store:\n      type: demo/datastore/db\n"
 	config := "workspace:\n  releases:\n" +
 		"    release-sized.yaml:\n      catalog_dirs:\n        - variant-sized\n" +

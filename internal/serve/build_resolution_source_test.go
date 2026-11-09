@@ -196,7 +196,7 @@ func libraryReferencingFillWorkspace(t *testing.T) (ws, releaseRel string) {
 	t.Helper()
 	ws, releaseRel = autoPullWorkspace(t)
 	catalogDir := filepath.Join(ws, "catalog")
-	writeFixtureFile(t, filepath.Join(catalogDir, "libraries", "base-types.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "libraries", "base-types.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: BaseTypes
@@ -206,7 +206,7 @@ spec:
     PortSpec:
       port: { type: integer, default: 8080 }
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "svc.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/svc

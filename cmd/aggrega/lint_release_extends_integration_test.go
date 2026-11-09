@@ -34,7 +34,7 @@ func TestIntegration_LintRelease_ExtendsInheritsBaseConstraint(t *testing.T) {
 	ws := t.TempDir()
 	cd := filepath.Join(ws, "catalog")
 
-	writeFixture(t, filepath.Join(cd, "parent.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(cd, "parent.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/lint-parent
@@ -48,7 +48,7 @@ spec:
 `)
 	// The child extends the parent and authors no pillar content, so the parent's
 	// x and its minimum are the child's contract.
-	writeFixture(t, filepath.Join(cd, "child.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(cd, "child.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: test/lint-child
@@ -59,7 +59,7 @@ spec:
   extends: test/lint-parent
   schema: inherited
 `)
-	writeFixture(t, filepath.Join(cd, "recipe.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(cd, "recipe.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: lint-child
@@ -68,13 +68,13 @@ spec:
   capability: compose
   implements: test/lint-child
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     containers:
       main:
         image: busybox:1
 `)
-	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: aggregate
@@ -88,7 +88,7 @@ spec:
 `)
 	// x=3 violates the parent's minimum 5, and the child never authored x — so the
 	// only way this halts is if the child inherited the parent's constraint.
-	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: manifest
@@ -99,7 +99,7 @@ spec:
       type:
         test/lint-child:1.0.0: compose/lint-child:1.0.0
 `)
-	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(ws, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: rel

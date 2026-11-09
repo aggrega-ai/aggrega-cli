@@ -24,7 +24,7 @@ import (
 // link leading elsewhere inside it is read. The control row returns the entity from
 // a plain file, which is what makes a halting row's halt the link's doing.
 func TestTheConventionsWalkDoesNotReadALinkLeadingOut(t *testing.T) {
-	const entity = "apiVersion: aggrega.ai/v1alpha1\nkind: Component\nmetadata:\n  name: example/probe\n" +
+	const entity = "apiVersion: aggrega.ai/v1beta1\nkind: Component\nmetadata:\n  name: example/probe\n" +
 		"  version: \"1.0.0\"\nspec:\n  inject: [\"env\"]\n"
 	for _, row := range []struct {
 		name string

@@ -24,7 +24,7 @@ func writeSelectorGrammarFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	files := map[string]string{
-		"node.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"node.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: api
@@ -39,28 +39,28 @@ spec:
     not-edge:
       selector: "tier!=edge"
 `,
-		"worker.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"worker.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: worker
   labels:
     tier: backend
 `,
-		"10-excludes-edge.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"10-excludes-edge.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: excludes-edge
 spec:
   appliesTo: "!tier=edge"
 `,
-		"20-separators.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"20-separators.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: separators
 spec:
   appliesTo: " , , "
 `,
-		"30-edge-only.yaml": `apiVersion: aggrega.ai/v1alpha1
+		"30-edge-only.yaml": `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: edge-only

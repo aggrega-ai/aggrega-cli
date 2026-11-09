@@ -167,7 +167,7 @@ func TestInspectAggregate_ParametersDeclarations(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "param-app.yaml")
-	writeFixture(t, path, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, path, `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: param-app
@@ -199,7 +199,7 @@ spec:
 func TestInspectManifest_ExtendsChainAndAnnotations(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	writeFixture(t, filepath.Join(root, "base.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(root, "base.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: base
@@ -212,7 +212,7 @@ spec:
         core/datastore/postgres: base-pg:1.0.0
 `)
 	child := filepath.Join(root, "child.yaml")
-	writeFixture(t, child, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, child, `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: child
@@ -266,7 +266,7 @@ func TestInspectManifest_UnknownMappingKeyIsRefused(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "unknown-mapping-key.yaml")
-	writeFixture(t, path, `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, path, `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: unknown-mapping-key-manifest

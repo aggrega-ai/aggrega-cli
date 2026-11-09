@@ -1,4 +1,4 @@
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: guardrail-mixed-patcher-compose
@@ -12,7 +12,7 @@ spec:
   # FeatureRecipe's own output is emitted as discrete fragment files under
   # features/<host>/<instance>/.
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:

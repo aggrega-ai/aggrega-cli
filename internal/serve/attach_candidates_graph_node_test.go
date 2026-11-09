@@ -54,7 +54,7 @@ func graphNodeWorkspace(t *testing.T) (ws, featuresDir, releaseRel string) {
 
 	catalogDir := filepath.Join(ws, "catalog")
 
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "edge.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "edge.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/edge
@@ -67,7 +67,7 @@ spec:
     provides:
       host: { type: string, required: true }
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "components", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "components", "store.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: demo/store
@@ -83,7 +83,7 @@ spec:
 	// The sub-aggregate. Its component key is what the qualified node id is
 	// built from: the aggregate is attached under "store", so its "primary"
 	// instance becomes "store.primary".
-	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "store-module.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "aggregates", "store-module.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo/store-module
@@ -93,7 +93,7 @@ spec:
     primary:
       type: demo/store
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "edge.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "edge.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-edge-synthesized
@@ -104,14 +104,14 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: demo-edge:latest
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "store.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "recipes", "store.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: demo-store-synthesized
@@ -122,14 +122,14 @@ spec:
   provides:
     host: "{{ .context.instance_id }}"
   workload: |
-    apiVersion: aggrega.ai/v1alpha1
+    apiVersion: aggrega.ai/v1beta1
     kind: Workload
     replicas: 1
     containers:
       main:
         image: demo-store:latest
 `)
-	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(catalogDir, "plugins", "helm-renderer.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
 metadata:
   name: helm
@@ -151,7 +151,7 @@ spec:
 	// string as the top-level graph node id — carrying labels that differ from
 	// the component that node resolves to, so the two answers are
 	// distinguishable rather than coincidentally equal.
-	writeFixtureFile(t, filepath.Join(ws, "checkout-entity.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "checkout-entity.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: checkout
@@ -162,7 +162,7 @@ metadata:
 spec: {}
 `)
 
-	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: app-manifest
@@ -174,7 +174,7 @@ spec:
         demo/edge: demo-edge-synthesized
         demo/store: demo-store-synthesized
 `)
-	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "app-agg.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app-agg
@@ -188,7 +188,7 @@ spec:
       type: "demo/edge:1.0.0"
 `)
 	relPath := filepath.Join(ws, "app-release.yaml")
-	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, relPath, `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: app-release
@@ -209,7 +209,7 @@ spec:
 	// through catalog resolution. Two are satisfied by the edge node's labels
 	// and one is not, so a widened collection has a specific expected answer
 	// rather than merely a non-empty one.
-	writeFixtureFile(t, filepath.Join(featuresDir, "observability.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(featuresDir, "observability.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/observability
@@ -217,7 +217,7 @@ metadata:
 spec:
   appliesTo: tier=edge
 `)
-	writeFixtureFile(t, filepath.Join(featuresDir, "edge-tls.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(featuresDir, "edge-tls.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/edge-tls
@@ -226,7 +226,7 @@ spec:
   appliesToAnyOf:
     - tier=edge
 `)
-	writeFixtureFile(t, filepath.Join(featuresDir, "db-backup.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(featuresDir, "db-backup.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/db-backup
@@ -621,7 +621,7 @@ func TestCatalogIndexReportsCatalogFeaturesWithoutAHostPath(t *testing.T) {
 // workspace document, because that is the copy whose file a client can open.
 func TestCatalogIndexPrefersTheWorkspaceCopyOfAFeature(t *testing.T) {
 	ws, features, _ := graphNodeWorkspace(t)
-	writeFixtureFile(t, filepath.Join(ws, "local-feature.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixtureFile(t, filepath.Join(ws, "local-feature.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/local-only

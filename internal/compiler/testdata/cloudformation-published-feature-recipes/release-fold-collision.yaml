@@ -2,7 +2,7 @@
 # and their alarm resource names genuinely meet inside one Resources map. Split
 # across two boundaries they would land in two documents and would not be a
 # collision at all.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: cloudformation-published-feature-recipes-fold-collision

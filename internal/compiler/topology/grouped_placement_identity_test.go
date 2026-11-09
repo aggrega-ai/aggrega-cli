@@ -52,7 +52,7 @@ func assertGroupIsACondition(t *testing.T, err error, condition error) {
 // sentence is true of all of them and names the fix.
 func TestSubModulePlacementGroupDeclaresItsCondition(t *testing.T) {
 	t.Parallel()
-	const root = `apiVersion: aggrega.ai/v1alpha1
+	const root = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -61,7 +61,7 @@ spec:
     mod:
       type: app/mod:1.0.0
 `
-	const module = `apiVersion: aggrega.ai/v1alpha1
+	const module = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: app/mod
@@ -71,7 +71,7 @@ spec:
     worker:
       type: app/db:1.0.0
 `
-	const release = `apiVersion: aggrega.ai/v1alpha1
+	const release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -93,7 +93,7 @@ spec:
 // separate call sites over separate subjects.
 func TestComponentPlacementGroupDeclaresItsCondition(t *testing.T) {
 	t.Parallel()
-	const root = `apiVersion: aggrega.ai/v1alpha1
+	const root = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -104,7 +104,7 @@ spec:
     writer:
       type: app/db:1.0.0
 `
-	const release = `apiVersion: aggrega.ai/v1alpha1
+	const release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod
@@ -126,7 +126,7 @@ spec:
 // is one condition with one fix.
 func TestBoundaryComponentResolutionGroupDeclaresItsCondition(t *testing.T) {
 	t.Parallel()
-	const root = `apiVersion: aggrega.ai/v1alpha1
+	const root = `apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: demo
@@ -135,7 +135,7 @@ spec:
     reader:
       type: app/db:1.0.0
 `
-	const release = `apiVersion: aggrega.ai/v1alpha1
+	const release = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: demo-prod

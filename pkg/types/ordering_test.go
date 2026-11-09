@@ -19,7 +19,7 @@ import (
 func TestAggregate_AuthorOrderPreserved(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
   name: test
@@ -49,7 +49,7 @@ spec:
 func TestRelease_AuthorOrderPreserved(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: test
@@ -80,7 +80,7 @@ spec:
 func TestComponent_AuthorOrderPreserved(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -121,7 +121,7 @@ spec:
 func TestFeature_AuthorOrderPreserved(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: core/monitoring
@@ -155,7 +155,7 @@ spec:
 func TestRecipe_AuthorOrderPreserved(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Recipe
 metadata:
   name: helm-server
@@ -194,7 +194,7 @@ spec:
 func TestFeatureRecipe_AuthorOrderPreserved(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: FeatureRecipe
 metadata:
   name: mon-prometheus
@@ -231,7 +231,7 @@ spec:
 func TestManifest_AuthorOrderPreserved(t *testing.T) {
 	t.Parallel()
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
   name: test
@@ -277,7 +277,7 @@ func TestWorkload_RoundTripPlaceholder(t *testing.T) {
 	// Workload struct body lands in synthesis-foundations. This test verifies
 	// the slot declarations unmarshal in author order once fields are populated.
 	src := []byte(`
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Workload
 containers:
   zcontainer:

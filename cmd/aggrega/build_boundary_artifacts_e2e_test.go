@@ -43,26 +43,26 @@ func boundaryArtifactsWorkspace(t *testing.T, root, capability string, component
 	catalogDir = filepath.Join(root, "catalog")
 
 	var aggregate, release, mappings strings.Builder
-	aggregate.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Aggregate\nmetadata:\n  name: aggregate\n" +
+	aggregate.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Aggregate\nmetadata:\n  name: aggregate\n" +
 		"  version: \"1.0.0\"\nspec:\n  components:\n")
-	release.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: boundary-files\n" +
+	release.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: boundary-files\n" +
 		"  environment: testing\n  version: \"1.0.0\"\nspec:\n  aggregate: ./aggregate.yaml\n  manifest: ./manifest.yaml\n" +
 		"  boundaries:\n    main:\n      directory: ./dist/main\n      components:\n")
-	mappings.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: manifest\n" +
+	mappings.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: manifest\n" +
 		"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n")
 	var recipePaths []string
 	for _, c := range components {
 		aggregate.WriteString("    " + c.component + ":\n      type: " + c.component + "\n")
 		release.WriteString("        " + c.component + ": {}\n")
 		mappings.WriteString("        " + c.component + ": " + c.component + "\n")
-		writeFixture(t, filepath.Join(catalogDir, "components", c.component+".yaml"), "apiVersion: aggrega.ai/v1alpha1\n"+
+		writeFixture(t, filepath.Join(catalogDir, "components", c.component+".yaml"), "apiVersion: aggrega.ai/v1beta1\n"+
 			"kind: Component\nmetadata:\n  name: "+c.component+"\n  version: \"1.0.0\"\n  labels:\n"+
 			"    component.aggrega.ai/type: \"server\"\nspec:\n  schema:\n    values: {}\n")
 		// Each Recipe in a directory of its own: the pin step refuses an entity that
 		// shares its directory with another, because the lock it writes is named
 		// for the directory rather than for the entity.
 		recipePath := filepath.Join(catalogDir, "recipes", c.component, "recipe.yaml")
-		writeFixture(t, recipePath, "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: "+c.component+"\n"+
+		writeFixture(t, recipePath, "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: "+c.component+"\n"+
 			"  version: \"1.0.0\"\nspec:\n  capability: "+capability+"\n  implements: "+c.component+"\n"+c.spec)
 		recipePaths = append(recipePaths, recipePath)
 	}
@@ -212,7 +212,7 @@ func TestValidate_TheBoundaryBlockNegativeCorpus(t *testing.T) {
 	t.Parallel()
 
 	recipe := func(spec string) string {
-		return "apiVersion: aggrega.ai/v1alpha1\nkind: Recipe\nmetadata:\n  name: corpus\n  version: \"1.0.0\"\nspec:\n" + spec
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: corpus\n  version: \"1.0.0\"\nspec:\n" + spec
 	}
 	const artifactsOnly = "  capability: terraform\n  implements: server\n  artifacts:\n    main.tf: \"# main\"\n"
 

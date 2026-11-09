@@ -3,7 +3,7 @@
 
 # A Feature whose FeatureRecipe delivers a value onto the attached component's
 # inject pipe, read directly off one of the component's connections.
-apiVersion: aggrega.ai/v1alpha1
+apiVersion: aggrega.ai/v1beta1
 kind: Feature
 metadata:
   name: example/direct-host

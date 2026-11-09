@@ -28,7 +28,7 @@ import (
 func TestLintCatalogWide_CatchesBrokenEntity(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFixture(t, filepath.Join(dir, "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dir, "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -52,7 +52,7 @@ spec:
 func TestLintCatalogWide_PassesValidCatalog(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	writeFixture(t, filepath.Join(dir, "server.yaml"), `apiVersion: aggrega.ai/v1alpha1
+	writeFixture(t, filepath.Join(dir, "server.yaml"), `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/server
@@ -70,7 +70,7 @@ spec:
 }
 
 // unloadableGoodComponent is a Component both whole-catalog scopes accept.
-const unloadableGoodComponent = `apiVersion: aggrega.ai/v1alpha1
+const unloadableGoodComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/server
@@ -85,7 +85,7 @@ spec:
 
 // unloadableSyntaxComponent declares the Aggrega envelope and does not parse as
 // YAML: a mapping value opens where a scalar was expected.
-const unloadableSyntaxComponent = `apiVersion: aggrega.ai/v1alpha1
+const unloadableSyntaxComponent = `apiVersion: aggrega.ai/v1beta1
 kind: Component
 metadata:
   name: core/compute/broken
@@ -96,7 +96,7 @@ spec:
 
 // unloadableListedComponent declares the Aggrega envelope, parses, and does not
 // decode into the entity header: its metadata is a list.
-const unloadableListedComponent = `apiVersion: "aggrega.ai/v1alpha1"
+const unloadableListedComponent = `apiVersion: "aggrega.ai/v1beta1"
 kind: Component
 metadata:
   - name: core/compute/listed

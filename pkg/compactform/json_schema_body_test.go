@@ -146,7 +146,7 @@ func TestEscape_BodyIsReadAsJSONSchema(t *testing.T) {
 func TestRequiredMarker_InsideExplicitProperties(t *testing.T) {
 	t.Parallel()
 
-	library := loadLibrary(t, `apiVersion: aggrega.ai/v1alpha1
+	library := loadLibrary(t, `apiVersion: aggrega.ai/v1beta1
 kind: SchemaLibrary
 metadata:
   name: Lib

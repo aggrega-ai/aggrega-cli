@@ -29,7 +29,7 @@ import (
 func TestReleaseCandidatesNameEachLinkedDirectoryOutsideTheRoot(t *testing.T) {
 	t.Parallel()
 
-	const release = "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: x\n"
+	const release = "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: x\n"
 
 	rows := []struct {
 		name string

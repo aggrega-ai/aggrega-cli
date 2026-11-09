@@ -31,13 +31,13 @@ fn classify_once(input: &LinterInput) -> String {
 #[test]
 fn component_patch_documentation_only_change() {
     let prev = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "core/api-server", "version": "1.0.0", "description": "first cut"},
         "spec": {"schema": {"values": {"type": "object"}}},
     });
     let prop = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "core/api-server", "version": "1.0.0", "description": "rewritten for clarity"},
         "spec": {"schema": {"values": {"type": "object"}}},
@@ -48,13 +48,13 @@ fn component_patch_documentation_only_change() {
 #[test]
 fn component_minor_new_optional_field() {
     let prev = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "core/api-server", "version": "1.0.0"},
         "spec": {"schema": {"values": {"type": "object", "properties": {"port": {"type": "integer"}}}}},
     });
     let prop = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "core/api-server", "version": "1.0.0"},
         "spec": {"schema": {"values": {"type": "object", "properties": {"port": {"type": "integer"}, "host": {"type": "string"}}}}},
@@ -65,13 +65,13 @@ fn component_minor_new_optional_field() {
 #[test]
 fn component_major_field_removed() {
     let prev = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "core/api-server", "version": "1.0.0"},
         "spec": {"schema": {"values": {"type": "object", "properties": {"port": {"type": "integer"}, "host": {"type": "string"}}}}},
     });
     let prop = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": "core/api-server", "version": "1.0.0"},
         "spec": {"schema": {"values": {"type": "object", "properties": {"port": {"type": "integer"}}}}},

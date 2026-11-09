@@ -48,7 +48,7 @@ fn provides(with_key: bool) -> Value {
 /// the given provides pillar.
 fn component(annotation: Option<Value>, pillar: Value) -> Value {
     let mut doc = json!({
-        "apiVersion": "aggrega.ai/v1alpha1",
+        "apiVersion": "aggrega.ai/v1beta1",
         "kind": "Component",
         "metadata": {"name": NAME, "version": "1.0.0", "labels": {"component.aggrega.ai/type": "server"}},
         "spec": {"schema": {"values": {"port": {"type": "integer"}}, "provides": pillar}},
