@@ -13,7 +13,6 @@ package draftyaml
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -31,31 +30,12 @@ import (
 // as they are.
 var CommentLine = importer.CommentLine
 
-// String writes s as a double-quoted YAML scalar reading back as exactly s: a
-// double quote and a backslash escaped, every printable ASCII character as it
-// is, and every other character as its \u or \U escape, so no character a YAML
-// reader could take for a line break, and no control character, is written raw.
-// A byte that is not part of a UTF-8 sequence is written as U+FFFD.
-func String(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range s {
-		switch {
-		case r == '"':
-			b.WriteString(`\"`)
-		case r == '\\':
-			b.WriteString(`\\`)
-		case r >= 0x20 && r < 0x7f:
-			b.WriteRune(r)
-		case r <= 0xffff:
-			fmt.Fprintf(&b, `\u%04X`, r)
-		default:
-			fmt.Fprintf(&b, `\U%08X`, r)
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
-}
+// String is the plugin kit's importer.QuotedString, the one writer of a
+// double-quoted scalar, whose documentation is the contract: the kit's own
+// platform drafts write theirs through it too, and the kit cannot reach this
+// package, so the writer lives there and is named here beside the drafts' other
+// writers.
+var String = importer.QuotedString
 
 // Comment writes text read from a source into a comment: as it is where it holds
 // only letters, digits, spaces and the punctuation a name, a path or a variable

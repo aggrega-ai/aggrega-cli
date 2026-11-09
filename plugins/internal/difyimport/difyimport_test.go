@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"text/template"
 
 	"go.yaml.in/yaml/v3"
 
@@ -70,6 +71,31 @@ const (
 	plantedRequest = "sk-planted-dify-request-needle-8b3d61f0"
 )
 
+// draftedAggregate is what the cases read of a drafted Aggregate: the parameters
+// it declares, each by its keys, the Components it declares, and each entry it
+// composes, with the parameters it hands that entry.
+type draftedAggregate struct {
+	Spec struct {
+		Parameters map[string]map[string]any `yaml:"parameters"`
+		Components map[string]any            `yaml:"components"`
+		Aggregates map[string]struct {
+			Type       string         `yaml:"type"`
+			Parameters map[string]any `yaml:"parameters"`
+		} `yaml:"aggregates"`
+	} `yaml:"spec"`
+}
+
+// readDrafted reads text, a drafted Aggregate as written or as evaluated, with a
+// YAML reader, and fails the test where it does not read.
+func readDrafted(t *testing.T, text string) draftedAggregate {
+	t.Helper()
+	var doc draftedAggregate
+	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
+		t.Fatalf("the drafted Aggregate does not read as YAML: %v\n%s", err, text)
+	}
+	return doc
+}
+
 // carried reads the drafted Aggregate of out as YAML and returns the application
 // the core/dify entry carries in app_definition, as an Aggregate's template
 // reading gives it back — every {{"{{"}} read as the two braces — and the
@@ -80,18 +106,7 @@ func carried(t *testing.T, out aggrega.ImportOutput) (app string, ok bool, text 
 		if f.Path != "aggregate.yaml" {
 			continue
 		}
-		var doc struct {
-			Spec struct {
-				Components map[string]any `yaml:"components"`
-				Aggregates map[string]struct {
-					Type       string         `yaml:"type"`
-					Parameters map[string]any `yaml:"parameters"`
-				} `yaml:"aggregates"`
-			} `yaml:"spec"`
-		}
-		if err := yaml.Unmarshal([]byte(f.Content), &doc); err != nil {
-			t.Fatalf("the drafted Aggregate does not read as YAML: %v\n%s", err, f.Content)
-		}
+		doc := readDrafted(t, f.Content)
 		if len(doc.Spec.Components) != 0 {
 			t.Errorf("the draft holds Components %v; the module form drafts none", doc.Spec.Components)
 		}
@@ -118,9 +133,10 @@ func codesAndRefs(out aggrega.ImportOutput) []string {
 // TestAWorkflowApplicationIsDraftedAsTheInstallationCarryingIt imports the
 // authored workflow application with no setting: the draft is aggregate.yaml
 // alone, composing core/dify with the application carried byte for byte in its
-// app_definition — Dify's {{#…#}} references and the double quotes included — and
-// the comment naming the owner account the Release supplies and that the import
-// does not check the catalog for core/dify. No Component is drafted and nothing
+// app_definition — Dify's {{#…#}} references and the double quotes included —
+// secret_key passed down to it, and the comment naming the secret_key parameter
+// and the owner account the Release supplies and that the import does not check
+// the catalog for core/dify. No Component is drafted and nothing
 // is wired. The secret variable and the HTTP request node's key, each holding a
 // value, are carried as written and named in a credential-carried warning, as
 // are the request's headers; the secret written empty raises nothing. The tool,
@@ -148,7 +164,9 @@ func TestAWorkflowApplicationIsDraftedAsTheInstallationCarryingIt(t *testing.T) 
 			"check that the catalog holds core/dify.\n",
 		"    #   - infra.owner_email on the api component of core/dify, ",
 		"    #   - the owner_password slot on that api component, ",
-		"    dify:\n      type: core/dify\n      parameters:\n        app_definition: |\n          app:\n",
+		"    #   - the secret_key parameter declared above, which this entry passes down to core/dify\n",
+		"    dify:\n      type: core/dify\n      parameters:\n        secret_key: \"{{ .parameters.secret_key }}\"\n" +
+			"        app_definition: |\n          app:\n",
 		`'Answer {{"{{"}}#1760000000001.question#}} from {{"{{"}}#context#}} only, or`,
 	} {
 		if !strings.Contains(text, want) {
@@ -520,6 +538,188 @@ func TestEmptyInSourceWritesOnlyTheValue(t *testing.T) {
 				t.Errorf("the writer wrote %q; it reads no such layout", out)
 			}
 		})
+	}
+}
+
+// draftedSecretKey is what a drafted Aggregate reads of the secret_key parameter:
+// its declaration under spec.parameters, every key it is declared with, and the
+// value each core/dify entry is handed for it, by entry key.
+type draftedSecretKey struct {
+	declared map[string]any
+	passed   map[string]any
+}
+
+// readSecretKey reads the drafted Aggregate of out as YAML, as it is written —
+// before an Aggregate's template reading — and returns what it declares and
+// passes of secret_key. It fails where the draft declares any other parameter.
+func readSecretKey(t *testing.T, out aggrega.ImportOutput) draftedSecretKey {
+	t.Helper()
+	if len(out.Files) != 1 || out.Files[0].Path != "aggregate.yaml" {
+		t.Fatalf("the import wrote %+v, want aggregate.yaml alone", out.Files)
+	}
+	doc := readDrafted(t, out.Files[0].Content)
+	if len(doc.Spec.Parameters) != 1 {
+		t.Errorf("the draft declares parameters %v, want %s alone", doc.Spec.Parameters, SecretKeyParameter)
+	}
+	got := draftedSecretKey{declared: doc.Spec.Parameters[SecretKeyParameter], passed: map[string]any{}}
+	for key, entry := range doc.Spec.Aggregates {
+		if entry.Type != Module {
+			t.Errorf("the draft's entry %s composes %q, want %s", key, entry.Type, Module)
+		}
+		got.passed[key] = entry.Parameters[SecretKeyParameter]
+	}
+	return got
+}
+
+// TestTheDraftDeclaresTheSecretKeyAndPassesItDown imports Dify applications and
+// reads the drafted Aggregate: it declares secret_key once under spec.parameters,
+// a required string of at least one character with no default and the
+// description saying what the Release supplies, and every core/dify entry is
+// handed it as {{ .parameters.secret_key }}, so the Release fulfills core/dify's
+// own secret_key, which has no default:
+//
+//   - the chat application, carried;
+//   - the workflow application with an alias reading its secret, under
+//     empty_credentials marked, not carried — its entry is handed secret_key all
+//     the same;
+//   - two applications as named sources of one request, drafted as two entries,
+//     dify and dify-2, both handed the one parameter.
+//
+// 🔴 PLANTED DEFECT: in difyimport.go, drop PassedDown from the platform's Module:
+// every row fails, the draft declaring no parameter and handing none down.
+func TestTheDraftDeclaresTheSecretKeyAndPassesItDown(t *testing.T) {
+	t.Parallel()
+	chat := fixture(t, "authored/chat.yml")
+	workflow := string(fixture(t, "authored/workflow.yml"))
+	aliased := strings.Replace(strings.Replace(workflow, "value: "+plantedSecret, "value: &ticketing "+plantedSecret, 1),
+		"value: Hello", "value: *ticketing", 1)
+	if aliased == workflow {
+		t.Fatal("the alias did not land in the fixture")
+	}
+	for _, tc := range []struct {
+		name    string
+		in      aggrega.ImportInput
+		entries []string
+	}{
+		{"one application, carried", aggrega.ImportInput{Format: Format, Bytes: chat, Catalog: catalog}, []string{"dify"}},
+		{"one application, not carried", aggrega.ImportInput{Format: Format, Bytes: []byte(aliased), Catalog: catalog,
+			Settings: json.RawMessage(`{"empty_credentials":"marked"}`)}, []string{"dify"}},
+		{"two applications", aggrega.ImportInput{Format: Format, Catalog: catalog, Sources: []aggrega.ImportSource{
+			{Name: "apps/policy.yml", Bytes: chat}, {Name: "apps/support.yml", Bytes: []byte(workflow)}}},
+			[]string{"dify", "dify-2"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := readSecretKey(t, Import(tc.in, hostParse))
+			want := map[string]any{"type": "string", "required": true, "minLength": 1, "description": secretKeyDescription}
+			if !reflect.DeepEqual(got.declared, want) {
+				t.Errorf("the draft declares %s as %v, want %v", SecretKeyParameter, got.declared, want)
+			}
+			passed := map[string]any{}
+			for _, key := range tc.entries {
+				passed[key] = "{{ .parameters." + SecretKeyParameter + " }}"
+			}
+			if !reflect.DeepEqual(got.passed, passed) {
+				t.Errorf("the draft's entries are handed %v, want %v", got.passed, passed)
+			}
+		})
+	}
+}
+
+// TestAPassedDownDescriptionReadsBackThroughAYAMLReader imports the chat
+// application through the Dify format with its secret_key parameter given a
+// description holding DEL, U+0085, a C1 control, a double quote, a backslash and
+// two opening braces. The drafted Aggregate holds none of the three controls raw;
+// evaluated as a template, as the compiler evaluates an Aggregate, with the
+// Release fulfilling secret_key, and read by a YAML reader — not the writer's own
+// codec — the parameter's description reads back as given, and the entry reads
+// the value fulfilled.
+//
+// 🔴 PLANTED DEFECT: in QuotedString (aggrega-pdk/go/pkg/importer/definition.go),
+// write `r >= 0x20 && r < 0x80` for the printable range: DEL is written raw, and
+// the case fails.
+func TestAPassedDownDescriptionReadsBackThroughAYAMLReader(t *testing.T) {
+	t.Parallel()
+	const controls = "\x7f\u0085\u0090"
+	planted := "a DEL \x7f, a next line \u0085, a C1 control \u0090, a \"quote\", a back\\slash and {{ braces }}"
+	module := *platform.Module
+	module.PassedDown = []importer.PassedDownParameter{{Name: SecretKeyParameter, Description: planted}}
+	plat := platform
+	plat.Module = &module
+	format := Dify
+	format.Platform = &plat
+
+	out := importer.Import(aggrega.ImportInput{Format: Format, Bytes: fixture(t, "authored/chat.yml"), Catalog: catalog},
+		format, hostParse)
+	if len(out.Files) != 1 || out.Files[0].Path != "aggregate.yaml" {
+		t.Fatalf("the import wrote %+v, want aggregate.yaml alone", out.Files)
+	}
+	text := out.Files[0].Content
+	if strings.ContainsAny(text, controls) {
+		t.Errorf("the drafted Aggregate holds a control character raw:\n%q", text)
+	}
+	tmpl, err := template.New("aggregate").Parse(text)
+	if err != nil {
+		t.Fatalf("the drafted Aggregate does not parse as a template: %v", err)
+	}
+	var evaluated strings.Builder
+	if err := tmpl.Execute(&evaluated, map[string]any{"parameters": map[string]any{SecretKeyParameter: "k-fulfilled"}}); err != nil {
+		t.Fatalf("the drafted Aggregate does not run as a template: %v", err)
+	}
+	doc := readDrafted(t, evaluated.String())
+	if got := doc.Spec.Parameters[SecretKeyParameter]["description"]; got != planted {
+		t.Errorf("the description reads back as %#v, want %q", got, planted)
+	}
+	if got := doc.Spec.Aggregates["dify"].Parameters[SecretKeyParameter]; got != "k-fulfilled" {
+		t.Errorf("the entry reads %s as %#v, want the value fulfilled", SecretKeyParameter, got)
+	}
+}
+
+// hubDifyModule is the hub's core/dify, in the aggrega-hub repository checked out
+// beside this one, relative to this package.
+var hubDifyModule = filepath.Join("..", "..", "..", "..", "aggrega-hub", "aggrega-catalog", "aggregate", "core", "dify",
+	"1.0.0", "aggregate.yaml")
+
+// TestTheSecretKeyIsTheModulesOwnWithNoDefault holds SecretKeyParameter, the
+// parameter a draft passes down, to the hub's core/dify: the module declares it,
+// required and with no default, so a Release must fulfill what the draft passes
+// down, and the module renaming it or giving it a default fails here rather than
+// leaving drafts passing down a parameter the module does not read, or one it no
+// longer needs. Without the aggrega-hub checkout beside this repository it fails
+// rather than skipping. A failure names what the module declares, never a value.
+func TestTheSecretKeyIsTheModulesOwnWithNoDefault(t *testing.T) {
+	t.Parallel()
+	body, err := os.ReadFile(hubDifyModule)
+	if err != nil {
+		t.Fatalf("read the hub's core/dify: %v", err)
+	}
+	var module struct {
+		Metadata struct {
+			Name string `yaml:"name"`
+		} `yaml:"metadata"`
+		Spec struct {
+			Parameters map[string]map[string]any `yaml:"parameters"`
+		} `yaml:"spec"`
+	}
+	if err := yaml.Unmarshal(body, &module); err != nil {
+		t.Fatalf("the hub's core/dify does not read as YAML: %v", err)
+	}
+	if module.Metadata.Name != Module {
+		t.Fatalf("the hub's file names %q, want %s", module.Metadata.Name, Module)
+	}
+	declared, ok := module.Spec.Parameters[SecretKeyParameter]
+	if !ok {
+		t.Fatalf("the hub's %s declares no parameter %s", Module, SecretKeyParameter)
+	}
+	if _, has := declared["default"]; has {
+		t.Errorf("the hub's %s gives %s a default", Module, SecretKeyParameter)
+	}
+	if declared["required"] != true || declared["minLength"] != 1 || declared["type"] != "string" {
+		t.Errorf("the hub's %s declares %s with type %v, required %v and minLength %v, want a required string of at "+
+			"least one character", Module, SecretKeyParameter, declared["type"], declared["required"], declared["minLength"])
+	}
+	if _, ok := module.Spec.Parameters[DefinitionParameter]; !ok {
+		t.Errorf("the hub's %s declares no parameter %s", Module, DefinitionParameter)
 	}
 }
 

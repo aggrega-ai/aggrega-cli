@@ -32,7 +32,10 @@ package importops
 // Each says so where it is built; none is presented as an export.
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -589,26 +592,53 @@ type helmVariable struct {
 }
 
 // helmContainerEnv reads the environment the helm Deployment of platform hands
-// its first container, in the order it writes it: the one reader of a rendered
-// Deployment's variables platformVariable and helmVariableNames share.
+// its first container, in the order it writes it, through deploymentEnvs: the
+// reader of a rendered Deployment's variables platformVariable and
+// helmVariableNames share.
 func helmContainerEnv(t *testing.T, artifacts map[string][]byte, platform string) []helmVariable {
 	t.Helper()
-	var d struct {
-		Spec struct {
-			Template struct {
-				Spec struct {
-					Containers []struct {
-						Env []helmVariable `yaml:"env"`
-					} `yaml:"containers"`
-				} `yaml:"spec"`
-			} `yaml:"template"`
-		} `yaml:"spec"`
-	}
 	doc := renderedEnding(t, artifacts, "/helm/"+platform+"-deployment.yaml")
-	if err := yaml.Unmarshal(doc, &d); err != nil || len(d.Spec.Template.Spec.Containers) == 0 {
+	envs, err := deploymentEnvs(doc)
+	if err != nil || len(envs) == 0 {
 		t.Fatalf("the rendered Deployment does not read (%v):\n%s", err, doc)
 	}
-	return d.Spec.Template.Spec.Containers[0].Env
+	return envs[0]
+}
+
+// deploymentEnvs reads every YAML document of a rendered file and returns, for
+// each Deployment among them, the environment it hands each of its containers,
+// in the order the file writes them: the one reader of a rendered Deployment's
+// variables. A document of another kind is passed over; a file that does not read
+// as YAML is an error.
+func deploymentEnvs(body []byte) ([][]helmVariable, error) {
+	var envs [][]helmVariable
+	dec := yaml.NewDecoder(bytes.NewReader(body))
+	for {
+		var d struct {
+			Kind string `yaml:"kind"`
+			Spec struct {
+				Template struct {
+					Spec struct {
+						Containers []struct {
+							Env []helmVariable `yaml:"env"`
+						} `yaml:"containers"`
+					} `yaml:"spec"`
+				} `yaml:"template"`
+			} `yaml:"spec"`
+		}
+		if err := dec.Decode(&d); err != nil {
+			if errors.Is(err, io.EOF) {
+				return envs, nil
+			}
+			return envs, err
+		}
+		if d.Kind != "Deployment" {
+			continue
+		}
+		for _, c := range d.Spec.Template.Spec.Containers {
+			envs = append(envs, c.Env)
+		}
+	}
 }
 
 // renderedEnding returns the one rendered file whose path ends with suffix. The

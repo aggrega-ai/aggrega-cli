@@ -22,6 +22,7 @@ package importops
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,9 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -286,6 +290,173 @@ func assertNoneReachesTheRecord(t *testing.T, planted []string, source []byte, r
 				t.Errorf("the decision of %s names the planted %q", d.SourceNode.ID, p)
 			}
 		}
+	}
+}
+
+// difyBuildPaths are the catalog paths a drafted Dify installation is built
+// against: core/dify, its ten Components and the Helm Recipe of each, the schema
+// library, the referenced-secret Feature and its existing-Secret realization, and
+// the provider Plugin entities the compiler's flow-definition proofs build with.
+func difyBuildPaths() []string {
+	paths := []string{"../compiler/testdata/flow-definition-escape/catalog"}
+	for _, rel := range []string{
+		"aggregate/core/dify/1.0.0/aggregate.yaml",
+		"schemalibrary/base-components/1.0.0/library.yaml",
+		"feature/core/referenced-secret/1.0.0/feature.yaml",
+		"feature-recipe/helm/k8s-existing-secret/1.0.0/recipe.yaml",
+	} {
+		paths = append(paths, platformHub+"/"+rel)
+	}
+	for _, c := range difyBuildComponents {
+		paths = append(paths, platformHub+"/component/"+c.component+"/1.0.0/component.yaml",
+			platformHub+"/recipe/helm/"+c.recipe+"/1.0.0/recipe.yaml")
+	}
+	return paths
+}
+
+// difyBuildComponents are the Components core/dify composes and the Helm Recipe
+// the build's Manifest maps each to.
+var difyBuildComponents = []struct{ component, recipe string }{
+	{"core/ai-agent/dify", "dify"},
+	{"core/ai-agent/dify-worker", "dify-worker"},
+	{"core/ai-agent/dify-worker-beat", "dify-worker-beat"},
+	{"core/ai-agent/dify-web", "dify-web"},
+	{"core/ai-agent/dify-sandbox", "dify-sandbox"},
+	{"core/ai-agent/dify-plugin-daemon", "dify-plugin-daemon"},
+	{"core/ai-agent/dify-ssrf-proxy", "dify-ssrf-proxy"},
+	{"core/datastore/postgres", "postgres"},
+	{"core/datastore/redis", "redis"},
+	{"core/datastore/weaviate", "weaviate"},
+}
+
+// difySecretName is the Secret the build's Release names for the application
+// secret, under the existing-Secret realization the build's Manifest binds.
+const difySecretName = "dify-test-credentials"
+
+// writeDifyBuild writes, beside the drafted Aggregate in dir, a Manifest mapping
+// each Component of core/dify to its Helm Recipe and core/referenced-secret to an
+// existing Secret, and a Release placing the entry in a boundary, naming the
+// owner account the application is imported under, and holding parameters, the
+// lines of its spec.parameters block — none where empty. It returns the
+// Release's path.
+func writeDifyBuild(t *testing.T, dir, parameters string) string {
+	t.Helper()
+	var manifest strings.Builder
+	manifest.WriteString("apiVersion: aggrega.ai/v1alpha1\nkind: Manifest\nmetadata:\n  name: imported/flow\n" +
+		"  version: 0.1.0\nspec:\n  mappings:\n    components:\n      type:\n")
+	for _, c := range difyBuildComponents {
+		manifest.WriteString("        " + c.component + ": helm/" + c.recipe + "\n")
+	}
+	manifest.WriteString("    features:\n      type:\n        core/referenced-secret: helm/k8s-existing-secret\n")
+	release := "apiVersion: aggrega.ai/v1alpha1\nkind: Release\nmetadata:\n  name: imported/flow\n" +
+		"  environment: development\n  version: 0.1.0\nspec:\n  aggregate: imported/flow\n  manifest: imported/flow\n"
+	if parameters != "" {
+		release += "  parameters:\n" + parameters
+	}
+	release += "  boundaries:\n    platform:\n      aggregates:\n        dify:\n          components:\n            api:\n" +
+		"              infra:\n                owner_email: owner@example.com\n              features:\n" +
+		"                owner_password:\n                  type: core/referenced-secret\n                  infra:\n" +
+		"                    origin: dify-test-owner\n"
+	for file, body := range map[string]string{"manifest.yaml": manifest.String(), "release.yaml": release} {
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644); err != nil {
+			t.Fatalf("write the %s: %v", file, err)
+		}
+	}
+	return filepath.Join(dir, "release.yaml")
+}
+
+// secretKeyVariables reads every rendered Deployment's containers, through
+// deploymentEnvs, and returns the SECRET_KEY variable each hands one, by the
+// artifact's path. A rendered .yaml file that does not read fails the test.
+func secretKeyVariables(t *testing.T, artifacts map[string][]byte) map[string]helmVariable {
+	t.Helper()
+	got := map[string]helmVariable{}
+	for path, body := range artifacts {
+		envs, err := deploymentEnvs(body)
+		if err != nil && strings.HasSuffix(path, ".yaml") {
+			t.Fatalf("the rendered %s does not read as YAML: %v", path, err)
+		}
+		for _, env := range envs {
+			for _, e := range env {
+				if e.Name == "SECRET_KEY" {
+					got[path] = e
+				}
+			}
+		}
+	}
+	return got
+}
+
+// TestADifyDraftBuildsOnlyWithTheReleaseFulfillingItsSecretKey imports the
+// authored chat application through the real Import and builds the draft, with a
+// Manifest mapping core/dify's Components to their Helm Recipes and the
+// credential to an existing Secret, through the build-faithful harness, under
+// three Releases, each placing the installation and naming its owner:
+//
+//   - fulfilling secret_key with a Secret's name: the build completes, and the
+//     API server and the task worker each read SECRET_KEY from that Secret under
+//     the data key secret-key — no literal is rendered for it anywhere;
+//   - leaving secret_key unset: the build halts with the required parameter not
+//     supplied, naming secret_key;
+//   - fulfilling it with the empty string: the build halts on the parameter
+//     contract, naming secret_key, since the draft declares it at least one
+//     character long.
+//
+// 🔴 PLANTED DEFECT: in moduleEntity (aggrega-pdk/go/pkg/importer/module.go),
+// pass each parameter down as the empty string (`": \"\"\n"` in place of the
+// template): the fulfilled row fails, core/dify's own secret_key halting on the
+// empty value it is handed.
+func TestADifyDraftBuildsOnlyWithTheReleaseFulfillingItsSecretKey(t *testing.T) {
+	t.Parallel()
+	source := readDifyFixture(t, "authored/chat.yml")
+	for _, tc := range []struct {
+		name       string
+		parameters string
+		// halts is the condition the build halts with, nil where it builds.
+		halts error
+	}{
+		{name: "fulfilled", parameters: "    secret_key: " + difySecretName + "\n"},
+		{name: "unset", halts: resolver.ErrParameterMissing()},
+		{name: "empty", parameters: "    secret_key: \"\"\n", halts: resolver.ErrParameterContractViolation()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			res, dir := writtenImport(t, difyWorkspace(t, nil), "support-assistant.yml", source)
+			if res.Halted() {
+				t.Fatalf("the import halted: %+v", res.Diagnostics)
+			}
+			result, err := pipelinetest.BuildE(t, pipelinetest.Input{
+				ReleasePath:  writeDifyBuild(t, dir, tc.parameters),
+				CatalogPaths: difyBuildPaths(),
+			})
+			if tc.halts != nil {
+				if err == nil {
+					t.Fatalf("the build completed; want it halted with %v", tc.halts)
+				}
+				if !errors.Is(err, tc.halts) {
+					t.Errorf("the build halted with %s, want %v", cerrors.CauseChain(err), tc.halts)
+				}
+				if chain := cerrors.CauseChain(err); !strings.Contains(chain, "secret_key") {
+					t.Errorf("the halt does not name secret_key: %s", chain)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("the build halted with secret_key fulfilled: %s", cerrors.CauseChain(err))
+			}
+			got := secretKeyVariables(t, result.Artifacts)
+			if len(got) != 2 {
+				t.Errorf("SECRET_KEY is handed to %d Deployments, want the API server's and the task worker's: %v",
+					len(got), got)
+			}
+			for path, v := range got {
+				if v.Value != nil || v.ValueFrom == nil || v.ValueFrom.SecretKeyRef == nil ||
+					v.ValueFrom.SecretKeyRef.Name != difySecretName || v.ValueFrom.SecretKeyRef.Key != "secret-key" {
+					t.Errorf("%s hands SECRET_KEY %+v, want it read from the Secret %s under the data key secret-key",
+						path, v, difySecretName)
+				}
+			}
+		})
 	}
 }
 

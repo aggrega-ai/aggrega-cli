@@ -34,8 +34,12 @@
 // application calls inside itself, and core/ai-agent/dify declares no socket for
 // a model, so every model, tool, knowledge base and plugin the application names
 // is reported, in its decision and in a warning, as configured inside Dify. The
-// owner account the application is imported under is the Release's to name, and
-// a comment above the entry says so.
+// installation's application secret, which core/dify takes in its secret_key
+// parameter with no default, is the Release's to supply: the drafted
+// Aggregate declares a required secret_key parameter of its own and passes it
+// down to the entry, for the Release to fulfill. The owner account the
+// application is imported under is the Release's to name too, and a comment
+// above the entry says what the Release supplies.
 //
 // # Credential values
 //
@@ -77,12 +81,23 @@ const Format = "dify"
 const Syntax = "yaml"
 
 // The catalog entities a draft names: the installation module it composes, the
-// module's parameter carrying the application, and the API server running it.
+// module's parameter carrying the application, the module's parameter carrying
+// the application secret, which the draft passes down from a parameter of its
+// own, and the API server running it.
 const (
 	Module              = "core/dify"
 	DefinitionParameter = "app_definition"
+	SecretKeyParameter  = "secret_key"
 	Server              = "core/ai-agent/dify"
 )
+
+// secretKeyDescription describes the secret_key parameter a draft declares. It
+// says only what the draft does with it and points at the module for the rest:
+// what the value is, and what the module does with it, are the catalog's to say,
+// in its own description of the parameter. That the module's parameter has no
+// default is held to the catalog by TestTheSecretKeyIsTheModulesOwnWithNoDefault.
+const secretKeyDescription = "Passed down to " + Module + "'s " + SecretKeyParameter + " parameter, which has no " +
+	"default; that parameter's description in " + Module + " says what the value is."
 
 // EngineVersion is the Dify version core/ai-agent/dify runs by default, its
 // infra.engine_version, and DSLVersion the version of the DSL that engine
@@ -108,10 +123,16 @@ var Dify = importer.Format{
 var platform = importer.Platform{
 	Component:       Server,
 	DefinitionValue: DefinitionParameter,
-	Module:          &importer.Module{Aggregate: Module, Parameter: DefinitionParameter},
-	Credentials:     credentialsOf,
-	Configured:      configuredOf,
-	EmptyInSource:   emptyInSource,
+	Module: &importer.Module{
+		Aggregate: Module,
+		Parameter: DefinitionParameter,
+		PassedDown: []importer.PassedDownParameter{
+			{Name: SecretKeyParameter, Description: secretKeyDescription},
+		},
+	},
+	Credentials:   credentialsOf,
+	Configured:    configuredOf,
+	EmptyInSource: emptyInSource,
 	LeftForRelease: []string{
 		"infra.owner_email on the api component of " + Module + ", the email of the installation's owner account the " +
 			"application is imported under, set under components.api in the Release's routing entry for this entry",
