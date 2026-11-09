@@ -405,7 +405,19 @@ const offFrameworkEmissionBlocks = false
 // here would be derived rather than quoted and would be wrong in a way no run
 // contradicts. So zero is a state this number can arrive at, and
 // [offFrameworkEmissionBlocks] flips in the edit that takes it there.
-const offFrameworkEmissionCeiling = 81
+//
+// # Two conditions held above the measured figure, by decision
+//
+// The ceiling stands two above the 81 measured above, and the two are named so
+// the difference is never read as slack: `retired-api-version` (E0373), raised at
+// the document-envelope gate before the schema, beside `entity-envelope-invalid`,
+// and `retired-abi-version` (E0374), raised at that gate for a Plugin entity and
+// at plugin load for a guest's own describe() report. Expressing them as checks
+// needs a document fact per kind that the framework does not declare, ahead of
+// the schema, and the plugin-load half has no authored document to present at
+// all. They are counted here until they move, and the edit that moves either one
+// lowers this constant with it.
+const offFrameworkEmissionCeiling = 83
 
 // unemittedSentinelsBlock decides whether a sentinel with no emission site at
 // all fails this test or is only reported. It is true.
