@@ -28,8 +28,9 @@ func stageLabelFeatureRecipe(extra string, ids ...string) string {
 
 // TestEnvelopeRefusalStageLabel pins the stage label the single-entity check
 // reports a document-envelope refusal under. A document failing its kind's
-// schema is labelled schema, exactly as it always was. A document the schema
-// accepts and the gate refuses under a condition of its own — a pipeline
+// schema is labelled schema, exactly as it always was, and so is one declaring a
+// retired API or plugin ABI version, which the schema refuses too. A document the
+// schema accepts and the gate refuses under a condition of its own — a pipeline
 // repeating a step id — is labelled shape, because a schema label would tell
 // the reader the schema refused a document it accepts. Each row carries one
 // fault, and the row's condition is asserted by its identity and its short code
@@ -58,6 +59,13 @@ func TestEnvelopeRefusalStageLabel(t *testing.T) {
 			wantLabel: "schema: ",
 			condition: envelope.ErrRetiredAPIVersion(),
 			shortCode: "E0373",
+		},
+		{
+			name:      "a retired plugin ABI version keeps the schema label under its own condition",
+			doc:       "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: probe\nspec:\n  abiVersion: v1alpha1\n",
+			wantLabel: "schema: ",
+			condition: envelope.ErrRetiredABIVersion(),
+			shortCode: "E0374",
 		},
 		{
 			name:      "a schema violation keeps the schema label",

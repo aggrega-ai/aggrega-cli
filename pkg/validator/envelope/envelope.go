@@ -257,6 +257,27 @@ func (e *Error) Condition() error {
 	return ErrEntityEnvelope()
 }
 
+// SchemaRefuses reports whether the document the violation reports is one its
+// kind's schema refuses: a document failing the schema, or one declaring a value
+// the compiler read once and reads no longer, which the schema refuses too and
+// the gate reports under a condition of its own. It is false for a rule a schema
+// cannot state, which the gate applies to a document the schema has accepted, so
+// a surface labelling the refusal tells a reader whether the schema refused it.
+//
+// It is answered from the same table the gate refuses retired values from, so a
+// retired value added there is answered here without a second list to keep.
+func (e *Error) SchemaRefuses() bool {
+	if e.condition == nil {
+		return true
+	}
+	for _, f := range retiredFields {
+		if e.condition == f.condition {
+			return true
+		}
+	}
+	return false
+}
+
 // Error renders the violation as one grouped report: the condition's
 // registered sentence, the kind and file it was met on, then each finding with
 // its position, key path and message, and the advice for this path last.

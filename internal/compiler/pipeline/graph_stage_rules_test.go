@@ -44,11 +44,15 @@ const (
 )
 
 // workspaceFixture names the four documents a compilation is driven from.
+//
+// The catalog is named once: catalogPath for one directory, or catalogDirs for
+// several loaded together, and compileWorkspace refuses a fixture setting both.
 type workspaceFixture struct {
 	aggregatePath string
 	releasePath   string
 	manifestPath  string
 	catalogPath   string
+	catalogDirs   []string
 }
 
 // compileWorkspace runs the real pre-render pipeline over one workspace and
@@ -73,7 +77,14 @@ func compileWorkspace(
 	if err != nil {
 		t.Fatalf("load manifest: %v", err)
 	}
-	cat, err := catalog.LoadAll("", fixture.catalogPath)
+	if fixture.catalogPath != "" && len(fixture.catalogDirs) > 0 {
+		t.Fatal("the workspace fixture names its catalog twice: set catalogPath or catalogDirs, not both")
+	}
+	catalogDirs := []string{fixture.catalogPath}
+	if len(fixture.catalogDirs) > 0 {
+		catalogDirs = fixture.catalogDirs
+	}
+	cat, err := catalog.LoadAll("", catalogDirs...)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}

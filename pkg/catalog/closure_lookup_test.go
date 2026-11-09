@@ -81,11 +81,11 @@ spec:
 	}
 	// Golden literal (not a re-derivation): the exact entity-row digest of
 	// compBody, which declares nothing beside itself and so publishes alone — the
-	// SHA-256 of its one-entry listing "644 63a6f938…ddb19fd 11:entity.yaml\n",
-	// where 63a6f938…ddb19fd is the SHA-256 of compBody's bytes. Guards the digest
+	// SHA-256 of its one-entry listing "644 28d7d74c…6043e4f5 11:entity.yaml\n",
+	// where 28d7d74c…6043e4f5 is the SHA-256 of compBody's bytes. Guards the digest
 	// format itself — a spelling change in the listing or in
 	// pkg/digest.ContentDigest fails here loudly instead of being mirrored.
-	const wantCompDigest = "sha256:e0738cf0c50e6d0c7ddd0f15b6ea724256670874bc9fc5f640053995efffd5f7"
+	const wantCompDigest = "sha256:d063d5caf7b14566a6dad8ad597bef89b270760f6ba039ccb090ebd47af3ad17"
 	if res.Digest != wantCompDigest {
 		t.Errorf("Digest: got %q; want %q", res.Digest, wantCompDigest)
 	}
@@ -149,9 +149,9 @@ spec:
 	}
 	// Golden literal (not a re-derivation): the exact entity-row digest of
 	// recipeBody, which declares no file beside itself and so publishes alone —
-	// the SHA-256 of "644 1e2507fc…1118eb06 11:entity.yaml\n", where
-	// 1e2507fc…1118eb06 is the SHA-256 of recipeBody — guarding the digest format.
-	const wantRecipeDigest = "sha256:134b69ba8e4745a5348b102f7915165ca592225daf3cc2e0c6a5cfd281bc7b3f"
+	// the SHA-256 of "644 282aeae3…26e7a1de 11:entity.yaml\n", where
+	// 282aeae3…26e7a1de is the SHA-256 of recipeBody — guarding the digest format.
+	const wantRecipeDigest = "sha256:47c7c2850b5a69656547b25500c5363111ab598810bacb5a25fee84b84f366e1"
 	if res.Digest != wantRecipeDigest {
 		t.Errorf("Digest: got %q; want %q", res.Digest, wantRecipeDigest)
 	}
@@ -203,10 +203,10 @@ func TestClosureLookupFallsBackToOCIPullerOnCacheMiss(t *testing.T) {
 	}
 	// Golden literal (not a re-derivation): the exact entity-row digest of the
 	// version-2.0.0 compBody as the registry published it, a document alone — the
-	// SHA-256 of "644 347ccb4b…ad7c9eba 11:entity.yaml\n", where 347ccb4b…ad7c9eba
+	// SHA-256 of "644 f6a698fc…69958d95 11:entity.yaml\n", where f6a698fc…69958d95
 	// is the SHA-256 of compBody — guarding the digest format. The registry names
 	// compBody's own digest in its manifest; the row is not that digest.
-	const wantComp2Digest = "sha256:71b047421149ce4b96723591660e9d9b2a642ea71aec42da40b451c6e9767efe"
+	const wantComp2Digest = "sha256:48ac42cb3c3910cb0b9e333dbb8814415a07c40f75903f8b9a35165f596914c1"
 	if res.Digest != wantComp2Digest {
 		t.Errorf("Digest: got %q; want %q", res.Digest, wantComp2Digest)
 	}

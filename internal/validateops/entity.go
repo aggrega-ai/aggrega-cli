@@ -230,16 +230,18 @@ func ValidateEntityContent(ctx context.Context, wsRoot, cacheDir string, dirs, n
 // repeated within one pipeline is one — under conditions of their own, and the
 // schema accepts such a document, so labelling that refusal schema would tell the
 // reader the schema refused something it accepts. Those are labelled shape, the
-// stage this report already uses for a kind's rules beyond its schema. Every
-// other refusal keeps the schema label: one reported under a condition of its own
-// that the schema also refuses — a retired API or plugin ABI version — and one
-// that is not a violation at all, a document that will not parse or an engine
-// that could not run. So the shape list names the rules a schema accepts, and a
-// retired version added later is labelled schema without an edit here.
+// stage this report already uses for a kind's rules beyond its schema. A refusal
+// reported under a condition of its own that the schema also refuses — a retired
+// API or plugin ABI version — keeps the schema label, and so does one that is not
+// a violation at all, a document that will not parse or an engine that could not
+// run.
+//
+// Which violations the schema refuses is the gate's own answer, read through the
+// violation rather than listed here, so no condition is named in this function and
+// a retired value the gate adds later is labelled schema without an edit here.
 func envelopeStageLabel(refusal error) string {
 	var violation *envelope.Error
-	if errors.As(refusal, &violation) && violation != nil &&
-		violation.Condition() == envelope.ErrDuplicatePipelineStepID() {
+	if errors.As(refusal, &violation) && violation != nil && !violation.SchemaRefuses() {
 		return "shape"
 	}
 	return "schema"

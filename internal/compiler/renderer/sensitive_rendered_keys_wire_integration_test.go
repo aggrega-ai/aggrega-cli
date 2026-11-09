@@ -27,6 +27,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -98,7 +99,13 @@ func (r *recordingSynthesizer) SynthesizeWorkload(
 func multikeyRenderInputs(t *testing.T, mutateComponent func(*types.Component)) (renderer.RendererInput, renderer.RecipeLookup) {
 	t.Helper()
 
-	cat, err := catalog.LoadAll("", multikeyHubCatalog, multikeyExampleCatalog)
+	// The standard library is loaded without its Plugin entities
+	// (catalogtest.DirsWithoutPluginEntities says why). The render reads none: its
+	// provider guest comes from the binary, the node and the Release carry no
+	// annotation a provider's declared support would be read for, and no Recipe it
+	// renders declares a pipeline step.
+	dirs := append(catalogtest.DirsWithoutPluginEntities(t, multikeyHubCatalog), multikeyExampleCatalog)
+	cat, err := catalog.LoadAll("", dirs...)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
