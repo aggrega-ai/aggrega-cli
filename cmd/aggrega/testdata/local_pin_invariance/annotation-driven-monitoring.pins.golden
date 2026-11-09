@@ -2,13 +2,13 @@ entities:
     - kind: feature
       uri: core/prometheus-exporter
       resolved_version: 1.0.0
-      digest: sha256:5168a479964a8ff299b3be07c360fe84604de76418329f85019d0d19147c2be9
+      digest: sha256:ef65eed9acf6a309b50e221d79fef36c974f2f0440a85e99e02be908ed3b8760
       referenced_from:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
     - kind: component
       uri: example/compute/service
       resolved_version: 1.0.0
-      digest: sha256:ed016539e8c6f2cf0a20456139a38a7f22ba4557a4f1b488f1d3d87047da0073
+      digest: sha256:e563fd5b86160758c2b5cc666f9f6fbb9b18a8476cead31292573c75a62b4639
       referenced_from:
         - aggregate.spec.components.api.type
         - aggregate.spec.components.etl.type
@@ -19,31 +19,31 @@ entities:
     - kind: component
       uri: example/compute/service:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:ed016539e8c6f2cf0a20456139a38a7f22ba4557a4f1b488f1d3d87047da0073
+      digest: sha256:e563fd5b86160758c2b5cc666f9f6fbb9b18a8476cead31292573c75a62b4639
       referenced_from:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
     - kind: feature_recipe
       uri: helm/prometheus-exporter:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:e4df11f46e851395422fc6b3adcac298c1b9b9cf6b722d42632b29c21b5f360e
+      digest: sha256:d6ac2f6314141ec69aec5b6ff6b9952aba94fb73b2106475650b4032c553cde5
       referenced_from:
         - manifest.spec.mappings.features.type.core/prometheus-exporter
     - kind: recipe
       uri: helm/service:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:2a265f179ce59caf200b44269cd17b3d9bd62e48018d0ee56bcd8209e38abe48
+      digest: sha256:d983d53af63f56c2d02d45c0b886ffaeb6fb2645c5d9b1d0a0730a0c5975bbf0
       referenced_from:
         - manifest.spec.mappings.components.type.example/compute/service:1.0.0
     - kind: aggregate
       uri: monitoring-demo
       resolved_version: ""
-      digest: sha256:3f6c12fc3d0514b53ccc15fa837270f19cd6c4c3b326bbe8935e9e17072c490c
+      digest: sha256:0e59795fd9a48a08bf93eda54e3b32a339d4715ecf1516858a008a749346c5d1
       referenced_from:
         - release.spec.aggregate
     - kind: manifest
       uri: monitoring-manifest
       resolved_version: ""
-      digest: sha256:1e87f8bddba542ebe6283d584eee8c45f776c8e4815088a8cfbf9d5dd85c6bec
+      digest: sha256:7c14448a24ca5d06e7fa5e3dc83671fe940b7016c0117f7d3706e0d887f6c197
       referenced_from:
         - release.spec.manifest
 external_inputs: []
@@ -55,12 +55,12 @@ providers:
       plugin: provider/helm
 release: release.yaml
 release_documents:
-    - digest: sha256:834dd58041ac0aec6f5ea72438928906865177383694a75dd6e156543e588bd1
+    - digest: sha256:d825a9979249195645130ab3cd152d775b4cb7549ccf4d9e1599b35789165705
       path: release.yaml
 schema_libraries:
     - uri: BaseComponents
       resolved_version: 1.0.0
-      digest: sha256:42229c361ec193fe0a3a7dc68f745dc2790bf882157cd518b677748cc0362696
+      digest: sha256:13992bc5286f7783563b90fad6fb7d705527cf9cef26f6da255605893812bb08
       consumers:
         - consumer_uri: BaseComponents
           fragments:

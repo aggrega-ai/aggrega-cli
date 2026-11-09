@@ -2,52 +2,52 @@ entities:
     - kind: recipe
       uri: compose/adminer-recipe:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:9eb5837b3fc4556daa1135e3de0f87209e15549f369317cb3ea30efb3eee20ec
+      digest: sha256:f1dbbda16cf6e8514b7f3b66fb76e6f149d7eec24d0de64a7cb21b6d10088312
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer
     - kind: feature_recipe
       uri: compose/compose-bridge-fr:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:d71e4049ef9acbf7cea5cfb694b2306ce49844d05f2fc0630acbfab7bfe49f2b
+      digest: sha256:7fd37d3c095a4b7e820c513c632ab61e61a32e8754fb930df2ac8388a36cb667
       referenced_from:
         - manifest.spec.mappings.features.type.core/compose-bridge:1.0.0
     - kind: recipe
       uri: compose/postgres:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:2283b9cd73c51f1a3fc0d2d5220872694999ace65a7b69c96fc1f7e5a938ce7b
+      digest: sha256:97fe85aaefb5175b7f6b5860eda3142a9a2c60b2c05ef9389c96505c5819eb97
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/postgres
     - kind: feature
       uri: core/compose-bridge:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:5e29f7cdc339bd0f23fb6ea1ac891395d1210707c4aeaf81a6c9a9a13c9a1af4
+      digest: sha256:2238e322f4733144781fba9366517491d35fd1da317c973ac3d772b5beb9cc94
       referenced_from:
         - manifest.spec.mappings.features.type.core/compose-bridge:1.0.0
         - release.spec.boundaries.bridge.features.gateway.type
     - kind: component
       uri: core/datastore/postgres
       resolved_version: 1.0.0
-      digest: sha256:d5b12fdef6bf1187d7cdb838c5c03483a329b344c0d3879986a2d9bc968b0151
+      digest: sha256:01fde5ef202c8dac7aa6636909efa0f63cab1e2cdae2fa0a7ac161434cdf3ec5
       referenced_from:
         - aggregate.spec.components.db.type
         - manifest.spec.mappings.components.type.core/datastore/postgres
     - kind: component
       uri: core/devtool/adminer
       resolved_version: 1.0.0
-      digest: sha256:f09145f3e9cef9cafeedeac41759bf87a691d9f2933bfec5f5a7c5b61f32eb8b
+      digest: sha256:a679d368a28c01f4fbe9a40c8a9fd427bb02fd964f8906eaf35412fb08a1cf9d
       referenced_from:
         - aggregate.spec.components.adminer.type
         - manifest.spec.mappings.components.type.core/devtool/adminer
     - kind: aggregate
       uri: cross-boundary-app
       resolved_version: ""
-      digest: sha256:81a4e353b30fafcf889fc9571ba3f94cecd1c49666db88d6098454e8e3a421f0
+      digest: sha256:adc001e06cfbecaf8eea180807d6f740e2e38de41d91a2db33c2241f13cca602
       referenced_from:
         - release.spec.aggregate
     - kind: manifest
       uri: cross-boundary-compose-manifest
       resolved_version: ""
-      digest: sha256:63467ccda2bd74e372bba8211415d8a1f2188f699aa6bb13860ef5b825609abc
+      digest: sha256:982a56812ddcd146832a021904121bd2aae0a98aa3d1a05d03448d629ea917c3
       referenced_from:
         - release.spec.manifest
 external_inputs: []
@@ -59,12 +59,12 @@ providers:
       plugin: provider/compose
 release: release-compose.yaml
 release_documents:
-    - digest: sha256:03cde2f63a0adde1fe42972ea8f7f237af40524bd2011fe515e5545e62fb7b11
+    - digest: sha256:bd9845b06b90bb101f4ff83c970eafedf4b8debc4356d1fa19826f7d91496ba6
       path: release-compose.yaml
 schema_libraries:
     - uri: BaseComponents
       resolved_version: 1.0.0
-      digest: sha256:42229c361ec193fe0a3a7dc68f745dc2790bf882157cd518b677748cc0362696
+      digest: sha256:13992bc5286f7783563b90fad6fb7d705527cf9cef26f6da255605893812bb08
       consumers:
         - consumer_uri: BaseComponents
           fragments:

@@ -42,11 +42,13 @@ const pluginEntityDir = "plugin"
 // new document version or plugin ABI version only when that build is published
 // again, while every other entity in a catalog checkout moves with its own edit.
 // A checkout can therefore hold Plugin entities the compiler under test refuses
-// while everything else in it loads. A test whose subject reads no Plugin entity —
-// it resolves no plugin through the catalog, and any guest it runs comes from the
-// binary — loads the catalog through this, so it measures its subject rather than
-// whether the plugins have been published again. A test whose subject does read a
-// Plugin entity loads the whole catalog and is not a caller.
+// while everything else in it loads. A test whose subject reads no Plugin entity
+// from the catalog at root — every plugin it resolves comes from the binary, from a
+// fixture handed to it directly, or from a catalog directory or content cache
+// stacked beside the returned directories — loads the catalog through this, so it
+// measures its subject rather than whether the plugins have been published again.
+// A test whose subject does read a Plugin entity from that catalog loads it whole
+// and is not a caller.
 func DirsWithoutPluginEntities(t testing.TB, root string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(root)

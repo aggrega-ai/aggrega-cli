@@ -228,11 +228,13 @@ func TestIntegration_RegistryEntityReadsTheFilesItsArchiveCarries(t *testing.T) 
 	if err := pullRun(context.Background(), pullConfig{ws: consumer, ReleasePath: "release.yaml"}); err != nil {
 		t.Fatalf("registry pull: %v", err)
 	}
-	for _, slot := range []struct{ uri, file string }{
-		{"helm/bannered-local:1.0.0", "chart/templates/greeting.yaml"},
-		{"helm/banner-local:1.0.0", "chart/templates/banner.yaml"},
+	// Each slot is addressed under the published kind its entity is pulled as: a
+	// Recipe and a FeatureRecipe are held in slots of their own kinds.
+	for _, slot := range []struct{ kind, uri, file string }{
+		{"Recipe", "helm/bannered-local:1.0.0", "chart/templates/greeting.yaml"},
+		{"FeatureRecipe", "helm/banner-local:1.0.0", "chart/templates/banner.yaml"},
 	} {
-		dir := ocitest.MustCachePath(ws, ".aggrega/cache", "Recipe", slot.uri, "1.0.0")
+		dir := ocitest.MustCachePath(ws, ".aggrega/cache", slot.kind, slot.uri, "1.0.0")
 		pulled, err := os.ReadFile(filepath.Join(dir, "blob"))
 		if err != nil {
 			t.Fatalf("after the pull, %s's cache slot holds no artifact: %v", slot.uri, err)
