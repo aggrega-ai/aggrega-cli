@@ -14,6 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -547,7 +548,7 @@ func validatePluginScope(ctx context.Context, s *server, a validateArgs, plugin,
 // A workspace that gives no Release directories of its own has one pass, over
 // its own stack, and is answered exactly as a single catalog is. A workspace that
 // does is checked once for each Release, and the answer carries each pass beside
-// the verdict over all of them; see validateCatalogPasses.
+// the verdict over all of them; see answerCatalogPasses.
 //
 // ctx is the call's, carried into every pass, so a client that withdraws ends the
 // reads the passes make.
@@ -564,32 +565,31 @@ func validateCatalogScope(ctx context.Context, s *server, a validateArgs) (*call
 			err)))
 	}
 	if len(passes) > 0 && passes[0].NamesReleases() {
-		return validateCatalogPasses(ctx, tw, passes)
+		return answerCatalogPasses(ctx, tw, passes)
 	}
-	// The single workspace pass reads a base its catalog does not hold through the
-	// pins its Releases' lockfiles record, decided over the same pass value
-	// `aggrega validate` hands the decision.
+	// The single workspace pass is validated through the same walk, over the same
+	// pass value `aggrega validate` hands it.
 	var pass workspaceconfig.CatalogPass
 	if len(passes) > 0 {
 		pass = passes[0]
 	}
-	pins, cerr := serve.CatalogPassPins(tw.rw, pass)
-	if cerr != nil {
+	outcome := validateops.ValidateCatalogPasses(ctx, tw.root, tw.cacheDir, []workspaceconfig.CatalogPass{pass}, tw.catalogPassPins, nil)[0]
+	if outcome.PinsErr != nil {
 		// Answered as a pass of a workspace that names its Releases answers the same
 		// refusal: the pass's own diagnostic in the structured answer, with nothing
 		// validated beside it.
 		payload := validateResultPayload{
 			Scope:       validateScopeCatalog,
-			Diagnostics: tw.reportedTexts([]string{passLockfileRefusal(cerr)}),
+			Diagnostics: tw.reportedTexts([]string{passLockfileRefusal(outcome.PinsErr)}),
 		}
 		payload.Target, payload.TargetWithheld = tw.reportedLocationField(tw.root)
 		return tw.answer(textResult(renderCatalogText(payload), payload))
 	}
-	res, cerr := validateops.ValidateCatalog(ctx, tw.root, tw.cacheDir, tw.dirs, tw.named, pins)
-	if cerr != nil {
-		return tw.answer(errorResult(explainToolError("Catalog validation could not load the catalog.", cerr, "component")))
+	if outcome.LoadErr != nil {
+		return tw.answer(errorResult(explainToolError("Catalog validation could not load the catalog.", outcome.LoadErr, "component")))
 	}
 
+	res := outcome.Result
 	diags := catalogDiagnostics(res)
 	payload := validateResultPayload{
 		Scope:       validateScopeCatalog,
@@ -601,24 +601,22 @@ func validateCatalogScope(ctx context.Context, s *server, a validateArgs) (*call
 	return tw.answer(textResult(renderCatalogText(payload), payload))
 }
 
-// validateCatalogPasses answers the catalog scope in a workspace that gives its
+// answerCatalogPasses answers the catalog scope in a workspace that gives its
 // Releases catalog directories of their own: one pass for each Release over the
-// directories that Release reads, every pass answered whatever an earlier one
-// found, since a broken entity in one Release's catalog variant says nothing
+// directories that Release reads, validated through the one walk of the passes
+// (validateops.ValidateCatalogPasses) and every pass answered whatever an earlier
+// one found, since a broken entity in one Release's catalog variant says nothing
 // about another's. A pass whose catalog cannot be loaded is answered as that
 // pass's diagnostic rather than as the whole call's failure, for the same reason.
 // A pass whose Releases read no directory checks nothing and is valid.
 //
 // The answer's own Valid, Diagnostics and Notices cover every pass together, so
 // a caller reading only those keys reads the whole verdict.
-//
-// The command line has a function of the same name, kept apart on purpose: each
-// renders the passes for its own surface — a structured answer here, lines on a
-// terminal there. What a pass reads is decided once for both, by
-// serve.WholeCatalogPasses and serve.CatalogPassPins.
-func validateCatalogPasses(ctx context.Context, tw *toolWorkspace, passes []workspaceconfig.CatalogPass) (*callToolResult, *rpcError) {
+func answerCatalogPasses(ctx context.Context, tw *toolWorkspace, passes []workspaceconfig.CatalogPass) (*callToolResult, *rpcError) {
 	payload := validateResultPayload{Scope: validateScopeCatalog}
-	for _, pass := range passes {
+	outcomes := validateops.ValidateCatalogPasses(ctx, tw.root, tw.cacheDir, passes, tw.catalogPassPins, nil)
+	for _, outcome := range outcomes {
+		pass := outcome.Pass
 		answered := validateCatalogPass{
 			Releases:    append([]string{}, pass.Releases...),
 			CatalogDirs: make([]*string, 0, len(pass.Dirs)),
@@ -629,15 +627,15 @@ func validateCatalogPasses(ctx context.Context, tw *toolWorkspace, passes []work
 			answered.CatalogDirsWithheld = answered.CatalogDirsWithheld || withheld
 		}
 		var diags, notices []string
-		if len(pass.Dirs) > 0 {
-			pins, perr := serve.CatalogPassPins(tw.rw, pass)
-			if perr != nil {
-				diags = []string{passLockfileRefusal(perr)}
-			} else if res, cerr := validateops.ValidateCatalog(ctx, tw.root, tw.cacheDir, pass.Dirs, pass.Named, pins); cerr != nil {
-				diags = []string{"Catalog validation could not load the catalog: " + cerr.Error()}
-			} else {
-				diags, notices = catalogDiagnostics(res), res.Notices
-			}
+		switch {
+		case !outcome.Checked:
+			// Nothing was read, so there is nothing to report and the pass is valid.
+		case outcome.PinsErr != nil:
+			diags = []string{passLockfileRefusal(outcome.PinsErr)}
+		case outcome.LoadErr != nil:
+			diags = []string{"Catalog validation could not load the catalog: " + outcome.LoadErr.Error()}
+		default:
+			diags, notices = catalogDiagnostics(outcome.Result), outcome.Result.Notices
 		}
 		answered.Valid = len(diags) == 0
 		answered.Diagnostics = tw.reportedTexts(diags)
@@ -649,6 +647,12 @@ func validateCatalogPasses(ctx context.Context, tw *toolWorkspace, passes []work
 	payload.Valid = len(payload.Diagnostics) == 0
 	payload.Target, payload.TargetWithheld = tw.reportedLocationField(tw.root)
 	return tw.answer(textResult(renderCatalogPassesText(payload), payload))
+}
+
+// catalogPassPins is the pins question the walk of the catalog passes asks of a
+// pass, answered over the call's workspace by serve.CatalogPassPins.
+func (tw *toolWorkspace) catalogPassPins(pass workspaceconfig.CatalogPass) (catalog.Pins, error) {
+	return serve.CatalogPassPins(tw.rw, pass)
 }
 
 // passLockfileRefusal is the diagnostic a whole-catalog pass answers with when the
