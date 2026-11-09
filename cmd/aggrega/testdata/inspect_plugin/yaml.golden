@@ -6,7 +6,7 @@ metadata:
     version: "1.0.0"
     description: Renders IR nodes into Helm chart artifacts.
 spec:
-    abiVersion: v1alpha1
+    abiVersion: v1beta1
     provider:
         capabilities:
             - helm

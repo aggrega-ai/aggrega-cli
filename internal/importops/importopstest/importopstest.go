@@ -64,6 +64,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parsersocket"
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginabi"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
@@ -896,7 +897,7 @@ func WriteImporterEntity(t *testing.T, dir, name string, formats []string, detec
 		Kind:       "Plugin",
 		Metadata:   types.PluginMetadata{Name: name, Version: "1.0.0", PluginType: "importer"},
 		Spec: types.PluginSpec{
-			AbiVersion: "v1alpha1",
+			AbiVersion: pluginabi.Version,
 			Importer:   &types.PluginImporter{Capabilities: capabilities, Detect: detect},
 		},
 	}

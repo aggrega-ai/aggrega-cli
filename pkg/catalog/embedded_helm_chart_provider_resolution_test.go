@@ -45,7 +45,7 @@ func helmChartChainCatalog() *catalog.Catalog {
 				Kind:       "Plugin",
 				Metadata:   types.PluginMetadata{Name: "helm-chart", Version: testCorePluginVersion, PluginType: "provider"},
 				Spec: types.PluginSpec{
-					AbiVersion: "v1alpha1",
+					AbiVersion: "v1beta1",
 					Provider:   types.PluginProvider{Capabilities: []string{"helm-chart"}},
 					Exports:    []types.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
 					Runtime:    &types.PluginRuntime{MaxMemoryPages: helmChartProviderMemPag},

@@ -36,7 +36,7 @@ import pdk "github.com/extism/go-pdk"
 // Plugin entity whose metadata.version the guest does not report, and the
 // entity that publishes this guest records 1.0.0.
 const stepDescriptor = `{` +
-	`"abi_version":"v1alpha1",` +
+	`"abi_version":"v1beta1",` +
 	`"plugin_type":"pipeline-step",` +
 	`"capabilities":["helm","helm-chart"],` +
 	`"metadata":{"version":"1.0.0"},` +

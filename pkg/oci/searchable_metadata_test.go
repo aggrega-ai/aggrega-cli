@@ -221,7 +221,7 @@ func TestPluginSearchableMetadataProjectsTheEntity(t *testing.T) {
 			Description: "Renders workloads into Compose services.",
 		},
 		Spec: types.PluginSpec{
-			AbiVersion: "v1alpha1",
+			AbiVersion: "v1beta1",
 			Provider:   types.PluginProvider{Capabilities: []string{"compose", "podman-compose"}},
 		},
 	}

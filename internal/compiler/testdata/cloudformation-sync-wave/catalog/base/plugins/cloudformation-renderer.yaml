@@ -9,7 +9,7 @@ metadata:
   pluginType: provider
   description: Renders the CloudFormation fragments of a component whose Recipe declares the cloudformation capability — normalizing them to pure-JSON long-form intrinsics — and folds a dispatch group's fragments into one stack template, ordering the merged resources by the declared deployment wave.
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   # This provider renders standalone artifact fragments and normalizes sourced
   # templates to pure-JSON long-form intrinsics, structurally validating a sourced
   # template ahead of render; it merges a dispatch group's per-node fragments into

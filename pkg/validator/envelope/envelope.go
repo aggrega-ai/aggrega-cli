@@ -371,7 +371,10 @@ func (e *envelopeFailure) Unwrap() []error { return []error{e.cause, ErrEntityEn
 // A document declaring an API version this compiler no longer reads returns
 // *Error under ErrRetiredAPIVersion before its schema is consulted, one finding
 // positioned at its `apiVersion` line naming the version it declares and the
-// version the compiler reads; that error matches ErrEntityEnvelope as well.
+// version the compiler reads; that error matches ErrEntityEnvelope as well. A
+// Plugin declaring a plugin ABI version the compiler no longer speaks is refused
+// the same way, under the condition a guest declaring it is refused under at load,
+// with its finding at `spec.abiVersion`.
 //
 // A Recipe or FeatureRecipe the schema accepts is then held to the one rule its
 // schema cannot state: no two steps of its pipeline share an id. A document
@@ -425,7 +428,7 @@ func validateBytes(key compiledKey, data []byte, path string) (any, error) {
 	// A document declaring a version this compiler no longer reads is told so
 	// before anything else is said about it: every other finding would be one
 	// about a version of the document the compiler does not read.
-	if err := retiredAPIVersion(key, path, data, instance); err != nil {
+	if err := refuseRetired(key, path, data, instance); err != nil {
 		return instance, err
 	}
 	findings, err := validateInstance(key, instance)

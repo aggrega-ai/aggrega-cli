@@ -304,7 +304,7 @@ func formatVersionLine(info versionInfo) string {
 func collectVersionInfo() versionInfo {
 	out := versionInfo{
 		Version:    "(unknown)",
-		ABIVersion: wasm.ABIVersionV1Alpha1,
+		ABIVersion: wasm.ABIVersion,
 		GoVersion:  runtime.Version(),
 		Platform:   runtime.GOOS + "/" + runtime.GOARCH,
 	}

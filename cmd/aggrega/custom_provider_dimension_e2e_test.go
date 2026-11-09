@@ -171,7 +171,7 @@ metadata:
   version: "`+version+`"
   pluginType: provider
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   provider:
     capabilities:
 `+caps.String()+`  exports:

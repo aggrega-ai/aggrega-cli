@@ -46,7 +46,7 @@ metadata:
   pluginType: provider
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: render_node
     - name: assemble_boundary
@@ -91,7 +91,7 @@ metadata:
   pluginType: provider
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: render_node
     - name: assemble_boundary
@@ -140,7 +140,7 @@ metadata:
   pluginType: provider
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: render_node
     - name: assemble_boundary
@@ -202,7 +202,7 @@ metadata:
   pluginType: provider
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: render_node
     - name: assemble_boundary

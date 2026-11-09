@@ -72,7 +72,7 @@ func helmChainCatalog() *catalog.Catalog {
 				Kind:       "Plugin",
 				Metadata:   types.PluginMetadata{Name: "helm", Version: testCorePluginVersion, PluginType: "provider"},
 				Spec: types.PluginSpec{
-					AbiVersion: "v1alpha1",
+					AbiVersion: "v1beta1",
 					Provider:   types.PluginProvider{Capabilities: []string{"helm"}},
 					Exports:    []types.PluginExport{{Name: "render_node"}},
 					Runtime:    &types.PluginRuntime{MaxMemoryPages: helmProviderMemPag},

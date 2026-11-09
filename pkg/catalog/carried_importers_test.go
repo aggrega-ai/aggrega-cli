@@ -29,7 +29,7 @@ func carriedImporterEntity(name, version, description string) types.Plugin {
 			Name: name, Version: version, PluginType: importerPluginType, Description: description,
 		},
 		Spec: types.PluginSpec{
-			AbiVersion: "v1alpha1",
+			AbiVersion: "v1beta1",
 			Importer:   &types.PluginImporter{Capabilities: []string{"import:langflow"}},
 		},
 	}

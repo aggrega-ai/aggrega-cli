@@ -2,7 +2,7 @@ Plugin: helm-renderer:1.0.0
 Description: Renders IR nodes into Helm chart artifacts.
 Plugin: provider/helm-renderer
 Plugin type: provider
-ABI version: v1alpha1
+ABI version: v1beta1
 Capabilities: helm, compose
 Exports:
   render_node

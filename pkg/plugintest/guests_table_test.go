@@ -165,7 +165,7 @@ func TestValidateEntity_Mutator(t *testing.T) {
 			PluginType: "governance",
 		},
 		Spec: types.PluginSpec{
-			AbiVersion: "v1alpha1",
+			AbiVersion: "v1beta1",
 			Exports:    []types.PluginExport{{Name: "mutate"}},
 		},
 	}

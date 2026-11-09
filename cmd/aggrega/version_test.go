@@ -57,8 +57,8 @@ func TestVersionJSONShape(t *testing.T) {
 	if info.Version == "" {
 		t.Errorf("version field empty")
 	}
-	if info.ABIVersion != wasm.ABIVersionV1Alpha1 {
-		t.Errorf("abiVersion = %q; want %q", info.ABIVersion, wasm.ABIVersionV1Alpha1)
+	if info.ABIVersion != wasm.ABIVersion {
+		t.Errorf("abiVersion = %q; want %q", info.ABIVersion, wasm.ABIVersion)
 	}
 	if info.GoVersion == "" {
 		t.Errorf("goVersion field empty")
@@ -204,15 +204,15 @@ func TestVersionABIVersionReported(t *testing.T) {
 	if err := json.Unmarshal(jsonBuf.Bytes(), &info); err != nil {
 		t.Fatalf("unmarshal: %v (raw: %s)", err, jsonBuf.String())
 	}
-	if info.ABIVersion != wasm.ABIVersionV1Alpha1 {
-		t.Errorf("json abiVersion = %q; want %q", info.ABIVersion, wasm.ABIVersionV1Alpha1)
+	if info.ABIVersion != wasm.ABIVersion {
+		t.Errorf("json abiVersion = %q; want %q", info.ABIVersion, wasm.ABIVersion)
 	}
 
 	var humanBuf bytes.Buffer
 	if err := runVersion(&humanBuf, false, false); err != nil {
 		t.Fatalf("runVersion human: %v", err)
 	}
-	if want := "abi " + wasm.ABIVersionV1Alpha1; !strings.Contains(humanBuf.String(), want) {
+	if want := "abi " + wasm.ABIVersion; !strings.Contains(humanBuf.String(), want) {
 		t.Errorf("expected human line to contain %q; got %q", want, humanBuf.String())
 	}
 }
@@ -225,10 +225,10 @@ func TestVersionHumanLineIncludesABISegment(t *testing.T) {
 		Version:    "1.2.3",
 		Committed:  "2026-07-09T18:07:57Z",
 		Commit:     "62c43d5babcdef",
-		ABIVersion: "v1alpha1",
+		ABIVersion: "v1beta1",
 		GoVersion:  "go1.26.0",
 	})
-	want := "aggrega 1.2.3 (committed 2026-07-09T18:07:57Z, commit 62c43d5b, abi v1alpha1, go1.26.0)\n"
+	want := "aggrega 1.2.3 (committed 2026-07-09T18:07:57Z, commit 62c43d5b, abi v1beta1, go1.26.0)\n"
 	if got != want {
 		t.Errorf("formatVersionLine with abi:\n got %q\nwant %q", got, want)
 	}

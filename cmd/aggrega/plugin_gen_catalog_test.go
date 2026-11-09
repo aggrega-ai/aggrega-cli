@@ -226,7 +226,7 @@ func TestGenCatalogCommandMirrorRoundTrips(t *testing.T) {
 func TestGenCatalogMergeStampsCommandMirror(t *testing.T) {
 	desc := wasm.PluginDescriptor{
 		PluginType: string(wasm.PluginTypeCLI),
-		AbiVersion: wasm.ABIVersionV1Alpha1,
+		AbiVersion: wasm.ABIVersion,
 		Exports:    []wasm.PluginExport{{Name: wasm.CLIRunExport.Name()}},
 		Commands: []wasm.PluginCLICommand{
 			{Name: "greet", Description: "greet a target"},

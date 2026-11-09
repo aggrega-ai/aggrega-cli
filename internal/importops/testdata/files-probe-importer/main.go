@@ -44,7 +44,7 @@ import (
 // format whose single export is import, declaring the two file patterns and the
 // predicate its sources are recognised by, and the version a Plugin entity is
 // generated at.
-const descriptor = `{"abi_version":"v1alpha1","plugin_type":"importer",` +
+const descriptor = `{"abi_version":"v1beta1","plugin_type":"importer",` +
 	`"description":"Report back the sources an import hands it, one diagnostic each.",` +
 	`"capabilities":["import:files-probe"],"exports":[{"name":"import"}],` +
 	`"importer":{"detect":[{"syntax":"json","files":["*.probe.json","probe/*.json"],` +

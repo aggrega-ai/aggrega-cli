@@ -7,6 +7,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginabi"
 )
 
 // TestValidateBytes_EveryFailureCarriesTheSentinel pins the property that
@@ -20,15 +22,16 @@ import (
 // The cases are the failure returns ValidateBytes has: a document that will
 // not parse, an empty document, a document that violates its schema, an engine
 // that could not run, a document the schema accepts whose pipeline repeats a
-// step id, and a document declaring an API version the compiler no longer
-// reads. A further return path added later with no sentinel is caught here
-// only if it is also added to this table, so the table is deliberately
-// exhaustive over the function's returns rather than over interesting inputs.
+// step id, a document declaring an API version the compiler no longer reads,
+// and a Plugin declaring a plugin ABI version it no longer speaks. A further
+// return path added later with no sentinel is caught here only if it is also
+// added to this table, so the table is deliberately exhaustive over the
+// function's returns rather than over interesting inputs.
 //
 // Every return opens with the sentence of the condition it reports. For four
-// of them that is ErrEntityEnvelope's; the repeated step id and the retired
-// API version each report a condition of their own, whose sentence they open
-// with instead, and they match ErrEntityEnvelope all the same.
+// of them that is ErrEntityEnvelope's; the repeated step id and the two retired
+// versions each report a condition of their own, whose sentence they open with
+// instead, and they match ErrEntityEnvelope all the same.
 func TestValidateBytes_EveryFailureCarriesTheSentinel(t *testing.T) {
 	t.Parallel()
 
@@ -100,6 +103,13 @@ spec:
 			doc:                 []byte("apiVersion: aggrega.ai/v1alpha1\nkind: Component\n"),
 			wantMessageFragment: "change the apiVersion line",
 			wantCondition:       ErrRetiredAPIVersion(),
+		},
+		{
+			name:                "retired plugin abi version",
+			kind:                KindPlugin,
+			doc:                 []byte("apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nspec:\n  abiVersion: v1alpha1\n"),
+			wantMessageFragment: pluginabi.Advice,
+			wantCondition:       ErrRetiredABIVersion(),
 		},
 	}
 

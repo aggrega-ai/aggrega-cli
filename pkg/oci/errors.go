@@ -130,6 +130,23 @@ var errNoContentLayer = cerrors.Register("no-content-layer", cerrors.Meta{
 		"content that found nothing to take."),
 })
 
+// ErrRetiredMediaType is returned when a fetched manifest carries an Aggrega
+// media type of a version this compiler published under once and reads no longer
+// — on its artifact type, its config or any of its layers. The artifact is
+// refused before any of its content is read, naming the media type it carries
+// and the one the compiler reads, so the remedy is to publish it again with the
+// current release. A media type outside Aggrega's own namespace is never this
+// condition.
+func ErrRetiredMediaType() error { return errRetiredMediaType }
+
+var errRetiredMediaType = cerrors.Register("retired-media-type", cerrors.Meta{
+	ShortCode: "E0375",
+	Message:   "oci: artifact carries a media type this compiler no longer reads",
+	RulePlace: cerrors.NotARule("A fetched manifest names a media type an earlier release published under. It reports how " +
+		"the artifact was published, read off the manifest the registry served, rather than a rule over a document an " +
+		"author wrote."),
+})
+
 // ErrAmbiguousContentLayer is returned when an OCI manifest carries more
 // than one layer of the expected content media type, so the content
 // layer cannot be selected unambiguously. Selection halts loudly rather

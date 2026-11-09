@@ -64,7 +64,7 @@ func fixedDescribe(desc wasm.PluginDescriptor) func(context.Context, resolvedIns
 // no-commands install guard can be exercised.
 func cliDesc(command, description string) wasm.PluginDescriptor {
 	d := wasm.PluginDescriptor{
-		AbiVersion: wasm.ABIVersionV1Alpha1,
+		AbiVersion: wasm.ABIVersion,
 		PluginType: string(wasm.PluginTypeCLI),
 		Exports:    []wasm.PluginExport{{Name: wasm.CLIRunExport.Name()}},
 	}
@@ -183,7 +183,7 @@ func TestPluginInstall_CollisionAndTypeGuards(t *testing.T) {
 		desc    wasm.PluginDescriptor
 		wantErr string
 	}{
-		{"not a CLI plugin", wasm.PluginDescriptor{AbiVersion: wasm.ABIVersionV1Alpha1, PluginType: string(wasm.PluginTypeProvider)}, "not a CLI plugin"},
+		{"not a CLI plugin", wasm.PluginDescriptor{AbiVersion: wasm.ABIVersion, PluginType: string(wasm.PluginTypeProvider)}, "not a CLI plugin"},
 		{"no commands", cliDesc("", "help"), "declares no commands"},
 		{"built-in collision", cliDesc("build", "help"), "built-in command"},
 		{"reserved collision", cliDesc("deploy", "help"), "reserved command name"},

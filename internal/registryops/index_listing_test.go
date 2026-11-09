@@ -125,7 +125,7 @@ func publishedComponent(t *testing.T, repo string) *taggedStore {
 		t.Fatalf("annotations for %s: %v", repo, err)
 	}
 	if _, err := oci.Push(context.Background(), store.Store, "1.0.0",
-		"application/vnd.aggrega.component.v1alpha1+yaml", []byte("# "+repo+"\n"), ann); err != nil {
+		"application/vnd.aggrega.component.v1beta1+yaml", []byte("# "+repo+"\n"), ann); err != nil {
 		t.Fatalf("pack %s: %v", repo, err)
 	}
 	return store

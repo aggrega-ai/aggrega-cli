@@ -90,10 +90,10 @@ func pluginEntitySchemaABIVersions(t *testing.T) []string {
 // host constant; this test is what fails when the third step is missed.
 func TestABIVersion_HostConstantMatchesDescriptorSchema(t *testing.T) {
 	declared := descriptorSchemaABIVersion(t)
-	if wasm.ABIVersionV1Alpha1 != declared {
+	if wasm.ABIVersion != declared {
 		t.Errorf("the host speaks abi_version %q; the descriptor schema pins %q. "+
 			"A guest built against the published contract would be refused at load",
-			wasm.ABIVersionV1Alpha1, declared)
+			wasm.ABIVersion, declared)
 	}
 }
 
@@ -111,17 +111,17 @@ func TestABIVersion_PluginEntitySchemaAcceptsHostVersion(t *testing.T) {
 
 	var hostIsAccepted bool
 	for _, v := range accepted {
-		if v == wasm.ABIVersionV1Alpha1 {
+		if v == wasm.ABIVersion {
 			hostIsAccepted = true
 			continue
 		}
 		t.Errorf("the plugin-entity schema accepts abiVersion %q, which the host does not speak "+
 			"(the host speaks %q); an entity declaring it would validate and then fail to load",
-			v, wasm.ABIVersionV1Alpha1)
+			v, wasm.ABIVersion)
 	}
 	if !hostIsAccepted {
 		t.Errorf("the host speaks abiVersion %q, which the plugin-entity schema does not accept "+
 			"(it accepts %v); no entity could be authored for a plugin the host can load",
-			wasm.ABIVersionV1Alpha1, accepted)
+			wasm.ABIVersion, accepted)
 	}
 }

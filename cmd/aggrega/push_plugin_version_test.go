@@ -25,7 +25,7 @@ import (
 // withABI false omits spec.abiVersion, a field the Plugin schema requires, and
 // changes nothing else.
 func versionedStepEntity(version string, withABI bool) string {
-	abi := "  abiVersion: v1alpha1\n"
+	abi := "  abiVersion: v1beta1\n"
 	if !withABI {
 		abi = ""
 	}

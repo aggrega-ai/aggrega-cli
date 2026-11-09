@@ -429,7 +429,7 @@ metadata:
   pluginType: provider
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   provider:
     capabilities:
       - helm
@@ -448,7 +448,7 @@ metadata:
   pluginType: provider
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   provider:
     capabilities:
       - helm

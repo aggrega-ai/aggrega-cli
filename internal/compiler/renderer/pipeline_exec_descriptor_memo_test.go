@@ -251,7 +251,7 @@ type stubGraphFacts struct{ constraint.GraphView }
 // copied.
 func populatedDescriptor() wasm.PluginDescriptor {
 	return wasm.PluginDescriptor{
-		AbiVersion:   "v1alpha1",
+		AbiVersion:   "v1beta1",
 		PluginType:   "feature-recipe-pipeline",
 		Capabilities: []string{"helm", "compose"},
 		Exports: []wasm.PluginExport{{

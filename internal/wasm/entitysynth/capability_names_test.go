@@ -28,7 +28,7 @@ func TestPublicationRefusesAColonInAServedProviderCapability(t *testing.T) {
 	overlay := types.Plugin{Metadata: types.PluginMetadata{Name: "acme-renderer", PluginType: "provider"}}
 	descriptor := func(capability string) wasm.PluginDescriptor {
 		return wasm.PluginDescriptor{
-			AbiVersion:   wasm.ABIVersionV1Alpha1,
+			AbiVersion:   wasm.ABIVersion,
 			PluginType:   string(wasm.PluginTypeProvider),
 			Capabilities: []string{capability},
 			Exports:      []wasm.PluginExport{{Name: "render_node"}},

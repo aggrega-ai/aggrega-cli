@@ -31,34 +31,34 @@ func TestADescriptorRefusesAColonInAServedProviderCapability(t *testing.T) {
 	}{
 		{
 			name:    "a provider serving a colon-bearing capability is refused",
-			payload: `{"abi_version":"v1alpha1","plugin_type":"provider","capabilities":["helm:1"],"exports":[{"name":"render_node"}]}`,
+			payload: `{"abi_version":"v1beta1","plugin_type":"provider","capabilities":["helm:1"],"exports":[{"name":"render_node"}]}`,
 			refused: "helm:1",
 		},
 		{
 			name:    "a colon in any one of a provider's served capabilities is refused",
-			payload: `{"abi_version":"v1alpha1","plugin_type":"provider","capabilities":["helm","compose:v2"],"exports":[{"name":"render_node"}]}`,
+			payload: `{"abi_version":"v1beta1","plugin_type":"provider","capabilities":["helm","compose:v2"],"exports":[{"name":"render_node"}]}`,
 			refused: "compose:v2",
 		},
 		{
 			name:    "a pipeline step compatible with a colon-bearing provider capability is refused",
-			payload: `{"abi_version":"v1alpha1","plugin_type":"pipeline-step","capabilities":["helm-chart:1.0.0"],"exports":[{"name":"step"}]}`,
+			payload: `{"abi_version":"v1beta1","plugin_type":"pipeline-step","capabilities":["helm-chart:1.0.0"],"exports":[{"name":"step"}]}`,
 			refused: "helm-chart:1.0.0",
 		},
 		{
 			name:    "control: a provider serving colon-free capabilities loads",
-			payload: `{"abi_version":"v1alpha1","plugin_type":"provider","capabilities":["helm","helm-chart"],"exports":[{"name":"render_node"}]}`,
+			payload: `{"abi_version":"v1beta1","plugin_type":"provider","capabilities":["helm","helm-chart"],"exports":[{"name":"render_node"}]}`,
 		},
 		{
 			name:    "control: a pipeline step compatible with colon-free capabilities loads",
-			payload: `{"abi_version":"v1alpha1","plugin_type":"pipeline-step","capabilities":["helm","compose"],"exports":[{"name":"step"}]}`,
+			payload: `{"abi_version":"v1beta1","plugin_type":"pipeline-step","capabilities":["helm","compose"],"exports":[{"name":"step"}]}`,
 		},
 		{
 			name:    "control: a parser's parse:<format> capabilities load",
-			payload: `{"abi_version":"v1alpha1","plugin_type":"parser","capabilities":["parse:yaml","parse:hcl"],"exports":[{"name":"parse"}]}`,
+			payload: `{"abi_version":"v1beta1","plugin_type":"parser","capabilities":["parse:yaml","parse:hcl"],"exports":[{"name":"parse"}]}`,
 		},
 		{
 			name:    "control: an importer's import:<format> capabilities load",
-			payload: `{"abi_version":"v1alpha1","plugin_type":"importer","capabilities":["import:langflow","import:flowise"],"exports":[{"name":"import"}]}`,
+			payload: `{"abi_version":"v1beta1","plugin_type":"importer","capabilities":["import:langflow","import:flowise"],"exports":[{"name":"import"}]}`,
 		},
 	}
 	for _, tc := range cases {

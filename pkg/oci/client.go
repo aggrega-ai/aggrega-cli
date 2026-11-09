@@ -93,8 +93,8 @@ func resolveReference(ctx context.Context, target oras.ReadOnlyTarget, reference
 }
 
 // fetchManifest reads the manifest a tag or digest names on target and returns
-// its descriptor and its bytes. Each read that pulls a published entity or
-// plugin begins with it.
+// its descriptor and its bytes. Each read of a published artifact's manifest
+// begins with it: a pull of an entity or a plugin, and a read of its facets.
 //
 // Against a registry the manifest is requested once, by the reference exactly as
 // given: a tag is fetched by the tag and a digest by the digest, with no separate
@@ -108,7 +108,8 @@ func resolveReference(ctx context.Context, target oras.ReadOnlyTarget, reference
 // nothing wraps ErrFetchNotFound, and a refused or absent credential wraps
 // ErrFetchUnauthorized, through referenceError, so the two failures a reader acts
 // on are classified identically whichever descriptor of the manifest it goes on to
-// read.
+// read. A manifest carrying a media type this compiler no longer reads is refused
+// here with ErrRetiredMediaType (refuseRetiredMediaType).
 func fetchManifest(ctx context.Context, target oras.ReadOnlyTarget, reference string) (ocispec.Descriptor, []byte, error) {
 	var manifestDesc ocispec.Descriptor
 	var manifestRC io.ReadCloser
@@ -139,7 +140,47 @@ func fetchManifest(ctx context.Context, target oras.ReadOnlyTarget, reference st
 		}
 		return ocispec.Descriptor{}, nil, fmt.Errorf("read manifest %q: %w", reference, err)
 	}
+	if err := refuseRetiredMediaType(reference, manifestBytes); err != nil {
+		return ocispec.Descriptor{}, nil, err
+	}
 	return manifestDesc, manifestBytes, nil
+}
+
+// refuseRetiredMediaType refuses a manifest that carries an Aggrega media type of
+// a version this compiler no longer reads, on its artifact type, its config or
+// any layer, in that order, naming the first it meets. A manifest that does not
+// parse is left to the reader that parses it, which reports it.
+//
+// It runs in fetchManifest, the read every read of a published artifact's
+// manifest goes through — a pull, a plugin fetch, an index reading a manifest's
+// facets — so an artifact published by an earlier release is refused by name before
+// its content is taken for anything — an entity, an executable, a documentation
+// bundle — rather than failing later as whatever the mismatch happens to break.
+// The referrers attached beside an artifact (a signature, a publication date) are
+// read by subject digest through their own path and carry media types this check
+// does not name.
+func refuseRetiredMediaType(reference string, manifestBytes []byte) error {
+	view, err := parseManifest(manifestBytes)
+	if err != nil {
+		return nil
+	}
+	carried := append([]string{view.ArtifactType, view.Config.MediaType}, layerMediaTypes(view.Layers)...)
+	for _, mt := range carried {
+		if current, ok := retiredMediaType(mt); ok {
+			return fmt.Errorf("%q carries media type %q, and this compiler reads %q; publish the artifact again with the current release: %w",
+				reference, mt, current, ErrRetiredMediaType())
+		}
+	}
+	return nil
+}
+
+// layerMediaTypes returns the media type of each layer, in manifest order.
+func layerMediaTypes(layers []ocispec.Descriptor) []string {
+	out := make([]string, 0, len(layers))
+	for _, l := range layers {
+		out = append(out, l.MediaType)
+	}
+	return out
 }
 
 // referenceError classifies a failure to resolve or fetch the manifest a
@@ -545,19 +586,21 @@ func parseManifest(manifestBytes []byte) (ociManifestView, error) {
 // resolved manifest digest. The digest comes from the resolve step, before any
 // content is fetched, so an index build can record it as a cheap revalidation
 // validator: a later refresh re-resolves the same tag and skips the manifest
-// read when the digest is unchanged. It reads the raw manifest through the one
-// manifest-parse home and returns without fetching any content blob, so a
+// read when the digest is unchanged. It reads the manifest through fetchManifest,
+// the read every registry read begins with, and parses it through the one
+// manifest-parse home, returning without fetching any content blob, so a
 // manifest's facets are read cheaply without re-deriving the manifest shape. A
 // manifest carrying no annotations returns a nil map and a nil error; the digest
 // is returned regardless.
+//
+// Being that read, it refuses what fetchManifest refuses: an artifact published
+// under a media type this compiler no longer reads is ErrRetiredMediaType here as
+// it is at a pull, so an index is never built from facets of an artifact a pull
+// would then refuse.
 func FetchManifestAnnotations(ctx context.Context, target oras.ReadOnlyTarget, tag string) (map[string]string, string, error) {
-	manifestDesc, err := target.Resolve(ctx, tag)
+	manifestDesc, manifestBytes, err := fetchManifest(ctx, target, tag)
 	if err != nil {
-		return nil, "", fmt.Errorf("oci: resolve %q: %w", tag, err)
-	}
-	manifestBytes, err := fetchBlob(ctx, target, manifestDesc)
-	if err != nil {
-		return nil, "", fmt.Errorf("oci: fetch manifest %q: %w", tag, err)
+		return nil, "", err
 	}
 	view, err := parseManifest(manifestBytes)
 	if err != nil {

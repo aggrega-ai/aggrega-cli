@@ -46,7 +46,7 @@ func terraformAt(version string) *Catalog {
 			Kind:       "Plugin",
 			Metadata:   types.PluginMetadata{Name: "terraform", Version: version, PluginType: "provider"},
 			Spec: types.PluginSpec{
-				AbiVersion: "v1alpha1",
+				AbiVersion: "v1beta1",
 				Provider: types.PluginProvider{
 					Capabilities: []string{"terraform"},
 					Contract: types.PluginSpecProviderContract{SourceIgnore: &types.PluginSourceIgnore{

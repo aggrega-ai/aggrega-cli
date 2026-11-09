@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginabi"
 	aggerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	jsonvalidator "github.com/aggrega-ai/aggrega-cli/pkg/validator/jsonschema"
 )
@@ -36,77 +38,154 @@ var errRetiredAPIVersion = aggerrors.Register("retired-api-version", aggerrors.M
 	RulePlace: aggerrors.RuleOverAuthoredInput(),
 })
 
+// ErrRetiredABIVersion re-exports the condition a plugin declaring a plugin ABI
+// version this compiler no longer speaks is refused under, so a caller of this
+// gate matches the Plugin entity's refusal through the package that returns it.
+// It yields that identity itself, registered once beside the retired versions,
+// and the guest's refusal at load reports the same one: the entity and its guest
+// state one ABI for one plugin, fixed the same way. Like ErrRetiredAPIVersion, the
+// refusal is an *Error at the abiVersion line, asked before the schema, and it
+// matches ErrEntityEnvelope as well.
+func ErrRetiredABIVersion() error { return pluginabi.ErrRetiredABIVersion() }
+
 // retiredAPIVersions are the API versions a document could once declare and this
 // compiler no longer reads. A version leaves the list never: a document still
 // declaring one is told which line to change for as long as the compiler can
 // recognise it.
 var retiredAPIVersions = []string{"aggrega.ai/v1alpha1"}
 
-// apiVersionPath is the field path of a document's `apiVersion` key, in the
-// spelling the schema engine's findings use and yamlpos resolves.
-const apiVersionPath = "apiVersion"
+// retiredField is one field the gate holds against the values it accepted once
+// and accepts no longer, and the words the refusal of such a value is reported in.
+// Each retired version a document can declare is one of these, so the refusals
+// share one reading of the document, one reading of the schema and one shape of
+// report, and differ only in what they are about.
+type retiredField struct {
+	// kind limits the field to one document kind; empty, it applies to every kind
+	// whose schema states the field's value.
+	kind Kind
+	// path is the field's key path from the document's root.
+	path []string
+	// retired reports whether a declared value is one the compiler no longer reads.
+	retired func(string) bool
+	// condition is the registered condition the refusal reports.
+	condition error
+	// finding and advice word the refusal's one finding and its advice, given the
+	// declared value and the value the kind's schema states.
+	finding func(declared, current string) string
+	advice  func(current string) string
+}
 
-// readAPIVersions maps each kind whose schema states the `apiVersion` its
-// documents declare to that value, read off the schema's own `const`. The schema
-// is where the version a document must declare is stated, so the version the
-// refusal tells an author to write is the one the schema accepts rather than a
-// second copy of it. A kind whose schema declares no `apiVersion` — a lockfile, a
-// workspace configuration — is absent: its documents carry no such line, and a
-// document of that kind that does carry one fails its schema.
-var readAPIVersions = sync.OnceValue(func() map[Kind]string {
-	out := make(map[Kind]string, len(schemaSource))
-	for kind, raw := range schemaSource {
-		var s struct {
-			Properties struct {
-				APIVersion struct {
-					Const *string `json:"const"`
-				} `json:"apiVersion"`
-			} `json:"properties"`
-		}
-		if err := json.Unmarshal([]byte(raw), &s); err != nil || s.Properties.APIVersion.Const == nil {
+// retiredFields are the retired versions the gate refuses by name, in the order
+// it asks: a document's API version before anything inside it.
+var retiredFields = []retiredField{
+	{
+		path:      []string{"apiVersion"},
+		retired:   func(v string) bool { return slices.Contains(retiredAPIVersions, v) },
+		condition: errRetiredAPIVersion,
+		finding: func(declared, current string) string {
+			return fmt.Sprintf("the document declares %s, and this compiler reads %s", declared, current)
+		},
+		advice: func(current string) string {
+			return fmt.Sprintf("change the apiVersion line to `apiVersion: %s`", current)
+		},
+	},
+	{
+		kind:      KindPlugin,
+		path:      []string{"spec", "abiVersion"},
+		retired:   pluginabi.IsRetired,
+		condition: pluginabi.ErrRetiredABIVersion(),
+		finding: func(declared, current string) string {
+			return fmt.Sprintf("the Plugin declares abiVersion %s, and this compiler speaks %s", declared, current)
+		},
+		advice: func(current string) string {
+			return fmt.Sprintf("%s; its Plugin entity then declares `abiVersion: %s`", pluginabi.Advice, current)
+		},
+	},
+}
+
+// refuseRetired refuses a document declaring a retired value in any of
+// retiredFields, and returns nil for every other document.
+//
+// The refusal carries one finding, positioned at the field, naming the value the
+// document declares and the value its kind's schema states, and the advice names
+// what to write or do. Both values are quoted even where every value is withheld:
+// the declared one is a member of a retired list and the other is the schema's
+// own, so neither is a value the author supplied.
+func refuseRetired(key compiledKey, path string, data []byte, instance any) error {
+	for _, f := range retiredFields {
+		if f.kind != "" && f.kind != key.kind {
 			continue
 		}
-		out[kind] = *s.Properties.APIVersion.Const
+		declared, ok := stringAtPath(instance, f.path)
+		if !ok || !f.retired(declared) {
+			continue
+		}
+		current, ok := schemaValue(key.kind, f.path)
+		if !ok || current == declared {
+			continue
+		}
+		fieldPath := strings.Join(f.path, ".")
+		e := &Error{
+			Kind:      key.kind,
+			Path:      path,
+			condition: f.condition,
+			advice:    f.advice(current),
+			Findings:  []jsonvalidator.Finding{{FieldPath: fieldPath, Message: f.finding(declared, current)}},
+		}
+		if locate, ok := fieldLocator(data, path); ok {
+			if loc, ok := locate(fieldPath); ok {
+				e.Positions = map[string]aggerrors.SourceLocation{fieldPath: loc}
+			}
+		}
+		return e
 	}
-	return out
-})
+	return nil
+}
 
-// retiredAPIVersion refuses a document whose `apiVersion` is one this compiler no
-// longer reads, and returns nil for every other document.
-//
-// The refusal carries one finding, positioned at the `apiVersion` line, naming
-// the version the document declares and the version the compiler reads, and the
-// advice names the line to change and what to write there. Both versions are
-// quoted even where every value is withheld: the declared one is a member of
-// retiredAPIVersions and the other is the schema's own, so neither is a value the
-// author supplied.
-func retiredAPIVersion(key compiledKey, path string, data []byte, instance any) error {
-	doc, ok := instance.(map[string]any)
-	if !ok {
-		return nil
+// stringAtPath reads the string a document holds at a key path, reporting false
+// where any step is not a mapping or the value is not a string.
+func stringAtPath(instance any, path []string) (string, bool) {
+	cur := instance
+	for _, k := range path {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return "", false
+		}
+		cur = m[k]
 	}
-	declared, ok := doc[apiVersionPath].(string)
-	if !ok || !slices.Contains(retiredAPIVersions, declared) {
-		return nil
+	s, ok := cur.(string)
+	return s, ok
+}
+
+// schemaValues caches schemaValue's answers, keyed by kind and key path.
+var schemaValues sync.Map
+
+// schemaValue is the one value a kind's embedded schema accepts at a key path —
+// its `const`, or an `enum` of exactly one value — read off the schema rather
+// than restated, so the value a refusal tells an author to write is the one the
+// schema accepts. It reports false where the schema states no such single value:
+// a kind whose documents carry no such field (a lockfile has no apiVersion), or a
+// field the schema leaves open, and the refusal then does not fire, leaving the
+// schema's own findings to report the document.
+func schemaValue(kind Kind, path []string) (string, bool) {
+	cacheKey := string(kind) + "\x00" + strings.Join(path, "\x00")
+	if v, ok := schemaValues.Load(cacheKey); ok {
+		s := v.(string)
+		return s, s != ""
 	}
-	reads, ok := readAPIVersions()[key.kind]
-	if !ok || reads == declared {
-		return nil
-	}
-	e := &Error{
-		Kind:      key.kind,
-		Path:      path,
-		condition: errRetiredAPIVersion,
-		advice:    fmt.Sprintf("change the apiVersion line to `apiVersion: %s`", reads),
-		Findings: []jsonvalidator.Finding{{
-			FieldPath: apiVersionPath,
-			Message:   fmt.Sprintf("the document declares %s, and this compiler reads %s", declared, reads),
-		}},
-	}
-	if locate, ok := fieldLocator(data, path); ok {
-		if loc, ok := locate(apiVersionPath); ok {
-			e.Positions = map[string]aggerrors.SourceLocation{apiVersionPath: loc}
+	value := ""
+	var node map[string]any
+	if raw, ok := schemaSource[kind]; ok && json.Unmarshal([]byte(raw), &node) == nil {
+		for _, k := range path {
+			props, _ := node["properties"].(map[string]any)
+			node, _ = props[k].(map[string]any)
+		}
+		if c, ok := node["const"].(string); ok {
+			value = c
+		} else if e, ok := node["enum"].([]any); ok && len(e) == 1 {
+			value, _ = e[0].(string)
 		}
 	}
-	return e
+	schemaValues.Store(cacheKey, value)
+	return value, value != ""
 }

@@ -74,7 +74,7 @@ metadata:
   version: "1.0.0"
   pluginType: governance
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: verdict_ir
 `)

@@ -33,7 +33,7 @@ func aggregaEmitWarning(codePtr uint64, messagePtr uint64, pathPtr uint64)
 // linterDescriptor is the fixed describe() self-report: a linter plugin whose
 // single lint_probe export declares the aggrega_emit_warning host function it
 // imports, so the load gate's describe()-vs-imports cross-check passes.
-const linterDescriptor = `{"abi_version":"v1alpha1","plugin_type":"linter","exports":[{"name":"lint_probe","host_functions":["aggrega_emit_warning"]}]}`
+const linterDescriptor = `{"abi_version":"v1beta1","plugin_type":"linter","exports":[{"name":"lint_probe","host_functions":["aggrega_emit_warning"]}]}`
 
 func emitWarning(code, message, path string) {
 	codeMem := pdk.AllocateString(code)

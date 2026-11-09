@@ -36,7 +36,7 @@ import (
 // descriptor is the fixed describe() self-report: an importer of the draft-set
 // format whose single export is import, and the version a Plugin entity is
 // generated at.
-const descriptor = `{"abi_version":"v1alpha1","plugin_type":"importer",` +
+const descriptor = `{"abi_version":"v1beta1","plugin_type":"importer",` +
 	`"description":"Draft exactly the files the source spells out, in its order.",` +
 	`"capabilities":["import:draft-set"],"exports":[{"name":"import"}],` +
 	`"metadata":{"version":"1.0.0"}}`

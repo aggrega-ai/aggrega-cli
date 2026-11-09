@@ -30,7 +30,7 @@ metadata:
   pluginType: cli
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
 `
 
 // TestSpliceCommands_PreservesCommentsAndBlanks proves the command splice is
@@ -173,7 +173,7 @@ metadata:
   pluginType: cli
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: cli_run
   commands:
@@ -227,7 +227,7 @@ metadata:
   pluginType: cli
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
 `)
 	// Stamp so the machine-owned records are in sync, leaving only the (legitimate)
 	// under-declaration of the export surface for the advisory to report.

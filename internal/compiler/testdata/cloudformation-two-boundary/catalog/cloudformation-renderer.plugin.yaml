@@ -8,7 +8,7 @@ metadata:
   version: 0.0.0-test
   pluginType: provider
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   # The plugin renders standalone artifact fragments and normalizes sourced
   # templates to pure-JSON long-form intrinsics, structurally validating a sourced
   # template ahead of render; it merges a dispatch group's per-node fragments into

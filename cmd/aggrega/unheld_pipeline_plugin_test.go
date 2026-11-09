@@ -115,7 +115,7 @@ metadata:
   pluginType: pipeline-step
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: step
       operates: patch

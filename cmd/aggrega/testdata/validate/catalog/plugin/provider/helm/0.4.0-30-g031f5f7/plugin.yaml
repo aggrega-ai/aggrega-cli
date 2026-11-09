@@ -8,7 +8,7 @@ metadata:
   version: 0.4.0-30-g031f5f7
   pluginType: provider
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   runtime:
     maxMemoryPages: 4096
     timeoutMs: 300000

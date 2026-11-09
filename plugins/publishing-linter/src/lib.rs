@@ -32,7 +32,7 @@ pub mod rules;
 pub mod sensitivity;
 
 /// `descriptor` is the `describe()` self-report the host reads once at load:
-/// a v1alpha1 linter plugin whose minimum export, `lint_rules`, is present.
+/// a linter plugin whose minimum export, `lint_rules`, is present.
 /// The host validates it against its contract (ABI version, plugin type,
 /// minimum export) before invoking any export.
 fn descriptor() -> PluginDescriptor {

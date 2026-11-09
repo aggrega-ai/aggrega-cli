@@ -168,7 +168,7 @@ func maximalPlugin() types.Plugin {
 			Keywords:    []string{"linter"},
 		},
 		Spec: types.PluginSpec{
-			AbiVersion: "v1alpha1",
+			AbiVersion: "v1beta1",
 			Signature: &types.PluginSignature{
 				Type:         "sigstore-cosign",
 				SignatureRef: "sha256:1111111111111111111111111111111111111111111111111111111111111111",

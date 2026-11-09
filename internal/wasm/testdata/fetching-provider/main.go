@@ -99,7 +99,7 @@ const (
 // a guest's declarations against the functions it actually imports, and refuses
 // a guest that imports one it did not declare.
 const providerDescriptor = `{` +
-	`"abi_version":"v1alpha1",` +
+	`"abi_version":"v1beta1",` +
 	`"plugin_type":"provider",` +
 	`"capabilities":["` + capability + `"],` +
 	`"description":"Renders one file whose bytes are an external input fetched through the host.",` +

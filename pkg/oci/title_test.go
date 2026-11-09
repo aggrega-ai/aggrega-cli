@@ -62,29 +62,29 @@ func titleManifestTagged(t *testing.T, store *memory.Store, tag string) ocispec.
 func TestEveryPublishableKindIsTitledByItsTransportShape(t *testing.T) {
 	t.Parallel()
 	want := map[string]string{
-		oci.MediaTypeComponent:                                    "entity.yaml",
-		"application/vnd.aggrega.component.v1alpha1+tar+gz":       "entity.tar.gz",
-		oci.MediaTypeFeature:                                      "entity.yaml",
-		"application/vnd.aggrega.feature.v1alpha1+tar+gz":         "entity.tar.gz",
-		oci.MediaTypeAggregate:                                    "entity.yaml",
-		"application/vnd.aggrega.aggregate.v1alpha1+tar+gz":       "entity.tar.gz",
-		oci.MediaTypeSchemaLibrary:                                "entity.yaml",
-		"application/vnd.aggrega.schemalibrary.v1alpha1+tar+gz":   "entity.tar.gz",
-		oci.MediaTypeMappingLibrary:                               "entity.yaml",
-		"application/vnd.aggrega.mappinglibrary.v1alpha1+tar+gz":  "entity.tar.gz",
-		oci.MediaTypeWorkloadLibrary:                              "entity.yaml",
-		"application/vnd.aggrega.workloadlibrary.v1alpha1+tar+gz": "entity.tar.gz",
-		oci.MediaTypeArtifactLibrary:                              "entity.yaml",
-		"application/vnd.aggrega.artifactlibrary.v1alpha1+tar+gz": "entity.tar.gz",
-		oci.MediaTypeRecipe:                                       "entity.tar.gz",
-		"application/vnd.aggrega.recipe.v1alpha1+yaml":            "entity.yaml",
-		oci.MediaTypeFeatureRecipe:                                "entity.tar.gz",
-		"application/vnd.aggrega.featurerecipe.v1alpha1+yaml":     "entity.yaml",
+		oci.MediaTypeComponent:                                   "entity.yaml",
+		"application/vnd.aggrega.component.v1beta1+tar+gz":       "entity.tar.gz",
+		oci.MediaTypeFeature:                                     "entity.yaml",
+		"application/vnd.aggrega.feature.v1beta1+tar+gz":         "entity.tar.gz",
+		oci.MediaTypeAggregate:                                   "entity.yaml",
+		"application/vnd.aggrega.aggregate.v1beta1+tar+gz":       "entity.tar.gz",
+		oci.MediaTypeSchemaLibrary:                               "entity.yaml",
+		"application/vnd.aggrega.schemalibrary.v1beta1+tar+gz":   "entity.tar.gz",
+		oci.MediaTypeMappingLibrary:                              "entity.yaml",
+		"application/vnd.aggrega.mappinglibrary.v1beta1+tar+gz":  "entity.tar.gz",
+		oci.MediaTypeWorkloadLibrary:                             "entity.yaml",
+		"application/vnd.aggrega.workloadlibrary.v1beta1+tar+gz": "entity.tar.gz",
+		oci.MediaTypeArtifactLibrary:                             "entity.yaml",
+		"application/vnd.aggrega.artifactlibrary.v1beta1+tar+gz": "entity.tar.gz",
+		oci.MediaTypeRecipe:                                      "entity.tar.gz",
+		"application/vnd.aggrega.recipe.v1beta1+yaml":            "entity.yaml",
+		oci.MediaTypeFeatureRecipe:                               "entity.tar.gz",
+		"application/vnd.aggrega.featurerecipe.v1beta1+yaml":     "entity.yaml",
 		// A Plugin publishes through its own manifest; its titles are proven by
 		// TestPluginManifestTitlesBothDescriptors. The catalog path still titles
 		// the Plugin media types, which name the entity document.
 		oci.MediaTypePlugin: "entity.yaml",
-		"application/vnd.aggrega.wasmplugin.v1alpha1+tar+gz": "entity.tar.gz",
+		"application/vnd.aggrega.wasmplugin.v1beta1+tar+gz": "entity.tar.gz",
 	}
 	for _, kind := range oci.MediaTypeKinds() {
 		for _, archive := range []bool{false, true} {

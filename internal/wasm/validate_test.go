@@ -185,7 +185,7 @@ func TestNonCLIStreamingDescriptorRejectedAtDescribe(t *testing.T) {
 	// it. Descriptor validation checks each export's declared host functions
 	// against the profile allowlist for the reported type, which for a non-cli type
 	// admits neither streaming name.
-	raw := []byte(`{"abi_version":"v1alpha1","plugin_type":"pipeline-step","exports":[{"name":"step","operates":"patch","scope":"own","host_functions":["aggrega_cli_write_stdout"]}]}`)
+	raw := []byte(`{"abi_version":"v1beta1","plugin_type":"pipeline-step","exports":[{"name":"step","operates":"patch","scope":"own","host_functions":["aggrega_cli_write_stdout"]}]}`)
 	_, err := parseAndValidateDescriptor(raw, "frp/patch:1.0.0")
 	if !errors.Is(err, ErrWasmManifestRejected()) {
 		t.Fatalf("a non-cli descriptor declaring a streaming host function should be rejected at describe validation with ErrWasmManifestRejected; got %v", err)

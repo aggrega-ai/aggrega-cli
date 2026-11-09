@@ -35,7 +35,7 @@ import (
 
 // descriptor is the fixed describe() self-report: a parser of the json syntax
 // whose single export is parse, and the version a Plugin entity is generated at.
-const descriptor = `{"abi_version":"v1alpha1","plugin_type":"parser",` +
+const descriptor = `{"abi_version":"v1beta1","plugin_type":"parser",` +
 	`"description":"Answer one fixed tree for any source, so a test can tell which parser read it.",` +
 	`"capabilities":["parse:json"],"exports":[{"name":"parse"}],` +
 	`"metadata":{"version":"1.0.0"}}`

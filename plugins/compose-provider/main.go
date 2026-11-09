@@ -37,7 +37,7 @@ import (
 	pdk "github.com/extism/go-pdk"
 )
 
-// descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
+// descriptor is the describe() self-report: a provider plugin declaring
 // the render_node and assemble_boundary exports,
 // compatibility with the compose provider engine, and its plugin-level
 // render-behavior contract (the input kinds it renders, its boundary-merge

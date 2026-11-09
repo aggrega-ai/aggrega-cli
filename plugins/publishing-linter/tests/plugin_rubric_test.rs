@@ -338,7 +338,7 @@ fn plugin_major_abi_version_changed() {
     // The live schema enum carries a single ABI value today; the pair
     // still exercises the comparison so the rule is proven independent of
     // the current enum cardinality.
-    let prev = json!({"kind": "Plugin", "spec": {"abiVersion": "v1alpha1"}});
+    let prev = json!({"kind": "Plugin", "spec": {"abiVersion": "v1beta1"}});
     let prop = json!({"kind": "Plugin", "spec": {"abiVersion": "v1alpha2"}});
     assert_eq!(classify_once(&fixture(prev, prop)), "MAJOR");
 }
@@ -547,7 +547,7 @@ fn plugin_major_command_change_folds_over_patch_surfaces() {
         "spec": {
             "exports": [{"name": "render_node", "operates": "emit", "scope": "own"}],
             "provider": {"capabilities": ["helm"]},
-            "abiVersion": "v1alpha1",
+            "abiVersion": "v1beta1",
             "commands": [{"name": "build"}, {"name": "lint"}],
         },
     });
@@ -557,7 +557,7 @@ fn plugin_major_command_change_folds_over_patch_surfaces() {
         "spec": {
             "exports": [{"name": "render_node", "operates": "emit", "scope": "own"}],
             "provider": {"capabilities": ["helm"]},
-            "abiVersion": "v1alpha1",
+            "abiVersion": "v1beta1",
             "commands": [{"name": "build"}],
         },
     });

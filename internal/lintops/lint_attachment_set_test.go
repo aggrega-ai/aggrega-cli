@@ -40,7 +40,7 @@ metadata:
   version: "` + version + `"
   pluginType: linter
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: lint_rules
 `

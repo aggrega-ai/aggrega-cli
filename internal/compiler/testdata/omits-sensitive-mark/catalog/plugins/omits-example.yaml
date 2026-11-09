@@ -6,7 +6,7 @@ metadata:
   pluginType: provider
   description: Provider plugin that renders two fixed units and leaves out the ones its omit entries name.
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   provider:
     capabilities:
       - omits-example

@@ -110,7 +110,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 )
 
-// descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
+// descriptor is the describe() self-report: a provider plugin declaring
 // the render_node, validate_node_input and assemble_boundary exports,
 // compatibility with the terraform provider, and its render-behavior contract
 // (sourced and artifacts-standalone input, nest-per-component boundary

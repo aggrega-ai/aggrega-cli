@@ -54,7 +54,7 @@ func readFixture(t *testing.T, parts ...string) []byte {
 // kindLower picks the mediatype suffix.
 func pushIntegrationFixture(t *testing.T, target *memoryRegistryTarget, kindLower string, yamlBytes []byte) {
 	t.Helper()
-	mediaType := "application/vnd.aggrega." + kindLower + ".v1alpha1+yaml"
+	mediaType := "application/vnd.aggrega." + kindLower + ".v1beta1+yaml"
 	if _, err := oci.Push(context.Background(), target.Store, "1.0.0", mediaType, yamlBytes, nil); err != nil {
 		t.Fatalf("push fixture: %v", err)
 	}
@@ -442,7 +442,7 @@ metadata:
   pluginType: provider
   version: 1.0.0
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   runtime:
     maxMemoryPages: 256
     timeoutMs: 3000

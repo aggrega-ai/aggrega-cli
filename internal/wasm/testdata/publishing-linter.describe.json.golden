@@ -1,5 +1,5 @@
 {
-  "abi_version": "v1alpha1",
+  "abi_version": "v1beta1",
   "plugin_type": "linter",
   "exports": [
     {

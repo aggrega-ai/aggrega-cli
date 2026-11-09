@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginabi"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -91,11 +92,11 @@ const (
 	InputPatternFull InputPattern = "b"
 
 	// InputPatternMinimal delivers a small input the guest enriches via
-	// host functions. In v1alpha1 the bound host-function surface is the
+	// host functions. In v1beta1 the bound host-function surface is the
 	// two baseline diagnostic functions, so a minimal-input export has
 	// no data-fetch host functions to call; the pattern is
 	// contract-reserved ABI-evolution headroom rather than an active
-	// v1alpha1 data path.
+	// v1beta1 data path.
 	InputPatternMinimal InputPattern = "a"
 )
 
@@ -108,10 +109,32 @@ const (
 	StabilityDeprecated   Stability = "deprecated"
 )
 
-// ABIVersionV1Alpha1 is the single plugin ABI version the host speaks.
-// A descriptor declaring any other abi_version fails the
-// ABI-compatibility handshake in [PluginDescriptor.Validate].
-const ABIVersionV1Alpha1 = "v1alpha1"
+// ABIVersion is the single plugin ABI version the host speaks, held in
+// internal/pluginabi beside the versions it spoke once. A descriptor declaring any
+// other abi_version fails the ABI-compatibility handshake in
+// [PluginDescriptor.Validate]; one declaring a version the host spoke once is
+// refused under its own condition, telling the author to rebuild against the
+// current kit.
+const ABIVersion = pluginabi.Version
+
+// retiredABIRefusal is the refusal of a guest whose describe() report declares a
+// plugin ABI version the host spoke once and speaks no longer. It reports
+// pluginabi.ErrRetiredABIVersion, whose short code a diagnostic prints, and it
+// matches ErrWasmManifestRejected as well, so a caller gating on the descriptor
+// check's one sentinel still catches it.
+type retiredABIRefusal struct {
+	plugin   string
+	declared string
+}
+
+func (e *retiredABIRefusal) Error() string {
+	return fmt.Sprintf("plugin %q declares abi_version %q, and this compiler speaks %q; %s: %s",
+		e.plugin, e.declared, ABIVersion, pluginabi.Advice, pluginabi.ErrRetiredABIVersion().Error())
+}
+
+func (e *retiredABIRefusal) Unwrap() []error {
+	return []error{pluginabi.ErrRetiredABIVersion(), ErrWasmManifestRejected()}
+}
 
 // minExportName returns the minimum-export name or prefix a plugin type
 // declares, read from the canonical plugin-type registry so the literal lives
@@ -210,8 +233,10 @@ var detectKinds = []string{
 // test suite exercises it directly. The checks, in order:
 //
 //   - ABI-compatibility handshake: abi_version is exactly
-//     ABIVersionV1Alpha1. A guest built against any other ABI is
-//     refused at load rather than mis-invoked at dispatch.
+//     ABIVersion. A guest built against any other ABI is
+//     refused at load rather than mis-invoked at dispatch; one built against
+//     an ABI the host spoke once is refused under
+//     pluginabi.ErrRetiredABIVersion, telling its author to rebuild it.
 //   - plugin_type is a recognized [PluginType].
 //   - the per-type minimum export is present: a provider declares
 //     render_node; a linter declares at least one lint_* export; a
@@ -271,9 +296,12 @@ var detectKinds = []string{
 // message contract is met without this surface inventing an identity
 // scheme of its own.
 func (d PluginDescriptor) Validate(pluginIdentity string) error {
-	if d.AbiVersion != ABIVersionV1Alpha1 {
+	if d.AbiVersion != ABIVersion {
+		if pluginabi.IsRetired(d.AbiVersion) {
+			return &retiredABIRefusal{plugin: pluginIdentity, declared: d.AbiVersion}
+		}
 		return fmt.Errorf("plugin %q declares abi_version %q; host speaks %q: %w",
-			pluginIdentity, d.AbiVersion, ABIVersionV1Alpha1, ErrWasmManifestRejected())
+			pluginIdentity, d.AbiVersion, ABIVersion, ErrWasmManifestRejected())
 	}
 
 	// Membership is asked of the canonical plugin-type registry rather than

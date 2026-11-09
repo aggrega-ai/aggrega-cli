@@ -25,7 +25,7 @@ import (
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
 )
 
-// descriptor is the describe() self-report: a v1alpha1 governance plugin whose
+// descriptor is the describe() self-report: a governance plugin whose
 // mutate export the host validates before dispatch at a label-transform role. A
 // governance guest is attached by URI at the governance socket rather than
 // matched by a served capability, so it advertises none.

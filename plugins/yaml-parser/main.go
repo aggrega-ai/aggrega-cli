@@ -21,7 +21,7 @@ import (
 	pdk "github.com/extism/go-pdk"
 )
 
-// descriptor is the describe() self-report: a v1alpha1 parser plugin whose parse
+// descriptor is the describe() self-report: a parser plugin whose parse
 // export handles the parse:yaml format. The host reads this once at load and
 // validates it before invoking parse.
 func descriptor() aggrega.PluginDescriptor {

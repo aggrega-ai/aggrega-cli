@@ -32,7 +32,7 @@ func TestMergeForPublishRecordsTheImportersSignatures(t *testing.T) {
 	}
 	descriptor := func(detect []wasm.DetectSignature) wasm.PluginDescriptor {
 		d := wasm.PluginDescriptor{
-			AbiVersion:   wasm.ABIVersionV1Alpha1,
+			AbiVersion:   wasm.ABIVersion,
 			PluginType:   string(wasm.PluginTypeImporter),
 			Capabilities: []string{"import:langflow"},
 			Exports:      []wasm.PluginExport{{Name: wasm.ImportExport.Name()}},

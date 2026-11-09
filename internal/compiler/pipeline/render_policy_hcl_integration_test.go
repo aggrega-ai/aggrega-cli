@@ -44,7 +44,7 @@ func hclParserEntity() types.Plugin {
 		Kind:       "Plugin",
 		Metadata:   types.PluginMetadata{Name: "hcl", Version: "0.0.0-test", PluginType: "parser"},
 		Spec: types.PluginSpec{
-			AbiVersion: "v1alpha1",
+			AbiVersion: "v1beta1",
 			Parser:     &types.PluginParser{Capabilities: []string{"parse:hcl"}},
 			Exports:    []types.PluginExport{{Name: "parse"}},
 			Runtime:    &types.PluginRuntime{MaxMemoryPages: 4096},

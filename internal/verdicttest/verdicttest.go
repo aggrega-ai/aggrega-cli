@@ -21,6 +21,7 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
+	"github.com/aggrega-ai/aggrega-cli/internal/pluginabi"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -44,7 +45,7 @@ func PluginEntityYAML(socket, name, version string) string {
 		"  version: \"" + version + "\"\n" +
 		"  pluginType: " + socket + "\n" +
 		"spec:\n" +
-		"  abiVersion: v1alpha1\n" +
+		"  abiVersion: " + pluginabi.Version + "\n" +
 		"  exports:\n" +
 		"    - name: verdict_ir\n"
 }

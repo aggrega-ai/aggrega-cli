@@ -45,7 +45,7 @@ func composeChainCatalog() *catalog.Catalog {
 				Kind:       "Plugin",
 				Metadata:   types.PluginMetadata{Name: "compose", Version: testCorePluginVersion, PluginType: "provider"},
 				Spec: types.PluginSpec{
-					AbiVersion: "v1alpha1",
+					AbiVersion: "v1beta1",
 					Provider:   types.PluginProvider{Capabilities: []string{"compose"}},
 					Exports:    []types.PluginExport{{Name: "render_node"}, {Name: "assemble_boundary"}},
 					Runtime:    &types.PluginRuntime{MaxMemoryPages: composeProviderMemPag},

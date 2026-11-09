@@ -27,7 +27,7 @@ func TestAContractClaimingOnlyBoundaryArtifactsIsNotAnAbsentContract(t *testing.
 	}
 
 	desc := wasm.PluginDescriptor{
-		AbiVersion: wasm.ABIVersionV1Alpha1,
+		AbiVersion: wasm.ABIVersion,
 		PluginType: string(wasm.PluginTypeProvider),
 		Exports:    []wasm.PluginExport{{Name: "render_node"}},
 		Contract:   &wasm.ProviderContract{BoundaryArtifacts: true},

@@ -21,7 +21,7 @@ metadata:
   pluginType: linter
   version: 1.0.0
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   signature:
     type: sigstore-cosign
     publicKeyRef: cosign.pub
@@ -94,7 +94,7 @@ metadata:
   pluginType: provider
   version: 1.0.0
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
 `
 	var wp types.Plugin
 	if err := yaml.Unmarshal([]byte(minimal), &wp); err != nil {
@@ -124,7 +124,7 @@ func TestPlugin_EnvelopeRejectsMalformed(t *testing.T) {
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: nonexistent}
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
 `,
 		"unknown abiVersion": `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
@@ -136,7 +136,7 @@ spec:
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   allowedHosts: [example.com]
 `,
 	}
@@ -162,7 +162,7 @@ metadata:
   pluginType: linter
   version: 1.0.0
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: lint_naming
       operates: patch
@@ -195,7 +195,7 @@ metadata:
   pluginType: linter
   version: 1.0.0
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
 `
 	if _, err := envelope.ValidateBytes(envelope.KindPlugin, []byte(withoutExports), "no-exports.yaml"); err != nil {
 		t.Fatalf("Plugin omitting exports rejected (the block must be additive): %v", err)
@@ -245,7 +245,7 @@ func TestPlugin_EnvelopeRejectsBadExportEnum(t *testing.T) {
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: lint_naming
       operates: rewrite
@@ -254,7 +254,7 @@ spec:
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: lint_naming
       scope: cluster
@@ -263,7 +263,7 @@ spec:
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - operates: patch
 `,
@@ -271,7 +271,7 @@ spec:
 kind: Plugin
 metadata: {name: p, version: 1.0.0, pluginType: linter}
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: lint_naming
       stability: stable
@@ -299,7 +299,7 @@ func pluginWithCommandFlag(flag string) string {
 kind: Plugin
 metadata: {name: greet, version: 1.0.0, pluginType: cli}
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   commands:
     - name: greet
       flags:

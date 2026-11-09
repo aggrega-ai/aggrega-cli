@@ -341,7 +341,7 @@ func TestHostGuestWireParity_Descriptor(t *testing.T) {
 	t.Parallel()
 
 	d := wasm.PluginDescriptor{
-		AbiVersion:  "v1alpha1",
+		AbiVersion:  "v1beta1",
 		PluginType:  "governance",
 		Description: "cross-side descriptor fixture",
 		Exports:     []wasm.PluginExport{{Name: "verdict_ir"}},
@@ -355,7 +355,7 @@ func TestHostGuestWireParity_Descriptor(t *testing.T) {
 	// An importer's recognition contract, every field populated, so the two sides
 	// are held to one encoding of the nested lists a signature carries.
 	importer := wasm.PluginDescriptor{
-		AbiVersion:   "v1alpha1",
+		AbiVersion:   "v1beta1",
 		PluginType:   "importer",
 		Capabilities: []string{"import:langflow"},
 		Exports:      []wasm.PluginExport{{Name: "import"}},

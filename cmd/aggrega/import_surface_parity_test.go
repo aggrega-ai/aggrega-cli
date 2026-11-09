@@ -51,7 +51,7 @@ metadata:
   version: 1.0.0
   pluginType: importer
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   importer:
     capabilities:
       - import:demo

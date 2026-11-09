@@ -152,7 +152,7 @@ metadata:
   version: "1.0.0"
   description: Renders IR nodes into Helm chart artifacts.
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   provider:
     capabilities:
       - helm
@@ -219,7 +219,7 @@ metadata:
   pluginType: linter
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: lint_naming
 `
@@ -255,7 +255,7 @@ metadata:
   pluginType: pipeline-step
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   runtime:
     timeoutMs: 7000
   exports:

@@ -44,7 +44,7 @@ import (
 // that renders a sourced node and honours omit entries. The build-provenance
 // version is stamped so a Plugin entity can be generated from it.
 const providerDescriptor = `{` +
-	`"abi_version":"v1alpha1",` +
+	`"abi_version":"v1beta1",` +
 	`"plugin_type":"provider",` +
 	`"capabilities":["omits-example"],` +
 	`"description":"Renders two fixed units and leaves out the ones its omit entries name.",` +

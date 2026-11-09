@@ -21,7 +21,10 @@
 // classifies a fetch failure by the same errors.Is match.
 package oci
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // The two shapes an entity publication takes, as the structured-syntax suffix of
 // its media type. An entity whose publication carries nothing beside its own
@@ -34,21 +37,40 @@ const (
 	archiveSuffix  = "+tar+gz"
 )
 
+// mediaTypeVendor opens the media types an entity, a Plugin's executable and a
+// documentation bundle are published under, and mediaTypeVersion is the version
+// segment each of them carries: every media type below is built from the two, so
+// they cannot come to carry different versions. The artifacts attached beside a
+// publication — its publication date (MediaTypePublishedAt) and a deprecation
+// marker — version their own media types on an axis of their own.
+const (
+	mediaTypeVendor  = "application/vnd.aggrega."
+	mediaTypeVersion = "v1beta1"
+)
+
+// retiredMediaTypeVersions are the version segments this transport once
+// published under and reads no longer. An artifact whose manifest carries a media
+// type spelled with one of them is refused by name when it is fetched (see
+// retiredMediaType), telling the reader to publish it again. A version leaves the
+// list never, so a stale artifact is recognised for as long as the compiler can
+// recognise it.
+var retiredMediaTypeVersions = []string{"v1alpha1"}
+
 // The vendor type and version each publishable kind's two media types share.
 // Each media type below is one of these followed by one of the two suffixes
 // above, so a kind's two shapes cannot come to name different kinds or
 // versions.
 const (
-	stemComponent       = "application/vnd.aggrega.component.v1alpha1"
-	stemFeature         = "application/vnd.aggrega.feature.v1alpha1"
-	stemRecipe          = "application/vnd.aggrega.recipe.v1alpha1"
-	stemFeatureRecipe   = "application/vnd.aggrega.featurerecipe.v1alpha1"
-	stemSchemaLibrary   = "application/vnd.aggrega.schemalibrary.v1alpha1"
-	stemMappingLibrary  = "application/vnd.aggrega.mappinglibrary.v1alpha1"
-	stemWorkloadLibrary = "application/vnd.aggrega.workloadlibrary.v1alpha1"
-	stemArtifactLibrary = "application/vnd.aggrega.artifactlibrary.v1alpha1"
-	stemAggregate       = "application/vnd.aggrega.aggregate.v1alpha1"
-	stemPlugin          = "application/vnd.aggrega.wasmplugin.v1alpha1"
+	stemComponent       = mediaTypeVendor + "component." + mediaTypeVersion
+	stemFeature         = mediaTypeVendor + "feature." + mediaTypeVersion
+	stemRecipe          = mediaTypeVendor + "recipe." + mediaTypeVersion
+	stemFeatureRecipe   = mediaTypeVendor + "featurerecipe." + mediaTypeVersion
+	stemSchemaLibrary   = mediaTypeVendor + "schemalibrary." + mediaTypeVersion
+	stemMappingLibrary  = mediaTypeVendor + "mappinglibrary." + mediaTypeVersion
+	stemWorkloadLibrary = mediaTypeVendor + "workloadlibrary." + mediaTypeVersion
+	stemArtifactLibrary = mediaTypeVendor + "artifactlibrary." + mediaTypeVersion
+	stemAggregate       = mediaTypeVendor + "aggregate." + mediaTypeVersion
+	stemPlugin          = mediaTypeVendor + "wasmplugin." + mediaTypeVersion
 )
 
 // Canonical OCI mediatypes for Aggrega catalog entities, each naming one kind in
@@ -82,13 +104,13 @@ const (
 	// blob is the entity (see PushPluginManifest). It is not resolved through
 	// MediaTypeFor: the .wasm is part of a Plugin publication, not a catalog
 	// entity kind of its own.
-	MediaTypeWasm = "application/vnd.aggrega.wasm.v1alpha1+wasm"
+	MediaTypeWasm = mediaTypeVendor + "wasm." + mediaTypeVersion + "+wasm"
 	// MediaTypeDocs is the mediatype of a documentation bundle — a gzipped
 	// tar of rendered documentation, published as a standalone data artifact
 	// rather than a catalog entity. It is a non-kind artifact, never resolved
 	// through MediaTypeFor: no entity kind lowercases to "docs", so the
 	// bundle carries no entity envelope and rides the kind-agnostic transport.
-	MediaTypeDocs = "application/vnd.aggrega.docs.v1alpha1+tar+gz"
+	MediaTypeDocs = mediaTypeVendor + "docs." + mediaTypeVersion + archiveSuffix
 	// MediaTypeSignatureBundle is the cosign-compatible Sigstore bundle media
 	// type a signature is attached under: the artifactType of the OCI referrer
 	// that carries the bundle, and the media type of that referrer's one layer.
@@ -182,4 +204,26 @@ func MediaTypeKinds() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// retiredMediaType reports whether mediaType is an Aggrega media type spelled with
+// a version segment this transport published under once and reads no longer, and
+// if so the media type it publishes the same artifact under now. It matches by
+// the media type's shape — the vendor prefix, a name, then a retired version
+// segment ending the type or followed by its structured-syntax suffix — rather
+// than against a list of the types published, so no list of them has to be kept
+// in step with the declarations above. A third party's media type — a chart, a
+// signature — never carries the vendor prefix, and never matches.
+func retiredMediaType(mediaType string) (current string, ok bool) {
+	rest, ours := strings.CutPrefix(mediaType, mediaTypeVendor)
+	if !ours {
+		return "", false
+	}
+	for _, retired := range retiredMediaTypeVersions {
+		name, after, found := strings.Cut(rest, "."+retired)
+		if found && (after == "" || strings.HasPrefix(after, "+")) {
+			return mediaTypeVendor + name + "." + mediaTypeVersion + after, true
+		}
+	}
+	return "", false
 }

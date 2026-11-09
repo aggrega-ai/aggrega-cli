@@ -108,7 +108,7 @@ func TestSkeletonDraftsTheDocumentTheSchemaRequires(t *testing.T) {
 				"  version: \"\"\n" +
 				"  pluginType: \"\"\n" +
 				"spec:\n" +
-				"  abiVersion: v1alpha1\n",
+				"  abiVersion: v1beta1\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

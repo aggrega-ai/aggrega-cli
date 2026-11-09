@@ -38,7 +38,7 @@ import (
 	"helm.sh/helm/v4/pkg/chart/v2/loader"
 )
 
-// descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
+// descriptor is the describe() self-report: a provider plugin declaring
 // the render_node export, compatibility with the helm provider engine, and its
 // render-behavior contract (the input kinds it renders and how it treats a
 // dispatch group's output). render_node declares two host functions it imports:

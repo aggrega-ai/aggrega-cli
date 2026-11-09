@@ -71,7 +71,7 @@ func seedComponentRepo(t *testing.T, tags []string, meta oci.SearchableMetadata)
 	t.Helper()
 	ctx := context.Background()
 	target := &memTagTarget{Store: memory.New()}
-	const mediaType = "application/vnd.aggrega.component.v1alpha1+yaml"
+	const mediaType = "application/vnd.aggrega.component.v1beta1+yaml"
 	ann, err := meta.Annotations()
 	if err != nil {
 		t.Fatalf("Annotations: %v", err)

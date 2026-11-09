@@ -738,9 +738,13 @@ func unreadReason(err error) string {
 // or its latest version's manifest. Where the registry answered that it holds
 // nothing there (registryindex.IsAbsent), that is an answer: the repository is no
 // longer there to record, and it is skipped as one whose version no longer
-// resolves is. Anything else is a read that did not complete (unreadable).
+// resolves is. Where the latest version's manifest carries a media type this
+// compiler no longer reads (oci.ErrRetiredMediaType), that is an answer too: the
+// read completed and every pull of that version is refused, so the repository is
+// skipped with that reason rather than kept on an earlier record listing a version
+// no pull can read. Anything else is a read that did not complete (unreadable).
 func (hw *hostWalk) readFailed(w *repoWalk, repo, uri string, err error) {
-	if registryindex.IsAbsent(err) {
+	if registryindex.IsAbsent(err) || errors.Is(err, oci.ErrRetiredMediaType()) {
 		w.skip(repo, err.Error())
 		return
 	}

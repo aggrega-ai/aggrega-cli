@@ -22,7 +22,7 @@ import (
 
 // cliDescriptor is the fixed describe() self-report: two commands, one of which
 // declares a flag with the shorthand "vv".
-const cliDescriptor = `{"abi_version":"v1alpha1","plugin_type":"cli","commands":[{"name":"greet-ok","description":"Greet with a well-formed flag","flags":[{"name":"ok","shorthand":"o","type":"bool"}]},{"name":"greet-bad","description":"Greet with a malformed flag","flags":[{"name":"verbose","shorthand":"vv","description":"talk more"}]}],"exports":[{"name":"cli_run"}]}`
+const cliDescriptor = `{"abi_version":"v1beta1","plugin_type":"cli","commands":[{"name":"greet-ok","description":"Greet with a well-formed flag","flags":[{"name":"ok","shorthand":"o","type":"bool"}]},{"name":"greet-bad","description":"Greet with a malformed flag","flags":[{"name":"verbose","shorthand":"vv","description":"talk more"}]}],"exports":[{"name":"cli_run"}]}`
 
 //go:wasmexport describe
 func describe() int32 {

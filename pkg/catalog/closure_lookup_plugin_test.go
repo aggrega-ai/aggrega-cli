@@ -25,7 +25,7 @@ metadata:
   pluginType: governance
   version: 1.0.0
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
 `
 
 // TestClosureLookupResolvesLocalPluginEntityAtTier1 proves a local Plugin

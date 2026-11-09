@@ -82,7 +82,7 @@ const (
 func pluginEntity(t *testing.T, name, pluginType string) *types.Plugin {
 	t.Helper()
 	src := "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: " + name +
-		"\n  version: 1.0.0\n  pluginType: " + pluginType + "\nspec:\n  abiVersion: v1alpha1\n"
+		"\n  version: 1.0.0\n  pluginType: " + pluginType + "\nspec:\n  abiVersion: v1beta1\n"
 	var wp types.Plugin
 	if err := yaml.Unmarshal([]byte(src), &wp); err != nil {
 		t.Fatalf("unmarshal plugin: %v", err)

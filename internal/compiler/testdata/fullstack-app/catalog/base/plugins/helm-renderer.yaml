@@ -12,7 +12,7 @@ metadata:
   # would stop discriminating. Keep it, and keep it non-empty.
   description: Renders IR nodes into helm-native artifacts.
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   provider:
     capabilities:
       - helm

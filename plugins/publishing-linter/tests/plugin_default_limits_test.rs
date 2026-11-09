@@ -29,7 +29,7 @@ fn base_spec() -> serde_json::Value {
     json!({
         "plugin": "oci://hub.aggrega.ai/plugins/example@sha256:abc",
         "pluginType": "linter",
-        "abiVersion": "v1alpha1",
+        "abiVersion": "v1beta1",
     })
 }
 

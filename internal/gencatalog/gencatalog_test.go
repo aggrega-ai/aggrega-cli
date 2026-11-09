@@ -320,7 +320,7 @@ func TestGenCatalogFromOneGuestCarriesTheDescriptionItReports(t *testing.T) {
 func TestMergeForPublishRequiresGuestVersion(t *testing.T) {
 	base := wasm.PluginDescriptor{
 		PluginType: string(wasm.PluginTypeCLI),
-		AbiVersion: wasm.ABIVersionV1Alpha1,
+		AbiVersion: wasm.ABIVersion,
 		Exports:    []wasm.PluginExport{{Name: wasm.CLIRunExport.Name()}},
 	}
 	overlay := types.Plugin{Metadata: types.PluginMetadata{Name: "cli-demo"}}

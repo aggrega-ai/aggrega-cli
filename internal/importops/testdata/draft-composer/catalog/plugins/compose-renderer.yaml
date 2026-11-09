@@ -6,7 +6,7 @@ metadata:
   pluginType: provider
   description: Renders the documents of a component whose Recipe declares the compose capability, and folds a dispatch group's documents into one.
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   provider:
     capabilities:
       - compose

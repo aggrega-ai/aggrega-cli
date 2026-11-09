@@ -87,7 +87,7 @@ const conformingFactValue = `[{"app":"api"}]`
 // renders a sourced node and advertises both halves of the cross-boundary link
 // capability, which is what routes a link crossing to it at all.
 const providerDescriptor = `{` +
-	`"abi_version":"v1alpha1",` +
+	`"abi_version":"v1beta1",` +
 	`"plugin_type":"provider",` +
 	`"capabilities":["` + capability + `"],` +
 	`"description":"Returns provider output the contract does not admit, to drive a host refusal.",` +

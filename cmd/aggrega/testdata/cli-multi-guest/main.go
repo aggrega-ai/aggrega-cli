@@ -35,7 +35,7 @@ func aggregaCLIWriteStdout(ptr uint64, length uint64)
 // commands and one cli_run export that imports the stdout streaming host
 // function. It self-reports a build version so a Plugin entity authoring the same
 // metadata.version cross-checks clean at publish.
-const cliDescriptor = `{"abi_version":"v1alpha1","plugin_type":"cli","commands":[{"name":"greet-a","description":"Greet in style A"},{"name":"greet-b","description":"Greet in style B"}],"exports":[{"name":"cli_run","host_functions":["aggrega_cli_write_stdout"]}],"metadata":{"version":"1.0.0"}}`
+const cliDescriptor = `{"abi_version":"v1beta1","plugin_type":"cli","commands":[{"name":"greet-a","description":"Greet in style A"},{"name":"greet-b","description":"Greet in style B"}],"exports":[{"name":"cli_run","host_functions":["aggrega_cli_write_stdout"]}],"metadata":{"version":"1.0.0"}}`
 
 //go:wasmexport describe
 func describe() int32 {

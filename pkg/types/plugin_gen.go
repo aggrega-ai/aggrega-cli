@@ -39,7 +39,7 @@ type PluginMetadata struct {
 
 // PluginSpec The ABI version the plugin targets, an optional signature pointer, and an optional runtime block. The plugin's `.wasm` location is derived from the plugin's identity — its `metadata.pluginType` (the socket) plus its bare `metadata.name` — and the configured registry; it is not carried in the spec.
 type PluginSpec struct {
-	// AbiVersion The host/guest ABI version the plugin targets. `v1alpha1` is the accepted value; a new ABI revision adds one.
+	// AbiVersion The host/guest ABI version the plugin targets. `v1beta1` is the one value accepted; a Plugin declaring an ABI version this compiler no longer speaks is refused, naming the version to rebuild the plugin against.
 	AbiVersion string `json:"abiVersion" yaml:"abiVersion"`
 	// Signature An optional descriptive pointer to the plugin's attached signature. This block is documentation only — it records where the signature lives and how it was produced for catalog readers; it does not itself gate or admit the plugin. The enforcing check is the per-registry trust policy applied at pull: a signature is fetched as an OCI referrer, verified against the registry's trusted identities or pinned key, and recorded as a verified fact in the lockfile. A registry that requires signatures halts the pull when a required signature is missing, untrusted, or invalid.
 	Signature *PluginSignature `json:"signature,omitempty" yaml:"signature,omitempty"`

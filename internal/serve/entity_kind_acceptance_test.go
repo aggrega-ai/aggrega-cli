@@ -161,7 +161,7 @@ metadata:
   version: 1.0.0
   pluginType: linter
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
 `},
 	"Manifest": {name: "rowops-probe-manifest", document: `apiVersion: aggrega.ai/v1beta1
 kind: Manifest

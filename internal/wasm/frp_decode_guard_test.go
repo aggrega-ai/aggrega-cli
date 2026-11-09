@@ -93,8 +93,8 @@ func TestFRPDecodeGuard(t *testing.T) {
 	if desc.PluginType != string(wasm.PluginTypePipelineStep) {
 		t.Fatalf("plugin type: got %q want %q", desc.PluginType, wasm.PluginTypePipelineStep)
 	}
-	if desc.AbiVersion != wasm.ABIVersionV1Alpha1 {
-		t.Fatalf("abi version: got %q want %q", desc.AbiVersion, wasm.ABIVersionV1Alpha1)
+	if desc.AbiVersion != wasm.ABIVersion {
+		t.Fatalf("abi version: got %q want %q", desc.AbiVersion, wasm.ABIVersion)
 	}
 	if want := []string{"helm", "helm-chart"}; !equalStrings(desc.Capabilities, want) {
 		t.Fatalf("compatible providers: got %v want %v", desc.Capabilities, want)

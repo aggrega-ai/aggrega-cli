@@ -54,7 +54,7 @@ import (
 	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
 )
 
-// descriptor is the static describe() self-report: a v1alpha1 importer plugin
+// descriptor is the static describe() self-report: an importer plugin
 // serving the langflow agent-flow format, whose import export imports the
 // aggrega_parse_source host function it uses to obtain each source's tree, and
 // the signature a Langflow source is recognised by (format.go). The host reads

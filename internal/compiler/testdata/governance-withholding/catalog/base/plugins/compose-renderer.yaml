@@ -6,7 +6,7 @@ metadata:
   pluginType: provider
   description: Provider plugin that renders the compose target.
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   provider:
     capabilities:
       - compose

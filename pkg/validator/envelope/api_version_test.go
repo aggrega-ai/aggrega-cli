@@ -136,9 +136,8 @@ func TestRetiredAPIVersionReachesEveryVersionedKind(t *testing.T) {
 		KindEntityLock:    true,
 		KindPluginsTrust:  true,
 	}
-	reads := readAPIVersions()
 	for _, kind := range Kinds() {
-		version, ok := reads[kind]
+		version, ok := schemaValue(kind, []string{"apiVersion"})
 		switch {
 		case unversioned[kind] && ok:
 			t.Errorf("%s: its schema now states apiVersion %q; take it off the unversioned list", kind, version)

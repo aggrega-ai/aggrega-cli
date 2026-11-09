@@ -13,7 +13,7 @@ import (
 // recognition signatures, or none where detect is nil.
 func importerDescriptor(detect []DetectSignature) PluginDescriptor {
 	desc := PluginDescriptor{
-		AbiVersion:   ABIVersionV1Alpha1,
+		AbiVersion:   ABIVersion,
 		PluginType:   string(PluginTypeImporter),
 		Capabilities: []string{"import:langflow"},
 		Exports:      []PluginExport{{Name: ImportExport.Name()}},

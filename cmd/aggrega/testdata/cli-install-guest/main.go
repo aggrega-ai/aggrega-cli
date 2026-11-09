@@ -21,7 +21,7 @@ import (
 // cliDescriptor is the fixed describe() self-report: a CLI plugin that names one
 // command and its short help, with the required cli_run export and no
 // host-function imports.
-const cliDescriptor = `{"abi_version":"v1alpha1","plugin_type":"cli","commands":[{"name":"moo","description":"Print a friendly greeting"}],"exports":[{"name":"cli_run"}]}`
+const cliDescriptor = `{"abi_version":"v1beta1","plugin_type":"cli","commands":[{"name":"moo","description":"Print a friendly greeting"}],"exports":[{"name":"cli_run"}]}`
 
 //go:wasmexport describe
 func describe() int32 {

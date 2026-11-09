@@ -56,7 +56,7 @@ func providerEntity(capabilities []string) types.Plugin {
 	entity.Metadata.Name = "p"
 	entity.Metadata.Version = "1.0.0"
 	entity.Metadata.PluginType = "provider"
-	entity.Spec.AbiVersion = "v1alpha1"
+	entity.Spec.AbiVersion = "v1beta1"
 	entity.Spec.SetCapabilitiesFor("provider", capabilities)
 	return entity
 }
@@ -150,7 +150,7 @@ func TestSetCapabilitiesForEmptyListKeepsAPresentBlock(t *testing.T) {
 				entity.Metadata.Name = "p"
 				entity.Metadata.Version = "1.0.0"
 				entity.Metadata.PluginType = block.pluginType
-				entity.Spec.AbiVersion = "v1alpha1"
+				entity.Spec.AbiVersion = "v1beta1"
 				block.author(&entity.Spec)
 
 				entity.Spec.SetCapabilitiesFor(block.pluginType, spelling.capabilities)

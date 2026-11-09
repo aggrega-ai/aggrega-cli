@@ -16,7 +16,7 @@ import (
 // colocatedPluginYAML authors a governance Plugin entity named name.
 func colocatedPluginYAML(name string) string {
 	return "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: " + name +
-		"\n  version: \"1.0.0\"\n  pluginType: governance\nspec:\n  abiVersion: v1alpha1\n  exports:\n    - name: transform_annotations\n"
+		"\n  version: \"1.0.0\"\n  pluginType: governance\nspec:\n  abiVersion: v1beta1\n  exports:\n    - name: transform_annotations\n"
 }
 
 // TestTheColocatedMapCarriesTheRootTheEntitysCatalogDirectoryPicks holds both

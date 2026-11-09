@@ -18,7 +18,7 @@ func TestPluginDescriptorValidateImporter(t *testing.T) {
 
 	// An importer descriptor with the import export passes Validate.
 	withImport := PluginDescriptor{
-		AbiVersion:   ABIVersionV1Alpha1,
+		AbiVersion:   ABIVersion,
 		PluginType:   string(PluginTypeImporter),
 		Capabilities: []string{"import:terraform"},
 		Exports:      []PluginExport{{Name: ImportExport.Name()}},
@@ -30,7 +30,7 @@ func TestPluginDescriptorValidateImporter(t *testing.T) {
 	// The same descriptor without the import export fails, wrapping
 	// ErrWasmManifestRejected.
 	withoutImport := PluginDescriptor{
-		AbiVersion:   ABIVersionV1Alpha1,
+		AbiVersion:   ABIVersion,
 		PluginType:   string(PluginTypeImporter),
 		Capabilities: []string{"import:terraform"},
 		Exports:      []PluginExport{{Name: "read"}},

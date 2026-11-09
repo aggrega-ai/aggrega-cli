@@ -47,13 +47,13 @@ func TestMediaTypeForDispatchesAllKinds(t *testing.T) {
 		want    string
 	}{
 		{"Component", false, oci.MediaTypeComponent},
-		{"Component", true, "application/vnd.aggrega.component.v1alpha1+tar+gz"},
+		{"Component", true, "application/vnd.aggrega.component.v1beta1+tar+gz"},
 		{"Feature", false, oci.MediaTypeFeature},
-		{"Feature", true, "application/vnd.aggrega.feature.v1alpha1+tar+gz"},
+		{"Feature", true, "application/vnd.aggrega.feature.v1beta1+tar+gz"},
 		{"Recipe", true, oci.MediaTypeRecipe},
-		{"Recipe", false, "application/vnd.aggrega.recipe.v1alpha1+yaml"},
+		{"Recipe", false, "application/vnd.aggrega.recipe.v1beta1+yaml"},
 		{"FeatureRecipe", true, oci.MediaTypeFeatureRecipe},
-		{"FeatureRecipe", false, "application/vnd.aggrega.featurerecipe.v1alpha1+yaml"},
+		{"FeatureRecipe", false, "application/vnd.aggrega.featurerecipe.v1beta1+yaml"},
 		{"SchemaLibrary", false, oci.MediaTypeSchemaLibrary},
 		{"MappingLibrary", false, oci.MediaTypeMappingLibrary},
 		{"WorkloadLibrary", false, oci.MediaTypeWorkloadLibrary},

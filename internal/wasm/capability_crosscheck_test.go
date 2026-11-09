@@ -16,7 +16,7 @@ func TestCrossCheckContract(t *testing.T) {
 	t.Parallel()
 
 	desc := PluginDescriptor{
-		AbiVersion: ABIVersionV1Alpha1,
+		AbiVersion: ABIVersion,
 		PluginType: string(PluginTypePipelineStep),
 		Exports: []PluginExport{
 			{Name: "step", Operates: operatesPatch, Scope: ScopeOwn, Selector: "the plugin's own description"},
@@ -111,7 +111,7 @@ func TestCrossCheckContract_PluginLevel(t *testing.T) {
 	t.Parallel()
 
 	desc := PluginDescriptor{
-		AbiVersion: ABIVersionV1Alpha1,
+		AbiVersion: ABIVersion,
 		PluginType: string(PluginTypeProvider),
 		Exports:    []PluginExport{{Name: "render_node"}},
 		Contract: &ProviderContract{
@@ -217,7 +217,7 @@ func TestCrossCheckContract_CrossBoundaryLinking(t *testing.T) {
 	// A descriptor that advertises cross-boundary linking exports both link
 	// exports and reports the flag; the crosscheck compares the flag directly.
 	linkingDesc := PluginDescriptor{
-		AbiVersion: ABIVersionV1Alpha1,
+		AbiVersion: ABIVersion,
 		PluginType: string(PluginTypeProvider),
 		Exports: []PluginExport{
 			{Name: "render_node"},
@@ -232,7 +232,7 @@ func TestCrossCheckContract_CrossBoundaryLinking(t *testing.T) {
 	}
 	// A descriptor that wires no cross-boundary edges reports the flag false.
 	nonLinkingDesc := PluginDescriptor{
-		AbiVersion: ABIVersionV1Alpha1,
+		AbiVersion: ABIVersion,
 		PluginType: string(PluginTypeProvider),
 		Exports:    []PluginExport{{Name: "render_node"}},
 		Contract: &ProviderContract{
@@ -317,7 +317,7 @@ func TestCrossCheckContract_Omits(t *testing.T) {
 
 	descriptor := func(omits bool) PluginDescriptor {
 		return PluginDescriptor{
-			AbiVersion: ABIVersionV1Alpha1,
+			AbiVersion: ABIVersion,
 			PluginType: string(PluginTypeProvider),
 			Exports:    []PluginExport{{Name: "render_node"}},
 			Contract: &ProviderContract{
@@ -387,7 +387,7 @@ func TestCrossCheckContract_BoundaryArtifacts(t *testing.T) {
 
 	descriptor := func(shared bool) PluginDescriptor {
 		return PluginDescriptor{
-			AbiVersion: ABIVersionV1Alpha1,
+			AbiVersion: ABIVersion,
 			PluginType: string(PluginTypeProvider),
 			Exports:    []PluginExport{{Name: "render_node"}},
 			Contract: &ProviderContract{
@@ -455,7 +455,7 @@ func TestCrossCheckContract_BoundaryArtifacts(t *testing.T) {
 func TestCrossCheckContract_EmptyClaim(t *testing.T) {
 	t.Parallel()
 	desc := PluginDescriptor{
-		AbiVersion: ABIVersionV1Alpha1,
+		AbiVersion: ABIVersion,
 		PluginType: string(PluginTypePipelineStep),
 		Exports:    []PluginExport{{Name: "step", Operates: operatesPatch, Scope: ScopeOwn}},
 	}

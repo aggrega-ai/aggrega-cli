@@ -32,7 +32,7 @@ func embeddedParserCatalog() *catalog.Catalog {
 			Kind:       "Plugin",
 			Metadata:   types.PluginMetadata{Name: format, Version: "0.0.0-test", PluginType: "parser"},
 			Spec: types.PluginSpec{
-				AbiVersion: "v1alpha1",
+				AbiVersion: "v1beta1",
 				Parser:     &types.PluginParser{Capabilities: []string{"parse:" + format}},
 				Exports:    []types.PluginExport{{Name: "parse"}},
 				Runtime:    &types.PluginRuntime{MaxMemoryPages: 4096},
@@ -111,7 +111,7 @@ func TestTheJSONWithCommentsParserYieldsTheJSONParsersTree(t *testing.T) {
 		Kind:       "Plugin",
 		Metadata:   types.PluginMetadata{Name: "jsonc", Version: "0.0.0-test", PluginType: "parser"},
 		Spec: types.PluginSpec{
-			AbiVersion: "v1alpha1",
+			AbiVersion: "v1beta1",
 			Parser:     &types.PluginParser{Capabilities: []string{"parse:jsonc"}},
 			Exports:    []types.PluginExport{{Name: "parse"}},
 			Runtime:    &types.PluginRuntime{MaxMemoryPages: 4096},

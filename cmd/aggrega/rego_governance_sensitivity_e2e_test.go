@@ -274,7 +274,7 @@ metadata:
   pluginType: provider
   description: Rendering engine for the compose target.
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   provider:
     capabilities:
       - compose
@@ -405,7 +405,7 @@ metadata:
   version: "1.0.0"
   pluginType: governance
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   runtime:
     maxMemoryPages: 4096
     timeoutMs: 300000

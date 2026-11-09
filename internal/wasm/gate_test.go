@@ -21,7 +21,7 @@ func TestParseAndValidateDescriptor(t *testing.T) {
 	}{
 		{
 			name: "valid pipeline-step descriptor",
-			raw:  `{"abi_version":"v1alpha1","plugin_type":"pipeline-step","exports":[{"name":"step"}]}`,
+			raw:  `{"abi_version":"v1beta1","plugin_type":"pipeline-step","exports":[{"name":"step"}]}`,
 		},
 		{
 			name:    "malformed JSON",
@@ -35,7 +35,7 @@ func TestParseAndValidateDescriptor(t *testing.T) {
 		},
 		{
 			name:    "pipeline-step missing minimum export",
-			raw:     `{"abi_version":"v1alpha1","plugin_type":"pipeline-step","exports":[{"name":"render_node"}]}`,
+			raw:     `{"abi_version":"v1beta1","plugin_type":"pipeline-step","exports":[{"name":"render_node"}]}`,
 			wantErr: true,
 		},
 	}
@@ -68,7 +68,7 @@ func TestInvokeExportUndeclared(t *testing.T) {
 	t.Parallel()
 
 	desc := PluginDescriptor{
-		AbiVersion: ABIVersionV1Alpha1,
+		AbiVersion: ABIVersion,
 		PluginType: string(PluginTypePipelineStep),
 		Exports:    []PluginExport{{Name: "step"}},
 	}

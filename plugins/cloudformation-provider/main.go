@@ -153,7 +153,7 @@ import (
 	pdk "github.com/extism/go-pdk"
 )
 
-// descriptor is the describe() self-report: a v1alpha1 provider plugin compatible
+// descriptor is the describe() self-report: a provider plugin compatible
 // with the cloudformation provider, declaring the render_node,
 // validate_node_input, assemble_boundary, link_publish, and link_resolve exports
 // and its render-behavior contract (sourced and artifacts-standalone input,

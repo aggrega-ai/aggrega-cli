@@ -47,7 +47,7 @@ metadata:
   pluginType: cli
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
 `
 
 // TestIntegration_PluginAddCLI_FetchCachesForOfflineRun proves the two-sided

@@ -313,7 +313,7 @@ func TestDeclaredFlags_BothRegistrationPathsReachTheGuard(t *testing.T) {
 		uri := filepath.Join(t.TempDir(), "absent.wasm")
 		pin := digest.ContentDigest([]byte("planted describe entry " + nonce))
 		writeDescribeCache(pin, wasm.PluginDescriptor{
-			AbiVersion: wasm.ABIVersionV1Alpha1,
+			AbiVersion: wasm.ABIVersion,
 			PluginType: "cli",
 			Commands: []wasm.PluginCLICommand{{
 				Name:  "greet",
@@ -427,7 +427,7 @@ func pluginEntityWithFlags(t *testing.T, flags []wasm.PluginCommandFlag) []byte 
 		"kind":       "Plugin",
 		"metadata":   map[string]any{"name": "greet", "version": "1.0.0", "pluginType": "cli"},
 		"spec": map[string]any{
-			"abiVersion": "v1alpha1",
+			"abiVersion": "v1beta1",
 			"commands":   []any{map[string]any{"name": "greet", "flags": entries}},
 		},
 	})

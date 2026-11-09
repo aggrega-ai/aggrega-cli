@@ -36,7 +36,7 @@ func TestDescribeCacheRoundTrip(t *testing.T) {
 	}
 
 	want := wasm.PluginDescriptor{
-		AbiVersion:   wasm.ABIVersionV1Alpha1,
+		AbiVersion:   wasm.ABIVersion,
 		PluginType:   string(wasm.PluginTypeProvider),
 		Capabilities: []string{"terraform"},
 		Exports:      []wasm.PluginExport{{Name: "render_node"}},

@@ -48,7 +48,7 @@ import (
 	pdk "github.com/extism/go-pdk"
 )
 
-// descriptor is the describe() self-report: a v1alpha1 provider plugin declaring
+// descriptor is the describe() self-report: a provider plugin declaring
 // the render_node, assemble_boundary, carve, and reassemble exports,
 // compatibility with the helm-chart provider engine, and its plugin-level
 // render-behavior contract (sourced-only input, nest-per-node umbrella assembly,

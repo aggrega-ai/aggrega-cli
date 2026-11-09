@@ -161,7 +161,7 @@ func TestListTagsAndSelectLatestVersion(t *testing.T) {
 	ctx := context.Background()
 	store := &memoryTagLister{Store: memory.New()}
 
-	mediaType := "application/vnd.aggrega.component.v1alpha1+yaml"
+	mediaType := "application/vnd.aggrega.component.v1beta1+yaml"
 	for _, tag := range []string{"1.0.0", "1.1.0", "2.0.0-rc.1", "0.9.0", "latest"} {
 		// Vary content per tag so oras's content-address dedupe
 		// doesn't reject the second seed-push.

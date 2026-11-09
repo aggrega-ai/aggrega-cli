@@ -643,7 +643,7 @@ metadata:
   pluginType: `+pipelineStepPluginType+`
   version: "`+version+`"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   exports:
     - name: step
       operates: patch

@@ -111,7 +111,7 @@ metadata:
   version: "1.0.0"
   description: A patch-applying feature-recipe step.
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   pipelineStep:
     capabilities:
       - helm

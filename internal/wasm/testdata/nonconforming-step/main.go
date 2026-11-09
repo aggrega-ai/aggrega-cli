@@ -53,7 +53,7 @@ import (
 // whose single step export patches nothing and is declared compatible with the
 // helm provider, which is the provider the tests that drive it render through.
 const stepDescriptor = `{` +
-	`"abi_version":"v1alpha1",` +
+	`"abi_version":"v1beta1",` +
 	`"plugin_type":"pipeline-step",` +
 	`"capabilities":["helm","helm-chart"],` +
 	`"description":"Returns a side effect the pipeline contract does not admit, to drive a host refusal.",` +

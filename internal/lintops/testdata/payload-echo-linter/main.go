@@ -35,7 +35,7 @@ import (
 
 // descriptor is the fixed describe() self-report: a linter plugin whose single
 // export is the socket's default rule-evaluation entry point.
-const descriptor = `{"abi_version":"v1alpha1","plugin_type":"linter","exports":[{"name":"lint_rules"}]}`
+const descriptor = `{"abi_version":"v1beta1","plugin_type":"linter","exports":[{"name":"lint_rules"}]}`
 
 //go:wasmexport describe
 func describe() int32 {

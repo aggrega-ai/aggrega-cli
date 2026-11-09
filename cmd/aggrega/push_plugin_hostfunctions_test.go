@@ -33,7 +33,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/frp/patch"
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
 
   # runtime carries the execution limits an operator tunes.
   runtime:
@@ -67,7 +67,7 @@ func TestSpliceHostFunctions_PreservesCommentsAndBlanks(t *testing.T) {
 		}
 	}
 	// The blank line before the runtime comment survives.
-	if !strings.Contains(got, "abiVersion: v1alpha1\n\n  # runtime") {
+	if !strings.Contains(got, "abiVersion: v1beta1\n\n  # runtime") {
 		t.Errorf("splice did not preserve the blank line before the runtime block; result:\n%s", got)
 	}
 	// The derived set is recorded as a nested block list under runtime.
@@ -101,7 +101,7 @@ metadata:
   version: "1.0.0"
 spec:
   plugin: "oci://hub.aggrega.ai/plugin/frp/patch" # bare identity
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
 `
 	out, changed, err := pluginops.SpliceHostFunctions([]byte(noRuntime), []string{"aggrega_log"})
 	if err != nil {
@@ -187,7 +187,7 @@ metadata:
   pluginType: cli
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
 `
 
 // TestStampPluginFile_WritesHostFunctionsAndCommands proves the file-level command
@@ -262,7 +262,7 @@ metadata:
   pluginType: pipeline-step
   version: "1.0.0"
 spec:
-  abiVersion: v1alpha1
+  abiVersion: v1beta1
   pipelineStep:
     capabilities:
       - helm
