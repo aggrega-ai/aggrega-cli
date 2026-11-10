@@ -17,18 +17,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
 // The documentation examples these proofs compile, and the standard-library
 // catalog the examples' own workspace configuration builds them against.
-//
-// Both proofs load that catalog without its Plugin entities
-// (catalogtest.DirsWithoutPluginEntities says why). Neither subject reads one:
-// the compilation runs with no provider binding and no governance attachment, so
-// it resolves no plugin through the catalog, and the importer's input projects
-// the catalog's Components alone.
 const (
 	payloadExamplesDir = "../../../../aggrega-docs/language-reference/examples"
 	payloadHubCatalog  = "../../../../aggrega-hub/aggrega-catalog"
@@ -138,7 +131,7 @@ func assembleBuildPayloads(t *testing.T, dir, release, manifest string) []encode
 		aggregatePath: aggregatePath,
 		releasePath:   filepath.Join(dir, release),
 		manifestPath:  filepath.Join(dir, manifest),
-		catalogDirs:   catalogtest.DirsWithoutPluginEntities(t, payloadHubCatalog),
+		catalogPath:   payloadHubCatalog,
 	}, bytesOf(t, aggregatePath))
 	if len(out.Analysis.Errors) > 0 {
 		t.Fatalf("the example does not compile cleanly, so its payloads are not the ones a build hands a guest: %v", out.Analysis.Errors[0])
@@ -241,10 +234,9 @@ func TestImporterInputIsByteIdenticalAcrossCatalogLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the export: %v", err)
 	}
-	catalogDirs := catalogtest.DirsWithoutPluginEntities(t, payloadHubCatalog)
 	assemble := func() encodedPayload {
 		t.Helper()
-		cat, err := catalog.LoadAll("", catalogDirs...)
+		cat, err := catalog.LoadAll("", payloadHubCatalog)
 		if err != nil {
 			t.Fatalf("catalog load: %v", err)
 		}

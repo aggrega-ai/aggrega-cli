@@ -28,7 +28,6 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -128,12 +127,12 @@ spec:
 // captured bytes carry the resolved node set — including whatever a transform
 // attachment contributed to it.
 //
-// stdCatalogDirs are passed in rather than resolved here. Resolving them walks
-// up from the working directory, and every caller has already changed into its
-// temporary workspace — from which that walk finds nothing and skips the test. A
-// skip reads as a pass at the package level, so deriving them here would make this
-// proof incapable of failing.
-func inspectGraphOf(t *testing.T, root string, stdCatalogDirs []string) (string, error) {
+// stdCatalog is passed in rather than resolved here. Resolving it walks up from
+// the working directory, and every caller has already changed into its temporary
+// workspace — from which that walk finds nothing and skips the test. A skip reads
+// as a pass at the package level, so deriving it here would make this proof
+// incapable of failing.
+func inspectGraphOf(t *testing.T, root, stdCatalog string) (string, error) {
 	t.Helper()
 	rw, err := workspaceconfig.Resolve(root, "")
 	if err != nil {
@@ -143,7 +142,7 @@ func inspectGraphOf(t *testing.T, root string, stdCatalogDirs []string) (string,
 	opts := testInspectOptions(&buf)
 	opts.irGraph = true
 	derr := dispatchInspect(context.Background(), rw, filepath.Join(root, "release.yaml"),
-		append([]string{filepath.Join(root, "catalog")}, stdCatalogDirs...), opts)
+		[]string{filepath.Join(root, "catalog"), stdCatalog}, opts)
 	return buf.String(), derr
 }
 
@@ -166,14 +165,7 @@ func TestIntegration_InspectResolvesATransformGuestFromEitherOrigin(t *testing.T
 	if err != nil {
 		t.Fatalf("read transform guest fixture %s: %v", guestPath, err)
 	}
-	// The standard-library catalog is stacked beneath each arm's own catalog with
-	// its Plugin entities set aside. Neither the acquisition nor the inspection
-	// reads one for this fixture: the transform guest is looked up by its own
-	// reference, which no standard-library Plugin carries, and comes from the arm's
-	// catalog directory or from the content cache; and each resolves the compose
-	// Recipe's provider on its own lazy view, where the provider the binary carries
-	// shadows a catalog entity of the same coordinate.
-	std := catalogtest.DirsWithoutPluginEntities(t, standardCatalogDir(t))
+	std := standardCatalogDir(t)
 	const (
 		guestName   = "tag-injector"
 		guestSocket = "governance/" + guestName
@@ -191,7 +183,7 @@ func TestIntegration_InspectResolvesATransformGuestFromEitherOrigin(t *testing.T
 		if err := pullRun(context.Background(), pullConfig{
 			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 			ReleasePath: "release.yaml",
-			CatalogDirs: append([]string{catalogDir}, std...),
+			CatalogDirs: []string{catalogDir, std},
 			DiagOut:     os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true},
 		}); err != nil {
 			t.Fatalf("acquisition with a co-located transform guest: %v", err)
@@ -220,7 +212,7 @@ func TestIntegration_InspectResolvesATransformGuestFromEitherOrigin(t *testing.T
 		if err := pullRun(context.Background(), pullConfig{
 			ws:          resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}),
 			ReleasePath: "release.yaml",
-			CatalogDirs: append([]string{catalogDir}, std...),
+			CatalogDirs: []string{catalogDir, std},
 			DiagOut:     os.Stderr, Out: os.Stderr, diag: buildDiagOptions{quiet: true},
 		}); err != nil {
 			t.Fatalf("acquisition with a registry-published transform guest: %v", err)

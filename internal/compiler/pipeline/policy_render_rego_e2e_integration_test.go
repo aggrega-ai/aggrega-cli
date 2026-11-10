@@ -19,7 +19,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/catalogtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -34,9 +33,8 @@ import (
 // that a service declares an image accepts it.
 const (
 	// catalogOnlyDir is the standard-library compose example; hubCatalogPath is
-	// the standard-library catalog it resolves against, the one the example's
-	// documented build command (`aggrega build --catalog <hub>`) names. It is
-	// loaded without its Plugin entities (loadComposeExampleForSockets says why).
+	// the standard-library catalog it resolves against, exactly as the example's
+	// documented build command (`aggrega build --catalog <hub>`) loads it.
 	catalogOnlyDir = "../../../../aggrega-docs/language-reference/examples/catalog-only"
 	hubCatalogPath = "../../../../aggrega-hub/aggrega-catalog"
 
@@ -99,22 +97,14 @@ deny contains msg if {
 // makes it faithful to the build command it stands in for. A real build resolves
 // through the lazy backing, which resolves core providers from the binary's own
 // embedded entity set; the eager whole-catalog view this loader uses does not do
-// that on its own. The mark pairs each embedded core provider's entity with the
-// guest bytes it was generated beside, which is the pairing a build actually
-// loads. Over a catalog holding the published provider entities, an unmarked view
-// would take a core provider's entity from the catalog while its guest bytes come
-// from this binary — two different builds — so a contract the guest reports and
-// the published entity does not yet declare would read as a disagreement that no
-// real build can produce.
-//
-// The catalog is loaded without its Plugin entities
-// (catalogtest.DirsWithoutPluginEntities says why), and the subject reads none: the
-// policy guest is the fixture the lookup hands over, the example's Recipes and its
-// FeatureRecipe declare the compose capability alone, which the provider the
-// binary embeds serves and the mark resolves from the binary, and the compose
-// output is YAML, which the render-stage policy reads with no parser plugin. The
-// example still exercises every Component, Feature, Recipe and FeatureRecipe it
-// names from the standard-library catalog.
+// that on its own. Without the mark, a core provider's entity comes from the
+// published catalog while its guest bytes come from this binary — two different
+// builds — so a contract the guest reports and the published entity does not yet
+// declare reads as a disagreement that no real build can produce. The mark pairs
+// each embedded core provider's entity with the guest bytes it was generated
+// beside, which is the pairing a build actually loads. A third-party provider the
+// binary does not embed is untouched and still resolves from the catalog, so the
+// example keeps exercising the real standard-library entities it names.
 func loadComposeExampleForSockets(t *testing.T) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
 	t.Helper()
 	rel, err := resolver.LoadRelease(filepath.Join(catalogOnlyDir, "release.yaml"))
@@ -130,7 +120,7 @@ func loadComposeExampleForSockets(t *testing.T) (pipeline.Inputs, resolver.Catal
 	if err != nil {
 		t.Fatalf("read aggregate: %v", err)
 	}
-	cat, err := catalog.LoadAll("", catalogtest.DirsWithoutPluginEntities(t, hubCatalogPath)...)
+	cat, err := catalog.LoadAll("", hubCatalogPath)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
