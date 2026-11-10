@@ -1532,7 +1532,7 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 		return nil
 	}
 	requested, implementers := implementingFeatureRecipes(c.FeatureRecipes, featureType, feature)
-	return unmappedFeatureFault(instanceName, featureType, requested, implementers, target)
+	return unmappedFeatureFault(instanceName, featureType, requested, implementers, target, c.recipeSetsFromPinsAlone)
 }
 
 // unmappedFeatureFault is the refusal for a feature instance the Manifest maps to
@@ -1555,9 +1555,36 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 // a Manifest mapping naming a FeatureRecipe that implements the type. One binding
 // to a capability other than the component's still renders, as its own output
 // beside the component's, which is why case three offers those as well.
-func unmappedFeatureFault(instanceName, featureType, requested string, implementers []types.FeatureRecipe, target string) error {
+//
+// pinsAlone says the implementers were enumerated from the FeatureRecipes the
+// lockfile pins and nothing else — a view reading no catalog directory, whose
+// FeatureRecipes all come from a registry by way of a pin. A registry is never
+// enumerated, and a Manifest that maps no FeatureRecipe for the type pins none, so
+// in that view the search finds none by construction while a registry may publish
+// several. Where an absence is claimed there, it is claimed of the pins rather
+// than of "the catalog", and the message says that a registry's FeatureRecipes
+// were not searched:
+//
+//   - no implementer: it names target, where known, as case three does, and
+//     offers pinning one a registry publishes beside writing one, since a registry
+//     is where one would be found;
+//   - implementers for other capabilities alone: case three, its claim made of
+//     the pins.
+func unmappedFeatureFault(instanceName, featureType, requested string, implementers []types.FeatureRecipe, target string, pinsAlone bool) error {
+	searched, scope := "in the catalog", ""
+	if pinsAlone {
+		searched = "the lockfile pins"
+		scope = "; with no catalog directory, the feature recipes searched are only those the lockfile pins, not a registry's"
+	}
 	if len(implementers) == 0 {
-		return fmt.Errorf("%w: feature %q (type %q); no feature recipe in the catalog implements %s; write one, then map the type to it", ErrNoRecipeResolved(), instanceName, featureType, requested)
+		switch {
+		case !pinsAlone:
+			return fmt.Errorf("%w: feature %q (type %q); no feature recipe in the catalog implements %s; write one, then map the type to it", ErrNoRecipeResolved(), instanceName, featureType, requested)
+		case target == "":
+			return fmt.Errorf("%w: feature %q (type %q); no feature recipe %s implements %s%s; pin one a registry publishes in the Manifest, or write one, then map the type to it", ErrNoRecipeResolved(), instanceName, featureType, searched, requested, scope)
+		default:
+			return fmt.Errorf("%w: feature %q (type %q); no feature recipe %s implements %s for capability %q, the capability its component's Recipe binds to%s; pin one a registry publishes in the Manifest, where one for another capability renders as its own output beside the component's, or write one for %q, then map the type to it", ErrNoRecipeResolved(), instanceName, featureType, searched, requested, target, scope, target)
+		}
 	}
 	if target == "" {
 		return fmt.Errorf("%w: feature %q (type %q); feature recipes implementing it: %v; pin one in the Manifest", ErrNoRecipeResolved(), instanceName, featureType, featureRecipeIdentities(implementers))
@@ -1573,7 +1600,7 @@ func unmappedFeatureFault(instanceName, featureType, requested string, implement
 	if len(forTarget) > 0 {
 		return fmt.Errorf("%w: feature %q (type %q); feature recipes implementing it for capability %q, the capability its component's Recipe binds to: %v; pin one in the Manifest", ErrNoRecipeResolved(), instanceName, featureType, target, forTarget)
 	}
-	return fmt.Errorf("%w: feature %q (type %q); no feature recipe in the catalog implements %s for capability %q, the capability its component's Recipe binds to; feature recipes implementing it for other capabilities: %v; pin one of those in the Manifest, and it renders as its own output beside the component's, or write one for %q, then map the type to it", ErrNoRecipeResolved(), instanceName, featureType, requested, target, elsewhere, target)
+	return fmt.Errorf("%w: feature %q (type %q); no feature recipe %s implements %s for capability %q, the capability its component's Recipe binds to%s; feature recipes implementing it for other capabilities: %v; pin one of those in the Manifest, and it renders as its own output beside the component's, or write one for %q, then map the type to it", ErrNoRecipeResolved(), instanceName, featureType, searched, requested, target, scope, elsewhere, target)
 }
 
 // ResolutionFindings is the shared resolution-completeness producer over the

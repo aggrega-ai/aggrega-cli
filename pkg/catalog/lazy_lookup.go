@@ -2722,6 +2722,9 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 		// The lazy backing is the production build/pull resolution path, so it
 		// resolves core providers from the binary's embedded set (embedded-wins).
 		resolveEmbeddedProviders: true,
+		// With no catalog directory, every Recipe and FeatureRecipe the shell holds is
+		// one the lockfile pins, so a search over its sets is a search over the pins.
+		recipeSetsFromPinsAlone: len(l.catalogDirs) == 0,
 	}
 	return l.recipeCat
 }
