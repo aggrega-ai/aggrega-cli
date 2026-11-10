@@ -442,18 +442,27 @@ func (l *catalogLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHint 
 // resolves where a verdict attachment naming it is loaded, and is pinned as an
 // output-shaping attachment the binary carries is pinned.
 //
-// The tier sits where the provider one does — after the local catalog, before the
-// content cache and the registry — which is the order the build's plugin lookup reads
-// the same sources in. A core provider keeps the provider tier's own rule, so the
-// wider tier answers only the types that one leaves to the registry.
+// The tier sits where the provider one does — after the catalog directories, before
+// the content cache and the registry — which is the order the build's plugin lookup
+// reads catalog directories and the binary in. A core provider keeps the provider
+// tier's own rule, so the wider tier answers only the types that one leaves to the
+// registry.
+//
+// The content cache includes an entry the catalog's index received from a
+// lockfile-pinned cache slot, which the local tier would otherwise answer first: a
+// pull resolves the entity from the binary and records it so, while a build over the
+// same lockfile holds the copy a registry served under that pin. Such an entry
+// answers here only where neither tier reading the binary answers the reference, so
+// the pull and the build give the pinned row one source.
 func (l *catalogLookup) ResolvePinnedSocketEntity(ctx context.Context, uri string) (closure.Resolution, error) {
 	return l.resolveCatalogEntity(ctx, uri, closure.KindPlugin, true)
 }
 
 // resolveCatalogEntity is the one cascade behind ResolveCatalogEntity and
 // ResolvePinnedSocketEntity. everyEmbeddedType admits the binary's entities of every
-// plugin type after the provider tier; without it only core providers resolve from
-// the binary.
+// plugin type after the provider tier, ahead of an index entry the content cache
+// supplied; without it only core providers resolve from the binary, and the local
+// tier answers every index entry first.
 func (l *catalogLookup) resolveCatalogEntity(ctx context.Context, uri, kindHint string, everyEmbeddedType bool) (closure.Resolution, error) {
 	entityKind := closure.EntityKindOf(kindHint)
 	if res, ok, err := l.lookupExternal(uri, entityKind); err != nil || ok {
@@ -462,8 +471,15 @@ func (l *catalogLookup) resolveCatalogEntity(ctx context.Context, uri, kindHint 
 	if res, ok := l.lookupRegistry(uri, entityKind); ok {
 		return res, nil
 	}
-	if res, ok, err := l.tier1CatalogEntity(uri, entityKind); err != nil || ok {
-		return res, err
+	local, indexed, err := l.tier1CatalogEntity(uri, entityKind)
+	if err != nil {
+		return local, err
+	}
+	// An index entry the pinned fold placed from a cache slot reports the cache as its
+	// source, and for a pinned socket entity the cache comes after the binary.
+	cacheEntryAfterBinary := indexed && everyEmbeddedType && closure.AcquiredFromRegistry(local.ResolutionPath)
+	if indexed && !cacheEntryAfterBinary {
+		return local, nil
 	}
 	// A core provider that ships inside the binary is already on the machine: resolve
 	// it here, before the registry tiers, so no network round-trip is attempted for
@@ -479,6 +495,9 @@ func (l *catalogLookup) resolveCatalogEntity(ctx context.Context, uri, kindHint 
 				return res, nil
 			}
 		}
+	}
+	if cacheEntryAfterBinary {
+		return local, nil
 	}
 	// Honor a prior pin: resolve the pinned EXACT version (never float to
 	// list-tags→highest) and verify the resolved bytes against the pin's digest.

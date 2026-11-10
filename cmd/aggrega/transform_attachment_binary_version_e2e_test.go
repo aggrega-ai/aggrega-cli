@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -56,6 +57,14 @@ const regoArtifact = "governance/rego"
 // no manifest digest. The build over that lockfile passes its drift check and runs
 // the attached policy. Naming a version neither the catalog nor the binary carries,
 // the pull refuses with the version-select condition, naming the reference.
+//
+// The binary's own version is also the version a registry publishes, so the content
+// cache can hold a copy a registry served under it, and a build reads the cache's
+// copies of what its lockfile pins. That copy must not take the place of the binary
+// the pull resolved the attachment from: the third row lays it in the cache, under
+// the default registry whose built-in policy requires a signature, and the build
+// over the lockfile the pull wrote still completes, rather than holding the row to a
+// signature the pull, which read the binary, never recorded.
 func TestPullResolvesATransformAttachmentAtTheBinarysOwnVersion(t *testing.T) {
 	own := embeddedRegoVersion(t)
 	wasm, ok := embedded.Lookup(regoArtifact)
@@ -67,9 +76,13 @@ func TestPullResolvesATransformAttachmentAtTheBinarysOwnVersion(t *testing.T) {
 		name    string
 		version string
 		wantErr error
+		// cachedCopy lays in the content cache a copy of the binary's own entity as a
+		// registry serves it, under a default registry requiring a signature.
+		cachedCopy bool
 	}{
 		{name: "the version the binary carries", version: own},
 		{name: "a version neither the catalog nor the binary carries", version: "9.9.9", wantErr: catalog.ErrUnsatisfiableEntityVersion()},
+		{name: "the version the binary carries, with a registry's copy of it in the content cache", version: own, cachedCopy: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -77,9 +90,17 @@ func TestPullResolvesATransformAttachmentAtTheBinarysOwnVersion(t *testing.T) {
 				artifact: regoArtifact, export: "mutate", role: "label-transform",
 			}, nil, "offline: true\n")
 			entity := regoArtifact + ":" + tc.version
-			writeWorkspaceConfig(t, root, "workspace:\n  catalog_dirs:\n    - ./catalog\noffline: true\nauto_pull: false\n"+
+			registry := ""
+			if tc.cachedCopy {
+				registry = "default_registry: hub.aggrega.ai\n"
+			}
+			writeWorkspaceConfig(t, root, "workspace:\n  catalog_dirs:\n    - ./catalog\n"+registry+"offline: true\nauto_pull: false\n"+
 				"plugins:\n  governance:\n    - uri: "+entity+"\n      role: label-transform\n"+
 				"      with:\n        sources:\n          - policy.rego\n")
+			if tc.cachedCopy {
+				layFetchedSlotOfKind(t, root, "Plugin", oci.MediaTypePlugin, regoArtifact, tc.version,
+					embeddedPluginEntityYAML(t, regoArtifact), true)
+			}
 			writeFixture(t, filepath.Join(root, "policy.rego"), `package proof
 
 import rego.v1
@@ -112,7 +133,13 @@ labels contains {"node": id, "key": "proof.example/version", "value": "`+binaryV
 			}
 			i := slices.IndexFunc(lf.Entities, func(e lockfile.Entity) bool { return e.URI == entity })
 			if i < 0 || lf.Entities[i].ResolvedVersion != own {
-				t.Errorf("the lockfile pins no entity row %q at %q; entities=%+v", entity, own, lf.Entities)
+				t.Fatalf("the lockfile pins no entity row %q at %q; entities=%+v", entity, own, lf.Entities)
+			}
+			// The row the pull writes for the entity it read from the binary is the
+			// binary's document digest with no manifest digest — the pin a cached copy
+			// of the same document satisfies, so the build's view does hold that copy.
+			if row, want := lf.Entities[i], oci.DocumentDigest(embeddedPluginEntityYAML(t, regoArtifact)); row.Digest != want || row.ManifestDigest != "" {
+				t.Errorf("the entity row is %+v; want digest %s, the binary's own document, and no manifest digest", row, want)
 			}
 			j := slices.IndexFunc(lf.Plugins, func(p lockfile.Plugin) bool { return p.URI == regoArtifact })
 			if j < 0 {
