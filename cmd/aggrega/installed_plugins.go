@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -18,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
+	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -220,7 +222,7 @@ func cliRegistrationsFromWorkspace(ctx context.Context, rw *workspaceconfig.Reso
 			d, derr := describeConfiguredCLI(ctx, ref, resolve)
 			if derr != nil {
 				fmt.Fprintf(pluginRegistrationWarnWriter,
-					"warning: CLI plugin %q was not added as a command: %v\n", ref.URI, derr)
+					"warning: CLI plugin %q was not added as a command: %v\n", ref.URI, missingCLIPluginRemedy(ref.URI, derr))
 				continue
 			}
 			desc = d
@@ -372,7 +374,7 @@ func newCLIPluginCmd(reg cliCommandReg, carried *pflag.FlagSet) (*cobra.Command,
 			}
 			current, err := resolveCLIPluginDigest(rw, reg.uri)
 			if err != nil {
-				return err
+				return missingCLIPluginRemedy(reg.uri, err)
 			}
 			if current != reg.digest {
 				return fmt.Errorf(
@@ -564,6 +566,27 @@ func searchSuggestion(name string) string {
 func addSuggestion(name string) string {
 	return fmt.Sprintf("%q is not a command — to add a CLI plugin of that name, run: %s",
 		name, cliPluginAddCommand(name))
+}
+
+// missingCLIPluginRemedy returns err restated for a configured cli plugin whose
+// bytes no source on this machine holds, and err unchanged otherwise.
+//
+// The cascade's own refusal names a pull as the way to cache a registry plugin's
+// bytes, which is the remedy for a plugin a Release uses; a cli plugin's bytes are
+// cached by adding it, so the restated refusal names the command that adds it
+// again, at the version its configuration pins, so the bytes it fetches are the
+// ones that pin was recorded for. It still matches the not-found condition, so a
+// caller testing for that condition reads it as before.
+func missingCLIPluginRemedy(uri string, err error) error {
+	if !errors.Is(err, pluginpath.ErrPluginArtifactNotFound()) || !workspaceconfig.LooksLikeOCIURI(uri) {
+		return err
+	}
+	base, version, pinned := ociref.SplitVersionTag(strings.TrimPrefix(uri, "oci://"))
+	query := path.Base(base)
+	if pinned {
+		query += ":" + version
+	}
+	return fmt.Errorf("%w; add it again with: %s", pluginpath.ErrPluginArtifactNotFound(), cliPluginAddCommand(query))
 }
 
 // cliPluginAddCommand is the command line that adds the CLI plugin named name,

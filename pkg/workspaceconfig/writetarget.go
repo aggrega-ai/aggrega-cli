@@ -228,13 +228,19 @@ func (r *ResolvedWorkspace) MachineCacheRoot() (string, error) {
 const machineArtifactCacheDir = "artifacts"
 
 // MachineArtifactCache returns the machine-wide artifact cache as the pair every
-// artifact-cache read and write takes: the root it is held to, which is the
-// machine-wide cache root on the platform and in the environment THIS resolution
-// was taken against ([ResolvedWorkspace.MachineCacheRoot]), and the cache
-// directory beneath that root. When no machine-wide cache root resolves, the error
-// names what is missing.
+// artifact-cache read and write takes: the root it is held to, which is the root a
+// process keeps its machine-wide caches under on the platform and in the
+// environment THIS resolution was taken against (machinedirs.ProcessCacheRoot),
+// and the cache directory beneath that root. When no machine-wide cache root
+// resolves, the error names what is missing.
+//
+// The root is the process's rather than the one MachineCacheRoot reports, and the
+// two differ only within a test binary: there the store is kept beside the
+// directory a normal invocation owns, as every other machine-wide store is, so a
+// test that adds a cli plugin or clears the caches through its process's own
+// environment cannot reach the developer's own plugins.
 func (r *ResolvedWorkspace) MachineArtifactCache() (root, cacheDir string, err error) {
-	root, err = r.MachineCacheRoot()
+	root, err = machinedirs.ProcessCacheRoot(r.machinePlatform(), r.environment())
 	if err != nil {
 		return "", "", fmt.Errorf("no machine-wide cache location resolves: %w", err)
 	}

@@ -33,6 +33,7 @@ import (
 	"errors"
 	"path/filepath"
 	"runtime"
+	"testing"
 )
 
 // Platform names an operating system the way the Go toolchain names it — the
@@ -120,6 +121,32 @@ func CacheRoot(p Platform, lookup func(string) string) (string, error) {
 // the other's.
 func SiblingCacheRoot(p Platform, lookup func(string) string, suffix string) (string, error) {
 	return cacheRootNamed(p, lookup, dirName+suffix)
+}
+
+// testCacheRootSuffix names the directory that holds every machine-wide cache
+// while a test binary is running: the directory a normal invocation owns, with
+// this appended, beside it. It is a sibling of that directory rather than a
+// directory inside it, so the two never share a byte in either direction.
+//
+// It is a fixed name rather than a per-process one so all test processes share
+// one set of caches and a whole run compiles each guest at most once.
+const testCacheRootSuffix = "-test"
+
+// ProcessCacheRoot returns the root a process running on p, with the environment
+// lookup reads, keeps its machine-wide caches under: the root [CacheRoot] names
+// for a normal invocation, and its test sibling ([SiblingCacheRoot]) within a test
+// binary.
+//
+// It is the one place that rule is written, and every machine-wide store a process
+// writes to resolves its root through it. A test binary's caches are thereby kept
+// beside the ones a normal invocation owns, never inside them, so a test that
+// fills or clears a cache through the process's own environment cannot reach the
+// bytes of the developer's own runs, which nothing a test holds can reconstruct.
+func ProcessCacheRoot(p Platform, lookup func(string) string) (string, error) {
+	if testing.Testing() {
+		return SiblingCacheRoot(p, lookup, testCacheRootSuffix)
+	}
+	return CacheRoot(p, lookup)
 }
 
 // cacheRootNamed is the cache-root layout for a directory named name beneath

@@ -197,7 +197,8 @@ var testCacheLocations func() cacheops.Locations
 //
 // The workspace half comes from the workspace the session was opened over; the
 // machine-wide half is filled by the shared layer, which is the same fill every
-// other surface gets. A session with no resolved workspace still addresses the
+// other surface gets, the command plugins that workspace's configuration pins and
+// the machine-wide store their bytes are kept in included. A session with no resolved workspace still addresses the
 // machine-wide caches, which is the honest answer rather than a refusal: those
 // caches exist and their contents are reportable.
 //
@@ -213,7 +214,7 @@ func (s *Server) cacheLocations(ctx context.Context) cacheops.Locations {
 		root = s.resolvedWorkspace.Root()
 		cacheDir = s.resolvedWorkspace.Config().ResolvedArtifactCacheDir()
 	}
-	return cacheops.ResolveLocations(s.docs.Onto(ctx), root, cacheDir)
+	return cacheops.ResolveLocations(s.docs.Onto(ctx), root, cacheDir).WithCLIPluginsOf(s.resolvedWorkspace)
 }
 
 // cacheScopeOf assembles the scope statement from the classes an operation

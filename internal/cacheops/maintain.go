@@ -85,7 +85,8 @@ type PruneResult struct {
 }
 
 // Prune removes every prunable element whose content digest is absent from the
-// reference set the workspace's lockfiles pin, and reports what it did.
+// reference set the workspace's lockfiles pin, together with the command plugins
+// the configuration pins (Locations.CLIPluginPins), and reports what it did.
 //
 // It halts loudly when no workspace or no lockfile is present rather than
 // pruning against an empty reference set, which would evict every entry.
@@ -112,6 +113,13 @@ func Prune(ctx context.Context, loc Locations) (PruneResult, error) {
 	}
 	if loaded == 0 {
 		return res, fmt.Errorf("cache prune found %d lockfile candidate(s) under %s but none parsed as a lockfile; run `aggrega pull --release <release>` first", len(lockPaths), loc.WorkspaceRoot)
+	}
+	// A configured command plugin is pinned by the configuration rather than by a
+	// lockfile, so its pin joins the retain set here: the bytes it runs from are
+	// kept whichever store holds them, and so is its describe entry, which is keyed
+	// by the same digest.
+	for _, pin := range loc.CLIPluginPins {
+		addDigest(refset, pin)
 	}
 
 	// Prune every prunable class, drawn from the single class-set assembly. The

@@ -335,15 +335,6 @@ func compilationCacheAt(dir string) (wazero.CompilationCache, string) {
 const (
 	compileCacheDirName  = "wasm-compile"
 	describeCacheDirName = "plugin-describe"
-
-	// testCacheRootSuffix names the directory that holds every cache while a test
-	// binary is running: the directory a normal invocation owns, with this
-	// appended, beside it. It is a sibling of that directory rather than a
-	// directory inside it, so the two never share a byte in either direction.
-	//
-	// It is a fixed name rather than a per-process one so all test processes share
-	// one set of caches and a whole run compiles each guest at most once.
-	testCacheRootSuffix = "-test"
 )
 
 // cacheRootAtStart is the root this process keeps its persistent caches under,
@@ -370,12 +361,11 @@ var cacheRootAtStart, cacheRootAtStartErr = processCacheRoot(machinedirs.Host(),
 
 // processCacheRoot is the cache root a process running on p, with the
 // environment lookup reads, keeps its caches under: the machine-wide root a
-// normal invocation owns, or its test sibling within a test binary.
+// normal invocation owns, or its test sibling within a test binary. The rule is
+// machinedirs.ProcessCacheRoot's, the one every machine-wide store resolves its
+// root through.
 func processCacheRoot(p machinedirs.Platform, lookup func(string) string) (string, error) {
-	if testing.Testing() {
-		return machinedirs.SiblingCacheRoot(p, lookup, testCacheRootSuffix)
-	}
-	return machinedirs.CacheRoot(p, lookup)
+	return machinedirs.ProcessCacheRoot(p, lookup)
 }
 
 // cacheRoot returns the root directory this process's persistent caches live

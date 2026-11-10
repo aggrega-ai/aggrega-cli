@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/provindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // pathIsInside reports whether path lies at or beneath root, comparing both after
@@ -135,6 +136,26 @@ func everyCacheLocation(t *testing.T) []cacheLocation {
 		name:     "cacheops.ResolveLocations (documentation-bundle subtree)",
 		path:     inventory,
 		resolved: inventory != "",
+	})
+	// The store of cli plugins' bytes is resolved from a workspace resolution rather
+	// than from the process, so it is asked of one taken through the process's own
+	// environment, as the command line takes it: once as the addition writes it, and
+	// once as the cache inventory lists and clears it.
+	rw, rwErr := workspaceconfig.Resolve(t.TempDir(), "")
+	if rwErr != nil {
+		t.Fatalf("resolve a folder through the process environment: %v", rwErr)
+	}
+	storeRoot, storeDir, storeErr := rw.MachineArtifactCache()
+	locs = append(locs, cacheLocation{
+		name:     "workspaceconfig.ResolvedWorkspace.MachineArtifactCache",
+		path:     filepath.Join(storeRoot, storeDir),
+		resolved: storeErr == nil,
+	})
+	listed := cacheops.ResolveLocations(context.Background(), "", "").WithCLIPluginsOf(rw).CLIPluginsDir
+	locs = append(locs, cacheLocation{
+		name:     "cacheops.Locations.WithCLIPluginsOf (cli-plugin store)",
+		path:     listed,
+		resolved: listed != "",
 	})
 	return locs
 }

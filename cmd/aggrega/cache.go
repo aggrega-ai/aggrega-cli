@@ -28,7 +28,9 @@ import (
 //   - the plugin-describe cache, holding each guest's static self-report keyed
 //     by the guest's content digest;
 //   - the docs-bundle cache, holding the documentation bundle keyed by registry
-//     and version, shared by every project on the machine.
+//     and version, shared by every project on the machine;
+//   - the cli-plugin cache, holding the bytes of the cli plugins added where no
+//     workspace was found, shared by every project on the machine.
 //
 // The commands here render; what they render is enumerated and removed by the
 // shared cache-operations layer, which every other caller-facing surface reaches
@@ -81,7 +83,10 @@ func resolveCacheLocations(ctx context.Context, errOut io.Writer) (cacheops.Loca
 	case errOut != nil:
 		fmt.Fprintf(errOut, "note: %s; only the machine-wide caches are acted on\n", err)
 	}
-	return cacheops.ResolveLocations(ctx, root, cacheDir), nil
+	if err != nil {
+		ws = nil
+	}
+	return cacheops.ResolveLocations(ctx, root, cacheDir).WithCLIPluginsOf(ws), nil
 }
 
 func newCacheStatusCmd() *cobra.Command {
@@ -209,11 +214,14 @@ func newCachePruneCmd() *cobra.Command {
 		Short: "Remove artifact-cache entries no lockfile references",
 		Long: `Remove cache entries whose content digest no workspace lockfile references,
 retaining every referenced entry. The reference set is the union of the
-digests pinned across every lockfile (*.lock) in the workspace.
+digests pinned across every lockfile (*.lock) in the workspace, together with
+the digests the configuration's plugins.cli list pins, so a cli plugin you
+added keeps the bytes it runs from.
 
 Prune acts on the caches whose entries carry a content digest — the workspace
-artifact cache (entities, source artifacts, external inputs) and the
-plugin-describe cache — and on the compiled-module cache by reference: a compiled
+artifact cache (entities, source artifacts, external inputs), the
+plugin-describe cache and the cli-plugin cache, which holds the cli plugins
+added where no workspace was found — and on the compiled-module cache by reference: a compiled
 plugin module is reclaimed when no lockfile still references the plugin it
 belongs to, and the shared runtime module every plugin depends on is reclaimed
 once the last plugin referring to it is pruned. A compiled module that cannot be
@@ -401,10 +409,12 @@ func newCacheClearCmd() *cobra.Command {
 		Short: "Wipe every cache, including compiled modules",
 		Long: `Wipe every cache: the workspace artifact cache (entities, source artifacts,
 external inputs) and the caches every project on the machine shares (compiled
-modules, plugin descriptors and documentation bundles). This is the total-wipe
-verb; unlike prune it reclaims the compiled-module cache and the documentation
-bundles as well. Cleared caches repopulate on the next build, and the
-documentation bundle on the next read of the documentation.
+modules, plugin descriptors, documentation bundles, and the cli plugins added
+where no workspace was found). This is the total-wipe verb; unlike prune it
+reclaims the compiled-module cache and the documentation bundles as well.
+Cleared caches repopulate on the next build, and the documentation bundle on
+the next read of the documentation; a cli plugin cleared from the cache is
+fetched again by adding it again.
 
 Because the wipe is irreversible, clear asks for confirmation before removing
 anything. Pass --yes to skip the prompt for non-interactive use; without --yes

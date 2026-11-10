@@ -52,6 +52,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
@@ -158,6 +159,11 @@ type Class struct {
 // only the machine-wide caches are addressable. The machine-wide directories may
 // themselves be absent when no user cache directory resolves, reported by their
 // empty value.
+//
+// CLIPluginsDir is the machine-wide store of command plugins' bytes — the cli
+// plugins added where no workspace was found — and CLIPluginPins the content
+// digests the configuration's plugins.cli list pins. Both are filled from a
+// resolution (Locations.WithCLIPluginsOf), and both are empty where none was given.
 type Locations struct {
 	WorkspaceRoot string
 	CacheDir      string
@@ -165,9 +171,45 @@ type Locations struct {
 	CompileDir     string
 	DescribeDir    string
 	DocsBundlesDir string
+	CLIPluginsDir  string
 
 	ProvIndexPath   string
 	AttribIndexPath string
+
+	CLIPluginPins []string
+}
+
+// CLIPluginClassName is the display name of the machine-wide store of command
+// plugins' bytes. It is the single spelling the class assembly and every surface
+// that names the class share.
+const CLIPluginClassName = "cli-plugin cache"
+
+// WithCLIPluginsOf returns l with the command plugins rw addresses filled in: the
+// machine-wide store their bytes are kept in where no workspace was found
+// (workspaceconfig.ResolvedWorkspace.MachineArtifactCache), and the content
+// digests the configuration rw read pins in its plugins.cli list. A nil rw, or a
+// machine with no cache location, leaves the store unset, so it is not listed.
+//
+// The store is taken from the resolution rather than from the process, because it
+// is where the resolution's own addition wrote those bytes: a surface listing,
+// pruning or clearing it addresses the store its additions fill. The pins travel
+// with it so a prune keeps the bytes a configured command plugin runs from — in this
+// store and in the workspace's own entity cache alike — however long ago it was
+// added.
+func (l Locations) WithCLIPluginsOf(rw *workspaceconfig.ResolvedWorkspace) Locations {
+	if rw == nil {
+		return l
+	}
+	if root, dir, err := rw.MachineArtifactCache(); err == nil {
+		l.CLIPluginsDir = oci.EntitiesRoot(root, dir)
+	}
+	l.CLIPluginPins = nil
+	for _, ref := range rw.Config().Plugins.CLI {
+		if ref.Digest != "" {
+			l.CLIPluginPins = append(l.CLIPluginPins, ref.Digest)
+		}
+	}
+	return l
 }
 
 // ResolveLocations fills the machine-wide cache roots and carries the workspace
@@ -306,7 +348,9 @@ func stopped(ctx context.Context) error {
 
 // Collect enumerates every applicable cache class in a fixed order: the
 // workspace subtrees, present only when a workspace resolved, then the
-// machine-wide caches, each present only when its directory resolved.
+// machine-wide caches, each present only when its directory resolved — the
+// command-plugin store last, present only where a resolution named it
+// (Locations.WithCLIPluginsOf).
 //
 // The fixed order and per-class element sort make the whole enumeration
 // deterministic across runs over identical cache state. This is the single
@@ -363,6 +407,16 @@ func Collect(ctx context.Context, loc Locations) ([]Class, error) {
 			return classes, err
 		}
 		classes = append(classes, Class{Name: DocsBundleClassName, Root: loc.DocsBundlesDir, Reach: ReachMachine, Prunable: false, Elements: bundles})
+	}
+	if loc.CLIPluginsDir != "" {
+		// The store is laid out as the workspace's entity cache is, so the entity
+		// slots' own enumeration lists it. It is the machine's own store rather than
+		// one held to a workspace, so nothing it reads is held.
+		plugins, err := enumEntities(ctx, loc.CLIPluginsDir, func(string) error { return nil })
+		if err != nil {
+			return classes, err
+		}
+		classes = append(classes, Class{Name: CLIPluginClassName, Root: loc.CLIPluginsDir, Reach: ReachMachine, Prunable: true, Elements: plugins})
 	}
 	return classes, nil
 }

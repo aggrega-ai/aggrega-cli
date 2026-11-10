@@ -204,8 +204,11 @@ func cacheStatusInvoke(s *server, ctx context.Context, args json.RawMessage) (*c
 		// The documentation bundle's place is read from the call's context with
 		// what the run stated about the bundle stated on it again, as the
 		// documentation reads do, so the inventory names the copy this session reads.
+		// The command plugins this workspace's configuration pins, and the
+		// machine-wide store their bytes are kept in, are filled from the same
+		// resolution, as every surface's cache roots are.
 		locate = func(workspaceRoot, cacheDir string) cacheops.Locations {
-			return cacheops.ResolveLocations(s.docsDecl.Onto(ctx), workspaceRoot, cacheDir)
+			return cacheops.ResolveLocations(s.docsDecl.Onto(ctx), workspaceRoot, cacheDir).WithCLIPluginsOf(tw.rw)
 		}
 	}
 	report, err := cacheops.Status(ctx, locate(root, cacheDir))
