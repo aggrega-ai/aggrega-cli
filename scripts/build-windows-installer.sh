@@ -53,6 +53,20 @@
 # the script has makensis record no file times, and makensis records no time of
 # its own.
 #
+# The installer's license page shows the license this repository's LICENSE
+# holds, read when the installer is built, and the install places it in the
+# install folder as LICENSE. NSIS's reference asks for the text file of such a
+# page in DOS format, with Windows line endings, so the copy it is given is
+# LICENSE with each line ending turned into a carriage return and a line feed,
+# and nothing else changed; before makensis runs, that copy is held to LICENSE,
+# line endings aside, and refused unless it matches. A LICENSE that is missing,
+# empty, or holds a byte that is not ASCII is refused, naming it: makensis would
+# read such a byte in the code page of the machine building the installer. The
+# welcome and finish pages, which are license pages too, are given welcome.txt
+# and finish.txt as they are written, with Unix line endings: makensis reads
+# them from packaging/windows/ itself, and bringing them through this
+# conversion too is outside it, which exists for the license page alone.
+#
 # Usage:
 #   scripts/build-windows-installer.sh parts --version <version> --aggrega <aggrega.exe> --output-dir <dir>
 #   scripts/build-windows-installer.sh installer --version <version> --aggrega <aggrega.exe> \
@@ -242,6 +256,38 @@ prepare_tools() {
   say "makensis $version, in $NSIS_IMAGE"
 }
 
+# check_license_page <page> <license>: refuse the license page's text unless
+# every line of it ends in a carriage return and a line feed, and it is
+# <license> byte for byte once the carriage return ending each line is dropped
+# from both.
+check_license_page() {
+  local page="$1" license="$2" crs lfs
+  crs="$(LC_ALL=C tr -cd '\r' < "$page" | wc -c)"
+  lfs="$(LC_ALL=C tr -cd '\n' < "$page" | wc -c)"
+  [ "$crs" -eq "$lfs" ] ||
+    refuse "the license page's text, $page, has $lfs line feeds and $crs carriage returns, so not every line of it ends in both"
+  cmp -s <(LC_ALL=C tr -d '\r' < "$page") <(LC_ALL=C tr -d '\r' < "$license") ||
+    refuse "the license page's text, $page, is not $license once line endings are set aside"
+}
+
+# prepare_license: write LICENSE_PAGE, the text the license page shows and the
+# install places as LICENSE: this repository's LICENSE with Windows line
+# endings, the one change makensis needs, held to LICENSE before it is used.
+# This is the one place the license text is transformed.
+prepare_license() {
+  local license="$CLI_ROOT/LICENSE" non_ascii
+  [ -e "$license" ] || refuse "$license is missing, and the installer's license page shows it"
+  [ -f "$license" ] || refuse "$license is not a file, and the installer's license page shows it"
+  [ -s "$license" ] || refuse "$license is empty, and the installer's license page shows it"
+  non_ascii="$(LC_ALL=C tr -d '\000-\177' < "$license" | wc -c)"
+  [ "$non_ascii" -eq 0 ] ||
+    refuse "$license holds $non_ascii bytes that are not ASCII, which makensis would read in the code page of the machine building the installer"
+  LICENSE_PAGE="$WORK/input/LICENSE"
+  LC_ALL=C sed 's/\r$//; s/$/\r/' "$license" > "$LICENSE_PAGE"
+  check_license_page "$LICENSE_PAGE" "$license"
+  say "license page: $license with Windows line endings, which is LICENSE once they are set aside, SHA-256 $(sha256_of "$LICENSE_PAGE")"
+}
+
 # compile <aggrega.exe> <plugin dir> <installer>: compile the script, every
 # path given being one the container sees.
 compile() {
@@ -249,6 +295,7 @@ compile() {
   in_image "$MAKENSIS" -V2 -WX -NOCONFIG \
     "-DVERSION=$VERSION" "-DVI_VERSION=$VI_VERSION" \
     "-DAGGREGA_EXE=$exe" "-DPLUGIN_DIR=$plugin_dir" \
+    "-DLICENSE_FILE=$LICENSE_PAGE" \
     "-DFINALIZER=$SCRIPT_DIR/build-windows-installer.sh" \
     "-DOUTFILE=$out" "$NSI" > "$log" 2>&1 || rc=$?
   cat "$log"
@@ -334,10 +381,13 @@ PULLED_IMAGE=0
 WORK="$(mktemp -d "$TEMP_ROOT/aggrega-installer.XXXXXX")"
 WORK="$(cd "$WORK" && pwd -P)"
 trap clean_up EXIT
+# The license page's text and the binary go into the temporary directory, which
+# the container sees; the license is read first, so a LICENSE refused stops the
+# build before anything is fetched.
+mkdir -p "$WORK/input"
+prepare_license
 prepare_tools
 say "version $VERSION, version resource $VI_VERSION, aggrega.exe $AGGREGA_EXE, SHA-256 $(sha256_of "$AGGREGA_EXE")"
-# The binary goes into the temporary directory, which the container sees.
-mkdir -p "$WORK/input"
 cp -- "$AGGREGA_EXE" "$WORK/input/aggrega.exe"
 
 if [ "$MODE" = parts ]; then

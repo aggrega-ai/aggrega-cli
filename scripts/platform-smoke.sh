@@ -194,12 +194,12 @@
 #                 folder Windows names as the user's local application data,
 #                 under Programs\aggrega, holding aggrega.exe, byte for byte the
 #                 default binary the installer was built from (the signed one, or
-#                 with --unsigned the one in bin/), uninstall.exe and EnVar.dll,
-#                 and nothing else; the user PATH holding that folder once; an
-#                 uninstall entry in the user's list of installed apps naming
-#                 Aggrega, the version staged, Cognitio S.r.l. as its publisher,
-#                 the folder, the uninstaller in it as its icon and as its
-#                 command, with /S as its quiet form, the Aggrega site, the
+#                 with --unsigned the one in bin/), uninstall.exe, EnVar.dll and
+#                 LICENSE, and nothing else; the user PATH holding that folder
+#                 once; an uninstall entry in the user's list of installed apps
+#                 naming Aggrega, the version staged, Cognitio S.r.l. as its
+#                 publisher, the folder, the uninstaller in it as its icon and as
+#                 its command, with /S as its quiet form, the Aggrega site, the
 #                 install page and the releases page as its links, no modify or
 #                 repair, and a size in KB no smaller than aggrega.exe; and a
 #                 new PowerShell, whose PATH is the machine's and the user's as
@@ -1433,8 +1433,8 @@ check_installer() {
       fail "$name /S ($run) did not exit 0 within $INSTALLER_SECONDS seconds; a silent install that does not finish is one waiting at a window"
       return 1
     fi
-    smoke_check_only_entries "$folder" aggrega.exe uninstall.exe EnVar.dll ||
-      { fail "after $name /S ($run), $native_folder does not hold exactly aggrega.exe, uninstall.exe and EnVar.dll"; return 1; }
+    smoke_check_only_entries "$folder" aggrega.exe uninstall.exe EnVar.dll LICENSE ||
+      { fail "after $name /S ($run), $native_folder does not hold exactly aggrega.exe, uninstall.exe, EnVar.dll and LICENSE"; return 1; }
     cmp -s "$built_from" "$folder/aggrega.exe" ||
       { fail "the aggrega.exe installed ($run) is not byte for byte ${built_from#"$INPUTS/"}, the default binary the installer was built from"; return 1; }
     echo "ok: aggrega.exe installed ($run) is byte for byte the default binary the installer was built from"

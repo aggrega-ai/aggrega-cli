@@ -7,13 +7,16 @@
 ; rights, by default into %LOCALAPPDATA%\Programs\aggrega, the folder
 ; install.ps1 installs into too, and adds that folder to the user's PATH. It is
 ; a Modern UI wizard built from pages makensis itself implements, so it runs no
-; plug-in but EnVar: a welcome page, showing welcome.txt; a components page,
-; where Aggrega itself is always installed and adding its folder to the PATH is
-; selected and can be cleared; the install folder, which can be changed; the
-; progress; and a finish page, showing what this install did with the PATH and
-; finish.txt's next steps. The welcome and finish pages are NSIS's license page,
-; with no acceptance control. It registers an uninstaller in the user's list of
-; installed apps, which removes aggrega.exe, the PATH entry and itself, after a
+; plug-in but EnVar: a welcome page, showing welcome.txt; a license page,
+; showing the license the repository's LICENSE holds, which the user accepts
+; with I Agree before anything is installed; a components page, where Aggrega
+; itself is always installed and adding its folder to the PATH is selected and
+; can be cleared; the install folder, which can be changed; the progress; and a
+; finish page, showing what this install did with the PATH and finish.txt's
+; next steps. The welcome and finish pages are NSIS's license page too, with no
+; acceptance control. The install places the license beside aggrega.exe as
+; LICENSE. It registers an uninstaller in the user's list of installed apps,
+; which removes aggrega.exe, LICENSE, the PATH entry and itself, after a
 ; confirmation page. Run again, by the same release or a later one, it offers
 ; the folder it installed into last and installs over what is there. /S
 ; installs with no window and no question, into that folder or the default one
@@ -43,6 +46,8 @@
 ;   VI_VERSION   the same version as four numbers, for the version resource
 ;   AGGREGA_EXE  the aggrega.exe to install
 ;   PLUGIN_DIR   the folder holding EnVar.dll, the plug-in built for x86-unicode
+;   LICENSE_FILE the license page's text, which the install places as LICENSE:
+;                the repository's LICENSE with Windows line endings
 ;   FINALIZER    the script makensis runs on the uninstaller it generates
 ;   OUTFILE      the installer to write
 
@@ -101,6 +106,11 @@ Var PathNote
 !define MUI_LICENSEPAGE_BUTTON "$(^NextBtn)"
 !insertmacro MUI_PAGE_LICENSE "${__FILEDIR__}/welcome.txt"
 
+; The license page, with Modern UI's own header, texts and I Agree button: none
+; of the welcome page's settings reach it, since Modern UI clears them once a
+; page is declared. Nothing is installed until the user presses I Agree.
+!insertmacro MUI_PAGE_LICENSE "${LICENSE_FILE}"
+
 !define MUI_COMPONENTSPAGE_TEXT_TOP "Aggrega is always installed. Add to PATH lets a terminal run it by typing aggrega."
 !insertmacro MUI_PAGE_COMPONENTS
 
@@ -157,6 +167,12 @@ Section "Aggrega" SecAggrega
   File "/oname=EnVar.dll" "${PLUGIN_DIR}/EnVar.dll"
   ${If} ${Errors}
     !insertmacro STOP "$INSTDIR\EnVar.dll could not be replaced."
+  ${EndIf}
+
+  ClearErrors
+  File "/oname=LICENSE" "${LICENSE_FILE}"
+  ${If} ${Errors}
+    !insertmacro STOP "$INSTDIR\LICENSE could not be replaced."
   ${EndIf}
 
   ClearErrors
@@ -256,6 +272,7 @@ Section "Uninstall"
   ${EndIf}
 
   Delete "$INSTDIR\EnVar.dll"
+  Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\uninstall.exe"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
   ; The folder goes only when nothing else is left in it.
