@@ -173,11 +173,17 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted Ver
 	// and is integrity-checked whether or not anything recorded a digest for it.
 	// A bundle digest the record carries for the plugin travels with it, so the
 	// resolver re-hashes the cached bundle before returning the bytes.
+	//
+	// The pin is the module digest the cached manifest reports — a recorded digest
+	// is threaded only where it equals that one — so a refusal of bytes that do not
+	// match it names the manifest. Left unnamed, it would name a lockfile pin, which
+	// nothing here reads.
 	pins := pluginpath.PinMaps{
 		Pins:        map[string]string{artifactRef: pin},
 		PinVersions: map[string]string{artifactRef: pin},
 		RecordedIn:  trusted.RecordedIn,
 		Release:     trusted.Release,
+		HeldTo:      cachedManifestModuleDigest,
 	}
 	if bundle := trusted.BundleDigests[artifactRef]; bundle != "" {
 		pins.BundleDigests = map[string]string{artifactRef: bundle}
@@ -196,6 +202,11 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted Ver
 	resolved.Limits = PluginRuntimeLimits(entity)
 	return resolved, nil
 }
+
+// cachedManifestModuleDigest names, in the refusal of a plugin's bytes that do not
+// match the digest ResolveVerdictPluginFromCache holds them to, what that digest
+// is: the module digest the Plugin entity's manifest in the content cache reports.
+const cachedManifestModuleDigest = "the module digest its cached Plugin manifest reports"
 
 // VerdictLookup composes a verdict-socket's cache-not-pin resolution: it tries
 // base first (the pinned / Tier-1 entity-fronted cascade, honoring a pin, a

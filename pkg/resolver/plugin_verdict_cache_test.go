@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -156,6 +157,57 @@ func TestVerdictPluginTrustedDigestForAnotherPluginDoesNotApply(t *testing.T) {
 
 	if _, err := ResolveVerdictPluginFromCache(sources, trusted, read, "any/uri"); err != nil {
 		t.Fatalf("a record addressed to another plugin must not govern this one; got %v", err)
+	}
+}
+
+// TestAModuleThatDoesNotMatchItsCachedManifestIsRefusedNamingTheManifest holds the
+// refusal of a plugin's bytes to the digest this resolution holds them to, and to
+// the words it names that digest by. The digest is the module digest the cached
+// Plugin manifest reports, so the refusal names that manifest and never a lockfile
+// pin, which nothing here reads. The refused row seeds the binary's module under
+// the plugin's identity with bytes other than the cached manifest's, the source
+// the cascade reads first; the control row reads the cached module, which matches.
+func TestAModuleThatDoesNotMatchItsCachedManifestIsRefusedNamingTheManifest(t *testing.T) {
+	rows := []struct {
+		name     string
+		inBinary []byte
+		refused  bool
+	}{
+		{name: "the module the cached manifest reports", refused: false},
+		{name: "another module under the same identity, read first", inBinary: []byte("\x00asm-another-module"), refused: true},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			sources, read, artifactRef, wasmDigest := verdictPluginFixture(t)
+			if row.inBinary != nil {
+				t.Cleanup(embedded.SeedForTest(artifactRef, row.inBinary))
+			}
+			resolved, err := ResolveVerdictPluginFromCache(sources, VerdictPluginTrust{}, read, "any/uri")
+			if !row.refused {
+				if err != nil {
+					t.Fatalf("the module the cached manifest reports must resolve; got %v", err)
+				}
+				if resolved.Tier != pluginpath.TierCache {
+					t.Errorf("resolved from %s; want the cache tier", resolved.Tier)
+				}
+				return
+			}
+			if !errors.Is(err, oci.ErrFetchIntegrity()) {
+				t.Fatalf("want the content-digest refusal; got %v", err)
+			}
+			msg := err.Error()
+			for _, want := range []string{artifactRef, digest.ContentDigest(row.inBinary), cachedManifestModuleDigest + " " + wasmDigest} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("the refusal does not name %q: %v", want, err)
+				}
+			}
+			if strings.Contains(msg, "lockfile pin") {
+				t.Errorf("the refusal names a lockfile pin, which this resolution does not read: %v", err)
+			}
+			if resolved.Bytes != nil {
+				t.Errorf("a refused load handed back the plugin's bytes")
+			}
+		})
 	}
 }
 
