@@ -218,20 +218,18 @@ func recordInstalledCLIPlugin(configPath string, src resolvedInstallable, desc w
 // productionInstallPluginFetch resolves ref to its verified .wasm bytes. A
 // registry oci:// reference is fetched over the wire through the same OCI puller
 // the closure walk uses, its signature verified against the registry's trust
-// policy, pinned by content digest, and cached under the workspace artifact cache
-// as two self-verifying blobs (content + manifest) so a later offline run
-// resolves the pinned bytes from cache with no network. A local or embedded
-// reference resolves through the shared plugin cascade with no network
+// policy, pinned by content digest, and cached as two self-verifying blobs
+// (content + manifest) where the resolution keeps a command extension's bytes —
+// the workspace's artifact cache, or the machine-wide one where no workspace was
+// found (workspaceconfig.ResolvedWorkspace.CommandExtensionCache) — so a later
+// offline run resolves the pinned bytes from cache with no network. A local or
+// embedded reference resolves through the shared plugin cascade with no network
 // and no cache write, since it carries no registry signature and needs none —
 // its bytes are already on disk or in the binary.
 func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, ref string) (resolvedInstallable, error) {
-	var (
-		wsCfg workspaceconfig.Config
-		root  string
-	)
+	var wsCfg workspaceconfig.Config
 	if rw != nil {
 		wsCfg = rw.Config()
-		root = rw.Root()
 	}
 
 	bare := strings.TrimPrefix(ref, "oci://")
@@ -255,10 +253,13 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 	if err != nil {
 		return resolvedInstallable{}, err
 	}
-	// The fetched blobs are cached under the workspace's artifact cache, and a
-	// workspace found nowhere and named by nobody gets no cache: the install is
-	// refused before the fetch, with the folder and the way out in the refusal.
-	if err := rw.CacheWriteRefusal(); err != nil {
+	// Where the fetched blobs are cached is settled before the fetch, so a machine
+	// with no cache location for them refuses without reaching the registry.
+	if rw == nil {
+		return resolvedInstallable{}, fmt.Errorf("internal: no resolved workspace supplied to cache %q under", ref)
+	}
+	root, cacheDir, err := rw.CommandExtensionCache()
+	if err != nil {
 		return resolvedInstallable{}, err
 	}
 	puller := catalog.NewDefaultOCIPuller(wsCfg)
@@ -286,7 +287,6 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 		return resolvedInstallable{}, err
 	}
 	pin := digest.ContentDigest(result.Bytes)
-	cacheDir := wsCfg.ResolvedArtifactCacheDir()
 	if err := oci.WriteCached(root, cacheDir, oci.PluginArtifactKind(), ref, pin, result.Bytes); err != nil {
 		return resolvedInstallable{}, err
 	}

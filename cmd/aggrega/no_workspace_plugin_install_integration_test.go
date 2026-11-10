@@ -10,7 +10,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,29 +22,26 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// TestIntegration_ARegistryPluginInstallIsRefusedInAFolderNoWorkspaceResolvesFrom
+// TestIntegration_ARegistryPluginInstallOutsideAWorkspaceIsCachedForTheMachine
 // runs the production fetch a registry plugin install performs, against the
 // in-process registry with a CLI plugin published on it, once in a folder nobody
 // marked with nothing naming a root and once in the same folder marked as a
-// workspace. The registry counts the requests it answers once the plugin is
-// published.
+// workspace. The environment names a machine-wide cache inside the test's scratch
+// tree.
 //
-// Marked, the fetch pulls the plugin and caches its bytes under the folder.
-// Unmarked, it is refused before anything is fetched, naming the folder: the
-// registry is asked for nothing, no .aggrega appears, and a resolution started
-// beneath the folder still anchors nothing.
+// Marked, the fetch pulls the plugin and caches its bytes in the workspace's own
+// artifact cache. Unmarked, it pulls the plugin and caches its bytes in the
+// machine-wide artifact cache instead: no .aggrega appears, and a resolution
+// started beneath the folder still anchors nothing.
 //
-// 🔴 PLANTED DEFECT: delete the CacheWriteRefusal block in
-// productionInstallPluginFetch, and the unmarked row fails — the fetch pulls the
-// plugin and creates the folder's .aggrega directory.
-func TestIntegration_ARegistryPluginInstallIsRefusedInAFolderNoWorkspaceResolvesFrom(t *testing.T) {
-	var counting atomic.Bool
+// 🔴 PLANTED DEFECT: cache the fetched bytes under the resolution's own root and
+// artifact cache directory whatever it found, and the unmarked row fails — the
+// fetch creates the folder's .aggrega directory.
+func TestIntegration_ARegistryPluginInstallOutsideAWorkspaceIsCachedForTheMachine(t *testing.T) {
 	var requests atomic.Int64
 	host := startRegistry(t, func(h http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if counting.Load() {
-				requests.Add(1)
-			}
+			requests.Add(1)
 			h.ServeHTTP(w, r)
 		})
 	})
@@ -60,7 +56,7 @@ func TestIntegration_ARegistryPluginInstallIsRefusedInAFolderNoWorkspaceResolves
 		t.Fatalf("publish plugin manifest: %v", err)
 	}
 	ref := "oci://" + host + "/plugin/cli/greet:1.0.0"
-	counting.Store(true)
+	pin := digest.ContentDigest(published)
 
 	for _, tc := range []struct {
 		name   string
@@ -71,40 +67,59 @@ func TestIntegration_ARegistryPluginInstallIsRefusedInAFolderNoWorkspaceResolves
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before := requests.Load()
-			folder := folderNoWorkspaceResolvesFrom(t)
-			config := "default_registry: \"" + host + "\"\noffline: false\n"
-			if tc.marked {
-				config = "workspace: {}\n" + config
+			machine := t.TempDir()
+			global := filepath.Join(machine, "global.yaml")
+			writeFixture(t, global, "default_registry: \""+host+"\"\noffline: false\n")
+			lookup := func(name string) string {
+				switch name {
+				case "AGGREGA_CONFIG":
+					return global
+				case "HOME":
+					return filepath.Join(machine, "home")
+				case "XDG_CACHE_HOME":
+					return filepath.Join(machine, "cache")
+				case "LOCALAPPDATA":
+					return filepath.Join(machine, "localappdata")
+				}
+				return ""
 			}
-			writeWorkspaceConfig(t, folder, config)
-			rw := resolveRow(t, folder, tc.marked)
+			folder := folderNoWorkspaceResolvesFrom(t)
+			if tc.marked {
+				writeWorkspaceConfig(t, folder, "workspace: {}\n")
+			}
+			rw, err := workspaceconfig.Resolve(folder, "", lookup)
+			if err != nil {
+				t.Fatalf("resolve %s: %v", folder, err)
+			}
+			if rw.FoundNoWorkspace() == tc.marked {
+				t.Fatalf("precondition: %s resolves as found-nothing=%v, the row needs %v", folder, rw.FoundNoWorkspace(), !tc.marked)
+			}
 
 			src, err := productionInstallPluginFetch(context.Background(), rw, ref)
+			if err != nil {
+				t.Fatalf("the install's fetch failed: %v", err)
+			}
+			if !bytes.Equal(src.Bytes, published) {
+				t.Fatalf("the install fetched %q, want the published bytes", src.Bytes)
+			}
+			if requests.Load() == before {
+				t.Fatal("the install's fetch asked the registry nothing, so where its bytes landed proves nothing")
+			}
 
-			if tc.marked {
+			root, dir := folder, rw.Config().ResolvedArtifactCacheDir()
+			if !tc.marked {
+				root, dir, err = rw.MachineArtifactCache()
 				if err != nil {
-					t.Fatalf("the install's fetch in a workspace failed, so the refused row proves nothing: %v", err)
+					t.Fatalf("the machine-wide cache does not resolve: %v", err)
 				}
-				if !bytes.Equal(src.Bytes, published) {
-					t.Fatalf("the install fetched %q, want the published bytes", src.Bytes)
-				}
-				slot := ocitest.MustCachePath(folder, rw.Config().ResolvedArtifactCacheDir(), oci.PluginArtifactKind(), ref, digest.ContentDigest(published))
-				if _, serr := os.Stat(filepath.Join(slot, "blob")); serr != nil {
-					t.Fatalf("the install's fetch in a workspace cached nothing at %s (%v), so the refused row's missing cache proves nothing", slot, serr)
-				}
-				return
 			}
-			var refused *workspaceconfig.CacheWriteRefusedError
-			if !errors.As(err, &refused) {
-				t.Fatalf("the install's fetch returned %v, want the refusal of a cache written in a folder that is no workspace", err)
+			slot := ocitest.MustCachePath(root, dir, oci.PluginArtifactKind(), ref, pin)
+			if _, serr := os.Stat(filepath.Join(slot, "blob")); serr != nil {
+				t.Fatalf("the install's fetch cached nothing at %s (%v)", slot, serr)
 			}
-			if refused.Root() != folder {
-				t.Errorf("the refusal names %s, want %s", refused.Root(), folder)
+			if !tc.marked {
+				assertNoCacheAndStillNoWorkspace(t, folder)
 			}
-			if n := requests.Load() - before; n != 0 {
-				t.Errorf("the refused install asked the registry %d time(s)", n)
-			}
-			assertNoCacheAndStillNoWorkspace(t, folder)
 		})
 	}
 }

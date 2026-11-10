@@ -220,6 +220,51 @@ func (r *ResolvedWorkspace) MachineCacheRoot() (string, error) {
 	return machinedirs.CacheRoot(r.machinePlatform(), r.environment())
 }
 
+// machineArtifactCacheDir is the directory, beneath the machine-wide cache root,
+// that holds the artifacts kept for the machine rather than for one workspace. It
+// is spelled relative to that root, as a workspace's artifact cache directory is
+// spelled relative to the workspace root, so every artifact-cache reader and
+// writer takes the pair the same way whichever cache it addresses.
+const machineArtifactCacheDir = "artifacts"
+
+// MachineArtifactCache returns the machine-wide artifact cache as the pair every
+// artifact-cache read and write takes: the root it is held to, which is the
+// machine-wide cache root on the platform and in the environment THIS resolution
+// was taken against ([ResolvedWorkspace.MachineCacheRoot]), and the cache
+// directory beneath that root. When no machine-wide cache root resolves, the error
+// names what is missing.
+func (r *ResolvedWorkspace) MachineArtifactCache() (root, cacheDir string, err error) {
+	root, err = r.MachineCacheRoot()
+	if err != nil {
+		return "", "", fmt.Errorf("no machine-wide cache location resolves: %w", err)
+	}
+	return root, machineArtifactCacheDir, nil
+}
+
+// CommandExtensionCache returns where THIS resolution caches a command
+// extension's bytes, and reads them back from first: a root and a cache directory
+// beneath it, the pair every artifact-cache read and write takes.
+//
+// Where the resolution found a workspace, or was named one, it is that
+// workspace's own artifact cache. Where it found none and nothing named one
+// ([ResolvedWorkspace.FoundNoWorkspace]), it is the machine-wide artifact cache
+// ([ResolvedWorkspace.MachineArtifactCache]). A command extension is machine-wide
+// tooling — it is recorded in the global configuration unless the workspace is
+// asked for — so it needs no workspace to be added or to run; and the folder such a
+// resolution uses as its root is one nobody chose, where a cache would leave a
+// directory the next resolution reads as a workspace marker. So outside a
+// workspace the bytes go to the machine, never to the folder.
+//
+// It is the one answer to where those bytes are, asked by the addition before it
+// reaches any registry, by the fetch that writes them and by every resolution
+// that reads them back, so the three cannot come to name different caches.
+func (r *ResolvedWorkspace) CommandExtensionCache() (root, cacheDir string, err error) {
+	if !r.FoundNoWorkspace() {
+		return r.root, r.Config().ResolvedArtifactCacheDir(), nil
+	}
+	return r.MachineArtifactCache()
+}
+
 // environment is the lookup this resolution read the environment through, or
 // the process's own when it carries none.
 func (r *ResolvedWorkspace) environment() func(string) string {

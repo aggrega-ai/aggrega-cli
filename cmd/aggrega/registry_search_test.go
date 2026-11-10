@@ -47,6 +47,12 @@ var searchFixtureRepos = []string{
 
 // withSearchTarget points the registry-enumeration target seam at a fake lister
 // for the duration of the test, so a plugin addition runs without a network.
+//
+// It points the tag-listing seam at a registry that lists no tag for any
+// repository as well, because an addition looks a plugin up by its name with a tag
+// listing before it walks the catalog: left live, that listing would reach a real
+// registry. A test that needs published versions sets them with withTagLister,
+// after this call.
 func withSearchTarget(t *testing.T, reg registryops.RepoLister, err error) {
 	t.Helper()
 	prev := pluginops.RegistryTarget
@@ -56,6 +62,11 @@ func withSearchTarget(t *testing.T, reg registryops.RepoLister, err error) {
 		}
 		return reg, "hub.aggrega.ai", nil
 	}
+	prevTags := pluginops.RepoTagLister
+	pluginops.RepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+		return nil, nil
+	}
+	t.Cleanup(func() { pluginops.RepoTagLister = prevTags })
 	// Disable the live deprecation probe so a search stays network-free: the fake
 	// target's host would otherwise trigger a per-result registry probe.
 	prevLookup := newRepoDeprecationLookup

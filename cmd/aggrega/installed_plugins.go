@@ -546,20 +546,31 @@ func installSuggestion(name string) string {
 }
 
 // searchSuggestion is the single home for the wording that tells a user how to
-// look for a CLI plugin named after a command the CLI does not recognize. The
-// command it names is the one cliPluginSearchCommand composes, so the printed
-// search asks exactly what the hint itself asked of the index.
-//
-// indexBuilt says whether the default registry's local index could be read. A
-// search reads only that index, so where there is none the hint first names the
-// command that builds it.
-func searchSuggestion(name string, indexBuilt bool) string {
-	if indexBuilt {
-		return fmt.Sprintf("%q is not a command — to look for a CLI plugin of that name, run: %s",
-			name, cliPluginSearchCommand(name))
-	}
-	return fmt.Sprintf("%q is not a command — to look for a CLI plugin of that name, build the local registry index with 'aggrega registry update', then run: %s",
+// look for a CLI plugin named after a command the CLI does not recognize, where
+// the local index was read and holds no CLI plugin of that name. The command it
+// names is the one cliPluginSearchCommand composes, so the printed search asks
+// exactly what the hint itself asked of the index.
+func searchSuggestion(name string) string {
+	return fmt.Sprintf("%q is not a command — to look for a CLI plugin of that name, run: %s",
 		name, cliPluginSearchCommand(name))
+}
+
+// addSuggestion is the single home for the wording that points a user at adding
+// a CLI plugin named after a command the CLI does not recognize, where no local
+// index says whether one is published. The command it names is the one
+// cliPluginAddCommand composes: it looks the plugin up by that name at the
+// registry and refuses where none is published, so it is the direct route
+// whether or not such a plugin exists, and needs no index built first.
+func addSuggestion(name string) string {
+	return fmt.Sprintf("%q is not a command — to add a CLI plugin of that name, run: %s",
+		name, cliPluginAddCommand(name))
+}
+
+// cliPluginAddCommand is the command line that adds the CLI plugin named name,
+// with the name written as one shell word so the line can be copied as printed
+// whatever the user typed.
+func cliPluginAddCommand(name string) string {
+	return "aggrega plugin add " + string(wasm.PluginTypeCLI) + " " + shellWord(name)
 }
 
 // cliPluginSearchCommand is the search command line that looks for a CLI plugin
@@ -596,8 +607,8 @@ func shellWord(s string) string {
 // Which hint follows is decided by the default registry's local index alone, so
 // the answer costs what reading a few files costs and a mistyped command is never
 // sent to a registry: an index holding a CLI plugin of that name gets the install
-// hint, an index holding none gets the search hint, and no index gets the search
-// hint preceded by the command that builds the index.
+// hint, an index holding none gets the search hint, and no index gets the command
+// that adds a CLI plugin of that name directly.
 func unknownCommandSuggestion(ctx context.Context, formatted string, err error) string {
 	name, ok := unknownCommandName(err)
 	if !ok {
@@ -607,9 +618,9 @@ func unknownCommandSuggestion(ctx context.Context, formatted string, err error) 
 	case indexHoldsCLIPlugin:
 		return formatted + "\n" + installSuggestion(name)
 	case indexHoldsNoCLIPlugin:
-		return formatted + "\n" + searchSuggestion(name, true)
+		return formatted + "\n" + searchSuggestion(name)
 	default:
-		return formatted + "\n" + searchSuggestion(name, false)
+		return formatted + "\n" + addSuggestion(name)
 	}
 }
 

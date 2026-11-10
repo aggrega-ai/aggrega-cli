@@ -61,8 +61,12 @@ type CLIInstaller func(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 
 // AddOptions is what an addition decides, independently of who asked for it.
 //
-// Socket is the plugin type to add for and Query is matched case-insensitively
-// against the plugin names of that type; it must resolve to exactly one plugin.
+// Socket is the plugin type to add for. Query is a plugin name of that type,
+// optionally followed by a colon and the version to pin (<name>:<version>); a
+// name the registry publishes no plugin under is matched case-insensitively
+// against the plugin names of that type instead, and must resolve to exactly one
+// plugin (locatePlugin). A version is refused on the provider type, whose binding
+// names no version.
 //
 // Capability names the capability a provider binding serves and applies only to
 // the provider type. Role names a governance attachment's role and applies only
@@ -200,17 +204,20 @@ type AddResult struct {
 	Retraction *RetractionAdvisory `json:"retraction,omitempty"`
 }
 
-// Add searches the configured registry for a plugin of the named type, resolves
-// the query to one plugin identity, and either writes the attachment into a
-// configuration file — a plugins.<type> list entry or a plugins.providers
-// capability binding — or, for the command-extension type, installs the plugin as
-// a top-level command through the supplied installer.
+// Add finds a plugin of the named type in the configured registry — by its name
+// first, with one tag listing, and by matching a part of a name only where no
+// plugin has that name (locatePlugin) — resolves the query to one plugin identity
+// at the version it names or else the latest published one, and either writes the
+// attachment into a configuration file — a plugins.<type> list entry or a
+// plugins.providers capability binding — or, for the command-extension type,
+// installs the plugin as a top-level command through the supplied installer.
 //
-// The write destination is resolved before any registry search, so a write-target
-// misuse or an unresolvable global path fails before anything is fetched. It is
-// resolved off the supplied resolution, so the attachment lands in the
-// configuration file that resolution read rather than in whichever file the
-// ambient environment names.
+// Every refusal reachable without a registry comes before any registry is
+// reached: the type and its fields, the query's version, the write destination,
+// and a write that would land in the workspace configuration file of a folder that
+// is no workspace. The write destination is resolved off the supplied resolution,
+// so the attachment lands in the configuration file that resolution read rather
+// than in whichever file the ambient environment names.
 //
 // Under a reporting delivery it composes the same document and returns it on the
 // result instead of writing it, touching no file and creating no directory. Every
@@ -260,6 +267,16 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	if !isCLI && (opts.AcceptCapabilities || opts.AssumeYes) {
 		return res, fmt.Errorf("%s: --accept-capabilities and --yes apply only to the cli type", command)
 	}
+	// What the query asks for is settled here, before any registry is reached, so a
+	// query that cannot name a plugin is refused without a network round trip.
+	query, err := parsePluginQuery(command, opts.Query)
+	if err != nil {
+		return res, err
+	}
+	if isProvider && query.version != "" {
+		return res, fmt.Errorf("%s: a provider is bound by its name alone, so %q cannot be bound: the version a build "+
+			"uses is the one its Recipe pins, or else the highest available; name the plugin as %s", command, opts.Query, query.name)
+	}
 	// 🔴 The command-extension type is the one type whose product is not content an
 	// author owns, so it is the one type this delivery is refused on — and it is
 	// refused rather than ignored, on the rule the type-specific fields above run
@@ -285,7 +302,7 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	// a configuration attachment, so it dispatches before the write-destination
 	// resolution the socket and provider types share.
 	if isCLI {
-		return addCLI(ctx, rw, opts)
+		return addCLI(ctx, rw, opts, query)
 	}
 
 	op := workspaceconfig.OpConfigSocket
@@ -296,20 +313,16 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	if err != nil {
 		return res, err
 	}
+	if err := refuseWorkspaceFileOutsideAWorkspace(command, rw, configPath, machineWide); err != nil {
+		return res, err
+	}
 
 	reg, host, err := RegistryTarget(rw.Config())
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
 	under := enumerationLocation(rw.Config(), host)
-	matches, err := registryops.EnumerateRepositories(ctx, reg, opts.Query, socketScope(under, socket))
-	if err != nil {
-		// The enumeration's refusal is about one registry's listing, so it names
-		// that registry: a reader with several configured cannot otherwise tell
-		// which one to look at.
-		return res, fmt.Errorf("%s: %s: %w", command, host, err)
-	}
-	repoPath, err := ResolveSingleRepo(matches, opts.Query, socket)
+	repoPath, listed, err := locatePlugin(ctx, rw, reg, host, under, socket, query)
 	if err != nil {
 		return res, err
 	}
@@ -351,15 +364,15 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 		return out, nil
 	}
 
-	// Config socket: pin the latest published version so the attachment is
-	// version-pinned.
+	// Config socket: pin the version the query names, or else the latest published
+	// one, so the attachment is version-pinned.
 	var recorder retractionRecorder
-	version, err := resolveLatestVersion(ctx, rw, host, repoPath, opts.noticeStreams(), &recorder)
+	version, err := pluginVersion(ctx, rw, host, repoPath, query.version, listed, opts.noticeStreams(), &recorder)
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
 	if version == "" {
-		return res, fmt.Errorf("%s: %s has no published version tag to attach; publish a version first", command, repoPath)
+		return res, noReleasedVersion(command, repoPath, query.name, listed, "attach")
 	}
 	identity := entity + ":" + version
 	out := AddResult{
@@ -384,14 +397,21 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 }
 
 // addCLI resolves the command-extension query to a single plugin repository, pins
-// its latest published version into an oci:// reference, and installs it as a
-// top-level command through the supplied installer. It reuses the same
-// registry-enumeration and version-resolution primitives the config-socket path
-// uses, so a command-extension plugin is resolved exactly as any other type; only
-// the terminal action differs — a command is installed rather than a
-// configuration attachment written.
-func addCLI(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOptions) (AddResult, error) {
+// the version the query names or else its latest published one into an oci://
+// reference, and installs it as a top-level command through the supplied
+// installer. It reuses the same lookup and version-resolution primitives the
+// config-socket path uses, so a command-extension plugin is resolved exactly as
+// any other type; only the terminal action differs — a command is installed
+// rather than a configuration attachment written.
+//
+// Every refusal this addition can reach without a registry is reached before one:
+// the installer, the write target, and where the plugin's bytes will be cached —
+// which, outside a workspace, is the machine-wide cache
+// ([workspaceconfig.ResolvedWorkspace.CommandExtensionCache]), so a command
+// extension is added and run with no workspace at all.
+func addCLI(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOptions, query pluginQuery) (AddResult, error) {
 	const command = "aggrega plugin add"
+	socket := string(wasm.PluginTypeCLI)
 
 	var res AddResult
 	if opts.InstallCLIPlugin == nil {
@@ -402,26 +422,28 @@ func addCLI(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Add
 	if err != nil {
 		return res, err
 	}
+	if err := refuseWorkspaceFileOutsideAWorkspace(command, rw, configPath, machineWide); err != nil {
+		return res, err
+	}
+	if _, _, err := rw.CommandExtensionCache(); err != nil {
+		return res, fmt.Errorf("%s: %w", command, err)
+	}
 
 	reg, host, err := RegistryTarget(rw.Config())
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
-	matches, err := registryops.EnumerateRepositories(ctx, reg, opts.Query, socketScope(enumerationLocation(rw.Config(), host), string(wasm.PluginTypeCLI)))
-	if err != nil {
-		return res, fmt.Errorf("%s: %s: %w", command, host, err)
-	}
-	repoPath, err := ResolveSingleRepo(matches, opts.Query, string(wasm.PluginTypeCLI))
+	repoPath, listed, err := locatePlugin(ctx, rw, reg, host, enumerationLocation(rw.Config(), host), socket, query)
 	if err != nil {
 		return res, err
 	}
 	var recorder retractionRecorder
-	version, err := resolveLatestVersion(ctx, rw, host, repoPath, opts.noticeStreams(), &recorder)
+	version, err := pluginVersion(ctx, rw, host, repoPath, query.version, listed, opts.noticeStreams(), &recorder)
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
 	if version == "" {
-		return res, fmt.Errorf("%s: %s has no published version tag to install; publish a version first", command, repoPath)
+		return res, noReleasedVersion(command, repoPath, query.name, listed, "install")
 	}
 	ref := "oci://" + host + "/" + repoPath + ":" + version
 
@@ -642,7 +664,7 @@ func liveRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host,
 // words. A repository whose every selectable version is withdrawn is the different
 // case and does halt: nothing is left to attach, and the withdrawal is the reason.
 func ResolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, out io.Writer) (string, error) {
-	return resolveLatestVersion(ctx, rw, host, repoPath, noticeStreams{notices: out, retractions: out}, nil)
+	return resolveLatestVersion(ctx, rw, host, repoPath, nil, noticeStreams{notices: out, retractions: out}, nil)
 }
 
 // resolveLatestVersion is ResolveLatestVersion with the two prose channels kept
@@ -653,19 +675,27 @@ func ResolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 // discovery path, and a return value would have to be merged at every one of them.
 // A nil recorder records nothing, which is what the exported entry passes: a caller
 // that only wants the prose already has it on the one writer it supplied.
-func resolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, streams noticeStreams, rec *retractionRecorder) (string, error) {
+//
+// listed is the repository's tags where the caller already listed them — the
+// direct lookup of a plugin by its name does — and nil otherwise. Where it is
+// supplied the live path selects from it rather than listing the same tags again.
+func resolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, listed []string, streams noticeStreams, rec *retractionRecorder) (string, error) {
 	if version, ok, err := versionFromIndex(rw, host, repoPath, streams.retractions, rec); err != nil {
 		return "", err
 	} else if ok {
 		return version, nil
 	}
 	cfg := rw.Config()
-	if cfg.Offline {
-		return "", fmt.Errorf("offline workspace has no local index entry for %s; run 'aggrega registry update' to build the discovery index", repoPath)
-	}
-	tags, err := RepoTagLister(ctx, cfg, host, repoPath)
-	if err != nil {
-		return "", fmt.Errorf("list versions for %s: %w", repoPath, err)
+	tags := listed
+	if tags == nil {
+		if cfg.Offline {
+			return "", fmt.Errorf("offline workspace has no local index entry for %s; run 'aggrega registry update' to build the discovery index", repoPath)
+		}
+		var err error
+		tags, err = RepoTagLister(ctx, cfg, host, repoPath)
+		if err != nil {
+			return "", fmt.Errorf("list versions for %s: %w", repoPath, err)
+		}
 	}
 	// The screen and the selection key off this one reference, and the screen is
 	// populated before selection runs so selection itself still reaches no registry.
@@ -711,33 +741,49 @@ func resolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 // unscreened, which is the honest posture — an exclusion nobody can be told about
 // is the silent substitution this exists to prevent.
 func versionFromIndex(rw *workspaceconfig.ResolvedWorkspace, host, repoPath string, retractions io.Writer, rec *retractionRecorder) (string, bool, error) {
+	record, ok, err := indexRecord(rw, host, repoPath)
+	if err != nil || !ok {
+		return "", false, err
+	}
+	if len(record.Versions) == 0 {
+		return record.Version, true, nil
+	}
+	// The screen keys off the same reference the record was found by, so the two
+	// cannot disagree about which repository they mean.
+	reference := host + "/" + repoPath
+	screen, herr := registryindex.NewScreen(rw, host, retractions)
+	if herr != nil {
+		return "", true, herr
+	}
+	version, serr := catalog.SelectScreenedVersion(rec.watch(screen), reference, record.Versions)
+	if serr != nil {
+		return "", true, serr
+	}
+	return version, true, nil
+}
+
+// indexRecord returns the host's local discovery index record for a plugin
+// repository, and whether the index carries one. An index that has not been built
+// carries nothing; a genuine read or parse fault of a built index is returned
+// rather than read as absence.
+//
+// The record is found through the single index-URI mapping
+// (registryindex.URIForReference), and it is the one lookup of a repository in the
+// index this package makes, so finding a plugin and choosing its version cannot
+// disagree about which record they mean.
+func indexRecord(rw *workspaceconfig.ResolvedWorkspace, host, repoPath string) (registryindex.Record, bool, error) {
 	loaded, err := registryindex.LoadHost(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), host)
 	if err != nil {
 		if registryindex.IsNotBuilt(err) {
-			return "", false, nil
+			return registryindex.Record{}, false, nil
 		}
-		return "", false, err
+		return registryindex.Record{}, false, err
 	}
-	// The record lookup and the screen both key off this one reference through the
-	// single index-URI mapping, so they cannot disagree about which record they mean.
-	reference := host + "/" + repoPath
-	uri := registryindex.URIForReference(reference)
+	uri := registryindex.URIForReference(host + "/" + repoPath)
 	for _, record := range loaded.Records {
-		if record.URI != uri {
-			continue
+		if record.URI == uri {
+			return record, true, nil
 		}
-		if len(record.Versions) == 0 {
-			return record.Version, true, nil
-		}
-		screen, herr := registryindex.NewScreen(rw, host, retractions)
-		if herr != nil {
-			return "", true, herr
-		}
-		version, serr := catalog.SelectScreenedVersion(rec.watch(screen), reference, record.Versions)
-		if serr != nil {
-			return "", true, serr
-		}
-		return version, true, nil
 	}
-	return "", false, nil
+	return registryindex.Record{}, false, nil
 }

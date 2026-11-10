@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -62,10 +63,20 @@ func resolvedTestWorkspaceAgainst(t *testing.T, look func(string) string) *works
 // turn a unit test into a real network call. No withdrawal is reported, so selection
 // over the fixed tags is unscreened — the arms that assert a screened outcome supply
 // their own withdrawals through withWithdrawals.
+//
+// The tags are listed only for a repository the fake registry target holds, where
+// the target is a fakeRepoLister: an addition looks a plugin up by its name with a
+// tag listing, and a registry listing tags for a repository it does not hold would
+// find a plugin under any name the test queries.
 func withTagLister(t *testing.T, tags []string) {
 	t.Helper()
 	prev := pluginops.RepoTagLister
-	pluginops.RepoTagLister = func(context.Context, workspaceconfig.Config, string, string) ([]string, error) {
+	pluginops.RepoTagLister = func(_ context.Context, cfg workspaceconfig.Config, _, repoPath string) ([]string, error) {
+		if reg, _, err := pluginops.RegistryTarget(cfg); err == nil {
+			if fake, ok := reg.(fakeRepoLister); ok && !slices.Contains(fake.repos, repoPath) {
+				return nil, nil
+			}
+		}
 		return tags, nil
 	}
 	t.Cleanup(func() { pluginops.RepoTagLister = prev })

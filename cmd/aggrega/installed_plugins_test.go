@@ -409,7 +409,8 @@ func TestConfiguredCLIPlugin_ExitCodePropagation(t *testing.T) {
 // A planted defect makes a row fail: point the hint at the registry rather than the
 // index and every row reports the request; drop the plugin-type narrowing and the
 // "without" row prints the install hint for the provider plugin named hep; read a
-// missing index as an empty one and the "no index" row loses the update step.
+// missing index as an empty one and the "no index" row prints the search hint
+// rather than the command that adds the plugin.
 func TestUnknownCommandHintReadsTheLocalIndex(t *testing.T) {
 	// Not parallel: mutates the process-global registration, dispatcher and
 	// unknown-command workspace seams other tests read.
@@ -436,8 +437,8 @@ func TestUnknownCommandHintReadsTheLocalIndex(t *testing.T) {
 			want:  `"hep" is not a command — to look for a CLI plugin of that name, run: aggrega search hep --kind plugin --plugin-type cli`,
 		},
 		{
-			name: "no index prints the update-then-search hint",
-			want: `"hep" is not a command — to look for a CLI plugin of that name, build the local registry index with 'aggrega registry update', then run: aggrega search hep --kind plugin --plugin-type cli`,
+			name: "no index prints the command that adds the plugin directly",
+			want: `"hep" is not a command — to add a CLI plugin of that name, run: aggrega plugin add cli hep`,
 		},
 	}
 	for _, tc := range cases {
@@ -544,6 +545,28 @@ func TestCLIPluginSearchCommandWritesTheNameAsOneShellWord(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := cliPluginSearchCommand(tc.name); got != tc.want {
 				t.Errorf("cliPluginSearchCommand(%q) = %q; want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestCLIPluginAddCommandWritesTheNameAsOneShellWord proves the printed command
+// that adds a CLI plugin carries the typed name as a single word a POSIX shell
+// reads back as the name, quoting it only where the name holds a character the
+// shell would read.
+func TestCLIPluginAddCommandWritesTheNameAsOneShellWord(t *testing.T) {
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"moo", "aggrega plugin add cli moo"},
+		{"two words", "aggrega plugin add cli 'two words'"},
+		{"it's", `aggrega plugin add cli 'it'\''s'`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cliPluginAddCommand(tc.name); got != tc.want {
+				t.Errorf("cliPluginAddCommand(%q) = %q; want %q", tc.name, got, tc.want)
 			}
 		})
 	}

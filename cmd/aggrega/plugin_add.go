@@ -15,9 +15,9 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// newPluginAddCmd builds the `plugin add` command: it searches the configured
-// registry for a plugin of the named type, resolves the match to one plugin
-// identity, and either writes the attachment into the workspace config file — a
+// newPluginAddCmd builds the `plugin add` command: it finds a plugin of the named
+// type in the configured registry, by its name first, resolves the query to one
+// plugin identity, and either writes the attachment into the workspace config file — a
 // `plugins.<type>` list entry (governance / linter / importer) or a
 // `plugins.providers` capability binding (provider) — or, for the cli type,
 // installs the plugin as a top-level aggrega command.
@@ -31,24 +31,35 @@ func newPluginAddCmd() *cobra.Command {
 	var dryRun bool
 	c := &cobra.Command{
 		Use:   "add <type> <query>",
-		Short: "Search the registry and add a plugin of the named type",
-		Long: `Search the configured registry for a plugin of the named type, resolve the
-query to one plugin, and add it to your configuration.
+		Short: "Find a plugin of the named type in the registry and add it",
+		Long: `Find a plugin of the named type in the configured registry and add it to your
+configuration.
+
+Examples:
+  aggrega plugin add cli moo                          # add the moo command
+  aggrega plugin add cli moo:0.2.4                    # a specific version
+  aggrega plugin add governance rego --role render-verdict
 
 Arguments:
   <type>   The plugin socket to add for. One of: provider, governance,
            linter, importer, or cli. The governance type requires --role.
-  <query>  A case-insensitive substring matched against the plugin names of the
-           chosen type. It must resolve to exactly one plugin — an exact
-           plugin-name match wins when several share the substring; otherwise the
-           command lists the candidates so you can narrow it.
+  <query>  The plugin's name, optionally followed by :<version> to add that
+           version rather than the latest published one. The name is looked
+           up directly first. Where no plugin of the chosen type has that name,
+           it is matched as a case-insensitive substring against the plugin
+           names of that type, which reads the registry's whole catalog and
+           must resolve to exactly one plugin — otherwise the command lists the
+           candidates so you can narrow it. A query naming a version is never
+           matched that way. The provider type takes no version.
 
 What add writes depends on the type:
 
-  - A socket type (governance, linter, importer) pins the latest published
-    version and adds the bare plugin identity (<type>/<name>:<version>) to the
-    plugins.<type> list. A governance entry also records its --role, one of
-    ` + pluginops.GovernanceRolesHint() + `.
+  - A socket type (governance, linter, importer) pins the version the query
+    names, or else the latest published version, and adds the bare plugin
+    identity (<type>/<name>:<version>) to the plugins.<type> list. The latest
+    is never taken from pre-release versions, so a plugin that publishes only
+    those is added by naming one. A governance entry also records its --role,
+    one of ` + pluginops.GovernanceRolesHint() + `.
     An importer the plugins.importer list already names keeps its one entry,
     moved to the pinned version with its place and what it carries under with.
   - The provider type adds a plugins.providers entry naming the plugin by its
@@ -63,8 +74,14 @@ What add writes depends on the type:
     bytes, resolving from the local cache on later runs with no further network
     access. A cli plugin defaults to the global config, so its command is
     available in every workspace; --workspace pins it to this project instead.
-    Its declared capabilities are confirmed before installing, and
-    --accept-capabilities or --yes skips that prompt for non-interactive use.
+    It needs no workspace: run outside one, its bytes are cached in the
+    machine-wide cache rather than in the folder you ran it in. Its declared
+    capabilities are confirmed before installing, and --accept-capabilities or
+    --yes skips that prompt for non-interactive use.
+
+A provider or socket attachment is written to a workspace's own configuration
+unless --global is passed, so outside a workspace it is refused before the
+registry is reached; so is anything else that can be refused without it.
 
 A provider or socket attachment is configuration you go on editing, so --dry-run
 does everything the plain command does except write: it hands back the

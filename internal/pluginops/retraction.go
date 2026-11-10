@@ -225,16 +225,14 @@ func (s *recordingScreen) ReportSelection(reference, selected string, excluded [
 	s.rec.filled = true
 }
 
-// ReportPinned delegates and records nothing, and the absence is measured rather
-// than an omission.
+// ReportPinned delegates and records nothing.
 //
 // It announces a reference that named an exact version carrying a withdrawal
-// record, which is a case an addition cannot produce: an addition resolves a search
-// term to a repository and then asks the discovery step for a version, so it never
-// names one. The delegation is here because the screen contract has the method, not
-// because this path can reach it — and nothing is recorded for it, because an
-// advisory field for a condition no caller here can raise would be a shape nobody
-// could ever fill.
+// record. A recording screen never meets that case: it wraps the screen the latest
+// version is chosen through, and an addition naming its version does not choose
+// one — it announces a withdrawal recorded against the version it names on a screen
+// of its own (announceWithdrawnPin), which nothing records. The delegation is here
+// because the screen contract has the method.
 func (s *recordingScreen) ReportPinned(reference, version string) {
 	s.inner.ReportPinned(reference, version)
 }

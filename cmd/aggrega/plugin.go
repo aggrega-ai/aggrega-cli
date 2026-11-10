@@ -338,6 +338,13 @@ type pluginResolutionInputs struct {
 	cacheDir      string
 	pins          map[string]string
 
+	// machineRoot and machineCacheDir address the machine-wide artifact cache where
+	// it is a different cache from the one workspaceRoot and cacheDir address, and
+	// are empty otherwise. A pinned CLI plugin the first cache does not hold is read
+	// from this one (resolvePluginURI); nothing else is.
+	machineRoot     string
+	machineCacheDir string
+
 	// colocatedDirs is where the cascade reads a module laid down beside its
 	// Plugin entity in a catalog directory, keyed by the entity's artifact
 	// reference. Only an import fills it, from the catalog view that selected
@@ -375,7 +382,28 @@ func (processStderr) Write(p []byte) (int, error) { return os.Stderr.Write(p) }
 // directories beside the catalog's Plugin entities, the one cascade both the
 // entity-fronted resolution and the bare fallback read through also reads a
 // module laid down beside its entity.
+//
+// A pinned CLI plugin whose bytes no source holds is looked for once more in the
+// machine-wide artifact cache, where the inputs name one apart from the cache
+// already read: that is where a plugin added outside any workspace was cached. Its
+// bytes are held to the same pin there. Where that cache does not hold them either,
+// the first refusal is returned, since it names the places this resolution reads.
 func resolvePluginURI(uri string, in pluginResolutionInputs) (pluginpath.ResolvedPlugin, error) {
+	resolved, err := resolvePluginURIIn(uri, in)
+	if err == nil || in.machineRoot == "" || in.pins[uri] == "" || !errors.Is(err, pluginpath.ErrPluginArtifactNotFound()) {
+		return resolved, err
+	}
+	machine := in
+	machine.workspaceRoot, machine.cacheDir = in.machineRoot, in.machineCacheDir
+	machine.machineRoot, machine.machineCacheDir = "", ""
+	if fromMachine, merr := resolvePluginURIIn(uri, machine); merr == nil {
+		return fromMachine, nil
+	}
+	return resolved, err
+}
+
+// resolvePluginURIIn is resolvePluginURI over the one content cache in names.
+func resolvePluginURIIn(uri string, in pluginResolutionInputs) (pluginpath.ResolvedPlugin, error) {
 	cascade := pluginpath.NewResolver(pluginpath.ResolutionContext{
 		ColocatedDirs: in.colocatedDirs,
 		WorkspaceRoot: in.workspaceRoot,
@@ -440,12 +468,24 @@ func workspacePluginResolutionInputs(rw *workspaceconfig.ResolvedWorkspace) plug
 		}
 		pins[ref.URI] = ref.Digest
 	}
-	return pluginResolutionInputs{
+	in := pluginResolutionInputs{
 		pluginByURI:   lazyView.PluginByURI,
 		workspaceRoot: rw.Root(),
 		cacheDir:      wsCfg.ResolvedArtifactCacheDir(),
 		pins:          pins,
 	}
+	// An installed CLI plugin's bytes are read from where this resolution caches a
+	// command extension, and then from the machine-wide cache where that is somewhere
+	// else: a plugin added in a folder that is no workspace is cached for the machine,
+	// and runs from inside any workspace as it does outside one. Both reads hold the
+	// bytes to the pin, so which cache served them changes nothing about what runs.
+	if root, dir, err := rw.CommandExtensionCache(); err == nil {
+		in.workspaceRoot, in.cacheDir = root, dir
+	}
+	if root, dir, err := rw.MachineArtifactCache(); err == nil && (root != in.workspaceRoot || dir != in.cacheDir) {
+		in.machineRoot, in.machineCacheDir = root, dir
+	}
+	return in
 }
 
 // workspacePluginResolver binds a resolved workspace's plugin-resolution inputs
