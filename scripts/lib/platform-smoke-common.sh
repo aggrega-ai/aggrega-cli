@@ -163,8 +163,10 @@
 #     Holds the entity cache of <workspace>, under .aggrega/cache, the directory a
 #     workspace keeps it in when its configuration names no other: at least one
 #     entity slot holds the entity it cached, and every name beneath .aggrega/cache
-#     is one Windows accepts (smoke_names_windows_accepts). Returns 1, naming what
-#     failed.
+#     is one Windows accepts (smoke_names_windows_accepts). A slot is the documented
+#     directory, entities/<kind>/<reference>/<version>/, and holds the entity in a
+#     file named blob; only a blob at exactly that depth counts, so a binary that
+#     lays a slot out at any other depth is refused. Returns 1, naming what failed.
 #
 #   smoke_names_windows_accepts
 #     Reads relative paths, one per line, on standard input, and returns 1, naming
@@ -683,7 +685,13 @@ smoke_check_entity_cache() {
     printf 'smoke: %s holds no entity cache at %s\n' "$1" "$root/entities" >&2
     return 1
   fi
-  for slot in "$root"/entities/*/*/blob; do
+  # The depth is a deliberate copy of the documented slot layout,
+  # entities/<kind>/<reference>/<version>/: a shell script cannot read the layout
+  # the binary builds slots from, and the check stays independent of the binary on
+  # purpose, since asking the binary where it wrote would let it grade itself. A
+  # binary whose slots sit at another depth leaves this glob empty and is refused;
+  # a change to the documented layout changes this line with it.
+  for slot in "$root"/entities/*/*/*/blob; do
     [ -f "$slot" ] && slots=$((slots + 1))
   done
   if [ "$slots" = 0 ]; then
