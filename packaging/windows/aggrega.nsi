@@ -69,16 +69,18 @@ OutFile "${OUTFILE}"
 InstallDir "$LOCALAPPDATA\Programs\aggrega"
 ; A folder chosen at an earlier install is offered again, and /S installs there.
 InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
-BrandingText "Aggrega ${VERSION}"
+; The line at the foot of every page, naming the publisher. ${U+00B7} is the
+; middle dot, written as its code point so this script stays plain ASCII.
+BrandingText "Aggrega ${VERSION} ${U+00B7} Cognitio S.r.l."
 ShowInstDetails show
 ShowUninstDetails show
 
-; The version resource names no copyright holder, which makensis would warn of.
-!pragma warning disable 9100
 VIProductVersion "${VI_VERSION}"
 VIFileVersion "${VI_VERSION}"
 VIAddVersionKey /LANG=1033 "ProductName" "Aggrega"
 VIAddVersionKey /LANG=1033 "CompanyName" "Cognitio S.r.l."
+; The copyright line the source files carry.
+VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright 2026 Cognitio S.r.l."
 VIAddVersionKey /LANG=1033 "FileDescription" "Aggrega Setup"
 VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
@@ -90,7 +92,9 @@ VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
 ; of it, to be signed, or puts the signed copy in its place.
 !uninstfinalize 'bash "${FINALIZER}" finalize-uninstaller "%1"' = 0
 
-; What the finish page says about the PATH, set by the sections that ran.
+; What the finish page says about the PATH, set by the sections that ran: a
+; short line above the box, and the paragraph that explains it, first in the box.
+Var PathLine
 Var PathNote
 
 !define MUI_ICON "${__FILEDIR__}/aggrega.ico"
@@ -120,16 +124,19 @@ Var PathNote
 AutoCloseWindow false
 !insertmacro MUI_PAGE_INSTFILES
 
-; The header and the top text are set when the page is shown, so they name the
-; folder and what this install did with the PATH. finish.txt's next steps are a
-; deliberate copy of the ones the install commands print, in
-; packaging/install/install.ps1 (Write-NextSteps) and packaging/install/install.sh
-; (its next steps), in their own wording: the three are a text file shown by
-; NSIS, PowerShell and POSIX shell, with no common source any of them could read
-; at run time, so a change to the next steps changes all three.
+; The header, the top line and the box's first paragraph are set when the page
+; is shown, so they name the folder and what this install did with the PATH; the
+; top line is one short line, since the label above the box holds one line, and
+; FinishShow puts the explanation in the box ahead of finish.txt's text.
+; finish.txt's next steps are a deliberate copy of the ones the install commands
+; print, in packaging/install/install.ps1 (Write-NextSteps) and
+; packaging/install/install.sh (its next steps), in their own wording: the three
+; are a text file shown by NSIS, PowerShell and POSIX shell, with no common
+; source any of them could read at run time, so a change to the next steps
+; changes all three.
 !define MUI_PAGE_HEADER_TEXT "Aggrega is installed"
 !define MUI_PAGE_HEADER_SUBTEXT "aggrega ${VERSION}, in $INSTDIR"
-!define MUI_LICENSEPAGE_TEXT_TOP "$PathNote"
+!define MUI_LICENSEPAGE_TEXT_TOP "$PathLine"
 !define MUI_LICENSEPAGE_TEXT_BOTTOM "Click Finish to close Setup."
 !define MUI_LICENSEPAGE_BUTTON "&Finish"
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW FinishShow
@@ -182,7 +189,8 @@ Section "Aggrega" SecAggrega
   ${EndIf}
   SetOverwrite on
 
-  ; The section below replaces this when it runs.
+  ; The section below replaces these when it runs.
+  StrCpy $PathLine "aggrega was not added to your PATH."
   StrCpy $PathNote "This install did not add its folder to your PATH, so unless an earlier install put it there, a terminal runs aggrega as $INSTDIR\aggrega.exe."
 SectionEnd
 
@@ -195,6 +203,7 @@ Section "Add to PATH" SecPath
   ${If} $0 != 0
     !insertmacro STOP "$INSTDIR could not be added to your PATH (EnVar error $0)."
   ${EndIf}
+  StrCpy $PathLine "aggrega is on your PATH."
   StrCpy $PathNote "Its folder is on your PATH: a terminal opened from now on runs it as aggrega; one already open keeps the PATH it started with."
 SectionEnd
 
@@ -231,11 +240,24 @@ SectionEnd
 
 ; The finish page comes after the install, so there is nothing to go back to
 ; and nothing to cancel: Back and Cancel are disabled, and Finish closes Setup.
+; Its box holds finish.txt, which makensis stores when it compiles; what this
+; install did with the PATH is known only now, so it is inserted ahead of that
+; text as the box's first paragraph. The box is read-only to the user, so it is
+; made writable for the insertion and read-only again. The page is shown once,
+; Back being disabled, so the paragraph is inserted once.
 Function FinishShow
   GetDlgItem $0 $HWNDPARENT 3
   EnableWindow $0 0
   GetDlgItem $0 $HWNDPARENT 2
   EnableWindow $0 0
+
+  FindWindow $0 "#32770" "" $HWNDPARENT
+  GetDlgItem $0 $0 1000
+  SendMessage $0 ${EM_SETREADONLY} 0 0
+  SendMessage $0 ${EM_SETSEL} 0 0
+  SendMessage $0 ${EM_REPLACESEL} 0 "STR:$PathNote$\r$\n$\r$\n"
+  SendMessage $0 ${EM_SETREADONLY} 1 0
+  SendMessage $0 ${EM_SETSEL} 0 0
 FunctionEnd
 
 Section "Uninstall"
