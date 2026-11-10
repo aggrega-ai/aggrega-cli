@@ -224,6 +224,20 @@ type NodeRecipeResolution struct {
 	// scanning the recipe index for it would pay for a set nothing reads.
 	PinCandidates []string
 
+	// PinCandidatesFromPinsAlone reports that PinCandidates were enumerated from
+	// the Recipes the lockfile pins and nothing else: the catalog read no catalog
+	// directory, so every Recipe it holds came from a registry by way of a pin. No
+	// registry is ever enumerated, so there an empty PinCandidates says only that
+	// no pinned Recipe implements the type, never that no Recipe does — a
+	// registry may publish several, and a Manifest mapping none of them pins
+	// none.
+	//
+	// It travels with the candidates rather than beside the catalog because it
+	// qualifies them: it is read off the same recipe set in the same resolution,
+	// so a reader holding the candidates holds the scope they were searched in.
+	// It is false wherever PinCandidates is not resolved.
+	PinCandidatesFromPinsAlone bool
+
 	// TypeKey is the type-axis mapping key the lookup settled on for this
 	// instance, verbatim as the Manifest declares it. Empty when MappedByType is
 	// false.

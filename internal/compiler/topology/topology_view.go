@@ -258,6 +258,13 @@ func (v *topologyView) NodeRecipePinCandidates(node string) []string {
 	return v.recipeResolutions[node].PinCandidates
 }
 
+// NodeRecipePinCandidatesFromPinsAlone returns whether a node's pin candidates
+// were enumerated from the Recipes the lockfile pins alone, false for a node
+// offered none.
+func (v *topologyView) NodeRecipePinCandidatesFromPinsAlone(node string) bool {
+	return v.recipeResolutions[node].PinCandidatesFromPinsAlone
+}
+
 // NodeRecipeMappingTypeKey returns the type-axis mapping key that resolved a
 // node's Recipe, and whether a type-axis key resolved the node at all.
 func (v *topologyView) NodeRecipeMappingTypeKey(node string) (string, bool) {

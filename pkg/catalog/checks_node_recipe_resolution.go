@@ -20,6 +20,13 @@ import (
 // as pin candidates — what a Recipe declares informs the choice, the author
 // makes it, and the mapping entry records it.
 //
+// Where no candidate is found, the finding says where none was found. In a
+// workspace that reads no catalog directory the candidates are searched among
+// the Recipes the lockfile pins alone, and a registry is never enumerated, so a
+// type the Manifest maps to nothing finds none there however many a registry
+// publishes. The claim of absence is then made of the pins rather than of the
+// catalog, and pinning one a registry publishes is offered beside writing one.
+//
 // # Why it reads the flattened composition
 //
 // The node set it walks has to be complete, and it is complete only once the
@@ -98,9 +105,15 @@ var NodeResolvesToARecipe = constraint.Check[
 
 		candidates := v.NodeRecipePinCandidates(node)
 		if len(candidates) == 0 {
+			advice := "no recipe in the catalog implements this type; write one, then map the type to it"
+			if v.NodeRecipePinCandidatesFromPinsAlone(node) {
+				advice = "no recipe the lockfile pins implements this type; with no catalog directory, the recipes " +
+					"searched are only those the lockfile pins, not a registry's; pin one a registry publishes in " +
+					"the Manifest, or write one, then map the type to it"
+			}
 			return []constraint.Objection{s.RaiseWithAdvice(
 				ErrNoRecipeResolved(),
-				"no recipe in the catalog implements this type; write one, then map the type to it",
+				advice,
 				constraint.Uncaptioned(node),
 				constraint.Captioned("of type", componentType),
 			)}

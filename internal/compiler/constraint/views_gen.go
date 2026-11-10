@@ -3782,6 +3782,28 @@ type TopologyView interface {
 	// Keyed by node; read from resolver.NodeRecipeResolution.PinCandidates.
 	NodeRecipePinCandidates(node string) []string
 
+	// NodeRecipePinCandidatesFromPinsAlone reports whether a node's pin
+	// candidates were enumerated from the Recipes the lockfile pins and
+	// nothing else — a catalog that reads no catalog directory, whose
+	// Recipes all come from a registry by way of a pin.
+	//
+	// It is the scope the candidate fact beside it was searched in, and it
+	// decides what an empty answer there may be read as. No registry is ever
+	// enumerated, so in that scope an empty candidate set says only that no
+	// pinned Recipe implements the type: a registry may publish several, and a
+	// Manifest mapping none of them pins none. A rule claiming that no Recipe
+	// implements a type reads this first, and makes the claim of the pins
+	// rather than of the catalog where it is true.
+	//
+	// It is read off the same resolution as the candidates, so the scope and
+	// the set it qualifies cannot come to describe two different recipe sets.
+	// It is false wherever no candidates are resolved — for a node the
+	// Manifest maps, and for one whose lookup refused.
+	//
+	// Keyed by node; read from
+	// resolver.NodeRecipeResolution.PinCandidatesFromPinsAlone.
+	NodeRecipePinCandidatesFromPinsAlone(node string) bool
+
 	// NodeRecipeMappingTypeKey is the type-axis key of the Manifest's mapping
 	// table that resolved a node's Recipe, verbatim as the table declares it,
 	// and whether a type-axis key resolved the node at all.

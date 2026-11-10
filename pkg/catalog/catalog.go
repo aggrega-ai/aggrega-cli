@@ -212,9 +212,10 @@ type Catalog struct {
 	// that reads no catalog directory, so its Recipe and FeatureRecipe sets hold the
 	// entities the lockfile pins and nothing else. No registry is ever enumerated, so
 	// such a set says nothing about what a registry publishes, and the no-mapping
-	// halt names what it searched rather than claiming an absence from the catalog
-	// (unmappedFeatureFault). A catalog loaded from directories, and a Catalog
-	// literal, leave it unset.
+	// halts name what they searched rather than claiming an absence from the
+	// catalog: unmappedFeatureFault for a feature, and, for a component, the pin
+	// candidates nodeRecipeResolution marks with it. A catalog loaded from
+	// directories, and a Catalog literal, leave it unset.
 	recipeSetsFromPinsAlone bool
 
 	// carriedImporters holds, keyed like Plugins (<pluginType>/<name>:<version>),

@@ -28,6 +28,12 @@ import (
 // in the mapping table's keys rather than in a missing entry, so candidates
 // would suggest the wrong edit.
 //
+// The candidates carry the scope they were searched in. A shell over a view that
+// reads no catalog directory holds only the Recipes the lockfile pins, so its
+// candidates are marked as enumerated from the pins alone, and a reader claiming
+// that no Recipe implements the type can make that claim of the pins rather
+// than of the catalog.
+//
 // A refused lookup yields no reference and no candidates, and the keys it could
 // not choose between travel instead. That ordering is the whole reason the keys
 // are a field: a reader seeing an unmapped instance and a reader seeing a
@@ -79,7 +85,8 @@ func (c *Catalog) nodeRecipeResolution(
 		}
 	}
 	return resolver.NodeRecipeResolution{
-		PinCandidates: recipesImplementing(c.Recipes, componentType, component),
-		ResolvedType:  resolved,
+		PinCandidates:              recipesImplementing(c.Recipes, componentType, component),
+		PinCandidatesFromPinsAlone: c.recipeSetsFromPinsAlone,
+		ResolvedType:               resolved,
 	}
 }

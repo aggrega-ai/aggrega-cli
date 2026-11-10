@@ -2683,6 +2683,13 @@ func (GraphViewBase) NodeRecipePinCandidates(node string) []string {
 	panic("this view does not carry node-recipe-pin-candidates, which is read from resolver.NodeRecipeResolution.PinCandidates")
 }
 
+// NodeRecipePinCandidatesFromPinsAlone panics. This view does not carry
+// node-recipe-pin-candidates-from-pins-alone, which is read from
+// resolver.NodeRecipeResolution.PinCandidatesFromPinsAlone.
+func (GraphViewBase) NodeRecipePinCandidatesFromPinsAlone(node string) bool {
+	panic("this view does not carry node-recipe-pin-candidates-from-pins-alone, which is read from resolver.NodeRecipeResolution.PinCandidatesFromPinsAlone")
+}
+
 // NodeRecipeMappingTypeKey panics. This view does not carry
 // node-recipe-mapping-type-key, which is read from
 // resolver.NodeRecipeResolution.TypeKey.
@@ -3873,6 +3880,7 @@ type TopologyStageFacts interface {
 	NodeRecipeMappingAmbiguousKeys(node string) []string
 	NodeMappedRecipePresent(node string) bool
 	NodeRecipePinCandidates(node string) []string
+	NodeRecipePinCandidatesFromPinsAlone(node string) bool
 	NodeRecipeMappingTypeKey(node string) (string, bool)
 	NodeResolvedComponentType(node string) string
 	ResolvedParameter(node string, name string) (any, bool)
