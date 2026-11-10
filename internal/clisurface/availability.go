@@ -3,7 +3,11 @@
 
 package clisurface
 
-import "github.com/aggrega-ai/aggrega-cli/internal/opsurface"
+import (
+	"fmt"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
+)
 
 // OperationAvailability returns what the command line does with every
 // operation: the command path it is reachable at, or the reason no command
@@ -211,4 +215,204 @@ var commandReach = map[string]opsurface.Reach{
 	// runnable examples into the new directory the caller names, as the stated
 	// effect of that flag.
 	"scaffold-entity": opsurface.ReachWorkspace,
+}
+
+// WorkspaceScope says whether what an operation does depends on which folder is
+// the workspace root.
+type WorkspaceScope string
+
+const (
+	// WorkspaceScoped is an operation whose result changes with the workspace
+	// root: it reads the documents beneath it, writes beneath it, reads or fills
+	// the artifact cache kept there, or serves it. Run in a folder that is no
+	// workspace, it uses that folder as the root, so every surface carrying it says
+	// so.
+	WorkspaceScoped WorkspaceScope = "workspace"
+
+	// MachineScoped is an operation whose result does not depend on which folder
+	// is the root: it answers from the binary, from the machine's own
+	// configuration and caches, or from a file or reference the call names. It may
+	// still read the configuration a workspace layers on top, and no surface says
+	// anything about workspaces when it runs outside one.
+	MachineScoped WorkspaceScope = "machine"
+)
+
+// OperationWorkspaceScope returns the workspace scope declared for an operation,
+// and false where the identifier names no declared operation.
+//
+// It is the one answer to whether an operation's result depends on the workspace
+// root, read by every surface that says so: the command line for the command that
+// carries the operation (CommandWorkspaceScope), and the assistant server for the
+// tool that answers it. Every operation declares one, the operations no command
+// carries included, so a surface carrying an operation the command line declines
+// still reads its answer here rather than keeping one of its own.
+func OperationWorkspaceScope(id string) (WorkspaceScope, bool) {
+	scope, declared := operationWorkspaceScope[id]
+	return scope, declared
+}
+
+// CommandWorkspaceScope returns the workspace scope of the operation the command
+// at path carries (CommandOperation), and false where the command carries none — a
+// command a configured plugin contributes, or one the command framework creates
+// for itself. The caller decides what an undeclared command means.
+func CommandWorkspaceScope(path string) (WorkspaceScope, bool) {
+	id := CommandOperation(path)
+	if id == "" {
+		return "", false
+	}
+	return OperationWorkspaceScope(id)
+}
+
+// CommandOperation returns the operation the command at path CARRIES, empty when
+// the availability table records none for it.
+//
+// A path can be claimed by more than one operation, and the distinction the
+// answer turns on is between the capability a command IS and a capability it
+// merely OFFERS. A command is the sole way to reach the first, so the operation
+// naming that path and no other is the one it carries; a capability reachable at
+// several commands — a document any of them can hand back under a flag — is
+// offered by each and is none of their identities. So a record naming exactly
+// this path wins over one naming it among others.
+//
+// That rule is read from the availability records rather than from any ordering,
+// which is what keeps the answer independent of the order the operation set is
+// written in. A tie broken by position would answer correctly only until the set
+// was reordered, and a capability declared before the command it is offered by
+// would then take the command's identity.
+//
+// The walk still follows the operation set's order, so among records that are
+// equally specific the answer never depends on map iteration.
+func CommandOperation(path string) string {
+	fallback := ""
+	for _, op := range opsurface.Operations() {
+		a, ok := operationAvailability[op.ID]
+		if !ok || !a.IsExposed() {
+			continue
+		}
+		for _, p := range a.Names {
+			if p != path {
+				continue
+			}
+			if len(a.Names) == 1 {
+				return op.ID
+			}
+			if fallback == "" {
+				fallback = op.ID
+			}
+		}
+	}
+	return fallback
+}
+
+// NoWorkspaceWarning is what every surface says, in the same words, where a
+// workspace-scoped operation ran in a folder no workspace was found from and
+// nothing named one: that folder, and the command that makes it a workspace.
+//
+// The command is spelled from the path this table gives the seeding operation,
+// so the sentence names the invocation the command line actually carries.
+func NoWorkspaceWarning(folder string) string {
+	return fmt.Sprintf("%s is not inside an Aggrega workspace. To make it one, run: %s --workspace",
+		folder, operationAvailability["config-init"].Names[0])
+}
+
+// operationWorkspaceScope is the workspace scope of every operation, keyed by its
+// identifier.
+//
+// It is keyed by operation rather than by command so the command line and every
+// other surface read one declaration: a command finds its row through the
+// operation it carries, and a tool through the operation it answers. Like the
+// availability table above it covers the operations no command carries, because
+// another surface may carry them. An operation added to the set and given no row
+// here fails the completeness check over this table, so whether a new
+// operation's result depends on the workspace is a question its author answers
+// rather than a default.
+var operationWorkspaceScope = map[string]WorkspaceScope{
+	// Operations that read or write the workspace's documents.
+	"build":         WorkspaceScoped,
+	"document-edit": WorkspaceScoped,
+	"import":        WorkspaceScoped,
+	"inspect":       WorkspaceScoped,
+	"ir-graph":      WorkspaceScoped,
+	"lint":          WorkspaceScoped,
+	"pin":           WorkspaceScoped,
+	"pull":          WorkspaceScoped,
+	"push":          WorkspaceScoped,
+	"validate":      WorkspaceScoped,
+
+	// Operations that read or fill the artifact cache and the registry index kept
+	// beneath the workspace root.
+	"cache-clear":     WorkspaceScoped,
+	"cache-evict":     WorkspaceScoped,
+	"cache-prune":     WorkspaceScoped,
+	"cache-status":    WorkspaceScoped,
+	"registry-update": WorkspaceScoped,
+	"search":          WorkspaceScoped,
+
+	// A capture writes into the workspace's own configuration file, and a skills
+	// install writes beneath the workspace root unless told to install for the
+	// whole machine.
+	"config-capture": WorkspaceScoped,
+	"skills-install": WorkspaceScoped,
+
+	// The two servers answer, by default, in the workspace of the folder they are
+	// started in, and a session they hold is a session over that workspace.
+	"mcp":                WorkspaceScoped,
+	"serve":              WorkspaceScoped,
+	"session-initialize": WorkspaceScoped,
+	"session-invalidate": WorkspaceScoped,
+	"cached-diagnostics": WorkspaceScoped,
+
+	// Operations that read the workspace's documents for an editor or an
+	// assistant: what it holds, which Releases it carries, and what a position or
+	// an attachment in one of its documents means.
+	"workspace-entity-index":      WorkspaceScoped,
+	"release-candidates":          WorkspaceScoped,
+	"active-release":              WorkspaceScoped,
+	"active-release-set":          WorkspaceScoped,
+	"feature-attach-candidates":   WorkspaceScoped,
+	"connection-candidates":       WorkspaceScoped,
+	"document-insertion-point":    WorkspaceScoped,
+	"attachment-container":        WorkspaceScoped,
+	"connection-at-position":      WorkspaceScoped,
+	"definition-at-position":      WorkspaceScoped,
+	"references-at-position":      WorkspaceScoped,
+	"implementations-at-position": WorkspaceScoped,
+	"hover-at-position":           WorkspaceScoped,
+	"completion-at-position":      WorkspaceScoped,
+
+	// Operations that answer from the binary itself.
+	"describe-capabilities": MachineScoped,
+	"explain-error":         MachineScoped,
+	"get-schema":            MachineScoped,
+	"scaffold-entity":       MachineScoped,
+	"skills-list":           MachineScoped,
+	"version":               MachineScoped,
+
+	// Operations that read or write the machine's own configuration and
+	// credentials. Each writes the global configuration file by default; a
+	// --workspace flag, where one is offered, is the reader choosing otherwise.
+	"auth-token":      MachineScoped,
+	"config-init":     MachineScoped,
+	"config-show":     MachineScoped,
+	"login":           MachineScoped,
+	"logout":          MachineScoped,
+	"registry-add":    MachineScoped,
+	"registry-list":   MachineScoped,
+	"registry-remove": MachineScoped,
+
+	// Plugin configuration. A command plugin is added to, and removed from, the
+	// global configuration by default, and the listing reads every layer; a socket
+	// attachment goes to the workspace's configuration file by default, which
+	// follows from the type the reader names rather than from the operation.
+	"plugin-add":    MachineScoped,
+	"plugin-list":   MachineScoped,
+	"plugin-remove": MachineScoped,
+
+	// Operations that act on a file or a published reference the call names.
+	"deprecate":          MachineScoped,
+	"plugin-gen-catalog": MachineScoped,
+	"plugin-run-local":   MachineScoped,
+	"plugin-sync":        MachineScoped,
+	"push-artifact":      MachineScoped,
+	"sign":               MachineScoped,
 }

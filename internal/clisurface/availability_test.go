@@ -101,6 +101,187 @@ func TestTheCommandClassCheckRefusesEachRowThatDoesNotBelong(t *testing.T) {
 	}
 }
 
+// checkWorkspaceScopes reports every way the declared workspace scopes and the
+// operation set disagree: an operation with no scope declared for it, a scope
+// declared for an identifier that is not an operation, and a scope the vocabulary
+// does not hold. Each finding names the identifier, so a missing row is named
+// rather than counted.
+//
+// The rows are handed in rather than read, so each way a row can be wrong is
+// driven against rows built for it below.
+func checkWorkspaceScopes(rows map[string]WorkspaceScope) []string {
+	var findings []string
+	for _, op := range opsurface.Operations() {
+		if _, declared := rows[op.ID]; !declared {
+			findings = append(findings, fmt.Sprintf("the %q operation declares no workspace scope", op.ID))
+		}
+	}
+	for id, scope := range rows {
+		_, known := opsurface.Lookup(id)
+		switch {
+		case !known:
+			findings = append(findings, fmt.Sprintf("a workspace scope is declared for %q, which is not an operation", id))
+		case scope != WorkspaceScoped && scope != MachineScoped:
+			findings = append(findings, fmt.Sprintf("the %q operation declares the workspace scope %q, which is not a scope", id, scope))
+		}
+	}
+	sort.Strings(findings)
+	return findings
+}
+
+// TestEveryOperationDeclaresItsWorkspaceScope holds the declared workspace scopes
+// to the operation set: every operation declares whether its result depends on
+// the workspace root, the ones no command carries included, and no declaration
+// names an identifier that is not an operation.
+//
+// Whether every runnable command in the live tree resolves to a declaration is
+// checked where the tree is built, which is not here.
+func TestEveryOperationDeclaresItsWorkspaceScope(t *testing.T) {
+	if len(operationWorkspaceScope) == 0 {
+		t.Fatal("no operation declares a workspace scope, so the check below reads nothing")
+	}
+	if findings := checkWorkspaceScopes(operationWorkspaceScope); len(findings) != 0 {
+		t.Fatalf("%d workspace scope finding(s):\n  %s", len(findings), strings.Join(findings, "\n  "))
+	}
+}
+
+// TestTheWorkspaceScopeCheckRefusesEachRowThatDoesNotBelong drives the check
+// above with rows built to be wrong in one way each, beside the real rows, so its
+// green over the real rows is a check that could have failed.
+func TestTheWorkspaceScopeCheckRefusesEachRowThatDoesNotBelong(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		edit    func(rows map[string]WorkspaceScope)
+		refuses string
+	}{
+		{name: "the real rows", edit: func(map[string]WorkspaceScope) {}, refuses: ""},
+		{name: "an operation with no row",
+			edit:    func(rows map[string]WorkspaceScope) { delete(rows, "validate") },
+			refuses: `the "validate" operation declares no workspace scope`},
+		{name: "an operation no command carries, with no row",
+			edit:    func(rows map[string]WorkspaceScope) { delete(rows, "release-candidates") },
+			refuses: `the "release-candidates" operation declares no workspace scope`},
+		{name: "a row naming something that is not an operation",
+			edit:    func(rows map[string]WorkspaceScope) { rows["not-an-operation"] = MachineScoped },
+			refuses: `declared for "not-an-operation", which is not an operation`},
+		{name: "a value the vocabulary does not hold",
+			edit:    func(rows map[string]WorkspaceScope) { rows["build"] = WorkspaceScope("everywhere") },
+			refuses: `declares the workspace scope "everywhere", which is not a scope`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := make(map[string]WorkspaceScope, len(operationWorkspaceScope))
+			for id, scope := range operationWorkspaceScope {
+				rows[id] = scope
+			}
+			tc.edit(rows)
+			findings := checkWorkspaceScopes(rows)
+			switch {
+			case tc.refuses == "" && len(findings) != 0:
+				t.Fatalf("rows that belong were refused: %v", findings)
+			case tc.refuses != "" && len(findings) != 1:
+				t.Fatalf("want one finding carrying %q, got %v", tc.refuses, findings)
+			case tc.refuses != "" && !strings.Contains(findings[0], tc.refuses):
+				t.Fatalf("the finding does not name what was wrong: want %q in %q", tc.refuses, findings[0])
+			}
+		})
+	}
+}
+
+// TestCommandWorkspaceScopeAnswersTheCarriedOperationsRow pins the command
+// accessor against the declaration it reads through the operation a command
+// carries: a command answers its operation's row, a path claimed by two
+// operations answers the one it carries, and a path the table does not give
+// answers false.
+func TestCommandWorkspaceScopeAnswersTheCarriedOperationsRow(t *testing.T) {
+	for _, tc := range []struct {
+		path     string
+		want     WorkspaceScope
+		declared bool
+	}{
+		{path: "aggrega build", want: WorkspaceScoped, declared: true},
+		{path: "aggrega version", want: MachineScoped, declared: true},
+		{path: "aggrega config show", want: MachineScoped, declared: true},
+		{path: "aggrega moo", declared: false},
+	} {
+		got, declared := CommandWorkspaceScope(tc.path)
+		if got != tc.want || declared != tc.declared {
+			t.Errorf("CommandWorkspaceScope(%q) = (%q, %v), want (%q, %v)", tc.path, got, declared, tc.want, tc.declared)
+		}
+	}
+}
+
+// TestACommandCarriesTheOperationItIsRatherThanOneItOffers pins the tie-break
+// every reader of a command's operation depends on, and it exists because a
+// command path is not claimed by exactly one operation.
+//
+// A capability several commands hand back under a flag is exposed at each of
+// their paths. It is OFFERED by each and is the identity of none, so the record
+// naming a path and no other wins. Resolving the tie by declaration order would
+// work today and silently stop working the day the operation set is reordered.
+//
+// The rows are read from the availability records rather than listed, so this
+// follows a rename instead of pinning one.
+func TestACommandCarriesTheOperationItIsRatherThanOneItOffers(t *testing.T) {
+	table := OperationAvailability()
+
+	// Every path claimed by more than one record, with the record that names it
+	// alone — the command the path IS.
+	claims := map[string][]string{}
+	soleClaimant := map[string]string{}
+	for id, a := range table {
+		if !a.IsExposed() {
+			continue
+		}
+		for _, path := range a.Names {
+			claims[path] = append(claims[path], id)
+			if len(a.Names) == 1 {
+				soleClaimant[path] = id
+			}
+		}
+	}
+
+	var contested int
+	for path, ids := range claims {
+		if len(ids) < 2 {
+			continue
+		}
+		contested++
+		want, ok := soleClaimant[path]
+		if !ok {
+			t.Errorf("%q is claimed by %v and by no record naming it alone, so which operation the command "+
+				"carries is undecidable from the table", path, ids)
+			continue
+		}
+		if got := CommandOperation(path); got != want {
+			t.Errorf("the command at %q carries %q; it was resolved to %q (claimants: %v)", path, want, got, ids)
+		}
+	}
+	if contested == 0 {
+		t.Skip("no command path is claimed by more than one operation, so the tie-break has nothing to resolve")
+	}
+
+	// The uncontested direction still has to hold, or the tie-break has broken
+	// the ordinary case while fixing the contested one.
+	for path, id := range soleClaimant {
+		if len(claims[path]) != 1 {
+			continue
+		}
+		if got := CommandOperation(path); got != id {
+			t.Errorf("the command at %q is the only claimant of %q, and it was resolved to %q", path, id, got)
+		}
+	}
+}
+
+// TestTheNoWorkspaceWarningNamesTheFolderAndTheSeedingCommand holds the shared
+// sentence to the words every surface says, written out rather than composed, so
+// a change to the sentence or to the seeding command's path shows here.
+func TestTheNoWorkspaceWarningNamesTheFolderAndTheSeedingCommand(t *testing.T) {
+	const want = "/work/here is not inside an Aggrega workspace. To make it one, run: aggrega config init --workspace"
+	if got := NoWorkspaceWarning("/work/here"); got != want {
+		t.Errorf("NoWorkspaceWarning = %q, want %q", got, want)
+	}
+}
+
 // TestEveryOperationIsDeclaredOnTheCommandLine is the command line's half of
 // the operation-completeness guard: every operation the compiler exposes is
 // either reachable at a named command or declined with a reason, and no entry

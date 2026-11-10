@@ -283,6 +283,78 @@ func TestCaptureSaysSoWhenThereIsNothingBuildCritical(t *testing.T) {
 	}
 }
 
+// TestCaptureRefusesAFolderNoWorkspaceResolvesFrom drives the capture against a
+// resolution that found no workspace and was handed none, beside the same layout
+// marked as a workspace. Both carry a build-critical binding from the global
+// layer, so each has something to write. Marked, the capture writes the folder's
+// configuration file; unmarked, it is refused naming the folder and saying
+// nothing was written, and the folder is left without a configuration file — so
+// it does not become a workspace by being asked what to freeze into one.
+//
+// 🔴 PLANTED DEFECT: remove the FoundNoWorkspace refusal from Capture, and the
+// unmarked row fails — the capture succeeds and writes the configuration file.
+func TestCaptureRefusesAFolderNoWorkspaceResolvesFrom(t *testing.T) {
+	const globalBinding = `offline: true
+plugins:
+    providers:
+        - capability: terraform
+          uri: provider/terraform:2.0.0
+`
+	for _, tc := range []struct {
+		name    string
+		marked  bool
+		refused bool
+	}{
+		{name: "a folder nobody marked and nothing named", refused: true},
+		{name: "the same folder marked as a workspace", marked: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			folder := t.TempDir()
+			wsPath := filepath.Join(folder, workspaceconfig.ConfigFilename)
+			if tc.marked {
+				if err := os.WriteFile(wsPath, []byte("workspace: {}\n"), 0o644); err != nil {
+					t.Fatalf("mark the workspace: %v", err)
+				}
+			}
+			globalPath := filepath.Join(t.TempDir(), workspaceconfig.ConfigFilename)
+			if err := os.WriteFile(globalPath, []byte(globalBinding), 0o644); err != nil {
+				t.Fatalf("write global config: %v", err)
+			}
+			rw, err := workspaceconfig.Resolve(folder, "",
+				frozenLookup(map[string]string{workspaceconfig.EnvConfigOverride: globalPath}))
+			if err != nil {
+				t.Fatalf("resolve %s: %v", folder, err)
+			}
+			if rw.FoundNoWorkspace() == tc.marked {
+				t.Fatalf("precondition: the folder resolves as found-nothing=%v, the row needs %v",
+					rw.FoundNoWorkspace(), !tc.marked)
+			}
+
+			res, err := configops.Capture(rw, configops.CaptureOptions{})
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("the capture in a workspace failed, so the refused row proves nothing: %v", err)
+				}
+				written, rerr := os.ReadFile(wsPath)
+				if rerr != nil || !strings.Contains(string(written), "terraform:2.0.0") {
+					t.Fatalf("the capture in a workspace did not write the binding (%v), so the refused row's "+
+						"missing file proves nothing:\n%s", rerr, written)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("the capture outside a workspace succeeded, reporting %+v", res)
+			}
+			if !strings.Contains(err.Error(), "nothing was written") || !strings.Contains(err.Error(), rw.Root()) {
+				t.Errorf("the refusal %q does not say nothing was written to %s", err, rw.Root())
+			}
+			if _, serr := os.Stat(wsPath); !errors.Is(serr, os.ErrNotExist) {
+				t.Errorf("%s exists after the refused capture (stat: %v)", wsPath, serr)
+			}
+		})
+	}
+}
+
 // TestInitRefusesAnExistingConfigurationFile drives the guard that is the whole of
 // what seeding decides on top of the registration it delegates to. The shared
 // writer merges into an existing document by design, so without this guard seeding

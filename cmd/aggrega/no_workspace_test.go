@@ -22,10 +22,16 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// noWorkspaceNoticeOpening is how the command line's notice opens, for counting
-// it in a captured error stream. The sentence's home is noWorkspaceNotice; this
-// is the part of it every row reads, so a reworded tail moves no row.
-const noWorkspaceNoticeOpening = "note: no Aggrega workspace was found from "
+// noWorkspaceWarningTail is the command line's warning after the folder it names,
+// written out rather than composed, so the sentence a reader is shown is what the
+// rows below hold. The line opens with "warning: " and the folder; this is the
+// part every row counts, which no other line a command writes carries.
+const noWorkspaceWarningTail = " is not inside an Aggrega workspace. To make it one, run: aggrega config init --workspace"
+
+// noWorkspaceWarningLine is the whole warning line a command writes about folder.
+func noWorkspaceWarningLine(folder string) string {
+	return "warning: " + folder + noWorkspaceWarningTail
+}
 
 // markedWorkspace returns a fresh folder carrying a workspace configuration, so
 // it anchors itself.
@@ -52,21 +58,53 @@ func namesFolder(t *testing.T, text, folder string) bool {
 	return strings.Contains(text, resolved)
 }
 
-// TestACommandSaysOnceWhichFolderItUsedWhereNoWorkspaceWasFound runs commands
-// through the real command tree from a folder no workspace resolves from, and
-// counts the notice on the process's error stream: once, naming that folder, for
-// each command that resolves a workspace there; never where something named a
-// root, where the folder is a workspace, or for a command that does not resolve
-// one. login resolves one for its offline posture alone and is not told.
+// carriesWarningFor reports whether text carries the whole warning line naming
+// folder, as given or with its links resolved (namesFolder says why both).
+func carriesWarningFor(t *testing.T, text, folder string) bool {
+	t.Helper()
+	if strings.Contains(text, noWorkspaceWarningLine(folder)) {
+		return true
+	}
+	resolved, err := filepath.EvalSymlinks(folder)
+	if err != nil {
+		t.Fatalf("resolve %s: %v", folder, err)
+	}
+	return strings.Contains(text, noWorkspaceWarningLine(resolved))
+}
+
+// carriesWarningWordsFor reports whether text carries the warning naming folder
+// in the command line's words, without the command line's "warning: " lead — the
+// form the assistant server's answer carries it in — as given or with its links
+// resolved.
+func carriesWarningWordsFor(t *testing.T, text, folder string) bool {
+	t.Helper()
+	if strings.Contains(text, folder+noWorkspaceWarningTail) {
+		return true
+	}
+	resolved, err := filepath.EvalSymlinks(folder)
+	if err != nil {
+		t.Fatalf("resolve %s: %v", folder, err)
+	}
+	return strings.Contains(text, resolved+noWorkspaceWarningTail)
+}
+
+// TestACommandWarnsOnceWhereItsResultDependsOnAWorkspaceItRanOutsideOf runs
+// commands through the real command tree from a folder no workspace resolves
+// from, and counts the warning on the process's error stream: once, naming that
+// folder, for each command whose result depends on the workspace root; never for
+// a command whose result does not, even where reading its configuration resolves
+// a workspace; never where something named a root or the folder is a workspace.
 //
 // 🔴 PLANTED DEFECTS: have FoundNoWorkspace also answer true for MarkerNone — a
 // named root counted as nothing found — and the --workspace-root and the variable
-// rows fail; drop the noWorkspaceNotice call from the lazy resolver and the three
-// "says it" rows fail; drop login's withholdNoWorkspaceNotice and its row fails.
+// rows fail; drop the noWorkspaceNotice call from the lazy resolver and the "warns"
+// rows fail; drop the withholdNoWorkspaceNotice call from the root command and
+// every machine-scoped row that reads the workspace fails; declare login, or
+// config show, workspace-scoped and its row fails.
 //
 // Not parallel: every row moves the process working directory and sets the
-// process environment, and the notice is written to the process's error stream.
-func TestACommandSaysOnceWhichFolderItUsedWhereNoWorkspaceWasFound(t *testing.T) {
+// process environment, and the warning is written to the process's error stream.
+func TestACommandWarnsOnceWhereItsResultDependsOnAWorkspaceItRanOutsideOf(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		// args builds the invocation for a row run in folder; it may set the
@@ -76,27 +114,47 @@ func TestACommandSaysOnceWhichFolderItUsedWhereNoWorkspaceWasFound(t *testing.T)
 		inWorkspace bool
 		says        bool
 	}{
-		{name: "config show says it", says: true,
-			args: func(*testing.T, string) []string { return []string{"config", "show"} }},
-		{name: "validate says it", says: true,
+		{name: "validate warns", says: true,
 			args: func(*testing.T, string) []string { return []string{"validate"} }},
-		{name: "pull says it", says: true,
+		{name: "search warns", says: true,
+			args: func(*testing.T, string) []string { return []string{"search", "moo"} }},
+		{name: "cache status warns", says: true,
+			args: func(*testing.T, string) []string { return []string{"cache", "status"} }},
+		{name: "pull warns", says: true,
 			args: func(t *testing.T, folder string) []string {
 				release := filepath.Join(folder, "production.yaml")
 				writeFixture(t, release, "kind: Release\n")
 				return []string{"pull", "--release", release}
 			}},
+		{name: "build warns", says: true,
+			args: func(t *testing.T, folder string) []string {
+				release := filepath.Join(folder, "production.yaml")
+				writeFixture(t, release, "kind: Release\n")
+				return []string{"build", "--release", release}
+			}},
+		// Each of these reads the configuration, so each resolves a workspace; none
+		// of their results depends on which folder is the root.
+		{name: "config show reads the workspace and says nothing",
+			args: func(*testing.T, string) []string { return []string{"config", "show"} }},
+		{name: "plugin list reads the workspace and says nothing",
+			args: func(*testing.T, string) []string { return []string{"plugin", "list"} }},
+		{name: "registry list reads the workspace and says nothing",
+			args: func(*testing.T, string) []string { return []string{"registry", "list"} }},
+		{name: "explain reads the workspace and says nothing",
+			args: func(*testing.T, string) []string { return []string{"explain", "E0007"} }},
+		{name: "plugin add reads the workspace and says nothing",
+			args: func(*testing.T, string) []string { return []string{"plugin", "add", "cli", "moo"} }},
 		{name: "--workspace-root names a root",
 			args: func(t *testing.T, _ string) []string {
-				return []string{"--workspace-root", markedWorkspace(t), "config", "show"}
+				return []string{"--workspace-root", markedWorkspace(t), "validate"}
 			}},
 		{name: "AGGREGA_WORKSPACE_ROOT names a root",
 			args: func(t *testing.T, _ string) []string {
 				t.Setenv(workspaceconfig.EnvWorkspaceRoot, markedWorkspace(t))
-				return []string{"config", "show"}
+				return []string{"validate"}
 			}},
 		{name: "the folder is a workspace", inWorkspace: true,
-			args: func(*testing.T, string) []string { return []string{"config", "show"} }},
+			args: func(*testing.T, string) []string { return []string{"validate"} }},
 		{name: "version resolves no workspace",
 			args: func(*testing.T, string) []string { return []string{"version"} }},
 		// The workspace is read before the command's own refusal of a password on
@@ -120,16 +178,16 @@ func TestACommandSaysOnceWhichFolderItUsedWhereNoWorkspaceWasFound(t *testing.T)
 
 			var out string
 			stderr := captureStderr(t, func() { out, _ = runAggrega(t, args...) })
-			count := strings.Count(stderr, noWorkspaceNoticeOpening)
+			count := strings.Count(stderr, noWorkspaceWarningTail)
 			switch {
 			case tc.says && count != 1:
-				t.Errorf("aggrega %s wrote the notice %d times, want once\nstderr:\n%s\noutput:\n%s",
+				t.Errorf("aggrega %s wrote the warning %d times, want once\nstderr:\n%s\noutput:\n%s",
 					strings.Join(args, " "), count, stderr, out)
-			case tc.says && !namesFolder(t, stderr, folder):
-				t.Errorf("aggrega %s wrote a notice that does not name the folder it ran in, %s:\n%s",
+			case tc.says && !carriesWarningFor(t, stderr, folder):
+				t.Errorf("aggrega %s wrote a warning that is not the line naming the folder it ran in, %s:\n%s",
 					strings.Join(args, " "), folder, stderr)
 			case !tc.says && count != 0:
-				t.Errorf("aggrega %s wrote the notice although %s:\n%s", strings.Join(args, " "), tc.name, stderr)
+				t.Errorf("aggrega %s wrote the warning although %s:\n%s", strings.Join(args, " "), tc.name, stderr)
 			}
 		})
 	}
@@ -137,8 +195,8 @@ func TestACommandSaysOnceWhichFolderItUsedWhereNoWorkspaceWasFound(t *testing.T)
 
 // TestTheNoticeIsWrittenOnceAndWithheldWhereTheCommandMarksIt drives the
 // resolution chokepoint itself, from a folder no workspace resolves from: three
-// reads of the workspace write the notice once, and a resolver marked to withhold
-// it writes nothing.
+// reads of the workspace write the warning once, and a resolver marked to
+// withhold it writes nothing.
 //
 // Not parallel: the resolver resolves from the process working directory.
 func TestTheNoticeIsWrittenOnceAndWithheldWhereTheCommandMarksIt(t *testing.T) {
@@ -152,8 +210,11 @@ func TestTheNoticeIsWrittenOnceAndWithheldWhereTheCommandMarksIt(t *testing.T) {
 			t.Fatalf("get (read %d): %v", i+1, err)
 		}
 	}
-	if n := strings.Count(once.String(), noWorkspaceNoticeOpening); n != 1 {
-		t.Errorf("three reads wrote the notice %d times, want once: %q", n, once.String())
+	if n := strings.Count(once.String(), noWorkspaceWarningTail); n != 1 {
+		t.Errorf("three reads wrote the warning %d times, want once: %q", n, once.String())
+	}
+	if !carriesWarningFor(t, once.String(), folder) {
+		t.Errorf("the warning is not the line naming %s: %q", folder, once.String())
 	}
 
 	ctx := withWorkspaceResolver(context.Background(), "", firstRunLookup(nil))
@@ -167,8 +228,83 @@ func TestTheNoticeIsWrittenOnceAndWithheldWhereTheCommandMarksIt(t *testing.T) {
 	if _, err := marked.get(); err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if strings.Contains(withheld.String(), noWorkspaceNoticeOpening) {
-		t.Errorf("a resolver marked to withhold the notice wrote it: %q", withheld.String())
+	if strings.Contains(withheld.String(), noWorkspaceWarningTail) {
+		t.Errorf("a resolver marked to withhold the warning wrote it: %q", withheld.String())
+	}
+}
+
+// TestConfigCaptureOutsideAWorkspaceWritesNothingAndSaysSo runs config capture
+// through the real command tree in a folder no workspace resolves from, and in a
+// workspace beside it. In the workspace it writes the workspace's configuration
+// file, which is what makes the other row's absence of a file the refusal's
+// doing. Outside one it fails saying nothing was written and naming the folder,
+// the folder is left exactly as it was — no configuration file, nothing at all —
+// a resolution started there still anchors nothing, and the command warns once
+// that the folder is no workspace.
+//
+// 🔴 PLANTED DEFECT: remove the FoundNoWorkspace refusal from configops.Capture,
+// and the outside row fails — the capture succeeds and leaves a configuration
+// file in the folder, which then resolves as a workspace.
+//
+// Not parallel: every row moves the process working directory and sets the
+// process environment, and the warning is written to the process's error stream.
+func TestConfigCaptureOutsideAWorkspaceWritesNothingAndSaysSo(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		marked  bool
+		refused bool
+	}{
+		{name: "a folder no workspace resolves from", refused: true},
+		{name: "a workspace", marked: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hometest.Isolate(t)
+			t.Setenv(workspaceconfig.EnvWorkspaceRoot, "")
+			t.Setenv("AGGREGA_OFFLINE", "true")
+			// Both rows carry build-critical bindings from the global layer, so a
+			// capture has something to write in either: the workspace row's write
+			// then moves the file's bytes, and the outside row's refusal is not an
+			// empty capture that happened to write nothing.
+			globalDir := t.TempDir()
+			globalPath := filepath.Join(globalDir, "aggrega", "config.yaml")
+			writeGlobalConfig(t, globalPath, filepath.Join(globalDir, "catalog"))
+			t.Setenv(workspaceconfig.EnvConfigOverride, globalPath)
+			folder := folderNoWorkspaceResolvesFrom(t)
+			if tc.marked {
+				folder = markedWorkspace(t)
+			}
+			t.Chdir(folder)
+			before := treeFingerprint(t, folder)
+
+			var err error
+			stderr := captureStderr(t, func() { _, err = runAggrega(t, "config", "capture") })
+
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("config capture in a workspace failed, so the refused row proves nothing: %v", err)
+				}
+				if diffs := fingerprintDifferences(before, treeFingerprint(t, folder)); len(diffs) == 0 {
+					t.Fatal("config capture in a workspace wrote nothing, so the refused row's untouched folder proves nothing")
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("config capture outside a workspace reported success")
+			}
+			if !strings.Contains(err.Error(), "nothing was written") || !namesFolder(t, err.Error(), folder) {
+				t.Errorf("the refusal does not say nothing was written to %s: %v", folder, err)
+			}
+			if diffs := fingerprintDifferences(before, treeFingerprint(t, folder)); len(diffs) != 0 {
+				t.Errorf("config capture outside a workspace changed the folder: %s", strings.Join(diffs, "; "))
+			}
+			if _, serr := os.Stat(filepath.Join(folder, workspaceconfig.ConfigFilename)); !errors.Is(serr, fs.ErrNotExist) {
+				t.Errorf("%s exists after the refused capture (stat: %v)", workspaceconfig.ConfigFilename, serr)
+			}
+			assertNoCacheAndStillNoWorkspace(t, folder)
+			if n := strings.Count(stderr, noWorkspaceWarningTail); n != 1 || !carriesWarningFor(t, stderr, folder) {
+				t.Errorf("config capture wrote the warning %d times, or not naming %s:\n%s", n, folder, stderr)
+			}
+		})
 	}
 }
 
@@ -240,10 +376,10 @@ func TestARootThatIsNotAnExistingFolderIsRefusedNamingWhereItCameFrom(t *testing
 // in one folder no workspace resolves from: as a command, and as the assistant
 // server called over its own streams with no launch root — once through a tool of
 // its own and once through the tool generated from the same command. The command
-// writes the notice on its error stream; the server's own tool says it in its
-// answer; the generated tool's answer carries the command's own line as the
-// command printed it. All three name that one folder, because all three ask the
-// one predicate of the same resolution.
+// writes the warning on its error stream; the server's own tool says the same
+// words in its answer; the generated tool's answer carries the command's own line
+// as the command printed it. All three name that one folder, because all three ask
+// the one predicate of the same resolution, and say it in one sentence.
 //
 // 🔴 PLANTED DEFECTS: drop the withNoWorkspaceNotice call at the server's one
 // exit and the server's own tool row fails; drop the noWorkspaceNotice call from
@@ -253,35 +389,38 @@ func TestTheCommandLineAndTheAssistantServerNameTheSameFolder(t *testing.T) {
 	bin := buildServeBinary(t)
 	folder := folderNoWorkspaceResolvesFrom(t)
 
-	cmd := exec.Command(bin, "config", "show")
+	// cache status reads the cache kept beneath the workspace root, so its result
+	// depends on the workspace and it is a command that warns.
+	cmd := exec.Command(bin, "cache", "status")
 	cmd.Dir = folder
 	cmd.Env = builtBinaryEnv(t, "AGGREGA_OFFLINE=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("aggrega config show in %s: %v\nstderr:\n%s", folder, err, stderr.String())
+		t.Fatalf("aggrega cache status in %s: %v\nstderr:\n%s", folder, err, stderr.String())
 	}
 	var line string
 	for _, l := range strings.Split(stderr.String(), "\n") {
-		if strings.HasPrefix(l, noWorkspaceNoticeOpening) {
+		if strings.Contains(l, noWorkspaceWarningTail) {
 			line = l
 		}
 	}
-	if line == "" || !namesFolder(t, line, folder) {
-		t.Fatalf("the command wrote no notice naming %s:\n%s", folder, stderr.String())
+	if line == "" || !carriesWarningFor(t, line, folder) {
+		t.Fatalf("the command wrote no warning naming %s:\n%s", folder, stderr.String())
 	}
 
 	own, isError := callToolOverStdio(t, bin, folder, "list-releases", map[string]any{})
 	if isError {
 		t.Fatalf("list-releases was refused:\n%s", own)
 	}
-	if n := strings.Count(own, "No Aggrega workspace was found from "); n != 1 || !namesFolder(t, own, folder) {
-		t.Errorf("the server's own tool says the notice %d times, or not of %s:\n%s", n, folder, own)
+	if n := strings.Count(own, noWorkspaceWarningTail); n != 1 || !carriesWarningWordsFor(t, own, folder) {
+		t.Errorf("the server's own tool says the warning %d times, or not in the command line's words of %s:\n%s",
+			n, folder, own)
 	}
 
-	generated, isError := callToolOverStdio(t, bin, folder, "cli-config-show", map[string]any{})
+	generated, isError := callToolOverStdio(t, bin, folder, "cli-cache-status", map[string]any{})
 	if isError {
-		t.Fatalf("cli-config-show was refused:\n%s", generated)
+		t.Fatalf("cli-cache-status was refused:\n%s", generated)
 	}
 	if !strings.Contains(generated, line) {
 		t.Errorf("the generated tool's answer does not carry the command's own line %q:\n%s", line, generated)

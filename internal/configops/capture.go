@@ -78,11 +78,21 @@ func (r CaptureResult) Captured() bool {
 // Re-running it over an unchanged effective configuration rewrites the same file
 // byte-for-byte, because the output is a pure function of the effective values in
 // a fixed field order.
+//
+// A resolution that found no workspace and was handed none
+// ([workspaceconfig.ResolvedWorkspace.FoundNoWorkspace]) is refused before
+// anything is written. Its root is only the folder the resolution started from,
+// and writing a configuration file there would make that folder a workspace as a
+// side effect of asking what to freeze into one.
 func Capture(rw *workspaceconfig.ResolvedWorkspace, opts CaptureOptions) (CaptureResult, error) {
 	var res CaptureResult
 	rw, err := workspaceOrRefuse(rw)
 	if err != nil {
 		return res, err
+	}
+	if rw.FoundNoWorkspace() {
+		return res, fmt.Errorf("aggrega config capture: nothing was written, because %s is not inside an Aggrega "+
+			"workspace and a capture writes only into a workspace's own %s", rw.Root(), workspaceconfig.ConfigFilename)
 	}
 
 	dest, err := rw.WorkspaceConfigDestination()

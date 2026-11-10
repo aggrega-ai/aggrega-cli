@@ -21,9 +21,10 @@ type workspaceCtxKey struct{}
 // lazyWorkspace resolves the workspace exactly once, on first access, and
 // caches the result. Resolution is deferred (not run in PersistentPreRunE) so
 // commands that never need a workspace — version, logout — never trigger
-// discovery and run cleanly outside any workspace. login reads the workspace for
-// one thing, the offline posture of its verification ping, and withholds the
-// notice below (withholdNoWorkspaceNotice).
+// discovery and run cleanly outside any workspace. A command whose result does
+// not depend on the workspace root may still read it — login reads it for the
+// offline posture of its verification ping — and the root command withholds the
+// warning below for every such command (withholdNoWorkspaceNotice).
 type lazyWorkspace struct {
 	flagRoot string
 	// rootSource names where flagRoot came from — the flag as a reader types it,
@@ -62,9 +63,10 @@ type lazyWorkspace struct {
 	// invocation. The root command sets it on the command the notice names,
 	// which would otherwise be told to run what it is already running.
 	withholdFirstRun bool
-	// withholdNoWorkspace suppresses the notice that no workspace was found
-	// (noWorkspaceNotice) for this invocation. A command sets it when what it
-	// reads from the workspace does not depend on which folder is the root.
+	// withholdNoWorkspace suppresses the warning that no workspace was found
+	// (noWorkspaceNotice) for this invocation. The root command sets it for every
+	// command whose result does not depend on which folder is the root
+	// (warnsOutsideAWorkspace).
 	withholdNoWorkspace bool
 
 	// mu guards subject and resolved, which a command sets and the resolution
@@ -228,13 +230,13 @@ func withholdFirstRunNotice(ctx context.Context) {
 }
 
 // withholdNoWorkspaceNotice marks the resolver attached to ctx so this invocation
-// shows no notice that no workspace was found. It is called by a command whose
-// reading of the workspace does not depend on which folder is the root — login,
-// which reads only the offline posture for its verification ping and stores the
-// credential where every workspace on the machine reads it — so telling its
-// reader how to name a workspace would answer a question the command never asks.
-// It must be called before the workspace is first read, which is when the notice
-// is written.
+// shows no warning that no workspace was found. The root command calls it for a
+// command whose result does not depend on which folder is the root
+// (warnsOutsideAWorkspace) — login, say, which reads only the offline posture for
+// its verification ping and stores the credential where every workspace on the
+// machine reads it — so telling its reader how to make a workspace would answer a
+// question the command never asks. It must be called before the workspace is
+// first read, which is when the warning is written.
 func withholdNoWorkspaceNotice(ctx context.Context) {
 	if l, ok := ctx.Value(workspaceCtxKey{}).(*lazyWorkspace); ok {
 		l.withholdNoWorkspace = true

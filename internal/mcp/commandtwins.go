@@ -7,9 +7,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-
-	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
-	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 )
 
 // One capability, two tools.
@@ -67,50 +64,6 @@ func commandTwins(specs []toolSpec) map[string]commandTwin {
 		out[specs[i].operation] = commandTwin{tool: specs[i].name, command: specs[i].commandPath}
 	}
 	return out
-}
-
-// commandOperation returns the operation the command at path CARRIES, empty when
-// the command line records none for it.
-//
-// A path can be claimed by more than one operation, and the distinction the
-// answer turns on is between the capability a command IS and a capability it
-// merely OFFERS. A command is the sole way to reach the first, so the operation
-// naming that path and no other is the one it carries; a capability reachable at
-// several commands — a document any of them can hand back under a flag — is
-// offered by each and is none of their identities. So a record naming exactly
-// this path wins over one naming it among others.
-//
-// That rule is read from the availability records rather than from any ordering,
-// which is what keeps the answer independent of the order the operation set is
-// written in. The set's own contract says nothing derives behaviour from that
-// order, and a tie broken by position would quietly falsify it: a capability
-// declared before the command it is offered by would take the command's identity,
-// and the only symptom would be a pairing disclosure silently going missing.
-//
-// The walk still follows the operation set's order, so among records that are
-// equally specific the answer never depends on map iteration and the description
-// bytes a client receives stay identical across runs.
-func commandOperation(path string) string {
-	table := clisurface.OperationAvailability()
-	fallback := ""
-	for _, op := range opsurface.Operations() {
-		a, ok := table[op.ID]
-		if !ok || !a.IsExposed() {
-			continue
-		}
-		for _, p := range a.Names {
-			if p != path {
-				continue
-			}
-			if len(a.Names) == 1 {
-				return op.ID
-			}
-			if fallback == "" {
-				fallback = op.ID
-			}
-		}
-	}
-	return fallback
 }
 
 // curatedSibling returns the curated or deferred tool that answers the given

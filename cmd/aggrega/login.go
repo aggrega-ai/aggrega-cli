@@ -35,9 +35,8 @@ func newLoginCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// The workspace is read for its offline posture alone, and the credential
-			// is stored where every workspace reads it, so which folder is the root is
-			// nothing this command's reader has to act on.
-			withholdNoWorkspaceNotice(cmd.Context())
+			// is stored where every workspace reads it, which is why the command is
+			// declared machine-scoped and says nothing about workspaces.
 			rw, err := workspaceFromContext(cmd.Context())
 			if err != nil {
 				return err

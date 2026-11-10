@@ -64,6 +64,42 @@ func TestEveryCommandBelongsToAnOperation(t *testing.T) {
 	}
 }
 
+// TestEveryCommandInTheTreeDeclaresItsWorkspaceScope walks the live command tree
+// and fails, naming the command, for every runnable command that declares no
+// workspace scope: the declaration is what decides whether the command warns
+// that the folder it runs in is no workspace (warnsOutsideAWorkspace), so a
+// command with no row would never warn whatever its result depends on.
+//
+// Hidden commands are included, because a hidden command runs and resolves its
+// workspace like any other. Grouping commands are excluded because they run
+// nothing, and commands a configured plugin contributes by construction: this
+// test registers none.
+//
+// 🔴 PLANTED DEFECT: delete any row from the declared workspace scopes and this
+// test fails naming that command.
+func TestEveryCommandInTheTreeDeclaresItsWorkspaceScope(t *testing.T) {
+	withCLIRegistrations(t, nil)
+
+	var missing []string
+	walked := 0
+	for _, c := range reachableCommands(newRootCmd()) {
+		if !c.Runnable() {
+			continue
+		}
+		walked++
+		if _, declared := clisurface.CommandWorkspaceScope(c.CommandPath()); !declared {
+			missing = append(missing, c.CommandPath())
+		}
+	}
+	if walked == 0 {
+		t.Fatal("no runnable commands in the tree")
+	}
+	if len(missing) != 0 {
+		t.Fatalf("%d of %d runnable commands declare no workspace scope:\n  %s",
+			len(missing), walked, strings.Join(missing, "\n  "))
+	}
+}
+
 // TestEveryToolBelongsToAnOperation is the tool protocol's growth half, and it
 // runs here for the same reason: the generated command tools exist only for a
 // session handed a command surface, and this is the only package that can build

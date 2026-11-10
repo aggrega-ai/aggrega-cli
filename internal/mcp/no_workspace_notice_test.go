@@ -12,13 +12,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
+	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// noWorkspaceSentenceOpening is how the sentence an answer carries opens, for
-// counting it in an answer's text. The sentence's home is noWorkspaceSentence.
-const noWorkspaceSentenceOpening = "No Aggrega workspace was found from "
+// noWorkspaceSentenceOpening is the part of the sentence an answer carries that
+// follows the folder it names, written out rather than composed, for counting it in
+// an answer's text: the command line's warning, word for word. The sentence's home
+// is noWorkspaceSentence.
+const noWorkspaceSentenceOpening = " is not inside an Aggrega workspace. To make it one, run: aggrega config init --workspace"
 
 // writeNoticeFixture writes body to path, creating the directories above it.
 func writeNoticeFixture(t *testing.T, path, body string) {
@@ -43,27 +47,43 @@ func markedNoticeWorkspace(t *testing.T) string {
 // TestAToolAnswerSaysWhichFolderItUsedWhereNoWorkspaceWasFound calls a tool
 // through the server's one exit, on a server reached over its own streams and
 // started in a folder no workspace resolves from: with no launch root and no root
-// on the call the answer says, once, which folder it used and how to name the
-// workspace; with a root on the call, or a launch root, it says nothing. The
+// on the call, an answer about the workspace says, once, that the folder it used is
+// in no workspace and how to make it one or name another; an answer whose result
+// the workspace does not decide says nothing, though its call resolved the same
+// workspace; with a root on the call, or a launch root, nothing is said. The
 // structured payload carries the sentence exactly where it carries the text, in its
 // text_answer, and in no field of the tool's own.
 //
-// 🔴 PLANTED DEFECT: drop the withNoWorkspaceNotice call from handleToolsCall, and
+// 🔴 PLANTED DEFECTS: drop the withNoWorkspaceNotice call from handleToolsCall, and
 // the first row fails. Move withTextAnswer ahead of it, and the first row fails on
-// the text_answer, which then lacks the sentence the text ends with.
+// the text_answer, which then lacks the sentence the text ends with. Drop the
+// workspace-scope check from withNoWorkspaceNotice, and the config-show row fails.
 //
 // Not parallel: a server launched with no root resolves from the process working
 // directory, which is the condition under test.
 func TestAToolAnswerSaysWhichFolderItUsedWhereNoWorkspaceWasFound(t *testing.T) {
 	for _, tc := range []struct {
 		name string
+		// tool is the tool called; list-releases where empty.
+		tool string
 		// launch returns the root the server was launched with, and args the
 		// call's arguments.
 		launch func(t *testing.T) string
 		args   func(t *testing.T) map[string]any
-		says   bool
+		// resolves is whether the row needs the call to have recorded the workspace
+		// it resolved on its answer, which is the state the sentence is decided on:
+		// a row whose silence is the scope's doing proves nothing unless the
+		// workspace was there to be spoken of.
+		resolves bool
+		says     bool
 	}{
-		{name: "no launch root and no root on the call", says: true,
+		{name: "no launch root and no root on the call", says: true, resolves: true,
+			launch: func(*testing.T) string { return "" },
+			args:   func(*testing.T) map[string]any { return map[string]any{} }},
+		// The configuration reading resolves the same workspace and answers
+		// successfully, with a structured payload of its own, so the row holds that
+		// withholding the sentence leaves the rest of the answer as it was composed.
+		{name: "an answer the workspace does not decide", tool: "config-show", resolves: true,
 			launch: func(*testing.T) string { return "" },
 			args:   func(*testing.T) map[string]any { return map[string]any{} }},
 		{name: "the call names its workspace",
@@ -81,9 +101,17 @@ func TestAToolAnswerSaysWhichFolderItUsedWhereNoWorkspaceWasFound(t *testing.T) 
 			args := tc.args(t)
 			t.Chdir(folder)
 
-			res := callTool(t, unlaunchedServer(launch), "list-releases", args)
+			tool := tc.tool
+			if tool == "" {
+				tool = "list-releases"
+			}
+			res := callTool(t, unlaunchedServer(launch), tool, args)
 			if res.IsError {
-				t.Fatalf("list-releases was refused: %s", res.Content[0].Text)
+				t.Fatalf("%s was refused: %s", tool, res.Content[0].Text)
+			}
+			if tc.resolves && (res.workspace == nil || !res.workspace.rw.FoundNoWorkspace()) {
+				t.Fatalf("precondition: the %s call recorded no workspace that found nothing, so the row proves nothing",
+					tool)
 			}
 			text := res.Content[len(res.Content)-1].Text
 			count := strings.Count(text, noWorkspaceSentenceOpening)
@@ -139,11 +167,58 @@ func TestTheNoticeIsNeverAddedOverAListener(t *testing.T) {
 				t.Fatalf("compose the workspace context: %v", err)
 			}
 			res.workspace = workspace
-			got := s.withNoWorkspaceNotice(res).Content[0].Text
+			got := s.withNoWorkspaceNotice("release-candidates", res).Content[0].Text
 			if says := got != "composed"; says != tc.says {
 				t.Errorf("over %s the answer reads %q; want the notice added: %v", transportName(tc.transport), got, tc.says)
 			}
 		})
+	}
+}
+
+// TestTheNoticeIsAddedOnlyForAnOperationTheWorkspaceDecides hands the step, over
+// the process's own streams, a result whose workspace found nothing and was named
+// by nobody, once per operation: the sentence is added for an operation the
+// declaration marks workspace-scoped, and not for one it marks machine-scoped or
+// for a result naming no operation. The rows are read from the declaration rather
+// than listed, so a row moving there moves the expectation with it, and each scope
+// is checked to be present so the table cannot pass empty.
+//
+// 🔴 PLANTED DEFECT: drop the workspace-scope check from withNoWorkspaceNotice, and
+// every machine-scoped row and the unnamed row fail.
+func TestTheNoticeIsAddedOnlyForAnOperationTheWorkspaceDecides(t *testing.T) {
+	folder := aDirectoryNoWorkspaceResolvesFrom(t)
+	rw, err := workspaceconfig.Resolve(folder, "", func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("resolve %s: %v", folder, err)
+	}
+	s := &server{transport: transportStdio}
+	seen := map[clisurface.WorkspaceScope]int{}
+	ids := []string{""}
+	for _, op := range opsurface.Operations() {
+		ids = append(ids, op.ID)
+	}
+	for _, id := range ids {
+		scope, declared := clisurface.OperationWorkspaceScope(id)
+		want := declared && scope == clisurface.WorkspaceScoped
+		if declared {
+			seen[scope]++
+		}
+		res, _ := textResult("composed", nil)
+		workspace, err := s.toolWorkspaceOf(rw, nil)
+		if err != nil {
+			t.Fatalf("compose the workspace context: %v", err)
+		}
+		res.workspace = workspace
+		got := s.withNoWorkspaceNotice(id, res).Content[0].Text
+		if says := strings.Contains(got, noWorkspaceSentenceOpening); says != want {
+			t.Errorf("for the %q operation (scope %q) the answer reads %q; want the sentence added: %v",
+				id, scope, got, want)
+		}
+	}
+	for _, scope := range []clisurface.WorkspaceScope{clisurface.WorkspaceScoped, clisurface.MachineScoped} {
+		if seen[scope] == 0 {
+			t.Errorf("no operation is declared %q, so that half of the check read nothing", scope)
+		}
 	}
 }
 

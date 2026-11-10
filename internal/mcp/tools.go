@@ -704,7 +704,7 @@ func (s *server) handleToolsCall(ctx context.Context, params json.RawMessage) (a
 		// The refusals above name no location, carry no structured payload, and are
 		// not read.
 		res, rpcErr := spec.invoke(s, ctx, p.Arguments)
-		return withTextAnswer(s.withoutHostLocations(s.withNoWorkspaceNotice(res))), rpcErr
+		return withTextAnswer(s.withoutHostLocations(s.withNoWorkspaceNotice(spec.operation, res))), rpcErr
 	}
 	// One class of name is answered with more than "no such tool", and it is the
 	// class a caller is most likely to have read about somewhere else: a tool

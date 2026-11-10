@@ -74,11 +74,12 @@ func newRootCmd() *cobra.Command {
 		// deferral above survives — a command that loads no plugin resolves no
 		// workspace and reads no configuration.
 		//
-		// Whether this invocation may show the first-run configuration notice is
-		// decided here too, because this is the only point that holds both the
-		// resolver that writes the notice and the command being run. The deferral
-		// is what keeps the decision honest: a command that never reads
-		// configuration never reaches the notice either.
+		// Whether this invocation may show the first-run configuration notice, and
+		// the warning that the folder it runs in is no workspace, is decided here
+		// too, because this is the only point that holds both the resolver that
+		// writes them and the command being run. The deferral is what keeps the
+		// decision honest: a command that never reads configuration never reaches
+		// either.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			globalDisplay = resolveGlobalDisplay(noColorFlag, plainFlag, os.LookupEnv)
 			// The environment is the process's own on every production invocation;
@@ -93,6 +94,9 @@ func newRootCmd() *cobra.Command {
 			nameWorkspaceRootSource(ctx, rootSource)
 			if cmd.CommandPath() == configInitInvocation {
 				withholdFirstRunNotice(ctx)
+			}
+			if !warnsOutsideAWorkspace(cmd.CommandPath()) {
+				withholdNoWorkspaceNotice(ctx)
 			}
 			cmd.SetContext(ctx)
 			armCompiledModuleCacheCap(ctx)

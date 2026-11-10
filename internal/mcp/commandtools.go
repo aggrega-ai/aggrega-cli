@@ -290,7 +290,7 @@ func deriveCommandTool(d clisurface.Descriptor, forwardsFlags bool) toolSpec {
 		positional:    commandPositionalSummary(d.Use),
 		forwardsFlags: forwardsFlags,
 	}
-	operation := commandOperation(d.Path)
+	operation := clisurface.CommandOperation(d.Path)
 	// The class the tool reaches is its COMMAND's: the class the command line
 	// declares for the command where it saves what its operation only renders,
 	// and otherwise the class the operation declares. A tool that runs the

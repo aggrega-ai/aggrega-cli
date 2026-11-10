@@ -526,7 +526,9 @@ materialized into the workspace and travels with the project.
 Machine-wide tooling settings, such as a registry's trust policy, are not
 captured: they stay in the global config by their nature. Capture always writes
 this project's workspace config file. Running it again on an unchanged
-configuration rewrites the same file byte-for-byte.`,
+configuration rewrites the same file byte-for-byte. Run in a folder that is not
+inside a workspace, with no --workspace-root naming one, it writes nothing and
+exits with an error saying so.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rw, err := workspaceFromContext(cmd.Context())

@@ -26,9 +26,10 @@ const emptyWorkspaceFolderRefusal = "the desktop application launched this serve
 	"setting empty, so AGGREGA_WORKSPACE_ROOT names no workspace root: set Workspace folder to the folder that " +
 	"holds your workspace's .aggrega-config.yaml"
 
-// noWorkspaceFoundNote opens the line a command writes when it uses the folder it
-// was started in as the workspace root (noWorkspaceNotice).
-const noWorkspaceFoundNote = "no Aggrega workspace was found from "
+// noWorkspaceFoundNote is the part of the warning a command writes when it uses
+// the folder it was started in as the workspace root (noWorkspaceNotice) that
+// follows the folder.
+const noWorkspaceFoundNote = noWorkspaceWarningTail
 
 // TestAnEmptyWorkspaceFolderUnderTheDesktopBundleIsServedAsItsRefusal runs the
 // built binary as the desktop bundle launches it — `aggrega mcp` over standard
