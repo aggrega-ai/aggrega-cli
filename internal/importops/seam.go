@@ -179,7 +179,8 @@ var BuildSeam = buildSeam
 // view, and its bytes come from the same cascade handed the same directories, so
 // a parser plugin loads exactly like any other — beside its entity included.
 // Where no parser in that view advertises a syntax, the parser the binary
-// carries for it serves instead (importParsers), its module read from the
+// carries for it serves instead (parsersocket.WithBinaryParsers, the resolution a
+// build's parse takes too), its module read from the
 // binary's own tier of that cascade; where one does, it is the one used, and the
 // binary's parsers play no part. The binary carries its parsers whatever the
 // workspace holds, so nothing is fetched for one, and a workspace whose catalog
@@ -234,7 +235,7 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 	}
 	return Seam{
 		ImporterRes: cat,
-		ParserRes:   importParsers{workspace: cat, binary: binaryParsers()},
+		ParserRes:   parsersocket.WithBinaryParsers(cat),
 		Catalog:     importersocket.ProjectCatalog(cat),
 		Importers:   cat.ImporterPlugins(),
 		Recipes:     cat,

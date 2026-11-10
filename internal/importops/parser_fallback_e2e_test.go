@@ -8,7 +8,8 @@ package importops
 // no parser for, the one the binary carries. The end-to-end cases run the REAL
 // seam — Import builds it from the workspace's own catalog and configuration, and
 // nothing below points that variable — so the resolution they observe is the one
-// every surface reaches.
+// every surface reaches. The resolution's own rows, over every answer a catalog
+// can give, are the parser socket's (internal/compiler/parsersocket).
 
 import (
 	"context"
@@ -31,134 +32,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
-
-// parserAnswer is what a stand-in parser resolution answers for every syntax,
-// counting how often it was asked.
-type parserAnswer struct {
-	plugin types.Plugin
-	err    error
-	asked  int
-}
-
-func (a *parserAnswer) ParserPluginForFormat(string) (types.Plugin, error) {
-	a.asked++
-	return a.plugin, a.err
-}
-
-// parserNamed is a parser entity of name advertising the json syntax.
-func parserNamed(name string) types.Plugin {
-	return types.Plugin{
-		Metadata: types.PluginMetadata{Name: name, Version: "1.0.0", PluginType: "parser"},
-		Spec:     types.PluginSpec{Parser: &types.PluginParser{Capabilities: []string{"parse:json"}}},
-	}
-}
-
-// TestAnImportFallsBackToTheBinarysParserOnlyWhereTheCatalogServesNone drives the
-// import's one parser resolution over each answer the catalog's resolution can
-// give, with the binary's resolution beside it, and reads which answer the import
-// takes and whether the binary was asked at all.
-//
-// The binary is asked only where the catalog answers that no parser advertises
-// the syntax. A catalog parser is used; a catalog refusing two parsers of
-// different names is refused as the catalog refuses it — the binary's parser
-// never joins a choice the catalog makes, so it never makes the ambiguity, nor
-// settles one; and where neither serves the syntax the refusal is the catalog's
-// own value, unchanged.
-//
-// 🔴 PLANTED DEFECT: in importParsers.ParserPluginForFormat
-// (internal/importops/parsers.go), consult the binary first, or on every catalog
-// error rather than on the no-parser one — the catalog-serves and ambiguity rows
-// fail, the binary having been asked or answered. Return the binary's refusal
-// where neither serves, and the neither row fails on the refusal's identity.
-func TestAnImportFallsBackToTheBinarysParserOnlyWhereTheCatalogServesNone(t *testing.T) {
-	t.Parallel()
-	noParser := fmt.Errorf("%w: no parser plugin advertises %q", catalog.ErrNoParserForFormat(), "parse:json")
-	ambiguous := fmt.Errorf("%w: format %q is advertised by parser plugins [a b]", catalog.ErrAmbiguousParserPlugin(), "json")
-	unrelated := errors.New("the catalog could not be read")
-	binaryMiss := fmt.Errorf("%w: no parser plugin advertises %q", catalog.ErrNoParserForFormat(), "parse:json")
-	binaryAmbiguous := fmt.Errorf("%w: format %q is advertised by parser plugins [x y]", catalog.ErrAmbiguousParserPlugin(), "json")
-
-	for _, row := range []struct {
-		name        string
-		catalog     parserAnswer
-		binary      parserAnswer
-		wantPlugin  string
-		wantErr     error
-		binaryAsked bool
-	}{
-		{name: "the catalog serves the syntax", catalog: parserAnswer{plugin: parserNamed("catalog-json")},
-			binary: parserAnswer{plugin: parserNamed("json")}, wantPlugin: "parser/catalog-json"},
-		{name: "the catalog serves none and the binary does", catalog: parserAnswer{err: noParser},
-			binary: parserAnswer{plugin: parserNamed("json")}, wantPlugin: "parser/json", binaryAsked: true},
-		{name: "neither serves the syntax", catalog: parserAnswer{err: noParser},
-			binary: parserAnswer{err: binaryMiss}, wantErr: noParser, binaryAsked: true},
-		{name: "the catalog refuses two parsers of different names", catalog: parserAnswer{err: ambiguous},
-			binary: parserAnswer{plugin: parserNamed("json")}, wantErr: ambiguous},
-		{name: "the catalog fails otherwise", catalog: parserAnswer{err: unrelated},
-			binary: parserAnswer{plugin: parserNamed("json")}, wantErr: unrelated},
-		{name: "the catalog serves none and the binary refuses", catalog: parserAnswer{err: noParser},
-			binary: parserAnswer{err: binaryAmbiguous}, wantErr: binaryAmbiguous, binaryAsked: true},
-	} {
-		t.Run(row.name, func(t *testing.T) {
-			t.Parallel()
-			workspace, binary := row.catalog, row.binary
-			got, err := importParsers{workspace: &workspace, binary: &binary}.ParserPluginForFormat("json")
-			if row.wantErr != nil {
-				if err != row.wantErr {
-					t.Fatalf("the resolution answered %v; want the very refusal %v", err, row.wantErr)
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("the resolution was refused: %v", err)
-				}
-				if got.Coordinate() != row.wantPlugin {
-					t.Errorf("the resolution answered %s; want %s", got.Coordinate(), row.wantPlugin)
-				}
-			}
-			if workspace.asked != 1 {
-				t.Errorf("the catalog was asked %d time(s); want exactly once", workspace.asked)
-			}
-			if asked := binary.asked > 0; asked != row.binaryAsked {
-				t.Errorf("the binary was asked = %v; want %v", asked, row.binaryAsked)
-			}
-		})
-	}
-}
-
-// TestTheBinarysParsersAreTheOnesItEmbeds reads the resolution of the parsers the
-// binary carries over the build of this binary: the json syntax every core
-// importer's signature reads resolves to the JSON parser the binary embeds — an
-// entity whose module the binary holds, so the import loads it from the binary's
-// own tier — and a syntax the binary embeds no parser for resolves to the
-// no-parser refusal.
-//
-// It fails rather than skips where the binary embeds no entity: the claim is
-// about the set a release ships, and a run that never saw it proves nothing.
-func TestTheBinarysParsersAreTheOnesItEmbeds(t *testing.T) {
-	t.Parallel()
-	if len(embedded.EntityURIs()) == 0 {
-		t.Fatal("this binary embeds no plugin entity, so nothing here can show its parsers being served: build it " +
-			"with the repository's build script, which embeds the core plugins' entities")
-	}
-	res := binaryParsers()
-
-	p, err := res.ParserPluginForFormat("json")
-	if err != nil {
-		t.Fatalf("the binary's parsers serve no json: %v", err)
-	}
-	if p.Metadata.PluginType != "parser" || !slices.Contains(p.DeclaredCapabilities(), "parse:json") {
-		t.Errorf("the binary's json parser is %s of type %q advertising %v", p.Coordinate(), p.Metadata.PluginType,
-			p.DeclaredCapabilities())
-	}
-	if _, held := embedded.Lookup(p.ArtifactReference()); !held {
-		t.Errorf("the binary embeds no module for %s, so its json parser could not be loaded from the binary",
-			p.ArtifactReference())
-	}
-
-	if _, err := res.ParserPluginForFormat("no-such-syntax"); !errors.Is(err, catalog.ErrNoParserForFormat()) {
-		t.Errorf("a syntax the binary embeds no parser for was not refused as such: %v", err)
-	}
-}
 
 // parserlessWorkspace resolves a scratch workspace whose catalog folder holds the
 // reference importer of each format, attached, and no parser. The attachments
@@ -346,8 +219,8 @@ func TestAWorkspaceHoldingNothingRecognisesAndImportsALoneFileThroughACoreImport
 // drafts no component, warning so. A binary parser read in its place would have
 // recognised and drafted the source's real Langflow nodes.
 //
-// 🔴 PLANTED DEFECT: in importParsers.ParserPluginForFormat
-// (internal/importops/parsers.go), ask the binary before the catalog, and both
+// 🔴 PLANTED DEFECT: in fallbackParsers.ParserPluginForFormat
+// (internal/compiler/parsersocket/fallback.go), ask the binary before the catalog, and both
 // rows fail: the source is recognised and drafted as Langflow, through parser/json.
 func TestAWorkspacesOwnParserIsTheOneAnImportReadsThrough(t *testing.T) {
 	t.Parallel()
@@ -427,8 +300,8 @@ func TestAWorkspacesOwnParserIsTheOneAnImportReadsThrough(t *testing.T) {
 // served at all. The importer's name sorts ahead of the core importers' so its
 // signature is the first the recognition tries, whatever this binary carries.
 //
-// 🔴 PLANTED DEFECT: in importParsers.ParserPluginForFormat
-// (internal/importops/parsers.go), answer the binary's miss with an error of its
+// 🔴 PLANTED DEFECT: in fallbackParsers.ParserPluginForFormat
+// (internal/compiler/parsersocket/fallback.go), answer the binary's miss with an error of its
 // own rather than the catalog's refusal, and the comparison fails.
 func TestASyntaxNeitherTheWorkspaceNorTheBinaryParsesIsRefusedAsBefore(t *testing.T) {
 	t.Parallel()

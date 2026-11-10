@@ -165,8 +165,8 @@ func TestEveryImportSurfaceReadsThroughTheBinarysParserWhereTheWorkspaceServesNo
 // have read it as the Langflow it is — played no part. The command's drafts are
 // the one planted node's.
 //
-// 🔴 PLANTED DEFECT: in importParsers.ParserPluginForFormat
-// (internal/importops/parsers.go), ask the binary before the catalog, and every
+// 🔴 PLANTED DEFECT: in fallbackParsers.ParserPluginForFormat
+// (internal/compiler/parsersocket/fallback.go), ask the binary before the catalog, and every
 // surface reads the source as Langflow.
 func TestEveryImportSurfaceReadsThroughTheWorkspacesOwnParser(t *testing.T) {
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
@@ -234,8 +234,8 @@ func TestEveryImportSurfaceReadsThroughTheWorkspacesOwnParser(t *testing.T) {
 // one every surface carried before the binary's parsers served — and the shared
 // operation's refusal is that refusal, word for word.
 //
-// 🔴 PLANTED DEFECT: in importParsers.ParserPluginForFormat
-// (internal/importops/parsers.go), answer the binary's miss with a nil error and
+// 🔴 PLANTED DEFECT: in fallbackParsers.ParserPluginForFormat
+// (internal/compiler/parsersocket/fallback.go), answer the binary's miss with a nil error and
 // an empty parser, and every surface reports a parser that could not be loaded
 // rather than the no-parser condition.
 func TestEveryImportSurfaceRefusesASyntaxNoParserServesAsBefore(t *testing.T) {

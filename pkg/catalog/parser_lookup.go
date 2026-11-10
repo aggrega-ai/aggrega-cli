@@ -47,9 +47,9 @@ var errNoParserForFormat = cerrors.Register("no-parser-for-format", cerrors.Meta
 	ShortCode: "E0098",
 	Message:   "no parser plugin advertises the requested format",
 	RulePlace: cerrors.RuleNoStageReaches("The parser socket evaluates the rule, when a source document's declared format is routed to " +
-		"the parser plugin advertising it and the catalog holds none. The routing settles how the document " +
-		"is read at all, so it runs ahead of every declared stage and no stage holds the advertised " +
-		"capability set it matches against."),
+		"the parser plugin advertising it and neither the catalog nor the parsers the compiler carries holds one. " +
+		"The routing settles how the document is read at all, so it runs ahead of every declared stage and no " +
+		"stage holds the advertised capability set it matches against."),
 })
 
 // ErrAmbiguousParserPlugin fires at resolution when a requested format is
@@ -94,7 +94,10 @@ var errAmbiguousParserPlugin = cerrors.Register("ambiguous-parser-plugin", cerro
 // included — and never the binary's embedded entities, whatever the view's
 // embedded-resolution posture: a core parser the binary embeds is selected here
 // only through a Plugin entity of its coordinate in the catalog, whose module the
-// plugin cascade then reads from the binary.
+// plugin cascade then reads from the binary. The parsers the binary carries stand
+// behind this resolution rather than inside it: the parser socket's consumers
+// consult them only for a format this one answers ErrNoParserForFormat for, so
+// they never join the candidates counted here and never make an ambiguity.
 //
 // Determinism (byte-identical output): candidate names sort before entering a
 // diagnostic and the version select sorts its candidates, so no outcome depends

@@ -636,9 +636,10 @@ var policyNativeFormats = map[string]bool{
 // reason over the structure of a non-native format. A native format (JSON, YAML)
 // and a selection that yields no format both leave the tree empty — the guest
 // reads the raw content directly, and the two native-format render-policy paths
-// stay byte-identical. The parser here feeds a verdict gate, so the host carries
-// no reproducibility posture of its own; a core parser embedded in the binary
-// resolves with no lockfile pin. A parse resolution or invocation failure on a
+// stay byte-identical. The parser is the catalog's for the format, or, where the
+// catalog serves none, the one the binary carries. It feeds a verdict gate, so
+// the host carries no reproducibility posture of its own; a core parser embedded
+// in the binary resolves with no lockfile pin. A parse resolution or invocation failure on a
 // non-native artifact halts loudly rather than dropping the tree silently.
 func sortedRenderedArtifacts(ctx context.Context, inputs Inputs, catalogLookup resolver.CatalogLookup, files map[string]renderer.AssembledFile) ([]analyzer.RenderedArtifact, error) {
 	arts := make([]analyzer.RenderedArtifact, 0, len(files))
@@ -678,12 +679,15 @@ func (f parserResolverFunc) ParserPluginForFormat(format string) (types.Plugin, 
 }
 
 // parserSeam builds the resolver and loader the render-policy stage hands to the
-// parser socket. The resolver fronts the catalog's format→parser lookup; the
-// loader resolves the parser entity's bytes through the same entity-fronted
-// cascade the render pipeline uses (embed → colocated → local → cache),
-// so a core parser embedded in the binary resolves offline with no lockfile pin.
+// parser socket. The resolver fronts the catalog's format→parser lookup, with the
+// parsers the binary carries behind it for a format the catalog serves no parser
+// for — the same resolution an import takes — so a workspace whose catalog holds
+// no parser still parses a format the binary carries a parser for. The loader
+// resolves the parser entity's bytes through the same entity-fronted cascade the
+// render pipeline uses (embed → colocated → local → cache), so a core parser
+// embedded in the binary resolves offline with no lockfile pin.
 func parserSeam(inputs Inputs, catalogLookup resolver.CatalogLookup) (parsersocket.ParserResolver, parsersocket.ParserLoader) {
-	res := parserResolverFunc(catalogLookup.ParserPlugin)
+	res := parsersocket.WithBinaryParsers(parserResolverFunc(catalogLookup.ParserPlugin))
 	cascade := buildPluginResolver(inputs, catalogLookup.PluginColocatedDirs).Resolve
 	load := func(p types.Plugin) (wasm.PluginSpec, error) {
 		resolved, err := cascade(p.ArtifactReference())
