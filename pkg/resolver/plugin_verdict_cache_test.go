@@ -160,21 +160,31 @@ func TestVerdictPluginTrustedDigestForAnotherPluginDoesNotApply(t *testing.T) {
 	}
 }
 
-// TestAModuleThatDoesNotMatchItsCachedManifestIsRefusedNamingTheManifest holds the
-// refusal of a plugin's bytes to the digest this resolution holds them to, and to
-// the words it names that digest by. The digest is the module digest the cached
-// Plugin manifest reports, so the refusal names that manifest and never a lockfile
-// pin, which nothing here reads. The refused row seeds the binary's module under
-// the plugin's identity with bytes other than the cached manifest's, the source
-// the cascade reads first; the control row reads the cached module, which matches.
-func TestAModuleThatDoesNotMatchItsCachedManifestIsRefusedNamingTheManifest(t *testing.T) {
+// TestTheBinarysOwnModuleRunsAndAnyOtherIsHeldToItsCachedManifest holds which
+// module a cached Plugin entity runs, and what that module is held to.
+//
+// The entity's version selects the entity, not the engine: where the binary carries
+// a module under the entity's identity, that module runs and is not held to the
+// module digest the cached manifest reports, which describes the module a registry
+// publishes for that version. Every other module stays held to that digest, and a
+// module that does not match it is refused naming the manifest — never a lockfile
+// pin, which nothing here reads. One fault per row; the first row is the control.
+func TestTheBinarysOwnModuleRunsAndAnyOtherIsHeldToItsCachedManifest(t *testing.T) {
+	binaryModule := []byte("\x00asm-the-binarys-own-module")
+	cacheTampered := []byte("\x00asm-rewritten-in-the-cache")
 	rows := []struct {
 		name     string
 		inBinary []byte
-		refused  bool
+		inCache  []byte
+		wantTier pluginpath.Tier
+		want     []byte
+		refused  []byte
 	}{
-		{name: "the module the cached manifest reports", refused: false},
-		{name: "another module under the same identity, read first", inBinary: []byte("\x00asm-another-module"), refused: true},
+		{name: "the binary carries nothing; the cached module matches its manifest", wantTier: pluginpath.TierCache},
+		{name: "the binary carries a module under the identity, other than the manifest's", inBinary: binaryModule,
+			wantTier: pluginpath.TierEmbed, want: binaryModule},
+		{name: "the binary carries nothing; the cached module does not match its manifest", inCache: cacheTampered,
+			refused: cacheTampered},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -182,13 +192,26 @@ func TestAModuleThatDoesNotMatchItsCachedManifestIsRefusedNamingTheManifest(t *t
 			if row.inBinary != nil {
 				t.Cleanup(embedded.SeedForTest(artifactRef, row.inBinary))
 			}
-			resolved, err := ResolveVerdictPluginFromCache(sources, VerdictPluginTrust{}, read, "any/uri")
-			if !row.refused {
-				if err != nil {
-					t.Fatalf("the module the cached manifest reports must resolve; got %v", err)
+			if row.inCache != nil {
+				if err := oci.WriteCached(sources.WorkspaceRoot, sources.CacheDir, oci.PluginArtifactKind(), artifactRef, wasmDigest, row.inCache); err != nil {
+					t.Fatalf("rewrite the cached module: %v", err)
 				}
-				if resolved.Tier != pluginpath.TierCache {
-					t.Errorf("resolved from %s; want the cache tier", resolved.Tier)
+			}
+			resolved, err := ResolveVerdictPluginFromCache(sources, VerdictPluginTrust{}, read, "any/uri")
+			if row.refused == nil {
+				if err != nil {
+					t.Fatalf("want the module to resolve; got %v", err)
+				}
+				if resolved.Tier != row.wantTier {
+					t.Errorf("resolved from %s; want %s", resolved.Tier, row.wantTier)
+				}
+				if row.want != nil && string(resolved.Bytes) != string(row.want) {
+					t.Errorf("resolved bytes are not the binary's own module")
+				}
+				// The entity still supplies what the version selects.
+				if resolved.Version != "2.4.1" || resolved.Contract == nil || resolved.Limits == nil {
+					t.Errorf("the entity's version, contract and limits must ride on the resolution: version=%q contract=%v limits=%v",
+						resolved.Version, resolved.Contract, resolved.Limits)
 				}
 				return
 			}
@@ -196,7 +219,7 @@ func TestAModuleThatDoesNotMatchItsCachedManifestIsRefusedNamingTheManifest(t *t
 				t.Fatalf("want the content-digest refusal; got %v", err)
 			}
 			msg := err.Error()
-			for _, want := range []string{artifactRef, digest.ContentDigest(row.inBinary), cachedManifestModuleDigest + " " + wasmDigest} {
+			for _, want := range []string{artifactRef, digest.ContentDigest(row.refused), cachedManifestModuleDigest + " " + wasmDigest} {
 				if !strings.Contains(msg, want) {
 					t.Errorf("the refusal does not name %q: %v", want, err)
 				}

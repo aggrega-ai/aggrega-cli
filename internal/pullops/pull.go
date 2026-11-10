@@ -2109,9 +2109,9 @@ func verifyCachedVerdictSocketPlugin(ctx context.Context, cfg workspaceconfig.Co
 // the content cache through the resolution a build loads such a plugin with,
 // resolver.ResolveVerdictPluginFromCache, over the sources a build reads it from.
 // It is handed the cache read of the plugin's entity already taken rather than
-// reading the entity again, so the bytes are held to the .wasm digest that read
-// reported: a .wasm that no longer hashes to it is refused, and so is one no
-// source holds, each as the build refuses it.
+// reading the entity again, so the bytes of a plugin the binary does not carry are
+// held to the .wasm digest that read reported: a .wasm that no longer hashes to it
+// is refused, and so is one no source holds, each as the build refuses it.
 //
 // It is handed no record, so the bytes are held to the cached manifest alone. The
 // walk holds the plugin's identity to the record (holdVerdictPluginsToTheirRecord),

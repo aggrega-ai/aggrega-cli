@@ -239,7 +239,7 @@ type Inputs struct {
 	//
 	// The zero value means NOTHING IS RECORDED, which is the ordinary first-run
 	// state and not a pin of zero: resolution stays exactly as it is without a
-	// record, governed by the manifest-derived digest alone. That is why the field
+	// record, with nothing beyond the cached manifest to hold a plugin to. That is why the field
 	// is supplied through one composition rather than assigned per surface — an
 	// omitted assignment is indistinguishable, to every type checker and to the
 	// resolution itself, from a workspace that has recorded nothing.

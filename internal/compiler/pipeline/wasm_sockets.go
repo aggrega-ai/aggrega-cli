@@ -87,7 +87,9 @@ func resolveSocketLookup(inputs Inputs, catalogLookup resolver.CatalogLookup, ti
 // authored contract and runtime limits and the .wasm layer content digest, then
 // resolves the executable through the shared artifact cascade keyed by that
 // manifest-derived digest — the same verified cache read the pinned path
-// performs, so the .wasm is digest-checked exactly as a pinned plugin's is.
+// performs, so the .wasm is digest-checked exactly as a pinned plugin's is. A
+// plugin the binary carries runs the binary's own module instead, which that
+// digest does not describe (resolver.ResolveVerdictPluginFromCache).
 //
 // No recorded digests are supplied, and that is the honest value rather than an
 // omission: a transform attachment's recorded identity is the lockfile pin, and
@@ -135,8 +137,9 @@ func versionedEntityRef(catalogLookup resolver.CatalogLookup, entityURI string) 
 // entity's authored contract and runtime limits and the .wasm layer content
 // digest, then resolves the executable through the shared artifact cascade keyed
 // by that manifest-derived digest — the same verified Tier-2 cache read the pinned
-// path uses, so the .wasm is digest-checked exactly as a pinned plugin's is. The
-// entity axis is never pinned or drift-gated; only its bytes are integrity-checked.
+// path uses, so the .wasm is digest-checked exactly as a pinned plugin's is. A
+// plugin the binary carries runs the binary's own module instead, which that
+// digest does not describe. The entity axis is never pinned or drift-gated.
 func resolveVerdictSocketPluginFromCache(inputs Inputs, catalogLookup resolver.CatalogLookup, entityURI string) (pluginpath.ResolvedPlugin, error) {
 	sources := resolver.VerdictPluginTierSources{
 		ColocatedDirs: catalogLookup.PluginColocatedDirs,

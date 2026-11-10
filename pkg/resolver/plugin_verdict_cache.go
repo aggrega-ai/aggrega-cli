@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -62,7 +63,23 @@ type VerdictPluginTrust struct {
 // digest, then resolves the executable through the shared artifact cascade keyed
 // by that digest — the same verified content-cache read the pinned path uses, so
 // the .wasm is digest-checked exactly as a pinned plugin's is. The entity axis is
-// never pinned or drift-gated; only its bytes are integrity-checked.
+// never pinned or drift-gated; only its bytes are integrity-checked, save a module
+// the binary carries.
+//
+// # A plugin the binary carries
+//
+// Where the compiler binary carries a module under the entity's identity
+// coordinate, that module is the one that runs, whatever version the entity
+// records: the version selects the entity — its exports, its contract and its
+// runtime limits — and not the engine. The manifest's module digest describes the
+// module a registry publishes for that version, which is another artifact, so the
+// binary's module is not held to it; the entity's contract is still checked
+// against the module's own report of itself when it loads. Whether the binary
+// carries the plugin is asked of the binary, as the record of trusted identities
+// asks it when it declines such a plugin, so a binary that carries no plugin
+// modules holds every module to the manifest. Only the binary's module is spared
+// the digest: a resolution that withheld it and then found the bytes anywhere else
+// is refused.
 //
 // It serves every socket that must resolve a guest without a lockfile pin: the
 // gates that return an accept-or-reject verdict, which are cached at pull and
@@ -113,7 +130,10 @@ type VerdictPluginTrust struct {
 //
 // Where no digest is recorded, resolution is exactly as it is without this
 // parameter: the manifest-derived digest governs the bytes. An absent record is a
-// first-run state, not a fault, and never a pin of zero.
+// first-run state, not a fault, and never a pin of zero. For a plugin the binary
+// carries, the comparison still runs and governs no bytes: a recorded digest that
+// passes it equals the manifest's, and describes the same other artifact. A record
+// the product writes never holds such a plugin.
 //
 // The bound on all of that is the resolution tier, not the plugin: the
 // comparison governs the cache-not-pin read this function performs, and no
@@ -168,6 +188,10 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted Ver
 			return pluginpath.ResolvedPlugin{}, err
 		}
 	}
+	// Whether the binary carries the plugin is asked of the binary itself, the
+	// question the record of trusted identities declines such a plugin by, so a
+	// binary that carries no plugin modules answers no and holds every module.
+	_, carriedByBinary := embedded.Lookup(artifactRef)
 	// A fresh resolver keyed only by that pin: it governs the bytes
 	// (verify-on-read) without a lockfile row, so the gate plugin's .wasm resolves
 	// and is integrity-checked whether or not anything recorded a digest for it.
@@ -178,12 +202,18 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted Ver
 	// is threaded only where it equals that one — so a refusal of bytes that do not
 	// match it names the manifest. Left unnamed, it would name a lockfile pin, which
 	// nothing here reads.
+	//
+	// A plugin the binary carries is given no pin: the module that runs is the
+	// binary's own, and the manifest's digest describes the module a registry
+	// publishes for the entity's version, which is another artifact.
 	pins := pluginpath.PinMaps{
-		Pins:        map[string]string{artifactRef: pin},
-		PinVersions: map[string]string{artifactRef: pin},
-		RecordedIn:  trusted.RecordedIn,
-		Release:     trusted.Release,
-		HeldTo:      cachedManifestModuleDigest,
+		RecordedIn: trusted.RecordedIn,
+		Release:    trusted.Release,
+		HeldTo:     cachedManifestModuleDigest,
+	}
+	if !carriedByBinary {
+		pins.Pins = map[string]string{artifactRef: pin}
+		pins.PinVersions = map[string]string{artifactRef: pin}
 	}
 	if bundle := trusted.BundleDigests[artifactRef]; bundle != "" {
 		pins.BundleDigests = map[string]string{artifactRef: bundle}
@@ -196,6 +226,15 @@ func ResolveVerdictPluginFromCache(sources VerdictPluginTierSources, trusted Ver
 	resolved, err := r.Resolve(artifactRef)
 	if err != nil {
 		return pluginpath.ResolvedPlugin{}, err
+	}
+	// The pin is withheld only for the binary's own module, so bytes any other
+	// source served under that withheld pin are refused rather than run unchecked.
+	// The cascade reads the binary first, so this holds by its order; the check
+	// keeps it holding if that order ever changes.
+	if carriedByBinary && resolved.Tier != pluginpath.TierEmbed {
+		return pluginpath.ResolvedPlugin{}, fmt.Errorf(
+			"resolve cached plugin %q: the binary carries its module, but it resolved from %s, which nothing holds to a digest: %w",
+			artifactRef, resolved.Tier.Source(), oci.ErrFetchIntegrity())
 	}
 	resolved.Version = entity.Metadata.Version
 	resolved.Contract = PluginContractClaim(entity)
