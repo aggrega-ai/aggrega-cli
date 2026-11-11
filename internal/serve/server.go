@@ -1006,6 +1006,16 @@ type session struct {
 	// on the runs that happened to land. A nil hook is a no-op.
 	testValidateGateHook func(file string)
 
+	// testDiagnosticsDecideHook, when non-nil, runs inside handleDiagnostics
+	// after the wait for the validations running when the request arrived and
+	// before the parse-cache lookup that decides whether the request can be
+	// answered. The production setup never sets this field; it exists so a test
+	// can hold a reader there while a validation that registered after the wait
+	// seeds the parse cache, which is the interleaving the wait after the lookup
+	// closes, and which concurrent traffic reaches only on the runs that happen to
+	// land in it. A nil hook is a no-op.
+	testDiagnosticsDecideHook func(file string)
+
 	// validationWaitBudget overrides how long a diagnostics request waits for a
 	// validation of its file that is already running. Zero — the production
 	// value, since nothing outside the in-memory test harness sets it — means

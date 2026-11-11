@@ -42,7 +42,9 @@ const validationWaitLivenessCeiling = 2 * time.Second
 
 // validateGateSeam holds a validation open at the one moment its parse cache
 // entry exists and its diagnostic layers do not — the window a concurrent reader
-// of the same file is answered from when nothing makes it wait.
+// of the same file is answered from when nothing makes it wait. Wired to the
+// diagnostics hook instead, the same seam holds a reader between its first wait
+// and the lookup that decides whether it can answer.
 //
 // It exists because the window is milliseconds wide in production, so a test
 // that merely fires concurrent traffic at it covers the window only on the runs
@@ -88,7 +90,7 @@ func (g *validateGateSeam) waitEntered(t *testing.T) {
 	select {
 	case <-entered:
 	case <-time.After(validationWaitLivenessCeiling):
-		t.Fatal("no validation reached the parse-cache-seeded window; the gate seam is not wired")
+		t.Fatal("nothing reached the point the seam holds; the seam is not wired")
 	}
 }
 
@@ -476,6 +478,68 @@ func TestDiagnosticsWaitBlocksUntilTheValidationReturns(t *testing.T) {
 	oracle := diagnosticsOf(t, w.await(vid))
 	if got := diagnosticsOf(t, w.await(did)); string(got) != string(oracle) {
 		t.Fatalf("the reader did not get the findings:\n want %s\n got  %s", oracle, got)
+	}
+	if got := w.srv.validations.waiting(path); got != 0 {
+		t.Errorf("waiter count after the exchange = %d; want 0 — a waiter leaked", got)
+	}
+}
+
+// TestDiagnosticsWaitsForAValidationThatSeededTheCacheAfterTheReaderArrived
+// forces the one interleaving a wait for the validations running at a reader's
+// ARRIVAL leaves open: the reader arrives while nothing is validating its file,
+// and before it consults the parse cache a validation registers and seeds that
+// cache. The reader is held between its first wait and its lookup, the
+// validation is held at the moment its parse-cache entry exists and its findings
+// do not, and only then is the reader let go — so its lookup hits on an entry
+// the validation has not yet answered for, on every run rather than on the runs
+// a loaded scheduler happens to produce.
+//
+// The answer must EQUAL the sequential one. A reader that answers from the hit
+// at once reads empty layers and reports a rejected document clean, which is
+// what this rules out; a reader that waits again after deciding is blocked on
+// the held validation and is answered with its findings once it returns.
+func TestDiagnosticsWaitsForAValidationThatSeededTheCacheAfterTheReaderArrived(t *testing.T) {
+	t.Parallel()
+	w := newDiagWire(t, 4, 0)
+	defer w.close()
+	reader := &validateGateSeam{}
+	w.srv.testDiagnosticsDecideHook = reader.hook
+
+	oracle := sequentialAnswer(t, w, w.writeFile("oracle.yaml", brokenComponentYAML))
+	path := w.writeFile("seeded-after-arrival.yaml", brokenComponentYAML)
+
+	// The reader first. Nothing is validating the file, so its first wait passes
+	// straight through, and it stops before the lookup that decides whether it
+	// can answer.
+	reader.arm()
+	did := w.id()
+	w.send(did, "aggrega/diagnostics", diagnosticsParams{File: path})
+	reader.waitEntered(t)
+
+	// Then a validation, held once it has seeded the parse cache and before it
+	// has written a finding.
+	w.seam.arm()
+	vid := w.id()
+	w.send(vid, "aggrega/validate", validateParams{File: path, Content: brokenComponentYAML})
+	w.seam.waitEntered(t)
+
+	// Let the reader look. Its lookup hits on the held validation's entry.
+	reader.open()
+	settled := settleWaiters(w, path, 1)
+	w.seam.open()
+
+	resp := w.await(did)
+	if resp.Error != nil {
+		t.Fatalf("the reader was refused (%d: %s) although the validation it should have waited for "+
+			"had seeded the parse cache before the reader looked", resp.Error.Code, resp.Error.Message)
+	}
+	if got := diagnosticsOf(t, resp); string(got) != string(oracle) {
+		t.Fatalf("a reader that decided after a validation seeded the parse cache answered with "+
+			"something other than its findings (%d reader(s) were waiting on the validation when it "+
+			"was released; want 1):\n want %s\n got  %s", settled, oracle, got)
+	}
+	if got := diagnosticsOf(t, w.await(vid)); string(got) != string(oracle) {
+		t.Fatalf("the validation's own answer moved:\n want %s\n got  %s", oracle, got)
 	}
 	if got := w.srv.validations.waiting(path); got != 0 {
 		t.Errorf("waiter count after the exchange = %d; want 0 — a waiter leaked", got)

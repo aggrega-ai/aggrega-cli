@@ -877,7 +877,9 @@ func (s *Server) dispatchDiagnostics(ctx context.Context, req *jsonRPCRequest) e
 // does not ask again — so a reader for a file with a validation in flight waits
 // for it and is answered with what it found. Waiting removes the window rather
 // than narrowing it, because what is waited for is the validating handler's
-// return and not a moment inside it.
+// return and not a moment inside it — and because the reader waits on both sides
+// of its decision: once for what was running when it arrived, and once more for
+// any validation that seeded the parse cache between that wait and the lookup.
 //
 // The wait hangs off the request's own context and adds no cancellation of its
 // own: a client's $/cancelRequest ends it because that already cancels this
@@ -919,24 +921,50 @@ func (s *Server) handleDiagnostics(ctx context.Context, params diagnosticsParams
 	// branch below reads the parent to tell which happened.
 	waitCtx, cancelWait := context.WithTimeout(ctx, s.validationWait())
 	defer cancelWait()
-	if err := s.validations.await(waitCtx, file); err != nil {
+	waitForValidations := func() *jsonRPCError {
+		err := s.validations.await(waitCtx, file)
+		if err == nil {
+			return nil
+		}
 		if ctx.Err() != nil {
-			return diagnosticsResult{}, &jsonRPCError{
+			return &jsonRPCError{
 				Code:    errValidationInFlight,
 				Message: fmt.Sprintf("cancelled while waiting for the validation running for %s", params.File),
 			}
 		}
-		return diagnosticsResult{}, &jsonRPCError{
+		return &jsonRPCError{
 			Code: errValidationInFlight,
 			Message: fmt.Sprintf("a validation of %s is still running after %s; retry once it finishes",
 				params.File, s.validationWait()),
 		}
+	}
+	// The first wait is for a validation already running when this request
+	// arrived, so a reader landing before that validation has seeded the parse
+	// cache is answered with its findings rather than refused as not validated.
+	if refusal := waitForValidations(); refusal != nil {
+		return diagnosticsResult{}, refusal
+	}
+	if s.testDiagnosticsDecideHook != nil {
+		s.testDiagnosticsDecideHook(file)
 	}
 	if _, ok := s.parseCache.Get(file); !ok {
 		return diagnosticsResult{}, &jsonRPCError{
 			Code:    errFileNotValidated,
 			Message: fmt.Sprintf("file not validated: %s", params.File),
 		}
+	}
+	// 🔴 The second wait is what makes the hit above safe to answer from. A
+	// validation that registered AFTER the first wait took its snapshot can still
+	// have seeded the parse cache before the lookup above read it, and then the
+	// hit says yes while the diagnostic layers are still empty — the false clean
+	// answer the first wait exists to rule out, reached around it. A validation
+	// registers before it seeds the parse cache, so any validation whose entry
+	// the lookup saw is in this snapshot or has already returned; waiting here
+	// therefore closes the window rather than narrowing it. It shares the first
+	// wait's deadline, so the budget is one budget, and it takes one snapshot, so
+	// validations arriving later still cannot extend it.
+	if refusal := waitForValidations(); refusal != nil {
+		return diagnosticsResult{}, refusal
 	}
 	return diagnosticsResult{Diagnostics: s.snapshotDiagnostics(file)}, nil
 }

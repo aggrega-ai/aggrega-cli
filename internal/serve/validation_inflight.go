@@ -171,6 +171,13 @@ func (t *validationTracker) release(file string, run *validationRun) {
 // already at least as current as that one's input — and re-reading would let a
 // stream of arriving validations extend one reader's wait without bound, turning
 // a busy file into a permanent refusal at the deadline.
+//
+// That holds for a validation's answer, not for what it writes on the way: one
+// that started after the snapshot can seed the parse cache before the reader
+// consults it. So a reader that decides from the parse cache calls await again
+// after deciding, as handleDiagnostics does — a validation registers before it
+// seeds the cache, so the second snapshot holds every validation whose entry the
+// decision saw, or that validation has already returned.
 func (t *validationTracker) await(ctx context.Context, file string) error {
 	t.mu.Lock()
 	runs := append([]*validationRun(nil), t.inFlight[file]...)
