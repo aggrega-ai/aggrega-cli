@@ -190,6 +190,15 @@ func (o AddOptions) noticeStreams() noticeStreams {
 // same fact: one answers with the values, and one renders them through
 // WriteRetractionNotice. A reader therefore meets a substitution whichever surface
 // they came through, and neither has to read prose addressed to the other.
+//
+// Withdrawn is true when the query named the version it pinned and that version
+// carries a withdrawal record. Naming a version is the override, so it is pinned
+// all the same; the operation states that on the marker account's writer, and this
+// is the same fact, from the same lookup, for a surface answering with values. It
+// is false whenever no version was named, because the latest version is chosen
+// through the withdrawal screen and Retraction carries what that concluded. False
+// is not a claim that the version carries no withdrawal: where a named version's
+// markers could not be read, it is false and Retraction.Unscreened says why.
 type AddResult struct {
 	Socket string `json:"socket"`
 
@@ -203,6 +212,7 @@ type AddResult struct {
 	Content             []byte `json:"content,omitempty"`
 
 	Retraction *RetractionAdvisory `json:"retraction,omitempty"`
+	Withdrawn  bool                `json:"withdrawn,omitempty"`
 }
 
 // Add finds a plugin of the named type in the configured registry — by its name
@@ -368,7 +378,7 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 	// Config socket: pin the version the query names, or else the latest published
 	// one, so the attachment is version-pinned.
 	var recorder retractionRecorder
-	version, err := pluginVersion(ctx, rw, host, repoPath, query.version, listed, opts.noticeStreams(), &recorder)
+	version, withdrawn, err := pluginVersion(ctx, rw, host, repoPath, query.version, listed, opts.noticeStreams(), &recorder)
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
@@ -382,6 +392,7 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 		ConfigPath:          configPath,
 		ConfigIsMachineWide: machineWide,
 		Retraction:          recorder.advisoryOrNil(),
+		Withdrawn:           withdrawn,
 	}
 	if opts.Delivery.Reports() {
 		body, derr := workspaceconfig.PluginSocketRefDocument(configPath, socket, identity, plugintype.Role(opts.Role))
@@ -439,7 +450,7 @@ func addCLI(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Add
 		return res, err
 	}
 	var recorder retractionRecorder
-	version, err := pluginVersion(ctx, rw, host, repoPath, query.version, listed, opts.noticeStreams(), &recorder)
+	version, withdrawn, err := pluginVersion(ctx, rw, host, repoPath, query.version, listed, opts.noticeStreams(), &recorder)
 	if err != nil {
 		return res, fmt.Errorf("%s: %w", command, err)
 	}
@@ -465,6 +476,7 @@ func addCLI(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Add
 		ConfigPath:          configPath,
 		ConfigIsMachineWide: machineWide,
 		Retraction:          recorder.advisoryOrNil(),
+		Withdrawn:           withdrawn,
 	}, nil
 }
 
@@ -621,9 +633,29 @@ func liveRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host,
 	if streams.retractions == nil {
 		return nil
 	}
+	deps, read := readLiveWithdrawals(ctx, cfg, host, repoPath, reference, tags, streams, rec)
+	if !read {
+		return nil
+	}
+	return rec.watch(registryindex.NewLiveScreen(reference, deps, streams.retractions))
+}
+
+// readLiveWithdrawals reads the withdrawal markers published against a plugin
+// repository's strict-SemVer tags and returns the verified ones, reporting false
+// where there was nothing to read or the read failed.
+//
+// It is the one home of the live read and of its degradation, shared by the
+// latest-version selection (liveRetractionScreen) and a version a query named
+// (announceWithdrawnPin), so the two report a failed read in the same words, on
+// the same writer, and record it the same way. A failure is stated on
+// streams.retractions — the writer selection's own outcome goes to — and recorded
+// on rec as unscreened, so a caller answering with values learns that nothing was
+// screened rather than reading the silence as a clean screening. streams.retractions
+// must not be nil.
+func readLiveWithdrawals(ctx context.Context, cfg workspaceconfig.Config, host, repoPath, reference string, tags []string, streams noticeStreams, rec *retractionRecorder) ([]registryindex.VersionDeprecation, bool) {
 	versions := oci.SortedSemverTags(tags)
 	if len(versions) == 0 {
-		return nil
+		return nil, false
 	}
 	// The marker read reports what it found on the writer the account goes to: what
 	// it says is which versions were asked about and what came back, which is not
@@ -636,9 +668,9 @@ func liveRetractionScreen(ctx context.Context, cfg workspaceconfig.Config, host,
 		// because there is no screen to decorate: the degradation IS that none was
 		// formed.
 		rec.recordUnscreened(reference, err.Error())
-		return nil
+		return nil, false
 	}
-	return rec.watch(registryindex.NewLiveScreen(reference, deps, streams.retractions))
+	return deps, true
 }
 
 // ResolveLatestVersion returns the highest strict-SemVer version published for the

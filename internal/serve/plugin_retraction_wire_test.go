@@ -423,6 +423,87 @@ default_registry: hub.aggrega.ai
 	}
 }
 
+// TestThePluginAddAnswerSaysANamedPinIsWithdrawn is the invocation-level proof that
+// a named version a withdrawal covers reaches a caller over the request surface as
+// a value, read from the payload BYTES, so "absent" is asserted rather than "false".
+//
+// The planted defects each row catches:
+//   - "named withdrawn": the daemon dropping the operation's Withdrawn, or the key
+//     sent under a spelling the shipped schema does not declare (the key is resolved
+//     against the schema, which also asserts it is optional);
+//   - "named ordinary": the key sent unconditionally, or sent as false — an absent
+//     key and a false one read differently to a client matching on presence;
+//   - "named, markers unreadable": a named pin's failed read answered with nothing,
+//     which a caller cannot tell from a version nothing withdrew — the answer must
+//     carry no withdrawn key and retraction.unscreened naming the fault.
+func TestThePluginAddAnswerSaysANamedPinIsWithdrawn(t *testing.T) {
+	// Not parallel: the plugin layer's registry seams are process-global.
+	const fault = "the registry refused the referrer listing"
+	for _, tc := range []struct {
+		name           string
+		version        string
+		failMarkers    bool
+		wantWithdrawn  bool
+		wantUnscreened string
+	}{
+		{name: "named withdrawn", version: wireRetractedNewest, wantWithdrawn: true},
+		{name: "named ordinary", version: wireRetractedOlder},
+		{name: "named, markers unreadable", version: wireRetractedNewest, failMarkers: true, wantUnscreened: fault},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withFakeRegistryForAttachWithdrawing(t, []string{wireRetractedOlder, wireRetractedNewest},
+				map[string]string{wireRetractedNewest: wireRetractedReason})
+			if tc.failMarkers {
+				// Set after the fixture, so the fixture's own restore puts the true lister back.
+				pluginops.RepoWithdrawalLister = func(context.Context, workspaceconfig.Config, string, string, []string, io.Writer) ([]registryindex.VersionDeprecation, error) {
+					return nil, errors.New(fault)
+				}
+			}
+			srv, _, _ := registryWriteFixture(t, `workspace:
+  catalog_dirs:
+    - catalog
+default_registry: hub.aggrega.ai
+`)
+			resp := callDaemonMethod(t, srv, "aggrega/pluginAdd", map[string]any{
+				"type": "governance", "query": "tag-injector:" + tc.version, "role": "label-transform",
+			})
+			if resp.Error != nil {
+				t.Fatalf("expected a result; got error %d: %s", resp.Error.Code, resp.Error.Message)
+			}
+			t.Logf("aggrega/pluginAdd answered:\n%s", resp.Result)
+
+			var raw map[string]json.RawMessage
+			if err := json.Unmarshal(resp.Result, &raw); err != nil {
+				t.Fatalf("unmarshal the payload: %v", err)
+			}
+			var identity string
+			if err := json.Unmarshal(raw["identity"], &identity); err != nil || !strings.HasSuffix(identity, ":"+tc.version) {
+				t.Fatalf("pinned %q (%v); want the named %s — the fixture is wrong, not the projection", identity, err, tc.version)
+			}
+			key := wireOptionalProperty(t, "#/$defs/PluginAddResult", "withdrawn")
+			value, present := raw[key]
+			switch {
+			case tc.wantWithdrawn && (!present || string(value) != "true"):
+				t.Errorf("the payload carries %s = %s (present %v); want true: %s", key, value, present, resp.Result)
+			case !tc.wantWithdrawn && present:
+				t.Errorf("the payload carries %s = %s; want the key absent: %s", key, value, resp.Result)
+			}
+
+			var got pluginAddResult
+			decodeDaemonResult(t, resp, &got)
+			if tc.wantUnscreened == "" {
+				if got.Retraction != nil {
+					t.Errorf("a named pin answered with an advisory %#v; nothing was substituted and nothing failed", got.Retraction)
+				}
+				return
+			}
+			if got.Retraction == nil || got.Retraction.Unscreened != tc.wantUnscreened || got.Retraction.Reference != wireRetractedRef {
+				t.Fatalf("retraction = %#v; want unscreened %q on %s", got.Retraction, tc.wantUnscreened, wireRetractedRef)
+			}
+		})
+	}
+}
+
 // TestTheRequestSurfaceKeepsVersionSelectionScreened pins why the notices writer is
 // a discarding one rather than absent, which is the kind of simplification a later
 // reader makes on the grounds that nothing reads the prose.

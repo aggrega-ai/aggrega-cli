@@ -209,6 +209,14 @@ type pluginAddParams struct {
 // withdrawal, frequently for a safety reason, so a caller handed an older version
 // than the newest published one is owed the reason — the command line states it on
 // the terminal, and this is where it travels for a caller that answers with values.
+//
+// Withdrawn is present, and true, only when the query named the version that was
+// pinned and that version carries a withdrawal record. Naming a version is the
+// override, so it is pinned all the same; the command line says so on the terminal,
+// and this is the same fact, from the same lookup, carried as a value. It is absent
+// rather than false otherwise, so its presence is the whole signal — and its absence
+// is not a claim that the version is not withdrawn: where a named version's markers
+// could not be read, it is absent and Retraction's unscreened says why.
 type pluginAddResult struct {
 	Type       string            `json:"type"`
 	Identity   string            `json:"identity,omitempty"`
@@ -219,6 +227,7 @@ type pluginAddResult struct {
 	Written    bool              `json:"written"`
 	Content    string            `json:"content,omitempty"`
 	Retraction *pluginRetraction `json:"retraction,omitempty"`
+	Withdrawn  bool              `json:"withdrawn,omitempty"`
 }
 
 // pluginRetractionExclusion is one published version the withdrawal screen removed
@@ -446,6 +455,7 @@ func (s *Server) dispatchPluginAdd(ctx context.Context, req *jsonRPCRequest) err
 		Written:    !delivery.Reports(),
 		Content:    string(res.Content),
 		Retraction: pluginRetractionOf(res.Retraction),
+		Withdrawn:  res.Withdrawn,
 	})
 }
 

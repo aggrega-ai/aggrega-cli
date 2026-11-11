@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 
@@ -145,55 +146,82 @@ func locatePlugin(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, re
 // does not publish lists the versions it does. A named version carrying a recorded
 // withdrawal is pinned all the same — naming a version is the override, as it is
 // for every reference that names one — and the withdrawal is announced
-// (announceWithdrawnPin) rather than passed over quietly.
-func pluginVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath, named string, listed []string, streams noticeStreams, rec *retractionRecorder) (string, error) {
+// (announceWithdrawnPin) rather than passed over quietly. withdrawn reports that
+// case, so a surface answering with values carries the fact the sentence states;
+// it is false whenever the latest version was taken, because that selection
+// runs through the withdrawal screen instead and what the screen concluded is
+// recorded on rec. It is false as well where a named version's withdrawal markers
+// could not be read, which is then recorded on rec as unscreened: false says no
+// withdrawal is known, never that the version carries none.
+func pluginVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath, named string, listed []string, streams noticeStreams, rec *retractionRecorder) (version string, withdrawn bool, err error) {
 	if named == "" {
-		return resolveLatestVersion(ctx, rw, host, repoPath, listed, streams, rec)
+		version, err = resolveLatestVersion(ctx, rw, host, repoPath, listed, streams, rec)
+		return version, false, err
 	}
 	if !slices.Contains(listed, named) {
 		published := oci.SortedSemverTags(listed)
 		if len(published) == 0 {
-			return "", fmt.Errorf("%s is not published at version %s, and publishes no version", repoPath, named)
+			return "", false, fmt.Errorf("%s is not published at version %s, and publishes no version", repoPath, named)
 		}
-		return "", fmt.Errorf("%s is not published at version %s; its published versions are %s",
+		return "", false, fmt.Errorf("%s is not published at version %s; its published versions are %s",
 			repoPath, named, strings.Join(published, ", "))
 	}
-	announceWithdrawnPin(ctx, rw, host, repoPath, named, streams)
-	return named, nil
+	return named, announceWithdrawnPin(ctx, rw, host, repoPath, named, streams, rec), nil
 }
 
 // announceWithdrawnPin states, on the writer the marker account goes to, that the
-// version a query named carries a withdrawal recorded against it, and states
-// nothing where it carries none.
+// version a query named carries a withdrawal recorded against it, states nothing
+// where it carries none, and reports which of the two it found.
 //
 // The withdrawal facts come from where the version was found, through the same
 // screens the latest version is chosen through: the local discovery index's
 // (registryindex.NewScreen) where the index carries that version, so a plugin the
 // index knows is screened with no registry round trip, and otherwise the markers
-// read for that one version from the registry (liveRetractionScreen). The sentence
-// is the screen's own (catalog.RetractionScreen.ReportPinned). It goes to the
+// read for that one version from the registry (readLiveWithdrawals, the read the
+// live screen is built from). The sentence and the reported fact are the screen's
+// own, from one lookup (registryindex.ReportPinnedWithdrawal). It goes to the
 // marker account's writer rather than the substitution's, because there is no
-// substitution: the version pinned is the one named. With no writer at all there
-// is no one to tell, and nothing is read.
-func announceWithdrawnPin(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath, version string, streams noticeStreams) {
+// substitution: the version pinned is the one named.
+//
+// Markers that cannot be read are the one thing reported on the substitution's
+// writer and recorded on rec, exactly as a latest-version selection reports the
+// same failure: it is the same event — nothing was screened — and a caller that
+// renders the advisory itself has discarded that writer, so it states the failure
+// once, from the advisory. rec records nothing else here: the screen is not wrapped
+// in a recorder, because a wrapped screen would hide from
+// registryindex.ReportPinnedWithdrawal the screen whose fact it reads, and there is
+// no substitution for a recorder to observe.
+//
+// With no writer at all there is no one to tell, and the fact is still read: a
+// caller answering with values is owed it whether or not anyone reads the
+// sentence, so the screen is formed over a discarding writer — the screens form
+// only where they have somewhere to write. A screen that cannot be formed, or
+// markers that cannot be read, report false: no withdrawal is known.
+func announceWithdrawnPin(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, host, repoPath, version string, streams noticeStreams, rec *retractionRecorder) bool {
 	out := streams.notices
 	if out == nil {
-		return
+		out = io.Discard
+	}
+	retractions := streams.retractions
+	if retractions == nil {
+		retractions = out
 	}
 	reference := host + "/" + repoPath
 	var screen catalog.RetractionScreen
 	if record, ok, err := indexRecord(rw, host, repoPath); err == nil && ok && slices.Contains(record.Versions, version) {
 		indexed, serr := registryindex.NewScreen(rw, host, out)
 		if serr != nil {
-			return
+			return false
 		}
 		screen = indexed
 	} else {
-		screen = liveRetractionScreen(ctx, rw.Config(), host, repoPath, reference, []string{version}, noticeStreams{notices: out, retractions: out}, nil)
+		deps, read := readLiveWithdrawals(ctx, rw.Config(), host, repoPath, reference, []string{version}, noticeStreams{notices: out, retractions: retractions}, rec)
+		if !read {
+			return false
+		}
+		screen = registryindex.NewLiveScreen(reference, deps, out)
 	}
-	if screen != nil {
-		screen.ReportPinned(reference, version)
-	}
+	return registryindex.ReportPinnedWithdrawal(screen, reference, version)
 }
 
 // noReleasedVersion is the refusal of an addition that found its plugin and no

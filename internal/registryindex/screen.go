@@ -391,21 +391,57 @@ func WriteSelectionNotice(out io.Writer, reference, selected string, excluded []
 // override, and refusing it would break a build that already committed to that
 // version — so this reports rather than refuses.
 func (s *screen) ReportPinned(reference, version string) {
+	s.reportPinned(reference, version)
+}
+
+// reportPinned is ReportPinned, reporting whether the named version carries a
+// withdrawal record: true exactly when the announcement was written.
+//
+// The lookup here is the one determination of that fact. The sentence and the
+// value a caller answering with values reads (ReportPinnedWithdrawal) are both its
+// result, so the two cannot come to disagree about which pinned versions are
+// withdrawn.
+func (s *screen) reportPinned(reference, version string) bool {
 	withdrawn, ok := s.withdrawnByURI[URIForReference(reference)]
 	if !ok {
-		return
+		return false
 	}
 	reason, hit := withdrawn[version]
 	if !hit {
-		return
+		return false
 	}
 	if reason == "" {
 		fmt.Fprintf(s.out, "  retraction: %s:%s is %s; resolving it because the reference names it explicitly%s\n",
 			reference, version, deprecation.SeverityRetracted.StatedAs(), s.asOfSuffix())
-		return
+		return true
 	}
 	fmt.Fprintf(s.out, "  retraction: %s:%s is %s (%s); resolving it because the reference names it explicitly%s\n",
 		reference, version, deprecation.SeverityRetracted.StatedAs(), reason, s.asOfSuffix())
+	return true
+}
+
+// ReportPinnedWithdrawal announces through s, as s.ReportPinned does, that a
+// reference named an exact version carrying a withdrawal record, and reports
+// whether it carried one.
+//
+// A caller that answers with values needs the fact as well as the sentence, and
+// it gets both from the one lookup the screen announces from, rather than
+// re-deriving the withdrawal from the records. The screen contract is not widened
+// to return it, for the reason given on ProvenanceOf: only a screen built from
+// index or registry facts can answer, and every implementation would otherwise be
+// obliged to. A nil screen reports false, and so does a screen this package did
+// not build, after announcing through its own ReportPinned — such a screen states
+// no fact to report.
+func ReportPinnedWithdrawal(s catalog.RetractionScreen, reference, version string) bool {
+	if s == nil {
+		return false
+	}
+	built, ok := s.(*screen)
+	if !ok {
+		s.ReportPinned(reference, version)
+		return false
+	}
+	return built.reportPinned(reference, version)
 }
 
 // asOfSuffix renders where this screen's withdrawal facts came from and how

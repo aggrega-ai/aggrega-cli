@@ -231,7 +231,8 @@ func (s *recordingScreen) ReportSelection(reference, selected string, excluded [
 // record. A recording screen never meets that case: it wraps the screen the latest
 // version is chosen through, and an addition naming its version does not choose
 // one — it announces a withdrawal recorded against the version it names on a screen
-// of its own (announceWithdrawnPin), which nothing records. The delegation is here
+// of its own (announceWithdrawnPin), whose finding reaches the result as
+// AddResult.Withdrawn rather than through this recorder. The delegation is here
 // because the screen contract has the method.
 func (s *recordingScreen) ReportPinned(reference, version string) {
 	s.inner.ReportPinned(reference, version)
