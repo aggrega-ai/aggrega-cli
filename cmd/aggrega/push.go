@@ -241,7 +241,7 @@ func listPublishableKinds(out io.Writer) error {
 // turn a display format into a contract. What makes the discard honest here is
 // that this surface IS the person watching.
 func pushRun(ctx context.Context, cfg pushConfig) error {
-	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
+	cfg.TokenGetter = signInGetter(ctx, cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
 	cfg.IdentitySupply = commandLineIdentitySupply

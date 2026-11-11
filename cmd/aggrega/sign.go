@@ -96,7 +96,7 @@ func newSignCmd() *cobra.Command {
 // including on a batch that failed partway, where the successes were reported as
 // the batch ran and the failures are named in the error rather than in the result.
 func signRun(ctx context.Context, cfg signConfig) error {
-	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
+	cfg.TokenGetter = signInGetter(ctx, cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
 	cfg.IdentitySupply = commandLineIdentitySupply

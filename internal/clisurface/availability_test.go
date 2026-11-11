@@ -187,6 +187,82 @@ func TestTheWorkspaceScopeCheckRefusesEachRowThatDoesNotBelong(t *testing.T) {
 	}
 }
 
+// checkWaitDisplays reports every way the declared wait displays and the
+// operation set disagree: an operation with no row, a row for an identifier that
+// is not an operation, and a value the vocabulary does not hold. Each finding
+// names the identifier.
+func checkWaitDisplays(rows map[string]WaitDisplay) []string {
+	var findings []string
+	for _, op := range opsurface.Operations() {
+		if _, declared := rows[op.ID]; !declared {
+			findings = append(findings, fmt.Sprintf("the %q operation declares nothing about what its command shows while it waits", op.ID))
+		}
+	}
+	for id, display := range rows {
+		_, known := opsurface.Lookup(id)
+		switch {
+		case !known:
+			findings = append(findings, fmt.Sprintf("a wait display is declared for %q, which is not an operation", id))
+		case display != ShowsWaitSteps && display != DrawsOwnProgress && display != ShowsNoProgress:
+			findings = append(findings, fmt.Sprintf("the %q operation declares the wait display %q, which is not one", id, display))
+		}
+	}
+	sort.Strings(findings)
+	return findings
+}
+
+// TestEveryOperationDeclaresWhatItsCommandShowsWhileItWaits holds the wait
+// displays to the operation set: every operation declares one, those no command
+// carries included, so a command attached for a new operation is given the
+// shared progress surface, or not, by a row its author wrote.
+func TestEveryOperationDeclaresWhatItsCommandShowsWhileItWaits(t *testing.T) {
+	if len(operationWaitDisplay) == 0 {
+		t.Fatal("no operation declares a wait display, so the check below reads nothing")
+	}
+	if findings := checkWaitDisplays(operationWaitDisplay); len(findings) != 0 {
+		t.Fatalf("%d wait display finding(s):\n  %s", len(findings), strings.Join(findings, "\n  "))
+	}
+}
+
+// TestTheWaitDisplayCheckRefusesEachRowThatDoesNotBelong drives the check above
+// with rows built to be wrong in one way each, beside the real rows, so its green
+// over the real rows is a check that could have failed.
+func TestTheWaitDisplayCheckRefusesEachRowThatDoesNotBelong(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		edit    func(rows map[string]WaitDisplay)
+		refuses string
+	}{
+		{name: "the real rows", edit: func(map[string]WaitDisplay) {}, refuses: ""},
+		{name: "an operation with no row",
+			edit:    func(rows map[string]WaitDisplay) { delete(rows, "plugin-add") },
+			refuses: `the "plugin-add" operation declares nothing about what its command shows while it waits`},
+		{name: "a row naming something that is not an operation",
+			edit:    func(rows map[string]WaitDisplay) { rows["not-an-operation"] = ShowsNoProgress },
+			refuses: `declared for "not-an-operation", which is not an operation`},
+		{name: "a value the vocabulary does not hold",
+			edit:    func(rows map[string]WaitDisplay) { rows["build"] = WaitDisplay("sometimes") },
+			refuses: `declares the wait display "sometimes", which is not one`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := make(map[string]WaitDisplay, len(operationWaitDisplay))
+			for id, display := range operationWaitDisplay {
+				rows[id] = display
+			}
+			tc.edit(rows)
+			findings := checkWaitDisplays(rows)
+			switch {
+			case tc.refuses == "" && len(findings) != 0:
+				t.Fatalf("rows that belong were refused: %v", findings)
+			case tc.refuses != "" && len(findings) != 1:
+				t.Fatalf("want one finding carrying %q, got %v", tc.refuses, findings)
+			case tc.refuses != "" && !strings.Contains(findings[0], tc.refuses):
+				t.Fatalf("the finding does not name what was wrong: want %q in %q", tc.refuses, findings[0])
+			}
+		})
+	}
+}
+
 // TestCommandWorkspaceScopeAnswersTheCarriedOperationsRow pins the command
 // accessor against the declaration it reads through the operation a command
 // carries: a command answers its operation's row, a path claimed by two

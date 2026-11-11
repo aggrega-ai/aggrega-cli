@@ -25,9 +25,11 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
+	"github.com/aggrega-ai/aggrega-cli/internal/waitbound"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress/livetrust"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
@@ -91,13 +93,60 @@ var errRepositoryListingRepeated = errors.New("the registry's repository listing
 // failure) still propagates, since there is nothing to fall back to. A caller
 // that stopped the walk gets the stop rather than a partial result, because a
 // partial result from a withdrawn walk reads as a complete one.
+//
+// 🔴 The walk also ends in time. A listing that keeps advancing without end —
+// or one a registry serves so slowly that it would outlast any reader — is
+// stopped once the walk has run for RepositoryListingDeadline, and refused with
+// ErrRepositoryListingTooLong naming that bound and how many repositories the
+// listing had named by then; the stop yields no repositories, as the refusal of
+// a listing that repeats itself does. A page of the listing is waited on for as
+// long as the walk may run, rather than for the network client's usual wait on
+// an answer (egress.AnswerWait), because a registry may gather every repository
+// it holds before it answers a listing request at all.
 func EnumerateRepositories(ctx context.Context, reg RepoLister, query string, scope RepoScope) ([]string, error) {
+	return enumerateRepositoriesWithin(ctx, reg, query, scope, RepositoryListingDeadline)
+}
+
+// RepositoryListingDeadline is how long a walk of a registry's repository listing
+// (EnumerateRepositories) may run before it is stopped and refused. It bounds
+// the listing alone — a walk that reads each repository afterwards, as an index
+// build does, reads them outside it — and is chosen well above what listing a
+// large public registry takes, so it stops a listing that will not end rather
+// than one that is merely long.
+const RepositoryListingDeadline = 5 * time.Minute
+
+// ErrRepositoryListingTooLong is returned when a walk of a registry's repository
+// listing ran for RepositoryListingDeadline without reaching the listing's end.
+// The error naming it names the bound and how many repositories the listing had
+// named when it was stopped.
+func ErrRepositoryListingTooLong() error { return errRepositoryListingTooLong }
+
+var errRepositoryListingTooLong = cerrors.Register("repository-listing-too-long", cerrors.Meta{
+	ShortCode: "E0377",
+	Message:   "registry: the repository listing did not end in time",
+	RulePlace: cerrors.NotARule("A walk of a registry's repository listing ran past the time a walk may run. It " +
+		"reports a network operation that did not complete rather than a rule over anything an author wrote."),
+})
+
+// enumerateRepositoriesWithin is EnumerateRepositories with the walk's bound
+// supplied, so the bound's refusal is exercised without waiting it out.
+func enumerateRepositoriesWithin(ctx context.Context, reg RepoLister, query string, scope RepoScope, deadline time.Duration) ([]string, error) {
+	parent := ctx
+	ctx, cancel, expired := waitbound.Within(ctx, deadline)
+	defer cancel()
+	// A registry may gather every repository it holds before it answers a listing
+	// request at all, so a page is waited on for as long as the walk may run rather
+	// than for the network client's usual wait on an answer.
+	ctx = egress.WithAnswerWait(ctx, deadline)
 	q := strings.ToLower(query)
 	var matches []string
 	pageDelivered := false
 	delivered := make(map[string]struct{})
 	previousPageEmpty := false
 	err := reg.Repositories(ctx, "", func(repos []string) error {
+		if expired() {
+			return context.DeadlineExceeded
+		}
 		pageDelivered = true
 		if len(repos) == 0 {
 			if previousPageEmpty {
@@ -128,7 +177,11 @@ func EnumerateRepositories(ctx context.Context, reg RepoLister, query string, sc
 		if errors.Is(err, errRepositoryListingRepeated) {
 			return nil, err
 		}
-		if serr := stopped(ctx); serr != nil {
+		if expired() {
+			return nil, fmt.Errorf("the walk was stopped after %s, before the listing ended (repositories named so far: %d): %w",
+				deadline, len(delivered), errRepositoryListingTooLong)
+		}
+		if serr := stopped(parent); serr != nil {
 			return nil, serr
 		}
 		if !pageDelivered {

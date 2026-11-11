@@ -56,6 +56,8 @@ import (
 
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
+	"github.com/aggrega-ai/aggrega-cli/internal/waitbound"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
@@ -78,9 +80,9 @@ const (
 
 // AcquireTimeout bounds one acquisition attempt.
 //
-// The egress transport carries no deadline of its own, so without a bound an
-// unreachable registry would hold the handshake open for as long as the operating
-// system's connect timeout allows. It is generous enough for a cold pull over a
+// The egress transport bounds each request's wait on the registry's answer
+// (egress.AnswerWait) but not the acquisition as a whole, which is several
+// requests; this bounds the whole. It is generous enough for a cold pull over a
 // slow link and short enough that a dead registry costs a pause rather than a
 // session.
 const AcquireTimeout = 30 * time.Second
@@ -457,12 +459,30 @@ func EnsureCached(ctx context.Context, cfg workspaceconfig.Config, cacheRoot, re
 	if err != nil {
 		return false, alsoRefused(refused, err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, AcquireTimeout)
-	defer cancel()
-	if _, err := docscache.ResolveAndCache(ctx, repo, ref, version, cacheRoot, verify); err != nil {
+	end := opprogress.Begin(ctx, "fetching the documentation bundle "+version)
+	err = withinAcquireTimeout(ctx, func(ctx context.Context) error {
+		_, err := docscache.ResolveAndCache(ctx, repo, ref, version, cacheRoot, verify)
+		return err
+	})
+	end(err)
+	if err != nil {
 		return false, alsoRefused(refused, fmt.Errorf("acquire documentation bundle %s@%s: %w", ref, version, err))
 	}
 	return true, nil
+}
+
+// withinAcquireTimeout runs one acquisition attempt under [AcquireTimeout]. An
+// attempt the bound stopped says so, naming the bound, rather than reporting only
+// that its context ended; an attempt its caller withdrew reports the withdrawal as
+// it is.
+func withinAcquireTimeout(ctx context.Context, attempt func(context.Context) error) error {
+	bounded, cancel, expired := waitbound.Within(ctx, AcquireTimeout)
+	defer cancel()
+	err := attempt(bounded)
+	if err != nil && expired() {
+		return fmt.Errorf("the registry did not deliver it within %s: %w", AcquireTimeout, err)
+	}
+	return err
 }
 
 // targetOf returns the target an acquisition reaches: target where it names one,
@@ -574,9 +594,15 @@ func publishedVersions(ctx context.Context, cfg workspaceconfig.Config, ref, ver
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, AcquireTimeout)
-	defer cancel()
-	return oci.ListTags(ctx, repo)
+	end := opprogress.Begin(ctx, "listing the published documentation bundles")
+	var tags []string
+	err = withinAcquireTimeout(ctx, func(ctx context.Context) error {
+		var lerr error
+		tags, lerr = oci.ListTags(ctx, repo)
+		return lerr
+	})
+	end(err)
+	return tags, err
 }
 
 // newestCachedAtOrBelow returns the newest version at or below bound that the

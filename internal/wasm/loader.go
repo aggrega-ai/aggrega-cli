@@ -65,14 +65,16 @@ import (
 	"testing"
 	"time"
 
+	extism "github.com/extism/go-sdk"
+	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/sys"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/attribindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/machinedirs"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
-	extism "github.com/extism/go-sdk"
-	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/sys"
 )
 
 // FetchService supplies external-input bytes to guests that import the
@@ -998,7 +1000,12 @@ func (l *Loader) loadCore(
 	// compiled form is rebuilt.
 	guestDigest := digest.ContentDigest(wasmBytes)
 	compiled, owned, err := l.compiledPlugin(guestDigest, profile.name, manifest, func() (*extism.CompiledPlugin, error) {
-		return extism.NewCompiledPlugin(ctx, manifest, config, profile.buildFunctions(hostFunctions))
+		// A build whose compiled form the cache already holds is over at once, so
+		// the step is shown only where it is not: where the guest is compiled.
+		end := opprogress.BeginAfter(ctx, CompileStepRevealDelay, "compiling plugin "+spec.Name)
+		compiled, err := extism.NewCompiledPlugin(ctx, manifest, config, profile.buildFunctions(hostFunctions))
+		end(err)
+		return compiled, err
 	})
 	var extismPlugin *extism.Plugin
 	if err == nil {
@@ -1020,6 +1027,15 @@ func (l *Loader) loadCore(
 	}
 	return p, nil
 }
+
+// CompileStepRevealDelay is how long building a guest's compiled form must run
+// before it is shown as a step an operation waits on (opprogress.BeginAfter). A
+// guest whose compiled form the compile cache already holds is built in a few
+// milliseconds; compiling one takes seconds, so a build still running past this
+// delay is compiling. The margin is wide enough that a cache hit never crosses
+// it and a real compile always does, so the signal separates the two without
+// inspecting the cache's internal keys.
+const CompileStepRevealDelay = 750 * time.Millisecond
 
 // compiledKey names one compiled form within one compilation cache: the guest's
 // content digest plus everything the compiled form fixes for every instance made

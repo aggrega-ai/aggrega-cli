@@ -21,7 +21,6 @@ import (
 	"io"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 
@@ -31,6 +30,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/trace"
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -1805,28 +1806,46 @@ func buildEntityPluginLookup(inputs Inputs, catalogLookup resolver.CatalogLookup
 
 // pluginCompileRevealDelay is the wall-clock a provider-guest warm must exceed
 // for the eager pass to treat it as a genuine compilation rather than a cache
-// hit. A guest served from the populated compile cache loads in a few
-// milliseconds; compiling one from source takes seconds, so a warm still running
-// past this delay is compiling. The margin is wide enough that a cache hit never
-// crosses it and a real compile always does, so the signal cleanly separates the
-// two without inspecting the cache's internal keys.
-const pluginCompileRevealDelay = 750 * time.Millisecond
+// hit. It is the loader's own reveal delay for a compile step
+// (wasm.CompileStepRevealDelay), so a build and every other surface tell a
+// compile from a cache hit by one measure.
+const pluginCompileRevealDelay = wasm.CompileStepRevealDelay
 
 // warmProviderGuest compiles one provider guest, reporting through onCompiling
 // when the warm runs long enough to be a genuine compile rather than a cache
-// hit. A warm still running after pluginCompileRevealDelay is compiling: the
-// timer fires onCompiling from its own goroutine while the warm proceeds, so a
+// hit. A warm still running after pluginCompileRevealDelay is compiling:
+// onCompiling is called from a timer's goroutine while the warm proceeds, so a
 // progress surface can reveal the compilation step mid-compile. A warm that
-// finishes within the delay (a cache hit) cancels the timer and reports nothing.
-// A nil onCompiling skips the timing and warms directly.
+// finishes within the delay (a cache hit) reports nothing. A nil onCompiling
+// skips the timing and warms directly.
+//
+// The reveal is the one every surface uses for a step that is usually over at
+// once (opprogress.BeginAfter), with onCompiling as the observer it reports the
+// step to; the warm itself runs under the caller's context, so the loader's own
+// compile step reaches whatever the caller installed and nothing else.
 func warmProviderGuest(ctx context.Context, w guestWarmer, onCompiling func()) error {
 	if onCompiling == nil {
 		return w.Warm(ctx)
 	}
-	timer := time.AfterFunc(pluginCompileRevealDelay, onCompiling)
-	defer timer.Stop()
-	return w.Warm(ctx)
+	end := opprogress.BeginAfter(opprogress.With(ctx, compileReveal(onCompiling)), pluginCompileRevealDelay, compileRevealStep)
+	err := w.Warm(ctx)
+	end(err)
+	return err
 }
+
+// compileRevealStep names the step warmProviderGuest reveals; the build's own
+// progress surface labels the step itself, so the name reaches no reader.
+const compileRevealStep = "compiling plugins"
+
+// compileReveal is the observer warmProviderGuest reveals a guest compilation to:
+// beginning the step calls the build's callback, and nothing else is reported.
+type compileReveal func()
+
+func (r compileReveal) Begin(string) opprogress.End { r(); return func(error) {} }
+
+func (compileReveal) Yield() {}
+
+func (compileReveal) Beside(w io.Writer) io.Writer { return w }
 
 // collectProviderGuestWarmers resolves the distinct provider guests the render
 // will load, in the same way the render loop does: it walks the graph's nodes,

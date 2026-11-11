@@ -10,6 +10,9 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"sync"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 )
 
 // progressMethod is the notification method the daemon reports work in progress
@@ -102,8 +105,14 @@ type progressKey struct{}
 // asked to be reported on. The dispatch path installs it beside the per-request
 // sink, so a handler reaches the token by the same route it reaches every other
 // per-request handle.
+//
+// It installs the request's step reports with it (stepReports), so the steps an
+// operation reports it waits on reach the report the request asked for, and a
+// request that asked for none reports none.
 func withProgressToken(ctx context.Context, token json.RawMessage) context.Context {
-	return context.WithValue(ctx, progressKey{}, token)
+	ctx = context.WithValue(ctx, progressKey{}, token)
+	steps := &stepReports{}
+	return context.WithValue(opprogress.With(ctx, steps), stepReportsKey{}, steps)
 }
 
 // progressTokenFromContext returns the progress token installed by
@@ -194,20 +203,79 @@ type progressRun struct {
 	rep   *progressReporter
 	lines *progressLines
 	began bool
+	// steps is the request's step reports, where the request carried a token.
+	steps *stepReports
 }
 
 // progressFor returns a report for this request, whether or not the request
 // asked to be reported on.
+//
+// The steps the request's operation reports it waits on (opprogress) are lines
+// of this report too, the step's own name as the line, as the command line shows
+// them to a person: the dispatch path installed the request's step reports where
+// a token was carried (withProgressToken), and the report is bound to them here,
+// so a step is reported only once the report has begun and until it is done.
 func (s *Server) progressFor(ctx context.Context) *progressRun {
 	rep := &progressReporter{s: s, ctx: ctx, token: progressTokenFromContext(ctx)}
-	return &progressRun{rep: rep, lines: &progressLines{rep: rep}}
+	run := &progressRun{rep: rep, lines: &progressLines{rep: rep}}
+	if steps, ok := ctx.Value(stepReportsKey{}).(*stepReports); ok {
+		run.steps = steps
+	}
+	return run
 }
 
 // begin opens the report under the given title.
 func (p *progressRun) begin(title string) {
 	p.began = true
 	p.rep.emit(progressBegin{Kind: progressKindBegin, Title: title})
+	p.steps.open(p.lines)
 }
+
+// stepReportsKey keys a request's step reports on its context.
+type stepReportsKey struct{}
+
+// stepReports turns the steps an operation reports it waits on into lines of
+// the request's progress report. It is installed on the request's context before
+// any handler runs and is bound to the report when the report begins, so a step
+// reported before the report began, or after it ended, reports nothing — a
+// caller is never sent a line outside the begin and end that frame it.
+type stepReports struct {
+	mu    sync.Mutex
+	lines *progressLines
+}
+
+// open binds the report's lines, from which steps are reported.
+func (s *stepReports) open(lines *progressLines) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lines = lines
+}
+
+// close unbinds them, so nothing is reported once the report has ended.
+func (s *stepReports) close() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lines = nil
+}
+
+func (s *stepReports) Begin(step string) opprogress.End {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lines != nil {
+		s.lines.reportLine(step)
+	}
+	return func(error) {}
+}
+
+func (*stepReports) Yield() {}
+
+func (*stepReports) Beside(w io.Writer) io.Writer { return w }
 
 // writer is the io.Writer to hand the shared operation for its own
 // human-readable output. It is never nil, and it discards when the request asked
@@ -223,6 +291,7 @@ func (p *progressRun) done() {
 	if !p.began {
 		return
 	}
+	p.steps.close()
 	p.lines.flush()
 	p.rep.emit(progressEnd{Kind: progressKindEnd})
 }

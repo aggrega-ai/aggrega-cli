@@ -311,11 +311,11 @@ func configLookupFromContext(ctx context.Context) func(string) string {
 // the reader set on this invocation, read once by the root command and stashed
 // there.
 //
-// It exists for a command that hands resolution on to a server of its own. Such
-// a server resolves a workspace for each request rather than reading the one
-// this invocation resolved, so it is handed this same value to resolve each of
-// those workspaces with — the value the root command composed, not the flags
-// read a second time. It returns the empty layer when no resolver is attached,
+// It exists for a command that resolves a workspace other than the one this
+// invocation's resolver holds. A server of its own resolves a workspace for each
+// request, and the seeding command resolves one without the global layer it is
+// about to write; each lays this same value over what it resolves — the value the
+// root command composed, not the flags read a second time. It returns the empty layer when no resolver is attached,
 // which happens only when a command helper is invoked directly outside the root
 // wiring (tests), and the empty layer changes nothing.
 func flagOverlayFromContext(ctx context.Context) workspaceconfig.FlagOverlay {

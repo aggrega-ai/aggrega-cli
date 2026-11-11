@@ -117,8 +117,10 @@ func offlinePostureSource(rw *workspaceconfig.ResolvedWorkspace) string {
 // RoundTripper returns the HTTP transport for network egress, derived from the
 // resolved workspace configuration. When the configuration is offline it returns
 // (nil, ErrOfflineEgress) before any dial; otherwise it returns the shared
-// default transport. It is the transport source the OCI package threads into its
-// repository and registry construction.
+// default transport, with every request held to the wait on its server's answer
+// (AnswerWait), so no request through it waits on a server without end. It is the
+// transport source the OCI package threads into its repository and registry
+// construction.
 //
 // It is also how a caller consults the offline decision without building a
 // client it does not yet need — a pre-flight that has to know whether a later
@@ -129,13 +131,16 @@ func RoundTripper(cfg workspaceconfig.Config) (http.RoundTripper, error) {
 	if cfg.Offline {
 		return nil, ErrOfflineEgress()
 	}
-	return http.DefaultTransport, nil
+	return answerWaitTransport{next: http.DefaultTransport}, nil
 }
 
 // HTTPClient returns an HTTP client for network egress, derived from the resolved
 // workspace configuration. When the configuration is offline it returns
-// (nil, ErrOfflineEgress) before any dial. The returned client carries no
-// timeout; a caller with a fetch deadline sets Timeout on the returned client.
+// (nil, ErrOfflineEgress) before any dial. Its transport holds every request to
+// the wait on its server's answer (AnswerWait), and the client itself carries no
+// overall timeout, since a large transfer that keeps arriving is not waiting; a
+// caller with a deadline of its own for the whole fetch sets Timeout on the
+// returned client.
 func HTTPClient(cfg workspaceconfig.Config) (*http.Client, error) {
 	rt, err := RoundTripper(cfg)
 	if err != nil {

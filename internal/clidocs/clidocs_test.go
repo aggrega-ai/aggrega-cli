@@ -312,3 +312,19 @@ func TestGenerateIsDeterministicAndPreservesCuratedProse(t *testing.T) {
 		t.Errorf("build page not byte-identical across runs")
 	}
 }
+
+// TestTheWaitingCommandsAreTheOnesTheirRowsDeclare pins the overview's list of
+// commands that show the steps they wait on to the operation rows the command
+// line applies that surface from: a command whose operation's row says so is
+// listed, and one whose row says otherwise is not.
+func TestTheWaitingCommandsAreTheOnesTheirRowsDeclare(t *testing.T) {
+	got := renderWaitingCommands(clisurface.Catalog(newTestTree()))
+	if !strings.Contains(got, "`aggrega config init`") {
+		t.Errorf("the list leaves out `aggrega config init`, whose operation's row says it shows its waits; got %q", got)
+	}
+	for _, absent := range []string{"`aggrega build`", "`aggrega config show`", "`aggrega auth token`"} {
+		if strings.Contains(got, absent) {
+			t.Errorf("the list names %s, whose operation's row says it does not show its waits on the shared surface; got %q", absent, got)
+		}
+	}
+}

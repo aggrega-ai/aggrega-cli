@@ -21,6 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -936,7 +937,9 @@ func fetchPreviousRegistryVersion(
 		}
 		target = repo
 	}
+	end := opprogress.Begin(ctx, "listing the published versions of "+header.Metadata.Name)
 	tags, err := oci.ListTags(ctx, target)
+	end(err)
 	if err != nil {
 		return nil, "", fmt.Errorf("list tags: %w", err)
 	}
@@ -966,7 +969,9 @@ func fetchPreviousRegistryVersion(
 			return nil, "", nil
 		}
 	}
+	end = opprogress.Begin(ctx, "reading "+header.Metadata.Name+" "+latest+" as published")
 	pull, err := oci.Pull(ctx, target, latest)
+	end(err)
 	if err != nil {
 		return nil, "", fmt.Errorf("pull %s: %w", latest, err)
 	}

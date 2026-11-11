@@ -6,7 +6,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"sync"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 )
 
 // progressMethod is the notification a request's progress is reported on. It is
@@ -179,8 +182,33 @@ func withProgressReporter(ctx context.Context, req *rpcRequest) (context.Context
 		return ctx, rpcErr
 	}
 	reporter := &progressReporter{ctx: ctx, token: token, sink: progressSinkFrom(ctx)}
-	return context.WithValue(ctx, progressReporterKey{}, reporter), nil
+	ctx = context.WithValue(ctx, progressReporterKey{}, reporter)
+	if reporter.reporting() {
+		// The steps an operation reports it waits on (opprogress) reach this
+		// request's caller too, as the command line shows them to a person: each
+		// one the work enters is one more report on the request's token.
+		ctx = opprogress.With(ctx, stepProgress{reporter: reporter})
+	}
+	return ctx, nil
 }
+
+// stepProgress reports each step an operation reports it waits on as one more
+// progress notification on the request's token. A notification here carries no
+// message, so the step's name travels nowhere; what a caller sees is the count
+// rising as the work enters each step, which is what this protocol's progress
+// carries. There is no terminal to clear and nothing drawn to write beside.
+type stepProgress struct {
+	reporter *progressReporter
+}
+
+func (s stepProgress) Begin(string) opprogress.End {
+	s.reporter.step()
+	return func(error) {}
+}
+
+func (stepProgress) Yield() {}
+
+func (stepProgress) Beside(w io.Writer) io.Writer { return w }
 
 // progressReporterFrom returns the reporter installed for this request, or nil
 // where nothing installed one — which every operation treats the same way,

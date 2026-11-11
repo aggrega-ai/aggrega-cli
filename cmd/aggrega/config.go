@@ -364,17 +364,9 @@ policy, whether advertised or the hub's built-in baseline, is in the content
 itself and produces no notice.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// init writes the global config, so it resolves the workspace WITHOUT
-			// the global layer: the explicit --config path it is about to create
-			// need not pre-exist. The resolution still carries the same flag-aware
-			// lookup every other command's does, because the write destination is
-			// resolved off the resolution — so the file init creates is the file a
-			// later read of this same invocation would consult.
-			lookup := configLookupFromContext(cmd.Context())
-			rw, err := workspaceconfig.ResolveWithoutGlobalOn(platformFromContext(cmd.Context()), "",
-				workspaceRootFromContext(cmd.Context()), lookup)
+			rw, err := configInitWorkspace(cmd.Context())
 			if err != nil {
-				return workspaceconfig.NameRootSource(err, workspaceRootSourceFromContext(cmd.Context()))
+				return err
 			}
 			return configInitRun(cmd.Context(), configInitConfig{
 				Registry:  registry,
@@ -394,6 +386,25 @@ itself and produces no notice.`,
 	c.Flags().BoolVar(&workspace, "workspace", false, "Write the entry to this project's workspace config instead of the global config.")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "Do everything except write: hand back the seeded configuration as content, naming the file it is for, and create or modify nothing. Every other behaviour is the write's, so an existing config file is refused exactly as a write refuses it — pass --force alongside it for the merge an overwriting write would produce.")
 	return c
+}
+
+// configInitWorkspace resolves the workspace `config init` seeds from.
+//
+// init writes the global config, so it resolves the workspace WITHOUT the global
+// layer: the explicit --config path it is about to create need not pre-exist. The
+// resolution still carries the same flag-aware lookup every other command's does,
+// because the write destination is resolved off the resolution — so the file init
+// creates is the file a later read of this same invocation would consult. The
+// settings the reader set on this invocation are laid over it as they are over
+// every other command's, so --offline keeps the trust-policy read off the network
+// here too.
+func configInitWorkspace(ctx context.Context) (*workspaceconfig.ResolvedWorkspace, error) {
+	rw, err := workspaceconfig.ResolveWithoutGlobalOn(platformFromContext(ctx), "",
+		workspaceRootFromContext(ctx), configLookupFromContext(ctx))
+	if err != nil {
+		return nil, workspaceconfig.NameRootSource(err, workspaceRootSourceFromContext(ctx))
+	}
+	return rw.WithFlags(flagOverlayFromContext(ctx)), nil
 }
 
 // configInitConfig is the input contract for `aggrega config init`.

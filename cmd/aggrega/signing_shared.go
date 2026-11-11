@@ -4,12 +4,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/sigstore/sigstore/pkg/oauthflow"
 	"golang.org/x/term"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
 )
 
@@ -47,6 +49,18 @@ func tokenGetterOrDefault(getter func() (string, error)) func() (string, error) 
 		return getter
 	}
 	return acquireInteractiveIDToken
+}
+
+// signInGetter is tokenGetterOrDefault for a command whose operation may be in
+// the middle of a step it waits on when it asks a person to sign in: the progress
+// surface is taken out of the way (opprogress.Yield) before the sign-in prints its
+// address and waits, so the person reads it undisturbed.
+func signInGetter(ctx context.Context, getter func() (string, error)) func() (string, error) {
+	acquire := tokenGetterOrDefault(getter)
+	return func() (string, error) {
+		opprogress.Yield(ctx)
+		return acquire()
+	}
 }
 
 // ttyOrDefault returns tty when non-nil, else the production terminal check.

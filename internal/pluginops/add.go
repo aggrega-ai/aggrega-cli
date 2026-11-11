@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
@@ -692,7 +693,9 @@ func resolveLatestVersion(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 			return "", fmt.Errorf("offline workspace has no local index entry for %s; run 'aggrega registry update' to build the discovery index", repoPath)
 		}
 		var err error
+		end := opprogress.Begin(ctx, "listing the versions of "+host+"/"+repoPath)
 		tags, err = RepoTagLister(ctx, cfg, host, repoPath)
+		end(err)
 		if err != nil {
 			return "", fmt.Errorf("list versions for %s: %w", repoPath, err)
 		}

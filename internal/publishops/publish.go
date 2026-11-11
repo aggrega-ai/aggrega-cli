@@ -15,6 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
 	"github.com/aggrega-ai/aggrega-cli/internal/entitypin"
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -509,6 +510,11 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	if advisories == nil {
 		advisories = os.Stderr
 	}
+	// A publication states each thing it lands as it lands it, between the steps
+	// it waits on the registry for, so its lines go where they land clear of them.
+	out = opprogress.Beside(ctx, out)
+	advisories = opprogress.Beside(ctx, advisories)
+	cfg.Out = out
 
 	rw, err := requireWorkspace(cfg.Workspace)
 	if err != nil {
@@ -784,7 +790,7 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	// published under a new version — the pre-publication lint gates that bump
 	// against the previous release. There is no force escape: the registry has no
 	// overwrite path the operator can opt into, by design.
-	existingDigest, exists, err := oci.Resolve(ctx, target, tag)
+	existingDigest, exists, err := resolvePublished(ctx, target, tag, reference+":"+tag)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("resolve %s:%s: %w", reference, tag, err)
 	}
@@ -835,7 +841,9 @@ func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 		}
 	}
 
+	end := opprogress.Begin(ctx, "uploading "+reference+":"+tag)
 	digest, err := oci.Push(ctx, target, tag, mediaType, bundleBytes, annotations)
+	end(err)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("push %s:%s: %w", reference, tag, err)
 	}

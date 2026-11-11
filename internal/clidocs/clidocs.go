@@ -65,8 +65,9 @@ type Result struct {
 // documentation pages under docsDir. For every visible top-level command it
 // targets language-reference/cli/aggrega-<name>.md, creating the page from a
 // minimal stub when absent and refreshing the generated region otherwise. It
-// also refreshes the command summary in language-reference/07-cli.md and the
-// global-flags table in language-reference/cli/global-flags.md. Curated prose
+// also refreshes the command summary and the list of commands that show the
+// steps they wait on in language-reference/07-cli.md, and the global-flags table
+// in language-reference/cli/global-flags.md. Curated prose
 // outside the markers is preserved byte-for-byte.
 func Generate(root *cobra.Command, docsDir string) (Result, error) {
 	var res Result
@@ -113,6 +114,17 @@ func Generate(root *cobra.Command, docsDir string) (Result, error) {
 		changed, werr := docsplice.WriteFile(overview, string(body), "command-list", renderCommandList(cmds))
 		if werr != nil {
 			return res, werr
+		}
+		// The overview also lists the commands that show the steps they wait on,
+		// read from the same rows the command line applies that surface from.
+		if spliced, rerr := os.ReadFile(overview); rerr == nil {
+			more, werr := docsplice.WriteFile(overview, string(spliced), "waiting-commands", renderWaitingCommands(cat))
+			if werr != nil {
+				return res, werr
+			}
+			changed = changed || more
+		} else {
+			return res, fmt.Errorf("read %s: %w", overview, rerr)
 		}
 		rel := filepath.Join("language-reference", "07-cli.md")
 		if changed {
@@ -313,6 +325,32 @@ func renderCommandList(cmds []clisurface.Descriptor) string {
 		b.WriteString("| `" + c.Path + "` | " + escapeCell(c.Short) + " |\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// renderWaitingCommands renders the commands that show each step their operation
+// reports waiting on — the ones whose carried operation's row says so
+// (clisurface.OperationWaitDisplay) — as one line of command paths in path order.
+// Hidden commands and cobra's generated ones are left out, as everywhere in the
+// reference.
+func renderWaitingCommands(cat []clisurface.Descriptor) string {
+	var paths []string
+	for _, c := range cat {
+		if c.Hidden || c.Name == "help" || c.Name == "completion" {
+			continue
+		}
+		op := clisurface.CommandOperation(c.Path)
+		if op == "" {
+			continue
+		}
+		if display, _ := clisurface.OperationWaitDisplay(op); display == clisurface.ShowsWaitSteps {
+			paths = append(paths, c.Path)
+		}
+	}
+	sort.Strings(paths)
+	for i, p := range paths {
+		paths[i] = "`" + p + "`"
+	}
+	return strings.Join(paths, ", ")
 }
 
 // stubPage returns the minimal page body used when a command has no curated

@@ -19,7 +19,16 @@ import (
 // compile-time literal, so a refusal is a programming error a reader fixes by
 // editing either the command or the row, and a binary that started anyway would
 // serve a command nobody declared.
+//
+// It is also where a command is given the shared progress surface, where the
+// operation's row says its command shows the steps it waits on
+// (clisurface.OperationWaitDisplay). Applying it here, from the row, is what keeps
+// the set of commands showing progress the table's to decide, so no command is
+// given it, or left without it, by an edit elsewhere.
 func mustAttach(parent, cmd *cobra.Command, id string) {
+	if display, _ := clisurface.OperationWaitDisplay(id); display == clisurface.ShowsWaitSteps {
+		showsOperationProgress(cmd)
+	}
 	if err := clisurface.Attach(parent, cmd, id); err != nil {
 		panic(err.Error())
 	}
@@ -35,8 +44,13 @@ func mustAttachGroup(parent, cmd *cobra.Command) {
 
 // mustAttachContributed registers a command a configured plugin contributes,
 // which is the plugin's capability rather than the compiler's and is therefore
-// absent from the operation set.
+// absent from the operation set. What it shows while it waits is the one
+// declaration for every contributed command
+// (clisurface.ContributedCommandWaitDisplay).
 func mustAttachContributed(parent, cmd *cobra.Command) {
+	if clisurface.ContributedCommandWaitDisplay == clisurface.ShowsWaitSteps {
+		showsOperationProgress(cmd)
+	}
 	if err := clisurface.AttachContributed(parent, cmd); err != nil {
 		panic(err.Error())
 	}

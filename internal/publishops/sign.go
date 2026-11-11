@@ -15,6 +15,7 @@ import (
 
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
@@ -200,6 +201,9 @@ func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 	if out == nil {
 		out = os.Stdout
 	}
+	// Each reference's lines are written while the steps of the references signed
+	// after it may be in flight, so they go where they land clear of them.
+	out = opprogress.Beside(ctx, out)
 
 	// The credential is resolved once, over every reference, through the one home
 	// every signing verb shares. The identity identifies the signer, not the
@@ -209,6 +213,16 @@ func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 		return SignResult{}, err
 	}
 	b := &batchSigner{cfg: cfg, cred: cred}
+
+	// One reference at a time reports each step it waits on. References signed
+	// several at a time would draw their steps over one another, so the batch is
+	// reported as one step and the references run with nothing to report to.
+	refCtx := ctx
+	endBatch := opprogress.End(func(error) {})
+	if cfg.jobs() > 1 && len(cfg.References) > 1 {
+		endBatch = opprogress.Begin(ctx, fmt.Sprintf("signing %d references, %d at a time", len(cfg.References), cfg.jobs()))
+		refCtx = opprogress.Without(ctx)
+	}
 
 	outcomes := make([]refOutcome, len(cfg.References))
 	w := &orderedWriter{out: out, outcomes: outcomes}
@@ -238,7 +252,7 @@ func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 			// at a bound of one a reference's lines precede the next reference's start.
 			defer func() { <-slots }()
 			o := &outcomes[i]
-			o.digest, o.attached, o.err = b.signRef(ctx, &o.lines, ref)
+			o.digest, o.attached, o.err = b.signRef(refCtx, &o.lines, ref)
 			w.finished(i)
 		}()
 	}
@@ -260,10 +274,12 @@ func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 		}
 	}
 	if stop != nil {
+		endBatch(stop)
 		return SignResult{Signed: signed}, stop
 	}
 
 	if len(failures) > 0 {
+		endBatch(failures[0].err)
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "%d of %d references failed:", len(failures), len(cfg.References))
 		for _, f := range failures {
@@ -271,6 +287,7 @@ func Sign(ctx context.Context, cfg SignConfig) (SignResult, error) {
 		}
 		return SignResult{}, errors.New(sb.String())
 	}
+	endBatch(nil)
 	return SignResult{Signed: signed}, nil
 }
 
@@ -380,7 +397,7 @@ func (b *batchSigner) signRef(ctx context.Context, out io.Writer, ref string) (s
 
 	// Resolve the published digest. signRef never re-publishes content — it signs
 	// whatever digest the registry already holds for the reference.
-	digest, exists, err := oci.Resolve(ctx, target, subjectRef)
+	digest, exists, err := resolvePublished(ctx, target, subjectRef, ref)
 	if err != nil {
 		return "", false, fmt.Errorf("resolve %s: %w", ref, err)
 	}
@@ -402,7 +419,9 @@ func (b *batchSigner) signRef(ctx context.Context, out io.Writer, ref string) (s
 		return "", false, fmt.Errorf("%s: %w", ref, err)
 	}
 
+	end := opprogress.Begin(ctx, "signing "+ref)
 	bundleBytes, artifactType, err := signDigest(ctx, signer, digest)
+	end(err)
 	if err != nil {
 		// A token that structurally lacks a usable signing subject cannot be
 		// fixed by re-exporting or re-acquiring it: the identity the OIDC flow

@@ -326,6 +326,22 @@ type progressReporter struct {
 	// and only its spinner.
 	counts map[int]stepProgress
 
+	// stepEnded is true once the step in flight was ended by the operation that
+	// began it (endStep), before any other began: the run is then waiting on
+	// nothing, and the step's row shows it done rather than spinning.
+	stepEnded bool
+	// stepFailed holds, keyed by spine index, the steps their operation ended
+	// with a failure, whose rows keep the pending marker.
+	stepFailed map[int]bool
+	// held is true while the drawn block is erased for a person (hold) and not yet
+	// drawn again.
+	held bool
+	// rowsFrom is the index of the first spine step the checklist draws. A block
+	// left standing once its last step ended (endStep) has scrolled into the
+	// output for good, so the next step draws a block of its own beneath whatever
+	// was written since, beginning at that step.
+	rowsFrom int
+
 	spin int
 	// linesDrawn is the number of lines in the last checklist block, so the next
 	// redraw can move the cursor up over them.
@@ -361,6 +377,7 @@ func newProgressReporter(out io.Writer, opts buildDiagOptions, spine progressSpi
 		phaseClock:   map[int]time.Time{},
 		phaseFrozen:  map[int]time.Duration{},
 		counts:       map[int]stepProgress{},
+		stepFailed:   map[int]bool{},
 	}
 }
 
@@ -391,6 +408,103 @@ func (p *progressReporter) setSteps(labels []string) {
 		return
 	}
 	p.spine.labels = append([]string(nil), labels...)
+}
+
+// beginStep adds a step named label to the run's steps and makes it the step in
+// flight, for a run whose steps are known only as each begins: an operation that
+// reports the steps it waits on as it reaches them (operationObserver). The step
+// in flight before it, if any, is over. It returns the new step's index, which
+// endStep takes, or -1 where nothing is drawn.
+func (p *progressReporter) beginStep(label string) int {
+	if p == nil {
+		return -1
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mode == progressSilent || p.finished {
+		return -1
+	}
+	p.spine.labels = append(p.spine.labels, label)
+	i := len(p.spine.labels) - 1
+	now := time.Now()
+	if p.started.IsZero() {
+		p.started = now
+	}
+	if p.mode == progressDebug {
+		p.debugCloseAndOpen(i, now)
+		p.stepEnded = false
+		return i
+	}
+	if !p.stepEnded {
+		p.completeStep(p.active)
+	}
+	p.active = i
+	p.stepEnded = false
+	p.startTimer(i)
+	if p.mode == progressChecklist {
+		p.draw()
+	}
+	return i
+}
+
+// endStep marks the step at index i over, where it is still the step in flight:
+// its time stops and, on the plain surface, its line is written. The run then
+// waits on nothing, so the checklist draws its block a last time and leaves it
+// standing — whatever the command writes next lands beneath it rather than under
+// a redraw — and a step begun later draws a block of its own below that.
+// A step that failed keeps the pending marker rather than the tick, so its row
+// never claims a completion the run did not reach; its time still stops.
+// Ending a step that another has followed, or one already ended, does nothing.
+func (p *progressReporter) endStep(i int, failed bool) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mode == progressSilent || p.finished || i < 0 || i != p.active || p.stepEnded {
+		return
+	}
+	p.stepEnded = true
+	if failed {
+		p.stepFailed[i] = true
+	}
+	if p.mode == progressDebug {
+		if !p.phaseStart.IsZero() {
+			fmt.Fprintf(p.out, "  [debug] %-22s done in %s\n", p.spine.labels[i], time.Since(p.phaseStart).Round(time.Microsecond))
+		}
+		p.phaseStart = time.Time{}
+		return
+	}
+	p.completeStep(i)
+	if p.mode == progressChecklist {
+		// A block held out of a person's way (hold) is drawn again here, finished,
+		// beneath whatever the exchange left on the screen.
+		if p.linesDrawn > 0 || p.held {
+			p.draw()
+		}
+		p.linesDrawn = 0
+		p.rowsFrom = len(p.spine.labels)
+	}
+}
+
+// hold takes the checklist out of the way of a person about to read or type at
+// the terminal — a question the command asks, a sign-in it waits on — by erasing
+// the drawn block. Nothing is drawn again until the next step begins, or the
+// step in flight ends, by which time the exchange is over. Where nothing is
+// drawn in place it does nothing.
+func (p *progressReporter) hold() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.mode != progressChecklist || p.finished || p.linesDrawn == 0 {
+		return
+	}
+	p.rewind()
+	fmt.Fprint(p.out, ansiClearBelow)
+	p.linesDrawn = 0
+	p.held = true
 }
 
 // stepCount records how far the step in flight has got: done of its total items
@@ -1069,6 +1183,7 @@ func (p *progressReporter) draw() {
 		fmt.Fprintf(p.out, "%s%s\n", clampVisibleWidth(row, width), ansiClearLine)
 	}
 	p.linesDrawn = len(rows)
+	p.held = false
 	p.spin++
 }
 
@@ -1136,7 +1251,7 @@ func (p *progressReporter) rows() []string {
 	}
 	rows := make([]string, 0, len(p.spine.labels)+4)
 
-	for i := 0; i < preCount; i++ {
+	for i := p.rowsFrom; i < preCount; i++ {
 		rows = append(rows, p.composeRow(p.phaseRow(i, frame)+p.phaseLabel(i), p.elapsedStr(i)))
 	}
 	if p.spine.renderIdx < 0 {
@@ -1170,9 +1285,12 @@ func (p *progressReporter) rows() []string {
 // A step that counts its own items is ticked only once its count reaches its
 // total. One the run left short of it — a walk stopped part way — keeps the
 // pending marker, as the render row does for a render that never finished, so
-// its row never claims a completion its count denies.
+// its row never claims a completion its count denies. A step its operation ended
+// with a failure (endStep) keeps it for the same reason.
 func (p *progressReporter) phaseRow(i int, frame rune) string {
 	switch {
+	case p.stepFailed[i]:
+		return markPending
 	case p.finished:
 		if (i <= p.active || p.inRenderStage) && !p.countShort(i) {
 			return markDone
@@ -1184,6 +1302,8 @@ func (p *progressReporter) phaseRow(i int, frame rune) string {
 		if p.countShort(i) {
 			return markPending
 		}
+		return markDone
+	case i == p.active && p.stepEnded:
 		return markDone
 	case i == p.active:
 		return markActive(frame)

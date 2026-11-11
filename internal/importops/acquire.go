@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
@@ -145,17 +146,20 @@ func acquireCarriedImporter(ctx context.Context, rw *workspaceconfig.ResolvedWor
 			" is not asked for it", true)
 	}
 
+	from := subject.Location + ":" + version
+	end := opprogress.Begin(ctx, "fetching importer "+from)
 	fetched, err := puller.Pull(ctx, subject.Location, version)
+	end(err)
 	if err != nil {
 		return carriedImporterFetchRefusal(ctx, p, subject, err)
 	}
-	from := subject.Location + ":" + version
 	held := pluginpath.ResolvedPlugin{Bytes: fetched.Bytes, Tier: pluginpath.TierRegistry, URI: uri}
 	if err := pluginpath.HoldToDigest(held, accepted, carriedModuleIs); err != nil {
 		return fmt.Errorf("core importer %q fetched from %s: %w", p.Coordinate(), from, err)
 	}
 	entity := p
-	if _, err := pluginfetchverify.Verify(ctx, pluginfetchverify.Fetched{
+	end = opprogress.Begin(ctx, "verifying the signature of "+from)
+	_, err = pluginfetchverify.Verify(ctx, pluginfetchverify.Fetched{
 		URI:            uri,
 		ManifestDigest: fetched.Digest,
 		Host:           subject.Host,
@@ -165,7 +169,9 @@ func acquireCarriedImporter(ctx context.Context, rw *workspaceconfig.ResolvedWor
 		EntityURI:      uri,
 		ArtifactURI:    from,
 		WasmBytes:      fetched.Bytes,
-	}, wsCfg, pluginfetchverify.RemoteTargetFor(httpClient), os.Stderr); err != nil {
+	}, wsCfg, pluginfetchverify.RemoteTargetFor(httpClient), opprogress.Beside(ctx, os.Stderr))
+	end(err)
+	if err != nil {
 		return fmt.Errorf("core importer %q fetched from %s: %w", p.Coordinate(), from, err)
 	}
 

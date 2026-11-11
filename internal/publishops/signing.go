@@ -14,6 +14,7 @@ import (
 
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/internal/retry"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -373,10 +374,20 @@ func signDigest(ctx context.Context, signer signing.Signer, digest string) (bund
 // is untouched — the referrer is a sibling manifest pointing back at it, so
 // attaching never re-pushes or mutates published bytes.
 func attachBundle(ctx context.Context, target oras.Target, subjectRef, artifactType string, bundle []byte) error {
-	if _, err := oci.AttachReferrer(ctx, target, subjectRef, artifactType, bundle); err != nil {
-		return err
-	}
-	return nil
+	end := opprogress.Begin(ctx, "attaching the signature")
+	_, err := oci.AttachReferrer(ctx, target, subjectRef, artifactType, bundle)
+	end(err)
+	return err
+}
+
+// resolvePublished is oci.Resolve reported as a step the publication waits on:
+// the digest the registry has for tag, and whether it has one. artifact names
+// what is looked up, as the step names it.
+func resolvePublished(ctx context.Context, target oras.ReadOnlyTarget, tag, artifact string) (string, bool, error) {
+	end := opprogress.Begin(ctx, "checking whether "+artifact+" is published")
+	digest, exists, err := oci.Resolve(ctx, target, tag)
+	end(err)
+	return digest, exists, err
 }
 
 // resolvePublishSigner resolves the publish-time signer for the destination
@@ -404,7 +415,9 @@ func resolvePublishSigner(req SignerRequest, registry string) (signing.Signer, e
 func signPublishDigestWith(ctx context.Context, signer signing.Signer, reference, tag, proposedDigest string) (bundle []byte, artifactType string, err error) {
 	// signDigest retries a transient signing failure itself, so the mapping below
 	// acts on the error that survives its last attempt.
+	end := opprogress.Begin(ctx, "signing "+reference+":"+tag)
 	bundle, artifactType, err = signDigest(ctx, signer, proposedDigest)
+	end(err)
 	if err != nil {
 		// A token without a usable signing subject is misdiagnosed by a generic
 		// rejection message; name the real cause — the identity the OIDC flow

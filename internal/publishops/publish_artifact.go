@@ -12,6 +12,7 @@ import (
 
 	"oras.land/oras-go/v2"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -141,6 +142,9 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 	if out == nil {
 		out = os.Stdout
 	}
+	// A publication states each thing it lands as it lands it, between the steps
+	// it waits on the registry for, so its lines go where they land clear of them.
+	out = opprogress.Beside(ctx, out)
 
 	rw, err := requireWorkspace(cfg.Workspace)
 	if err != nil {
@@ -217,7 +221,7 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 		return PushArtifactResult{}, serr
 	}
 
-	existingDigest, exists, err := oci.Resolve(ctx, target, cfg.Tag)
+	existingDigest, exists, err := resolvePublished(ctx, target, cfg.Tag, reference+":"+cfg.Tag)
 	if err != nil {
 		return PushArtifactResult{}, fmt.Errorf("resolve %s:%s: %w", reference, cfg.Tag, err)
 	}
@@ -246,7 +250,9 @@ func PushArtifact(ctx context.Context, cfg PushArtifactConfig) (PushArtifactResu
 			reference, cfg.Tag, existingDigest, proposedDigest, oci.ErrImmutableTagConflict())
 	}
 
+	end := opprogress.Begin(ctx, "uploading "+reference+":"+cfg.Tag)
 	digest, err := oci.PushNamed(ctx, target, cfg.Tag, mediaType, cfg.Name, content, nil)
+	end(err)
 	if err != nil {
 		return PushArtifactResult{}, fmt.Errorf("push %s:%s: %w", reference, cfg.Tag, err)
 	}

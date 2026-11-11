@@ -11,6 +11,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/ociref"
@@ -106,7 +107,9 @@ func ReadPublishedEntity(ctx context.Context, cfg workspaceconfig.Config, refere
 	if err != nil {
 		return PublishedEntity{}, fmt.Errorf("read %s: %w", reference, err)
 	}
+	end := opprogress.Begin(ctx, "reading "+repository+":"+target)
 	published, err := oci.PullPublishedEntity(ctx, repo, target)
+	end(err)
 	if err != nil {
 		return PublishedEntity{}, fmt.Errorf("read %s: %w%s", reference, err, fetchRemediation(err, repositoryHost(repository)))
 	}

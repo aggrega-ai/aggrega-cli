@@ -14,14 +14,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"helm.sh/helm/v4/pkg/getter"
+	repo "helm.sh/helm/v4/pkg/repo/v1"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/netrc"
-	"helm.sh/helm/v4/pkg/getter"
-	repo "helm.sh/helm/v4/pkg/repo/v1"
 )
 
 // KindHTTPS names the helm-https-chart source kind, whose one declaration is
@@ -283,17 +284,15 @@ func (c *connEndingWithContext) Close() error {
 	return c.Conn.Close()
 }
 
-// egressTransport extracts the concrete *http.Transport the network-egress gate
-// constructs, for injection into the helm getter via getter.WithTransport (which
-// takes a *http.Transport, not a RoundTripper). A nil client is the gate's
-// offline signal; a client whose transport is not a *http.Transport reports not
-// ok so the caller refuses rather than let the getter build its own transport.
+// egressTransport returns the concrete *http.Transport the network-egress gate
+// gives a library that takes one, for injection into the helm getter via
+// getter.WithTransport (which takes a *http.Transport, not a RoundTripper). A nil
+// client is the gate's offline signal; a client with no standard transport
+// beneath it reports not ok so the caller refuses rather than let the getter
+// build its own transport. Which transport that is, and which of the gate's
+// bounds it carries, is the gate's to decide (egress.StandardTransport).
 func egressTransport(client *http.Client) (*http.Transport, bool) {
-	if client == nil {
-		return nil, false
-	}
-	t, ok := client.Transport.(*http.Transport)
-	return t, ok
+	return egress.StandardTransport(client)
 }
 
 // productionGetter wraps the helm getter providers in the

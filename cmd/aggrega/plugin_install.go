@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginfetchverify"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -266,7 +267,9 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 	if puller == nil {
 		return resolvedInstallable{}, fmt.Errorf("cannot fetch %q while the workspace is offline; installing a registry plugin requires network access", ref)
 	}
+	end := opprogress.Begin(ctx, "fetching "+bare)
 	result, err := puller.Pull(ctx, repoRef, tag)
+	end(err)
 	if err != nil {
 		return resolvedInstallable{}, fmt.Errorf("fetch %q: %w", ref, err)
 	}
@@ -278,12 +281,15 @@ func productionInstallPluginFetch(ctx context.Context, rw *workspaceconfig.Resol
 	// signature is verified. result.Digest is the fetched manifest digest the
 	// signature commits to.
 	installVerifyClient, _ := workspaceEgressClient(wsCfg)
-	if _, err := pluginfetchverify.Verify(ctx, pluginfetchverify.Fetched{
+	end = opprogress.Begin(ctx, "verifying the signature of "+bare)
+	_, err = pluginfetchverify.Verify(ctx, pluginfetchverify.Fetched{
 		URI:            ref,
 		ManifestDigest: result.Digest,
 		Host:           registryhost.Of(bare),
 		Kind:           catalog.EntityKindForHint("plugin"),
-	}, wsCfg, pluginfetchverify.RemoteTargetFor(installVerifyClient), os.Stderr); err != nil {
+	}, wsCfg, pluginfetchverify.RemoteTargetFor(installVerifyClient), opprogress.Beside(ctx, os.Stderr))
+	end(err)
+	if err != nil {
 		return resolvedInstallable{}, err
 	}
 	pin := digest.ContentDigest(result.Bytes)

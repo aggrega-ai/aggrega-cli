@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -99,7 +100,14 @@ func locatePlugin(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, re
 		if indexed && (q.version == "" || slices.Contains(record.Versions, q.version)) {
 			return exact, record.Versions, nil
 		}
+		end := opprogress.Begin(ctx, "looking up "+socket+" plugin "+q.name+" on "+host)
 		listed, lerr := RepoTagLister(ctx, rw.Config(), host, exact)
+		if errors.Is(lerr, oci.ErrFetchNotFound()) {
+			// A name the registry holds nothing under is an answer, not a failure.
+			end(nil)
+		} else {
+			end(lerr)
+		}
 		switch {
 		case lerr == nil && len(listed) > 0:
 			return exact, listed, nil
@@ -110,11 +118,19 @@ func locatePlugin(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, re
 	if q.version != "" {
 		return "", nil, fmt.Errorf("%s: no %s plugin named %q is published in %s", command, socket, q.name, host)
 	}
+	end := opprogress.Begin(ctx, "searching every repository on "+host+" for "+socket+" plugins matching \""+q.name+"\"")
 	matches, err := registryops.EnumerateRepositories(ctx, reg, q.name, socketScope(under, socket))
+	end(err)
 	if err != nil {
 		// The enumeration's refusal is about one registry's listing, so it names
 		// that registry: a reader with several configured cannot otherwise tell
-		// which one to look at.
+		// which one to look at. A listing stopped for running too long says what
+		// needs none: a plugin named exactly is looked up without it.
+		if errors.Is(err, registryops.ErrRepositoryListingTooLong()) {
+			return "", nil, fmt.Errorf("%s: %s: no %s plugin is named %q, and searching every repository for a name "+
+				"containing it did not finish; name the plugin exactly, as aggrega plugin add %s <name>: %w",
+				command, host, socket, q.name, socket, err)
+		}
 		return "", nil, fmt.Errorf("%s: %s: %w", command, host, err)
 	}
 	repoPath, err = ResolveSingleRepo(matches, q.name, socket)

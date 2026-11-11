@@ -416,3 +416,126 @@ var operationWorkspaceScope = map[string]WorkspaceScope{
 	"push-artifact":      MachineScoped,
 	"sign":               MachineScoped,
 }
+
+// WaitDisplay says what the command carrying an operation shows a person at a
+// terminal while the operation waits — on a registry, on a download, on a plugin's
+// first compile.
+type WaitDisplay string
+
+const (
+	// ShowsWaitSteps is a command that draws each step its operation reports it
+	// waits on, through the progress surface every waiting command shares.
+	ShowsWaitSteps WaitDisplay = "steps"
+
+	// DrawsOwnProgress is a command that draws a progress surface of its own for
+	// its whole run, so it is never given the shared one as well: two surfaces
+	// drawing on one stream draw over each other.
+	DrawsOwnProgress WaitDisplay = "own"
+
+	// ShowsNoProgress is a command that shows nothing while it runs: its operation
+	// reports no step it waits on, or the command answers requests rather than a
+	// person at a terminal.
+	ShowsNoProgress WaitDisplay = "none"
+)
+
+// ContributedCommandWaitDisplay is what a command a configured plugin contributes
+// shows while it waits. Such a command carries no operation, so it has no row in
+// the table below; its one wait is the plugin's first compile, which the shared
+// surface shows like any other command's.
+const ContributedCommandWaitDisplay = ShowsWaitSteps
+
+// OperationWaitDisplay returns what the command carrying an operation shows while
+// it waits, and false where the identifier names no declared operation.
+//
+// It is the one answer to which commands show the steps their operations wait on:
+// the command line applies the shared surface to a command as it attaches it, and
+// the reference's list of such commands is generated from the same rows.
+func OperationWaitDisplay(id string) (WaitDisplay, bool) {
+	display, declared := operationWaitDisplay[id]
+	return display, declared
+}
+
+// operationWaitDisplay is what the command carrying each operation shows while it
+// waits, keyed by the operation's identifier.
+//
+// Like the workspace scope above it covers every operation, those no command
+// carries included, so the completeness check over this table fails for an
+// operation added with no row, and whether a new command shows its waits is a
+// question its author answers rather than a default.
+var operationWaitDisplay = map[string]WaitDisplay{
+	// Commands whose operation waits on a registry, a download, a documentation
+	// bundle or a plugin's first compile, and reports each step it waits on.
+	"config-init":   ShowsWaitSteps,
+	"deprecate":     ShowsWaitSteps,
+	"explain-error": ShowsWaitSteps,
+	"import":        ShowsWaitSteps,
+	"inspect":       ShowsWaitSteps,
+	"lint":          ShowsWaitSteps,
+	"plugin-add":    ShowsWaitSteps,
+	"push":          ShowsWaitSteps,
+
+	// Commands that load a plugin the caller names, whose one wait is that
+	// plugin's first compile.
+	"plugin-gen-catalog": ShowsWaitSteps,
+	"plugin-run-local":   ShowsWaitSteps,
+	"plugin-sync":        ShowsWaitSteps,
+
+	"push-artifact":   ShowsWaitSteps,
+	"registry-add":    ShowsWaitSteps,
+	"scaffold-entity": ShowsWaitSteps,
+	"sign":            ShowsWaitSteps,
+	"validate":        ShowsWaitSteps,
+
+	// Commands that draw progress of their own for the whole run.
+	"build":           DrawsOwnProgress,
+	"pull":            DrawsOwnProgress,
+	"registry-update": DrawsOwnProgress,
+
+	// The two servers answer requests rather than a person at the terminal they
+	// were started from; each reports a request's progress to its own client.
+	"mcp":   ShowsNoProgress,
+	"serve": ShowsNoProgress,
+
+	// Operations that report no step they wait on, so their command has nothing to
+	// show. Every request any of them makes is still bounded by the network
+	// client's wait on an answer.
+	"active-release":              ShowsNoProgress,
+	"active-release-set":          ShowsNoProgress,
+	"attachment-container":        ShowsNoProgress,
+	"auth-token":                  ShowsNoProgress,
+	"cache-clear":                 ShowsNoProgress,
+	"cache-evict":                 ShowsNoProgress,
+	"cache-prune":                 ShowsNoProgress,
+	"cache-status":                ShowsNoProgress,
+	"cached-diagnostics":          ShowsNoProgress,
+	"completion-at-position":      ShowsNoProgress,
+	"config-capture":              ShowsNoProgress,
+	"config-show":                 ShowsNoProgress,
+	"connection-at-position":      ShowsNoProgress,
+	"connection-candidates":       ShowsNoProgress,
+	"definition-at-position":      ShowsNoProgress,
+	"describe-capabilities":       ShowsNoProgress,
+	"document-edit":               ShowsNoProgress,
+	"document-insertion-point":    ShowsNoProgress,
+	"feature-attach-candidates":   ShowsNoProgress,
+	"get-schema":                  ShowsNoProgress,
+	"hover-at-position":           ShowsNoProgress,
+	"implementations-at-position": ShowsNoProgress,
+	"ir-graph":                    ShowsNoProgress,
+	"login":                       ShowsNoProgress,
+	"logout":                      ShowsNoProgress,
+	"pin":                         ShowsNoProgress,
+	"plugin-list":                 ShowsNoProgress,
+	"plugin-remove":               ShowsNoProgress,
+	"references-at-position":      ShowsNoProgress,
+	"registry-list":               ShowsNoProgress,
+	"registry-remove":             ShowsNoProgress,
+	"release-candidates":          ShowsNoProgress,
+	"search":                      ShowsNoProgress,
+	"session-initialize":          ShowsNoProgress,
+	"session-invalidate":          ShowsNoProgress,
+	"skills-install":              ShowsNoProgress,
+	"skills-list":                 ShowsNoProgress,
+	"version":                     ShowsNoProgress,
+	"workspace-entity-index":      ShowsNoProgress,
+}

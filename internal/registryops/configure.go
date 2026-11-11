@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/registryhost"
@@ -254,7 +255,13 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 
 	switch {
 	case opts.FetchTrust && !manualPolicy:
-		outcome, ferr := pinAdvertisedTrust(ctx, &reg, host, trustClientFor(rw, opts.TrustClient), baseline)
+		client := trustClientFor(rw, opts.TrustClient)
+		end := opprogress.End(func(error) {})
+		if client != nil {
+			end = opprogress.Begin(ctx, "reading the trust policy "+host+" advertises")
+		}
+		outcome, ferr := pinAdvertisedTrust(ctx, &reg, host, client, baseline)
+		end(ferr)
 		if ferr != nil {
 			return res, ferr
 		}

@@ -126,7 +126,7 @@ func newDeprecateCmd() *cobra.Command {
 // one such account per entry and records one per entry, so the result restates
 // what this surface has already shown rather than adding to it.
 func deprecateRun(ctx context.Context, cfg deprecateConfig) error {
-	cfg.TokenGetter = tokenGetterOrDefault(cfg.TokenGetter)
+	cfg.TokenGetter = signInGetter(ctx, cfg.TokenGetter)
 	cfg.IsTTY = ttyOrDefault(cfg.IsTTY)
 	cfg.EnvLookup = envLookupOrGetenv(cfg.EnvLookup)
 	cfg.IdentitySupply = commandLineIdentitySupply

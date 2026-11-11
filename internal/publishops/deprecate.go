@@ -16,6 +16,7 @@ import (
 	"oras.land/oras-go/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredshape"
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -175,6 +176,9 @@ func Deprecate(ctx context.Context, cfg DeprecateConfig) (DeprecateResult, error
 	if out == nil {
 		out = os.Stdout
 	}
+	// Each marker is stated as it is attached, so its lines go where they land
+	// clear of the step attaching it.
+	out = opprogress.Beside(ctx, out)
 	now := cfg.Now
 	if now == nil {
 		now = time.Now
@@ -220,7 +224,9 @@ func deprecateSingle(ctx context.Context, cfg DeprecateConfig, out io.Writer, no
 	if err != nil {
 		return DeprecateResult{}, err
 	}
+	end := opprogress.Begin(ctx, "attaching a deprecation marker to "+cfg.Reference)
 	digest, err := registryindex.AttachSignedMarker(ctx, out, target, subjectRef, cfg.Reference, marker, signer)
+	end(err)
 	if err != nil {
 		return DeprecateResult{}, err
 	}
@@ -287,7 +293,9 @@ func deprecateBatch(ctx context.Context, cfg DeprecateConfig, out io.Writer, now
 		if terr != nil {
 			return DeprecateResult{}, terr
 		}
+		end := opprogress.Begin(ctx, "attaching a deprecation marker to "+e.Reference)
 		digest, aerr := registryindex.AttachSignedMarker(ctx, out, target, subjectRef, e.Reference, marker, signers[i])
+		end(aerr)
 		if aerr != nil {
 			return DeprecateResult{}, aerr
 		}

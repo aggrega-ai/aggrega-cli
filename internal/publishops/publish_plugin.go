@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -234,7 +235,7 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	// different content is refused. The proposed digest is derived from the whole
 	// manifest — the config entity plus the inline .wasm layer — so a changed
 	// executable under an unchanged entity is caught as a conflict too.
-	existingDigest, exists, err := oci.Resolve(ctx, target, version)
+	existingDigest, exists, err := resolvePublished(ctx, target, version, reference+":"+version)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("resolve %s:%s: %w", reference, version, err)
 	}
@@ -295,7 +296,9 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	// by the entity's version. The returned digest is the manifest the signature
 	// (if any) commits to. Each write it makes retries a transient failure
 	// inside pkg/oci, so nothing here wraps it again.
+	end := opprogress.Begin(ctx, "uploading "+reference+":"+version)
 	manifestDigest, err := oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes, annotations)
+	end(err)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("push plugin %s:%s: %w", reference, version, err)
 	}
