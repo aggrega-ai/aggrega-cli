@@ -185,8 +185,27 @@ func WriteTrustingWorkspace(t testing.TB, dir, host string, trusted *Signer) {
 // published at two versions must differ in content.
 func (r *Registry) Publish(t testing.TB, version string, bundle []byte, by *Signer) {
 	t.Helper()
+	r.PublishUnder(t, version, oci.MediaTypeDocs, bundle, by)
+}
+
+// RetiredMediaType returns the documentation bundle's media type as an earlier
+// release published it, which this compiler refuses to read.
+func RetiredMediaType(t testing.TB) string {
+	t.Helper()
+	retired := strings.Replace(oci.MediaTypeDocs, ".v1beta1", ".v1alpha1", 1)
+	if retired == oci.MediaTypeDocs {
+		t.Fatalf("the documentation bundle's media type %q carries no v1beta1 segment to retire", oci.MediaTypeDocs)
+	}
+	return retired
+}
+
+// PublishUnder publishes bundle at version as Publish does, under mediaType — the
+// media type an earlier release published it under, for a case reading a bundle
+// this compiler no longer reads.
+func (r *Registry) PublishUnder(t testing.TB, version, mediaType string, bundle []byte, by *Signer) {
+	t.Helper()
 	ctx := context.Background()
-	dg, err := oci.Push(ctx, r.Store, version, oci.MediaTypeDocs, bundle, nil)
+	dg, err := oci.Push(ctx, r.Store, version, mediaType, bundle, nil)
 	if err != nil {
 		t.Fatalf("publish %s: %v", version, err)
 	}

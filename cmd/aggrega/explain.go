@@ -52,7 +52,9 @@ func newExplainCmd() *cobra.Command {
 			"sentence are reported without a network or a cache. The published reference " +
 			"supplies the walk-through of the authoring fix for every condition, and nothing " +
 			"else is resolved against it. It is read from the " +
-			"documentation bundle kept in the cache every project on this machine shares, acquired on " +
+			"documentation bundle published for this version of aggrega on the default registry — or, " +
+			"where none is published for it, the newest one published for an earlier version — kept in " +
+			"the cache every project on this machine shares, acquired on " +
 			"first use when that cache holds no copy this workspace's signature check admits. " +
 			"Where it cannot be acquired, the condition is still reported and the " +
 			"reason the walk-through is missing is stated.\n\n" +

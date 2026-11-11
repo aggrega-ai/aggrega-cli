@@ -420,9 +420,14 @@ func (m *admissionMemo) decide(key string, v *admissionVerdict, verify func(warn
 	v.err = verify(func(notice string) { v.notices = append(v.notices, notice) })
 }
 
-// EnsureCached acquires the documentation bundle for (ref, version) into the
+// ensureCached acquires the documentation bundle for (ref, version) into the
 // cache under cacheRoot unless that cache already holds a copy the workspace
 // configured as cfg admits, and reports whether it acquired one.
+//
+// It reads exactly the version named. It is unexported so that the choice of
+// which version a reader reads has one home, [EnsureCachedAtOrBelow], which
+// every surface calls: a surface acquiring the exact version on its own would
+// read no documentation where another surface reads an earlier version's.
 //
 // A copy already cached that the workspace's check admits is left exactly as it
 // is and reported as not acquired, so a caller can distinguish a warm cache from a
@@ -442,7 +447,7 @@ func (m *admissionMemo) decide(key string, v *admissionVerdict, verify func(warn
 // caller's decision: a session that serves documentation as one capability among
 // many logs it and carries on, while a command whose whole answer is a page has
 // to say so.
-func EnsureCached(ctx context.Context, cfg workspaceconfig.Config, cacheRoot, ref, version string,
+func ensureCached(ctx context.Context, cfg workspaceconfig.Config, cacheRoot, ref, version string,
 	target TargetFor, warn func(string)) (bool, error) {
 	if warn == nil {
 		warn = func(string) {}
@@ -497,18 +502,26 @@ func targetOf(ctx context.Context, target TargetFor) TargetFor {
 	return RegistryTarget
 }
 
-// EnsureCachedAtOrBelow acquires the documentation bundle for (ref, version) as
-// [EnsureCached] does and, where none is published at that version, the newest
-// one published at or below it, and returns the version it holds.
+// EnsureCachedAtOrBelow acquires the documentation bundle for (ref, version) into
+// the cache under cacheRoot unless that cache already holds a copy the workspace
+// configured as cfg admits — or, where none is published at that version, the
+// newest one published at or below it — and returns the version it holds.
 //
-// The version asked for is tried first, exactly as EnsureCached tries it, so a
-// copy cached for it is used without reaching a registry and a reader whose
-// version is published reads exactly that one. Only when the registry answers
-// that it publishes no bundle at that version are the versions it does publish
-// listed, through the same target and the same egress, and the newest at or below
-// the version asked for is acquired in turn — under the same signature check, from
-// the cache where a copy of it is held. Offline, where no registry can be asked,
-// the newest version at or below it that the cache holds a copy of that the
+// It is the one choice of which documentation bundle a reader reads, and every
+// surface that serves the documentation — an explanation, an example, a page —
+// acquires through it, so a reader is never given an earlier version's
+// documentation by one surface and none at all by another.
+//
+// The version asked for is tried first, so a copy cached for it is used without
+// reaching a registry and a reader whose version is published reads exactly that
+// one. Only when the registry answers that it publishes no bundle at that version
+// are the versions it does publish listed, through the same target and the same
+// egress, and the newest at or below the version asked for is acquired in turn —
+// under the same signature check, from the cache where a copy of it is held. Where
+// that one cannot be acquired either, the refusal is a [*NoBundleForVersionError]
+// saying both: that none is published for the version asked for, and why the
+// earlier one could not be read. Offline, where no registry can be asked, the
+// newest version at or below it that the cache holds a copy of that the
 // workspace's check admits is used instead; with none, the offline refusal is
 // returned unchanged.
 //
@@ -522,10 +535,15 @@ func targetOf(ctx context.Context, target TargetFor) TargetFor {
 // stamped with none — has nothing to be at or below, and the failure to acquire
 // the exact version is returned as it is.
 //
-// The acquired reports whether a fetch happened, as EnsureCached reports it.
+// The bound is the same one attempt's ([AcquireTimeout]) for each acquisition,
+// and a failure leaves the cache exactly as it was.
+//
+// The acquired reports whether a fetch happened; a copy already cached that the
+// workspace's check admits is reported as not acquired, so a caller can tell a
+// warm cache from a fetch without probing again.
 func EnsureCachedAtOrBelow(ctx context.Context, cfg workspaceconfig.Config, cacheRoot, ref, version string,
 	target TargetFor, warn func(string)) (held string, acquired bool, err error) {
-	acquired, err = EnsureCached(ctx, cfg, cacheRoot, ref, version, target, warn)
+	acquired, err = ensureCached(ctx, cfg, cacheRoot, ref, version, target, warn)
 	if err == nil {
 		return version, acquired, nil
 	}
@@ -548,14 +566,64 @@ func EnsureCachedAtOrBelow(ctx context.Context, cfg workspaceconfig.Config, cach
 		if chosen == "" {
 			return "", false, fmt.Errorf("%w; the registry publishes no version of it at or below %s", err, bound)
 		}
-		acquired, err = EnsureCached(ctx, cfg, cacheRoot, ref, chosen, target, warn)
+		missing := err
+		acquired, err = ensureCached(ctx, cfg, cacheRoot, ref, chosen, target, warn)
 		if err != nil {
-			return "", false, err
+			return "", false, &NoBundleForVersionError{
+				Ref: ref, Version: version, Earlier: chosen, missing: missing, earlier: err,
+			}
 		}
 		return chosen, acquired, nil
 	}
 	return "", false, err
 }
+
+// NoBundleForVersionError reports that the registry publishes no documentation
+// bundle for the version asked for, and that the newest one it publishes at or
+// below that version could not be acquired either.
+//
+// It says both facts in one sentence, because each alone misleads: the first
+// alone hides that an earlier version's documentation was tried, and the second
+// alone — an earlier version's bundle refused — reads as a fault in a bundle the
+// reader never asked for, with a remedy (publishing it again) the reader cannot
+// act on. A bundle published by an earlier release in a format this version no
+// longer reads is the common case, and is named as exactly that.
+//
+// Both causes stay matchable with errors.Is: the version asked for answers as
+// not found (docscache.ErrFetchNotFound), and the earlier one's refusal keeps its
+// own identity. Only the first is on the chain, so the condition the error
+// carries is the not-found's, and a renderer meets one failure rather than a
+// list of two: the earlier one's refusal is answered through Is alone, which is
+// also what keeps its remedy text out of the sentence.
+type NoBundleForVersionError struct {
+	// Ref is the documentation bundle's reference.
+	Ref string
+	// Version is the version asked for, which the registry publishes no bundle at.
+	Version string
+	// Earlier is the newest version published at or below Version, the one that
+	// could not be acquired.
+	Earlier string
+
+	missing error
+	earlier error
+}
+
+// Error states both facts in one sentence.
+func (e *NoBundleForVersionError) Error() string {
+	if errors.Is(e.earlier, oci.ErrRetiredMediaType()) {
+		return fmt.Sprintf("%s publishes no documentation bundle for %s, and the newest earlier one, %s, "+
+			"is in a format this version of aggrega no longer reads", e.Ref, e.Version, e.Earlier)
+	}
+	return fmt.Sprintf("%s publishes no documentation bundle for %s, and the newest earlier one, %s, "+
+		"could not be acquired: %v", e.Ref, e.Version, e.Earlier, e.earlier)
+}
+
+// Unwrap returns the not-found of the version asked for.
+func (e *NoBundleForVersionError) Unwrap() error { return e.missing }
+
+// Is reports whether the earlier version's refusal matches target, so a caller
+// can still ask why the earlier bundle could not be read.
+func (e *NoBundleForVersionError) Is(target error) bool { return errors.Is(e.earlier, target) }
 
 // describedBuild matches a version a build describes itself by as some commits
 // after a release: the release, the count of commits since it, and the commit

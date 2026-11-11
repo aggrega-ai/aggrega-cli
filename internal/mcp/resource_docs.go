@@ -106,7 +106,10 @@ func (s *server) docsCacheRoot() (string, error) {
 // The bundle is kept in the machine-wide cache, so a copy another surface or
 // another session already acquired is used as it is when this workspace's own
 // signature check admits it, and nothing is downloaded. One the check refuses is
-// fetched again under that check.
+// fetched again under that check. Which version is acquired is the choice every
+// documentation surface shares (docsbundle.EnsureCachedAtOrBelow): the one asked
+// for where it is published, otherwise the newest earlier one, which the
+// session's reads then read (docsBundleCoords).
 //
 // It never fails the run. An offline workspace, a registry that does not serve
 // the bundle, a signature that does not verify, and a machine with no cache root
@@ -159,8 +162,9 @@ func (s *server) ensureDocsBundle(ctx context.Context) {
 				return s.docsTarget(tw, ref, version, warn)
 			}
 		}
-		acquired, err := docsbundle.EnsureCached(ctx, tw.cfg, cacheRoot, ref, version, target, warn)
+		held, acquired, err := docsbundle.EnsureCachedAtOrBelow(ctx, tw.cfg, cacheRoot, ref, version, target, warn)
 		if err != nil {
+			s.docsAcquireErr = err
 			s.logLifecycle(
 				lifecycleAudit{
 					Event:     eventDocsBundle,
@@ -171,14 +175,15 @@ func (s *server) ensureDocsBundle(ctx context.Context) {
 				"mcp: documentation bundle %s@%s not acquired: %v", ref, version, err)
 			return
 		}
+		s.docsHeldVersion = held
 		if acquired {
 			s.logLifecycle(
 				lifecycleAudit{
 					Event:     eventDocsBundle,
-					Reference: ref + "@" + version,
+					Reference: ref + "@" + held,
 					Outcome:   bundleAcquired,
 				},
-				"mcp: documentation bundle %s@%s acquired", ref, version)
+				"mcp: documentation bundle %s@%s acquired", ref, held)
 		}
 	})
 }
@@ -290,16 +295,27 @@ func ensureMarkdownExt(body string) string {
 // docsBundleCoords returns the OCI reference and version of the documentation
 // bundle the server reads pages from. Explicit server overrides win (a test
 // pins a fixture bundle); otherwise the reference defaults to the workspace's
-// registry under the reserved docs namespace and the version defaults to the
-// server's own build identity.
+// registry under the reserved docs namespace. The version is the one the
+// session's acquisition holds — an earlier version's where none is published for
+// the version asked for — and, before that acquisition has held one, the version
+// asked for (docsRequestedVersion).
 func (s *server) docsBundleCoords(tw *toolWorkspace) (ref, version string) {
 	ref = s.docsBundleRef
 	if ref == "" {
 		ref = docsbundle.Ref(tw.cfg.DefaultRegistryLocation().Prefix())
 	}
-	version = s.docsBundleVersion
-	if version == "" {
-		version = s.serverVersion
+	if s.docsHeldVersion != "" {
+		return ref, s.docsHeldVersion
 	}
-	return ref, version
+	return ref, s.docsRequestedVersion()
+}
+
+// docsRequestedVersion returns the version of the documentation bundle this
+// session asks for: the pinned one where a test pins it, otherwise the server's
+// own build identity.
+func (s *server) docsRequestedVersion() string {
+	if s.docsBundleVersion != "" {
+		return s.docsBundleVersion
+	}
+	return s.serverVersion
 }

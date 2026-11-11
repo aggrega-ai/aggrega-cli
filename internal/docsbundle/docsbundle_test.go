@@ -134,10 +134,10 @@ func TestAWarmCopyTheWorkspaceAdmitsReachesNoRegistry(t *testing.T) {
 	reaches := 0
 	target := countingTarget(store, &reaches)
 
-	if acquired, err := EnsureCached(context.Background(), requiring(key), root, testRef, testVersion, target, nil); err != nil || !acquired {
+	if acquired, err := ensureCached(context.Background(), requiring(key), root, testRef, testVersion, target, nil); err != nil || !acquired {
 		t.Fatalf("the first acquisition answered (%v, %v), want an acquired bundle", acquired, err)
 	}
-	if acquired, err := EnsureCached(context.Background(), requiring(key), root, testRef, testVersion, target, nil); err != nil || acquired {
+	if acquired, err := ensureCached(context.Background(), requiring(key), root, testRef, testVersion, target, nil); err != nil || acquired {
 		t.Fatalf("the second acquisition answered (%v, %v), want the warm copy", acquired, err)
 	}
 	if reaches != 1 {
@@ -158,7 +158,7 @@ func TestACopyTheWorkspaceRefusesIsFetchedAgainUnderItsCheck(t *testing.T) {
 	reaches := 0
 	target := countingTarget(store, &reaches)
 
-	if _, err := EnsureCached(context.Background(), skipping(), root, testRef, testVersion, target, nil); err != nil {
+	if _, err := ensureCached(context.Background(), skipping(), root, testRef, testVersion, target, nil); err != nil {
 		t.Fatalf("the skipping workspace's acquisition: %v", err)
 	}
 	if err := docscache.Admitted(root, testRef, testVersion, Admission(context.Background(), requiring(key), testRef, nil)); err == nil {
@@ -170,7 +170,7 @@ func TestACopyTheWorkspaceRefusesIsFetchedAgainUnderItsCheck(t *testing.T) {
 	broken := func(workspaceconfig.Config, string, string, func(string)) (oras.ReadOnlyTarget, docscache.VerifyAtPull, error) {
 		return nil, nil, errNoRegistry
 	}
-	_, err := EnsureCached(context.Background(), requiring(key), root, testRef, testVersion, broken, nil)
+	_, err := ensureCached(context.Background(), requiring(key), root, testRef, testVersion, broken, nil)
 	var refused *docscache.NotAdmittedError
 	if !errors.As(err, &refused) || !errors.Is(err, errNoRegistry) {
 		t.Fatalf("a failed second fetch answered %v, want the refusal and the fetch's own failure", err)
@@ -180,7 +180,7 @@ func TestACopyTheWorkspaceRefusesIsFetchedAgainUnderItsCheck(t *testing.T) {
 	}
 
 	// Fetching again succeeds: the copy is replaced and admitted.
-	if acquired, err := EnsureCached(context.Background(), requiring(key), root, testRef, testVersion, target, nil); err != nil || !acquired {
+	if acquired, err := ensureCached(context.Background(), requiring(key), root, testRef, testVersion, target, nil); err != nil || !acquired {
 		t.Fatalf("the requiring workspace's second fetch answered (%v, %v), want an acquired bundle", acquired, err)
 	}
 	if _, _, err := docscache.ReadPage(root, testRef, testVersion, testPage, Admission(context.Background(), requiring(key), testRef, nil)); err != nil {
@@ -200,7 +200,7 @@ func TestAnAcquisitionNamingNoTargetReachesTheOneTheContextStates(t *testing.T) 
 	store, key := signedFixture(t)
 	reaches := 0
 	ctx := WithTarget(context.Background(), countingTarget(store, &reaches))
-	if acquired, err := EnsureCached(ctx, requiring(key), root, testRef, testVersion, nil, nil); err != nil || !acquired {
+	if acquired, err := ensureCached(ctx, requiring(key), root, testRef, testVersion, nil, nil); err != nil || !acquired {
 		t.Fatalf("the acquisition answered (%v, %v), want an acquired bundle", acquired, err)
 	}
 	if reaches != 1 {

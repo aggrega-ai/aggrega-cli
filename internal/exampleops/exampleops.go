@@ -60,8 +60,9 @@ type Examples struct {
 // in the machine-wide cache that the check admits is read without reaching a
 // registry, and otherwise the bundle is fetched through the workspace's egress
 // gate and verified before it is kept. Where the registry publishes no bundle at
-// version, the newest at or below it is read instead, and Version says which.
-// Warnings the acquisition raises go to warn.
+// version, the newest at or below it is read instead, and Version says which —
+// the one choice every documentation surface shares
+// (docsbundle.EnsureCachedAtOrBelow). Warnings the acquisition raises go to warn.
 //
 // Every failure names the bundle and the version it looked for, and carries what
 // stood in the way — an offline workspace's refusal, a signature the workspace's
@@ -88,7 +89,16 @@ func Open(ctx context.Context, cfg workspaceconfig.Config, version string, warn 
 
 // unavailable states that the examples cannot be read because the documentation
 // bundle for (ref, version) could not be, and why.
+//
+// Where no bundle is published for version and the earlier version's one could
+// not be acquired either (docsbundle.NoBundleForVersionError), the answer is that
+// one sentence, which already names the bundle and both versions, and what it
+// means for the examples.
 func unavailable(ref, version string, cause error) error {
+	var none *docsbundle.NoBundleForVersionError
+	if errors.As(cause, &none) {
+		return fmt.Errorf("%w, so the examples cannot be read", none)
+	}
 	return fmt.Errorf("the examples are read from the documentation bundle %s@%s, which is not available: %w",
 		ref, version, cause)
 }

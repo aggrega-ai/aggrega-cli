@@ -31,6 +31,19 @@ type Pages struct {
 	// Halts is the bytes of the page that documents the authoring fix for the
 	// conditions it covers.
 	Halts []byte
+
+	// Version is the version of the documentation bundle the pages were read
+	// from, and Requested the version asked for. They differ where no bundle is
+	// published for the version asked for and an earlier version's was read
+	// instead; Requested is empty where the reader asked for Version itself.
+	Version   string
+	Requested string
+}
+
+// earlier reports whether the pages are an earlier version's than the one asked
+// for, and so may lack a condition declared since.
+func (p Pages) earlier() bool {
+	return p.Requested != "" && p.Requested != p.Version
 }
 
 // Explanation is one composed answer: the condition a code names, the published
@@ -111,6 +124,14 @@ func Compose(code string, loadPages func() (Pages, error)) (Explanation, error) 
 		if perr != nil {
 			var unknown *haltref.UnknownCodeError
 			if errors.As(perr, &unknown) {
+				if pages.earlier() {
+					// The reference read is an earlier version's, which cannot
+					// carry a condition declared since, so its silence settles
+					// nothing: the code is as undetermined as with no reference.
+					return Explanation{}, fmt.Errorf("%w\n\nThe published reference read is the one for %s, "+
+						"the newest earlier version, because none is published for %s.",
+						withoutTheReference(declaredErr), pages.Version, pages.Requested)
+				}
 				// The reference was read and carries no such code. Every place a
 				// condition is declared has now been searched, so the refusal is
 				// entitled to the definitive negative it states.
@@ -217,6 +238,11 @@ func note(notes io.Writer, reason error) error {
 // acquires on its own schedule reads through [ReadPages] instead, which is the
 // same read without the fetch.
 //
+// Which version's bundle is read is the one choice every documentation surface
+// shares (docsbundle.EnsureCachedAtOrBelow): the bundle for version where one is
+// published, otherwise the newest one published for an earlier version, which
+// the returned Pages name.
+//
 // Every failure it reports names the artifact and the version it looked for, so a
 // reader who cannot get the documentation is told what was missing rather than
 // that something was not found. Warnings raised while acquiring go to warn, which
@@ -232,12 +258,18 @@ func LoadPages(
 	if err != nil {
 		return Pages{}, Unavailable(ref, version, err)
 	}
-	if _, aerr := docsbundle.EnsureCached(ctx, cfg, cacheRoot, ref, version, nil, warn); aerr != nil {
+	held, _, aerr := docsbundle.EnsureCachedAtOrBelow(ctx, cfg, cacheRoot, ref, version, nil, warn)
+	if aerr != nil {
 		return Pages{}, Unavailable(ref, version, aerr)
 	}
 	// The acquisition above already reported what the check had to say about the
 	// copy it left in place, so the read asks it again without repeating that.
-	return ReadPages(cacheRoot, ref, version, docsbundle.Admission(ctx, cfg, ref, nil))
+	pages, err := ReadPages(cacheRoot, ref, held, docsbundle.Admission(ctx, cfg, ref, nil))
+	if err != nil {
+		return Pages{}, err
+	}
+	pages.Requested = version
+	return pages, nil
 }
 
 // ReadPages returns the published pages the cache under cacheRoot holds for a
@@ -268,7 +300,7 @@ func ReadPages(cacheRoot, ref, version string, admit docscache.AdmitAtRead) (Pag
 		return Pages{}, fmt.Errorf("the published documentation is not available: the "+
 			"documentation bundle %s@%s cannot be read (%v)", ref, version, err)
 	}
-	var pages Pages
+	pages := Pages{Version: version}
 	for _, p := range []struct {
 		path string
 		into *[]byte
@@ -306,7 +338,18 @@ func ReadPages(cacheRoot, ref, version string, admit docscache.AdmitAtRead) (Pag
 // said to be refused rather than absent: the reader's repair is to the trust
 // configuration or the registry's signatures, not to a missing download, and the
 // cause says which check refused it and why.
+//
+// Where no bundle is published for version and the earlier version's one could
+// not be acquired either (docsbundle.NoBundleForVersionError), the answer is that
+// one sentence, which already names the artifact and both versions, followed by
+// where the pages are published.
 func Unavailable(ref, version string, cause error) error {
+	var none *docsbundle.NoBundleForVersionError
+	if errors.As(cause, &none) {
+		return fmt.Errorf("%w, so the walk-through is not shown here; every condition, including the ones a "+
+			"provider declares, is published at %s, and the walk-through of each authoring fix at %s",
+			none, haltref.PublishedPath(haltref.ReferencePagePath), haltref.PublishedPath(haltref.PagePath))
+	}
 	state := "is not cached on this machine and could not be acquired"
 	var refused *docscache.NotAdmittedError
 	if errors.As(cause, &refused) {

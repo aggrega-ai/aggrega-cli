@@ -342,6 +342,14 @@ type server struct {
 	// nothing having changed.
 	docsBundleOnce sync.Once
 
+	// docsHeldVersion is the version of the documentation bundle that acquisition
+	// holds — the one asked for, or the newest earlier one where none is published
+	// for it — and docsAcquireErr why it holds none. Both are written once, by the
+	// acquisition, before the session answers its first message, and only read
+	// after it.
+	docsHeldVersion string
+	docsAcquireErr  error
+
 	// runGenCatalog runs the catalog-generation helper for the gen-catalog
 	// tool. Nil calls the in-process catalog-generation core. A test injects a
 	// fake that records the options and returns canned output.

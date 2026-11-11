@@ -399,11 +399,23 @@ func (s *server) explainPages(ctx context.Context) (explainops.Pages, error) {
 		return explainops.Pages{}, fmt.Errorf("the published documentation is not available: %w", err)
 	}
 	ref, version := s.docsBundleCoords(tw)
+	var none *docsbundle.NoBundleForVersionError
+	if errors.As(s.docsAcquireErr, &none) {
+		// The session's acquisition already measured why there is no bundle to
+		// read, and that answer names both versions; a read of the cache could
+		// only report the version asked for as absent.
+		return explainops.Pages{}, explainops.Unavailable(ref, version, s.docsAcquireErr)
+	}
 	cacheRoot, err := s.docsCacheRoot()
 	if err != nil {
 		return explainops.Pages{}, explainops.Unavailable(ref, version, err)
 	}
-	return explainops.ReadPages(cacheRoot, ref, version, docsbundle.Admission(s.docsDecl.Onto(ctx), tw.cfg, ref, nil))
+	pages, err := explainops.ReadPages(cacheRoot, ref, version, docsbundle.Admission(s.docsDecl.Onto(ctx), tw.cfg, ref, nil))
+	if err != nil {
+		return explainops.Pages{}, err
+	}
+	pages.Requested = s.docsRequestedVersion()
+	return pages, nil
 }
 
 var explainErrorToolSpec = toolSpec{
