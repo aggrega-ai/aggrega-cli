@@ -363,7 +363,7 @@ func TestTheReferenceImporterReadsTheShapesRealExportsCarry(t *testing.T) {
 		{
 			shape:    "a langflow noteNode on the canvas is not lifted as a component",
 			source:   langflowStarterProject,
-			document: "imported/flow",
+			document: "imported/research-translation-loop",
 			keys:     components,
 			want: []string{
 				"arxivcomponent-zgqwh", "chatinput-mblfd", "chatoutput-scvyg",
@@ -373,7 +373,7 @@ func TestTheReferenceImporterReadsTheShapesRealExportsCarry(t *testing.T) {
 		{
 			shape:    "a flowise stickyNote on a chatflow's canvas is not lifted as a component",
 			source:   flowiseChatflow,
-			document: "imported/flow",
+			document: "imported/multiple-documents-qna",
 			keys:     components,
 			want: []string{
 				"buffermemory-0", "chatopenai-0", "openaiembeddings-0", "openaiembeddings-1", "pinecone-0",
@@ -383,7 +383,7 @@ func TestTheReferenceImporterReadsTheShapesRealExportsCarry(t *testing.T) {
 		{
 			shape:    "a flowise stickyNote on an agentflow's canvas is not lifted as a component",
 			source:   flowiseAgentflow,
-			document: "imported/flow",
+			document: "imported/agents-handoff",
 			keys:     components,
 			want: []string{
 				"agentagentflow-0", "agentagentflow-1", "agentagentflow-2", "conditionagentagentflow-0",

@@ -349,7 +349,8 @@ func writeDifyBuild(t *testing.T, dir, parameters string) string {
 	}
 	manifest.WriteString("    features:\n      type:\n        core/referenced-secret: helm/k8s-existing-secret\n")
 	release := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: imported/flow\n" +
-		"  environment: development\n  version: 0.1.0\nspec:\n  aggregate: imported/flow\n  manifest: imported/flow\n"
+		"  environment: development\n  version: 0.1.0\nspec:\n  aggregate: " + draftedAggregateName(t, dir) + "\n" +
+		"  manifest: imported/flow\n"
 	if parameters != "" {
 		release += "  parameters:\n" + parameters
 	}

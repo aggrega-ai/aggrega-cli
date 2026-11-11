@@ -834,7 +834,7 @@ func TestTwoImportsAreByteIdentical(t *testing.T) {
 // TestTheEntitiesNameEachInstancesComponent requires the learn agent's import to
 // emit a reference to each Component its instances are of, in order, beside the
 // drafted Aggregate and Release — none to the MCP tool, which the draft holds no
-// instance of.
+// instance of — both named after the agent's name, LearnAgent.
 func TestTheEntitiesNameEachInstancesComponent(t *testing.T) {
 	out := importFile(catalog, "", fixture(t, "learn-agent.yaml"))
 	var got []string
@@ -842,8 +842,53 @@ func TestTheEntitiesNameEachInstancesComponent(t *testing.T) {
 		got = append(got, e.Kind+" "+e.Name+" "+e.Mode)
 	}
 	want := []string{"Component " + Component + " reference", "Component " + modelComponent + " reference",
-		"Aggregate imported/flow draft", "Release imported/flow draft"}
+		"Aggregate imported/learnagent draft", "Release imported/learnagent draft"}
 	if !slices.Equal(got, want) {
 		t.Errorf("the import emits %q, want %q", got, want)
+	}
+}
+
+// TestTheDraftIsNamedAfterTheAgent imports one declarative agent under each way
+// its draft can be named, one row each, and reads the name off the drafted
+// Aggregate and Release entities and off the files: the agent's name, not its
+// displayName; the file's stem where two agents name themselves apart; and the
+// namespace the target_namespace setting names in front.
+//
+// 🔴 PLANTED DEFECT: in Import (agentframeworkimport.go), hand importer.DraftName
+// each agent's displayName rather than its name: the first row reddens.
+func TestTheDraftIsNamedAfterTheAgent(t *testing.T) {
+	t.Parallel()
+	one := []byte("kind: Prompt\nname: SupportAgent\ndisplayName: Support Assistant\nmodel:\n  id: gpt-4o\n" +
+		"  provider: OpenAI\n")
+	other := []byte("kind: Prompt\nname: BillingAgent\nmodel:\n  id: gpt-4o\n  provider: OpenAI\n")
+	for _, row := range []struct {
+		scenario string
+		in       aggrega.ImportInput
+		want     string
+	}{
+		{"the agent's name", aggrega.ImportInput{Format: Format, Bytes: one, Name: "support-agent.yaml"},
+			"imported/supportagent"},
+		{"two agents naming themselves apart, the file's stem", aggrega.ImportInput{Format: Format, Bytes: one,
+			Name: "agents.yaml", Sources: []aggrega.ImportSource{{Name: "billing.yaml", Bytes: other}}},
+			"imported/agents"},
+		{"the target namespace", aggrega.ImportInput{Format: Format, Bytes: one,
+			Settings: json.RawMessage(`{"target_namespace":"team-a"}`)}, "team-a/supportagent"},
+	} {
+		out := Import(row.in, hostParse)
+		var got []string
+		for _, e := range out.Entities {
+			if e.Kind == "Aggregate" || e.Kind == "Release" {
+				got = append(got, e.Kind+" "+e.Name)
+			}
+		}
+		if want := []string{"Aggregate " + row.want, "Release " + row.want}; !slices.Equal(got, want) {
+			t.Errorf("%s: the import drafted %q, want %q", row.scenario, got, want)
+		}
+		for _, f := range out.Files {
+			if (f.Path == "aggregate.yaml" || f.Path == "release.yaml") &&
+				!strings.Contains(f.Content, "\nmetadata:\n  name: "+row.want+"\n") {
+				t.Errorf("%s: %s does not name the draft %s:\n%s", row.scenario, f.Path, row.want, f.Content)
+			}
+		}
 	}
 }

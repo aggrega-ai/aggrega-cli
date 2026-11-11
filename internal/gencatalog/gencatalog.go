@@ -34,8 +34,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
-// genCatalogHeader is the two-part banner every generated Plugin entity
-// carries: the generation note, then the standard license header.
+// genCatalogHeader is the banner every generated Plugin entity carries: one
+// generation note, and nothing else.
 //
 // The note says where the entity comes from and the one edit its author may
 // make: the entity is generated from the plugin — its contract fields from the
@@ -43,10 +43,12 @@ import (
 // capability lists may be narrowed before it is published. It
 // says nothing else, because anything else an author changes in the entity is
 // changed in the overlay and generated again.
+//
+// The banner carries no license or copyright line: the licence a generated
+// entity is published under is for whoever generates and publishes it to state,
+// so the generator writes none of its own into the file.
 const genCatalogHeader = "# Generated from the plugin by `aggrega plugin gen-catalog`. You may narrow its " +
-	"capability lists; edit nothing else here.\n" +
-	"# SPDX-License-Identifier: Apache-2.0\n" +
-	"# Copyright 2026 Cognitio S.r.l.\n"
+	"capability lists; edit nothing else here.\n"
 
 // genCatalogPluginFilename is the kind-conventional filename for a Plugin
 // entity within its per-version directory.

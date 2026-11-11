@@ -94,11 +94,12 @@ func mcpDrafts(t *testing.T, dir string) (aggregateKeys, releaseKeys []string, a
 		}
 		return keys, string(content), doc.Content[0]
 	}
-	aggregateKeys, aggregate, _ = keysOf("aggregate.yaml")
-	var releaseDoc *yaml.Node
+	var aggregateDoc, releaseDoc *yaml.Node
+	aggregateKeys, aggregate, aggregateDoc = keysOf("aggregate.yaml")
 	releaseKeys, release, releaseDoc = keysOf("release.yaml")
-	if got := yamlMember(yamlMember(releaseDoc, "spec"), "aggregate"); got == nil || got.Value != "imported/flow" {
-		t.Errorf("the drafted Release does not name the drafted Aggregate:\n%s", release)
+	name := yamlMember(yamlMember(aggregateDoc, "metadata"), "name")
+	if got := yamlMember(yamlMember(releaseDoc, "spec"), "aggregate"); name == nil || got == nil || got.Value != name.Value {
+		t.Errorf("the drafted Release does not name the drafted Aggregate:\n%s\n%s", aggregate, release)
 	}
 	return aggregateKeys, releaseKeys, aggregate, release
 }

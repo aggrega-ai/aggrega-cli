@@ -20,6 +20,10 @@ type server struct {
 	// name is the server's name in the source; ref names it in a report, and key
 	// is its instance's key in the drafts.
 	name, ref, key string
+	// title is the name a registry server description gives the server it
+	// describes, which names the draft; empty for a server a client's
+	// configuration lists, since the configuration gives itself no name.
+	title string
 	// command is the server's command line, the command first, for a server run
 	// behind the bridge; nil where it runs otherwise or names no command.
 	command []item
@@ -209,6 +213,7 @@ func registryServer(top []importer.ObjectEntry) server {
 		switch e.Key {
 		case "name":
 			_ = json.Unmarshal(e.Value, &s.name)
+			s.title = s.name
 		case "packages":
 			_ = json.Unmarshal(e.Value, &packages)
 		case "remotes":

@@ -141,7 +141,7 @@ documents:
       apiVersion: aggrega.ai/v1beta1
       kind: Aggregate
       metadata:
-        name: imported/flow
+        name: imported/research-translation-loop
         version: 0.1.0
         description: Draft Aggregate imported from a source in the langflow format.
       spec:

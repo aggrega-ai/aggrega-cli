@@ -395,8 +395,8 @@ func writeN8nRelease(t *testing.T, dir, target string) string {
 		"        core/datastore/qdrant:1.0.0: " + target + "/qdrant:1.0.0\n" +
 		"    features:\n      type:\n        " + secret + ":1.0.0: " + realization + ":1.0.0\n"
 	release := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: " + name + "\n  environment: " +
-		environment + "\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n  manifest: " + name + "\n" +
-		"  boundaries:\n    main:\n      directory: ./dist/" + target + "\n      components:\n" +
+		environment + "\n  version: \"1.0.0\"\nspec:\n  aggregate: " + draftedAggregateName(t, dir) + "\n  manifest: " +
+		name + "\n  boundaries:\n    main:\n      directory: ./dist/" + target + "\n      components:\n" +
 		"        openai-chat-model: {}\n        knowledge-base: {}\n" +
 		"        docs-mcp:\n          infra:\n            endpoint: https://docs-mcp.release.example/mcp\n" +
 		"        n8n:\n          infra:\n            image: n8nio/n8n:1.110.1\n" +

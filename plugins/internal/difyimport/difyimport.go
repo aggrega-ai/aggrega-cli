@@ -109,13 +109,32 @@ const (
 )
 
 // Dify is the format as the kit drafts it: a YAML source, walked by walkTree,
-// run by the Dify installation.
+// its draft named after the application's name, run by the Dify installation.
 var Dify = importer.Format{
 	Name:     Format,
 	Syntax:   Syntax,
 	Mappings: map[string]importer.Mapping{},
 	Walk:     walkTree,
+	Title:    appName,
 	Platform: &platform,
+}
+
+// appName returns the name a Dify application's DSL gives the application, the
+// one Dify lists it under: the scalar at app.name, read through readDSL, empty
+// where it writes none.
+func appName(tree json.RawMessage) string {
+	d, ok := readDSL(tree)
+	if !ok {
+		return ""
+	}
+	var app struct {
+		Name json.RawMessage `json:"name"`
+	}
+	if json.Unmarshal(d.App, &app) != nil {
+		return ""
+	}
+	name, _ := draftyaml.ScalarText(app.Name)
+	return name
 }
 
 // platform is the Dify installation: core/dify, running core/ai-agent/dify,

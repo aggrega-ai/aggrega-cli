@@ -50,6 +50,12 @@
 // halts naming it. The Release's environment and its Manifest are left unset
 // too, since no source names either and the import drafts no Manifest.
 //
+// The Aggregate and the Release are named as importer.DraftName names a draft: a
+// registry server description gives the server it describes a name, and a draft
+// made from descriptions alone, all naming one server, is named after it; a
+// client's configuration gives itself none, so a draft holding a server one
+// lists is named after the file the import was handed on its own.
+//
 // # Credential values
 //
 // A value of a server's configuration can carry a key: a header's value, an
@@ -183,7 +189,11 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		return out
 	}
 
-	name := importer.TargetNamespace(in.Settings) + "/flow"
+	titles := make([]string, 0, len(servers))
+	for _, s := range servers {
+		titles = append(titles, s.title)
+	}
+	name := importer.DraftName(in, titles...)
 	aggregate, release := renderAggregate(name, servers), renderRelease(name, servers)
 	for _, s := range servers {
 		out.Entities = append(out.Entities, aggrega.EmittedEntity{Kind: "Component", Name: Component, Mode: "reference",

@@ -218,7 +218,8 @@ func TestAWorkflowApplicationIsDraftedAsTheInstallationCarryingIt(t *testing.T) 
 	for _, e := range out.Entities {
 		entities = append(entities, e.Kind+" "+e.Mode+" "+e.Name)
 	}
-	if want := []string{"Aggregate reference core/dify", "Aggregate draft imported/flow"}; !reflect.DeepEqual(entities, want) {
+	// The drafted Aggregate is named after the application, Support Answers.
+	if want := []string{"Aggregate reference core/dify", "Aggregate draft imported/support-answers"}; !reflect.DeepEqual(entities, want) {
 		t.Errorf("the import emitted %v, want %v", entities, want)
 	}
 }

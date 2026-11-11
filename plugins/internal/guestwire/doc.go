@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio S.r.l.
 
-// Package guestwire holds the assertions that hold across every provider guest
-// rather than within one: that the provider render socket's failure transport
-// stays in step with the halting conditions the provider guest cores publish,
-// and that no provider guest links the host's plugin loader or the WebAssembly
-// runtime beneath it. It declares nothing of its own.
+// Package guestwire holds the assertions that hold across the guests under
+// plugins/ rather than within one guest: properties of a socket, or of every
+// guest of a kind at once. It declares nothing of its own.
 //
 // It exists as a package because of where the assertions can be written. Each
 // property is about the SOCKET or about every guest at once rather than about any

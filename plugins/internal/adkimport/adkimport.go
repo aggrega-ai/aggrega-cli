@@ -86,6 +86,11 @@
 // Each tool is reported in a decision choosing nothing: one ADK ships runs inside
 // the application, and any other is code the application defines.
 //
+// The Aggregate and the Release are named after the application, as
+// importer.DraftName names a draft: after the name its root agent's
+// configuration declares, where every tree read declares the same one, and
+// otherwise after the file the import was handed on its own.
+//
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and leaves
 // for the Release what no configuration states: each instance's image, which runs
 // the application and holds its configurations, and the credential it presents to
@@ -249,7 +254,6 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	}
 
 	out.Decisions = decisions(apps)
-	namespace := importer.TargetNamespace(in.Settings)
 	var entities []aggrega.EmittedEntity
 	for _, app := range apps {
 		entities = append(entities, aggrega.EmittedEntity{Kind: "Component", Name: Component, Mode: "reference",
@@ -269,7 +273,11 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 			SourceRef: p.ref, DecisionRef: "decision:" + p.ref})
 	}
 
-	name := namespace + "/flow"
+	titles := make([]string, 0, len(apps))
+	for _, app := range apps {
+		titles = append(titles, app.root.name)
+	}
+	name := importer.DraftName(in, titles...)
 	aggregate := renderAggregate(name, apps, parts, unread(r, apps))
 	release := renderRelease(name, apps, parts)
 	out.Entities = append(entities,

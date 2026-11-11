@@ -379,8 +379,8 @@ func writePlatformRelease(t *testing.T, dir string, r platformRelease) string {
 
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: " + name + "\n  environment: " +
-		environment + "\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n  manifest: " + name + "\n" +
-		"  boundaries:\n    main:\n      directory: ./dist/" + r.target + "\n      components:\n")
+		environment + "\n  version: \"1.0.0\"\nspec:\n  aggregate: " + draftedAggregateName(t, dir) + "\n  manifest: " +
+		name + "\n  boundaries:\n    main:\n      directory: ./dist/" + r.target + "\n      components:\n")
 	for _, part := range r.parts {
 		if address, ok := r.servers[part]; ok {
 			b.WriteString("        " + part + ":\n          infra:\n            endpoint: " + address + "\n")
@@ -671,6 +671,19 @@ func readDraftedAggregate(t *testing.T, dir string) string {
 		t.Fatalf("read the drafted Aggregate: %v", err)
 	}
 	return string(content)
+}
+
+// draftedAggregateName returns the name the drafted Aggregate in dir declares at
+// metadata.name, which an import derives from the source, so a Release written
+// beside it names the Aggregate it was drafted as.
+func draftedAggregateName(t *testing.T, dir string) string {
+	t.Helper()
+	_, rest, ok := strings.Cut(readDraftedAggregate(t, dir), "\nmetadata:\n  name: ")
+	name, _, _ := strings.Cut(rest, "\n")
+	if !ok || name == "" {
+		t.Fatalf("the drafted Aggregate in %s declares no metadata.name", dir)
+	}
+	return name
 }
 
 // decisionNamed returns the decision recorded for the node whose id is id.

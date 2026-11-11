@@ -50,6 +50,10 @@ type crew struct {
 	tasks  []task
 	// listed are the agents crew.jsonc names, in its order.
 	listed []string
+	// name is the crew's name as crew.jsonc writes it at its top-level name, the
+	// name CrewAI gives the crew; empty where it writes none, as a classic
+	// project's files never do.
+	name string
 	// shadowed names the .json files the crew's files declare that the import
 	// does not read, since the .jsonc file of the same crew or agent was handed.
 	shadowed []string
@@ -313,12 +317,17 @@ func (c *crew) readTasks(tree json.RawMessage, text []byte) {
 	}
 }
 
-// readCrew reads a crew.jsonc: the agents its agents list names, in its order;
-// its tasks, in their order, each by its name — or its place in the list where it
+// readCrew reads a crew.jsonc: the crew's name, at its top-level name, where
+// written as a scalar; the agents its agents list names, in its order; its
+// tasks, in their order, each by its name — or its place in the list where it
 // names none — with the agent it is assigned to; and the names of its other
 // members, which the draft does not read.
 func (c *crew) readCrew(tree json.RawMessage) {
 	top := objectOf(tree)
+	crewName, named := draftyaml.ScalarText(top["name"])
+	if named && crewName != "" {
+		c.name = crewName
+	}
 	if items, ok := listOf(top["agents"]); ok {
 		for _, item := range items {
 			if name, ok := draftyaml.ScalarText(item); ok {
@@ -337,9 +346,9 @@ func (c *crew) readCrew(tree json.RawMessage) {
 			c.tasks = append(c.tasks, task{name: name, agent: assigned})
 		}
 	}
-	for _, name := range sortedKeys(top) {
-		if name != "agents" && name != "tasks" {
-			c.others = append(c.others, name)
+	for _, member := range sortedKeys(top) {
+		if member != "agents" && member != "tasks" && (member != "name" || !named) {
+			c.others = append(c.others, member)
 		}
 	}
 }

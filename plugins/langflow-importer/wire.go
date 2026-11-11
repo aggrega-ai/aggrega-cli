@@ -717,11 +717,12 @@ func (t flowTemplate) member(key string) json.RawMessage {
 
 // flowNodes are the elements of a Langflow flow's node list that read as nodes,
 // in the order the list holds them, and, by id, the first of them carrying each
-// id; and the flow's own top-level id, undecoded.
+// id; and the flow's own top-level id and name, undecoded.
 type flowNodes struct {
 	list  []flowNode
 	first map[string]int
 	id    json.RawMessage
+	name  json.RawMessage
 }
 
 // nodesMemo holds the nodes last read off a flow's tree.
@@ -737,13 +738,14 @@ func nodesOf(tree json.RawMessage) flowNodes {
 // element that decodes as a node, with its type and the template its data.node
 // carries, its members read once. A type that is not a string reads as none
 // and leaves the node read. A tree whose node list does not decode holds none.
-// It reads the flow's top-level id in the same decoding, as decoding the id
-// alone would: a member whose value does not fit the node list leaves the id
-// read.
+// It reads the flow's top-level id and name in the same decoding, as decoding
+// either alone would: a member whose value does not fit the node list leaves
+// them read.
 func readNodes(tree json.RawMessage) flowNodes {
 	nodes := flowNodes{first: map[string]int{}}
 	var top struct {
 		ID   json.RawMessage `json:"id"`
+		Name json.RawMessage `json:"name"`
 		Data struct {
 			Nodes []json.RawMessage `json:"nodes"`
 		} `json:"data"`
@@ -751,7 +753,7 @@ func readNodes(tree json.RawMessage) flowNodes {
 	err := json.Unmarshal(tree, &top)
 	var mismatch *json.UnmarshalTypeError
 	if err == nil || errors.As(err, &mismatch) {
-		nodes.id = top.ID
+		nodes.id, nodes.name = top.ID, top.Name
 	}
 	if err != nil {
 		return nodes

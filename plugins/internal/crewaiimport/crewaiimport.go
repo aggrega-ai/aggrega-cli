@@ -56,6 +56,12 @@
 // and a tool whose name matches the name of a tool Component the catalog holds
 // carries that match as a hint.
 //
+// The Aggregate and the Release are named after the crew, as importer.DraftName
+// names a draft: after the name crew.jsonc gives it, where every crew read is
+// named alike, and otherwise after the file the import was handed on its own. A
+// classic project's files give the crew no name — its program does — so a draft
+// read from one is named after the file.
+//
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and
 // leaves for the Release what no declaration states: each agent's image, which
 // runs the crew's program, and the credential each agent presents to its model.
@@ -214,7 +220,6 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	}
 
 	out.Decisions = decisions(in, read, parts)
-	namespace := importer.TargetNamespace(in.Settings)
 	var entities []aggrega.EmittedEntity
 	for _, c := range read {
 		for _, a := range c.agents {
@@ -239,7 +244,11 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 			SourceRef: p.ref, DecisionRef: "decision:" + p.ref})
 	}
 
-	name := namespace + "/flow"
+	titles := make([]string, 0, len(read))
+	for _, c := range read {
+		titles = append(titles, c.name)
+	}
+	name := importer.DraftName(in, titles...)
 	aggregate := renderAggregate(name, read, parts)
 	release := renderRelease(name, read, parts)
 	out.Entities = append(entities,

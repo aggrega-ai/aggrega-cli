@@ -434,7 +434,11 @@ func writeAgentFrameworkRelease(t *testing.T, dir, key, part string) string {
 		}
 		release = strings.Replace(release, old, new, 1)
 	}
-	replace("  name: imported/flow\n", "  name: imported-agent-framework\n  environment: production\n")
+	// The drafted Release is named after the agent; whatever it is named, the
+	// name is replaced.
+	_, named, _ := strings.Cut(release, "\nmetadata:\n  name: ")
+	draftName, _, _ := strings.Cut(named, "\n")
+	replace("  name: "+draftName+"\n", "  name: imported-agent-framework\n  environment: production\n")
 	replace("  components:\n", "  manifest: imported-agent-framework\n  boundaries:\n    main:\n"+
 		"      directory: ./dist/helm\n      components:\n")
 	head, entries, _ := strings.Cut(release, "      components:\n")

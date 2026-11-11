@@ -18,7 +18,7 @@ import (
 
 // The tests in this file hold the lockfile's identity of an entity: its kind and
 // its reference together. A Release whose Aggregate and Manifest carry one name —
-// every Release an importer drafts names both `imported/flow` — pins each by a row
+// every Release an importer drafts names both by the one name of the draft — pins each by a row
 // of its own, so an edit to either is drift exactly as it is where the two names
 // differ. With the identity reduced to the reference alone, the two collapse into
 // one row: the lockfile pins the Manifest only, and a build over an edited

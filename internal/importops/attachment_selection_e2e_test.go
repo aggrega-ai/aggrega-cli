@@ -154,7 +154,7 @@ func assertDraftedBy(t *testing.T, res Result, importers []string, format, wantI
 		}
 	}
 	for _, f := range res.Files {
-		if f.Path == "aggregate.yaml" && !strings.Contains(f.Content, "name: "+namespace+"/flow") {
+		if f.Path == "aggregate.yaml" && !strings.Contains(f.Content, "\nmetadata:\n  name: "+namespace+"/") {
 			t.Errorf("the drafted Aggregate is not named in the namespace %q:\n%s", namespace, f.Content)
 		}
 	}

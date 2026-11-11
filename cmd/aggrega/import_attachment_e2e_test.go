@@ -103,7 +103,7 @@ func sharedAttachedImport(t *testing.T, root, file, namespace, other string) imp
 			t.Fatalf("the shared import of %s drafted %s, which is not named in the namespace %q its "+
 				"importer's attachment hands it", file, f.Path, namespace)
 		}
-		if f.Path == "aggregate.yaml" && !strings.Contains(f.Content, "name: "+namespace+"/flow") {
+		if f.Path == "aggregate.yaml" && !strings.Contains(f.Content, "\nmetadata:\n  name: "+namespace+"/") {
 			t.Fatalf("the shared import of %s drafted an Aggregate not named in the namespace %q:\n%s",
 				file, namespace, f.Content)
 		}

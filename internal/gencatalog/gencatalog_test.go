@@ -75,6 +75,47 @@ func embeddedGuestVersion(t *testing.T, uri string) string {
 	return desc.Metadata.Version
 }
 
+// TestTheGeneratedEntityCarriesTheGenerationNoteAndNoLicenseLines marshals a
+// Plugin entity through the generator's one emitter and holds the file to its
+// opening: the generation note as its only comment line, followed at once by
+// the entity's first key, and no license identifier or copyright notice
+// anywhere in it. The generated file is the author's, so the generator writes
+// no licence terms or copyright holder of its own into it.
+//
+// 🔴 PLANTED DEFECT: append "# SPDX-License-Identifier: Apache-2.0\n" to
+// genCatalogHeader (gencatalog.go): the second-line row and the no-license row
+// both redden.
+func TestTheGeneratedEntityCarriesTheGenerationNoteAndNoLicenseLines(t *testing.T) {
+	t.Parallel()
+	entity := types.Plugin{
+		APIVersion: "aggrega.ai/v1beta1",
+		Kind:       "Plugin",
+		Metadata:   types.PluginMetadata{Name: "example", Version: "1.0.0", PluginType: "parser"},
+	}
+	raw, err := emitGenCatalogEntity(entity)
+	if err != nil {
+		t.Fatalf("emit the entity: %v", err)
+	}
+	lines := strings.Split(string(raw), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("the generated entity holds %d line(s):\n%s", len(lines), raw)
+	}
+	const note = "# Generated from the plugin by `aggrega plugin gen-catalog`. You may narrow its capability lists; " +
+		"edit nothing else here."
+	if lines[0] != note {
+		t.Errorf("the generated entity opens with %q; want the generation note %q", lines[0], note)
+	}
+	if lines[1] != "apiVersion: aggrega.ai/v1beta1" {
+		t.Errorf("the line after the generation note is %q; want the entity's first key, apiVersion", lines[1])
+	}
+	for _, forbidden := range []string{"SPDX-License-Identifier", "Copyright"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Errorf("the generated entity carries %q; the generator writes no license or copyright line:\n%s",
+				forbidden, raw)
+		}
+	}
+}
+
 // readGeneratedEntity reads and parses a generated Plugin entity written under
 // out/<pluginType>/<name>/<version>/plugin.yaml. Its name argument carries the
 // slashed <pluginType>/<name> coordinate rather than a bare name — which is why

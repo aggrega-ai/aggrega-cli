@@ -98,12 +98,14 @@ func targetedImport(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, name st
 }
 
 // wantPostgresManifest is the Manifest the compose target drafts for the
-// PostgreSQL application: the drafted type, written with no version, mapped to the
-// one compose Recipe implementing the version of it the catalog holds.
+// PostgreSQL application, named as the drafted Release is, after the file
+// compose.yaml, since the application gives itself no name: the drafted type,
+// written with no version, mapped to the one compose Recipe implementing the
+// version of it the catalog holds.
 const wantPostgresManifest = `apiVersion: aggrega.ai/v1beta1
 kind: Manifest
 metadata:
-  name: imported/flow
+  name: imported/compose
   version: 0.1.0
 spec:
   mappings:

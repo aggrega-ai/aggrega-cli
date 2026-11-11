@@ -583,7 +583,7 @@ func writeGoogleADKRelease(t *testing.T, dir, key, part string) string {
 		"        core/ai-agent/google-adk:1.0.0: helm/google-adk:1.0.0\n        core/ai-model/gemini:1.0.0: helm/gemini:1.0.0\n" +
 		"    features:\n      type:\n        core/referenced-secret:1.0.0: helm/k8s-existing-secret:1.0.0\n"
 	release := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: imported-google-adk\n" +
-		"  environment: production\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n" +
+		"  environment: production\n  version: \"1.0.0\"\nspec:\n  aggregate: " + draftedAggregateName(t, dir) + "\n" +
 		"  manifest: imported-google-adk\n  boundaries:\n    main:\n      directory: ./dist/helm\n      components:\n" +
 		"        " + part + ": {}\n" +
 		"        " + key + ":\n          infra:\n            image: " + googleADKImage + "\n" +
@@ -692,7 +692,7 @@ func TestAGoogleADKDraftNamingALiteLLMModelHaltsNamingItsModelSocket(t *testing.
 		"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n" +
 		"        core/ai-agent/google-adk:1.0.0: helm/google-adk:1.0.0\n        core/ai-model/gemini:1.0.0: helm/gemini:1.0.0\n"
 	release := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: imported-google-adk\n" +
-		"  environment: production\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n" +
+		"  environment: production\n  version: \"1.0.0\"\nspec:\n  aggregate: " + draftedAggregateName(t, dir) + "\n" +
 		"  manifest: imported-google-adk\n  boundaries:\n    main:\n      directory: ./dist/helm\n      components:\n" +
 		"        " + key + ":\n          infra:\n            image: " + googleADKImage + "\n"
 	for file, body := range map[string]string{"manifest.yaml": manifest, "release.yaml": release} {

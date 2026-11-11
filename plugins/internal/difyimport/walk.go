@@ -59,6 +59,9 @@ type dsl struct {
 	} `json:"model_config"`
 	Agent        json.RawMessage   `json:"agent"`
 	Dependencies []json.RawMessage `json:"dependencies"`
+	// App is the application's own block, undecoded, so an app that is not an
+	// object leaves the rest of the DSL read; appName reads its name off it.
+	App json.RawMessage `json:"app"`
 }
 
 // readDSL reads tree, false where it is not an object.

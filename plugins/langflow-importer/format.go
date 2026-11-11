@@ -12,12 +12,14 @@ import (
 )
 
 // langflow is the one format this importer serves: Langflow flow JSON, parsed by
-// the host as JSON and walked by walkTree, and run by the Langflow platform.
+// the host as JSON and walked by walkTree, its draft named after the flow's name,
+// and run by the Langflow platform.
 var langflow = importer.Format{
 	Name:     "langflow",
 	Syntax:   "json",
 	Mappings: mappings,
 	Walk:     walkTree,
+	Title:    flowName,
 	Platform: &platform,
 }
 

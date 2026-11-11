@@ -7,6 +7,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/treememo"
@@ -67,19 +68,26 @@ func liftNode(n workflowNode) importer.Node {
 // workflowID returns the identifier an n8n export gives its workflow: the string
 // at its top-level id, empty where it gives none. The kit derives one from the
 // carried workflow where this is empty or holds a character a draft does not
-// write as it is.
+// write as it is. The id is read with the workflow's nodes, in the one decoding
+// of the tree they share.
 func workflowID(tree json.RawMessage) string {
-	var top struct {
-		ID json.RawMessage `json:"id"`
-	}
-	if err := json.Unmarshal(tree, &top); err != nil {
-		return ""
-	}
 	var id string
-	if err := json.Unmarshal(top.ID, &id); err != nil {
+	if err := json.Unmarshal(workflowOf(tree).id, &id); err != nil {
 		return ""
 	}
 	return id
+}
+
+// workflowName returns the name an exported n8n workflow gives itself, the one
+// n8n lists it under: the string at its top-level name, empty where it carries
+// none. The name is read with the workflow's nodes, in the one decoding of the
+// tree they share.
+func workflowName(tree json.RawMessage) string {
+	var name string
+	if err := json.Unmarshal(workflowOf(tree).name, &name); err != nil {
+		return ""
+	}
+	return name
 }
 
 // workflowNode is one element of an n8n workflow's node list that reads as a
@@ -105,11 +113,14 @@ func (n workflowNode) credentialTypes() []string {
 
 // workflow is what an n8n workflow's tree holds that this importer reads more
 // than once: its nodes, in the order the list holds them, the first node of each
-// name by name, and the connections between nodes as edges.
+// name by name, the connections between nodes as edges, and the workflow's own
+// top-level id and name, undecoded.
 type workflow struct {
 	nodes  []workflowNode
 	byName map[string]int
 	edges  []importer.Edge
+	id     json.RawMessage
+	name   json.RawMessage
 }
 
 // node returns the first node of the workflow named name, and false where none
@@ -137,14 +148,23 @@ func workflowOf(tree json.RawMessage) workflow {
 // the connection leaves, then by its type, then by the output it leaves from —
 // as an edge from the node it leaves to the node it enters. A node whose name is
 // empty is identified by its id. A tree whose node list does not decode holds no
-// node; an output n8n writes as null holds no connection.
+// node; an output n8n writes as null holds no connection. It reads the
+// workflow's top-level id and name in the same decoding, as decoding either
+// alone would: a member whose value does not fit the node list leaves them read.
 func readWorkflow(tree json.RawMessage) workflow {
 	w := workflow{byName: map[string]int{}}
 	var top struct {
+		ID          json.RawMessage   `json:"id"`
+		Name        json.RawMessage   `json:"name"`
 		Nodes       []json.RawMessage `json:"nodes"`
 		Connections json.RawMessage   `json:"connections"`
 	}
-	if err := json.Unmarshal(tree, &top); err != nil {
+	err := json.Unmarshal(tree, &top)
+	var mismatch *json.UnmarshalTypeError
+	if err == nil || errors.As(err, &mismatch) {
+		w.id, w.name = top.ID, top.Name
+	}
+	if err != nil {
 		return w
 	}
 	for i, raw := range top.Nodes {

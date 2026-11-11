@@ -108,6 +108,18 @@ func flowID(tree json.RawMessage) string {
 	return id
 }
 
+// flowName returns the name a Langflow export gives its flow, the one Langflow
+// lists the flow under: the string at its top-level name, empty where it carries
+// none. The name is read with the flow's node list (wire.go), in the one
+// decoding of the tree they share.
+func flowName(tree json.RawMessage) string {
+	var name string
+	if err := json.Unmarshal(nodesOf(tree).name, &name); err != nil {
+		return ""
+	}
+	return name
+}
+
 // credentialsOf locates every value a Langflow flow holds that can carry a
 // credential, each of its class, every class every time:
 //

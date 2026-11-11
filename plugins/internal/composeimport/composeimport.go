@@ -63,6 +63,11 @@
 // draft holds a variable's name, so each is named, as the entry writes it, in a
 // comment above the connection and in the service's decision.
 //
+// The Aggregate and the Release are named after the project, as
+// importer.DraftName names a draft: after the name its top-level name member
+// gives it, where every project read gives the same one, and otherwise after the
+// file the import was handed on its own.
+//
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and
 // carries per service what the source states for its operation: for an instance
 // of core/compute/server, its image and the port its container listens on as
@@ -244,7 +249,11 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		components = append(components, models...)
 	}
 
-	name := importer.TargetNamespace(in.Settings) + "/flow"
+	titles := make([]string, 0, len(read))
+	for _, p := range read {
+		titles = append(titles, p.name)
+	}
+	name := importer.DraftName(in, titles...)
 	aggregate := renderAggregate(name, read, types)
 	release := renderRelease(name, read, types)
 	out.Entities = append(components,

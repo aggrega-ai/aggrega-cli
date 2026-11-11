@@ -25,6 +25,9 @@ type project struct {
 	// notRead names the files of the directory Compose does not read, since
 	// another file of the same kind precedes them.
 	notRead []string
+	// name is the project's name as its top-level name member writes it, the
+	// last file to write one winning as Compose merges it; empty where none does.
+	name string
 	// services and models are the project's, in the order the files write them.
 	services []*service
 	models   []*model
@@ -166,15 +169,23 @@ func projectsOf(sources []aggrega.ImportSource) []*project {
 // read merges one file's parsed tree into the project, its services and models
 // in the order text writes them: a service or a model the project already
 // holds is merged with what the file says of it, as Compose merges an override
-// file, and a new one follows those it holds.
+// file, and a new one follows those it holds. A top-level name written as a
+// scalar names the project, replacing what an earlier file named it.
 func (p *project) read(tree json.RawMessage, text []byte) {
 	var top map[string]json.RawMessage
 	if json.Unmarshal(tree, &top) != nil {
 		return
 	}
-	for _, name := range sortedKeys(top) {
-		if name != "services" && name != "models" && !slices.Contains(p.others, name) {
-			p.others = append(p.others, name)
+	projectName, named := scalarText(top["name"])
+	if named && projectName != "" {
+		p.name = projectName
+	}
+	for _, member := range sortedKeys(top) {
+		if member == "services" || member == "models" || (member == "name" && named) {
+			continue
+		}
+		if !slices.Contains(p.others, member) {
+			p.others = append(p.others, member)
 		}
 	}
 	slices.Sort(p.others)

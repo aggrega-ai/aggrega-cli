@@ -618,7 +618,7 @@ func writeGraphRelease(t *testing.T, dir, local, target string, graphs []string,
 		"    features:\n      type:\n        " + secret + ":1.0.0: " + realization + ":1.0.0\n"
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: imported-langgraph\n" +
-		"  environment: " + environment + "\n  version: \"1.0.0\"\nspec:\n  aggregate: imported/flow\n" +
+		"  environment: " + environment + "\n  version: \"1.0.0\"\nspec:\n  aggregate: " + draftedAggregateName(t, dir) + "\n" +
 		"  manifest: imported-langgraph\n  boundaries:\n    main:\n      directory: ./dist/" + target + "\n" +
 		"      components:\n        gpt-4o: {}\n        " + datastore + ": {}\n")
 	for _, g := range graphs {

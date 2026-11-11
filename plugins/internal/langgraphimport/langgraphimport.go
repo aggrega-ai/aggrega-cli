@@ -58,6 +58,12 @@
 // the author, and the draft says so; the build halts naming the socket until one
 // is wired.
 //
+// The Aggregate and the Release are named after the graph, as
+// importer.DraftName names a draft: a configuration carries no name of its own,
+// so where every configuration read declares one graph, and all of them the
+// same id, the draft is named after that id, and otherwise after the file the
+// import was handed on its own.
+//
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and leaves
 // for the Release each graph's image: the application's own, its code with
 // LangGraph installed, rather than the server image langgraph build builds, and
@@ -261,7 +267,15 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 			SourceRef: p.ref, DecisionRef: "decision:" + p.ref})
 	}
 
-	name := importer.TargetNamespace(in.Settings) + "/flow"
+	var titles []string
+	for _, a := range read {
+		for _, g := range a.graphs {
+			if g.entrypoint != "" {
+				titles = append(titles, g.id)
+			}
+		}
+	}
+	name := importer.DraftName(in, titles...)
 	aggregate := renderAggregate(name, read, parts, unread)
 	release := renderRelease(name, read, parts)
 	out.Entities = append(entities,

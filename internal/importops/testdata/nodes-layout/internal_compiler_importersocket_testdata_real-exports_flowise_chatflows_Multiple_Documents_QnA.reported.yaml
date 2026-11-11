@@ -217,7 +217,7 @@ documents:
       apiVersion: aggrega.ai/v1beta1
       kind: Aggregate
       metadata:
-        name: imported/flow
+        name: imported/multiple-documents-qna
         version: 0.1.0
         description: Draft Aggregate imported from a source in the flowise format.
       spec:

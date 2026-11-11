@@ -74,6 +74,12 @@
 // is written, whole, in the comment above the agent's entry of the Release. A
 // tool of any other kind is reported in a decision choosing nothing too.
 //
+// The Aggregate and the Release are named after the agent, as
+// importer.DraftName names a draft: after the name its declaration gives it —
+// its name, the one it is keyed by, rather than its displayName — where every
+// agent read declares the same one, and otherwise after the file the import was
+// handed on its own.
+//
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and
 // leaves for the Release what no declarative agent states: each instance's image,
 // which runs the application and holds its declarative agents, and the
@@ -245,7 +251,6 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	}
 
 	out.Decisions = decisions(agents)
-	namespace := importer.TargetNamespace(in.Settings)
 	var entities []aggrega.EmittedEntity
 	for _, a := range agents {
 		entities = append(entities, aggrega.EmittedEntity{Kind: "Component", Name: Component, Mode: "reference",
@@ -265,7 +270,11 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 			SourceRef: p.ref, DecisionRef: "decision:" + p.ref})
 	}
 
-	name := namespace + "/flow"
+	titles := make([]string, 0, len(agents))
+	for _, a := range agents {
+		titles = append(titles, a.name)
+	}
+	name := importer.DraftName(in, titles...)
 	aggregate := renderAggregate(name, agents, parts)
 	release := renderRelease(name, agents, parts)
 	out.Entities = append(entities,

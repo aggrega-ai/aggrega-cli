@@ -12,12 +12,14 @@ import (
 )
 
 // n8n is the one format this importer serves: an exported n8n workflow, parsed
-// by the host as JSON and walked by walkTree, and run by the n8n platform.
+// by the host as JSON and walked by walkTree, its draft named after the
+// workflow's name, and run by the n8n platform.
 var n8n = importer.Format{
 	Name:     "n8n",
 	Syntax:   "json",
 	Mappings: mappings,
 	Walk:     walkTree,
+	Title:    workflowName,
 	Platform: &platform,
 }
 
