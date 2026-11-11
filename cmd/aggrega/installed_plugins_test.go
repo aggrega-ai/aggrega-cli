@@ -550,11 +550,11 @@ func TestCLIPluginSearchCommandWritesTheNameAsOneShellWord(t *testing.T) {
 	}
 }
 
-// TestCLIPluginAddCommandWritesTheNameAsOneShellWord proves the printed command
+// TestCLIPluginAddLineWritesTheNameAsOneShellWord proves the printed command
 // that adds a CLI plugin carries the typed name as a single word a POSIX shell
 // reads back as the name, quoting it only where the name holds a character the
 // shell would read.
-func TestCLIPluginAddCommandWritesTheNameAsOneShellWord(t *testing.T) {
+func TestCLIPluginAddLineWritesTheNameAsOneShellWord(t *testing.T) {
 	cases := []struct {
 		name string
 		want string
@@ -565,8 +565,8 @@ func TestCLIPluginAddCommandWritesTheNameAsOneShellWord(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := cliPluginAddCommand(tc.name); got != tc.want {
-				t.Errorf("cliPluginAddCommand(%q) = %q; want %q", tc.name, got, tc.want)
+			if got := cliPluginAddLine(tc.name); got != tc.want {
+				t.Errorf("cliPluginAddLine(%q) = %q; want %q", tc.name, got, tc.want)
 			}
 		})
 	}

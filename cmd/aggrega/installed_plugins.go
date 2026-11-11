@@ -560,12 +560,12 @@ func searchSuggestion(name string) string {
 // addSuggestion is the single home for the wording that points a user at adding
 // a CLI plugin named after a command the CLI does not recognize, where no local
 // index says whether one is published. The command it names is the one
-// cliPluginAddCommand composes: it looks the plugin up by that name at the
+// cliPluginAddLine composes: it looks the plugin up by that name at the
 // registry and refuses where none is published, so it is the direct route
 // whether or not such a plugin exists, and needs no index built first.
 func addSuggestion(name string) string {
 	return fmt.Sprintf("%q is not a command — to add a CLI plugin of that name, run: %s",
-		name, cliPluginAddCommand(name))
+		name, cliPluginAddLine(name))
 }
 
 // missingCLIPluginRemedy returns err restated for a configured cli plugin whose
@@ -586,13 +586,13 @@ func missingCLIPluginRemedy(uri string, err error) error {
 	if pinned {
 		query += ":" + version
 	}
-	return fmt.Errorf("%w; add it again with: %s", pluginpath.ErrPluginArtifactNotFound(), cliPluginAddCommand(query))
+	return fmt.Errorf("%w; add it again with: %s", pluginpath.ErrPluginArtifactNotFound(), cliPluginAddLine(query))
 }
 
-// cliPluginAddCommand is the command line that adds the CLI plugin named name,
+// cliPluginAddLine is the command line that adds the CLI plugin named name,
 // with the name written as one shell word so the line can be copied as printed
 // whatever the user typed.
-func cliPluginAddCommand(name string) string {
+func cliPluginAddLine(name string) string {
 	return "aggrega plugin add " + string(wasm.PluginTypeCLI) + " " + shellWord(name)
 }
 
