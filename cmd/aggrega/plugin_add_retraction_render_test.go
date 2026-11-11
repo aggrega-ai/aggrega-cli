@@ -252,6 +252,73 @@ func TestPluginAddRunStatesAnUnscreenedSelection(t *testing.T) {
 	}
 }
 
+// TestPluginAddRunSaysANamedPinIsRetractedOnItsResultLine holds the result line to
+// the result's withdrawn value, beside the notice the version's resolution prints.
+//
+// Whole-stream equality on every arm, so the planted defects it catches are each a
+// visible diff: the clause dropped from the result line on a named retracted pin
+// (the first arm); the clause printed on an ordinary named pin, or on every line
+// (the second arm); and the clause reaching a reporting delivery's document, which
+// would stop that answer being one parseable document (the third arm). The first
+// arm also pins that the resolution's own notice — the one carrying the recorded
+// reason and the snapshot's age — still precedes the result line exactly once.
+func TestPluginAddRunSaysANamedPinIsRetractedOnItsResultLine(t *testing.T) {
+	// Not parallel: these arms mutate process-global registry seams.
+	const pinnedNotice = "  retraction: " + screenedIndexHost + "/" + screenedIndexRepo +
+		":2.0.0 is retracted (" + screenedWithdrawnReason + "); resolving it because the reference names it explicitly" +
+		" (recorded in the local registry index as of " + screenedIndexBuiltAt + "; run `aggrega registry update` to refresh it)\n"
+	const clause = "; the version named is retracted and was pinned because it was named"
+
+	t.Run("a named retracted version", func(t *testing.T) {
+		rw := screenedIndexWorkspace(t, map[string]string{"2.0.0": screenedWithdrawnReason})
+		var out, errOut bytes.Buffer
+		if err := pluginAddRun(context.Background(), pluginAddConfig{
+			Socket: "governance", Role: "label-transform", Query: "tag-injector:2.0.0",
+			ws: rw, Out: &out, ErrOut: &errOut,
+		}); err != nil {
+			t.Fatalf("pluginAddRun: %v", err)
+		}
+		added := strings.TrimSuffix(addedGovernanceLine(rw, "2.0.0"), "\n") + clause + "\n"
+		if want := pinnedNotice + added; out.String() != want {
+			t.Errorf("rendered:\n%s\nwant:\n%s", out.String(), want)
+		}
+		if errOut.Len() != 0 {
+			t.Errorf("a writing delivery put %q on the other writer", errOut.String())
+		}
+	})
+
+	t.Run("a named version nothing withdrew", func(t *testing.T) {
+		rw := screenedIndexWorkspace(t, map[string]string{"2.0.0": screenedWithdrawnReason})
+		var out, errOut bytes.Buffer
+		if err := pluginAddRun(context.Background(), pluginAddConfig{
+			Socket: "governance", Role: "label-transform", Query: "tag-injector:1.0.0",
+			ws: rw, Out: &out, ErrOut: &errOut,
+		}); err != nil {
+			t.Fatalf("pluginAddRun: %v", err)
+		}
+		if want := addedGovernanceLine(rw, "1.0.0"); out.String() != want {
+			t.Errorf("rendered:\n%s\nwant:\n%s", out.String(), want)
+		}
+	})
+
+	t.Run("a reporting delivery's document carries no clause", func(t *testing.T) {
+		rw := screenedIndexWorkspace(t, map[string]string{"2.0.0": screenedWithdrawnReason})
+		var out, errOut bytes.Buffer
+		if err := pluginAddRun(context.Background(), pluginAddConfig{
+			Socket: "governance", Role: "label-transform", Query: "tag-injector:2.0.0", DryRun: true,
+			ws: rw, Out: &out, ErrOut: &errOut,
+		}); err != nil {
+			t.Fatalf("pluginAddRun: %v", err)
+		}
+		if strings.Contains(out.String(), clause) || !strings.HasPrefix(out.String(), "documents:") {
+			t.Errorf("the reporting delivery's answer is not the bare document:\n%s", out.String())
+		}
+		if errOut.String() != pinnedNotice {
+			t.Errorf("beside the document:\n%s\nwant the resolution's notice alone:\n%s", errOut.String(), pinnedNotice)
+		}
+	})
+}
+
 // screenedWithdrawals builds the verified withdrawal records a marker read answers
 // with, keyed by version. Each carries a signer, because only a signature-verified
 // record screens a version.

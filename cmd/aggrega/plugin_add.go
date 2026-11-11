@@ -195,6 +195,10 @@ type pluginAddConfig struct {
 // not composed here: it has one home, shared with the screen that reaches the
 // conclusion, so a substitution reads the same however a reader met it.
 //
+// A version the query named that turns out to be retracted is pinned all the same,
+// and the result line says so from the result's own value (withdrawnPinClause),
+// after the notice that gave the reason as the version was resolved.
+//
 // The command-extension sentence is the short one, and deliberately: the installer
 // this command supplies has already named the reference it pinned, the commands it
 // registered and the file it wrote, so restating those would announce one install
@@ -273,12 +277,28 @@ func pluginAddRun(ctx context.Context, cfg pluginAddConfig) error {
 		fmt.Fprintf(cfg.Out, "Bound capability %q to %s in %s (%s)\n",
 			res.Capability, res.URI, res.ConfigPath, pluginWriteReach(res.ConfigIsMachineWide))
 	case res.Identity != "":
-		fmt.Fprintf(cfg.Out, "Added %s as a %s plugin in %s (%s)\n",
-			res.Identity, res.Socket, res.ConfigPath, pluginWriteReach(res.ConfigIsMachineWide))
+		fmt.Fprintf(cfg.Out, "Added %s as a %s plugin in %s (%s)%s\n",
+			res.Identity, res.Socket, res.ConfigPath, pluginWriteReach(res.ConfigIsMachineWide), withdrawnPinClause(res.Withdrawn))
 	case res.Reference != "":
-		fmt.Fprintf(cfg.Out, "Pinned %s (%s)\n", res.Reference, pluginWriteReach(res.ConfigIsMachineWide))
+		fmt.Fprintf(cfg.Out, "Pinned %s (%s)%s\n", res.Reference, pluginWriteReach(res.ConfigIsMachineWide), withdrawnPinClause(res.Withdrawn))
 	}
 	return nil
+}
+
+// withdrawnPinClause is what a result line adds when the version the query named
+// is retracted, and the empty string otherwise.
+//
+// It is read off the result, the same value every other surface answers with, so
+// the line reporting what was pinned says the outcome in the terms the other
+// surfaces state it in. The withdrawal notice printed while the version was
+// resolved stays as it is: it alone carries the reason recorded against the
+// version and where that record was read, which the value does not. A provider
+// binding pins no version, so its line never carries the clause.
+func withdrawnPinClause(withdrawn bool) string {
+	if !withdrawn {
+		return ""
+	}
+	return "; the version named is retracted and was pinned because it was named"
 }
 
 // installCLIPlugin is the command-extension installer the operations layer is
