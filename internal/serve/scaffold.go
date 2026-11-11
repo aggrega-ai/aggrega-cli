@@ -59,7 +59,7 @@ type scaffoldExample struct {
 // from the answer itself. Skeleton is a document to write, not a document that
 // was written: where the text goes is the client's decision.
 //
-// For a list: Examples, each example once, in name order.
+// For a list: Examples, each example once, in the order the documentation lists them.
 //
 // For a write: the example written, the directory it went into as the request
 // named it, the files written relative to that directory, the commands the

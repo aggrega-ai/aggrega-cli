@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle"
@@ -104,7 +103,7 @@ func unavailable(ref, version string, cause error) error {
 }
 
 // List returns every example the bundle's list of examples names, each once, in
-// name order.
+// the order that list gives them.
 func (e *Examples) List() ([]Example, error) {
 	page, _, err := e.bundle.Page(IndexPage)
 	if err != nil {
@@ -119,12 +118,15 @@ func (e *Examples) List() ([]Example, error) {
 var indexEntry = regexp.MustCompile("^- \\[([^\\]]+)\\]\\(([^)]+)/README\\.md\\) \\(`([^`]+)`\\) — (.*)$")
 
 // ParseIndex returns the examples the list-of-examples page names, each once, in
-// name order.
+// the order the page first names them.
 //
-// The page lists an example under every product it deploys and every capability
-// it shows, so one example appears on several lines; they carry the same level
-// and sentence, and the first is kept. A line that is not an entry, and an entry
-// whose link does not lead to the page of the example it names, is not an example.
+// The page opens with every example in the order the documentation teaches them,
+// then lists an example again under every product it deploys and every capability
+// it shows, so one example appears on several lines; they carry the same level and
+// sentence, and the first is kept, at the place it first appears. The order is the
+// page's own and is not rearranged, so the list reads in the order the
+// documentation publishes. A line that is not an entry, and an entry whose link
+// does not lead to the page of the example it names, is not an example.
 func ParseIndex(page []byte) []Example {
 	var out []Example
 	seen := map[string]bool{}
@@ -136,7 +138,6 @@ func ParseIndex(page []byte) []Example {
 		seen[m[1]] = true
 		out = append(out, Example{Name: m[1], Level: m[3], Summary: m[4]})
 	}
-	slices.SortFunc(out, func(a, b Example) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 
