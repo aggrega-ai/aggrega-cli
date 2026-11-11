@@ -106,6 +106,15 @@ func lockfileRefusal(lockfilePath, release string, err error) *jsonRPCError {
 // DiagnosticCollection stays in sync with the daemon's cache state — including
 // the drift-cleared transition (empty diagnostics list).
 //
+// A drift finding is stored naming no text. It describes the lockfile as the
+// check loaded it from disk, and the load keeps none of the bytes it read, so
+// nothing ties the finding to a buffer the daemon holds: binding it to the text a
+// later read of the file returned would bind it to bytes the check never
+// verified. It reaches the client through the notification, and a diagnostics
+// read of the lockfile is refused as not validated until a validation answers for
+// the buffer the client holds. A cleared finding deletes the entry, which a read
+// takes the same way.
+//
 // It is the one place a drift finding reaches the client, and it settles the
 // finding in one of two ways, told apart by cl.
 //
@@ -166,7 +175,7 @@ func (s *Server) verifyDriftAndUpdateCache(lockfilePath, release string, cl clos
 	}
 	if err := lockfile.Verify(lf, cl); err != nil {
 		message := fmt.Sprintf("Lockfile drifted; %s. Details: %v", compilerops.LockfileDriftRemedy(release), err)
-		s.setDiagnostics(lockfilePath, []Diagnostic{
+		s.setDiagnostics(lockfilePath, checkedText{}, []Diagnostic{
 			{Line: 1, Column: 1, Severity: editorSeverityWarning, Message: message, ConditionCodes: conditionCodesOf(err)},
 		})
 		return lf

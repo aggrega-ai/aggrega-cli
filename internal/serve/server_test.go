@@ -78,7 +78,7 @@ func newTestWorkspace(sess *session, root string) *Server {
 		// every test that doesn't touch the lookup directly.
 		lazyCatalog:     catalog.NewLazyLookup(root, "", nil, nil),
 		parseCache:      newCache(0, 0),
-		diagnostics:     map[string][]Diagnostic{},
+		diagnostics:     map[string]semanticEntry{},
 		renderDiags:     map[string][]Diagnostic{},
 		conventionDiags: map[string][]Diagnostic{},
 	}

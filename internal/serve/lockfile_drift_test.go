@@ -114,7 +114,7 @@ func TestPublishDiagnosticsWireShape(t *testing.T) {
 	srv := newTestServer(t, tmp, nil, &out)
 
 	// Drift-detected state: populate one diagnostic on a file.
-	srv.setDiagnostics("/tmp/release.lock", []Diagnostic{
+	srv.setDiagnostics("/tmp/release.lock", checkedText{}, []Diagnostic{
 		{Line: 1, Column: 1, Severity: "warning", Message: "drifted"},
 	})
 	ctx1, flush1 := serializerContext(t, &out)
@@ -179,7 +179,7 @@ func TestVerifyDriftAndUpdateCacheOnLoadFailure(t *testing.T) {
 	// Pre-populate the diagnostic so we can observe it being
 	// cleared on load failure.
 	lockfilePath := filepath.Join(tmp, "release.lock")
-	srv.setDiagnostics(lockfilePath, []Diagnostic{
+	srv.setDiagnostics(lockfilePath, checkedText{}, []Diagnostic{
 		{Line: 1, Column: 1, Severity: "warning", Message: "previous drift"},
 	})
 

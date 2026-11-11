@@ -293,6 +293,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/pluginops"
 	"github.com/aggrega-ai/aggrega-cli/internal/requestcancel"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
@@ -1008,13 +1009,20 @@ type session struct {
 
 	// testDiagnosticsDecideHook, when non-nil, runs inside handleDiagnostics
 	// after the wait for the validations running when the request arrived and
-	// before the parse-cache lookup that decides whether the request can be
-	// answered. The production setup never sets this field; it exists so a test
-	// can hold a reader there while a validation that registered after the wait
-	// seeds the parse cache, which is the interleaving the wait after the lookup
-	// closes, and which concurrent traffic reaches only on the runs that happen to
-	// land in it. A nil hook is a no-op.
+	// before its first parse-cache lookup. The production setup never sets this
+	// field; it exists so a test can hold a reader there while a validation that
+	// registered after the wait seeds the parse cache, which is the interleaving
+	// the wait after the lookup closes, and which concurrent traffic reaches only
+	// on the runs that happen to land in it. A nil hook is a no-op.
 	testDiagnosticsDecideHook func(file string)
+
+	// testDiagnosticsFoundHook, when non-nil, runs inside handleDiagnostics after
+	// its first parse-cache lookup has found the buffer and before its second
+	// wait. The production setup never sets this field; it exists so a test can
+	// hold a reader that has found one text while a validation of another text
+	// seeds the parse cache and is cancelled, which is the interleaving the
+	// parse-cache read after the second wait closes. A nil hook is a no-op.
+	testDiagnosticsFoundHook func(file string)
 
 	// validationWaitBudget overrides how long a diagnostics request waits for a
 	// validation of its file that is already running. Zero — the production
@@ -1174,7 +1182,7 @@ type Server struct {
 	// always reassign a whole slice (never mutate one in place), so a header copy
 	// taken under the lock is a safe snapshot to marshal after releasing it.
 	diagMu      sync.Mutex
-	diagnostics map[string][]Diagnostic
+	diagnostics map[string]semanticEntry
 
 	// renderDiags is the second diagnostic layer, guarded by the same diagMu:
 	// the coded advisories the render step raises, keyed by the file they are
@@ -1548,7 +1556,7 @@ func (s *session) heldWorkspace(held *workspaceconfig.HeldWorkspace) *Server {
 		held:            held,
 		lazyCatalog:     heldCatalog,
 		parseCache:      newCache(0, 0),
-		diagnostics:     map[string][]Diagnostic{},
+		diagnostics:     map[string]semanticEntry{},
 		renderDiags:     map[string][]Diagnostic{},
 		conventionDiags: map[string][]Diagnostic{},
 		published:       map[string][]Diagnostic{},
@@ -1601,7 +1609,7 @@ func (s *session) newWorkspace(resolved *workspaceconfig.ResolvedWorkspace) *Ser
 		lazyCatalog:       sessionCatalog,
 		releaseCatalogs:   newReleaseCatalogs(sessionNamed, sessionNamed, sessionCatalog),
 		parseCache:        newCache(cfg.ParseCache.MaxEntries, cfg.ParseCache.MaxBytes),
-		diagnostics:       map[string][]Diagnostic{},
+		diagnostics:       map[string]semanticEntry{},
 		renderDiags:       map[string][]Diagnostic{},
 		conventionDiags:   map[string][]Diagnostic{},
 		published:         map[string][]Diagnostic{},
@@ -1669,19 +1677,51 @@ func (s *Server) canonicalFile(file string) string {
 	return file
 }
 
-// setDiagnostics records the diagnostics slice for file under diagMu.
-// A nil slice is stored verbatim (it reads back as an empty result).
+// semanticEntry is what the semantic diagnostic layer holds for one file: the
+// findings, and the text they describe.
+type semanticEntry struct {
+	diags   []Diagnostic
+	checked checkedText
+}
+
+// checkedText names the text a semantic entry's findings describe, by its content
+// address. The zero value names no text: it is what findings carry that describe
+// a file as some other reader loaded it from disk rather than a buffer the daemon
+// parsed, so they answer no diagnostics read (validatedDiagnostics).
+//
+// It is a digest rather than the text itself so that the comparison a
+// diagnostics read makes under diagMu stays a constant-size compare, and so that
+// an entry does not keep a superseded buffer alive after the parse cache has let
+// it go.
+type checkedText struct {
+	digest string
+}
+
+// textChecked returns the checkedText naming content. It is the one derivation
+// both sides of the comparison use — a validation storing what it found, and a
+// diagnostics read naming the parse it holds — so the two cannot spell the same
+// text two ways.
+func textChecked(content []byte) checkedText {
+	return checkedText{digest: digest.ContentDigest(content)}
+}
+
+// setDiagnostics records the diagnostics slice for file under diagMu, together
+// with the text it describes: checked is textChecked of the buffer a validation
+// checked, or the zero checkedText for findings bound to no buffer the daemon
+// parsed. A nil slice is stored verbatim (it reads back as an empty result).
 // This is the single write entry point for the diagnostics map; all
 // handler write sites route through it so the locking discipline has
 // one home — which is also why the semantic layer's source is stamped
 // here rather than at each construction site, and why the key's
 // coordinate system is fixed here too: a write site cannot key the map
-// by a spelling the matching read would then miss.
-func (s *Server) setDiagnostics(file string, diags []Diagnostic) {
+// by a spelling the matching read would then miss. The binding is an argument
+// rather than a default for the same reason: each write site states what its
+// findings describe.
+func (s *Server) setDiagnostics(file string, checked checkedText, diags []Diagnostic) {
 	stampSource(diags, DiagnosticSourceSemantic)
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
-	s.diagnostics[s.canonicalFile(file)] = diags
+	s.diagnostics[s.canonicalFile(file)] = semanticEntry{diags: diags, checked: checked}
 }
 
 // dropDiagnostics removes file's diagnostics entry under diagMu. No-op
@@ -1722,10 +1762,10 @@ func (s *Server) setConventionDiagnostics(file string, diags []Diagnostic) {
 // diagMu: the semantic layer first, then the render layer, then the
 // publishing-conventions layer. The copy is what callers marshal or return on
 // the wire, so the marshal runs off the lock and never races a concurrent
-// writer's whole-slice reassignment. It is the single read entry point for what
-// reaches the wire, so no caller can publish one layer and silently drop
-// another; the composition itself is composedLocked's. Every layer empty returns
-// nil.
+// writer's whole-slice reassignment. It and validatedDiagnostics are the read
+// entry points for what reaches the wire, and both compose through
+// composedLocked, so no caller can publish one layer and silently drop another.
+// Every layer empty returns nil.
 //
 // The layers are read at the one key canonicalFile fixes, so they are looked up
 // in a single coordinate system. That matters here more than at any other site:
@@ -1758,12 +1798,54 @@ func (s *Server) snapshotDiagnostics(file string) []Diagnostic {
 	return s.composedLocked(key)
 }
 
+// validatedDiagnostics is snapshotDiagnostics for a reader that must first know
+// the answer standing for the file is a validation's answer for the text it
+// holds: it reports whether the semantic layer holds an entry for file whose
+// findings describe held — the text of the parse the reader holds, named by
+// textChecked — and, when it does, the composed diagnostics. The comparison and
+// the composition run in one hold of diagMu, so the verdict and the answer
+// describe one state.
+//
+// The semantic entry, not the parse cache, is what says a validation reached an
+// answer, and the text it carries is what says which buffer that answer was
+// about. A validation seeds the parse cache as soon as the buffer parses, because
+// hover, completion and the other readers of the buffer need it at once, so a
+// parse-cache entry also stands for a validation still running or one cancelled
+// partway. Every path by which a validation answers writes a semantic entry naming
+// the text it checked, an empty entry included; a validation cancelled partway
+// writes nothing on any layer, so whatever an earlier one wrote stands — and
+// answers only while the buffer is still the text that earlier validation
+// checked. Findings bound to no text (the lockfile drift check, a Release the
+// cascade could not load) answer no read.
+//
+// The entry is the answer written LAST, which is not always the answer for the
+// text the parse cache kept: two validations of different texts that overlap can
+// leave one's text cached and the other's answer standing, and the read is then
+// refused although the cached text was checked. That errs toward a client asking
+// again, never toward an answer for a text nobody checked. A validation stores
+// its conventions findings and its semantic answer under two holds, so the same
+// overlap can also let a read pair the semantic answer for the text it holds with
+// another text's conventions findings, until that validation stores its semantic
+// answer and the read is refused instead. An empty entry and an
+// absent one compose to the same nothing, which is why the entry is read here
+// rather than recovered from the composition.
+func (s *Server) validatedDiagnostics(file string, held checkedText) (diags []Diagnostic, validated bool) {
+	key := s.canonicalFile(file)
+	s.diagMu.Lock()
+	defer s.diagMu.Unlock()
+	entry, ok := s.diagnostics[key]
+	if !ok || entry.checked == (checkedText{}) || entry.checked != held {
+		return nil, false
+	}
+	return s.composedLocked(key), true
+}
+
 // composedLocked composes the layers standing on the file keyed key, as
 // snapshotDiagnostics describes, into a fresh slice. diagMu must be held. It is
 // the one composition, so a document compared on either side of a change made
 // under the same hold is compared in exactly the terms a publication carries.
 func (s *Server) composedLocked(key string) []Diagnostic {
-	semantic := withoutRestatedFaults(s.diagnostics[key], s.buildRefusalsOnLocked(key))
+	semantic := withoutRestatedFaults(s.diagnostics[key].diags, s.buildRefusalsOnLocked(key))
 	render := s.renderDiags[key]
 	conventions := s.conventionDiags[key]
 	if len(semantic)+len(render)+len(conventions) == 0 {

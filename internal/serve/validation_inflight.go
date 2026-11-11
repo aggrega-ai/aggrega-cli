@@ -54,12 +54,16 @@ type validationRun struct {
 //
 // Validation seeds two different stores — the parse cache and the diagnostic
 // layers — and it seeds them at two different moments inside one handler. A
-// diagnostics request decides whether it can answer by consulting the first and
-// then answers out of the second, so between those two moments the decision says
-// yes while the answer is empty, and a reader landing there is told the file is
-// clean. That is the worst available answer: a reader acts on "no problems" and
-// never asks again. Waiting removes the window rather than narrowing it, because
-// what a reader waits for is the handler's return and not a moment inside it.
+// diagnostics request finds the buffer in the first and answers out of the
+// second, so a reader landing between those two moments would read a file the
+// validation is about to report on as one with nothing to report, or as one not
+// validated at all. Waiting for the handler's return, and not for a moment
+// inside it, answers that reader with what the validation found. What keeps a
+// validation that never reaches an answer — one cancelled partway — from reading
+// as clean is the other half: the reader answers only where the answer standing
+// for the file is a validation's answer for the text of the parse the reader then
+// holds. A cancelled validation writes nothing, so it never makes one, and an
+// earlier validation's answer for a different text is not one.
 //
 // The other file readers — hover, completion, definition resolution, references
 // and implementations — consult the parse cache and answer out of the parse
@@ -174,10 +178,14 @@ func (t *validationTracker) release(file string, run *validationRun) {
 //
 // That holds for a validation's answer, not for what it writes on the way: one
 // that started after the snapshot can seed the parse cache before the reader
-// consults it. So a reader that decides from the parse cache calls await again
-// after deciding, as handleDiagnostics does — a validation registers before it
-// seeds the cache, so the second snapshot holds every validation whose entry the
-// decision saw, or that validation has already returned.
+// consults it. So a reader that looks the buffer up in the parse cache calls
+// await again after the lookup, as handleDiagnostics does — a validation
+// registers before it seeds the cache, so the second snapshot holds every
+// validation whose entry the lookup saw, or that validation has already returned.
+// One that seeds the cache after the second snapshot can leave the reader holding
+// a text no finished validation has answered for; the reader answers only where
+// the answer standing for the file is a validation's answer for the text it
+// holds, and is refused as not validated otherwise.
 func (t *validationTracker) await(ctx context.Context, file string) error {
 	t.mu.Lock()
 	runs := append([]*validationRun(nil), t.inFlight[file]...)

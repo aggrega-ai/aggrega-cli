@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -406,6 +408,109 @@ func TestConventionsLayerClearsWhatWasFixed(t *testing.T) {
 	if found := conventionEntries(srv.snapshotDiagnostics(filepath.Join(root, rel))); len(found) != 0 {
 		t.Errorf("the store still holds %d conventions finding(s) for a repaired document:\n  %s",
 			len(found), diagSummary(found))
+	}
+}
+
+// conventionsRunIsCutShort fails the test as a fixture unless the conventions
+// rules find something in content when they run to the end and nothing when their
+// context is already cancelled — so a cancelled validation of content runs them
+// and is cut short, rather than running nothing a cancellation could cut.
+func conventionsRunIsCutShort(t *testing.T, srv *Server, path, content string) {
+	t.Helper()
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		t.Fatalf("fixture defect: the text does not parse: %v", err)
+	}
+	if finished := srv.conventionsForBuffer(t.Context(), path, []byte(content), &doc); len(finished) == 0 {
+		t.Fatal("fixture defect: the conventions rules find nothing in this text, so a run of them cut short " +
+			"cannot be told from one that finished")
+	}
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if cut := srv.conventionsForBuffer(cancelled, path, []byte(content), &doc); len(cut) != 0 {
+		t.Fatalf("fixture defect: the conventions rules reached %d finding(s) under a cancelled context, so a "+
+			"cancelled validation's run of them is not cut short:\n  %s", len(cut), diagSummary(cut))
+	}
+}
+
+// TestAValidationCutShortInItsConventionsRunStoresNothing pins what a validation
+// whose context is cancelled while the publishing-conventions rules run leaves
+// behind. The rules stop before they collect, so the run reports nothing, and
+// nothing is not a finding that the document is clean: storing it would clear
+// the layer, and going on to answer would store an answer for a text whose
+// conventions were never checked. Each row cancels a validation naming no Release,
+// the path a catalog entity is ordinarily validated on, and names the defect it
+// catches:
+//
+//   - the same text as a finished validation: the diagnostics read still answers
+//     the finished validation's answer, its conventions finding included. It
+//     catches storing the cut-short run, which clears that finding.
+//   - a changed text: the read is refused as not validated. It catches storing
+//     nothing on the conventions layer but still answering, which answers the
+//     changed text with the earlier text's conventions findings.
+func TestAValidationCutShortInItsConventionsRunStoresNothing(t *testing.T) {
+	t.Parallel()
+	rows := []struct {
+		name      string
+		cancelled string
+		check     func(t *testing.T, first []Diagnostic, res diagnosticsResult, refusal *jsonRPCError)
+	}{
+		{
+			name:      "the same text as a finished validation",
+			cancelled: conventionsBadComponent,
+			check: func(t *testing.T, first []Diagnostic, res diagnosticsResult, refusal *jsonRPCError) {
+				if refusal != nil {
+					t.Fatalf("a cancelled validation of unchanged text displaced the answer a finished one gave: "+
+						"refused [%d] %s", refusal.Code, refusal.Message)
+				}
+				want, _ := json.Marshal(first)
+				got, _ := json.Marshal(res.Diagnostics)
+				if string(got) != string(want) {
+					t.Fatalf("a validation cut short in its conventions run changed the answer standing for its text:\n"+
+						" want %s\n got  %s", want, got)
+				}
+			},
+		},
+		{
+			name:      "a changed text",
+			cancelled: conventionsBadComponent + "# edited after the first validation\n",
+			check: func(t *testing.T, _ []Diagnostic, res diagnosticsResult, refusal *jsonRPCError) {
+				if refusal == nil {
+					t.Fatalf("a text whose conventions run was cut short was answered rather than refused:\n  %s",
+						diagSummary(res.Diagnostics))
+				}
+				if refusal.Code != errFileNotValidated {
+					t.Fatalf("refusal code = %d (%s); want %d, file not validated",
+						refusal.Code, refusal.Message, errFileNotValidated)
+				}
+			},
+		},
+	}
+	for _, row := range rows {
+		row := row
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			root, rel := conventionsWorkspace(t, conventionsBadComponent)
+			srv := conventionsServer(t, root, true)
+			path := filepath.Join(root, rel)
+
+			first := validateBuffer(t, srv, root, rel, "", conventionsBadComponent)
+			if len(conventionEntries(first)) == 0 {
+				t.Fatalf("fixture defect: the finished validation carries no conventions finding, so a cleared "+
+					"layer could not be told from an untouched one; it carried:\n  %s", diagSummary(first))
+			}
+			conventionsRunIsCutShort(t, srv, path, row.cancelled)
+
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			if _, envelope := srv.handleValidate(ctx, validateParams{File: path, Content: row.cancelled}); envelope != nil {
+				t.Fatalf("fixture defect: the cancelled validation was refused before it ran: [%d] %s",
+					envelope.Code, envelope.Message)
+			}
+
+			res, refusal := srv.handleDiagnostics(t.Context(), diagnosticsParams{File: path})
+			row.check(t, first, res, refusal)
+		})
 	}
 }
 

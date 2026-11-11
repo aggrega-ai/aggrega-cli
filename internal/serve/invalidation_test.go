@@ -57,7 +57,7 @@ func TestInvalidateFileGranularityPreservesWorkspaceCache(t *testing.T) {
 	t.Parallel()
 	srv, compPath := newInvalidationServer(t)
 	srv.parseCache.Put("/file.yaml", &yaml.Node{}, []byte(""))
-	srv.setDiagnostics("/file.yaml", []Diagnostic{
+	srv.setDiagnostics("/file.yaml", textChecked([]byte("")), []Diagnostic{
 		{Line: 1, Column: 1, Severity: "error", Message: "stale"},
 	})
 	if err := os.Remove(compPath); err != nil {

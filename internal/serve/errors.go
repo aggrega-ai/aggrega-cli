@@ -15,9 +15,14 @@ const (
 // Application-level error codes in the 1xxx range. Each code surfaces
 // a daemon-specific condition the IDE client can branch on.
 //
-//	1001 — The daemon holds no parse of the file and is producing none;
-//	       the requesting operation depends on a parse-cache entry the
-//	       client must seed via aggrega/validate before retrying.
+//	1001 — The daemon holds nothing for the file, as it now stands, that
+//	       the operation can answer from: no parse of it (hover,
+//	       completion, resolve) or, for a diagnostics read, no parse of it
+//	       or no answer standing for the file that is a validation's
+//	       answer for the text that parse holds. A validation cancelled
+//	       partway writes nothing, and an answer for another text of the
+//	       file does not stand for the current one. The client seeds it via
+//	       aggrega/validate before retrying.
 //	1003 — The lockfile for the Release the request named is absent;
 //	       the requested operation requires a generated lockfile.
 //	1004 — The requested entity could not be resolved from any
@@ -32,11 +37,12 @@ const (
 //	       needs is on its way.
 //
 // 1001 and 1006 report opposite states and are kept apart for that reason.
-// Under 1001 the daemon holds no parse of the file and is producing none, so a
-// client seeds the state with a validation. Under 1006 a validation is under way,
-// so sending another adds work and answers nothing — the client waits and asks
-// again. One code covering both would leave a client unable to tell which action
-// its situation called for.
+// Under 1001 the daemon holds nothing the operation can answer from for the file
+// as it now stands, so a client seeds the state with a validation (a diagnostics
+// read has already waited for any validation in flight; the other readers do not
+// wait). Under 1006 a validation is under way, so sending another adds work and
+// answers nothing — the client waits and asks again. One code covering both would
+// leave a client unable to tell which action its situation called for.
 //
 // 1002 is not allocated. It reported that the daemon could not resolve a
 // Release for an operation that needed one, which no request can be in:

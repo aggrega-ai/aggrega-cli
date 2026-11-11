@@ -620,8 +620,8 @@ func (s *Server) snapshotAllDiagnostics() map[string]int {
 	s.diagMu.Lock()
 	defer s.diagMu.Unlock()
 	out := map[string]int{}
-	for file, diags := range s.diagnostics {
-		out["semantic:"+file] = len(diags)
+	for file, entry := range s.diagnostics {
+		out["semantic:"+file] = len(entry.diags)
 	}
 	for file, diags := range s.renderDiags {
 		out["render:"+file] = len(diags)

@@ -41,7 +41,7 @@ func layeredServer() *Server {
 	return &Server{
 		session:       sess,
 		workspaceRoot: layeredWorkspaceRoot,
-		diagnostics:   map[string][]Diagnostic{},
+		diagnostics:   map[string]semanticEntry{},
 		renderDiags:   map[string][]Diagnostic{},
 	}
 }
@@ -66,7 +66,7 @@ func TestDiagnosticLayers_ComposeAndSurviveEachOther(t *testing.T) {
 	s := layeredServer()
 	const file = "/w/aggregate.yaml"
 
-	s.setDiagnostics(file, []Diagnostic{{Line: 3, Column: 5, Severity: "error", Message: "semantic"}})
+	s.setDiagnostics(file, checkedText{}, []Diagnostic{{Line: 3, Column: 5, Severity: "error", Message: "semantic"}})
 	s.setRenderDiagnostics(map[string][]Diagnostic{
 		file: {{Line: 1, Column: 1, Severity: "warning", Message: "render"}},
 	}, nil)
@@ -76,7 +76,7 @@ func TestDiagnosticLayers_ComposeAndSurviveEachOther(t *testing.T) {
 	}
 
 	// A fresh validation rewrites the semantic layer; the render advisory stands.
-	s.setDiagnostics(file, []Diagnostic{{Line: 4, Column: 1, Severity: "error", Message: "semantic-2"}})
+	s.setDiagnostics(file, checkedText{}, []Diagnostic{{Line: 4, Column: 1, Severity: "error", Message: "semantic-2"}})
 	if got, want := messages(s.snapshotDiagnostics(file)), []string{"semantic-2", "render"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("after semantic rewrite = %v, want %v", got, want)
 	}
@@ -135,7 +135,7 @@ func TestSetRenderDiagnostics_ClearsAndReportsTouchedFiles(t *testing.T) {
 func TestDiagnosticsFiles_WalksBothLayers(t *testing.T) {
 	t.Parallel()
 	s := layeredServer()
-	s.setDiagnostics("/w/a.yaml", []Diagnostic{{Message: "semantic"}})
+	s.setDiagnostics("/w/a.yaml", checkedText{}, []Diagnostic{{Message: "semantic"}})
 	s.setRenderDiagnostics(map[string][]Diagnostic{
 		"/w/a.yaml": {{Message: "render"}},
 		"/w/b.yaml": {{Message: "render-only"}},
@@ -160,7 +160,7 @@ func TestDiagnosticSource_BothLayersInOnePayload(t *testing.T) {
 	s := layeredServer()
 	const file = "/w/aggregate.yaml"
 
-	s.setDiagnostics(file, []Diagnostic{{Line: 3, Column: 5, Severity: "error", Message: "semantic"}})
+	s.setDiagnostics(file, checkedText{}, []Diagnostic{{Line: 3, Column: 5, Severity: "error", Message: "semantic"}})
 	s.setRenderDiagnostics(map[string][]Diagnostic{
 		file: {{Line: 1, Column: 1, Severity: "warning", Message: "render"}},
 	}, nil)

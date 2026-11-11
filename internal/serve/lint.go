@@ -188,20 +188,31 @@ func (s *Server) conventionsForBuffer(ctx context.Context, file string, content 
 	return conventionDiagnosticsFor(collect.Report().Findings, file)
 }
 
-// refreshConventionDiagnostics replaces the publishing-conventions layer for one
-// file with what a validation of it found, or clears the layer when the dial is
-// off.
+// conventionsForValidation runs the publishing-conventions rules for one
+// validation of a buffer and returns what the layer should hold once that
+// validation answers: what the rules found, or nothing when the dial is off. It
+// stores nothing itself; the validation stores the result with its answer.
 //
-// Clearing on the off position is what makes the default an absence rather than a
+// complete is false when the validation's context was cancelled by the time the
+// rules returned. A run cut short reports nothing — the rules stop before they
+// collect — and nothing is not a finding that the document is clean, so such a
+// result is no answer to store: the validation leaves without one, as it does when
+// its semantic pass is cancelled.
+//
+// Nothing on the off position is what makes the default an absence rather than a
 // memory: a session whose dial is turned off reports nothing on its next
 // validation, instead of leaving whatever an earlier on position published
-// standing in the editor with nothing to refresh it.
-func (s *Server) refreshConventionDiagnostics(ctx context.Context, file string, content []byte, doc *yaml.Node) {
+// standing in the editor with nothing to refresh it. No rule runs then, so there
+// is nothing a cancellation could cut short.
+func (s *Server) conventionsForValidation(ctx context.Context, file string, content []byte, doc *yaml.Node) (diags []Diagnostic, complete bool) {
 	if !s.lintOnValidate {
-		s.setConventionDiagnostics(file, nil)
-		return
+		return nil, true
 	}
-	s.setConventionDiagnostics(file, s.conventionsForBuffer(ctx, file, content, doc))
+	diags = s.conventionsForBuffer(ctx, file, content, doc)
+	if ctx.Err() != nil {
+		return nil, false
+	}
+	return diags, true
 }
 
 // lintParams is the request shape for `aggrega/lint`.

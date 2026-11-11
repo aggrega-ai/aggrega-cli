@@ -185,7 +185,7 @@ func TestVerifyDriftAndPublishWithNoClosureWithdrawsWithoutReading(t *testing.T)
 	srv := newPinIsolationServer(t, ws, &in, &out, 1)
 	srv.stderr = &stderr
 	writeDriftedLockfile(t, srv, rel, lockfilePath)
-	srv.setDiagnostics(lockfilePath, []Diagnostic{
+	srv.setDiagnostics(lockfilePath, checkedText{}, []Diagnostic{
 		{Line: 1, Column: 1, Severity: editorSeverityWarning, Message: "previous drift"},
 	})
 

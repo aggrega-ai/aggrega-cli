@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 )
 
@@ -42,9 +44,10 @@ const validationWaitLivenessCeiling = 2 * time.Second
 
 // validateGateSeam holds a validation open at the one moment its parse cache
 // entry exists and its diagnostic layers do not — the window a concurrent reader
-// of the same file is answered from when nothing makes it wait. Wired to the
-// diagnostics hook instead, the same seam holds a reader between its first wait
-// and the lookup that decides whether it can answer.
+// of the same file is answered from when nothing makes it wait. Wired to one of
+// the diagnostics hooks instead, the same seam holds a reader at that hook's
+// point: between its first wait and its first lookup, or between that lookup and
+// its second wait.
 //
 // It exists because the window is milliseconds wide in production, so a test
 // that merely fires concurrent traffic at it covers the window only on the runs
@@ -494,10 +497,11 @@ func TestDiagnosticsWaitBlocksUntilTheValidationReturns(t *testing.T) {
 // the validation has not yet answered for, on every run rather than on the runs
 // a loaded scheduler happens to produce.
 //
-// The answer must EQUAL the sequential one. A reader that answers from the hit
-// at once reads empty layers and reports a rejected document clean, which is
-// what this rules out; a reader that waits again after deciding is blocked on
-// the held validation and is answered with its findings once it returns.
+// The answer must EQUAL the sequential one. A reader that answers at once finds
+// no finding written yet, and is either refused as not validated or, where the
+// answer is not gated on the semantic entry, reports a rejected document clean;
+// a reader that waits again after its lookup is blocked on the held validation
+// and is answered with its findings once it returns.
 func TestDiagnosticsWaitsForAValidationThatSeededTheCacheAfterTheReaderArrived(t *testing.T) {
 	t.Parallel()
 	w := newDiagWire(t, 4, 0)
@@ -543,6 +547,274 @@ func TestDiagnosticsWaitsForAValidationThatSeededTheCacheAfterTheReaderArrived(t
 	}
 	if got := w.srv.validations.waiting(path); got != 0 {
 		t.Errorf("waiter count after the exchange = %d; want 0 — a waiter leaked", got)
+	}
+}
+
+// cancellableDocument is the document a cancelled validation validates. It is
+// the Component the entity-kind acceptance harness holds, which that harness
+// checks against its kind's schema on every run, and it owes no placeholder — so
+// the envelope leg of a validation finds nothing in it and the validation goes on
+// to the semantic pass a cancellation interrupts. A document the envelope
+// rejects would be answered at the envelope instead, and a cancellation landing
+// on it would exercise nothing.
+var cancellableDocument = acceptanceFixtures["Component"].document
+
+// cancelledReleaseValidation sends a validation of path naming a Release, has
+// the client cancel it before its handler starts, and returns once that
+// validation has seeded the parse cache and is held there by the gate seam — so
+// the caller decides when it reaches its cancellation exit. It returns the
+// validation's id for cancelledWithoutAnswer.
+//
+// The request is parked inside the dispatcher until its own context is cancelled
+// (parkUntilCancelled), and the cancellation is the client's real
+// $/cancelRequest. So the handler starts with a context already cancelled, and
+// whether it takes the cancellation exit depends on nothing a scheduler decides.
+//
+// The cancellation exit is the handler's only way out once three things hold,
+// and each is checked here rather than assumed, so a fixture that answers early
+// fails as a fixture: the buffer parsed and was cached (the seam is entered only
+// after that), a Release is named (so the Release-less answer is not taken), and
+// the envelope leg finds nothing in content — checked through the same method the
+// handler calls, before the request is sent.
+func cancelledReleaseValidation(t *testing.T, w *diagWire, path, content string) int {
+	t.Helper()
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		t.Fatalf("fixture defect: the cancelled validation's document does not parse: %v", err)
+	}
+	release := filepath.Join(w.root, "release.yaml")
+	if diags, answers := w.srv.envelopeDiagnosticsForBuffer(path, release, []byte(content), &doc); answers {
+		t.Fatalf("fixture defect: the envelope leg answers this document, so its validation stops there "+
+			"and never reaches the cancellation it is sent to exercise: %+v", diags)
+	}
+	vid := w.id()
+	entered := parkUntilCancelled(t, w.srv, vid)
+	w.seam.arm()
+	w.send(vid, "aggrega/validate", validateParams{File: path, Content: content, Release: "release.yaml"})
+	select {
+	case <-entered:
+	case <-time.After(validationWaitLivenessCeiling):
+		t.Fatal("the validation never reached the dispatcher's park; the context hook is not wired")
+	}
+	w.notify("$/cancelRequest", map[string]any{"id": vid})
+	w.seam.waitEntered(t)
+	return vid
+}
+
+// cancelledWithoutAnswer asserts, once the cancelled validation vid has been
+// released, that it wrote no response: a validation whose context was cancelled
+// by the time its handler returned drops its answer, and one that answered would
+// have written it. A request sent afterwards is read to get past vid's slot, which
+// the serializer closes before any later answer, so an answer for vid would have
+// been read and held on the way.
+func cancelledWithoutAnswer(t *testing.T, w *diagWire, vid int) {
+	t.Helper()
+	after := w.id()
+	w.send(after, "aggrega/diagnostics", diagnosticsParams{File: filepath.Join(w.root, "never-validated.yaml")})
+	w.await(after)
+	if resp, answered := w.pending[vid]; answered {
+		t.Fatalf("fixture defect: the validation meant to be cancelled answered (%+v), so the cancellation "+
+			"never reached it and the row asserts nothing about a cancelled validation", resp)
+	}
+}
+
+// TestDiagnosticsAnswersOnlyForTheTextAFinishedValidationChecked pins what a
+// diagnostics read answers for a file whose validation was cancelled partway. A
+// cancelled validation has already seeded the parse cache — hover and completion
+// read the buffer from there — and writes no finding, so a read that took the
+// cached buffer as proof of a finished validation would answer a file nobody
+// finished checking as clean, and a read that took any answer standing for the
+// file as the answer for that buffer would report an earlier buffer's findings
+// for it.
+//
+// Each row cancels a Release-named validation at the same point and names the
+// defect it catches:
+//
+//   - a first validation, cancelled: the read is refused as not validated. It
+//     catches a read that answers from the parse-cache entry alone, which
+//     answers null.
+//   - a later validation of CHANGED text, cancelled after a first one answered:
+//     the read is refused as not validated. It catches a read that takes any
+//     answer standing for the file as the answer for the buffer it holds, which
+//     answers the first buffer's findings for a buffer nobody finished checking.
+//   - a later validation of the SAME text, cancelled after a first one answered:
+//     the read still answers the first answer. It catches a fix that discards the
+//     answer on every cancellation, and one that ties the answer to the cached
+//     entry or the buffer's identity rather than to its text; each refuses a
+//     text a validation did finish checking.
+//   - a reader that found an answered text, held after that lookup while a
+//     validation of CHANGED text seeds the cache, waited for and cancelled:
+//     refused as not validated. It catches a read that decides on the text its
+//     first lookup found rather than on the parse held once its waits are over,
+//     which answers the earlier text's findings for a buffer nobody finished
+//     checking.
+//   - a reader that looked the buffer up while the cancelled validation was
+//     still running, and waited for it: refused as not validated. It catches a
+//     fix that only removes the cancelled validation's parse-cache entry, which
+//     comes too late for a reader that already found it and answers null.
+func TestDiagnosticsAnswersOnlyForTheTextAFinishedValidationChecked(t *testing.T) {
+	t.Parallel()
+	refusedAsNotValidated := func(t *testing.T, resp jsonRPCResponse) {
+		t.Helper()
+		if resp.Error == nil {
+			t.Fatalf("a file whose current text no validation finished checking was answered rather "+
+				"than refused, which reports findings nobody produced for that text: %s", resp.Result)
+		}
+		if resp.Error.Code != errFileNotValidated {
+			t.Fatalf("refusal code = %d (%s); want %d, file not validated",
+				resp.Error.Code, resp.Error.Message, errFileNotValidated)
+		}
+	}
+	rows := []struct {
+		name  string
+		drive func(t *testing.T, w *diagWire)
+	}{
+		{
+			name: "a first validation cancelled",
+			drive: func(t *testing.T, w *diagWire) {
+				path := w.writeFile("cancelled-first.yaml", cancellableDocument)
+				vid := cancelledReleaseValidation(t, w, path, cancellableDocument)
+				w.seam.open()
+				cancelledWithoutAnswer(t, w, vid)
+
+				did := w.id()
+				w.send(did, "aggrega/diagnostics", diagnosticsParams{File: path})
+				refusedAsNotValidated(t, w.await(did))
+			},
+		},
+		{
+			name: "a later validation of changed text cancelled after a first one answered",
+			drive: func(t *testing.T, w *diagWire) {
+				if brokenComponentYAML == cancellableDocument {
+					t.Fatal("fixture defect: the two texts are the same, so this row would drive the same-text row")
+				}
+				// The first validation answers with findings, so the earlier answer,
+				// read back for the changed text, cannot pass for a refusal.
+				path := w.writeFile("cancelled-changed.yaml", brokenComponentYAML)
+				sequentialAnswer(t, w, path)
+				vid := cancelledReleaseValidation(t, w, path, cancellableDocument)
+				w.seam.open()
+				cancelledWithoutAnswer(t, w, vid)
+
+				did := w.id()
+				w.send(did, "aggrega/diagnostics", diagnosticsParams{File: path})
+				refusedAsNotValidated(t, w.await(did))
+			},
+		},
+		{
+			name: "a later validation of the same text cancelled after a first one answered",
+			drive: func(t *testing.T, w *diagWire) {
+				// The first validation runs to its answer in the terms the cancelled
+				// one is sent in — the same text, naming the same Release — so the
+				// two differ only in that one was cancelled.
+				path := w.writeFile("cancelled-same.yaml", cancellableDocument)
+				fid := w.id()
+				w.send(fid, "aggrega/validate",
+					validateParams{File: path, Content: cancellableDocument, Release: "release.yaml"})
+				first := diagnosticsOf(t, w.await(fid))
+				vid := cancelledReleaseValidation(t, w, path, cancellableDocument)
+				w.seam.open()
+				cancelledWithoutAnswer(t, w, vid)
+
+				did := w.id()
+				w.send(did, "aggrega/diagnostics", diagnosticsParams{File: path})
+				resp := w.await(did)
+				if resp.Error != nil {
+					t.Fatalf("a cancelled validation of unchanged text displaced the answer an earlier validation "+
+						"of that text gave: refused %d (%s)", resp.Error.Code, resp.Error.Message)
+				}
+				if got := diagnosticsOf(t, resp); string(got) != string(first) {
+					t.Fatalf("a cancelled validation of unchanged text displaced the answer an earlier validation "+
+						"of that text gave:\n want %s\n got  %s", first, got)
+				}
+			},
+		},
+		{
+			name: "a reader that found an answered text while a validation of changed text was cancelled",
+			drive: func(t *testing.T, w *diagWire) {
+				if brokenComponentYAML == cancellableDocument {
+					t.Fatal("fixture defect: the two texts are the same, so the reader's lookups would read one text")
+				}
+				found := &validateGateSeam{}
+				w.srv.testDiagnosticsFoundHook = found.hook
+				path := w.writeFile("cancelled-after-lookup.yaml", brokenComponentYAML)
+
+				// The first text runs to its answer, naming the Release the cancelled
+				// validation names, so the entry it writes is a finished answer for it.
+				fid := w.id()
+				w.send(fid, "aggrega/validate",
+					validateParams{File: path, Content: brokenComponentYAML, Release: "release.yaml"})
+				diagnosticsOf(t, w.await(fid))
+
+				// The reader: nothing is validating the file, so its first wait passes
+				// straight through, its first lookup finds the answered text, and it
+				// stops there, before its second wait.
+				found.arm()
+				did := w.id()
+				w.send(did, "aggrega/diagnostics", diagnosticsParams{File: path})
+				found.waitEntered(t)
+
+				// Then a validation of the changed text, cancelled and held once it has
+				// seeded the cache over the text the reader found.
+				vid := cancelledReleaseValidation(t, w, path, cancellableDocument)
+
+				// The reader's second wait catches the held validation; only then is
+				// it let go, to exit cancelled.
+				found.open()
+				settled := settleWaiters(w, path, 1)
+				w.seam.open()
+
+				resp := w.await(did)
+				cancelledWithoutAnswer(t, w, vid)
+				if settled < 1 {
+					t.Fatalf("fixture defect: the reader was not waiting on the cancelled validation when it was "+
+						"released, so this row did not drive the interleaving it names (answer: %+v)", resp)
+				}
+				refusedAsNotValidated(t, resp)
+			},
+		},
+		{
+			name: "a reader that found the buffer while the cancelled validation ran",
+			drive: func(t *testing.T, w *diagWire) {
+				reader := &validateGateSeam{}
+				w.srv.testDiagnosticsDecideHook = reader.hook
+				path := w.writeFile("cancelled-under-reader.yaml", cancellableDocument)
+
+				// The reader first: nothing is validating the file, so its first
+				// wait passes straight through and it stops before its lookup.
+				reader.arm()
+				did := w.id()
+				w.send(did, "aggrega/diagnostics", diagnosticsParams{File: path})
+				reader.waitEntered(t)
+
+				// Then the cancelled validation, held once it has seeded the cache.
+				vid := cancelledReleaseValidation(t, w, path, cancellableDocument)
+
+				// The reader's lookup finds the held validation's buffer, and its
+				// second wait catches that validation; only then is it let go.
+				reader.open()
+				settled := settleWaiters(w, path, 1)
+				w.seam.open()
+
+				resp := w.await(did)
+				cancelledWithoutAnswer(t, w, vid)
+				if settled < 1 {
+					t.Fatalf("fixture defect: the reader was not waiting on the cancelled validation when it was "+
+						"released, so this row did not drive the interleaving it names (answer: %+v)", resp)
+				}
+				refusedAsNotValidated(t, resp)
+			},
+		},
+	}
+	for _, row := range rows {
+		row := row
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			w := newDiagWire(t, 4, 0)
+			defer w.close()
+			writeRelease(t, w.root, "release.yaml", "release/only")
+			row.drive(t, w)
+		})
 	}
 }
 

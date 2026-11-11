@@ -176,7 +176,7 @@ func TestPublishDiagnostics_AnotherLayerMovingIsNews(t *testing.T) {
 	}
 	// A validation writes the semantic layer for the same file. The build layer
 	// is then recomputed unchanged, exactly as a graph request would.
-	s.setDiagnostics(file, []Diagnostic{
+	s.setDiagnostics(file, checkedText{}, []Diagnostic{
 		{Line: 7, Column: 3, Severity: editorSeverityError, Message: "a semantic violation"},
 	})
 	for _, f := range s.setRenderDiagnostics(advisory(file, "a standing advisory"), nil) {

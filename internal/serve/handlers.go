@@ -691,9 +691,14 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	releaseValidation := s.validations.begin(file)
 	defer releaseValidation()
 
+	// Every answer below is stored naming the text it is about, so a diagnostics
+	// read can tell an answer for the buffer it holds from one left standing for an
+	// earlier buffer by a validation that was cancelled before it wrote its own.
+	about := textChecked(content)
+
 	var doc yaml.Node
 	if err := yaml.Unmarshal(content, &doc); err != nil {
-		s.setDiagnostics(file, []Diagnostic{yamlErrorToDiagnostic(err)})
+		s.setDiagnostics(file, about, []Diagnostic{yamlErrorToDiagnostic(err)})
 		// A buffer no parser will read is not a catalog entity the conventions rules
 		// can be asked about, so whatever they last said about this file is cleared
 		// rather than left standing beside a parse failure.
@@ -720,7 +725,7 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 	// envelope-clean documents that owe no value, fall through to the
 	// existing flow unchanged.
 	if diags, hasFindings := s.envelopeDiagnosticsForBuffer(file, releasePath, content, &doc); hasFindings {
-		s.setDiagnostics(file, diags)
+		s.setDiagnostics(file, about, diags)
 		// The document's own shape was rejected, or it still owes a value, so it is
 		// not yet a document the publishing conventions have anything to say about:
 		// a name that is wrong where the envelope is broken is the second problem,
@@ -732,18 +737,26 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		return validateResult{Diagnostics: s.snapshotDiagnostics(file), Checked: checked}, nil
 	}
 	// The publishing-conventions layer, refreshed on every validation of this file
-	// — including the ones that find nothing, since an author who corrected a name
-	// has to stop being told about it, and a document that stopped being a catalog
-	// entity has to stop carrying an entity's findings. It is gated on the
-	// serve.lint_on_validate dial, which defaults off; with the dial off the
+	// that answers — including the ones that find nothing, since an author who
+	// corrected a name has to stop being told about it, and a document that stopped
+	// being a catalog entity has to stop carrying an entity's findings. It is gated
+	// on the serve.lint_on_validate dial, which defaults off; with the dial off the
 	// refresh clears the layer and runs no rule.
 	//
-	// It sits above the two answers below rather than inside either, because a
-	// catalog entity is ordinarily validated with no Release named and the
-	// conventions are a question about the document itself. Both answers compose
-	// the layer through the snapshot, so the findings reach the reply whichever of
-	// the two the request asked for.
-	s.refreshConventionDiagnostics(ctx, file, content, &doc)
+	// The rules run here, above the two answers below rather than inside either,
+	// because a catalog entity is ordinarily validated with no Release named and the
+	// conventions are a question about the document itself. What they found is
+	// stored with whichever answer the validation gives, and not before, so a
+	// validation cancelled before it answers stores nothing on this layer as on the
+	// semantic one, and whatever an earlier validation stored on both stands. A run
+	// the cancellation cut short is no answer at all — the rules stopped before
+	// they collected — so the validation leaves here, through the same exit as a
+	// cancelled semantic pass, rather than going on to store an answer for a text
+	// whose conventions were never checked.
+	conventions, complete := s.conventionsForValidation(ctx, file, content, &doc)
+	if !complete {
+		return validateResult{Checked: checked}, nil
+	}
 	if releasePath == "" {
 		// The request named no Release, so the half above is the whole answer.
 		// The semantic layer is cleared rather than left standing: this file may
@@ -751,7 +764,8 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		// returning those under an answer that says it checked the document alone
 		// would report a Release-scoped verdict the caller did not ask for and
 		// cannot attribute. Silence here is honest; a stale finding is not.
-		s.setDiagnostics(file, nil)
+		s.setConventionDiagnostics(file, conventions)
+		s.setDiagnostics(file, about, nil)
 		return validateResult{Diagnostics: s.snapshotDiagnostics(file), Checked: checked}, nil
 	}
 	// The Release this request named is the terms of the answer, and what it is
@@ -771,13 +785,18 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 		diags = s.runTier4Validation(ctx, releasePath, file, content, &doc)
 	}
 	if ctx.Err() != nil {
-		// Cancelled mid-pipeline. Leave the prior diagnostic cache
-		// entry intact and return without overwriting it — which means
+		// Cancelled mid-pipeline. Leave the prior entries on both layers
+		// intact and return without overwriting them — which means
 		// stamping the layer's source here, since the store is what
-		// normally stamps it.
+		// normally stamps it. Writing nothing is also what keeps a
+		// diagnostics read honest: the buffer this validation already
+		// cached has no answer naming its text, so the read is refused
+		// as not validated — unless an earlier validation answered for
+		// that same text, whose answer is then still the answer for it.
 		return validateResult{Diagnostics: stampSource(diags, DiagnosticSourceSemantic)}, nil
 	}
-	s.setDiagnostics(file, diags)
+	s.setConventionDiagnostics(file, conventions)
+	s.setDiagnostics(file, about, diags)
 	// The response carries the composed view, not the semantic layer alone: the
 	// client replaces its whole per-file collection from this reply, so returning
 	// one layer would erase any render advisory standing on the same file.
@@ -797,10 +816,16 @@ func (s *Server) handleValidate(ctx context.Context, params validateParams) (val
 // It takes the attempt rather than reading one, because the attempt is
 // what the cascade returns and nothing retains it: the account of how a
 // Release was chosen belongs to the call that chose one.
+//
+// The finding is stored naming no text. It describes the file as the cascade
+// loaded it from disk, and the cascade keeps none of the bytes it read, so
+// nothing ties it to a buffer the daemon holds: it reaches the client through
+// the notification, and a diagnostics read of that file is refused as not
+// validated until a validation answers for the buffer the client holds.
 func (s *Server) publishCascadeFailureDiagnostics(ctx context.Context, attempt cascadeAttempt) int {
 	failed := attempt.failedReleaseCandidates()
 	for _, fc := range failed {
-		s.setDiagnostics(fc.Path, []Diagnostic{
+		s.setDiagnostics(fc.Path, checkedText{}, []Diagnostic{
 			{Line: 1, Column: 1, Severity: editorSeverityError, Message: fc.Err.Error(), ConditionCodes: conditionCodesOf(fc.Err)},
 		})
 		_ = s.publishDiagnostics(ctx, fc.Path)
@@ -869,17 +894,26 @@ func (s *Server) dispatchDiagnostics(ctx context.Context, req *jsonRPCRequest) e
 // # The wait, and why the answer would otherwise be wrong rather than late
 //
 // A validation seeds two stores at two moments inside one handler: the parse
-// cache, which is what decides whether this request can be answered at all, and
-// the diagnostic layers, which are what it is answered from. Between those two
-// moments the decision says yes and the layers are still empty, so a reader
-// landing there is told the file is clean while the validation is about to report
-// errors on it. That is worse than a refusal — a reader acts on "no problems" and
-// does not ask again — so a reader for a file with a validation in flight waits
-// for it and is answered with what it found. Waiting removes the window rather
-// than narrowing it, because what is waited for is the validating handler's
-// return and not a moment inside it — and because the reader waits on both sides
-// of its decision: once for what was running when it arrived, and once more for
-// any validation that seeded the parse cache between that wait and the lookup.
+// cache, as soon as the buffer parses, and the diagnostic layers, once it has an
+// answer. A reader landing between the two would find the buffer and no finding,
+// and a clean answer there is worse than a refusal — a reader acts on "no
+// problems" and does not ask again — so a reader for a file with a validation in
+// flight waits for it and is answered with what it found. It waits on both sides
+// of its first parse-cache lookup: once for what was running when it arrived, and
+// once more for any validation that seeded the parse cache between that wait and
+// the lookup. What is waited for is the validating handler's return and not a
+// moment inside it.
+//
+// The answer itself is gated on the semantic layer holding an entry that names
+// the text of the parse held for the file once the waits are over
+// (validatedDiagnostics), not on the parse-cache hit. A validation cancelled
+// partway seeds the parse cache and writes no finding, so the hit alone would
+// report a file nobody finished checking as clean; and the entry an earlier
+// validation wrote for a different text of the file would report that text's
+// findings for this one. Every path by which a validation answers writes the
+// entry naming the text it checked; a cancelled one writes nothing on any layer,
+// so an earlier answer still answers only while the buffer is the text it was
+// about.
 //
 // The wait hangs off the request's own context and adds no cancellation of its
 // own: a client's $/cancelRequest ends it because that already cancels this
@@ -890,18 +924,27 @@ func (s *Server) dispatchDiagnostics(ctx context.Context, req *jsonRPCRequest) e
 //
 // # The two refusals, which report different states
 //
-// The file-not-validated code now means exactly one thing: nothing has validated
-// this file and nothing is validating it. A client sends a validation and asks
-// again. It no longer covers "a validation is under way", which is the separate
-// validation-in-flight code, reached only when the wait ran out of budget: there
-// the file is being validated right now and the client retries rather than
-// sending anything. Telling them apart is what lets a client do the right thing
-// in each case.
-//
-// The parse cache's own staleness check can produce the first refusal on a file
-// that WAS validated: it stats its key on every lookup and drops an entry the
-// file on disk has outgrown, so an external edit reads as not-yet-validated,
-// which is the honest answer for a buffer nothing has looked at since.
+// The file-not-validated code carries its meaning as declared beside it: for this
+// read, after waiting for any validation in flight, the daemon holds no parse of
+// the file as it now stands, or the answer standing for the file is not a
+// validation's answer for the text that parse holds. Nothing has validated it;
+// every validation of the text it now holds was cancelled partway, which writes
+// nothing — and an answer for an earlier text of the file does not stand for this
+// one; what stands for the file was written by a check that read it from disk
+// rather than from a buffer (the lockfile drift check, or a Release the cascade
+// could not load); two validations of different texts overlapped and the one
+// whose text the parse cache kept answered first, so the answer left standing is
+// the other's — a refusal where an answer existed, which errs toward asking
+// again; or a validation did answer and its parse is gone since — the buffer
+// would not parse, the file was invalidated, the parse cache's staleness check (it
+// stats its key on every lookup) dropped an entry the file on disk has outgrown,
+// which is the honest answer for a buffer nothing has looked at since, or the
+// parse cache's size caps evicted the entry as the least recently used. A client
+// sends a validation and asks again. It does not cover "a validation is under
+// way", which is the separate validation-in-flight code, reached only when the
+// wait ran out of budget: there the file is being validated right now and the
+// client retries rather than sending anything. Telling them apart is what lets a
+// client do the right thing in each case.
 //
 // # The spelling
 //
@@ -947,26 +990,52 @@ func (s *Server) handleDiagnostics(ctx context.Context, params diagnosticsParams
 	if s.testDiagnosticsDecideHook != nil {
 		s.testDiagnosticsDecideHook(file)
 	}
-	if _, ok := s.parseCache.Get(file); !ok {
-		return diagnosticsResult{}, &jsonRPCError{
-			Code:    errFileNotValidated,
-			Message: fmt.Sprintf("file not validated: %s", params.File),
-		}
+	notValidated := &jsonRPCError{
+		Code:    errFileNotValidated,
+		Message: fmt.Sprintf("file not validated: %s", params.File),
 	}
-	// 🔴 The second wait is what makes the hit above safe to answer from. A
-	// validation that registered AFTER the first wait took its snapshot can still
-	// have seeded the parse cache before the lookup above read it, and then the
-	// hit says yes while the diagnostic layers are still empty — the false clean
-	// answer the first wait exists to rule out, reached around it. A validation
-	// registers before it seeds the parse cache, so any validation whose entry
-	// the lookup saw is in this snapshot or has already returned; waiting here
-	// therefore closes the window rather than narrowing it. It shares the first
-	// wait's deadline, so the budget is one budget, and it takes one snapshot, so
-	// validations arriving later still cannot extend it.
+	// The first lookup refuses a file with no parse at once, without a second
+	// wait, and its hit is what the second wait is for: a validation whose parse it
+	// found is waited for below. It is not where the request is decided; the read
+	// after the second wait is.
+	if _, ok := s.parseCache.Get(file); !ok {
+		return diagnosticsResult{}, notValidated
+	}
+	if s.testDiagnosticsFoundHook != nil {
+		s.testDiagnosticsFoundHook(file)
+	}
+	// The second wait is for a validation that registered AFTER the first wait
+	// took its snapshot and seeded the parse cache before the lookup above read
+	// it: without it the reader would decide while that validation is still
+	// writing, and be refused — or answered with what an earlier validation found
+	// for the same text — rather than answered with what this one finds. A
+	// validation registers before it seeds the parse cache, so any validation
+	// whose entry the lookup saw is in this snapshot or has already returned. It
+	// shares the first wait's deadline, so the budget is one budget, and it takes
+	// one snapshot, so validations arriving later still cannot extend it.
 	if refusal := waitForValidations(); refusal != nil {
 		return diagnosticsResult{}, refusal
 	}
-	return diagnosticsResult{Diagnostics: s.snapshotDiagnostics(file)}, nil
+	// 🔴 Whether the request can be answered is decided HERE, from the semantic
+	// layer's entry and the parse held NOW, and not from the lookup above. That
+	// hit can stand for a validation cancelled partway — it seeded the parse cache
+	// and wrote no finding — and the entry beside it can be an earlier
+	// validation's answer for a different text of the file; answering from either
+	// reports a buffer nobody finished checking. So the parse cache is read again
+	// after the second wait, because a validation the wait saw may have replaced
+	// the text the first lookup found and then been cancelled, and the request is
+	// answered only where the entry names the text this read holds. The text is
+	// named outside diagMu; the comparison and the composition are one step under
+	// it.
+	held, ok := s.parseCache.Get(file)
+	if !ok {
+		return diagnosticsResult{}, notValidated
+	}
+	diags, validated := s.validatedDiagnostics(file, textChecked(held.content))
+	if !validated {
+		return diagnosticsResult{}, notValidated
+	}
+	return diagnosticsResult{Diagnostics: diags}, nil
 }
 
 // irGraphParams is the request shape for `aggrega/irGraph`. The
