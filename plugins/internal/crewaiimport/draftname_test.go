@@ -15,9 +15,11 @@ import (
 // TestTheDraftIsNamedAfterTheCrew imports CrewAI projects under each way the
 // draft can be named, one row each, and reads the name off the drafted Aggregate
 // and Release entities and off the metadata.name of both files: the name a
-// crew.jsonc gives its crew; a classic project's files give it none — its
-// program does — so a classic project falls to the file's stem, and to flow from
-// a directory; and the namespace the target_namespace setting names comes first.
+// crew.jsonc gives its crew, also from a named directory; a classic project's
+// files give it none — its program does — so a classic project falls to the
+// file's stem, to the directory's name from a directory, and to flow from a
+// directory the request names nothing for; and the namespace the
+// target_namespace setting names comes first.
 // The crew's name, read to name the draft, is not listed among the members of
 // crew.jsonc the draft does not carry.
 //
@@ -37,8 +39,12 @@ func TestTheDraftIsNamedAfterTheCrew(t *testing.T) {
 		{"the crew's name", aggrega.ImportInput{Format: Format, Sources: jsonFirst}, "imported/release-notes-crew"},
 		{"a classic project's file, its stem", aggrega.ImportInput{Format: Format, Bytes: agents, Name: "agents.yaml"},
 			"imported/agents"},
-		{"a classic project, from a directory", aggrega.ImportInput{Format: Format,
+		{"a classic project, from a directory naming nothing", aggrega.ImportInput{Format: Format,
 			Sources: []aggrega.ImportSource{{Name: "src/brief/config/agents.yaml", Bytes: agents}}}, "imported/flow"},
+		{"a classic project, from a named directory", aggrega.ImportInput{Format: Format, Name: "support_brief",
+			Sources: []aggrega.ImportSource{{Name: "config/agents.yaml", Bytes: agents}}}, "imported/support-brief"},
+		{"the crew's name, from a named directory", aggrega.ImportInput{Format: Format, Name: "support_brief",
+			Sources: jsonFirst}, "imported/release-notes-crew"},
 		{"the target namespace", aggrega.ImportInput{Format: Format, Sources: jsonFirst,
 			Settings: json.RawMessage(`{"target_namespace":"team-a"}`)}, "team-a/release-notes-crew"},
 	} {

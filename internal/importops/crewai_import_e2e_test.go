@@ -19,6 +19,8 @@ package importops
 //   - by default the members of an llm object are carried as written into the
 //     Release and named in a warning, and the empty_credentials setting at all
 //     writes each empty;
+//   - a classic project, whose declarations name no crew, drafts an Aggregate, a
+//     Release and a target's Manifest named after its directory;
 //   - two imports of one project are byte-identical;
 //   - a declaration the parser refuses halts the import with the parser's reason;
 //   - each draft builds, with a Release supplying only each agent's image and the
@@ -421,6 +423,54 @@ func TestTheEmptyCredentialsSettingDecidesWhatACrewAIImportCarries(t *testing.T)
 				}
 			}
 		})
+	}
+}
+
+// TestAClassicCrewAIProjectIsNamedAfterItsDirectory imports the classic project,
+// laid down in a directory named market_brief, for the compose target through
+// the real Import, naming no format: its declarations give the crew no name, so
+// the drafted Aggregate, the drafted Release and the Manifest the target drafts
+// beside them are all named after the directory, imported/market-brief. The
+// catalog folder holds the hub's compose Recipes for the agent and the model, so
+// the target has Recipes to map.
+//
+// 🔴 PLANTED DEFECT: in primaryName (internal/importops/source.go), return "" for
+// a directory source: the three drafts are named imported/flow and the case
+// fails.
+func TestAClassicCrewAIProjectIsNamedAfterItsDirectory(t *testing.T) {
+	t.Parallel()
+	rw, folder := catalogFolderImportWorkspaceAttaching(t, nil)
+	layHubEntities(t, folder.Dir, append(slices.Clone(crewaiHubEntities),
+		"recipe/compose/crewai/1.0.0/recipe.yaml", "recipe/compose/openai/1.0.0/recipe.yaml"))
+	laid := crewaiProject(t, "classic")
+	dir := filepath.Join(filepath.Dir(laid), "market_brief")
+	if err := os.Rename(laid, dir); err != nil {
+		t.Fatalf("name the project's directory: %v", err)
+	}
+	outputDir := filepath.Join(rw.Root(), "drafts")
+	res, err := Import(context.Background(), rw, Options{
+		SourcePath:    dir,
+		SourceName:    "market_brief",
+		Target:        "compose",
+		OutputDir:     outputDir,
+		Delivery:      authoredcontent.DeliveryFor(false),
+		ResolvePlugin: (&recordingCascade{}).resolve,
+	})
+	if err != nil {
+		t.Fatalf("the import of the project for the compose target was refused: %v", err)
+	}
+	if res.Format != "crewai" || res.Halted() {
+		t.Fatalf("the project was read as %q, halted %v: %+v", res.Format, res.Halted(), res.Diagnostics)
+	}
+	const want = "imported/market-brief"
+	for _, file := range []string{"aggregate.yaml", "release.yaml", ManifestFileName} {
+		body, err := os.ReadFile(filepath.Join(outputDir, file))
+		if err != nil {
+			t.Fatalf("read the drafted %s: %v", file, err)
+		}
+		if !strings.Contains(string(body), "\nmetadata:\n  name: "+want+"\n") {
+			t.Errorf("the drafted %s is not named %s:\n%s", file, want, body)
+		}
 	}
 }
 

@@ -270,16 +270,37 @@ func (s *Source) inputsFor(importer types.Plugin, format string) ([]byte, []abi.
 	return nil, sources, nil
 }
 
-// primaryName returns the name a file source's bytes are handed to the importer
-// under: the file's base name, with no directory, so what the importer reports
-// names the file alike wherever the import ran and however the path to it was
-// spelled. A directory source hands its files on as named sources and has none,
-// and so does a file the caller received no name for.
+// primaryName returns the name the source is handed to the importer under, so
+// what the importer reports, and the name it gives its draft, are alike wherever
+// the import ran and however the path to the source was spelled. For a file
+// source it is the file's base name as the caller received it, with no
+// directory; a file the caller received no name for has none. For a directory
+// source, whose files are handed on as named sources, it is the directory's own
+// base name, read from its absolute, cleaned path — so a directory spelled `.`
+// or with a trailing separator is named as it is named in its parent — and a
+// file system's root, which has no name, has none.
 func (s *Source) primaryName() string {
-	if s.directory || s.entries[0].name == "" {
+	if s.directory {
+		return directoryName(s.path)
+	}
+	if s.entries[0].name == "" {
 		return ""
 	}
 	return path.Base(s.entries[0].name)
+}
+
+// directoryName returns the base name of the directory at dir, read from its
+// absolute, cleaned path, and nothing for a file system's root.
+func directoryName(dir string) string {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		abs = filepath.Clean(dir)
+	}
+	name := filepath.Base(abs)
+	if name == "." || name == string(filepath.Separator) {
+		return ""
+	}
+	return name
 }
 
 // mergeSources returns the named sources the importer is handed: those read from a

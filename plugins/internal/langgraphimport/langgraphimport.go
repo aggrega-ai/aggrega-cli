@@ -61,8 +61,8 @@
 // The Aggregate and the Release are named after the graph, as
 // importer.DraftName names a draft: a configuration carries no name of its own,
 // so where every configuration read declares one graph, and all of them the
-// same id, the draft is named after that id, and otherwise after the file the
-// import was handed on its own.
+// same id, the draft is named after that id, and otherwise after the directory
+// or the file the import was handed.
 //
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and leaves
 // for the Release each graph's image: the application's own, its code with

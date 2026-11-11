@@ -81,11 +81,13 @@ type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 // ImportOutput carry, and reports a failure it can describe in the output's
 // error field.
 //
-// sourceName is the name of the file source was read from, which the payload
-// carries beside it so the importer can name the file in what it reports; an
-// empty sourceName — an import of a directory, whose files arrive as named
-// sources — is omitted from the wire payload. sources carries the named sources
-// for a multi-file import, and settings is the opaque importer-specific options
+// sourceName is the name of what the import reads, which the payload carries so
+// the importer can name it in what it reports and in what it drafts: the base
+// name of the file source was read from, or, for an import of a directory —
+// whose files arrive as named sources, with source empty — the directory's base
+// name. An empty sourceName is omitted from the wire payload. sources carries
+// the named sources for a multi-file import, and settings is the opaque
+// importer-specific options
 // document the consumer supplies; the host pipes them through without
 // interpreting them — settings crosses as the bytes the consumer supplied. A nil
 // settings is omitted from the wire payload.

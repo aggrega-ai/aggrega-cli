@@ -16,8 +16,11 @@ import (
 // draft can be named, one row each, and reads the name off the drafted Aggregate
 // and Release entities and off the metadata.name of both files: the project's
 // top-level name; an override file's name over the Compose file's, as Compose
-// merges it; the file's stem where no project names itself; flow for a
-// directory whose projects name themselves apart; and the namespace the
+// merges it; the file's stem where no project names itself; the directory's
+// name, as Compose names a project after the directory holding it, where a
+// directory's project names nothing or its projects name themselves apart, and
+// the project's own name over the directory's; flow for a directory the request
+// names nothing for whose projects name themselves apart; and the namespace the
 // target_namespace setting names in front. A project's name, read to name the
 // draft, is not listed among the top-level members the draft does not carry.
 //
@@ -41,9 +44,18 @@ func TestTheDraftIsNamedAfterTheProject(t *testing.T) {
 			"imported/staging"},
 		{"no name, the file's stem", aggrega.ImportInput{Format: Format, Bytes: unnamed, Name: "docker-compose.yml"},
 			"imported/docker-compose"},
-		{"two projects named apart, a directory", aggrega.ImportInput{Format: Format, Sources: []aggrega.ImportSource{
-			{Name: "a/compose.yaml", Bytes: named("first")}, {Name: "b/compose.yaml", Bytes: named("second")}}},
+		{"two projects named apart, a directory naming nothing", aggrega.ImportInput{Format: Format,
+			Sources: []aggrega.ImportSource{
+				{Name: "a/compose.yaml", Bytes: named("first")}, {Name: "b/compose.yaml", Bytes: named("second")}}},
 			"imported/flow"},
+		{"no name, the directory's name", aggrega.ImportInput{Format: Format, Name: "shop",
+			Sources: []aggrega.ImportSource{{Name: "compose.yaml", Bytes: unnamed}}}, "imported/shop"},
+		{"the project's name over the directory's", aggrega.ImportInput{Format: Format, Name: "shop",
+			Sources: []aggrega.ImportSource{{Name: "compose.yaml", Bytes: named("notes")}}}, "imported/notes"},
+		{"two projects named apart, the directory's name", aggrega.ImportInput{Format: Format, Name: "shop",
+			Sources: []aggrega.ImportSource{
+				{Name: "a/compose.yaml", Bytes: named("first")}, {Name: "b/compose.yaml", Bytes: named("second")}}},
+			"imported/shop"},
 		{"the target namespace", aggrega.ImportInput{Format: Format, Bytes: named("notes"),
 			Settings: json.RawMessage(`{"target_namespace":"team-a"}`)}, "team-a/notes"},
 	} {

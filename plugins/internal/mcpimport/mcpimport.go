@@ -54,7 +54,7 @@
 // registry server description gives the server it describes a name, and a draft
 // made from descriptions alone, all naming one server, is named after it; a
 // client's configuration gives itself none, so a draft holding a server one
-// lists is named after the file the import was handed on its own.
+// lists is named after the directory or the file the import was handed.
 //
 // # Credential values
 //

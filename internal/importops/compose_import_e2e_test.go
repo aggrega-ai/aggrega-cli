@@ -19,6 +19,8 @@ package importops
 //     and named in a warning, and the empty_credentials setting at all writes each
 //     empty, alike whatever its variable is called;
 //   - a project directory is merged in Compose's order;
+//   - a project directory is named after the directory unless its project names
+//     itself, and a file imported on its own after the file;
 //   - two imports of one application are byte-identical;
 //   - a Compose file the parser refuses halts the import with the parser's reason.
 //
@@ -284,6 +286,59 @@ func TestAComposeProjectDirectoryIsMergedInComposesOrder(t *testing.T) {
 	}
 	if !strings.Contains(release, "#   image: \"nginx:1.27-alpine\"\n") || strings.Contains(aggregate+release, "ignored") {
 		t.Errorf("the override file is not merged in Compose's order:\n%s\n%s", aggregate, release)
+	}
+}
+
+// TestAComposeProjectIsNamedAfterItsDirectoryUnlessItNamesItself imports a
+// directory shop holding one compose.yaml through the real Import, naming no
+// format, and reads the name the drafted Aggregate and Release carry: with no
+// top-level name, the directory's, as Compose names a project after the
+// directory holding it; with one, the name the project declares. The same file
+// imported on its own is named after the file, as it is wherever it lies.
+//
+// 🔴 PLANTED DEFECT: in primaryName (internal/importops/source.go), return "" for
+// a directory source: the directory row drafts imported/flow and fails.
+func TestAComposeProjectIsNamedAfterItsDirectoryUnlessItNamesItself(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		scenario  string
+		project   string
+		directory bool
+		want      string
+	}{
+		{"a directory whose project names nothing", postgresComposeSource, true, "imported/shop"},
+		{"a directory whose project names itself", "name: notes\n" + postgresComposeSource, true, "imported/notes"},
+		{"the file imported on its own", postgresComposeSource, false, "imported/compose"},
+	} {
+		t.Run(row.scenario, func(t *testing.T) {
+			t.Parallel()
+			dir := filepath.Join(t.TempDir(), "shop")
+			file := importopstest.WriteSource(t, filepath.Join(dir, "compose.yaml"), row.project)
+			source, name := file, "compose.yaml"
+			if row.directory {
+				source, name = dir, "shop"
+			}
+			res, err := importDirectory(t, composeWorkspace(t, nil), source, name, "")
+			if err != nil {
+				t.Fatalf("the import was refused: %v", err)
+			}
+			if res.Format != "compose" || res.Halted() {
+				t.Fatalf("the source was read as %q, halted %v: %+v", res.Format, res.Halted(), res.Diagnostics)
+			}
+			drafted := map[string]bool{}
+			for _, f := range res.Files {
+				if f.Path != "aggregate.yaml" && f.Path != "release.yaml" {
+					continue
+				}
+				drafted[f.Path] = true
+				if !strings.Contains(f.Content, "\nmetadata:\n  name: "+row.want+"\n") {
+					t.Errorf("the drafted %s is not named %s:\n%s", f.Path, row.want, f.Content)
+				}
+			}
+			if !drafted["aggregate.yaml"] || !drafted["release.yaml"] {
+				t.Errorf("the import drafted %v; want the Aggregate and the Release", draftPaths(res))
+			}
+		})
 	}
 }
 

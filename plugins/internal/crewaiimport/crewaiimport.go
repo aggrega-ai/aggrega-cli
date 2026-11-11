@@ -58,9 +58,10 @@
 //
 // The Aggregate and the Release are named after the crew, as importer.DraftName
 // names a draft: after the name crew.jsonc gives it, where every crew read is
-// named alike, and otherwise after the file the import was handed on its own. A
-// classic project's files give the crew no name — its program does — so a draft
-// read from one is named after the file.
+// named alike, and otherwise after the directory or the file the import was
+// handed. A classic project's files give the crew no name — its program does —
+// so a draft read from one is named after the directory or the file it was
+// read from.
 //
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and
 // leaves for the Release what no declaration states: each agent's image, which

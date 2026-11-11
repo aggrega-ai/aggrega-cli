@@ -89,7 +89,7 @@
 // The Aggregate and the Release are named after the application, as
 // importer.DraftName names a draft: after the name its root agent's
 // configuration declares, where every tree read declares the same one, and
-// otherwise after the file the import was handed on its own.
+// otherwise after the directory or the file the import was handed.
 //
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and leaves
 // for the Release what no configuration states: each instance's image, which runs

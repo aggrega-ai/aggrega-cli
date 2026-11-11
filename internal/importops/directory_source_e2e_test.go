@@ -138,7 +138,8 @@ func probeDirectory(t *testing.T, dir string) []abi.ImportSource {
 
 // assertHandedExactly holds the probe's report to the sources want, in order, with
 // empty primary bytes, and holds the whole input payload the importer received to
-// the one those sources and the format encode — so nothing else rode along.
+// the one those sources, the format and the directory's name encode — so nothing
+// else rode along. Every directory these cases import is named flows.
 func assertHandedExactly(t *testing.T, res Result, want []abi.ImportSource) {
 	t.Helper()
 	report := probeReportOf(t, res)
@@ -155,13 +156,64 @@ func assertHandedExactly(t *testing.T, res Result, want []abi.ImportSource) {
 			t.Errorf("the source name %q carries a host separator", s.Name)
 		}
 	}
-	payload, err := abi.ImportInput{Format: importopstest.FilesProbeFormat, Sources: want}.EncodeCBOR()
+	payload, err := abi.ImportInput{Format: importopstest.FilesProbeFormat, Name: "flows", Sources: want}.EncodeCBOR()
 	if err != nil {
 		t.Fatalf("encode the expected input: %v", err)
 	}
 	if string(report.Input) != string(payload) {
-		t.Errorf("the importer received an input payload of %d bytes that is not the one the format and those "+
-			"sources encode (%d bytes)", len(report.Input), len(payload))
+		t.Errorf("the importer received an input payload of %d bytes that is not the one the format, the "+
+			"directory's name and those sources encode (%d bytes)", len(report.Input), len(payload))
+	}
+}
+
+// TestADirectoryImportHandsTheImporterTheDirectorysName imports a directory
+// through the real Import and reads off the input payload the files-probe
+// importer received the name the request carries: the directory's own base name,
+// whole — a name holding a full stop keeps it — however the path to it is spelled,
+// and whatever name the caller received the source under, with empty primary
+// bytes beside it. The directory is named, inside a temporary directory of the
+// test's own, so the name read is the one laid down.
+//
+// 🔴 PLANTED DEFECT: in primaryName (internal/importops/source.go), return "" for
+// a directory source: every row reads an empty name, and the case fails.
+func TestADirectoryImportHandsTheImporterTheDirectorysName(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		scenario string
+		spell    func(dir string) string
+		name     string
+	}{
+		{"the directory's path", func(dir string) string { return dir }, "my.project"},
+		{"the path ending in a separator", func(dir string) string { return dir + string(filepath.Separator) },
+			"my.project/"},
+		{"the path ending in the current directory", func(dir string) string {
+			return dir + string(filepath.Separator) + "."
+		}, "."},
+	} {
+		t.Run(row.scenario, func(t *testing.T) {
+			t.Parallel()
+			rw, _ := directoryImportWorkspace(t, nil)
+			dir := filepath.Join(t.TempDir(), "my.project")
+			importopstest.WriteSource(t, filepath.Join(dir, "a", "x.probe.json"), importopstest.FilesProbeBody("a"))
+			importopstest.WriteSource(t, filepath.Join(dir, "b", "x.probe.json"), importopstest.FilesProbeBody("b"))
+
+			res, err := importDirectory(t, rw, row.spell(dir), row.name, importopstest.FilesProbeFormat)
+			if err != nil {
+				t.Fatalf("the directory import was refused: %v", err)
+			}
+			report := probeReportOf(t, res)
+			var in abi.ImportInput
+			if err := in.DecodeCBOR(report.Input); err != nil {
+				t.Fatalf("decode the input payload the importer received: %v", err)
+			}
+			if in.Name != "my.project" {
+				t.Errorf("the importer was handed the name %q; want the directory's, %q", in.Name, "my.project")
+			}
+			if len(in.Bytes) != 0 || len(in.Sources) != 2 {
+				t.Errorf("the importer was handed %d primary bytes and %d named sources; want none and the "+
+					"directory's two selected files", len(in.Bytes), len(in.Sources))
+			}
+		})
 	}
 }
 
