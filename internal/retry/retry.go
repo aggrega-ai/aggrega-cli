@@ -12,7 +12,6 @@ package retry
 
 import (
 	"context"
-	"errors"
 	"time"
 )
 
@@ -20,7 +19,8 @@ import (
 // returns the operation's last error: the first call plus at most two retries.
 // A publication is a timeout-bounded job, so the budget is small and fixed; the
 // registry index walk reads under the same budget, so one bound says how often
-// any registry request is attempted.
+// any registry request is attempted after a transient failure. A registry asking
+// to slow down is not such a failure and spends none of it.
 const MaxAttempts = 3
 
 // BaseDelay is the first backoff interval; each later retry doubles it, so an
@@ -38,12 +38,10 @@ var BaseDelay = 500 * time.Millisecond
 // another call. After the last attempt the last error is returned unwrapped, so
 // the caller's own wrapping applies to the underlying failure.
 //
-// A transient error that says how long the party that refused asked to be left
-// alone — an error carrying a RetryAfter method, as one built from an HTTP
-// Retry-After header does — is waited out for that long where it is longer than
-// the backoff. The request is not shortened by any cap: a party asked to be left
-// alone is left alone for as long as it asked, and the caller's context is what
-// bounds the wait.
+// It waits its own backoff and nothing else. A registry asking to be left alone
+// for a while is answered before any failure reaches this loop, by the registry
+// client's handling of a registry that is too busy, so a wait the registry asked
+// for is never taken here as well.
 //
 // A context that is cancelled or past its deadline during a backoff ends the
 // wait at once: Transient returns the context's error rather than sleeping out
@@ -63,12 +61,7 @@ func Transient[T any](ctx context.Context, fn func() (T, error), transient func(
 		if attempt == MaxAttempts-1 {
 			break
 		}
-		delay := BaseDelay << attempt
-		var asked interface{ RetryAfter() time.Duration }
-		if errors.As(err, &asked) && asked.RetryAfter() > delay {
-			delay = asked.RetryAfter()
-		}
-		timer := time.NewTimer(delay)
+		timer := time.NewTimer(BaseDelay << attempt)
 		select {
 		case <-ctx.Done():
 			timer.Stop()

@@ -5,15 +5,10 @@ package registryops
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
-	"strings"
-	"sync/atomic"
-	"time"
 
 	"oras.land/oras-go/v2/registry/remote/errcode"
 
@@ -34,11 +29,17 @@ const indexReadBodyLimit = 4 << 20
 // readRetryingTransport is the transport every request of a registry index walk
 // travels through. It asks a read again where the registry's answer, or the lack
 // of one, says a later attempt can succeed: a status the one registry-failure
-// classifier calls transient (oci.IsTransientRegistryError: a 5xx, 408 or 429), a
+// classifier calls transient (oci.IsTransientRegistryError: a 5xx or a 408), a
 // connection failure it calls transient (a timeout, a reset, an unexpected end),
 // and a successful answer whose body ended before it was complete. It asks under
-// the module's one retry budget (retry.MaxAttempts) and backoff, and where the
-// registry said how long to wait — a Retry-After header — it waits that long.
+// the module's one retry budget (retry.MaxAttempts) and backoff.
+//
+// A registry asking to slow down (oci.IsBusyAnswer: a 429, or a 503 carrying
+// Retry-After) is not its to answer. Such an answer is handed straight on, to the
+// registry client's handling of a busy registry above it (oci.RegistryClient),
+// which waits as the registry asked and asks again; spending this budget on it
+// too would wait twice and give up after three attempts on a registry that only
+// asked for time.
 //
 // It retries reads only: a GET or a HEAD with no body. Asking again is then the
 // same question, so it cannot change what the registry holds. Anything else passes
@@ -50,7 +51,10 @@ const indexReadBodyLimit = 4 << 20
 // read, which is never the same as reading that nothing is there.
 //
 // A read asked again is counted, once, in the count its request's context
-// carries (countingReadRetries), whether or not a later attempt succeeds.
+// carries (oci.CountAskedAgain), whether or not a later attempt succeeds: asked
+// again here, sent again because the registry asked it to slow down, or both, it
+// is one read, because every layer that asks it again notes it through the one
+// flag its request carries (oci.NoteAskedAgain).
 type readRetryingTransport struct {
 	base http.RoundTripper
 }
@@ -58,7 +62,9 @@ type readRetryingTransport struct {
 // retryingReadClient returns the network client for cfg with its reads going
 // through readRetryingTransport. The client and the transport it wraps both come
 // from the egress gate, so the walk reaches the network on the same terms, and
-// under the same offline decision, as every other client.
+// under the same offline decision, as every other client. The registry targets the
+// walk builds around it (oci.NewRemoteRegistry, oci.NewRemoteRepository) put the
+// busy-registry handling above it.
 func retryingReadClient(cfg workspaceconfig.Config) (*http.Client, error) {
 	base, err := egress.RoundTripper(cfg)
 	if err != nil {
@@ -83,8 +89,8 @@ func (t readRetryingTransport) RoundTrip(req *http.Request) (*http.Response, err
 	asked := 0
 	resp, err := retry.Transient(req.Context(), func() (*http.Response, error) {
 		asked++
-		if asked == 2 {
-			noteReadRetried(req.Context())
+		if asked > 1 {
+			oci.NoteAskedAgain(req.Context())
 		}
 		if refused != nil {
 			_ = refused.resp.Body.Close()
@@ -94,9 +100,12 @@ func (t readRetryingTransport) RoundTrip(req *http.Request) (*http.Response, err
 		if err != nil {
 			return nil, err
 		}
+		if oci.IsBusyAnswer(resp) {
+			return resp, nil
+		}
 		answer := &errcode.ErrorResponse{Method: req.Method, URL: req.URL, StatusCode: resp.StatusCode}
 		if resp.StatusCode >= http.StatusBadRequest && oci.IsTransientRegistryError(answer) {
-			refused = &refusedRead{answer: answer, resp: resp, after: retryAfter(resp.Header)}
+			refused = &refusedRead{answer: answer, resp: resp}
 			return nil, refused
 		}
 		if req.Method == http.MethodGet && resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -117,27 +126,6 @@ func (t readRetryingTransport) RoundTrip(req *http.Request) (*http.Response, err
 		_ = refused.resp.Body.Close()
 	}
 	return nil, err
-}
-
-// readRetriesKey is the context key a walk's count of reads asked again travels
-// under, from the walk to the transport its reads go through.
-type readRetriesKey struct{}
-
-// countingReadRetries returns a context under which readRetryingTransport counts,
-// in the returned counter, every read it asks again — each read once, however
-// many times it is asked. The count travels with the requests rather than with
-// the transport because the walk reaches its registry through the IndexTarget
-// seam, which hands back a source and nothing to read a count from.
-func countingReadRetries(ctx context.Context) (context.Context, *atomic.Int64) {
-	var retried atomic.Int64
-	return context.WithValue(ctx, readRetriesKey{}, &retried), &retried
-}
-
-// noteReadRetried counts one read asked again, where ctx carries a count.
-func noteReadRetried(ctx context.Context) {
-	if retried, ok := ctx.Value(readRetriesKey{}).(*atomic.Int64); ok {
-		retried.Add(1)
-	}
 }
 
 // readThrough reads a successful answer's body before it is handed on, so an
@@ -170,40 +158,12 @@ func readThrough(resp *http.Response) error {
 
 // refusedRead is a read the registry answered with a status worth asking again
 // for. It reads as the registry's error response, so the one classifier judges it
-// as it judges that response anywhere else, and it carries how long the registry
-// asked to be left alone, which the retry waits out.
+// as it judges that response anywhere else.
 type refusedRead struct {
 	answer *errcode.ErrorResponse
 	resp   *http.Response
-	after  time.Duration
 }
 
 func (r *refusedRead) Error() string { return r.answer.Error() }
 
 func (r *refusedRead) Unwrap() error { return r.answer }
-
-// RetryAfter is how long the registry asked to be left alone before the next
-// attempt; zero where it did not say.
-func (r *refusedRead) RetryAfter() time.Duration { return r.after }
-
-// retryAfter reads a Retry-After header, in either of its two forms: a number of
-// seconds, or the time to try again at. A header that is absent, malformed, or
-// names a time already past asks for no wait.
-func retryAfter(h http.Header) time.Duration {
-	v := strings.TrimSpace(h.Get("Retry-After"))
-	if v == "" {
-		return 0
-	}
-	if secs, err := strconv.Atoi(v); err == nil {
-		if secs <= 0 {
-			return 0
-		}
-		return time.Duration(secs) * time.Second
-	}
-	if at, err := http.ParseTime(v); err == nil {
-		if d := time.Until(at); d > 0 {
-			return d
-		}
-	}
-	return 0
-}

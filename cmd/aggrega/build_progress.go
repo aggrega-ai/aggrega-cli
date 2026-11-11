@@ -352,6 +352,63 @@ type progressReporter struct {
 	// finished guards finish against a double call: the caller invokes it
 	// explicitly before the stdout summary and again via defer on any return.
 	finished bool
+
+	// waitNote is what the step in flight is waiting on — a registry that asked
+	// to slow down, say — shown beside that step's row while waitsOpen is above
+	// zero (beginWait).
+	waitNote  string
+	waitsOpen int
+}
+
+// draws reports whether the reporter shows anything at all: false for a silent
+// reporter, and for a nil one.
+func (p *progressReporter) draws() bool {
+	return p != nil && p.mode != progressSilent
+}
+
+// beginWait shows label as what the step in flight is waiting on, until the
+// returned function is called. It is how an operation's own report of a wait
+// (opprogress) reaches a command that draws its steps itself (stepWaitObserver):
+// the wait is part of the step in flight rather than a step of its own, so it
+// neither ends that step nor takes its count.
+//
+// On the checklist the label is drawn beside the row of the step in flight, the
+// latest one shown where several waits are open at once; the plain surface writes
+// it as one line when the wait begins, and the verbose debug layer as a debug
+// line. A silent reporter shows nothing.
+func (p *progressReporter) beginWait(label string) (end func()) {
+	if p == nil {
+		return func() {}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	switch {
+	case p.mode == progressSilent || p.finished:
+		return func() {}
+	case p.mode == progressDebug:
+		fmt.Fprintf(p.out, "  [debug]   %s\n", label)
+		return func() {}
+	case p.mode == progressStatic:
+		fmt.Fprintln(p.out, label)
+		return func() {}
+	}
+	p.waitNote = label
+	p.waitsOpen++
+	p.draw()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			p.mu.Lock()
+			defer p.mu.Unlock()
+			p.waitsOpen--
+			if p.waitsOpen == 0 {
+				p.waitNote = ""
+			}
+			if !p.finished && p.linesDrawn > 0 {
+				p.draw()
+			}
+		})
+	}
 }
 
 // newProgressReporter resolves the reporter shape from the diagnostic options,
@@ -1252,7 +1309,11 @@ func (p *progressReporter) rows() []string {
 	rows := make([]string, 0, len(p.spine.labels)+4)
 
 	for i := p.rowsFrom; i < preCount; i++ {
-		rows = append(rows, p.composeRow(p.phaseRow(i, frame)+p.phaseLabel(i), p.elapsedStr(i)))
+		label := p.phaseLabel(i)
+		if i == p.active && p.waitNote != "" && !p.stepEnded {
+			label += " — " + p.waitNote
+		}
+		rows = append(rows, p.composeRow(p.phaseRow(i, frame)+label, p.elapsedStr(i)))
 	}
 	if p.spine.renderIdx < 0 {
 		// No render phase: every label is an ordinary spine phase, and there is no

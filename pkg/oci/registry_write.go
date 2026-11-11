@@ -6,7 +6,6 @@ package oci
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -35,6 +34,13 @@ import (
 // refuses such a resend, and only a new session recovers. That is also why the
 // retry sits here and not in the HTTP transport, which can only resend the
 // request it was given.
+//
+// A registry asking to slow down is not one of those failures. How a request
+// reacts to it is decided in one place (registry_busy.go): the wait, the
+// shared allowance and the bound all live there, and a request with a body that
+// was refused that way is handed back here, where each write runs again as a new
+// attempt (resendWhileBusy) — its first request taking the wait on its way out —
+// for as long as that place lets it.
 
 // IsTransientRegistryError reports whether a failed registry write is worth
 // another attempt.
@@ -42,16 +48,23 @@ import (
 // Terminal (false): a nil error; an immutable-tag conflict
 // (ErrImmutableTagConflict); an authentication refusal — the registry answered
 // 401 or 403, or demands a credential the credential store holds none for
-// (ErrFetchUnauthorized); a caller cancellation (context.Canceled); and any
-// error not recognised below.
+// (ErrFetchUnauthorized); a caller cancellation (context.Canceled); a registry
+// that kept asking to slow down (ErrRegistryTooBusy); and any error not
+// recognised below, a 429 Too Many Requests among them.
 //
-// Transient (true): a registry response with any 5xx status, 408 Request
-// Timeout or 429 Too Many Requests; a network error that reports a timeout; a
-// connection the peer reset; an unexpected end of a response body
-// (io.ErrUnexpectedEOF); and a deadline that expired on the request
-// (context.DeadlineExceeded). A deadline that belongs to the caller's own
-// context ends the retry anyway, because the retry stops waiting the moment the
-// caller's context is done.
+// Transient (true): a registry response with any 5xx status or 408 Request
+// Timeout; a network error that reports a timeout; a connection the peer reset;
+// an unexpected end of a response body (io.ErrUnexpectedEOF); and a deadline that
+// expired on the request (context.DeadlineExceeded). A deadline that belongs to
+// the caller's own context ends the retry anyway, because the retry stops waiting
+// the moment the caller's context is done.
+//
+// A registry asking to slow down — a 429, or a 503 carrying Retry-After — is not
+// a failure worth another attempt under this budget: a registry client reacts to
+// it before it reaches any classifier (RegistryClient), with no fixed attempt
+// ceiling and a bound of its own, and a write it hands back is run again there
+// (resendWhileBusy). Counting it here too would spend this budget on a wait the
+// registry asked for.
 //
 // It reads error values, never their wording, so it answers the same for a
 // remote registry, an in-memory store, or any other target that returns these
@@ -63,14 +76,13 @@ func IsTransientRegistryError(err error) bool {
 	if errors.Is(err, ErrImmutableTagConflict()) || errors.Is(err, ErrFetchUnauthorized()) || isUnauthorized(err) {
 		return false
 	}
-	if errors.Is(err, context.Canceled) {
+	if errors.Is(err, context.Canceled) || errors.Is(err, ErrRegistryTooBusy()) {
 		return false
 	}
 	if status, answered := registryStatus(err); answered {
 		switch {
 		case status >= 500,
-			status == http.StatusRequestTimeout,
-			status == http.StatusTooManyRequests:
+			status == http.StatusRequestTimeout:
 			return true
 		}
 	}
@@ -78,25 +90,27 @@ func IsTransientRegistryError(err error) bool {
 }
 
 // ReadFailureKind names, in a reader's words, what kind of failure ended a
-// registry read: the status the registry answered with, a read that timed out, a
-// connection that was reset, or an answer whose body was cut short. It returns ""
-// for any other failure — one with no registry answer and no connection failure
-// behind it — and for a nil error.
+// registry read: a registry that kept asking to slow down, the status the
+// registry answered with, a read that timed out, a connection that was reset, or
+// an answer whose body was cut short. It returns "" for any other failure — one
+// with no registry answer and no connection failure behind it — and for a nil
+// error.
 //
 // It reads the same error values IsTransientRegistryError reads, never their
 // wording, so a failure is named the same way whether it was worth another
-// attempt or not. Where an error carries more than one of these, the status is
-// named first, then a reset, then an answer cut short, then a timeout: a body
-// that ended because the connection was reset is named as the reset.
+// attempt or not. Where an error carries more than one of these, a registry that
+// kept asking to slow down is named first, then the status, then a reset, then an
+// answer cut short, then a timeout: a body that ended because the connection was
+// reset is named as the reset.
 func ReadFailureKind(err error) string {
 	if err == nil {
 		return ""
 	}
+	if errors.Is(err, ErrRegistryTooBusy()) {
+		return "the registry kept asking to slow down"
+	}
 	if status, answered := registryStatus(err); answered {
-		if text := http.StatusText(status); text != "" {
-			return fmt.Sprintf("the registry answered %d %s", status, text)
-		}
-		return fmt.Sprintf("the registry answered %d", status)
+		return "the registry answered " + statusWords(status)
 	}
 	switch {
 	case connectionReset(err):
@@ -148,7 +162,8 @@ func connectionReset(err error) bool {
 
 // pushBlob uploads data as a blob of mediaType to target and returns its
 // descriptor, retrying a transient failure (IsTransientRegistryError) up to the
-// shared attempt budget.
+// shared attempt budget, and running again as a new attempt each time the
+// registry asks it to slow down (resendWhileBusy).
 //
 // Each attempt is a new oras.PushBytes call, which reads the bytes afresh and,
 // against a remote registry, opens a new upload session. A target that answers
@@ -156,18 +171,21 @@ func connectionReset(err error) bool {
 // exists is what was asked for, and the push counts as landed. That is what makes
 // an attempt whose response was lost after the bytes landed safe to repeat.
 func pushBlob(ctx context.Context, target oras.Target, mediaType string, data []byte) (ocispec.Descriptor, error) {
-	return retry.Transient(ctx, func() (ocispec.Descriptor, error) {
-		desc, err := oras.PushBytes(ctx, target, mediaType, data)
-		if errors.Is(err, errdef.ErrAlreadyExists) {
-			return content.NewDescriptorFromBytes(mediaType, data), nil
-		}
-		return desc, err
-	}, IsTransientRegistryError)
+	return resendWhileBusy(ctx, func() (ocispec.Descriptor, error) {
+		return retry.Transient(ctx, func() (ocispec.Descriptor, error) {
+			desc, err := oras.PushBytes(ctx, target, mediaType, data)
+			if errors.Is(err, errdef.ErrAlreadyExists) {
+				return content.NewDescriptorFromBytes(mediaType, data), nil
+			}
+			return desc, err
+		}, IsTransientRegistryError)
+	})
 }
 
 // packManifest packs an OCI image manifest of artifactType from opts into target
 // and returns its descriptor, retrying a transient failure
-// (IsTransientRegistryError) up to the shared attempt budget.
+// (IsTransientRegistryError) up to the shared attempt budget, and running again as
+// a new attempt each time the registry asks it to slow down (resendWhileBusy).
 //
 // It pins the manifest's creation annotation (see mergeCreatedAnnotations) on
 // every attempt, so each attempt packs byte-identical manifest JSON: a retry
@@ -176,18 +194,23 @@ func pushBlob(ctx context.Context, target oras.Target, mediaType string, data []
 // The pack itself treats a blob or manifest the target already holds as landed.
 func packManifest(ctx context.Context, target oras.Target, artifactType string, opts oras.PackManifestOptions) (ocispec.Descriptor, error) {
 	opts.ManifestAnnotations = mergeCreatedAnnotations(opts.ManifestAnnotations)
-	return retry.Transient(ctx, func() (ocispec.Descriptor, error) {
-		return oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, artifactType, opts)
-	}, IsTransientRegistryError)
+	return resendWhileBusy(ctx, func() (ocispec.Descriptor, error) {
+		return retry.Transient(ctx, func() (ocispec.Descriptor, error) {
+			return oras.PackManifest(ctx, target, oras.PackManifestVersion1_1, artifactType, opts)
+		}, IsTransientRegistryError)
+	})
 }
 
 // tagManifest points tag at desc on target, retrying a transient failure
-// (IsTransientRegistryError) up to the shared attempt budget. Tagging the same
-// descriptor again is the same request, so a repeated attempt leaves the tag
-// where one attempt would.
+// (IsTransientRegistryError) up to the shared attempt budget, and running again as
+// a new attempt each time the registry asks it to slow down (resendWhileBusy).
+// Tagging the same descriptor again is the same request, so a repeated attempt
+// leaves the tag where one attempt would.
 func tagManifest(ctx context.Context, target oras.Target, desc ocispec.Descriptor, tag string) error {
-	_, err := retry.Transient(ctx, func() (struct{}, error) {
-		return struct{}{}, target.Tag(ctx, desc, tag)
-	}, IsTransientRegistryError)
+	_, err := resendWhileBusy(ctx, func() (struct{}, error) {
+		return retry.Transient(ctx, func() (struct{}, error) {
+			return struct{}{}, target.Tag(ctx, desc, tag)
+		}, IsTransientRegistryError)
+	})
 	return err
 }

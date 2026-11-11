@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"oras.land/oras-go/v2/registry/remote/errcode"
 )
@@ -57,6 +58,10 @@ func TestReadFailureKindNamesTheFailureFromItsValue(t *testing.T) {
 		{"a body cut short by a reset", fmt.Errorf("the response body ended early: %w: %w", io.ErrUnexpectedEOF, reset), "the connection was reset"},
 		{"a read past its deadline", fmt.Errorf("tags: %w", &url.Error{Op: "Get", URL: listing.String(), Err: timeoutError{}}), "the read timed out"},
 		{"a request deadline", fmt.Errorf("tags: %w", context.DeadlineExceeded), "the read timed out"},
+		{"a registry that kept asking to slow down", fmt.Errorf("tags: %w", &url.Error{Op: "Get", URL: listing.String(),
+			Err: &busyRefusal{host: "registry.example", status: http.StatusTooManyRequests, waited: time.Minute}}), "the registry kept asking to slow down"},
+		{"a registry that kept asking to slow down until the deadline", fmt.Errorf("tags: %w", &url.Error{Op: "Get", URL: listing.String(),
+			Err: &busyRefusal{host: "registry.example", status: http.StatusTooManyRequests, waited: time.Minute, cause: context.DeadlineExceeded}}), "the registry kept asking to slow down"},
 		{"a failure of no such kind", errors.New("live trust-root fetch: failed to persist metadata"), ""},
 		{"no failure", nil, ""},
 	}

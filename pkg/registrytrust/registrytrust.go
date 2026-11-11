@@ -31,7 +31,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -200,10 +199,6 @@ var errOfflineRegistrationWithoutTrustPolicy = cerrors.Register("offline-registr
 		"declared stage of a compilation holds the request or the posture it reads."),
 })
 
-// fetchTimeout bounds the one-time well-known GET so a hung endpoint cannot
-// stall registration indefinitely.
-const fetchTimeout = 15 * time.Second
-
 // Fetch GETs the advertised trust document from host's own origin
 // (`https://<host>` + WellKnownPath, or plain HTTP for a loopback host),
 // decodes it, and returns the validated document. A 404 maps to
@@ -221,8 +216,13 @@ const fetchTimeout = 15 * time.Second
 //
 // host is the registry authority (e.g. "hub.aggrega.ai" or "localhost:5000"),
 // as produced by pkg/registryhost.Of — no scheme, no path. The client passed
-// in transports the request, bounded by fetchTimeout; it comes from pkg/egress,
-// and a nil client is that gate's offline refusal, reported before any dial.
+// in transports the request; it comes from pkg/egress, and a nil client is that
+// gate's offline refusal, reported before any dial. The request is bounded as
+// every registry request is, and not by a deadline of its own: the egress client
+// bounds each wait on the registry's answer, and a registry client's handling of a
+// registry asking to slow down bounds that wait — a whole-request deadline would
+// cut such a wait short after its first spell. Fetch does not change the client
+// it is given.
 func Fetch(ctx context.Context, client *http.Client, host string) (AdvertisedTrust, error) {
 	if host == "" {
 		return AdvertisedTrust{}, errors.New("a registry host is required to ask for its trust policy")
@@ -236,8 +236,6 @@ func Fetch(ctx context.Context, client *http.Client, host string) (AdvertisedTru
 			condition: egress.ErrOfflineEgress(),
 		}
 	}
-	client.Timeout = fetchTimeout
-
 	scheme := "https"
 	if registryhost.IsLoopback(host) {
 		scheme = "http"

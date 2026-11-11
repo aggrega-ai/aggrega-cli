@@ -188,7 +188,6 @@ func TestEveryRegistryWriteRetriesATransientFailure(t *testing.T) {
 		{name: "a signature referrer manifest, answer lost after it landed", entry: entrySignature, match: manifestOf(retryTestSignatureType), fault: status(500), after: true},
 
 		{name: "the content blob, 408", entry: entryPush, match: blobOf(oci.MediaTypeComponent), fault: status(408)},
-		{name: "the content blob, 429", entry: entryPush, match: blobOf(oci.MediaTypeComponent), fault: status(429)},
 		{name: "the content blob, connection reset", entry: entryPush, match: blobOf(oci.MediaTypeComponent), fault: func() error {
 			return &url.Error{Op: "Put", URL: "http://registry.invalid/v2/upload", Err: &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}}
 		}},
@@ -336,7 +335,14 @@ func TestIsTransientRegistryError(t *testing.T) {
 		{"a 500", wrap(&errcode.ErrorResponse{StatusCode: 500}), true},
 		{"a 503", wrap(&errcode.ErrorResponse{StatusCode: 503}), true},
 		{"a 408", wrap(&errcode.ErrorResponse{StatusCode: 408}), true},
-		{"a 429", wrap(&errcode.ErrorResponse{StatusCode: 429}), true},
+		// A registry asking to slow down is answered by the registry client before
+		// any classifier sees it, so neither its answer nor its refusal spends the
+		// retry budget. The refusal that ended on the request's own deadline is the
+		// row that fails if the refusal is not checked first: its deadline alone
+		// would read as transient.
+		{"a 429", wrap(&errcode.ErrorResponse{StatusCode: 429}), false},
+		{"a registry that kept asking to slow down", wrap(oci.ErrRegistryTooBusy()), false},
+		{"a registry that kept asking to slow down until the deadline", wrap(fmt.Errorf("%w: %w", oci.ErrRegistryTooBusy(), context.DeadlineExceeded)), false},
 		{"a network timeout", wrap(&url.Error{Op: "Put", URL: "u", Err: &net.OpError{Op: "dial", Net: "tcp", Err: timeoutNetError{}}}), true},
 		{"a connection reset", wrap(&url.Error{Op: "Put", URL: "u", Err: &net.OpError{Op: "read", Net: "tcp", Err: syscall.ECONNRESET}}), true},
 		{"an unexpected EOF", wrap(&url.Error{Op: "Put", URL: "u", Err: io.ErrUnexpectedEOF}), true},

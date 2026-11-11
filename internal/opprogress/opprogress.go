@@ -54,6 +54,18 @@ type Observer interface {
 	Beside(w io.Writer) io.Writer
 }
 
+// WaitObserver is an Observer that tells a wait on someone else — a registry
+// that asked the operation to slow down — from a step of the operation's own work,
+// and shows waits its own way. A surface that draws the steps of its command
+// itself, and shows an operation only what it waits on, is one.
+//
+// Wait is called as such a wait begins, with what is being waited on, and returns
+// the function the operation calls once the wait is over.
+type WaitObserver interface {
+	Observer
+	Wait(step string) End
+}
+
 // observerKey keys the installed observer on a context.
 type observerKey struct{}
 
@@ -85,6 +97,24 @@ func Begin(ctx context.Context, step string) End {
 	o := from(ctx)
 	if o == nil {
 		return func(error) {}
+	}
+	return once(o.Begin(step))
+}
+
+// Wait reports that the operation has begun to wait on someone else rather than
+// on a step of its own work — a registry that asked it to slow down — and returns
+// the function to call once the wait is over. An observer that tells the two apart
+// (WaitObserver) receives it as a wait; any other receives it as a step, so a
+// surface that shows every step shows the wait on the same terms as the rest.
+// With no observer installed it returns a function that does nothing, and the
+// returned function reports over the first call only.
+func Wait(ctx context.Context, step string) End {
+	o := from(ctx)
+	if o == nil {
+		return func(error) {}
+	}
+	if w, ok := o.(WaitObserver); ok {
+		return once(w.Wait(step))
 	}
 	return once(o.Begin(step))
 }

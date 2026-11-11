@@ -143,4 +143,35 @@ func TestWithNoObserverEveryCallIsANoOp(t *testing.T) {
 	if got := Beside(With(ctx, &recorder{}), nil); got != nil {
 		t.Errorf("Beside must return a nil writer as it is")
 	}
+	Wait(ctx, "slowed down")(nil)
+}
+
+// waitRecorder is a recorder that tells waits from steps (WaitObserver).
+type waitRecorder struct{ recorder }
+
+func (w *waitRecorder) Wait(step string) End {
+	w.note("wait " + step)
+	return func(error) { w.note("waited " + step) }
+}
+
+// TestAWaitReachesAnObserverAsAWaitOrAsAStep reports one wait (Wait) to each kind
+// of observer and requires an observer that tells waits from steps to receive it
+// as a wait, ended once however often it is ended, and any other observer to
+// receive it as a step — so a surface showing every step shows the wait on the
+// same terms as the rest, and a surface showing only waits sees it at all.
+func TestAWaitReachesAnObserverAsAWaitOrAsAStep(t *testing.T) {
+	t.Parallel()
+	w := &waitRecorder{}
+	end := Wait(With(t.Context(), w), "registry asked to slow down")
+	end(nil)
+	end(nil)
+	if got, want := w.seen(), []string{"wait registry asked to slow down", "waited registry asked to slow down"}; !slices.Equal(got, want) {
+		t.Errorf("a wait observer received %q; want %q", got, want)
+	}
+
+	r := &recorder{}
+	Wait(With(t.Context(), r), "registry asked to slow down")(nil)
+	if got, want := r.seen(), []string{"begin registry asked to slow down", "end registry asked to slow down"}; !slices.Equal(got, want) {
+		t.Errorf("an observer of steps received %q; want %q", got, want)
+	}
 }

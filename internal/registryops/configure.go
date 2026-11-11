@@ -318,7 +318,10 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 
 // trustClientFor returns the transport the advertised-trust fetch runs over: the
 // one a test injected, or else the one the network-egress gate hands out for the
-// workspace's own resolution.
+// workspace's own resolution — either way as a registry client
+// (oci.RegistryClient). The fetch is a request to the registry like any other,
+// made outside a registry target, so it reacts to a registry asking it to slow
+// down on the same terms every other registry request does.
 //
 // 🔴 It is resolved here, inside the one registration every surface calls, and
 // never by a surface. A client each surface had to supply is a client a surface
@@ -333,13 +336,13 @@ func Add(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts AddOpt
 // error rather than reading the posture a second time.
 func trustClientFor(rw *workspaceconfig.ResolvedWorkspace, injected *http.Client) *http.Client {
 	if injected != nil {
-		return injected
+		return oci.RegistryClient(injected)
 	}
 	client, err := egress.HTTPClient(rw.Config())
 	if err != nil {
 		return nil
 	}
-	return client
+	return oci.RegistryClient(client)
 }
 
 // pinAdvertisedTrust fetches host's advertised trust document and copies its

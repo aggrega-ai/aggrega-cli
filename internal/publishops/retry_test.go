@@ -35,8 +35,9 @@ func (timeoutError) Temporary() bool { return true }
 
 // TestIsRetryablePublishError holds the signing classifier to what it is: the
 // registry classifier's answer, plus the keyless authority's token-processing
-// failure. The 429 row is one only the registry classifier knows, so it fails if
-// this classifier stops deferring to it.
+// failure. The 408 row is one only the registry classifier knows, so it fails if
+// this classifier stops deferring to it; the 429 row follows that classifier in
+// leaving a registry that asks to slow down to the registry client.
 func TestIsRetryablePublishError(t *testing.T) {
 	cases := []struct {
 		name string
@@ -48,7 +49,8 @@ func TestIsRetryablePublishError(t *testing.T) {
 		{"auth denied", oci.ErrFetchUnauthorized(), false},
 		{"caller cancellation", context.Canceled, false},
 		{"registry 503", &errcode.ErrorResponse{StatusCode: 503}, true},
-		{"registry 429", &errcode.ErrorResponse{StatusCode: 429}, true},
+		{"registry 408", &errcode.ErrorResponse{StatusCode: 408}, true},
+		{"registry 429", &errcode.ErrorResponse{StatusCode: 429}, false},
 		{"registry 403", &errcode.ErrorResponse{StatusCode: 403}, false},
 		{"net timeout", timeoutError{}, true},
 		{"fulcio token 400", errors.New(`signing: keyless bundle: Fulcio returned 400: {"code":3,"message":"There was an error processing the identity token"}`), true},

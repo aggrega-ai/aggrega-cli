@@ -5,6 +5,8 @@ package registryops
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net"
@@ -18,6 +20,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
+	"github.com/aggrega-ai/aggrega-cli/internal/retry"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
@@ -232,7 +235,7 @@ func updateResult(t *testing.T, ws *refreshFixture, opts UpdateOptions) (UpdateR
 	t.Helper()
 	opts.Now = func() time.Time { return time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC) }
 	var out bytes.Buffer
-	res, err := Update(t.Context(), ws.rw, opts, &out)
+	res, err := Update(busyTestContext(t), ws.rw, opts, &out)
 	if err != nil {
 		t.Fatalf("Update: %v\n%s", err, out.String())
 	}
@@ -240,6 +243,18 @@ func updateResult(t *testing.T, ws *refreshFixture, opts UpdateOptions) (UpdateR
 		t.Fatalf("hosts = %+v; want the one registry", res.Hosts)
 	}
 	return res, out.String()
+}
+
+// busyTestWait is the wait the walks below are told to take where a registry asks
+// them to slow down without saying how long, in place of the production default,
+// so a row that meets such an answer costs milliseconds rather than ten seconds a
+// time. A Retry-After header is still honoured as the registry states it.
+const busyTestWait = 50 * time.Millisecond
+
+// busyTestContext is the test's context, with the busy-registry wait shortened
+// (busyTestWait), no random spread, and the production bound.
+func busyTestContext(t *testing.T) context.Context {
+	return oci.WithBusyTiming(t.Context(), oci.BusyWaitLimit, busyTestWait, 0)
 }
 
 // indexedRecord returns the record a workspace's index holds for repo, if any.
@@ -280,12 +295,14 @@ func skippedRepos(hu HostUpdate) []string {
 // Each row also requires its fault to have fired as often as it was set to, so a
 // fixture whose fault never met a read cannot pass as a walk that recovered.
 //
-// The 429 row carries a Retry-After header of two seconds, and requires the read
-// to have been asked again no sooner than a second and a half later. Asked again
-// after the walk's own first backoff alone, it would come half a second later; a
-// slow machine only lengthens the gap, so the bound cannot be met by a walk that
-// ignores the header, however loaded the machine. Requested 2 s, threshold 1.5 s,
-// the walk's own first backoff 0.5 s.
+// The 429 rows are a registry asking the walk to slow down, which the registry
+// client answers rather than the walk's retry budget. The first carries a
+// Retry-After header of two seconds, and requires the read to have been asked
+// again no sooner than a second and a half later. Asked again after the wait the
+// test states for an answer that names none (busyTestWait, 50 ms), it would come
+// far sooner; a slow machine only lengthens the gap, so the bound cannot be met by
+// a client that ignores the header, however loaded the machine. Requested 2 s,
+// threshold 1.5 s, the stated default wait 50 ms.
 func TestAReadTheRegistryFailsInPassingIsAskedAgain(t *testing.T) {
 	t.Parallel()
 	rows := []struct {
@@ -448,7 +465,7 @@ func TestAVersionIsNeverRecordedUnsignedOrUnmarkedBecauseAReadFailed(t *testing.
 		{"the signature listing answers 503", readFault{read: readSignatureListing, status: http.StatusServiceUnavailable}},
 		{"a referrer's manifest is reset", readFault{read: readReferrerManifest, reset: true}},
 		{"a referrer's payload is cut short", readFault{read: readBlob, truncate: true}},
-		{"the deprecation marker listing answers 429", readFault{read: readMarkerListing, status: http.StatusTooManyRequests}},
+		{"the deprecation marker listing answers 503", readFault{read: readMarkerListing, status: http.StatusServiceUnavailable}},
 		{"the published-at listing answers 503", readFault{read: readPublishedAtListing, status: http.StatusServiceUnavailable}},
 	}
 	for _, row := range rows {
@@ -475,5 +492,58 @@ func TestAVersionIsNeverRecordedUnsignedOrUnmarkedBecauseAReadFailed(t *testing.
 				t.Errorf("the repository with nothing failing was not indexed signed: %+v\n%s", rec, out)
 			}
 		})
+	}
+}
+
+// TestARegistryThatNeverStopsAskingToSlowDownIsRefusedByNameAndKeepsItsIndex is
+// a registry that answers one read of one repository 429 for ever, with no
+// Retry-After, after an earlier walk indexed it. The walk is told a bound of a
+// third of a second and a wait of ten milliseconds (oci.WithBusyTiming), so the
+// bound is met in a fraction of a second rather than in five minutes.
+//
+// It requires four things, each with the defect that breaks it:
+//
+//   - The walk ends, with the refusal naming the registry and its last answer
+//     (oci.ErrRegistryTooBusy). A client with no bound on its waiting never ends,
+//     and this test is then stopped by its own run's time limit rather than
+//     passing.
+//   - The refused read was asked again more often than the retry budget allows
+//     (retry.MaxAttempts), so a registry asking to slow down is not given up on
+//     after three attempts as a failing one is.
+//   - The registry is reported as not indexed: one refused read is a refusal of
+//     the registry, not of that repository. A walk that skipped the repository and
+//     went on would report the registry indexed.
+//   - The index on disk is the earlier one, byte for byte: nothing of the refused
+//     walk was written, so no index of part of the registry stands in for the whole.
+func TestARegistryThatNeverStopsAskingToSlowDownIsRefusedByNameAndKeepsItsIndex(t *testing.T) {
+	t.Parallel()
+	f := newFailureFixture(t)
+	ws := f.workspace(t, f.pub)
+	updateResult(t, ws, UpdateOptions{})
+	before := ws.files(t)
+
+	fault := &readFault{repo: failingRepo, read: readMarkerListing, status: http.StatusTooManyRequests}
+	f.reg.addFault(fault)
+	ctx := oci.WithBusyTiming(t.Context(), 300*time.Millisecond, 10*time.Millisecond, 0)
+	var out bytes.Buffer
+	res, err := Update(ctx, ws.rw, UpdateOptions{Registry: f.reg.host, Upgrade: true,
+		Now: func() time.Time { return time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC) }}, &out)
+
+	if !errors.Is(err, oci.ErrRegistryTooBusy()) {
+		t.Fatalf("the walk ended with %v; want the refusal of a registry that kept asking to slow down\n%s", err, out.String())
+	}
+	for _, want := range []string{f.reg.host, "429 Too Many Requests"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal %q does not name %q", err, want)
+		}
+	}
+	if fired, _ := f.reg.faultState(fault); fired <= retry.MaxAttempts {
+		t.Errorf("the refused read was asked %d time(s); want more than the %d a failing read is given", fired, retry.MaxAttempts)
+	}
+	if len(res.Hosts) != 1 || res.Hosts[0].Err == "" {
+		t.Errorf("hosts = %+v; want the registry reported as not indexed", res.Hosts)
+	}
+	if got := ws.files(t); !maps.Equal(got, before) {
+		t.Errorf("the refused walk changed the index:\nbefore %v\nafter  %v\n%s", before, got, out.String())
 	}
 }

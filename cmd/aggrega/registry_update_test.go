@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -966,6 +967,20 @@ func answerWithStatus(status int) func(http.ResponseWriter, *http.Request, http.
 	}
 }
 
+// answerEachInTurn answers with each status in turn, one per read it is handed,
+// and with the last for every read after that.
+func answerEachInTurn(statuses ...int) func(http.ResponseWriter, *http.Request, http.Handler) {
+	var mu sync.Mutex
+	next := 0
+	return func(w http.ResponseWriter, _ *http.Request, _ http.Handler) {
+		mu.Lock()
+		status := statuses[min(next, len(statuses)-1)]
+		next++
+		mu.Unlock()
+		http.Error(w, "the registry failed this read", status)
+	}
+}
+
 // resetTheConnection drops the connection without an answer, with a reset rather
 // than an orderly close, as a connection the peer resets reaches a client.
 func resetTheConnection(w http.ResponseWriter, _ *http.Request, _ http.Handler) {
@@ -1164,7 +1179,9 @@ func (r *flakyListingRegistry) fired(repo string) int {
 // to state, on the registry's row, how many reads were asked again — beside the
 // count of repositories that could not be read where there is one, and zero where
 // nothing was asked again. A read asked several times counts once: the 429 row's
-// listing is asked three times and counts as one read retried.
+// listing is asked three times and counts as one read retried, and so does the
+// listing asked again first by the walk's own retry and then by the registry
+// client — the row that fails where each layer keeps a count of its own.
 //
 // The summary is what a terminal, the catalog build and an assistant running the
 // command all read, so it is read from the command's own output after the line
@@ -1206,6 +1223,14 @@ func TestRegistryUpdateCountsTheReadsItAskedAgain(t *testing.T) {
 			row:    ": 2 entities, 1 read retried",
 		},
 		{
+			// Asked again twice over, by two layers: the walk's own retry after the
+			// 503, then the registry client after the 429. It is one read, and a
+			// count kept by each layer would say two.
+			name:   "one listing answered 503 and then 429, then served",
+			flakes: map[string]*listingFlake{web: {times: 2, fail: answerEachInTurn(http.StatusServiceUnavailable, http.StatusTooManyRequests)}},
+			row:    ": 2 entities, 1 read retried",
+		},
+		{
 			name: "two listings dropped once each, by a reset and by an answer cut short",
 			flakes: map[string]*listingFlake{
 				web: {times: 1, fail: resetTheConnection},
@@ -1226,8 +1251,11 @@ func TestRegistryUpdateCountsTheReadsItAskedAgain(t *testing.T) {
 			publishComponent(t, reg.host, web, "1.0.0")
 			config := "workspace: {}\nregistries:\n  - host: " + reg.host + "\n"
 
+			// The 429 row's registry names no wait, so the walk is told a short one in
+			// place of the production default; nothing else here meets that wait.
+			ctx := oci.WithBusyTiming(t.Context(), oci.BusyWaitLimit, 10*time.Millisecond, 0)
 			var out bytes.Buffer
-			if err := registryUpdateRun(t.Context(), registryUpdateConfig{ws: resolveWorkspaceWithConfig(t, t.TempDir(), config), Out: &out, now: frozenClock()}); err != nil {
+			if err := registryUpdateRun(ctx, registryUpdateConfig{ws: resolveWorkspaceWithConfig(t, t.TempDir(), config), Out: &out, now: frozenClock()}); err != nil {
 				t.Fatalf("registryUpdateRun: %v\n%s", err, out.String())
 			}
 			for repo, flake := range row.flakes {
@@ -1248,6 +1276,180 @@ func TestRegistryUpdateCountsTheReadsItAskedAgain(t *testing.T) {
 			if want := "\n  " + reg.host + row.row + "\n"; !strings.Contains(outcome, want) {
 				t.Errorf("the closing summary does not state the reads asked again on the registry's row (looked for %q):\n%s\nwhole output:\n%s",
 					strings.TrimSpace(want), outcome, printed)
+			}
+		})
+	}
+}
+
+// windowLimitedRegistry is an in-process OCI registry over HTTP that, once armed,
+// limits its one client per window the way a rate limit counting requests does: in
+// each of the first `windows` windows it serves `burst` requests and refuses the
+// next `block` with 429, naming no wait; after those windows it serves everything.
+// A window is counted in requests rather than in time, so whether the limit is met
+// does not depend on how fast the machine runs the walk.
+type windowLimitedRegistry struct {
+	host                  string
+	inner                 http.Handler
+	burst, block, windows int
+
+	mu      sync.Mutex
+	armed   bool
+	seen    int
+	refused int
+}
+
+func newWindowLimitedRegistry(t *testing.T, burst, block, windows int) *windowLimitedRegistry {
+	t.Helper()
+	r := &windowLimitedRegistry{inner: registry.New(), burst: burst, block: block, windows: windows}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.mu.Lock()
+		refuse := false
+		if r.armed {
+			window, at := r.seen/(r.burst+r.block), r.seen%(r.burst+r.block)
+			refuse = window < r.windows && at >= r.burst
+			r.seen++
+			if refuse {
+				r.refused++
+			}
+		}
+		r.mu.Unlock()
+		if refuse {
+			http.Error(w, "slow down", http.StatusTooManyRequests)
+			return
+		}
+		r.inner.ServeHTTP(w, req)
+	}))
+	t.Cleanup(srv.Close)
+	r.host = strings.TrimPrefix(srv.URL, "http://")
+	return r
+}
+
+// TestRegistryUpdateSlowsDownOnARateLimitedRegistryAndRecovers walks a registry of
+// sixty repositories that rate-limits the walk per window, and requires the walk to
+// index every one of them, and the allowance of requests in flight to the registry
+// to have fallen below the walk's own sixteen and been raised back to sixteen as the
+// registry answered again (oci.ObserveRegistryAllowance, test instrumentation; no
+// time is measured). The walk is told a wait of five milliseconds in place of the
+// production default (oci.WithBusyTiming).
+//
+// Sixty repositories leave the walk well over the answers it takes, after the last
+// refused window, to raise an allowance lowered to one back to sixteen
+// (1+2+…+15 = 120), at the handful of requests each repository costs.
+//
+// A walk that skipped what the registry refused indexes fewer than sixty; one that
+// never lowered its allowance reports none below sixteen; one that never raised it
+// again ends below sixteen.
+func TestRegistryUpdateSlowsDownOnARateLimitedRegistryAndRecovers(t *testing.T) {
+	// Not parallel: the walk resolves its source through the process-global
+	// index-target seam, which other tests in this package point elsewhere; here it
+	// is read at its production value, so the walk reaches the registry over HTTP.
+	const repositories = 60
+	reg := newWindowLimitedRegistry(t, 10, 4, 2)
+	for i := range repositories {
+		publishComponent(t, reg.host, fmt.Sprintf("component/core/busy-%02d", i), "1.0.0")
+	}
+	var mu sync.Mutex
+	var trail []int
+	stop := oci.ObserveRegistryAllowance(func(host string, allowed int) {
+		if host != reg.host {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		trail = append(trail, allowed)
+	})
+	t.Cleanup(stop)
+	reg.mu.Lock()
+	reg.armed = true
+	reg.mu.Unlock()
+
+	config := "workspace: {}\nregistries:\n  - host: " + reg.host + "\n"
+	ctx := oci.WithBusyTiming(t.Context(), oci.BusyWaitLimit, 5*time.Millisecond, 0)
+	var out bytes.Buffer
+	if err := registryUpdateRun(ctx, registryUpdateConfig{ws: resolveWorkspaceWithConfig(t, t.TempDir(), config), Out: &out, now: frozenClock()}); err != nil {
+		t.Fatalf("registryUpdateRun: %v\n%s", err, out.String())
+	}
+	if want := "\n  " + reg.host + ": 60 entities, "; !strings.Contains(out.String(), want) {
+		t.Errorf("the closing summary does not report every repository indexed (looked for %q):\n%s", strings.TrimSpace(want), out.String())
+	}
+	reg.mu.Lock()
+	refused := reg.refused
+	reg.mu.Unlock()
+	if refused == 0 {
+		t.Fatal("the registry refused nothing, so this run proves nothing about slowing down")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(trail) == 0 {
+		t.Fatalf("the allowance never moved, though the registry refused %d request(s)", refused)
+	}
+	if lowest := slices.Min(trail); lowest >= 16 {
+		t.Errorf("the allowance never fell below the walk's sixteen: %v", trail)
+	}
+	if last := trail[len(trail)-1]; last != 16 {
+		t.Errorf("the allowance ended at %d, not back at the walk's sixteen: %v", last, trail)
+	}
+}
+
+// TestRegistryUpdateEndsWithANamedRefusalOnARegistryThatNeverStopsAskingToSlowDown
+// walks a registry that answers 429, naming no wait, for ever — one row where it
+// refuses every request, its repository listing included, and one where it refuses
+// one repository's tag listing and serves everything else. The command is told a
+// bound of a third of a second and a wait of ten milliseconds
+// (oci.WithBusyTiming), so the bound is met in a fraction of a second.
+//
+// Each row requires the command to end with an error, and its output to name the
+// registry as not indexed, with the refusal naming the registry and its last
+// answer. A client with no bound on its waiting never returns, and the test is
+// then stopped by its run's own time limit rather than passing; a walk that
+// skipped the refused repository and went on reports the registry indexed, with
+// an index of part of it, and fails the "Not indexed" line.
+func TestRegistryUpdateEndsWithANamedRefusalOnARegistryThatNeverStopsAskingToSlowDown(t *testing.T) {
+	// Not parallel: the walk resolves its source through the process-global
+	// index-target seam, which other tests in this package point elsewhere; here it
+	// is read at its production value, so the walk reaches the registry over HTTP.
+	const (
+		web = "component/core/web"
+		api = "component/core/api"
+	)
+	refuseEverything := func(t *testing.T) string {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			answerWithStatus(http.StatusTooManyRequests)(w, req, nil)
+		}))
+		t.Cleanup(srv.Close)
+		return strings.TrimPrefix(srv.URL, "http://")
+	}
+	refuseOneListing := func(t *testing.T) string {
+		reg := newFlakyListingRegistry(t, map[string]*listingFlake{web: {fail: answerWithStatus(http.StatusTooManyRequests)}})
+		publishComponent(t, reg.host, api, "1.0.0")
+		publishComponent(t, reg.host, web, "1.0.0")
+		return reg.host
+	}
+	rows := []struct {
+		name     string
+		registry func(t *testing.T) string
+	}{
+		{"every request, the repository listing included", refuseEverything},
+		{"one repository's tag listing", refuseOneListing},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			host := row.registry(t)
+			config := "workspace: {}\nregistries:\n  - host: " + host + "\n"
+			ctx := oci.WithBusyTiming(t.Context(), 300*time.Millisecond, 10*time.Millisecond, 0)
+			var out bytes.Buffer
+			err := registryUpdateRun(ctx, registryUpdateConfig{ws: resolveWorkspaceWithConfig(t, t.TempDir(), config), Out: &out, now: frozenClock()})
+			printed := out.String()
+			if err == nil {
+				t.Fatalf("registryUpdateRun succeeded against a registry that never stopped asking to slow down:\n%s", printed)
+			}
+			if !strings.Contains(printed, "Not indexed: "+host+"\n") {
+				t.Errorf("the closing summary does not name %s as not indexed:\n%s", host, printed)
+			}
+			for _, want := range []string{"registry " + host + ": ", host + " kept asking to slow down", "429 Too Many Requests"} {
+				if !strings.Contains(printed, want) {
+					t.Errorf("the output does not carry %q:\n%s", want, printed)
+				}
 			}
 		})
 	}

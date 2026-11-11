@@ -245,7 +245,7 @@ func dispatchBuildWithDiag(ctx context.Context, rw *workspaceconfig.ResolvedWork
 	// is detected before the build runs so the bar's calibration is fixed for
 	// the whole run. --disable-plugin-cache forces the cold profile.
 	coldCache := wasm.PluginCompileCacheCold(wasm.ContextWithDisablePluginCache(ctx, run.DisablePluginCache))
-	progress := newProgressReporter(diagOut, diag, buildProgressSpine(coldCache))
+	progress, ctx := newOwnProgress(ctx, "build", diagOut, diag, buildProgressSpine(coldCache))
 	defer progress.finish()
 
 	result, err := buildops.Run(ctx, buildDispatchConfig(rw, releasePath, catalogFlagDirs, traceEnabled, run, progress, diagOut, out))

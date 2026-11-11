@@ -431,7 +431,7 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	if cfg.Verify {
 		diag.quiet = true
 	}
-	progress := newProgressReporter(diagOut, diag, pullProgressSpine())
+	progress, ctx := newOwnProgress(ctx, "pull", diagOut, diag, pullProgressSpine())
 	defer progress.finish()
 
 	opts := cfg.resolutionRequest()

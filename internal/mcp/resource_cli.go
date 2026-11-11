@@ -158,6 +158,14 @@ func isCommandToken(s string) bool {
 //
 // The child starts in dir, which is how the folder a call's command runs in
 // reaches it; an empty dir leaves the child in this server's own working folder.
+//
+// A command run this way carries no live progress of any kind to the caller, and
+// that is a bound of the subprocess rather than a gap a command can close: the
+// child's error stream is a buffer rather than a terminal, so its own progress
+// surface draws nothing, and nothing the child's operation reports — a step it
+// waits on, a registry that asked it to slow down — crosses the process boundary
+// to this server's progress notifications. The caller sees the command's output
+// once it ends.
 func selfExecCommand(ctx context.Context, dir string, args []string, stdout, stderr io.Writer) error {
 	self, err := os.Executable()
 	if err != nil {

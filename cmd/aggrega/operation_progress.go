@@ -4,10 +4,13 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
 	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 )
 
@@ -30,6 +33,57 @@ func (o operationObserver) Begin(step string) opprogress.End {
 func (o operationObserver) Yield() { o.p.hold() }
 
 func (o operationObserver) Beside(w io.Writer) io.Writer { return o.p.beside(w) }
+
+// stepWaitObserver is the observer a command that draws its own steps gives its
+// operation (newOwnProgress): it shows the operation's waits on someone else
+// (opprogress.Wait) — a registry that asked to slow down — beside the step in
+// flight, through the command's one reporter (beginWait), and draws none of the
+// operation's own steps (opprogress.Begin). The command's spine already draws its
+// steps, so a step the operation reports as well — the plugin loader's compile,
+// beside build's own compile row — would be drawn a second time. It draws on the
+// reporter's terms: beside the row on a terminal, one line on a terminal that
+// cannot redraw or under --plain, and nothing where standard error is not a
+// terminal.
+type stepWaitObserver struct {
+	p *progressReporter
+}
+
+func (stepWaitObserver) Begin(string) opprogress.End { return func(error) {} }
+
+func (o stepWaitObserver) Wait(step string) opprogress.End {
+	end := o.p.beginWait(step)
+	return func(error) { end() }
+}
+
+func (o stepWaitObserver) Yield() { o.p.hold() }
+
+func (o stepWaitObserver) Beside(w io.Writer) io.Writer { return o.p.beside(w) }
+
+// newOwnProgress is the one place a command that draws its own progress for its
+// whole run (clisurface.DrawsOwnProgress) makes its reporter: it returns the
+// reporter for spine on out, and ctx with the waits its operation reports drawn
+// through that reporter (stepWaitObserver). operation names the operation whose
+// row says the command draws its own progress, and an operation whose row says
+// otherwise is refused as the programming error it is, as the attach site refuses
+// a command the table does not account for (mustAttach). A test holds the set of
+// operations passed here to the set of those rows, so no such command is left
+// without its waits drawn, and holds newProgressReporter to being called nowhere
+// else but for the shared surface (showsOperationProgress).
+//
+// Where the reporter draws nothing, ctx is returned as it is: a caller that
+// reached the command's run with an observer of its own — a daemon request, an
+// assistant tool running the operation in process — keeps having the waits
+// reported to it, rather than to a reporter that shows nothing.
+func newOwnProgress(ctx context.Context, operation string, out io.Writer, opts buildDiagOptions, spine progressSpine) (*progressReporter, context.Context) {
+	if display, _ := clisurface.OperationWaitDisplay(operation); display != clisurface.DrawsOwnProgress {
+		panic(fmt.Sprintf("internal: %q is not an operation whose command draws its own progress", operation))
+	}
+	p := newProgressReporter(out, opts, spine)
+	if !p.draws() {
+		return p, ctx
+	}
+	return p, opprogress.With(ctx, stepWaitObserver{p: p})
+}
 
 // operationProgressSpine is the progress spine of a command whose steps are the
 // ones its operation reports as it reaches them: none known up front, each added

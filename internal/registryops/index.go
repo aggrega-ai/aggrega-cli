@@ -174,7 +174,12 @@ func enumerateRepositoriesWithin(ctx context.Context, reg RepoLister, query stri
 		return nil
 	})
 	if err != nil {
-		if errors.Is(err, errRepositoryListingRepeated) {
+		// A registry that kept asking to slow down is refused whole, as one whose
+		// listing repeats itself is: what the pages before the refusal named is
+		// not the registry's listing, and a partial listing reads as a complete
+		// one. It is named before the walk's own bound, because a bound that ends a
+		// wait on a registry asking to slow down ends it with that refusal.
+		if errors.Is(err, errRepositoryListingRepeated) || errors.Is(err, oci.ErrRegistryTooBusy()) {
 			return nil, err
 		}
 		if expired() {
@@ -346,8 +351,9 @@ type DeprecationNote struct {
 // machine's resolver as much as the condition.
 //
 // ReadsRetried is how many of the walk's reads the registry refused or dropped in
-// passing and were asked again (readRetryingTransport), each read counted once
-// however many times it was asked; zero where none was. It says how near the walk
+// passing and were asked again (readRetryingTransport), or asked the walk to slow
+// down on and were sent again, each read counted once however many times, and for
+// however many of those reasons, it was asked; zero where none was. It says how near the walk
 // came to repositories it could not read: a read asked again that then succeeded
 // leaves nothing in Skipped, and only this count shows it happened. The command
 // line's closing summary states it on the registry's row, and the encoded form of
@@ -625,7 +631,10 @@ func updateHostIndex(
 	hu = HostUpdate{Host: host}
 	// Every read of this registry's walk is counted where it is asked again, and the
 	// count is the walk's to report however it ends.
-	ctx, retried := countingReadRetries(ctx)
+	// The count travels with the requests rather than with a transport because the
+	// walk reaches its registry through the IndexTarget seam, which hands back a
+	// source and nothing to read a count from.
+	ctx, retried := oci.CountAskedAgain(ctx)
 	defer func() { hu.ReadsRetried = int(retried.Load()) }()
 	// Every signature this walk verifies against the live public trust root
 	// verifies against one fetch of it, made by the first verification that needs
@@ -655,6 +664,10 @@ func updateHostIndex(
 	if workers <= 0 {
 		workers = indexWalkWorkers
 	}
+	// A registry that asks the walk to slow down has its allowance of requests in
+	// flight lowered, and raised again as it answers; the walk's own concurrency is
+	// what it is raised back up to.
+	ctx = oci.WithConcurrencyCeiling(ctx, workers)
 	hw := &hostWalk{
 		wsCfg:  cfg,
 		policy: policy,
@@ -747,6 +760,30 @@ type hostWalk struct {
 	src    IndexSource
 	prior  priorIndex
 	reuse  bool
+	// tooBusy is the one thing the workers do change: the first read refused
+	// because the registry kept asking to slow down, which ends the whole walk
+	// (buildHostIndex). It is nil on a walk that set none up.
+	tooBusy *walkRefusal
+}
+
+// walkRefusal holds the refusal that ended a walk, and stops the walk's
+// remaining reads the first time one is recorded.
+type walkRefusal struct {
+	once sync.Once
+	err  error
+	stop context.CancelFunc
+}
+
+// record keeps err as the walk's refusal, where none is kept yet, and stops the
+// walk.
+func (r *walkRefusal) record(err error) {
+	if r == nil {
+		return
+	}
+	r.once.Do(func() {
+		r.err = err
+		r.stop()
+	})
 }
 
 // unreadable settles a repository the walk could not read: one of its reads
@@ -759,7 +796,14 @@ type hostWalk struct {
 // another policy, or none, leaves the repository out of this index. Either way it
 // is named as a repository that could not be read, with the read that failed and
 // the kind of its last failure (unreadReason).
+//
+// A read refused because the registry kept asking to slow down
+// (oci.ErrRegistryTooBusy) is a refusal of the registry rather than of the
+// repository, and it ends the whole walk (buildHostIndex).
 func (hw *hostWalk) unreadable(w *repoWalk, repo, uri string, err error) {
+	if errors.Is(err, oci.ErrRegistryTooBusy()) {
+		hw.tooBusy.record(err)
+	}
 	w.notes = nil
 	w.text.Reset()
 	reason := unreadReason(err)
@@ -851,11 +895,21 @@ func (w *repoWalk) skip(repo, reason string) {
 // progress hears how many repositories the walk reads once the listing is read,
 // and then, as each repository is reported, how many have been: it is told from
 // the same place, in the same order, as the commentary is written.
+//
+// 🔴 A registry that kept asking to slow down ends the walk whole. The first read
+// refused that way (oci.ErrRegistryTooBusy) stops every read still to come and is
+// returned as the walk's error, so the registry is reported as not indexed and
+// keeps the index it had: every other repository would be refused by the same
+// registry in turn, and an index of whatever was read before the refusal is a
+// partial one that reads as complete.
 func buildHostIndex(ctx context.Context, hw *hostWalk, workers int, hu *HostUpdate, notices io.Writer, progress UpdateProgress) (HostIndex, error) {
 	repos, err := EnumerateRepositories(ctx, hw.src, "", CatalogScope)
 	if err != nil {
 		return HostIndex{}, err
 	}
+	ctx, stopWalk := context.WithCancel(ctx)
+	defer stopWalk()
+	hw.tooBusy = &walkRefusal{stop: stopWalk}
 	progress.listed(len(repos))
 	idx := HostIndex{Host: hw.host, Revalidations: map[string]registryindex.Revalidation{}}
 	walks := make([]repoWalk, len(repos))
@@ -908,6 +962,9 @@ func buildHostIndex(ctx context.Context, hw *hostWalk, workers int, hu *HostUpda
 		}()
 	}
 	wg.Wait()
+	if hw.tooBusy.err != nil {
+		return HostIndex{}, hw.tooBusy.err
+	}
 	registryindex.SortRecords(idx.Records)
 	return idx, nil
 }

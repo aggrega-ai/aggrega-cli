@@ -481,6 +481,11 @@ func NewRemoteRegistry(host string, httpClient *http.Client) (*remote.Registry, 
 // registry asks for a credential — is reported in a fixed sentence naming the
 // registry and the credential file, never in the store's own words, which can
 // quote what the file holds. See storeCredential.
+//
+// The client every target is given sends its requests through RegistryClient,
+// the one place that decides how a request reacts to a registry asking it to slow
+// down. A target built around the egress client directly would reach the registry
+// with no wait, no shared allowance and no bound on its refusals.
 func remoteClient(registryHost string, httpClient *http.Client) (plainHTTP bool, client *auth.Client, err error) {
 	if httpClient == nil {
 		return false, nil, fmt.Errorf("oci: nil egress client; obtain the HTTP client from pkg/egress before constructing a remote target")
@@ -490,7 +495,7 @@ func remoteClient(registryHost string, httpClient *http.Client) (plainHTTP bool,
 		return false, nil, credentialfailure.Unreadable(registryHost, "", err)
 	}
 	return registryhost.IsLoopback(registryHost), &auth.Client{
-		Client:     httpClient,
+		Client:     RegistryClient(httpClient),
 		Credential: storeCredential(store),
 	}, nil
 }
@@ -516,7 +521,7 @@ func VerifyCredential(ctx context.Context, registryHost string, cred auth.Creden
 	// login time rather than silently at the first push. The home's loopback
 	// plain-HTTP decision and egress-supplied transport are kept.
 	reg.Client = &auth.Client{
-		Client:     httpClient,
+		Client:     RegistryClient(httpClient),
 		Credential: auth.StaticCredential(reg.Reference.Registry, cred),
 	}
 	if err := reg.Ping(ctx); err != nil {
