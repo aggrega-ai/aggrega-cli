@@ -60,13 +60,14 @@ type lazyWorkspace struct {
 	// keyboard.
 	errOut io.Writer
 	// withholdFirstRun suppresses the first-run configuration notice for this
-	// invocation. The root command sets it on the command the notice names,
-	// which would otherwise be told to run what it is already running.
+	// invocation. The root command sets it for every command whose result does not
+	// depend on which folder is the root (workspaceScopedCommand), the command the
+	// notice names among them.
 	withholdFirstRun bool
 	// withholdNoWorkspace suppresses the warning that no workspace was found
 	// (noWorkspaceNotice) for this invocation. The root command sets it for every
 	// command whose result does not depend on which folder is the root
-	// (warnsOutsideAWorkspace).
+	// (workspaceScopedCommand).
 	withholdNoWorkspace bool
 
 	// mu guards subject and resolved, which a command sets and the resolution
@@ -215,9 +216,11 @@ func platformFromContext(ctx context.Context) machinedirs.Platform {
 }
 
 // withholdFirstRunNotice marks the resolver attached to ctx so this invocation
-// shows no first-run configuration notice. It is called for the command the
-// notice routes a reader to: telling someone running that command to run it is
-// advice they are already taking.
+// shows no first-run configuration notice. The root command calls it for every
+// command whose result does not depend on which folder is the root
+// (workspaceScopedCommand): such a command adds nothing besides its answer. The
+// command the notice routes a reader to is one of them, so someone running it is
+// never told to run it.
 //
 // It marks the resolver rather than reading the command later because the
 // resolver is what writes the notice and it has no command to consult; the mark
@@ -232,7 +235,7 @@ func withholdFirstRunNotice(ctx context.Context) {
 // withholdNoWorkspaceNotice marks the resolver attached to ctx so this invocation
 // shows no warning that no workspace was found. The root command calls it for a
 // command whose result does not depend on which folder is the root
-// (warnsOutsideAWorkspace) — login, say, which reads only the offline posture for
+// (workspaceScopedCommand) — login, say, which reads only the offline posture for
 // its verification ping and stores the credential where every workspace on the
 // machine reads it — so telling its reader how to make a workspace would answer a
 // question the command never asks. It must be called before the workspace is

@@ -29,7 +29,7 @@ import (
 // the stream a caller parses, and it is written whether or not that stream is a
 // terminal: a log of a run that used an unintended folder is where the line is
 // most needed. Which commands may write it at all is decided by the root command
-// (warnsOutsideAWorkspace).
+// (workspaceScopedCommand).
 func noWorkspaceNotice(errOut io.Writer, rw *workspaceconfig.ResolvedWorkspace) {
 	if !rw.FoundNoWorkspace() {
 		return
@@ -37,19 +37,21 @@ func noWorkspaceNotice(errOut io.Writer, rw *workspaceconfig.ResolvedWorkspace) 
 	fmt.Fprintf(errOut, "warning: %s\n", clisurface.NoWorkspaceWarning(rw.Root()))
 }
 
-// warnsOutsideAWorkspace reports whether the command at path writes the warning
-// that the folder it runs in is no workspace (noWorkspaceNotice).
+// workspaceScopedCommand reports whether the command at path may write either of
+// the two lines a command adds about where it runs: the warning that the folder
+// is no workspace (noWorkspaceNotice), and the first-run line naming the command
+// that seeds a configuration (firstRunConfigNotice).
 //
 // It does where the operation the command carries is declared to depend on the
 // workspace root (clisurface.WorkspaceScoped), and nowhere else — the one
 // declaration the assistant server reads for the same operation. A command whose
-// result does not depend on it has nothing to tell its reader about workspaces,
-// even when reading its configuration resolves one — loading a plugin does, to
-// size the compiled-module cache. A command that carries no operation is a
-// command a configured plugin contributes, or one the command framework adds
-// itself, and it writes no warning either: the warning is said where the
-// declaration says it is owed, never by default.
-func warnsOutsideAWorkspace(path string) bool {
+// result does not depend on it has nothing to tell its reader about where it ran,
+// even when reading its configuration resolves a workspace — loading a plugin
+// does, to size the compiled-module cache. A command that carries no operation is
+// a command a configured plugin contributes, or one the command framework adds
+// itself, and it writes neither line: each is said where the declaration says it
+// is owed, never by default.
+func workspaceScopedCommand(path string) bool {
 	scope, declared := clisurface.CommandWorkspaceScope(path)
 	return declared && scope == clisurface.WorkspaceScoped
 }

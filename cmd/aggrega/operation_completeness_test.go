@@ -67,7 +67,7 @@ func TestEveryCommandBelongsToAnOperation(t *testing.T) {
 // TestEveryCommandInTheTreeDeclaresItsWorkspaceScope walks the live command tree
 // and fails, naming the command, for every runnable command that declares no
 // workspace scope: the declaration is what decides whether the command warns
-// that the folder it runs in is no workspace (warnsOutsideAWorkspace), so a
+// that the folder it runs in is no workspace (workspaceScopedCommand), so a
 // command with no row would never warn whatever its result depends on.
 //
 // Hidden commands are included, because a hidden command runs and resolves its

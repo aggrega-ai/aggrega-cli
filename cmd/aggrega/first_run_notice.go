@@ -11,14 +11,19 @@ import (
 )
 
 // configInitInvocation is how a reader types the command that seeds a
-// configuration. The first-run notice names it and the root command withholds
-// the notice on it, both from this one spelling, so the sentence a reader is
-// shown and the invocation it withholds on cannot come to name different things.
+// configuration, as the first-run notice names it. That command is
+// machine-scoped, so the notice is never written on it and a reader running it is
+// not told to run it; a test holds both facts against the live tree.
 const configInitInvocation = "aggrega config init"
 
 // firstRunConfigNotice writes one line on errOut routing a reader whose
 // resolution found no configuration file to the command that creates one, and
 // writes nothing in every other case.
+//
+// Which commands may write it at all is decided by the root command, by the one
+// declaration that decides the warning a command writes outside a workspace
+// (workspaceScopedCommand): a command whose result does not depend on the
+// workspace adds neither line to its answer.
 //
 // It is silent unless errOut is an interactive terminal, so a redirected or
 // piped error stream — a continuous-integration log, a capture, a pipeline —

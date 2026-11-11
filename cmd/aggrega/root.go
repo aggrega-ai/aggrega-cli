@@ -77,7 +77,8 @@ func newRootCmd() *cobra.Command {
 		// Whether this invocation may show the first-run configuration notice, and
 		// the warning that the folder it runs in is no workspace, is decided here
 		// too, because this is the only point that holds both the resolver that
-		// writes them and the command being run. The deferral is what keeps the
+		// writes them and the command being run. Both are decided by one
+		// declaration (workspaceScopedCommand). The deferral is what keeps the
 		// decision honest: a command that never reads configuration never reaches
 		// either.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -92,10 +93,12 @@ func newRootCmd() *cobra.Command {
 				globalConfigLookup(configPathFlag, env),
 				flagOverlayFromCobra(cmd, offlineFlag, configPathFlag))
 			nameWorkspaceRootSource(ctx, rootSource)
-			if cmd.CommandPath() == configInitInvocation {
+			// Both lines a command may add about where it runs follow one rule: a
+			// command whose result does not depend on the workspace says neither.
+			// The seeding command the first-run line names is one of them, so a
+			// reader running it is never told to run it.
+			if !workspaceScopedCommand(cmd.CommandPath()) {
 				withholdFirstRunNotice(ctx)
-			}
-			if !warnsOutsideAWorkspace(cmd.CommandPath()) {
 				withholdNoWorkspaceNotice(ctx)
 			}
 			cmd.SetContext(ctx)

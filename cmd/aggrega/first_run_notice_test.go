@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/hometest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -147,6 +148,71 @@ func TestFirstRunConfigNoticeNamesACommandTheTreeCarries(t *testing.T) {
 	if !found {
 		t.Errorf("configInitInvocation %q names no runnable command; the tree carries %q",
 			configInitInvocation, paths)
+	}
+}
+
+// firstRunNoticeOpening is how the first-run line opens, written out rather than
+// composed, for counting it in a captured error stream.
+const firstRunNoticeOpening = "No configuration file found; run '"
+
+// TestTheFirstRunNoticeIsWrittenOnlyByAWorkspaceScopedCommand runs commands
+// through the real command tree on a machine with no configuration file, at what
+// the notice takes for a terminal, from a folder no workspace resolves from, and
+// counts the first-run line on the process's error stream: once for each command
+// whose result depends on the workspace, never for one whose result does not —
+// though each of those reads the configuration too, which is the state the line
+// is written from — and never for a command that resolves nothing.
+//
+// 🔴 PLANTED DEFECT: drop the withholdFirstRunNotice call from the root command,
+// and every machine-scoped row that reads its configuration fails.
+//
+// Not parallel: it moves the process working directory, sets the process
+// environment, mutates the process-global terminal seam, and the line is written
+// to the process's error stream.
+func TestTheFirstRunNoticeIsWrittenOnlyByAWorkspaceScopedCommand(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		says bool
+	}{
+		{args: []string{"validate"}, says: true},
+		{args: []string{"cache", "status"}, says: true},
+		{args: []string{"search", "moo"}, says: true},
+		{args: []string{"config", "show"}},
+		{args: []string{"plugin", "list"}},
+		{args: []string{"registry", "list"}},
+		{args: []string{"explain", "E0007"}},
+		{args: []string{"version"}},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			setFileTerminal(t, true)
+			hometest.Isolate(t)
+			t.Setenv(workspaceconfig.EnvWorkspaceRoot, "")
+			t.Setenv("AGGREGA_OFFLINE", "true")
+			t.Chdir(folderNoWorkspaceResolvesFrom(t))
+
+			var out string
+			stderr := captureStderr(t, func() { out, _ = runAggrega(t, tc.args...) })
+			count := strings.Count(stderr, firstRunNoticeOpening)
+			switch {
+			case tc.says && count != 1:
+				t.Errorf("aggrega %s wrote the first-run line %d times, want once\nstderr:\n%s\noutput:\n%s",
+					strings.Join(tc.args, " "), count, stderr, out)
+			case !tc.says && count != 0:
+				t.Errorf("aggrega %s, whose result does not depend on the workspace, wrote the first-run line:\n%s",
+					strings.Join(tc.args, " "), stderr)
+			}
+		})
+	}
+}
+
+// TestTheCommandTheFirstRunNoticeNamesNeverShowsIt holds the one fact the root
+// command's rule relies on for the seeding command: it is not workspace-scoped,
+// so its reader is never told to run what they are already running. Declaring it
+// workspace-scoped would fail here rather than in front of that reader.
+func TestTheCommandTheFirstRunNoticeNamesNeverShowsIt(t *testing.T) {
+	t.Parallel()
+	if workspaceScopedCommand(configInitInvocation) {
+		t.Errorf("%q is declared workspace-scoped, so the first-run line would tell its reader to run it", configInitInvocation)
 	}
 }
 
