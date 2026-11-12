@@ -6,11 +6,12 @@
 # It downloads the default aggrega binary for this operating system and
 # processor from a release, checks it against the release's SHA256SUMS list,
 # and installs it as ~/.local/bin/aggrega, replacing an earlier copy there in
-# one step. Then it runs the installed binary to print its version, and, when
-# the folder is not on PATH, prints the line that puts it there. It ends by
-# printing the next steps: setting up shell completion, installing the Aggrega
+# one step. Then it checks, printing nothing, that the installed binary runs,
+# and, when the folder is not on PATH, prints the line that puts it there. It
+# prints the next steps: setting up shell completion, installing the Aggrega
 # skill for an AI assistant, and connecting an AI client to the Aggrega MCP
-# server. It never uses sudo, and it edits a shell profile only when
+# server. It ends by running the installed binary, by its full path, to print
+# its version. It never uses sudo, and it edits a shell profile only when
 # --completion sets up completion for zsh.
 #
 # Beyond the standard system utilities it needs curl or wget, uname, and
@@ -540,7 +541,9 @@ main() {
   staged=''
 
   say "installed $dest"
-  if ! "$dest" version; then
+  # Checked before completion or the skill is set up, which run it too; the
+  # version it prints is shown last, below.
+  if ! "$dest" version >/dev/null 2>&1; then
     refuse "installed $dest, but running '$dest version' failed"
   fi
 
@@ -572,6 +575,9 @@ main() {
     fi
   fi
   next_steps
+  if ! "$dest" version; then
+    refuse "installed $dest, but running '$dest version' failed"
+  fi
   exit "$status"
 }
 

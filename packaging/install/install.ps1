@@ -6,11 +6,12 @@
 # release, checks it against the release's SHA256SUMS list, and installs it as
 # %LOCALAPPDATA%\Programs\aggrega\aggrega.exe, replacing an earlier copy there
 # in one step. It adds that folder to the user PATH when it is not there yet,
-# and to the PATH of the window it runs in, then runs the installed binary to
-# print its version. It ends by printing the next steps: setting up shell
+# and to the PATH of the window it runs in, then checks, printing nothing, that
+# the installed binary runs. It prints the next steps: setting up shell
 # completion, installing the Aggrega skill for an AI assistant, and connecting
-# an AI client to the Aggrega MCP server. It runs in Windows PowerShell 5.1 and
-# in PowerShell 7, and needs no administrator rights.
+# an AI client to the Aggrega MCP server. It ends by running the installed
+# binary, by its full path, to print its version. It runs in Windows PowerShell
+# 5.1 and in PowerShell 7, and needs no administrator rights.
 #
 # Options, given to the script as a script block, since Invoke-Expression
 # passes none:
@@ -309,6 +310,32 @@ param([switch]$Completion, [switch]$Skills)
         Write-Host ''
     }
 
+    # Assert-Runs runs the installed aggrega's version command, showing what it
+    # prints when $Show is set and discarding it otherwise, and stops the
+    # install when it does not run. Inside it, a line the binary writes to its
+    # error stream is not an error of the script's own: under the Stop
+    # preference, Windows PowerShell 5.1 would end the script on the first one
+    # it redirects.
+    function Assert-Runs([bool]$Show) {
+        $ErrorActionPreference = 'Continue'
+        $why = $null
+        try {
+            if ($Show) {
+                & $dest version | Out-Host
+            } else {
+                & $dest version 2>&1 | Out-Null
+            }
+            if ($LASTEXITCODE -ne 0) {
+                $why = " with exit code $LASTEXITCODE"
+            }
+        } catch {
+            $why = ": $($_.Exception.Message)"
+        }
+        if ($why) {
+            Stop-Install "installed $dest, but running '$dest version' failed$why"
+        }
+    }
+
     function Get-ReleaseFile([string]$Url, [string]$Path) {
         try {
             # -UseBasicParsing: Windows PowerShell 5.1 otherwise needs the
@@ -493,10 +520,9 @@ param([switch]$Completion, [switch]$Skills)
         $env:Path = "$env:Path".TrimEnd(';') + ';' + $dir
     }
 
-    & $dest version
-    if ($LASTEXITCODE -ne 0) {
-        Stop-Install "installed $dest, but running '$dest version' failed with exit code $LASTEXITCODE"
-    }
+    # Checked before completion or the skill is set up, which run it too; the
+    # version it prints is shown last, below.
+    Assert-Runs $false
 
     $first = Get-Command aggrega -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($first -and $first.Path -ne $dest) {
@@ -529,6 +555,7 @@ param([switch]$Completion, [switch]$Skills)
         }
     }
     Write-NextSteps $completionDone $skillsDone
+    Assert-Runs $true
     $global:LASTEXITCODE = $status
     if ($status -ne 0) {
         $failed = @{ 3 = 'setting up shell completion'; 4 = 'installing the Aggrega skill'; 5 = 'setting up shell completion and installing the Aggrega skill' }[$status]

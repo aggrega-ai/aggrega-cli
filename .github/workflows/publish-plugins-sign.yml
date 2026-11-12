@@ -3578,7 +3578,9 @@ jobs:
         # The final side effect: attach the default, debug and light binaries for
         # linux/amd64, linux/arm64, windows/amd64, darwin/arm64 and darwin/amd64,
         # the Windows installer, the desktop extension package, the install scripts install.sh and
-        # install.ps1, and SHA256SUMS, the SHA-256 list of all of them, to the
+        # install.ps1, the quickstart scripts quickstart-ai.sh, quickstart-ai.ps1,
+        # quickstart-web.sh and quickstart-web.ps1, each of which runs one step of
+        # an example from the documentation, and SHA256SUMS, the SHA-256 list of all of them, to the
         # GitHub release for this tag so they are downloadable from the release
         # page. The default binary, under the plain name, is the
         # debug one without its debug information. The linux/amd64 and linux/arm64
@@ -3617,10 +3619,12 @@ jobs:
         # build job built — the commit each smoke run checks out, whose install
         # step ran these very scripts on its platform — and are attached under
         # their own names, so releases/latest/download/install.sh is always the
-        # latest release's. The embedded guests are
+        # latest release's. The quickstart scripts are read from the same
+        # checkout and attached the same way, under their own names; no smoke
+        # run runs them. The embedded guests are
         # NOT uploaded here — they publish to the registry with their Plugin
         # entities; the release carries only the runnable binaries, the Windows
-        # installer, the extension package, the install scripts and the list, and GitHub
+        # installer, the extension package, the install and quickstart scripts and the list, and GitHub
         # attaches the source archives on its own. The step refuses to release
         # when any of those files is missing, and refuses to re-publish a
         # release that already carries the Windows installer (below).
@@ -3736,12 +3740,17 @@ jobs:
           WINDOWS_SETUP="$(smoke_release_asset_name windows/amd64 "$BIN_VERSION" "$installer")"
           attach "$WINDOWS_INSTALLER/$installer" "$WINDOWS_SETUP" "sign-windows-installer"
           attach "$MCP_BUNDLE" "$(basename "$MCP_BUNDLE")" "the pack step"
-          # The install scripts, each named once by its path in this checkout,
-          # which is what the release job isolation check reads them by, and
-          # attached under its own file name.
+          # The install scripts and the quickstart scripts, each named once by
+          # its path in this checkout, which is what the release job isolation
+          # check reads them by, and attached under its own file name.
           INSTALL_SH=aggrega-cli/packaging/install/install.sh
           INSTALL_PS1=aggrega-cli/packaging/install/install.ps1
-          for script in "$INSTALL_SH" "$INSTALL_PS1"; do
+          QUICKSTART_AI_SH=aggrega-cli/packaging/install/quickstart-ai.sh
+          QUICKSTART_AI_PS1=aggrega-cli/packaging/install/quickstart-ai.ps1
+          QUICKSTART_WEB_SH=aggrega-cli/packaging/install/quickstart-web.sh
+          QUICKSTART_WEB_PS1=aggrega-cli/packaging/install/quickstart-web.ps1
+          for script in "$INSTALL_SH" "$INSTALL_PS1" \
+            "$QUICKSTART_AI_SH" "$QUICKSTART_AI_PS1" "$QUICKSTART_WEB_SH" "$QUICKSTART_WEB_PS1"; do
             attach "$script" "${script##*/}" "the checkout of the commit the build job built"
           done
           # Where this release's own files download from: the install commands
@@ -3802,6 +3811,7 @@ jobs:
           | \`$WINDOWS_SETUP\` | Windows installer |
           | \`$(basename "$MCP_BUNDLE")\` | Claude Desktop extension: runs an installed \`aggrega\` as a local MCP server; one file for every OS |
           | \`${INSTALL_SH##*/}\`, \`${INSTALL_PS1##*/}\` | Install scripts |
+          | \`${QUICKSTART_AI_SH##*/}\`, \`${QUICKSTART_AI_PS1##*/}\`, \`${QUICKSTART_WEB_SH##*/}\`, \`${QUICKSTART_WEB_PS1##*/}\` | Quickstart scripts: each runs one step of an example from the documentation |
           | \`SHA256SUMS\` | SHA-256 of every other file; check with \`sha256sum -c SHA256SUMS\` |
 
           **Signing:** Windows files carry a timestamped Authenticode signature from Cognitio S.r.l.; $MACOS_NOTE.
