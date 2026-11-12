@@ -290,6 +290,35 @@ param([switch]$Verbose, [switch]$Completion, [switch]$Skills)
         }
     }
 
+    # Invoke-Utf8Output runs a script block that shows what the installed
+    # aggrega prints. aggrega prints UTF-8, and PowerShell reads what a program
+    # prints in the console's output encoding, which in Windows PowerShell 5.1
+    # is the console's legacy code page, so a character outside ASCII, such as
+    # the dash in the version or a letter in the name of a user folder, would
+    # be shown garbled. While the block runs, the output encoding is UTF-8, and
+    # the one before is put back after. Where the console's encoding cannot be
+    # set, as in the PowerShell ISE, the block runs all the same.
+    function Invoke-Utf8Output([scriptblock]$Command) {
+        $utf8 = New-Object Text.UTF8Encoding $false
+        $restore = $null
+        try {
+            $before = [Console]::OutputEncoding
+            [Console]::OutputEncoding = $utf8
+            $restore = $before
+        } catch {
+        }
+        try {
+            & $Command
+        } finally {
+            if ($restore) {
+                try {
+                    [Console]::OutputEncoding = $restore
+                } catch {
+                }
+            }
+        }
+    }
+
     # Install-Skills runs the installed aggrega's own skill installation, for the
     # assistants the list after -Skills names or for the ones it finds on this
     # machine, and returns $null, or returns why it did not succeed. Finding
@@ -301,7 +330,7 @@ param([switch]$Verbose, [switch]$Completion, [switch]$Skills)
         foreach ($id in $skillsList) {
             $skillArgs += @('--agent', $id)
         }
-        & $dest @skillArgs | Out-Host
+        Invoke-Utf8Output { & $dest @skillArgs | Out-Host }
         if ($LASTEXITCODE -ne 0) {
             return "'aggrega skills install' did not succeed, as it says above"
         }
@@ -332,7 +361,7 @@ param([switch]$Verbose, [switch]$Completion, [switch]$Skills)
         $why = $null
         try {
             if ($Show) {
-                & $dest version | Out-Host
+                Invoke-Utf8Output { & $dest version | Out-Host }
             } else {
                 & $dest version 2>&1 | Out-Null
             }
