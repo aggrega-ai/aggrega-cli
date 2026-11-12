@@ -11,8 +11,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"oras.land/oras-go/v2/registry/remote/auth"
-
 	"github.com/aggrega-ai/aggrega-cli/internal/hometest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
@@ -58,7 +56,7 @@ func TestCredentialHomeRedirectIsInEffect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRemoteRepository: %v", err)
 	}
-	client, ok := repo.Client.(*auth.Client)
+	client, ok := oci.AuthClientOf(repo.Client)
 	if !ok {
 		t.Fatalf("repository transport is %T, not the authenticated client the constructor wires", repo.Client)
 	}

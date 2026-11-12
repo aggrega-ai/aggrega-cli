@@ -129,6 +129,15 @@ type Options struct {
 // over a lockfile row that records no signature, so a setting that admits an
 // artifact here admits it there and one that requires a signature requires it at
 // both.
+//
+// The registry is asked about up to oci.RegistryRequestsAtOnce entities at once,
+// each through Target. What each answer means is judged afterwards, one entity
+// after another in the order given, so the results, every notice handed to Warn
+// and the refusal returned are those of a run asking about one entity at a time:
+// the refusal is the first entity's in that order that halts, whichever answer
+// arrived first. Every live trust root the verifications need is the one fetch a
+// shared root holds (livetrust.EnsureSharedRoot) — the caller's, where ctx carries
+// one. Target is called from several goroutines at once.
 func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, error) {
 	warn := opts.Warn
 	if warn == nil {
@@ -140,17 +149,32 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 		return nil, nil
 	}
 
-	var results []Result
-	for _, e := range entities {
-		check := opts.Config.SignatureCheckFor(hostOf(e), e.Kind)
+	checks := make([]workspaceconfig.SignatureCheck, len(entities))
+	for i, e := range entities {
+		checks[i] = opts.Config.SignatureCheckFor(hostOf(e), e.Kind)
+	}
+	type answer struct {
+		res *Result
+		err error
+	}
+	answers := make([]answer, len(entities))
+	ctx = livetrust.EnsureSharedRoot(ctx)
+	oci.EachAtOnce(ctx, len(entities), oci.RegistryRequestsAtOnce, func(ctx context.Context, i int) {
+		if checks[i].Skip == workspaceconfig.SignatureSkipRegistry {
+			return
+		}
+		res, verr := verifyEntity(ctx, opts.Config, entities[i], checks[i].Policy, checks[i].Configured, opts.Target)
+		answers[i] = answer{res: res, err: verr}
+	})
 
+	var results []Result
+	for i, e := range entities {
+		check := checks[i]
 		if check.Skip == workspaceconfig.SignatureSkipRegistry {
 			warn(registrySkipNotice(check.Host))
 			continue
 		}
-
-		res, verr := verifyEntity(ctx, opts.Config, e, check.Policy, check.Configured, opts.Target)
-		res, err := judge(check, e, res, verr, warn)
+		res, err := judge(check, e, answers[i].res, answers[i].err, warn)
 		if err != nil {
 			return nil, err
 		}

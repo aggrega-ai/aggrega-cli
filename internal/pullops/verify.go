@@ -100,7 +100,10 @@ import (
 // Verification warning notices are written to diagOut (os.Stderr in production).
 //
 // targetFor resolves each verifiable item's OCI target for referrer discovery;
-// production passes remoteTargetFor (a real remote repository per registry).
+// production passes remoteTargetFor (a real remote repository per registry). Both
+// passes ask about several items at once (oci.RegistryRequestsAtOnce), so it is
+// called from several goroutines at once; what each pass records and reports is in
+// the order the items are asked about, whichever answer arrives first.
 //
 // Each verified bundle is cached beneath workspaceRoot, in the cacheDir the
 // workspace configures, and that write is held to the workspace: see

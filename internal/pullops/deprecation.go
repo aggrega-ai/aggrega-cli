@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/registryindex"
 	"github.com/aggrega-ai/aggrega-cli/pkg/deprecation"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress/livetrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pullverify"
@@ -65,34 +66,59 @@ func discoverClosureDeprecations(
 		return nil
 	}
 
-	recordByRow := make(map[lockfile.RowKey]*lockfile.DeprecationRecord, len(verifiable))
-	for _, q := range verifiable {
-		e := q.entity
-		host := e.Host
+	// The registry is asked about up to oci.RegistryRequestsAtOnce artifacts at
+	// once, and each answer is judged and reported afterwards, one question after
+	// another in the order asked — so the notices, the markers recorded and the
+	// halt are those of a pass asking about one artifact at a time: the halt is the
+	// first question's in that order whose answer halts, whichever arrived first.
+	// The marker signatures verify against the one live trust root a shared root
+	// holds (livetrust.EnsureSharedRoot), the pull's own where ctx carries it.
+	type asked struct {
+		policy     workspaceconfig.RegistryConfig
+		configured bool
+		skip       bool
+		rec        *lockfile.DeprecationRecord
+		err        error
+	}
+	answers := make([]asked, len(verifiable))
+	for i, q := range verifiable {
+		host := q.entity.Host
 		if host == "" {
-			host = registryhost.Of(e.URI)
+			host = registryhost.Of(q.entity.URI)
 		}
 		policy, configured := wsCfg.RegistryTrustPolicy(host)
-		if policy.SkipSignatureVerification {
-			continue
+		answers[i] = asked{policy: policy, configured: configured, skip: policy.SkipSignatureVerification}
+	}
+	ctx = livetrust.EnsureSharedRoot(ctx)
+	oci.EachAtOnce(ctx, len(verifiable), oci.RegistryRequestsAtOnce, func(ctx context.Context, i int) {
+		if answers[i].skip {
+			return
 		}
-
+		q := verifiable[i]
 		var origSigner *pullverify.Result
 		if r, ok := sigFactByRow[q.row]; ok {
 			rr := r
 			origSigner = &rr
 		}
+		answers[i].rec, answers[i].err = discoverEntityDeprecation(ctx, wsCfg, q.entity, answers[i].policy, origSigner, targetFor)
+	})
 
-		rec, verr := discoverEntityDeprecation(ctx, wsCfg, e, policy, origSigner, targetFor)
-		if verr != nil {
-			if herr := honorDeprecationDiscoveryError(e, policy, configured, verr, diagOut); herr != nil {
+	recordByRow := make(map[lockfile.RowKey]*lockfile.DeprecationRecord, len(verifiable))
+	for i, q := range verifiable {
+		a := answers[i]
+		if a.skip {
+			continue
+		}
+		e := q.entity
+		if a.err != nil {
+			if herr := honorDeprecationDiscoveryError(e, a.policy, a.configured, a.err, diagOut); herr != nil {
 				return herr
 			}
 			continue
 		}
-		if rec != nil {
-			recordByRow[q.row] = rec
-			fmt.Fprintf(diagOut, "  deprecation: %s %s by %s\n", e.URI, deprecation.Severity(rec.Severity).StatedAs(), deprecationSignerLabel(rec.Signer))
+		if a.rec != nil {
+			recordByRow[q.row] = a.rec
+			fmt.Fprintf(diagOut, "  deprecation: %s %s by %s\n", e.URI, deprecation.Severity(a.rec.Severity).StatedAs(), deprecationSignerLabel(a.rec.Signer))
 		}
 	}
 

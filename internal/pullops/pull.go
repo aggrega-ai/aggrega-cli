@@ -24,6 +24,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress/livetrust"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -488,6 +489,14 @@ func stopped(ctx context.Context) error {
 	return nil
 }
 
+// runContext returns the context one run of the resolution is carried out under:
+// the caller's, holding a live trust root of the run's own (livetrust.WithSharedRoot),
+// so every verification in the run shares one fetch of it and no root fetched for
+// an earlier run, in a process that runs many, is handed to this one.
+func runContext(ctx context.Context) context.Context {
+	return livetrust.WithSharedRoot(ctx)
+}
+
 // Run executes the dependency resolution against the supplied configuration.
 // Loads workspace config + Release + Manifest + Aggregate, walks the catalog and
 // source closures, and writes the per-Release lockfile.
@@ -544,7 +553,15 @@ func stopped(ctx context.Context) error {
 // record written beside the file is part of the same landing, so a stop between
 // the two would leave a lockfile whose companion record does not describe it —
 // a worse state than either finishing or not starting.
+//
+// # One live trust root per run
+//
+// Every signature the run verifies against the live public trust root — the
+// signature pass, the deprecation-marker pass, the verdict-plugin verification —
+// verifies against one fetch of it, made by the first verification that needs it
+// (runContext). A run pinning its own trust root, or an offline one, is unchanged.
 func Run(ctx context.Context, cfg Config) (Result, error) {
+	ctx = runContext(ctx)
 	if err := cfg.VerifyConflict(); err != nil {
 		return Result{}, err
 	}

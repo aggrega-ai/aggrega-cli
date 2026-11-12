@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sync"
 	"testing"
 
 	"oras.land/oras-go/v2"
@@ -39,11 +40,17 @@ const reaskHost = "keyed.example.com"
 // registry request the pass makes — the signature lookup and the deprecation-marker
 // discovery alike — goes through the target, so a reference absent from the log is
 // one the registry was asked nothing about.
+//
+// A pass asks about several references at once, so the log is written under a
+// lock; it is read only once the pass has returned.
 type askLog struct {
+	mu   sync.Mutex
 	uris []string
 }
 
 func (l *askLog) asked(uri string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	for _, u := range l.uris {
 		if u == uri {
 			return true
@@ -55,7 +62,9 @@ func (l *askLog) asked(uri string) bool {
 // countingTargetFor is inner with every reference it is asked for recorded.
 func countingTargetFor(inner pullverify.TargetFor, log *askLog) pullverify.TargetFor {
 	return func(e pullverify.Entity) (oras.ReadOnlyTarget, string, error) {
+		log.mu.Lock()
 		log.uris = append(log.uris, e.URI)
+		log.mu.Unlock()
 		return inner(e)
 	}
 }

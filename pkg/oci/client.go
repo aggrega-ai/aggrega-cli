@@ -486,7 +486,16 @@ func NewRemoteRegistry(host string, httpClient *http.Client) (*remote.Registry, 
 // the one place that decides how a request reacts to a registry asking it to slow
 // down. A target built around the egress client directly would reach the registry
 // with no wait, no shared allowance and no bound on its refusals.
-func remoteClient(registryHost string, httpClient *http.Client) (plainHTTP bool, client *auth.Client, err error) {
+//
+// The auth client remembers what each registry's sign-in taught it (signInCache):
+// once a registry has challenged a request, the requests after it, through any
+// target this process builds, are sent with the credential the first time. What is
+// remembered lives for the process, is never written anywhere, and is filed under
+// the credential it was obtained with, so a request is only ever sent with a scheme
+// or token learned under the credential it is made with. The first request this
+// process sends a registry goes alone (signInClient), so many requests started at
+// once draw one challenge rather than one each.
+func remoteClient(registryHost string, httpClient *http.Client) (plainHTTP bool, client remote.Client, err error) {
 	if httpClient == nil {
 		return false, nil, fmt.Errorf("oci: nil egress client; obtain the HTTP client from pkg/egress before constructing a remote target")
 	}
@@ -494,10 +503,28 @@ func remoteClient(registryHost string, httpClient *http.Client) (plainHTTP bool,
 	if err != nil {
 		return false, nil, credentialfailure.Unreadable(registryHost, "", err)
 	}
-	return registryhost.IsLoopback(registryHost), &auth.Client{
+	return registryhost.IsLoopback(registryHost), signInClientFor(httpClient, storeCredential(store)), nil
+}
+
+// signInClientFor builds the client one remote target sends its requests through:
+// an auth client over RegistryClient(httpClient), remembering what each registry's
+// sign-in taught it (signInCache), behind the first-contact wait (signInClient).
+//
+// read is the credential store. It is read at most once per registry host for the
+// whole life of the target (onceForTheTarget), and that one answer is what both the
+// sign-in sends and the sign-in cache files the request under, so the two cannot
+// differ. Once per target rather than once per request because a store that
+// delegates to a credential helper starts a process for every read, and a
+// challenged registry consults the credential on every request; once per target
+// rather than once per process because a target serves one operation, so the next
+// target — and with it a login made since — reads the store afresh.
+func signInClientFor(httpClient *http.Client, read auth.CredentialFunc) *signInClient {
+	credential := pinnedFirst(onceForTheTarget(read))
+	return &signInClient{auth: &auth.Client{
 		Client:     RegistryClient(httpClient),
-		Credential: storeCredential(store),
-	}, nil
+		Credential: credential,
+		Cache:      signInCache{credential: credential},
+	}}
 }
 
 // VerifyCredential checks a username/password against a registry by pinging
@@ -520,9 +547,14 @@ func VerifyCredential(ctx context.Context, registryHost string, cred auth.Creden
 	// passed in rather than whatever the store holds, so a typo fails loudly at
 	// login time rather than silently at the first push. The home's loopback
 	// plain-HTTP decision and egress-supplied transport are kept.
+	//
+	// Its cache is its own and ends with the call: it verifies one credential, so
+	// it neither reads a token another request obtained nor leaves one behind for
+	// any request after it.
 	reg.Client = &auth.Client{
 		Client:     RegistryClient(httpClient),
 		Credential: auth.StaticCredential(reg.Reference.Registry, cred),
+		Cache:      auth.NewCache(),
 	}
 	if err := reg.Ping(ctx); err != nil {
 		if isUnauthorized(err) {

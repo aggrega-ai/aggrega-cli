@@ -51,12 +51,31 @@ func WithSharedRoot(ctx context.Context) context.Context {
 	return context.WithValue(ctx, sharedRootKey{}, &sharedRoot{})
 }
 
+// EnsureSharedRoot returns ctx itself where it already carries a shared root
+// ([WithSharedRoot]), and [WithSharedRoot] of ctx otherwise. It is for a pass that
+// verifies several signatures at once and may be reached both under a caller that
+// shares one root across a larger run and under one that shares none: the first
+// keeps sharing the caller's one fetch, and the second shares one fetch among the
+// pass's own verifications rather than letting them fetch side by side.
+func EnsureSharedRoot(ctx context.Context) context.Context {
+	if sharedRootOf(ctx) != nil {
+		return ctx
+	}
+	return WithSharedRoot(ctx)
+}
+
+// sharedRootOf returns the shared root ctx carries ([WithSharedRoot]), or nil.
+func sharedRootOf(ctx context.Context) *sharedRoot {
+	shared, _ := ctx.Value(sharedRootKey{}).(*sharedRoot)
+	return shared
+}
+
 // TrustedRootWithin is [TrustedRoot] for a verification made under ctx. Where ctx
 // carries a shared root ([WithSharedRoot]) and cfg is not offline, it is that
 // root, fetched by the first call that needed it; otherwise it is a fetch of its
 // own, exactly as [TrustedRoot] makes one.
 func TrustedRootWithin(ctx context.Context, cfg workspaceconfig.Config) (root.TrustedMaterial, error) {
-	shared, _ := ctx.Value(sharedRootKey{}).(*sharedRoot)
+	shared := sharedRootOf(ctx)
 	if shared == nil || cfg.Offline {
 		return TrustedRoot(cfg)
 	}
