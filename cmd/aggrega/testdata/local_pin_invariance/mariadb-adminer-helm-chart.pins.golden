@@ -2,19 +2,19 @@ entities:
     - kind: aggregate
       uri: aggregate
       resolved_version: ""
-      digest: sha256:5e08d61dc98038abcf5fb0bc796fcc76312dc10092d8aa5f41ea525c540c1300
+      digest: sha256:d7b11215032cdb097cd306ae0a140ce69a3526193a7efe9c9abce1274e955ecb
       referenced_from:
         - release.spec.aggregate
     - kind: component
       uri: core/datastore/mariadb
       resolved_version: 1.0.0
-      digest: sha256:4c435dfe9f4335089a9244a71ab60c21f29aa57bbc6a78b6847adf028168e8a3
+      digest: sha256:406652e242fcc765709089db93c48dc3a5a6032498c3369f1759508cf1445ae9
       referenced_from:
         - aggregate.spec.components.db.type
     - kind: component
       uri: core/datastore/mariadb:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:4c435dfe9f4335089a9244a71ab60c21f29aa57bbc6a78b6847adf028168e8a3
+      digest: sha256:406652e242fcc765709089db93c48dc3a5a6032498c3369f1759508cf1445ae9
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - kind: component
@@ -32,55 +32,55 @@ entities:
     - kind: feature
       uri: core/secret-provided
       resolved_version: 1.0.0
-      digest: sha256:66eb50f705d2c525a06f632d732a801738a2588a37ee2981394430053481e73d
+      digest: sha256:c3ced27948662bfa57fae6e4089e2e9107ac3669007933521e7e3d0d199a52e2
       referenced_from:
         - aggregate.spec.components.db.features.user_password.type
     - kind: feature
       uri: core/secret-provided:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:66eb50f705d2c525a06f632d732a801738a2588a37ee2981394430053481e73d
+      digest: sha256:c3ced27948662bfa57fae6e4089e2e9107ac3669007933521e7e3d0d199a52e2
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
     - kind: feature
       uri: core/secret-value
       resolved_version: 1.0.0
-      digest: sha256:a6c27eb2642c1793b183a198c07a1379a8e6ddc3798485b27de814806b7d8a44
+      digest: sha256:5223fb085296b25e76cb2c969d5ab531252253b94b03b6803fb68d72d7121e20
       referenced_from:
         - aggregate.spec.components.db.features.root_password.type
     - kind: feature
       uri: core/secret-value:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:a6c27eb2642c1793b183a198c07a1379a8e6ddc3798485b27de814806b7d8a44
+      digest: sha256:5223fb085296b25e76cb2c969d5ab531252253b94b03b6803fb68d72d7121e20
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-value:1.0.0
     - kind: recipe
       uri: helm-chart/adminer-chart:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:ccdb3757b00b38b7d223fbe7f2c7f8caacb572582e65e38983d3015dc728dccc
+      digest: sha256:5ee1102136025dc39eff6b46a95727e73fb7161e3d67945b7fbe2fa1926956c7
       referenced_from:
         - manifest.spec.mappings.components.type.core/devtool/adminer:1.0.0
     - kind: recipe
       uri: helm-chart/mariadb-chart:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:976a269995ed46f7d37b62a0adff2b7b7c7e6e79d98ffc5aa7b3aadb723a44ae
+      digest: sha256:486f0272d134579324caa066fb92ee73c0d071a52be54666752e85b0370230ce
       referenced_from:
         - manifest.spec.mappings.components.type.core/datastore/mariadb:1.0.0
     - kind: feature_recipe
       uri: helm/env-secret:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:edef39a8a1a489501ba0141db1cd77f070134ae08ff4d91029a177990477ddd1
+      digest: sha256:2af44e92bede25520211407a2f61b0bc5709e37cc11e3e030c4676e9b1e85afa
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-value:1.0.0
     - kind: feature_recipe
       uri: helm/provided-secret:1.0.0
       resolved_version: 1.0.0
-      digest: sha256:f8bd8cd0ab38a4b7459d3821eb1a371575a048234971789421ad6914b9c695b9
+      digest: sha256:0dc2a13d1b5013ef95e9651f8a780ac5797cd8f835f6375b84fd54403b775350
       referenced_from:
         - manifest.spec.mappings.features.type.core/secret-provided:1.0.0
     - kind: manifest
       uri: manifest-helm-chart
       resolved_version: ""
-      digest: sha256:787e044fd12c29914b3ffc6cd0e68a895b069c1be866142498ebfdbcab2d44f4
+      digest: sha256:d52507dd860be444c930d54e842c4813fc97dac1128e23580eb2261809f4a2e0
       referenced_from:
         - release.spec.manifest
 external_inputs: []
@@ -94,12 +94,12 @@ providers:
       plugin: provider/helm-chart
 release: release-helm-chart.yaml
 release_documents:
-    - digest: sha256:a49059659393f23c0a9a1d41b226273941b49cd3d9dab9b30327421eb5da76a6
+    - digest: sha256:75873a1b14ca188923c0fc91206d229b0f156fbe77e95641ab26d721fd810aa9
       path: release-helm-chart.yaml
 schema_libraries:
     - uri: DbSizing
       resolved_version: 1.0.0
-      digest: sha256:35f59a1c320b1ab7042ecd97e76c61f878409df3f17142230554418ce18bbc46
+      digest: sha256:408e1196ac998c8c735b35ef41783c48ca86c2eaa02f02a31717847e248a39d7
       consumers:
         - consumer_uri: core/datastore/mariadb
           fragments:
