@@ -1,16 +1,18 @@
 #!/bin/sh
 # Run one step of quickstart-ai, the example in the Aggrega documentation that
-# builds an AI agent on a local model up in four steps:
+# builds an AI agent on a local model up in four steps. Step 1:
 #
-#   curl -fsSL https://aggrega.ai/quickstart-ai.sh | sh -s -- 1
+#   curl -fsSL https://aggrega.ai/quickstart-ai.sh | sh
 #
-#   usage: quickstart-ai.sh [--yes] 1|2|3|4
+# Another step, 2, 3 or 4, is given after `sh -s --`:
+#
+#   curl -fsSL https://aggrega.ai/quickstart-ai.sh | sh -s -- 2
 #
 # It first says what it will do and asks to continue, reading the answer from
-# the terminal even when the script itself is piped into sh; --yes goes ahead
-# without asking, and with no terminal and no --yes it refuses. It checks that
-# aggrega can be found, on PATH or in the folder the Aggrega installer puts it
-# in, and, for a step that runs, that Docker answers and has Compose. It writes
+# the terminal even when the script itself is piped into sh; --yes, given after
+# `sh -s --` too, goes ahead without asking, and with no terminal and no --yes
+# it refuses. It checks that aggrega can be found, on PATH or in the folder the
+# Aggrega installer puts it in, and, for a step that runs, that Docker answers and has Compose. It writes
 # the example into ./quickstart-ai with `aggrega scaffold --example
 # quickstart-ai`, or uses that folder as it is when it already exists, changes
 # into the step's folder, quickstart-ai/<step>, and runs the commands the
@@ -32,7 +34,7 @@
 #
 #   0  the step was built, and started where it runs
 #   1  a check or a command failed, or the answer was not yes
-#   2  the arguments are not one step, 1 to 4, with --yes or without it
+#   2  an argument is neither a step, 1 to 4, nor --yes, or two steps are given
 #
 # How the steps are written. Each step's commands are in the function
 # step_<N>, one command per line, each line the word `run` followed by the
@@ -115,10 +117,13 @@ fail() {
 
 usage() {
   printf '%s: %s\n' "$example" "$*" >&2
-  printf 'usage: %s [--yes] 1|2|3|4\n' "$example.sh" >&2
+  printf 'usage: curl -fsSL https://aggrega.ai/%s | sh\n' "$example.sh" >&2
+  printf '       another step: curl -fsSL https://aggrega.ai/%s | sh -s -- 2\n' "$example.sh" >&2
   exit 2
 }
 
+# parse_args sets step to the step the arguments give, 1 when they give none,
+# and yes when they give --yes.
 parse_args() {
   yes='' step=''
   for arg in "$@"; do
@@ -132,7 +137,7 @@ parse_args() {
       *) usage "'$arg' is not a step; the steps are 1, 2, 3 and 4" ;;
     esac
   done
-  [ -n "$step" ] || usage "give the step to run, 1, 2, 3 or 4"
+  [ -n "$step" ] || step=1
 }
 
 confirm() {

@@ -7,17 +7,30 @@
 # %LOCALAPPDATA%\Programs\aggrega\aggrega.exe, replacing an earlier copy there
 # in one step. It adds that folder to the user PATH when it is not there yet,
 # and to the PATH of the window it runs in, then checks, printing nothing, that
-# the installed binary runs. It prints the next steps: setting up shell
-# completion, installing the Aggrega skill for an AI assistant, and connecting
-# an AI client to the Aggrega MCP server. It ends by running the installed
-# binary, by its full path, to print its version. It runs in Windows PowerShell
-# 5.1 and in PowerShell 7, and needs no administrator rights.
+# the installed binary runs. What it prints, on success:
 #
-# Options, given to the script as a script block, since Invoke-Expression
-# passes none:
+#   Installing aggrega <version> (windows-amd64)
+#     Downloaded and checked against its SHA-256 checksum
+#     Installed <folder>\aggrega.exe
 #
-#   & ([scriptblock]::Create((irm https://aggrega.ai/install.ps1))) -Completion -Skills
+# then, when it added the folder to the user PATH, a line saying so; then the
+# installed binary's own version, printed by running it by its full path; and
+# last, under "Next:", one line each for running the AI quickstart, adding the
+# Aggrega skill to your AI assistants, and the page that shows how to set up
+# shell completion and connect an AI client to the Aggrega MCP server. It runs
+# in Windows PowerShell 5.1 and in PowerShell 7, and needs no administrator
+# rights.
 #
+# A refusal ends in an error, and a failed step in a warning, reading:
+#
+#   aggrega install: error: <what went wrong> - <what to do>
+#
+# Options. These are switches of the script itself; Invoke-Expression passes
+# none, so they apply where the script is run with arguments:
+#
+#   -Verbose               also print the address of the checksum list, the
+#                          name of the release file and the address it is
+#                          downloaded from.
 #   -Completion            also set up shell completion, for you alone, for the
 #                          PowerShell the script runs in, using the installed
 #                          aggrega's own `aggrega completion powershell`
@@ -44,7 +57,8 @@
 #                          Enter to install for those, or type the identifiers
 #                          of others to add them. With nobody to ask it
 #                          installs for those it found. It prints each skill
-#                          folder it wrote.
+#                          folder it wrote, and the line about the skill is
+#                          left out of "Next:".
 #   -Skills <list>         install the skill for the assistants the list names
 #                          instead, such as -Skills claude-code,cursor, without
 #                          looking for others; `aggrega skills list` prints
@@ -65,7 +79,7 @@
 #   4  aggrega is installed and runs, but installing the skill failed
 #   5  aggrega is installed and runs, but both of those failed
 #
-# A failed step says why in the warning before the next steps.
+# A failed step says why in its warning, written when it fails.
 #
 # Settings, read from the environment:
 #
@@ -86,7 +100,7 @@
 # open. Everything runs inside one script block, so none of its variables or
 # preferences outlive it in the session that ran it; what it leaves in that
 # session is the folder added to its PATH, $LASTEXITCODE as above, the
-# $Completion and $Skills switches its options declare, which
+# $Verbose, $Completion and $Skills switches its options declare, which
 # Invoke-Expression defines in the session it runs in, and, in Windows
 # PowerShell 5.1, TLS 1.2 added to the protocols the session's web requests may
 # use.
@@ -94,27 +108,32 @@
 # The script is kept to ASCII: Windows PowerShell 5.1 reads a file without a
 # byte-order mark in the system's legacy code page.
 
-# The script declares no [CmdletBinding()], so PowerShell hands it every
-# argument its two switches do not take in $args rather than refusing it: the
-# assistants a list after -Skills names, and anything else, which the script
-# refuses itself, naming it.
-param([switch]$Completion, [switch]$Skills)
+# The script declares no [CmdletBinding()], so -Verbose is a switch of its own
+# rather than PowerShell's common parameter, and PowerShell hands it every
+# argument its three switches do not take in $args rather than refusing it:
+# the assistants a list after -Skills names, and anything else, which the
+# script refuses itself, naming it.
+param([switch]$Verbose, [switch]$Completion, [switch]$Skills)
 
 & {
-    param([bool]$WantCompletion, [bool]$WantSkills, [object[]]$Rest)
+    param([bool]$WantVerbose, [bool]$WantCompletion, [bool]$WantSkills, [object[]]$Rest)
 
     $ErrorActionPreference = 'Stop'
     # Windows PowerShell 5.1 redraws a progress bar for every block it
     # downloads, which slows a large download many times over.
     $ProgressPreference = 'SilentlyContinue'
 
-    function Stop-Install([string]$Message, [int]$Status = 1) {
+    # Stop-Install ends the install with an error saying what went wrong and
+    # what to do.
+    function Stop-Install([string]$Message, [string]$Todo, [int]$Status = 1) {
         $global:LASTEXITCODE = $Status
-        throw "aggrega install: $Message"
+        throw "aggrega install: error: $Message - $Todo"
     }
 
-    function Write-Step([string]$Message) {
-        Write-Host "aggrega install: $Message"
+    # Write-Item prints one line of what the install did, indented under its
+    # first line.
+    function Write-Item([string]$Message) {
+        Write-Host "  $Message"
     }
 
     # The assistants a list after -Skills names. A value of -Skills a,b reaches
@@ -122,30 +141,30 @@ param([switch]$Completion, [switch]$Skills)
     # so every argument is flattened and split on commas and spaces.
     $skillsList = @()
     $listGiven = $false
-    $usage = "; it takes -Completion and -Skills [<list>], given to the script as a script block: & ([scriptblock]::Create((irm https://aggrega.ai/install.ps1))) -Completion -Skills"
+    $options = 'the options are -Verbose, -Completion and -Skills [<list>]'
     foreach ($argument in $Rest) {
         foreach ($part in @($argument)) {
             $listGiven = $true
             $text = "$part"
             if ($text.StartsWith('-')) {
-                Stop-Install "'$text' is not an option install.ps1 takes$usage" 2
+                Stop-Install "'$text' is not an option install.ps1 takes" $options 2
             }
             if (-not $WantSkills) {
-                Stop-Install "'$text' is not an option install.ps1 takes$usage" 2
+                Stop-Install "'$text' is not an option install.ps1 takes" $options 2
             }
             foreach ($id in ($text -split '[,\s]+')) {
                 if (-not $id) {
                     continue
                 }
                 if ($id -cnotmatch '^[a-z0-9-]+$') {
-                    Stop-Install "-Skills names '$id', which is not an assistant identifier such as claude-code$usage" 2
+                    Stop-Install "-Skills names '$id', which is not an assistant identifier such as claude-code" $options 2
                 }
                 $skillsList += $id
             }
         }
     }
     if ($listGiven -and $skillsList.Count -eq 0) {
-        Stop-Install '-Skills names no assistant' 2
+        Stop-Install '-Skills names no assistant' $options 2
     }
 
     if ($PSVersionTable.PSEdition -eq 'Core') {
@@ -203,10 +222,10 @@ param([switch]$Completion, [switch]$Skills)
         try {
             $policy = Get-NewWindowPolicy
             if (@('RemoteSigned', 'Unrestricted', 'Bypass') -notcontains $policy) {
-                return "could not set up shell completion: a new $shellName window takes the execution policy $policy, under which it runs no profile, so nothing was written; Set-ExecutionPolicy -Scope CurrentUser RemoteSigned lets it run yours"
+                return "a new $shellName window takes the execution policy $policy, under which it runs no profile, so nothing was written; Set-ExecutionPolicy -Scope CurrentUser RemoteSigned lets it run yours"
             }
             if (-not $env:LOCALAPPDATA) {
-                return 'could not set up shell completion: LOCALAPPDATA is not set, so there is no folder of yours to write it into'
+                return 'LOCALAPPDATA is not set, so there is no folder of yours to write it into'
             }
             $profiles = Get-Variable -Name PROFILE -ValueOnly -ErrorAction SilentlyContinue
             $profilePath = $null
@@ -214,20 +233,20 @@ param([switch]$Completion, [switch]$Skills)
                 $profilePath = $profiles.CurrentUserAllHosts
             }
             if (-not $profilePath) {
-                return "could not set up shell completion: this $shellName names no profile file of yours"
+                return "this $shellName names no profile file of yours"
             }
 
             $completionPath = Join-Path $env:LOCALAPPDATA 'aggrega\completion.ps1'
             $text = & $dest completion powershell | Out-String
             if ($LASTEXITCODE -ne 0) {
-                return "could not set up shell completion: running '$dest completion powershell' failed with exit code $LASTEXITCODE"
+                return "running '$dest completion powershell' failed with exit code $LASTEXITCODE"
             }
             $current = $null
             if (Test-Path -LiteralPath $completionPath -PathType Leaf) {
                 $current = [IO.File]::ReadAllText($completionPath)
             }
             if ($current -ceq $text) {
-                Write-Step "$completionPath already holds aggrega's PowerShell completion; left it unchanged"
+                Write-Item "$completionPath already holds aggrega's PowerShell completion; left it unchanged"
             } else {
                 $folder = Split-Path -Parent $completionPath
                 New-Item -ItemType Directory -Force -Path $folder | Out-Null
@@ -242,7 +261,7 @@ param([switch]$Completion, [switch]$Skills)
                 } finally {
                     Remove-Item -LiteralPath $stagedScript -Force -ErrorAction SilentlyContinue
                 }
-                Write-Step "wrote aggrega's PowerShell completion to $completionPath"
+                Write-Item "Wrote aggrega's PowerShell completion to $completionPath"
             }
 
             $marker = '# Shell completion for aggrega, added by the aggrega installer.'
@@ -251,7 +270,7 @@ param([switch]$Completion, [switch]$Skills)
                 $content = [IO.File]::ReadAllText($profilePath)
             }
             if (($content -split "`r?`n") -ccontains $marker) {
-                Write-Step "$profilePath already loads it; left it unchanged"
+                Write-Item "$profilePath already loads it; left it unchanged"
                 return $null
             }
             $quoted = $completionPath.Replace("'", "''")
@@ -264,10 +283,10 @@ param([switch]$Completion, [switch]$Skills)
             $encoding = Get-ProfileEncoding $profilePath
             New-Item -ItemType Directory -Force -Path (Split-Path -Parent $profilePath) | Out-Null
             [IO.File]::AppendAllText($profilePath, $lines, $encoding)
-            Write-Step "added the lines that load it to $profilePath; $shellName reads them from a new window on"
+            Write-Item "Added the lines that load it to $profilePath; $shellName reads them from a new window on"
             return $null
         } catch {
-            return "could not set up shell completion: $($_.Exception.Message)"
+            return "$($_.Exception.Message)"
         }
     }
 
@@ -284,30 +303,22 @@ param([switch]$Completion, [switch]$Skills)
         }
         & $dest @skillArgs | Out-Host
         if ($LASTEXITCODE -ne 0) {
-            return "could not install the Aggrega skill: 'aggrega skills install' did not succeed, as it says above"
+            return "'aggrega skills install' did not succeed, as it says above"
         }
         return $null
     }
 
-    # Write-NextSteps prints one command for each thing left to set up.
-    function Write-NextSteps([bool]$CompletionDone, [bool]$SkillsDone) {
-        Write-Step 'next steps:'
+    # Write-NextSteps prints one line for each thing to do next: the AI
+    # quickstart, the skill when -Skills did not install it, and the page on
+    # shell completion and the MCP server.
+    function Write-NextSteps([bool]$SkillsDone) {
         Write-Host ''
-        if ($CompletionDone) {
-            Write-Host "  Shell completion for $shellName is set up; a new window loads it."
-        } else {
-            Write-Host "  Set up shell completion for ${shellName}:"
-            Write-Host "    & ([scriptblock]::Create((irm $base/latest/download/install.ps1))) -Completion"
+        Write-Host 'Next:'
+        Write-Host ('  {0,-30}{1}' -f 'Run the AI quickstart:', 'irm https://aggrega.ai/quickstart-ai.ps1 | iex')
+        if (-not $SkillsDone) {
+            Write-Host ('  {0,-30}{1}' -f 'Add the skill to your AI:', 'aggrega skills install --global')
         }
-        if ($SkillsDone) {
-            Write-Host '  The Aggrega skill is installed; a new session of each assistant reads it.'
-        } else {
-            Write-Host '  Install the Aggrega skill for the AI assistants on this machine:'
-            Write-Host '    aggrega skills install --global'
-        }
-        Write-Host '  Connect your AI client to the Aggrega MCP server, as this page describes:'
-        Write-Host '    https://aggrega.ai/docs/install/#connect-an-mcp-client'
-        Write-Host ''
+        Write-Host ('  {0,-30}{1}' -f 'Shell completion and MCP:', 'https://aggrega.ai/docs/install/')
     }
 
     # Assert-Runs runs the installed aggrega's version command, showing what it
@@ -332,7 +343,7 @@ param([switch]$Completion, [switch]$Skills)
             $why = ": $($_.Exception.Message)"
         }
         if ($why) {
-            Stop-Install "installed $dest, but running '$dest version' failed$why"
+            Stop-Install "installed $dest, but running '$dest version' failed$why" "run '$dest version' to see why"
         }
     }
 
@@ -355,21 +366,21 @@ param([switch]$Completion, [switch]$Skills)
     $base = $base.TrimEnd('/')
 
     if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
-        Stop-Install "install.ps1 installs on Windows; on Linux and macOS, run: curl -fsSL $base/latest/download/install.sh | sh"
+        Stop-Install 'install.ps1 installs on Windows' "on Linux and macOS, run: curl -fsSL $base/latest/download/install.sh | sh"
     }
     $machine = $env:PROCESSOR_ARCHITEW6432
     if (-not $machine) {
         $machine = $env:PROCESSOR_ARCHITECTURE
     }
     if ($machine -ne 'AMD64') {
-        Stop-Install "the processor is $machine, for which no release carries a Windows binary; Windows releases carry a binary for 64-bit x86 (AMD64)"
+        Stop-Install "the processor is $machine, for which no release carries a Windows binary" 'install on 64-bit x86 (AMD64), which Windows releases carry a binary for'
     }
 
     $requested = ''
     if ($env:AGGREGA_VERSION) {
         $requested = $env:AGGREGA_VERSION -replace '^v', ''
         if ($requested -notmatch '^[A-Za-z0-9._+-]+$') {
-            Stop-Install "AGGREGA_VERSION is '$($env:AGGREGA_VERSION)', which is not a release version such as 0.8.7 or v0.8.7"
+            Stop-Install "AGGREGA_VERSION is '$($env:AGGREGA_VERSION)', which is not a release version such as 0.8.7 or v0.8.7" 'set it to a release version, or remove it to install the latest release'
         }
     }
 
@@ -378,7 +389,7 @@ param([switch]$Completion, [switch]$Skills)
     } elseif ($env:LOCALAPPDATA) {
         $dir = Join-Path $env:LOCALAPPDATA 'Programs\aggrega'
     } else {
-        Stop-Install 'LOCALAPPDATA is not set, so there is no default folder to install into; set AGGREGA_INSTALL_DIR to one'
+        Stop-Install 'LOCALAPPDATA is not set, so there is no default folder to install into' 'set AGGREGA_INSTALL_DIR to the folder to install into'
     }
     $dir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($dir)
     if ($dir.Length -gt 3) {
@@ -386,7 +397,7 @@ param([switch]$Completion, [switch]$Skills)
     }
     $dest = Join-Path $dir 'aggrega.exe'
     if (Test-Path -LiteralPath $dest -PathType Container) {
-        Stop-Install "$dest is a folder, so aggrega cannot be installed under that name"
+        Stop-Install "$dest is a folder, so aggrega cannot be installed under that name" 'move that folder away, or set AGGREGA_INSTALL_DIR to another folder'
     }
 
     # GitHub accepts TLS 1.2 or later, which Windows PowerShell 5.1 does not
@@ -395,6 +406,8 @@ param([switch]$Completion, [switch]$Skills)
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     }
 
+    $network = 'check your network connection and run the installer again'
+    $otherRelease = 'set AGGREGA_VERSION to another release and run the installer again'
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ('aggrega-install-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $tmp | Out-Null
     $staged = $null
@@ -404,14 +417,13 @@ param([switch]$Completion, [switch]$Skills)
         } else {
             $sumsUrl = "$base/latest/download/SHA256SUMS"
         }
-        Write-Step "reading the checksum list $sumsUrl"
         $sumsPath = Join-Path $tmp 'SHA256SUMS'
         $failure = Get-ReleaseFile $sumsUrl $sumsPath
         if ($failure) {
             if ($requested) {
-                Stop-Install "could not download ${sumsUrl}: $failure; check that $requested is a published release"
+                Stop-Install "could not download ${sumsUrl}: $failure" "check that $requested is a published release"
             }
-            Stop-Install "could not download ${sumsUrl}: $failure"
+            Stop-Install "could not download ${sumsUrl}: $failure" $network
         }
 
         # The default binary is aggrega-<version>-windows-amd64.exe, where the
@@ -435,28 +447,33 @@ param([switch]$Completion, [switch]$Skills)
             $found += [pscustomobject]@{ Name = $lineName; Sum = $lineSum.ToLowerInvariant() }
         }
         if ($found.Count -eq 0) {
-            Stop-Install "the checksum list at $sumsUrl names no aggrega binary for windows/amd64"
+            Stop-Install "the checksum list at $sumsUrl names no aggrega binary for windows/amd64" $otherRelease
         }
         if ($found.Count -gt 1) {
-            Stop-Install "the checksum list at $sumsUrl names $($found.Count) aggrega binaries for windows/amd64, where it should name one"
+            Stop-Install "the checksum list at $sumsUrl names $($found.Count) aggrega binaries for windows/amd64, where it should name one" $otherRelease
         }
         $asset = $found[0].Name
         $assetSum = $found[0].Sum
         $version = $asset.Substring('aggrega-'.Length, $asset.Length - 'aggrega-'.Length - $suffix.Length)
 
         $url = "$base/download/v$version/$asset"
-        Write-Step "downloading $url"
+        Write-Host "Installing aggrega $version (windows-amd64)"
+        if ($WantVerbose) {
+            Write-Item "Checksum list:  $sumsUrl"
+            Write-Item "Release file:   $asset"
+            Write-Item "Downloaded from $url"
+        }
         $download = Join-Path $tmp $asset
         $failure = Get-ReleaseFile $url $download
         if ($failure) {
-            Stop-Install "could not download ${url}: $failure"
+            Stop-Install "could not download ${url}: $failure" $network
         }
         $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $download).Hash.ToLowerInvariant()
         if ($actual -ne $assetSum) {
             Remove-Item -LiteralPath $download -Force
-            Stop-Install "the SHA-256 checksum of the downloaded $asset is $actual, but SHA256SUMS lists $assetSum; the download was deleted and nothing was installed"
+            Stop-Install "the SHA-256 checksum of the downloaded $asset is $actual, but SHA256SUMS lists $assetSum; the download was deleted and nothing was installed" 'run the installer again'
         }
-        Write-Step "$asset matches its SHA-256 checksum in SHA256SUMS"
+        Write-Item 'Downloaded and checked against its SHA-256 checksum'
 
         # The new binary is written beside the old one under a temporary name
         # and then swapped in by one file-system call, so the folder holds
@@ -474,7 +491,7 @@ param([switch]$Completion, [switch]$Skills)
                 [IO.File]::Move($staged, $dest)
             }
         } catch {
-            Stop-Install "could not put the new aggrega.exe in place at ${dest}: $($_.Exception.Message) If aggrega is running, started by an editor or an AI client, close that and run the installer again."
+            Stop-Install "could not put the new aggrega.exe in place at ${dest}: $($_.Exception.Message)" 'if aggrega is running, started by an editor or an AI client, close that and run the installer again'
         }
         $staged = $null
         # A downloaded file can carry the mark Windows gives files from the
@@ -490,7 +507,7 @@ param([switch]$Completion, [switch]$Skills)
         Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Step "installed $dest"
+    Write-Item "Installed $dest"
 
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $onUserPath = $false
@@ -501,6 +518,7 @@ param([switch]$Completion, [switch]$Skills)
             }
         }
     }
+    $pathAdded = $false
     if (-not $onUserPath) {
         if ($userPath) {
             $newPath = $userPath.TrimEnd(';') + ';' + $dir
@@ -508,7 +526,7 @@ param([switch]$Completion, [switch]$Skills)
             $newPath = $dir
         }
         [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
-        Write-Step "added $dir to your user PATH; a terminal opened from now on finds aggrega"
+        $pathAdded = $true
     }
     $onSessionPath = $false
     foreach ($entry in "$env:Path".Split(';')) {
@@ -521,30 +539,34 @@ param([switch]$Completion, [switch]$Skills)
     }
 
     # Checked before completion or the skill is set up, which run it too; the
-    # version it prints is shown last, below.
+    # version it prints is shown below.
     Assert-Runs $false
 
-    $first = Get-Command aggrega -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($first -and $first.Path -ne $dest) {
-        Write-Step "note: the aggrega that runs by name is $($first.Path), which comes before $dir on your PATH"
-    }
-
     $status = 0
-    $completionDone = $false
     if ($WantCompletion) {
         $failure = Set-Completion
         if ($failure) {
-            Write-Warning "aggrega install: $failure"
+            Write-Warning "aggrega install: error: could not set up shell completion: $failure - aggrega is installed and runs; https://aggrega.ai/docs/install/ shows how to set completion up later"
             $status = 3
-        } else {
-            $completionDone = $true
         }
     }
+
+    if ($pathAdded) {
+        Write-Host ''
+        Write-Host "Added $dir to your user PATH. Open a new terminal to run aggrega by name."
+    }
+    $first = Get-Command aggrega -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($first -and $first.Path -ne $dest) {
+        Write-Host ''
+        Write-Host "Note: the aggrega that runs by name is $($first.Path), which comes before $dir on your PATH."
+    }
+
     $skillsDone = $false
     if ($WantSkills) {
+        Write-Host ''
         $failure = Install-Skills
         if ($failure) {
-            Write-Warning "aggrega install: $failure"
+            Write-Warning "aggrega install: error: could not install the Aggrega skill: $failure - aggrega is installed and runs; run 'aggrega skills install --global' again once that is fixed"
             if ($status -eq 3) {
                 $status = 5
             } else {
@@ -554,11 +576,13 @@ param([switch]$Completion, [switch]$Skills)
             $skillsDone = $true
         }
     }
-    Write-NextSteps $completionDone $skillsDone
+
+    Write-Host ''
     Assert-Runs $true
+    Write-NextSteps $skillsDone
     $global:LASTEXITCODE = $status
     if ($status -ne 0) {
         $failed = @{ 3 = 'setting up shell completion'; 4 = 'installing the Aggrega skill'; 5 = 'setting up shell completion and installing the Aggrega skill' }[$status]
-        throw "aggrega install: installed $dest, and it runs, but $failed failed, as the warning above says"
+        throw "aggrega install: error: aggrega is installed at $dest and runs, but $failed failed - the warning above says why and what to do"
     }
-} ([bool]$Completion) ([bool]$Skills) $args
+} ([bool]$Verbose) ([bool]$Completion) ([bool]$Skills) $args

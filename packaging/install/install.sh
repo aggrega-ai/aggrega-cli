@@ -6,21 +6,35 @@
 # It downloads the default aggrega binary for this operating system and
 # processor from a release, checks it against the release's SHA256SUMS list,
 # and installs it as ~/.local/bin/aggrega, replacing an earlier copy there in
-# one step. Then it checks, printing nothing, that the installed binary runs,
-# and, when the folder is not on PATH, prints the line that puts it there. It
-# prints the next steps: setting up shell completion, installing the Aggrega
-# skill for an AI assistant, and connecting an AI client to the Aggrega MCP
-# server. It ends by running the installed binary, by its full path, to print
-# its version. It never uses sudo, and it edits a shell profile only when
-# --completion sets up completion for zsh.
+# one step. Then it checks, printing nothing, that the installed binary runs.
+# What it prints, on success:
+#
+#   Installing aggrega <version> (<os>-<arch>)
+#     Downloaded and checked against its SHA-256 checksum
+#     Installed <folder>/aggrega
+#
+# then, when the folder is not on PATH, the line that adds it to your shell's
+# profile; then the installed binary's own version, printed by running it by
+# its full path; and last, under "Next:", one line each for running the AI
+# quickstart, adding the Aggrega skill to your AI assistants, and the page
+# that shows how to set up shell completion and connect an AI client to the
+# Aggrega MCP server. It never uses sudo, and it edits a shell profile only
+# when --completion sets up completion for zsh.
+#
+# A refusal or a failed step is written to standard error as one line:
+#
+#   aggrega install: error: <what went wrong> - <what to do>
 #
 # Beyond the standard system utilities it needs curl or wget, uname, and
 # sha256sum or shasum.
 #
 # Options, written after `sh -s --` when the script is piped into sh:
 #
-#   curl -fsSL https://aggrega.ai/install.sh | sh -s -- --completion --skills
+#   curl -fsSL https://aggrega.ai/install.sh | sh -s -- --verbose
 #
+#   --verbose              also print the address of the checksum list, the
+#                          name of the release file and the address it is
+#                          downloaded from.
 #   --completion           also set up shell completion, for you alone, for the
 #                          shell your SHELL setting names, using the installed
 #                          aggrega's own `aggrega completion` script, and say
@@ -48,7 +62,8 @@
 #                          it then asks before writing: press Enter to install
 #                          for those, or type the identifiers of others to add
 #                          them. With no terminal it installs for those it
-#                          found. It prints each skill folder it wrote.
+#                          found. It prints each skill folder it wrote, and
+#                          the line about the skill is left out of "Next:".
 #   --skills <list>        install the skill for the assistants the
 #                          comma-separated list names instead, such as
 #                          --skills claude-code,cursor, without looking for
@@ -68,7 +83,7 @@
 #   4  aggrega is installed and runs, but installing the skill failed
 #   5  aggrega is installed and runs, but both of those failed
 #
-# A failed step says why in the message before the next steps.
+# A failed step says why in its error line, written when it fails.
 #
 # Settings, read from the environment:
 #
@@ -86,34 +101,44 @@
 # Everything runs from main, which the last line calls, so a download of this
 # script that is cut short runs nothing.
 
-say() {
-  printf 'aggrega install: %s\n' "$*"
+# item prints one line of what the install did, indented under its first line.
+item() {
+  printf '  %s\n' "$*"
 }
 
+# refuse <what went wrong> <what to do> reports why nothing more can be done
+# and stops with exit status 1.
 refuse() {
-  printf 'aggrega install: %s\n' "$*" >&2
+  printf 'aggrega install: error: %s - %s\n' "$1" "$2" >&2
   exit 1
 }
 
-# complain reports a step that failed without stopping the script.
+# complain <what went wrong> <what to do> reports a step that failed without
+# stopping the script.
 complain() {
-  printf 'aggrega install: %s\n' "$*" >&2
+  printf 'aggrega install: error: %s - %s\n' "$1" "$2" >&2
+}
+
+# complain_completion <why> reports that shell completion was not set up.
+complain_completion() {
+  complain "could not set up shell completion: $1" "aggrega is installed and runs; https://aggrega.ai/docs/install/ shows how to set completion up later"
 }
 
 # usage_refusal reports an option the script cannot use and stops with exit
 # status 2, before anything is done.
 usage_refusal() {
-  printf "aggrega install: %s; it takes --completion and --skills [<list>], written after 'sh -s --' when the script is piped into sh\n" "$*" >&2
+  printf "aggrega install: error: %s - the options are --verbose, --completion and --skills [<list>], written after 'sh -s --' when the script is piped into sh\n" "$*" >&2
   exit 2
 }
 
-# Sets want_completion, want_skills and skills_list from the options, or
-# refuses with exit status 2 before anything is done. A value after --skills
+# Sets verbose, want_completion, want_skills and skills_list from the options,
+# or refuses with exit status 2 before anything is done. A value after --skills
 # that does not start with a dash is its list of assistants.
 parse_options() {
-  want_completion='' want_skills='' skills_list=''
+  verbose='' want_completion='' want_skills='' skills_list=''
   while [ "$#" -gt 0 ]; do
     case "$1" in
+      --verbose) verbose=1 ;;
       --completion) want_completion=1 ;;
       --skills=*)
         want_skills=1 skills_list="${1#--skills=}"
@@ -155,23 +180,25 @@ sh_quote() {
 
 # Sets os and arch to the names release files carry, or refuses.
 detect_platform() {
-  kernel="$(uname -s)" || refuse "could not run uname to read the operating system's name"
-  machine="$(uname -m)" || refuse "could not run uname to read the processor's name"
+  kernel="$(uname -s)" ||
+    refuse "could not run uname to read the operating system's name" "install.sh needs uname, one of the standard system utilities"
+  machine="$(uname -m)" ||
+    refuse "could not run uname to read the processor's name" "install.sh needs uname, one of the standard system utilities"
   case "$kernel" in
     Linux) os=linux ;;
     Darwin) os=darwin ;;
     MINGW* | MSYS* | CYGWIN* | Windows_NT)
-      refuse "this is Windows ($kernel), which install.sh does not install on; from PowerShell, run: irm $base/latest/download/install.ps1 | iex"
+      refuse "this is Windows ($kernel), which install.sh does not install on" "from PowerShell, run: irm $base/latest/download/install.ps1 | iex"
       ;;
     *)
-      refuse "the operating system is $kernel, for which no release carries a binary; releases carry binaries for Linux, macOS and Windows"
+      refuse "the operating system is $kernel, for which no release carries a binary" "install on Linux, macOS or Windows, which releases carry binaries for"
       ;;
   esac
   case "$machine" in
     x86_64 | amd64) arch=amd64 ;;
     aarch64 | arm64) arch=arm64 ;;
     *)
-      refuse "the processor is $machine, for which no release carries a $kernel binary; releases carry binaries for 64-bit x86 (x86_64) and 64-bit ARM (aarch64, arm64)"
+      refuse "the processor is $machine, for which no release carries a $kernel binary" "install on 64-bit x86 (x86_64) or 64-bit ARM (aarch64, arm64), which releases carry binaries for"
       ;;
   esac
   # On a Mac with Apple silicon, a shell running through Rosetta 2 reports
@@ -188,14 +215,14 @@ pick_tools() {
   elif command -v wget >/dev/null 2>&1; then
     fetcher=wget
   else
-    refuse "downloading needs curl or wget, and neither is on PATH"
+    refuse "downloading needs curl or wget, and neither is on PATH" "install one of them and run the installer again"
   fi
   if command -v sha256sum >/dev/null 2>&1; then
     hasher=sha256sum
   elif command -v shasum >/dev/null 2>&1; then
     hasher=shasum
   else
-    refuse "checking the download needs sha256sum or shasum, and neither is on PATH"
+    refuse "checking the download needs sha256sum or shasum, and neither is on PATH" "install one of them and run the installer again"
   fi
 }
 
@@ -238,17 +265,18 @@ find_asset() {
     asset="$line_name"
     asset_sum="$(printf '%s\n' "$line_sum" | tr 'A-F' 'a-f')"
   done <"$1"
+  other_release="set AGGREGA_VERSION to another release and run the installer again"
   if [ "$matches" -eq 0 ]; then
-    refuse "the checksum list at $sums_url names no aggrega binary for $os/$arch"
+    refuse "the checksum list at $sums_url names no aggrega binary for $os/$arch" "$other_release"
   fi
   if [ "$matches" -gt 1 ]; then
-    refuse "the checksum list at $sums_url names $matches aggrega binaries for $os/$arch, where it should name one"
+    refuse "the checksum list at $sums_url names $matches aggrega binaries for $os/$arch, where it should name one" "$other_release"
   fi
   case "$asset_sum" in
-    *[!0-9a-f]*) refuse "the checksum list at $sums_url lists '$asset_sum' for $asset, which is not a SHA-256 digest" ;;
+    *[!0-9a-f]*) refuse "the checksum list at $sums_url lists '$asset_sum' for $asset, which is not a SHA-256 digest" "$other_release" ;;
   esac
   if [ "${#asset_sum}" -ne 64 ]; then
-    refuse "the checksum list at $sums_url lists '$asset_sum' for $asset, which is not a SHA-256 digest"
+    refuse "the checksum list at $sums_url lists '$asset_sum' for $asset, which is not a SHA-256 digest" "$other_release"
   fi
   version="${asset#aggrega-}"
   version="${version%-"$os-$arch"}"
@@ -264,24 +292,26 @@ cleanup() {
   fi
 }
 
-# path_hint prints the line that puts dir on PATH for the user's login shell.
+# path_hint prints the command that adds dir to PATH in the profile of the
+# user's login shell.
 path_hint() {
-  line="export PATH=\"$dir:\$PATH\""
+  # The folder is written inside single quotes in the command below, so a
+  # single quote in it is closed, escaped and reopened.
+  quoted_dir="$(printf '%s' "$dir" | sed "s/'/'\\\\''/g")"
+  # shellcheck disable=SC2016 # $PATH is the profile's to expand, when the shell reads it.
   case "${SHELL:-}" in
-    */zsh) profile=.zshrc ;;
+    */zsh) command="echo 'export PATH=\"$quoted_dir:\$PATH\"' >> ~/.zshrc" ;;
     */bash)
       if [ "$os" = darwin ]; then
-        profile=.bash_profile
+        command="echo 'export PATH=\"$quoted_dir:\$PATH\"' >> ~/.bash_profile"
       else
-        profile=.bashrc
+        command="echo 'export PATH=\"$quoted_dir:\$PATH\"' >> ~/.bashrc"
       fi
       ;;
-    */fish) profile=.config/fish/config.fish line="fish_add_path \"$dir\"" ;;
-    *) profile=.profile ;;
+    */fish) command="echo 'fish_add_path \"$quoted_dir\"' >> ~/.config/fish/config.fish" ;;
+    *) command="echo 'export PATH=\"$quoted_dir:\$PATH\"' >> ~/.profile" ;;
   esac
-  say "$dir is not on your PATH. To run aggrega by name, add this line to ${HOME:-~}/$profile:"
-  printf '\n  %s\n\n' "$line"
-  say "then open a new terminal."
+  printf '\n%s is not on your PATH. Add it, then open a new terminal:\n\n  %s\n' "$dir" "$command"
 }
 
 # write_completion <shell> <file> writes the installed aggrega's completion
@@ -289,24 +319,24 @@ path_hint() {
 # already holds exactly that script.
 write_completion() {
   if ! "$dest" completion "$1" >"$tmp/completion.$1"; then
-    complain "could not set up shell completion: running '$dest completion $1' failed"
+    complain_completion "running '$dest completion $1' failed"
     return 1
   fi
   if [ -f "$2" ] && cmp -s "$tmp/completion.$1" "$2"; then
-    say "$2 already holds aggrega's $1 completion; left it unchanged"
+    item "$2 already holds aggrega's $1 completion; left it unchanged"
     return 0
   fi
   if ! mkdir -p -- "${2%/*}"; then
-    complain "could not set up shell completion: could not create the folder ${2%/*}"
+    complain_completion "could not create the folder ${2%/*}"
     return 1
   fi
   staged="${2%/*}/.aggrega.completion.$$"
   if ! cp -- "$tmp/completion.$1" "$staged" || ! mv -f -- "$staged" "$2"; then
-    complain "could not set up shell completion: could not write $2"
+    complain_completion "could not write $2"
     return 1
   fi
   staged=''
-  say "wrote aggrega's $1 completion to $2"
+  item "Wrote aggrega's $1 completion to $2"
 }
 
 # file_has_line <file> <line> succeeds when the file holds the line exactly.
@@ -327,7 +357,7 @@ completion_bash() {
     folder="${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
   fi
   write_completion bash "$folder/aggrega" || return 1
-  say "bash loads it through the bash-completion package, from a new terminal on"
+  item "bash loads it through the bash-completion package, from a new terminal on"
 }
 
 completion_zsh() {
@@ -336,7 +366,7 @@ completion_zsh() {
   rc="${ZDOTDIR:-$HOME}/.zshrc"
   marker='# Shell completion for aggrega, added by the aggrega installer.'
   if file_has_line "$rc" "$marker"; then
-    say "$rc already loads it; left it unchanged"
+    item "$rc already loads it; left it unchanged"
     return 0
   fi
   # A file whose last line has no newline gets one first, so the lines start
@@ -354,22 +384,22 @@ completion_zsh() {
     "fpath=($(sh_quote "$folder") \$fpath)" \
     'if (( $+functions[compdef] )); then autoload -Uz _aggrega && compdef _aggrega aggrega; else autoload -Uz compinit && compinit; fi' \
     >>"$rc"; then
-    complain "could not set up shell completion: could not add the lines that load it to $rc"
+    complain_completion "could not add the lines that load it to $rc"
     return 1
   fi
-  say "added the lines that load it to $rc; zsh reads them from a new terminal on"
+  item "Added the lines that load it to $rc; zsh reads them from a new terminal on"
 }
 
 completion_fish() {
   write_completion fish "${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions/aggrega.fish" || return 1
-  say "fish loads it from a new terminal on"
+  item "fish loads it from a new terminal on"
 }
 
 # setup_completion sets up completion for the shell SHELL names, or reports
 # why it did not.
 setup_completion() {
   if [ -z "${HOME:-}" ]; then
-    complain "could not set up shell completion: HOME is not set, so there is no folder of yours to write it into"
+    complain_completion "HOME is not set, so there is no folder of yours to write it into"
     return 1
   fi
   case "${SHELL:-}" in
@@ -377,11 +407,11 @@ setup_completion() {
     */zsh | zsh) completion_zsh ;;
     */fish | fish) completion_fish ;;
     '')
-      complain "could not set up shell completion: SHELL is not set, so the shell to set it up for is not known; install.sh sets it up for bash, zsh and fish"
+      complain_completion "SHELL is not set, so the shell to set it up for is not known; install.sh sets it up for bash, zsh and fish"
       return 1
       ;;
     *)
-      complain "could not set up shell completion: SHELL names $SHELL, and install.sh sets it up for bash, zsh and fish"
+      complain_completion "SHELL names $SHELL, and install.sh sets it up for bash, zsh and fish"
       return 1
       ;;
   esac
@@ -411,54 +441,25 @@ install_skills() {
   else
     "$dest" "$@" </dev/null
   fi || {
-    complain "could not install the Aggrega skill: 'aggrega skills install' did not succeed, as it says above"
+    complain "could not install the Aggrega skill: 'aggrega skills install' did not succeed, as it says above" "aggrega is installed and runs; run 'aggrega skills install --global' again once that is fixed"
     return 1
   }
 }
 
-# next_steps prints one command for each thing left to set up.
+# next_steps prints one line for each thing to do next: the AI quickstart, the
+# skill when --skills did not install it, and the page on shell completion and
+# the MCP server.
 next_steps() {
-  settings=''
-  if [ -n "${AGGREGA_MIRROR:-}" ]; then
-    settings="${settings}AGGREGA_MIRROR=$(sh_quote "$base") "
-  fi
-  if [ -n "$requested" ]; then
-    settings="${settings}AGGREGA_VERSION=$(sh_quote "$requested") "
-  fi
-  if [ -n "${AGGREGA_INSTALL_DIR:-}" ]; then
-    settings="${settings}AGGREGA_INSTALL_DIR=$(sh_quote "$dir") "
-  fi
-  shell_name="${SHELL##*/}"
-  # The command below fetches this script again under the name the release
-  # publishes it as. The name is kept apart from the address on purpose:
+  # The name is kept apart from the address on purpose:
   # scripts/check-release-job-isolation.sh reads every path ending in .sh that
   # this script names as a repository script, and refuses one it cannot find.
-  installer=install.sh
-  say "next steps:"
-  printf '\n'
-  if [ "$completion_done" = 1 ]; then
-    printf '  Shell completion for %s is set up; a new terminal loads it.\n' "$shell_name"
-  else
-    case "$shell_name" in
-      bash | zsh | fish)
-        printf '  Set up shell completion for %s:\n' "$shell_name"
-        printf '    curl -fsSL %s | %ssh -s -- --completion\n' "$(sh_quote "$base/latest/download/$installer")" "$settings"
-        ;;
-      *)
-        printf '  Set up shell completion, for one of the shells aggrega writes it for:\n'
-        printf '    aggrega completion --help\n'
-        ;;
-    esac
+  quickstart='quickstart-ai.sh'
+  printf '\nNext:\n'
+  printf '  %-30s%s\n' 'Run the AI quickstart:' "curl -fsSL https://aggrega.ai/$quickstart | sh"
+  if [ "$skills_done" != 1 ]; then
+    printf '  %-30s%s\n' 'Add the skill to your AI:' 'aggrega skills install --global'
   fi
-  if [ "$skills_done" = 1 ]; then
-    printf '  The Aggrega skill is installed; a new session of each assistant reads it.\n'
-  else
-    printf '  Install the Aggrega skill for the AI assistants on this machine:\n'
-    printf '    aggrega skills install --global\n'
-  fi
-  printf '  Connect your AI client to the Aggrega MCP server, as this page describes:\n'
-  printf '    https://aggrega.ai/docs/install/#connect-an-mcp-client\n'
-  printf '\n'
+  printf '  %-30s%s\n' 'Shell completion and MCP:' 'https://aggrega.ai/docs/install/'
 }
 
 main() {
@@ -472,7 +473,7 @@ main() {
   if [ -n "${AGGREGA_VERSION:-}" ]; then
     case "$requested" in
       '' | *[!A-Za-z0-9._+-]*)
-        refuse "AGGREGA_VERSION is '$AGGREGA_VERSION', which is not a release version such as 0.8.7 or v0.8.7"
+        refuse "AGGREGA_VERSION is '$AGGREGA_VERSION', which is not a release version such as 0.8.7 or v0.8.7" "set it to a release version, or unset it to install the latest release"
         ;;
     esac
   fi
@@ -482,7 +483,7 @@ main() {
   elif [ -n "${HOME:-}" ]; then
     dir="$HOME/.local/bin"
   else
-    refuse "HOME is not set, so there is no default folder to install into; set AGGREGA_INSTALL_DIR to one"
+    refuse "HOME is not set, so there is no default folder to install into" "set AGGREGA_INSTALL_DIR to the folder to install into"
   fi
   case "$dir" in
     /*) ;;
@@ -492,8 +493,9 @@ main() {
     dir="${dir%/}"
   done
   dest="$dir/aggrega"
+  elsewhere="check that you can write there, or set AGGREGA_INSTALL_DIR to another folder"
   if [ -d "$dest" ]; then
-    refuse "$dest is a folder, so aggrega cannot be installed under that name"
+    refuse "$dest is a folder, so aggrega cannot be installed under that name" "move that folder away, or set AGGREGA_INSTALL_DIR to another folder"
   fi
 
   pick_tools
@@ -504,68 +506,72 @@ main() {
   trap 'exit 130' INT
   trap 'exit 143' TERM
   tmp="$(mktemp -d 2>/dev/null || mktemp -d -t aggrega-install)" ||
-    refuse "could not create a temporary folder to download into"
+    refuse "could not create a temporary folder to download into" "check that the temporary folder, TMPDIR when it is set, can be written to"
 
   if [ -n "$requested" ]; then
     sums_url="$base/download/v$requested/SHA256SUMS"
   else
     sums_url="$base/latest/download/SHA256SUMS"
   fi
-  say "reading the checksum list $sums_url"
   if ! fetch "$sums_url" "$tmp/SHA256SUMS"; then
     if [ -n "$requested" ]; then
-      refuse "could not download $sums_url; check that $requested is a published release"
+      refuse "could not download $sums_url" "check that $requested is a published release"
     fi
-    refuse "could not download $sums_url"
+    refuse "could not download $sums_url" "check your network connection and run the installer again"
   fi
   find_asset "$tmp/SHA256SUMS"
 
   url="$base/download/v$version/$asset"
-  say "downloading $url"
-  fetch "$url" "$tmp/$asset" || refuse "could not download $url"
-  actual="$(digest "$tmp/$asset")" || refuse "could not compute the SHA-256 checksum of the downloaded $asset"
+  printf 'Installing aggrega %s (%s-%s)\n' "$version" "$os" "$arch"
+  if [ -n "$verbose" ]; then
+    item "Checksum list:  $sums_url"
+    item "Release file:   $asset"
+    item "Downloaded from $url"
+  fi
+  fetch "$url" "$tmp/$asset" ||
+    refuse "could not download $url" "check your network connection and run the installer again"
+  actual="$(digest "$tmp/$asset")" ||
+    refuse "could not compute the SHA-256 checksum of the downloaded $asset" "run the installer again"
   if [ "$actual" != "$asset_sum" ]; then
     rm -f -- "$tmp/$asset"
-    refuse "the SHA-256 checksum of the downloaded $asset is $actual, but SHA256SUMS lists $asset_sum; the download was deleted and nothing was installed"
+    refuse "the SHA-256 checksum of the downloaded $asset is $actual, but SHA256SUMS lists $asset_sum; the download was deleted and nothing was installed" "run the installer again"
   fi
-  say "$asset matches its SHA-256 checksum in SHA256SUMS"
+  item "Downloaded and checked against its SHA-256 checksum"
 
   # The new binary is written beside the old one under a temporary name and
   # then renamed over it, so the folder holds either the earlier aggrega or
   # the new one at every moment, never a partial file.
-  mkdir -p -- "$dir" || refuse "could not create the folder $dir"
+  mkdir -p -- "$dir" || refuse "could not create the folder $dir" "$elsewhere"
   staged="$dir/.aggrega.install.$$"
-  cp -- "$tmp/$asset" "$staged" || refuse "could not write into $dir"
-  chmod 755 "$staged" || refuse "could not mark $staged executable"
-  mv -f -- "$staged" "$dest" || refuse "could not put the new aggrega in place at $dest"
+  cp -- "$tmp/$asset" "$staged" || refuse "could not write into $dir" "$elsewhere"
+  chmod 755 "$staged" || refuse "could not mark $staged executable" "$elsewhere"
+  mv -f -- "$staged" "$dest" || refuse "could not put the new aggrega in place at $dest" "$elsewhere"
   staged=''
 
-  say "installed $dest"
+  item "Installed $dest"
   # Checked before completion or the skill is set up, which run it too; the
-  # version it prints is shown last, below.
+  # version it prints is shown below.
   if ! "$dest" version >/dev/null 2>&1; then
-    refuse "installed $dest, but running '$dest version' failed"
+    refuse "installed $dest, but running '$dest version' failed" "run '$dest version' to see why"
+  fi
+
+  status=0 skills_done=''
+  if [ -n "$want_completion" ]; then
+    setup_completion || status=3
   fi
 
   case ":${PATH:-}:" in
     *":$dir:"* | *":$dir/:"*)
       found="$(command -v aggrega 2>/dev/null || true)"
       if [ -n "$found" ] && [ "$found" != "$dest" ]; then
-        say "note: the aggrega that runs by name is $found, which comes before $dir on your PATH"
+        printf '\nNote: the aggrega that runs by name is %s, which comes before %s on your PATH.\n' "$found" "$dir"
       fi
       ;;
     *) path_hint ;;
   esac
 
-  status=0 completion_done='' skills_done=''
-  if [ -n "$want_completion" ]; then
-    if setup_completion; then
-      completion_done=1
-    else
-      status=3
-    fi
-  fi
   if [ -n "$want_skills" ]; then
+    printf '\n'
     if install_skills; then
       skills_done=1
     elif [ "$status" = 3 ]; then
@@ -574,10 +580,12 @@ main() {
       status=4
     fi
   fi
-  next_steps
+
+  printf '\n'
   if ! "$dest" version; then
-    refuse "installed $dest, but running '$dest version' failed"
+    refuse "installed $dest, but running '$dest version' failed" "run '$dest version' to see why"
   fi
+  next_steps
   exit "$status"
 }
 

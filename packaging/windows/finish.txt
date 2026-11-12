@@ -1,9 +1,13 @@
 Next steps
 
-Install the Aggrega skill for the AI assistants on this machine. In a new terminal, run:
+Run the AI quickstart. In a new PowerShell window, run:
+
+    irm https://aggrega.ai/quickstart-ai.ps1 | iex
+
+Add the Aggrega skill to the AI assistants on this machine. In a new terminal, run:
 
     aggrega skills install --global
 
-Connect your AI client to the Aggrega MCP server, as this page describes:
+Set up shell completion and connect your AI client to the Aggrega MCP server, as this page describes:
 
-    https://aggrega.ai/docs/install/#connect-an-mcp-client
+    https://aggrega.ai/docs/install/

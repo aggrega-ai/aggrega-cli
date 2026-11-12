@@ -1,15 +1,17 @@
 # Run one step of quickstart-ai, the example in the Aggrega documentation that
-# builds an AI agent on a local model up in four steps, from PowerShell:
+# builds an AI agent on a local model up in four steps, from PowerShell. For
+# step 1:
 #
-#   & ([scriptblock]::Create((irm https://aggrega.ai/quickstart-ai.ps1))) 1
+#   irm https://aggrega.ai/quickstart-ai.ps1 | iex
 #
-#   usage: quickstart-ai.ps1 [-Yes] 1|2|3|4
+# Another step, 2, 3 or 4, is set in QUICKSTART_STEP first:
 #
-# It first says what it will do and asks to continue; -Yes goes ahead without
-# asking, and where nobody can answer - its input redirected, or a host that
-# reads none - it refuses unless -Yes is given. It checks that aggrega can be
-# found, on PATH or in the folder the Aggrega installer puts it in, and, for a
-# step that runs, that Docker answers and has Compose. It writes the example
+#   $env:QUICKSTART_STEP=2; irm https://aggrega.ai/quickstart-ai.ps1 | iex
+#
+# It first says what it will do and asks to continue, reading the answer from
+# the console; where nobody can answer - its input redirected, or a host that
+# reads none - it refuses. It checks that aggrega can be found, on PATH or in
+# the folder the Aggrega installer puts it in, and, for a step that runs, that Docker answers and has Compose. It writes the example
 # into .\quickstart-ai with `aggrega scaffold --example quickstart-ai`, or uses
 # that folder as it is when it already exists, goes into the step's folder,
 # quickstart-ai\<step>, and runs the commands the example's page gives for that
@@ -27,6 +29,8 @@
 #   OPENAI_API_KEY        for steps 2 and 3, the key of the hosted OpenAI model,
 #                         which Docker Compose reads; unset, the local model
 #                         answers instead. The script never prints it.
+#   QUICKSTART_STEP       the step to run, 1, 2, 3 or 4; 1 when unset. A step
+#                         given to the script as an argument is run instead.
 #
 # Exit status. The script never closes the window it runs in, so it does not
 # exit with a number: it leaves the number in $LASTEXITCODE, and every outcome
@@ -35,7 +39,7 @@
 #
 #   0  the step was built, and started where it runs
 #   1  a check or a command failed, or the answer was not yes
-#   2  the arguments are not one step, 1 to 4, with -Yes or without it
+#   2  the step is not 1, 2, 3 or 4, or an argument is not a step
 #
 # How the steps are written. Each step's commands are in the function
 # step_<N>, one command per line, each line the word `run` followed by the
@@ -53,8 +57,8 @@
 # system's legacy code page.
 
 # The script declares no [CmdletBinding()], so PowerShell hands it every
-# argument -Yes does not take in $args rather than refusing it: the step, and
-# anything else, which the script refuses itself, naming it.
+# argument its one switch does not take in $args rather than refusing it: the
+# step, and anything else, which the script refuses itself, naming it.
 param([switch]$Yes)
 
 & {
@@ -120,9 +124,10 @@ param([switch]$Yes)
     }
 
     function Stop-Usage([string]$Message) {
-        Write-Say $Message
+        Write-Host "usage: irm https://aggrega.ai/$example.ps1 | iex"
+        Write-Host "       another step: `$env:QUICKSTART_STEP=2; irm https://aggrega.ai/$example.ps1 | iex"
         $global:LASTEXITCODE = 2
-        throw "usage: $example.ps1 [-Yes] 1|2|3|4"
+        throw "${example}: $Message"
     }
 
     # Test-Runs returns whether a command runs and succeeds, discarding what it
@@ -196,13 +201,21 @@ param([switch]$Yes)
             Stop-Usage "'$text' is not a step; the steps are 1, 2, 3 and 4"
         }
     }
-    if ($steps.Count -eq 0) {
-        Stop-Usage 'give the step to run, 1, 2, 3 or 4'
-    }
     if ($steps.Count -gt 1) {
         Stop-Usage "give one step, not $($steps.Count) ($($steps -join ', '))"
     }
-    $step = $steps[0]
+    # A step given as an argument is run; else the one QUICKSTART_STEP names;
+    # else step 1.
+    if ($steps.Count -eq 1) {
+        $step = $steps[0]
+    } elseif ($env:QUICKSTART_STEP) {
+        $step = "$env:QUICKSTART_STEP".Trim()
+        if (@('1', '2', '3', '4') -notcontains $step) {
+            Stop-Usage "QUICKSTART_STEP is '$($env:QUICKSTART_STEP)', which is not a step; the steps are 1, 2, 3 and 4"
+        }
+    } else {
+        $step = '1'
+    }
 
     if (step_runs $step) {
         Write-Host 'This script will scaffold the example, build it and run it with Docker Compose.'
@@ -222,7 +235,7 @@ param([switch]$Yes)
             $asked = $false
         }
         if (-not $asked) {
-            Stop-Quickstart 'there is nobody to ask; run the script again with -Yes to go ahead without asking.'
+            Stop-Quickstart 'there is nobody to ask whether to continue; run the script again from a PowerShell window you are at.'
         }
         if ("$answer".Trim() -notmatch '^(y|yes)$') {
             Stop-Quickstart 'stopped; nothing was done.'
