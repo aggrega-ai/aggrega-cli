@@ -2,8 +2,8 @@
 // Copyright 2026 Cognitio S.r.l.
 
 // Command genrepository writes the tree of the public skills repository from
-// the skills built into the aggrega binary, with the module's LICENSE file at
-// its root.
+// the skills built into the aggrega binary, with the module's LICENSE file and
+// the plugin manifests that make the tree installable as a plugin at its root.
 //
 // Run it from inside the aggrega-cli module, whose LICENSE it reads from the
 // module root above its working directory:
@@ -13,7 +13,9 @@
 // The skills package's go:generate directive runs it over the copy committed
 // beside that package; pointed at a checkout of the public repository, it
 // brings that checkout to the same tree. The folder ends up holding exactly the
-// generated tree: a file the tree no longer has is removed.
+// generated tree: a file the tree no longer has is removed. A .git at the
+// folder's root, a checkout's repository folder or a submodule's pointer file,
+// is left as it is.
 package main
 
 import (

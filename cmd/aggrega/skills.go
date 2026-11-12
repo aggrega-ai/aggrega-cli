@@ -108,7 +108,7 @@ command on your PATH:
 ` + agentTable() + `
 An assistant that is not listed is refused by name. It can still use Aggrega
 through its MCP server: connect it to "aggrega mcp" as
-` + skills.SetupPage + ` describes.`,
+` + skills.SetupPage() + ` describes.`,
 		Example: `  # This project, for Claude Code
   aggrega skills install --agent claude-code
 

@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 )
 
 // repositorySkillsDir is the folder of the published repository that holds one
@@ -26,9 +28,29 @@ const repositorySkillsDir = "skills"
 // module, and of the copy at the root of the published repository.
 const licenseFile = "LICENSE"
 
+// gitEntry is the name of a checkout's repository folder, or of the file a
+// submodule's checkout holds in its place, at the checkout's root.
+const gitEntry = ".git"
+
+// passOverGitEntry reports whether rel, the path of d relative to the root of a
+// tree being walked, is that root's .git, and returns what the walk's callback
+// returns to pass over it: SkipDir for a folder, so nothing beneath it is
+// visited, and nil for a file. Both the writer and the reader of the tree ask
+// it, so the two agree on what the tree is.
+func passOverGitEntry(rel string, d fs.DirEntry) (bool, error) {
+	if rel != gitEntry {
+		return false, nil
+	}
+	if d.IsDir() {
+		return true, filepath.SkipDir
+	}
+	return true, nil
+}
+
 // RepositoryFiles returns the whole tree of the public skills repository, in
-// lexical path order: a README, the licence, and each shipped skill's files
-// beneath skills/<name>/ exactly as Files returns them.
+// lexical path order: a README, the licence, each shipped skill's files
+// beneath skills/<name>/ exactly as Files returns them, and the plugin
+// manifests that make the tree installable as a plugin, one per format.
 //
 // The licence is this package's module's own LICENSE file, byte for byte, read
 // from the root of the module that holds the folder from, so the published
@@ -55,6 +77,11 @@ func RepositoryFiles(from string) ([]File, error) {
 			out = append(out, File{Path: path.Join(repositorySkillsDir, name, f.Path), Content: f.Content})
 		}
 	}
+	manifests, err := pluginFiles()
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, manifests...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out, nil
 }
@@ -63,6 +90,11 @@ func RepositoryFiles(from string) ([]File, error) {
 // returns for from: every file written, and every other file beneath dir
 // removed along with any folder left empty, because the tree is generated as a
 // whole and a file a skill no longer has must not be published.
+//
+// The one entry it leaves alone is a .git directly beneath dir — a checkout's
+// repository folder, or the file a submodule's checkout holds in its place —
+// which it neither reads nor removes, so dir may be a checkout of the public
+// repository.
 func WriteRepository(dir, from string) error {
 	files, err := RepositoryFiles(from)
 	if err != nil {
@@ -91,6 +123,9 @@ func WriteRepository(dir, from string) error {
 		}
 		if rel == "." {
 			return nil
+		}
+		if pass, verdict := passOverGitEntry(rel, d); pass {
+			return verdict
 		}
 		if d.IsDir() {
 			dirs = append(dirs, p)
@@ -126,19 +161,24 @@ func WriteRepository(dir, from string) error {
 }
 
 // ReadRepository reads the tree beneath dir as files, in lexical path order, so
-// a caller can compare a committed copy of the repository with RepositoryFiles.
+// a caller can compare a committed copy of the repository, or a checkout of it,
+// with RepositoryFiles. A .git directly beneath dir is not part of the tree and
+// is not read, as WriteRepository leaves it alone.
 func ReadRepository(dir string) ([]File, error) {
 	var out []File
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if d.IsDir() {
-			return nil
-		}
 		rel, err := filepath.Rel(dir, p)
 		if err != nil {
 			return err
+		}
+		if pass, verdict := passOverGitEntry(rel, d); pass {
+			return verdict
+		}
+		if d.IsDir() {
+			return nil
 		}
 		content, err := os.ReadFile(p)
 		if err != nil {
@@ -284,10 +324,14 @@ func repositoryReadme() ([]byte, error) {
 		rows = append(rows, fmt.Sprintf("| [`%s`](%s/%s/SKILL.md) | %s |", name, repositorySkillsDir, name, meta.Description))
 	}
 
+	binary, _ := MCPServerCommand()
+	serverCommandLine := mcpServerCommandLine()
+	setupPage := SetupPage()
+
 	var b strings.Builder
 	b.WriteString(Banner + "\n\n")
 	b.WriteString("# Aggrega skills\n\n")
-	b.WriteString("Skills that teach an AI assistant to install and use [Aggrega](https://aggrega.ai/docs/), the\n")
+	b.WriteString("Skills that teach an AI assistant to install and use [Aggrega](" + haltref.PublishedRoot() + "), the\n")
 	b.WriteString("ahead-of-time compiler that turns declarative Aggregate, Component, Recipe, Manifest and Release\n")
 	b.WriteString("files into provider-native artifacts. Each skill follows the open\n")
 	b.WriteString("[Agent Skills](https://agentskills.io/specification) format, so any assistant that reads that\n")
@@ -297,9 +341,33 @@ func repositoryReadme() ([]byte, error) {
 	for _, row := range rows {
 		b.WriteString(row + "\n")
 	}
-	b.WriteString("\n## Install a skill\n\n")
-	b.WriteString("With the open skills command-line tool, from your project:\n\n")
-	b.WriteString("```bash\nnpx skills add aggrega-ai/aggrega-skills\n```\n\n")
+	b.WriteString("\n## Install the plugin\n\n")
+	b.WriteString("This repository is also a plugin for the assistants that install plugins. Installing it adds the\n")
+	b.WriteString("`" + InstalledSkill + "` skill and connects the assistant to the `" + mcpServerName + "` MCP server, " +
+		"which the assistant starts\nas `" + serverCommandLine + "`. ")
+	b.WriteString("The plugin does not install the `" + binary + "` binary: install it first, as\n")
+	b.WriteString("[the install page](" + setupPage + ") describes, so the assistant finds\n")
+	b.WriteString("`" + binary + "` on the `PATH`.\n\n")
+	b.WriteString("Claude Code:\n\n")
+	fmt.Fprintf(&b, "```bash\nclaude plugin install %s --marketplace %s\n```\n\n", pluginName, repositorySlug)
+	fmt.Fprintf(&b, "Inside Claude Code, the same is `/plugin install %s --marketplace %s`.\n\n", pluginName, repositorySlug)
+	b.WriteString("Codex:\n\n")
+	fmt.Fprintf(&b, "```bash\ncodex plugin marketplace add %s\ncodex plugin add %s@%s\n```\n\n",
+		repositorySlug, pluginName, marketplaceName)
+	b.WriteString("GitHub Copilot CLI:\n\n")
+	fmt.Fprintf(&b, "```bash\ncopilot plugin marketplace add %s\ncopilot plugin install %s@%s\n```\n\n",
+		repositorySlug, pluginName, marketplaceName)
+	b.WriteString("Gemini CLI:\n\n")
+	fmt.Fprintf(&b, "```bash\ngemini extensions install %s\n```\n\n", repositoryURL)
+	b.WriteString("Antigravity:\n\n")
+	fmt.Fprintf(&b, "```bash\nagy plugin install %s\n```\n\n", repositoryURL)
+	b.WriteString("Cursor loads a plugin from a folder beneath `~/.cursor/plugins/local/`. Put the repository there,\n")
+	b.WriteString("then run **Developer: Reload Window** from the command palette:\n\n")
+	fmt.Fprintf(&b, "```bash\ngit clone %s ~/.cursor/plugins/local/%s\n```\n\n", repositoryURL, pluginName)
+	b.WriteString("## Install a skill\n\n")
+	b.WriteString("To install the skill alone and connect the MCP server yourself, with the open skills\n")
+	b.WriteString("command-line tool, from your project:\n\n")
+	fmt.Fprintf(&b, "```bash\nnpx skills add %s\n```\n\n", repositorySlug)
 	b.WriteString("With Aggrega itself, which writes the copy built into the binary you have installed, so the\n")
 	b.WriteString("skill matches that version:\n\n")
 	b.WriteString("```bash\naggrega skills install --agent <assistant>\n```\n\n")
@@ -311,14 +379,15 @@ func repositoryReadme() ([]byte, error) {
 		fmt.Fprintf(&b, "| `%s` | %s | `%s` | `~/%s` |\n", a.ID, a.Name, a.ProjectDir, a.UserDir)
 	}
 	b.WriteString("\nAn assistant that is not listed can still use Aggrega through its MCP server: connect it to\n")
-	b.WriteString("`aggrega mcp` as [the install page](" + SetupPage + ") describes.\n\n")
+	b.WriteString("`" + serverCommandLine + "` as [the install page](" + setupPage + ") describes.\n\n")
 	b.WriteString("## Where these files come from\n\n")
-	b.WriteString("Every file in this repository is generated from the skills built into the `aggrega` binary,\n")
-	b.WriteString("whose source is [aggrega-ai/aggrega-cli](https://github.com/aggrega-ai/aggrega-cli), and a\n")
-	b.WriteString("tag here names the Aggrega release the files were generated from. A change to a skill is made\n")
-	b.WriteString("there; an edit made here is replaced the next time the files are generated.\n\n")
+	b.WriteString("Every file in this repository — the skills and the plugin manifests beside them — is generated\n")
+	b.WriteString("from the source of the `aggrega` binary,\n")
+	b.WriteString("[aggrega-ai/aggrega-cli](https://github.com/aggrega-ai/aggrega-cli), and a tag here names the\n")
+	b.WriteString("Aggrega release the files were generated from. A change to a skill or a manifest is made there;\n")
+	b.WriteString("an edit made here is replaced the next time the files are generated.\n\n")
 	b.WriteString("## License\n\n")
-	b.WriteString("The Aggrega skills are released under the Apache License, Version 2.0; the full text is in the\n")
-	b.WriteString("[`LICENSE`](" + licenseFile + ") file.\n")
+	b.WriteString("The Aggrega skills and plugin are released under " + pluginLicenseName + "; the full text\n")
+	b.WriteString("is in the [`LICENSE`](" + licenseFile + ") file.\n")
 	return []byte(b.String()), nil
 }

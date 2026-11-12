@@ -10,12 +10,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
 )
 
-// SetupPage is the published page that says how to install aggrega and connect
-// an assistant to its MCP server, which is the route for an assistant no skill
-// folder is known for.
-const SetupPage = "https://aggrega.ai/docs/install/"
+// setupPagePath is the page that says how to install aggrega and connect an
+// assistant to its MCP server, as a path in the documentation tree.
+const setupPagePath = "install.md"
+
+// SetupPage returns the address of the published page that says how to install
+// aggrega and connect an assistant to its MCP server, which is the route for an
+// assistant no skill folder is known for. The address is composed where every
+// published page's is, from setupPagePath.
+func SetupPage() string { return haltref.PublishedURL(setupPagePath) }
 
 // InstallRequest is what one installation writes.
 type InstallRequest struct {
@@ -149,8 +156,8 @@ func Install(req InstallRequest) ([]Installed, error) {
 func unknownAgentError(id string) error {
 	return fmt.Errorf("no skill folder is known for the assistant %q; the assistants a skill can be installed "+
 		"for are %s. An assistant that is not listed can still use Aggrega through its MCP server: connect it to "+
-		"the command \"aggrega mcp\" as %s describes",
-		id, strings.Join(AgentIDs(), ", "), SetupPage)
+		"the command %q as %s describes",
+		id, strings.Join(AgentIDs(), ", "), mcpServerCommandLine(), SetupPage())
 }
 
 // guardTarget asks guard about a skill folder and about every file the skill

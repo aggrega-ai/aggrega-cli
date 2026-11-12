@@ -220,11 +220,12 @@ name: Publish and sign core plugins
 #                        The token reaches the writer's git commands through their
 #                        environment and is never written to disk.
 #   publish-skills       Once sign-and-publish has succeeded, publishes the
-#                        skills built into the aggrega binary to the public
+#                        skills built into the aggrega binary, and the plugin
+#                        manifests generated beside them, to the public
 #                        aggrega-skills repository: the tree committed at
 #                        internal/skills/repository, at the commit the build job
 #                        built, which the build job has held to what the skills
-#                        built into the binary generate. It makes one commit on
+#                        package's generator writes. It makes one commit on
 #                        that repository's main branch whose tree is exactly that
 #                        tree, tags it with the release tag, and pushes both
 #                        together as a fast-forward, never forcing: a tag already
@@ -1324,8 +1325,9 @@ jobs:
         # publish-skills publishes the tree committed at
         # internal/skills/repository, at the commit this job builds, to the
         # public aggrega-skills repository, so that tree must be exactly what the
-        # skills built into the binary generate: the skills package's generator
-        # writes the tree into a folder of its own here, and any file missing,
+        # skills package's generator writes — the skills built into the binary
+        # and the plugin manifests beside them: the generator writes the tree
+        # into a folder of its own here, and any file missing,
         # added or different stops the run before anything is published, naming
         # the difference. The comparison runs here, in a job that names no secret,
         # because the generator is compiled from the module, which reaches its
@@ -4125,13 +4127,16 @@ jobs:
           rm -rf -- "$RECORD_DIR"
 
   publish-skills:
-    # Publishes the skills built into the aggrega binary to the public
-    # aggrega-skills repository, so an assistant's own skills tool can install
-    # them from there, tagged with the release they were generated from. What
-    # it publishes is the tree committed at internal/skills/repository, at the
-    # commit the build job built, which the build job has held to what the
-    # skills built into the binary generate: a tree that differs stopped the
-    # run there, before anything was published.
+    # Publishes the skills built into the aggrega binary, and the plugin
+    # manifests generated beside them, to the public aggrega-skills repository,
+    # so an assistant's own skills tool can install the skills from there and an
+    # assistant that installs plugins can install it as one, tagged with the
+    # release they were generated from. What it publishes is the tree committed
+    # at internal/skills/repository, at the commit the build job built, which
+    # the build job has held to what the skills package's generator writes: a
+    # tree that differs stopped the run there, before anything was published.
+    # The tree's dot-folders, where several assistants read their manifests,
+    # are published with it: git add -A takes them, as diff -r compares them.
     #
     # It runs once sign-and-publish has succeeded, on a dry run too: a dry run
     # prints the tree it would publish and mints no token, reads nothing from

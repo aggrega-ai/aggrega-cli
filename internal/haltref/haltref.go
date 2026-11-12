@@ -68,14 +68,22 @@ func PublishedPath(page string) string { return docsTreePrefix + page }
 // second spelling of either is a second answer to where the documentation is.
 const publishedSiteBase = "https://aggrega.ai/docs/"
 
+// PublishedRoot is the address the published documentation is served from: the
+// page a reader lands on when sent to the documentation as a whole rather than to
+// one page of it. It ends in a separator.
+func PublishedRoot() string { return publishedSiteBase }
+
 // PublishedURL renders a bundle-internal page path as the address the published
 // documentation serves it at.
 //
 // The transformation is the served layout's own: the extension is dropped and the
 // result is a directory, because that is how the page is addressed once published
-// rather than once checked out. A caller handing this a path it did not get from
-// one of the page constants above is composing an address for a page that may not
-// exist; the constants are the paths this is for.
+// rather than once checked out. It accepts the path of any page of the
+// documentation tree, relative to the tree's root — the page constants above and
+// a caller's own alike. Nothing here checks that the page exists: a caller naming
+// a path the tree does not hold composes the address of a page that does not
+// exist, so a caller declares the path once, beside its use, as the constants
+// above are declared.
 func PublishedURL(page string) string {
 	return publishedSiteBase + strings.TrimSuffix(page, ".md") + "/"
 }
