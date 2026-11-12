@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pipelinetest is the single sanctioned way an example/end-to-end test
 // compiles a workspace. It runs the real compilation spine

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package validateops holds the compute cores for the correctness-checking
 // scopes: one entity in isolation, a raw plugin binary against its self-report,

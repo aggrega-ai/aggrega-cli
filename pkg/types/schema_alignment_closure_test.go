@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Positional Go→schema closure for the kinds whose Go type is hand-written
 // against its schema rather than generated from it.

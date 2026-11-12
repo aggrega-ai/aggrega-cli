@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package publishops is the shared publication layer that front ends drive to
 // publish a catalog entity, publish a standalone data artifact, sign an

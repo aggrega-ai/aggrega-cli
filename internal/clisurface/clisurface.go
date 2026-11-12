@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package clisurface projects a live cobra command tree into a structured,
 // deterministic catalog of command descriptors that other surfaces consume.

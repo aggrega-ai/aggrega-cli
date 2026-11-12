@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package retry calls an operation again when it fails in a way a later attempt
 // can succeed, with a small fixed budget and an exponential backoff.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package envelope validates a raw YAML document against the embedded
 // JSON schema for its entity kind — the document-envelope layer that

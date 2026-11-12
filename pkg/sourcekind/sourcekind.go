@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package sourcekind names the source kinds a Recipe's or FeatureRecipe's
 // structured `source:` can select, and decides which of them this program serves.

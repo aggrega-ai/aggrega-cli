@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package declaredselector checks the label selectors an entity's own document
 // declares on its dependency sockets and attachment slots, and reports each one

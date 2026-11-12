@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Command stampedversion prints the version a build stamped into an aggrega
 // binary's main.version, read from the binary's own symbol table and data

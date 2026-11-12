@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package filelock takes exclusive locks on sidecar lock files, so that several
 // processes sharing one on-disk directory can take turns writing it instead of

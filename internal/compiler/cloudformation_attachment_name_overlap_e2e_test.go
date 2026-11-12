@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end coverage of what a CloudFormation dispatch group does with the
 // names a component's own render and a component-carried attachment's render

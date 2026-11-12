@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Guards the two-home rule list: the rule identifiers this package dispatches
 // and the identifiers the publishing-linter guest answers to. The two lists live

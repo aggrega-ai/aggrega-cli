@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proof that an authored platform annotation the resolved target
 // cannot act on reaches the author as an advisory instead of being dropped in

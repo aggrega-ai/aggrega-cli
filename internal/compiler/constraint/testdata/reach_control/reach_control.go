@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package reachcontrol is the positive control for the document-reach gate:
 // the one program beside it that MUST compile. It establishes the three things

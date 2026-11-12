@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package importersocket is the host orchestration for the importer socket: it
 // resolves an importer plugin for a requested source format, runs it

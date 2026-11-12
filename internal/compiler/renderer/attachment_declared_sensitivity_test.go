@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // WHOSE declarations an attachment's rendered values are joined against, proved
 // over emitted bytes rather than over a context field.

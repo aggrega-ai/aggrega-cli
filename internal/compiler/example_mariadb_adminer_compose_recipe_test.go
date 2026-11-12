@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Per-Recipe integration test for the compose Recipe carried by the
 // mariadb-adminer worked example in the language reference.

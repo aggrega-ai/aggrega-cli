@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Structural bound on the resolved view's reachability: the only exported
 // producer of a ResolveResult is ResolveAndUse, which scopes the result to a

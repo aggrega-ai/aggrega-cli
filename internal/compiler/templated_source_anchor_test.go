@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Proves which VALUE a relative `source:` is resolved against when the source is
 // written as a template, end to end through a real build.

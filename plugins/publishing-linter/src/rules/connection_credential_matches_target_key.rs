@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Advise where the two ends of a key-checked connection name different
 //! secrets, or where only one end names one.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package sourceref owns the single rule for reading a Recipe's source
 // reference as local or remote, and the single statement of what a local one is

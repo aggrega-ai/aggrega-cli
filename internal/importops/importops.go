@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package importops holds the import operation every caller-facing surface
 // reaches: turning a foreign source description into draft Aggrega authoring

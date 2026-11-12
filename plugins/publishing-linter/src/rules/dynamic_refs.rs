@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Reject `$dynamicAnchor` / `$dynamicRef` constructs at sub-schema
 //! positions in SchemaLibrary entries.

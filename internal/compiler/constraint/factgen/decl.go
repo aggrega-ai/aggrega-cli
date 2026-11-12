@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Command factgen generates the constraint framework's view stages, its derived
 // subject-kind set, and the reviewable placement table, from the fact registry

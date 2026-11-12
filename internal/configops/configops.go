@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package configops holds the workspace-configuration operations every
 // caller-facing surface reaches: seeding a working configuration with a registry

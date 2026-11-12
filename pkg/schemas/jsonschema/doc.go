@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package jsonschema rebinds canonical JSON Schema 2020-12 source
 // owned by the aggrega-schemas Go module under a stable identifier

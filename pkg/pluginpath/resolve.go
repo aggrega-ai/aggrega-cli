@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pluginpath is the single home for resolving a Wasm-plugin URI to the
 // .wasm bytes the loader compiles. Every socket that loads a plugin — the

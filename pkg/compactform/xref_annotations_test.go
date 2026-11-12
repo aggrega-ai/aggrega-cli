@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Unit tests for the source-map annotation helpers. The annotation
 // pipeline has two roles: injection (annotateLibrarySource decorates a

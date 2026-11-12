@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compiler_test — end-to-end proof that two ordinary components
 // declaring one top-level compose volume name halt a real build when their

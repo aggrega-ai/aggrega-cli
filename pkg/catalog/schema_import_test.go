@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the schema-import substitution every schema-bearing catalog entity
 // shares: an authored `$import:` on a schema surface is replaced, at load, with

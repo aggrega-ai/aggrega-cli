@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package topology is Step 2 of the compiler pipeline — the Topology
 // Builder & Mutation Gate. It consumes a resolver.ResolveResult (the Step

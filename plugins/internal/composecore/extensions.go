@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Extension members — the keys beginning x- that the Compose Specification
 // reserves for data any tool may carry and none has to read — at the top level of

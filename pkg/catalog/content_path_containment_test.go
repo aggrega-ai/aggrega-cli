@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests the bound on every path an entity declares for content it carries: each
 // such path is read against the directory holding the entity's document, and one

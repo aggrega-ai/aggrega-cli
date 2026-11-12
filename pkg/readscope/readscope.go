@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package readscope holds a read of workspace content to the root it is read
 // beneath: the workspace, or a directory outside it that the owner typed or the

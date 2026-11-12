@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Cognitio S.r.l.
+# Copyright 2026 Cognitio s.r.l.
 
 # The database in one stack and the application reading its values directly off
 # the connection in another, both in the same account and region: a value the

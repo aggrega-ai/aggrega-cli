@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Negative-authoring corpus — build surface. Drives violating triad
 // documents (Aggregate / Manifest / Release) and the four Invariant-5

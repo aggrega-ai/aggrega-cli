@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proof that an author who declares a `values` leaf sensitive on a
 // node whose render cannot carry that declaration is told so — built through the

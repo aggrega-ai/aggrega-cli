@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Cross-package integration proof for the per-node sensitivity marking a Provider
 // guest receives over its rendered keys, driven from a worked example's own

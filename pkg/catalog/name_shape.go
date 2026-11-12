@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // This file owns the regex source-of-truth strings for catalog-entity
 // metadata.name shapes. It declares patterns only; no Go code in this

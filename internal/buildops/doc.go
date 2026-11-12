@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package buildops is the shared build-orchestration layer that front ends drive
 // to compile a Release into artifacts on disk. It single-sources that operation,

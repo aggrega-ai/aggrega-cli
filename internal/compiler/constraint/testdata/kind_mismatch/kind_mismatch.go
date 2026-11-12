@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package kindmismatch must NOT compile. It declares a check over the node kind
 // and then hands it to the entry that presents a document, which is the mistake

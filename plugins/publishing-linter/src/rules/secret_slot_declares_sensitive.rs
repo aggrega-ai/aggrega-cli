@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Advise when an attachment slot accepts only secret-kind material but
 //! does not declare that it handles it.

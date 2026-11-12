@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pathscope is the one home for deciding a path's scope. Three questions
 // live here: does a path stay inside the directory it is relative to as it is

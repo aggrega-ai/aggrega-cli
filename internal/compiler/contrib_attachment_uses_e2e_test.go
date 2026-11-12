@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compiler_test — socket-allowlist coverage for a Feature attachment
 // whose socket names the pre-flatten walk over the Aggregate and Release documents

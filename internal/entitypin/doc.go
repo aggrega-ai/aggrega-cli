@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package entitypin is the pin step: the one implementation that records, in the
 // entity.lock beside a Recipe or FeatureRecipe, the content pins for the inputs

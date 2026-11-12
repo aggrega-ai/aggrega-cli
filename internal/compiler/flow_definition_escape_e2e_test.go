@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proofs that a flow platform's definition carried in an Aggregate's
 // values reaches the platform exactly as the platform exported it when every

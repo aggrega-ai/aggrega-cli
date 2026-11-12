@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Zero-value conformance for the IR edge shape: which of the edge's
 // schema-required properties reject the Go zero value of the field carrying

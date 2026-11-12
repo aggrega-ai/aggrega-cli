@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package merger composes a chain of JSON Schema 2020-12 schemas into
 // a single merged schema with source-position provenance metadata and

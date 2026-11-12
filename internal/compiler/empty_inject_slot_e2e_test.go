@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compiler_test — one verdict for an attachment's inject block on a slot
 // whose allowlist is empty, wherever the attachment is authored.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pluginfetchverify is the single home every plugin fetch routes through
 // for verification: registry signature verification against the resolving

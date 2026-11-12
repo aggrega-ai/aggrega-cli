@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // A FeatureRecipe workload flows through the same Phase B machinery as a base
 // Recipe (via a synthetic Recipe), so a workload library `$import:

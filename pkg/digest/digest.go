@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package digest is the single source of the content-address spelling every
 // push, pull, lockfile, and source-cache integrity check compares against.

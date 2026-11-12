@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package plugincondition declares the generic conditions a plugin reports a
 // failure under: the kinds of failure a plugin names when it stops a build, which

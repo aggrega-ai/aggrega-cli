@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package plugintest is a public, in-process validation facade over the
 // plugin publish-side validation door. It lets a Go plugin author validate a

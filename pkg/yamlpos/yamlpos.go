@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package yamlpos carries LSP-shape Position / Range / Location types
 // alongside helpers that map LSP cursor positions to yaml.v3 nodes and

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package filefailure says a failed file-system operation the way its reader can
 // act on it: what the program was doing, with which path, and then the operating

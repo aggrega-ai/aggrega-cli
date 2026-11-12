@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end coverage of the two published cloudformation FeatureRecipes, built
 // against the sibling catalog through the real compiled Wasm guest and asserted

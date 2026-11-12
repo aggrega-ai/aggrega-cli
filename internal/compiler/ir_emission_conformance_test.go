@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Emitted-IR conformance — the output-side twin of the document-envelope
 // gate. Every end-to-end fixture build's emitted IR document is validated

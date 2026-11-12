@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package importopstest lays down, for a test, a catalog folder from which an
 // import runs end to end: the reference importer of each format the compiler's

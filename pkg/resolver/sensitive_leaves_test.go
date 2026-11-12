@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for DeclaredSensitiveLeaves — the one reader of a schema's sensitivity
 // declarations. Each case pairs a positive observation with the negative that

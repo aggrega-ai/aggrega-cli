@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Command pluginguestfile prints the filename a Plugin entity's .wasm guest is
 // written under, derived through the shipped mapping rather than spelled again

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package branchin is a view chain that joins: one view embeds two others, so
 // its facts are complete at a point two stages claim. Reading this shape must

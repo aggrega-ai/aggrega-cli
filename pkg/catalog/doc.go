@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package catalog is the single source of truth for entity loading from
 // filesystem-resident YAML. It walks one or more directory trees, identifies

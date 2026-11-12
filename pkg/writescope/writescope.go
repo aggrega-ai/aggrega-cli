@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package writescope holds a write or a delete the product works out for itself to
 // the root it is composed beneath: the workspace, or a directory outside it that

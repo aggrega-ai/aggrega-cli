@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the authored-local-path resolution base every import-bearing
 // Recipe and FeatureRecipe field shares: a relative path an author writes

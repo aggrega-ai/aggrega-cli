@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pluginwire answers one question about a plugin export: does a socket
 // call it with a payload in the canonical binary encoding, how is an authored

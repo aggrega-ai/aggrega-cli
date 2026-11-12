@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package oci wraps oras.land/oras-go/v2 for catalog-artifact + source-
 // artifact OCI transport. Pull and Push are the canonical entry points;

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Cognitio S.r.l.
+# Copyright 2026 Cognitio s.r.l.
 
 # The second worked example of the platform smoke run: one web server realized by
 # a Helm chart its Recipe carries, laid out as a catalog of one's own must be — each

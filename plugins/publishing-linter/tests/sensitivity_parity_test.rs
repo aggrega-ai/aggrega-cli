@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! The plugin half of the authored-schema parity check, plus the
 //! vocabulary pins the plugin's reader depends on.

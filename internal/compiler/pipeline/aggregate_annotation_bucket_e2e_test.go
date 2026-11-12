@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proof that the annotations an Aggregate writes on its subsystems
 // and components reach the `.context.annotations.aggregate` bucket a template

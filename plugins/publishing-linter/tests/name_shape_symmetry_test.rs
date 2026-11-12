@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Symmetry test pinning byte-identity between the Rust-side regex
 //! constants in `src/rules/name_shape.rs` and the Go-side

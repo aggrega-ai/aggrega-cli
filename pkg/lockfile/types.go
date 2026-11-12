@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package lockfile parses and writes the per-Release lockfile
 // (`<release-stem>.lock`) that pins every URI resolved from a Release

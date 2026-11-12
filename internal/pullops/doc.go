@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pullops is the shared dependency-resolution layer that front ends
 // drive to resolve a Release's catalog and source dependencies into the cache

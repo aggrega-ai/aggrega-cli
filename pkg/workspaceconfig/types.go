@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package workspaceconfig parses and exposes the per-workspace
 // configuration file (`.aggrega-config.yaml`) that the aggrega CLI

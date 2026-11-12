@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end coverage of what a schema-declared default renders to, per
 // authoring surface, in ONE build against the sibling catalog.

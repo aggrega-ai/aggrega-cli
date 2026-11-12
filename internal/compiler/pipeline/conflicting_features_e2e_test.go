@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proof that two Features one of which declares a conflict with the
 // other halt the build wherever their attachments meet on one component, and

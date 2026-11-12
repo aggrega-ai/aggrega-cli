@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package machinedirs decides where the files that belong to a machine, rather
 // than to any one workspace, are kept: the global configuration file, and the

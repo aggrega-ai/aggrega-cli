@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Cognitio S.r.l.
+# Copyright 2026 Cognitio s.r.l.
 
 # A fixture-local mariadb-rds Recipe, loaded in place of the catalog's own under
 # the same Recipe identity (cloudformation/mariadb-rds:1.0.0), so a build differs

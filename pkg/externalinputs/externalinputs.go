@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package externalinputs owns the content-addressed store for remote content
 // that provider plugins consume during rendering, and the acquisition

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pluginstrust parses and writes `plugins-trust.yaml`, the committed
 // record of the plugin identity trusted for each attachment that returns an

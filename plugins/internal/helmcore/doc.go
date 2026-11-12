@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package helmcore holds the helm provider's translation core: the functions
 // that turn a node's render input into flat rendered Kubernetes YAML for GitOps

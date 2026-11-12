@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package cacheops holds the on-disk cache inventory and the operations that
 // maintain it, as data rather than as rendered text.

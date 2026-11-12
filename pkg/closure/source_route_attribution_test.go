@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Drives what the descent's routing decision changes about an acquisition
 // failure, which is where that decision becomes something a reader can see.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package selector implements Kubernetes-style label matching for Aggrega's
 // cross-node type-safety check (static analysis's `usesSchema` selector

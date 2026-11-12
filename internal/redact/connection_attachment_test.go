@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for withholding the attachments written on a connection, which a uses
 // edge displays under its features entry. Every withheld position sits beside a

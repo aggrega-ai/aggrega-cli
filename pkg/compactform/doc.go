@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compactform compiles the YAML-shaped declarative shorthand for
 // JSON Schema 2020-12 content into a resolved JSON Schema document.

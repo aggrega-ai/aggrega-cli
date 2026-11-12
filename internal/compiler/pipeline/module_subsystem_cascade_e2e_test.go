@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proofs that an attachment a module declares on one of its own
 // subsystems reaches the module's components beneath that subsystem, and is held

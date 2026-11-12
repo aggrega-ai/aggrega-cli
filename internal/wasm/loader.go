@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package wasm is the sole construction site for Extism plugins.
 // Per the project's loader-containment discipline, only this package

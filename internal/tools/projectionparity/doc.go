@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package projectionparity reports a structured fact a shared computation
 // produced that one caller-facing surface carries and another silently drops.

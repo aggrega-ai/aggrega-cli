@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package jsonschema wraps the google/jsonschema-go library behind an
 // adapter interface so the compiler's validator pipeline can run JSON

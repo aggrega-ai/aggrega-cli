@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package cliplugin runs an installed CLI plugin as a terminal command: it
 // resolves the plugin's bytes through the one resolution cascade, loads them

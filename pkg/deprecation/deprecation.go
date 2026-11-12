@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package deprecation defines the on-the-wire format of a deprecation marker:
 // the OCI artifactType that identifies a deprecation referrer and the payload

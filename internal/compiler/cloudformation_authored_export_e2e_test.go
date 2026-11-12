@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proof, from real builds, of what happens when a Recipe authors its
 // own CloudFormation Outputs entry carrying an Export name.

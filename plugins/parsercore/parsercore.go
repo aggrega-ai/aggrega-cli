@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package parsercore holds the pure text-to-tree conversions the embedded
 // starter parser guests run. A parser turns a foreign source text into a

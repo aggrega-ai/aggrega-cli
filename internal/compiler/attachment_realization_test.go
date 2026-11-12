@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // The realization each attachment entry carries on the build graph: the
 // FeatureRecipe the Manifest binds to it, recorded when the graph is finalised

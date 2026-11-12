@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proof that an omits entry built from a value an author declared
 // sensitive reaches its provider marked, through the real pipeline, and that an

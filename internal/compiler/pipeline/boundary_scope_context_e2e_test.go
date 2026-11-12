@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proof, through the real pipeline and the shipped helm guest, that a
 // boundary-scope FeatureRecipe renders by its boundary's own placement and not by

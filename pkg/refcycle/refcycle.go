@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package refcycle is a content-agnostic cycle detector for recursive
 // reference expansion. A caller threads an in-flight key stack through its

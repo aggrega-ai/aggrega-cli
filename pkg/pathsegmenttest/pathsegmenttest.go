@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pathsegmenttest holds the assertion every site that names a file or
 // directory after a value it did not choose is held to: each name the site

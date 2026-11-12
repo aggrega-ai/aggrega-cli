@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end coverage of leaving documents a chart renders out of a build, through
 // the real pipeline and the embedded helm provider.

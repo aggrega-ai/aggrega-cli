@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package sourcewalk decides which files under an entity's local source directory
 // belong to the entity, and is the one walk every reading of such a directory

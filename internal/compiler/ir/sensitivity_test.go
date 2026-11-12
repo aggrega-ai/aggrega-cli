@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the derived sensitivity facts an IR attachment entry carries: the
 // per-attachment roll-up and the per-delivery-key marking. Every case runs

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Cognitio S.r.l.
+# Copyright 2026 Cognitio s.r.l.
 #
 # Field choice exercises typed-parameter resolution mechanics; the specific
 # parameter names (cache_ttl_seconds, display_name) are placeholders for any

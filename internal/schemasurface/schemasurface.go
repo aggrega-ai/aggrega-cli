@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package schemasurface names the places a Component or Feature declares a schema
 // contract, in the spelling every diagnostic about one prints: the entity's own

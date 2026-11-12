@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Cognitio S.r.l.
+# Copyright 2026 Cognitio s.r.l.
 #
 # Pinned to the exact release the guests that consume this crate pin,
 # rego-governance and cel-governance. Each of them selects its own toolchain

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package unregistered_condition attempts to raise a diagnostic against a
 // condition that reports a code without ever having registered one. The type

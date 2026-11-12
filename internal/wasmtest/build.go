@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package wasmtest provides shared helpers for tests that consume
 // .wasm artifacts built on demand from per-language plugin sources.

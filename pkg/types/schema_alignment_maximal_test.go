@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Maximal instance constructors for the Direction-1 leg of the
 // schema↔struct alignment suite. Each populates every top-level spec

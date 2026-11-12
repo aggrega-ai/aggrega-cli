@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package cacheslot owns cache-slot path computation and the
 // combined "write blob + metadata" operation that every adapter

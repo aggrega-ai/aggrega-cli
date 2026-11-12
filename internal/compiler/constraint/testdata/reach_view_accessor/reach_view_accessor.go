@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package reachviewaccessor asks the deepest view for a whole authored
 // document, and for the finalised graph, by the names an author reaching for one

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proof that a CloudFormation stack keeps every node's names apart
 // when several nodes of the same type assemble into one stack, built against the

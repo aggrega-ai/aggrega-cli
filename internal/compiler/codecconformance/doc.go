@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package codecconformance is the shared determinism + correctness contract
 // every provider codec must pass. A codec carves a provider's emitted output

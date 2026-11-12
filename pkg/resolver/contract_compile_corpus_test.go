@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Negative-authoring corpus for the schema-contract compile refusal, driven
 // through the real compilation spine rather than through the guard entry alone.

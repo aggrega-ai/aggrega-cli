@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compiler_test — end-to-end proof that a Workload delivers a credential a
 // connection carries by naming the connection beside the slot its socket declares,

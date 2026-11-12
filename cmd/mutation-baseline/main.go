@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Binary mutation-baseline produces a per-package mutation testing
 // baseline for the aggrega-cli codebase. The binary implements ten

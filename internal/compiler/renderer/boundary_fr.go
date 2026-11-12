@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Boundary-scope FeatureRecipe dispatch: the executionScope: boundary
 // branch of Phase B.6. Per-component FR dispatch (the default,

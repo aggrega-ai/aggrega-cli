@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package rendercore holds the loader-free primitives of the render pipeline:
 // the provider-render socket wire types, the per-node render and provenance

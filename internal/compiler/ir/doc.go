@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package ir is Step 3 of the compiler pipeline — Graph Finalization. It
 // consumes the upstream Step 2 output (a topology.TopologyResult, the

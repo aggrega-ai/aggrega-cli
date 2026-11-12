@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the provider-scoped Recipe/FeatureRecipe identity: two providers
 // shipping a recipe of the same name and version coexist (the catalog tree

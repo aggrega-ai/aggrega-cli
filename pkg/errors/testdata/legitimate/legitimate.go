@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package legitimate declares a halting condition exactly the way a consuming
 // package does. It is the calibration for the sealing gate: it must compile, so

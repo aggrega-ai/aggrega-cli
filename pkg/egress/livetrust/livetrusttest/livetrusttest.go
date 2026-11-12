@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package livetrusttest serves a TUF repository publishing a trust root of a
 // test's choosing, and points every live trust-root fetch of the test binary at

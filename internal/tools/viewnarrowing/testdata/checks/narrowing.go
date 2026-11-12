@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package checks is the corpus the narrowing reading is proven against: checks
 // written in the shape a real check is written in, each shaped to exercise one

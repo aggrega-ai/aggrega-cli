@@ -71,16 +71,16 @@ InstallDir "$LOCALAPPDATA\Programs\aggrega"
 InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
 ; The line at the foot of every page, naming the publisher. ${U+00B7} is the
 ; middle dot, written as its code point so this script stays plain ASCII.
-BrandingText "Aggrega ${VERSION} ${U+00B7} Cognitio S.r.l."
+BrandingText "Aggrega ${VERSION} ${U+00B7} Cognitio s.r.l."
 ShowInstDetails show
 ShowUninstDetails show
 
 VIProductVersion "${VI_VERSION}"
 VIFileVersion "${VI_VERSION}"
 VIAddVersionKey /LANG=1033 "ProductName" "Aggrega"
-VIAddVersionKey /LANG=1033 "CompanyName" "Cognitio S.r.l."
+VIAddVersionKey /LANG=1033 "CompanyName" "Cognitio s.r.l."
 ; The copyright line the source files carry.
-VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright 2026 Cognitio S.r.l."
+VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright 2026 Cognitio s.r.l."
 VIAddVersionKey /LANG=1033 "FileDescription" "Aggrega Setup"
 VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
@@ -217,7 +217,7 @@ Section "-Register"
   ClearErrors
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "Aggrega"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "Cognitio S.r.l."
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "Cognitio s.r.l."
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\uninstall.exe"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "URLInfoAbout" "https://aggrega.ai"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "HelpLink" "https://aggrega.ai/docs/install/"

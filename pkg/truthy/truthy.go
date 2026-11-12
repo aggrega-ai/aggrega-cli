@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package truthy owns the single rule that turns a template-rendered string into
 // a Go boolean. It is a stdlib-only leaf so every surface that gates on a

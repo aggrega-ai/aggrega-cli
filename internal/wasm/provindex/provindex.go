@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package provindex is the CLI-owned provenance index: a small on-disk record
 // mapping a plugin guest's content digest to the identities — the {URI, version}

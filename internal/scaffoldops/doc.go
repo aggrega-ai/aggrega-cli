@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package scaffoldops is the shared drafting layer that front ends drive to turn
 // an entity kind into a starter document. It single-sources the one operation a

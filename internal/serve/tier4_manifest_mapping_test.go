@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package serve — integration proof that an inconsistent Manifest mapping is
 // published by the daemon WITHOUT displacing the rest of a file's diagnostics.

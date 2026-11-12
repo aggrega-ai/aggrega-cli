@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package egress is the single gate every network-egressing path crosses. It is
 // the sole home of the offline decision and the sole constructor of the network

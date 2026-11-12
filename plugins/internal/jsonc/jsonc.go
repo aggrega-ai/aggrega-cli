@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package jsonc reads JSON with comments as JSON: it writes what JSON with
 // comments admits and JSON does not as spaces, so a JSON reader reads the rest.

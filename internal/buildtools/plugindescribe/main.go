@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Command plugindescribe extracts a Wasm plugin guest's describe() descriptor
 // once at build time and writes it as JSON alongside the embedded guest, so the

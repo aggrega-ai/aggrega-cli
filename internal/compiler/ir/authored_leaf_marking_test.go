@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the per-authored-leaf sensitivity marking at the two units a real
 // build reaches only through a whole workspace: the node's own pillars and a

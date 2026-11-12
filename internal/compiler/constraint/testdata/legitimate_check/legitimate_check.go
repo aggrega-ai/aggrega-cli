@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package legitimatecheck is the positive control for the subject-kind gate: the
 // program that MUST compile. It declares a check as a value over the document

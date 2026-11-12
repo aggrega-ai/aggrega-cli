@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package draftyaml carries text read from an imported source into the YAML
 // drafts an importer writes by hand: it reads the text a scalar of the source's

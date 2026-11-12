@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests which `source:` values a catalog load anchors against the declaring
 // entity's own directory, for both kinds that carry a source and both shapes a

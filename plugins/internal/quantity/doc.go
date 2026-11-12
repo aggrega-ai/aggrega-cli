@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package quantity parses the resource quantities a Workload carries — CPU,
 // memory, extended-resource values and volume sizes — in the grammar Kubernetes

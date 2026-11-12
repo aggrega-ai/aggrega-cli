@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the Step-3 Feature/Secret attachment schema-conformance gate:
 // validateNodeAttachments + its wiring into BuildIRContext. The gate validates the

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package langgraphimport is the LangGraph importer: it reads the graphs a
 // LangGraph application declares in its configuration, langgraph.json, and

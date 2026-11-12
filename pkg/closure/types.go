@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package closure walks a Release plus its associated Manifest,
 // Aggregate, workspace-config, and an injected Lookup, producing

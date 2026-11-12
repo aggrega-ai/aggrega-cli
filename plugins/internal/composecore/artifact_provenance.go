@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Provenance placement for compose artifact fragments — the compose-shaped
 // counterpart to the Kubernetes-manifest placer in the shared render core.

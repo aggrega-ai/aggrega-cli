@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package haltref resolves a halting condition's code to what the compiler
 // declares about it and to the published entry that teaches the authoring fix.

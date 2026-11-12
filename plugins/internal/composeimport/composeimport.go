@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package composeimport is the Compose importer: it reads the services and the
 // models a Compose application declares and drafts an Aggregate holding one

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end coverage of the Kubernetes version a chart rendered from source is
 // rendered for: the version the Release names under aggrega.ai/kubernetes-version,

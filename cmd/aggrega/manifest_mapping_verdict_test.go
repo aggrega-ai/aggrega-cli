@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package main — end-to-end proof of the per-surface verdict on an inconsistent
 // Manifest mapping: the two artifact-producing commands halt, and each does so

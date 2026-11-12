@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package mutatorcore holds the pure label-patch computations the embedded
 // mutator guests run. A mutator reads a projection of the topology graph —

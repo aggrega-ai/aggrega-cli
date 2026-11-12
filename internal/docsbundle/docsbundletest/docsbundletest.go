@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package docsbundletest builds documentation bundles and serves them from an
 // in-process registry, for tests that drive a documentation surface against

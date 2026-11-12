@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package attribindex is the CLI-owned compile-attribution index: a small
 // on-disk record mapping each leaf of the machine-global compiled-module cache

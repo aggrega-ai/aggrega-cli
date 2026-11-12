@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package explainops composes the explanation of a halting condition from a code
 // a reader is holding, for every surface that answers the question.

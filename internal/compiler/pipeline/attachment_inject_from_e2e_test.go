@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proof that an attachment's inject entry whose `from:` names a key the
 // attachment's FeatureRecipe does not publish is refused rather than built and

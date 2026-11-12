@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package authoredcontent carries the rule that decides who writes what a
 // capability produces, and the one delivery mode that follows from it.

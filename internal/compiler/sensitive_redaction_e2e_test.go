@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compiler_test — end-to-end proof of the host-redaction boundary: a
 // declared-sensitive datum is withheld from the per-pass trace a human reads,

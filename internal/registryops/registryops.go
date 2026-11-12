@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package registryops holds the registry inventory — which registries a
 // workspace is configured to reach, and what the local index of them offers — as

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // The proofs below park a traversal inside a read of a named pipe, so they are
 // built only where the standard library can create one.

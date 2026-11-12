@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Cognitio S.r.l.
+# Copyright 2026 Cognitio s.r.l.
 #
 # One boundary annotating three keys over three nodes that differ only in which
 # input kinds their Recipe declares, so one build shows every outcome the

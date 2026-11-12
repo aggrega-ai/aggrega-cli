@@ -197,7 +197,7 @@
 #                 with --unsigned the one in bin/), uninstall.exe, EnVar.dll and
 #                 LICENSE, and nothing else; the user PATH holding that folder
 #                 once; an uninstall entry in the user's list of installed apps
-#                 naming Aggrega, the version staged, Cognitio S.r.l. as its
+#                 naming Aggrega, the version staged, Cognitio s.r.l. as its
 #                 publisher, the folder, the uninstaller in it as its icon and as
 #                 its command, with /S as its quiet form, the Aggrega site, the
 #                 install page and the releases page as its links, no modify or
@@ -1333,7 +1333,7 @@ INSTALLER_SECONDS=300
 # under the installer's uninstall entry, read through Windows PowerShell, with
 # the install folder in SMOKE_INSTALL_FOLDER and the version staged in
 # SMOKE_VERSION. present prints the entry's values and refuses one that is
-# missing or does not name Aggrega, the version, Cognitio S.r.l., the folder,
+# missing or does not name Aggrega, the version, Cognitio s.r.l., the folder,
 # the uninstaller in it as its icon and, quoted, as its command with /S as its
 # quiet form, https://aggrega.ai, the install page and the releases page as its
 # links, and 1 for NoModify and NoRepair; or whose EstimatedSize is not a
@@ -1347,7 +1347,7 @@ installed_app() {
   script+="\$key = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\aggrega'; "
   script+="\$q = [string][char]34; "
   script+="\$uninstaller = Join-Path \$env:SMOKE_INSTALL_FOLDER 'uninstall.exe'; "
-  script+="\$want = [ordered]@{ DisplayName = 'Aggrega'; DisplayVersion = \$env:SMOKE_VERSION; Publisher = 'Cognitio S.r.l.'; "
+  script+="\$want = [ordered]@{ DisplayName = 'Aggrega'; DisplayVersion = \$env:SMOKE_VERSION; Publisher = 'Cognitio s.r.l.'; "
   script+="DisplayIcon = \$uninstaller; URLInfoAbout = 'https://aggrega.ai'; HelpLink = 'https://aggrega.ai/docs/install/'; "
   script+="URLUpdateInfo = 'https://github.com/aggrega-ai/aggrega-cli/releases'; "
   script+="InstallLocation = \$env:SMOKE_INSTALL_FOLDER; UninstallString = \$q + \$uninstaller + \$q; QuietUninstallString = \$q + \$uninstaller + \$q + ' /S'; "

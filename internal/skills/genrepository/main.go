@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Command genrepository writes the tree of the public skills repository from
 // the skills built into the aggrega binary, with the module's LICENSE file and

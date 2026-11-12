@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for materialising an attachment's schema-declared pillar defaults into
 // the graph, on both surfaces an attachment reaches the graph by: the per-node

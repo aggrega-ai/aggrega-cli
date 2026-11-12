@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package docsbundle names the documentation bundle, acquires it into the
 // machine-wide cache every surface on the machine reads it from, and holds each

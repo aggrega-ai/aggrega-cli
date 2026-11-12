@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package set_the_field obtains an identity legitimately and then attempts to
 // overwrite the code it carries. It must not compile.

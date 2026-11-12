@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end corpus for the identity a dispatch group holds a boundary-scope
 // contributor under, driven through the real pipeline.

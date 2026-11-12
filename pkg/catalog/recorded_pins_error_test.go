@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the load-side half of the entity lock: a lock that will not read
 // stops the load rather than being read as an entity with nothing pinned.

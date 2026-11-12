@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package crewaiimport is the CrewAI importer: it reads the agents and the tasks
 // a CrewAI project declares in its configuration files and drafts an Aggregate

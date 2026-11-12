@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Entry-level + sub-schema-aware walker for SchemaLibrary content.
 //! Rules under `src/rules/` that operate on the per-entry shape of

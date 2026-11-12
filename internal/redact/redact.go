@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package redact holds the one replacement text every human-readable surface
 // substitutes for a datum an author declared sensitive, and the appliers that

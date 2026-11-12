@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package registryhost is the single source for reading a registry host: for
 // extracting the host authority from a registry reference or a source-artifact

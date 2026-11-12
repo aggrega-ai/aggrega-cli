@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package legitimate is the positive control for the forgery gate: the one
 // program under testdata that MUST compile. It uses the framework the way a

@@ -1,6 +1,6 @@
 This installs aggrega, the Aggrega command-line program, for you alone, without administrator rights.
 
-Aggrega is developed and published by Cognitio S.r.l. and released under the Apache License 2.0.
+Aggrega is developed and published by Cognitio s.r.l. and released under the Apache License 2.0.
 
 The next pages let you choose whether to add its folder to your PATH, and where to install it. Unless you choose another folder, it goes into %LOCALAPPDATA%\Programs\aggrega.
 

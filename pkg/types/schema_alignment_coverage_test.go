@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Population coverage for the bidirectional schema↔struct alignment suite.
 // The suite itself walks a hand-listed set of cases; this gate closes the hole

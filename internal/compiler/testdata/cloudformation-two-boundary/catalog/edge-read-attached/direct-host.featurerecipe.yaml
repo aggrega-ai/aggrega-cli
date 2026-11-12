@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Cognitio S.r.l.
+# Copyright 2026 Cognitio s.r.l.
 
 # Copies the database host it reads directly off the connection onto the
 # component's inject pipe, which the build accepts.

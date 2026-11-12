@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package forged_identity attempts the deliberate version of the same forgery:
 // it declares every method the identity interface names, the unexported marker

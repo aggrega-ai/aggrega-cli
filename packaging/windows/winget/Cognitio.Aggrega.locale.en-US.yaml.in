@@ -5,7 +5,7 @@
 PackageIdentifier: Cognitio.Aggrega
 PackageVersion: "@VERSION@"
 PackageLocale: en-US
-Publisher: Cognitio S.r.l.
+Publisher: Cognitio s.r.l.
 PackageName: Aggrega
 PackageUrl: https://aggrega.ai
 License: Apache-2.0

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package recipepin owns a Recipe or FeatureRecipe's intrinsic-input content
 // pins — one per resolved remote source, one per $import artifact file — from

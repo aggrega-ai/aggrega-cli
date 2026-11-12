@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Negative-authoring corpus — serve surface. One permanent subprocess
 // row proves the envelope gate is inherited by the serve daemon: an

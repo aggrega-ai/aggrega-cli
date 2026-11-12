@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Command annotationmatrix refreshes the published well-known-annotation support
 // matrix from the support claim each provider declares for itself.

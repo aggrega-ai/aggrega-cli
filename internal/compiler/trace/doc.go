@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package trace provides per-pass intermediate-state capture for the
 // `aggrega build --trace` debug surface. When tracing is on, each

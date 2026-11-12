@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package hometest redirects the per-user homes a test binary would otherwise
 // resolve, for the lifetime of that binary, so a suite never reads from or

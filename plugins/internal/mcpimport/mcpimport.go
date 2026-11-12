@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package mcpimport is the MCP importer: it reads the MCP servers an MCP
 // client's configuration lists, or the one server an MCP registry server

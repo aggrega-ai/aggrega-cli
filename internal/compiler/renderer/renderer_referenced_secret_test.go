@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // A core/referenced-secret credential Feature declares its referenceable-secret
 // output contract (schema.provides {name, key}); the filling FeatureRecipe

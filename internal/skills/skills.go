@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package skills carries the assistant skills the aggrega binary ships, and
 // writes copies of them where an AI assistant reads skills.

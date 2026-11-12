@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package registrytrust defines the advertised-trust contract a registry
 // serves at its well-known trust endpoint, and the trust-on-first-use fetch

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end coverage of the names a Kubernetes render declares it emitted, and
 // of the halt the host raises when two contributors to one assembled output claim

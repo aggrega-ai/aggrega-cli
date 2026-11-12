@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proof of the CloudFormation provider against the sibling catalog,
 // building the fragment-form mariadb-rds Recipe and a db-reader consumer through

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package sourcecache owns the build-time read-and-extract pipeline
 // for source artifacts pinned in the lockfile. The package looks up

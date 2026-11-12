@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package analyzer holds the static contracts evaluated over the finalised IR
 // graph, and derives what that graph makes available to the surfaces beyond it.

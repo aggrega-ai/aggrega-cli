@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package parsersocket is the host orchestration for the parser socket: it
 // resolves a parser plugin for a requested source format, runs it hermetically,

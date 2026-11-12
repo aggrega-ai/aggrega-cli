@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compiler_test — end-to-end proof that a name a CloudFormation template
 // cannot hold halts the build when it is authored in a section the assembled

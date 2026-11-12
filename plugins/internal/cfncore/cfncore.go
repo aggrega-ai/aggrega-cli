@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package cfncore is the filesystem-free CloudFormation domain core the
 // cloudformation-provider Wasm guest runs: it normalizes CloudFormation

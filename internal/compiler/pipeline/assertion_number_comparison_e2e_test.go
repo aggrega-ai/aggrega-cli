@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proof that an assertion comparing a number an author wrote with a
 // number literal — the form the assertion pages teach — builds, through the real

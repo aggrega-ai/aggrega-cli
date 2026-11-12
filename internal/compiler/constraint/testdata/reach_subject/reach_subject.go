@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package reachsubject asks the other value a rule is handed — the subject —
 // for a whole document. It must FAIL to compile.

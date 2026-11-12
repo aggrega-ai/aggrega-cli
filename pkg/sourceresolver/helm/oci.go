@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package helm implements the source-resolver adapters for Helm
 // chart sources: helm-oci-chart (OCI-distributed charts via ORAS)

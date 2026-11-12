@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the cross-document $ref lookup perspective on the catalog's
 // SchemaLibraries map. The compactform compiler resolves cross-document

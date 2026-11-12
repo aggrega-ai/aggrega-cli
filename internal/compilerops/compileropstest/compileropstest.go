@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compileropstest provides shared fixtures for tests that need a
 // Release's lockfile to describe exactly what the Release resolves to.

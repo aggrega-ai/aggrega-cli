@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compose implements the compose-https-fragment source-
 // resolver adapter. The adapter fetches a single Docker Compose YAML

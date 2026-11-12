@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package selectormatch reads a catalog selector against a set of labels held
 // as a plain map, for the importer guests built on the plugin kit: the kit hands

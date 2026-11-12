@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package archive provides a strict deterministic .tar.gz writer and
 // a sha256 digest helper used by every source-resolver adapter that

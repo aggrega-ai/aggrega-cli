@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package exampleops is the shared layer every front end drives to hand a reader
 // one of the runnable examples the published documentation carries: the list of

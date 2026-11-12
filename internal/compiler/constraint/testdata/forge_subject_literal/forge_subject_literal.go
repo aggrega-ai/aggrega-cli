@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package forgesubjectliteral must NOT compile. Since an objection can only
 // come from a subject, this attempts to conjure the subject instead — the

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package wasmfixture builds the test .wasm artifacts whose sources live inside
 // this module, and holds the discipline every fixture build in this module

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Per-kind × per-classification rubric coverage for the
 //! publishing-linter's schema-evolution rule. Fixtures are inline

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package envelope_field_write attempts to reshape a diagnostic a constructor
 // legitimately built, which would let a caller change what a reader is told

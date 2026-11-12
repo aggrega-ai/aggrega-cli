@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for a pillar whose own node is an in-document reference. Two readers ask
 // what such a pillar declares — the sensitivity reader over a whole-entity

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // The Phase B.2 workload-secret cross-check validates a synthesized Workload's
 // containers.<n>.attachments against the bound owning entity's featuresSchema slots:

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Filesystem-free per-(path, provider) merge core for the compose provider.
 // Reads per-node fragments (Intermediate=true EmittedFiles produced by

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package ociref owns the single OCI-safe rule for splitting a version tag off a
 // plugin reference. It is a stdlib-only leaf so both the catalog resolver and the

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compiler_test — a refusal's text never carries a value an author declared
 // sensitive, through the real pipeline, at both stages a template refuses at: a

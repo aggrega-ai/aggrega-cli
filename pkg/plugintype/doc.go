@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package plugintype is the canonical home for the Wasm plugin-type
 // vocabulary and the per-type metadata every other package reads. It is a

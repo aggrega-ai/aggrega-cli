@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Reject direct authoring of `x-aggrega-selector` or
 //! `x-aggrega-inject` keywords in Component / Feature schema

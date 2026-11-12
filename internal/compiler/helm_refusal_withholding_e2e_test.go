@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // A refusal the helm or compose guest raises never carries a value its input marks
 // sensitive, through the real pipeline and the guest itself. The guest composes

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // The unconveyed-sensitivity advisory on an attachment, proved through RenderAll
 // over the shipped terraform guest rather than over the reading in isolation.

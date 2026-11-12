@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pluginops holds the plugin operations every caller-facing surface
 // reaches: adding a plugin of a named type, removing one, aligning a plugin

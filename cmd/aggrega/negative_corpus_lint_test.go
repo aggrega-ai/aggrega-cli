@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Negative-authoring corpus — lint surface. Each catalog entity kind has
 // a base-valid document and a set of single-fault violations (unknown

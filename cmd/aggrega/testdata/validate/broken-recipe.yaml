@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Cognitio S.r.l.
+# Copyright 2026 Cognitio s.r.l.
 
 # A deliberately malformed Recipe for validate's loud-diagnostic path: the
 # scalar fields carry the wrong types (target is a sequence, implements is a

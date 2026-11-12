@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the per-attachment facts clause the Release layout prints beside
 // each attachment: the slot it fills, and whether it handles declared-sensitive

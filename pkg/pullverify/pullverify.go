@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pullverify runs signature verification at pull/lock time. It is
 // the lock-time half of the signing model: pull discovers each pinned

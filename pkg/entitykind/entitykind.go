@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package entitykind declares the entity-kind vocabulary — the set of kinds an
 // author may write in a document's top-level `kind:` field — and the per-kind

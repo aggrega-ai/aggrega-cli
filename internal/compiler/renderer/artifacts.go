@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Phase B.3 artifacts host-side projection per chapter 16's three-input-kinds
 // model. `artifacts:` is a single OrderedMap keyed by output filename; each entry

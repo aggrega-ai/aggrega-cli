@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package charttest renders an assembled chart tree the way `helm template`
 // does, so a test can assert what a chart ACTUALLY renders rather than that its

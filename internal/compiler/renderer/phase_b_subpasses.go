@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Phase B sub-pass functions per chapter 16 §5.1. The orchestrator threads a
 // single PhaseBState accumulator through B.0 → B.6 in order; each function

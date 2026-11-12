@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for what the inspect layouts withhold. Both surfaces are asserted on
 // their real emitted text, and every "the value is hidden" assertion sits

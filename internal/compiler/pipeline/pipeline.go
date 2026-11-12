@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pipeline orchestrates the 5-step compiler pipeline from already-
 // loaded inputs to in-memory artifacts. It carries no CLI dependency: no

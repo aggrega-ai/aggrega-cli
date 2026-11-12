@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the coordinates a set derives for the data it names, the reading of a
 // template's references over them, and the one substitution of a template's data

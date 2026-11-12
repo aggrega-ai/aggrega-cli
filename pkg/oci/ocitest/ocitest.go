@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package ocitest provides fixtures for tests that lay out or read the artifact
 // cache by hand. It is a test helper, not a way to address the cache: every slot it

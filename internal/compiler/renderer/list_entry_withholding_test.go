@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for what a template's failure may say when the template read a value an
 // author declared sensitive from inside a list — a boundary's connections and

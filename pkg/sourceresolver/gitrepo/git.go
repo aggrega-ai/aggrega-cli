@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package gitrepo implements the git-repository source-resolver
 // adapter. The adapter clones a Git repository to a temporary

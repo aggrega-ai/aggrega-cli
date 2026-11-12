@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package catalogtest provides fixtures for tests that hold a catalog view to a
 // lockfile's or a closure's pins. It is a test helper, not a way to build pins:

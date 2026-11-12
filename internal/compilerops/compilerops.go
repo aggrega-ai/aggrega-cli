@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compilerops is the shared compiler-operations layer that language
 // front ends drive to run the compiler pipeline against explicit inputs. It

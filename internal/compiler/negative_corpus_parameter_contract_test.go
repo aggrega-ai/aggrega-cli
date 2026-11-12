@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Negative-authoring corpus — a parameter contract that constrains nothing. Drives
 // each shape through the REAL build pipeline (pipelinetest.BuildE) on the minimal

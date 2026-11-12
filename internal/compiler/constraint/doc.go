@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package constraint carries the mechanism a constraint check is written
 // against: what a check declares, what it hands back when an input violates a

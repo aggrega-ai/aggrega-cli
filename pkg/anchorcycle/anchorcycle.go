@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package anchorcycle detects a YAML anchor that is aliased somewhere inside
 // its own content. Such a document denotes an infinite tree: expanding the

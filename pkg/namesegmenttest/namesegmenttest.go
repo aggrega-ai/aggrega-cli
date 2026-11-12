@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package namesegmenttest is the shared harness the segment-encoding assertions
 // are made with: the corpus they are established over, and a reader that turns

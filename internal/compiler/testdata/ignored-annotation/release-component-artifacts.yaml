@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Cognitio S.r.l.
+# Copyright 2026 Cognitio s.r.l.
 #
 # The component crossing carries the artifacts: the node's own Recipe declares
 # artifacts and nothing else, so its whole output is imported artifact documents.

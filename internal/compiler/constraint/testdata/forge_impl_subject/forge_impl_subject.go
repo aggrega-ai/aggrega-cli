@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package forgeimplsubject must NOT compile. A subject kind cannot be
 // zero-valued, so this attempts the remaining route: implement the interface.

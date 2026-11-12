@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 package serve
 
@@ -15,7 +15,7 @@ import (
 
 // licenceHeader is the comment a catalog file opens with, so the head of every
 // document below is a comment rather than a key.
-const licenceHeader = "# SPDX-License-Identifier: Apache-2.0\n# Copyright 2026 Cognitio S.r.l.\n\n"
+const licenceHeader = "# SPDX-License-Identifier: Apache-2.0\n# Copyright 2026 Cognitio s.r.l.\n\n"
 
 // TestKeyPathSpanDrawsAFindingItCannotPlaceOnTheKeyNamingTheDocument holds the one
 // fall-back every finding positioned from a path takes: a path that resolves is

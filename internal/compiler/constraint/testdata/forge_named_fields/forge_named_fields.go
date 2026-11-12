@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package forgenamedfields must NOT compile. It attempts to build an objection
 // by naming the fields, which is the most direct way a function outside the

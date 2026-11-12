@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package yamlsplice carries the low-level line mechanics for a surgical,
 // byte-faithful edit of a single key-and-value block inside a YAML document:

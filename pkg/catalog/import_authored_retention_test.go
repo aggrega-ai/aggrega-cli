@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests that the `$import:` value an author wrote survives a catalog load
 // beside the resolved path rather than being consumed by it, for both kinds

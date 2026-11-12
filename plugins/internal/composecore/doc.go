@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package composecore holds the compose provider's translation core: the
 // filesystem-free functions that turn a node's render input into Docker Compose

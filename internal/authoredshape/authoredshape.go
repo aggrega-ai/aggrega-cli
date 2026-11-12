@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package authoredshape names the shape of a value in the words an author writes
 // values in — a number, text, a true/false value, a list, a map, no value — so a

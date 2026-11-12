@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package adkimport is the Google ADK importer: it reads the agents declared in
 // the Agent Config files of an application built on Google's Agent Development

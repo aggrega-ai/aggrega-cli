@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package documentview presents one authored Recipe or FeatureRecipe to a
 // document-stage check as the named facts that kind carries.

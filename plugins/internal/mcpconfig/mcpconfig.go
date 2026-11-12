@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package mcpconfig reads the server configuration a flow's MCP tool node
 // carries — the address of a server reached over HTTP and the headers sent to

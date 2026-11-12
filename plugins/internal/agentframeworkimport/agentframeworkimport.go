@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package agentframeworkimport is the Agent Framework importer: it reads a
 // Microsoft Agent Framework declarative agent — the YAML file an application

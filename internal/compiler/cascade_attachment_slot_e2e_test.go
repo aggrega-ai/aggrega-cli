@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package compiler_test — what a Feature attachment contributed at a subsystem
 // scope does when it lands on a component whose attachment slot of the same name

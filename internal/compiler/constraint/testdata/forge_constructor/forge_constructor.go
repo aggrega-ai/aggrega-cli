@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package forgeconstructor must NOT compile. It reaches for the constructor an
 // author would expect a value type to have, and pins that the framework exposes

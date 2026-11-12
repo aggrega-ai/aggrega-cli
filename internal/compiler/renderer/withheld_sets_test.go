@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the two sets one assembly of a node's render context yields — the set
 // a capture is withheld by and the set a failure's text is withheld by — and for

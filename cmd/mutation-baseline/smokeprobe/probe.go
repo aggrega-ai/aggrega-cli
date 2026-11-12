@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package smokeprobe is a tiny self-contained probe used by the mutation
 // baseline binary's startup smoke check. It carries one tested function and

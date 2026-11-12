@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package editops applies one bounded, structured edit to an authored source
 // YAML document, preserving every byte the edit does not touch.

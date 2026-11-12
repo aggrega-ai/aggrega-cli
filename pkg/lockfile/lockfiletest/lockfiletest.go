@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package lockfiletest provides fixtures for tests that need a lockfile
 // describing exactly a closure they computed. It is a test helper, not a way to

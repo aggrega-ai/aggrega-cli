@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package pathsegment spells the file and directory names this program derives
 // from values it did not choose — an entity's reference, a version, a content

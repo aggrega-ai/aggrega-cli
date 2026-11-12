@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end coverage of the identity a per-component Feature attachment's
 // rendered resources carry, across the three ways a FeatureRecipe can deliver

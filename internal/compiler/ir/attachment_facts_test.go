@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for the per-attachment facts a consumer needs in order to judge an
 // attachment for itself: the attached Feature's verbatim catalog labels, its

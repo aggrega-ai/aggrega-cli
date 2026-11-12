@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package netrc reads the netrc file — the per-user credential file curl, Git
 // and the Go toolchain also read — for the source kinds fetched over HTTP: a

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package gencatalog generates deterministic, idempotent Plugin catalog
 // entities from Wasm guests. Each entity's contract fields are derived from the

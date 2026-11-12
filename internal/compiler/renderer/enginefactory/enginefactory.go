@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package enginefactory provides the compiler's render routing: the
 // catalog-driven Wasm engine factory (NewHybrid) that resolves a provider name to

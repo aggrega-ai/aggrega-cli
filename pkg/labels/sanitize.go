@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package labels turns the strings the compiler holds into values that satisfy
 // Kubernetes label-value rules. The compiler stamps labels on rendered

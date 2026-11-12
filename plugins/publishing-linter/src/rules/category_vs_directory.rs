@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Reject Components whose component.aggrega.ai/category label does
 //! not match their filesystem path's first directory segment under

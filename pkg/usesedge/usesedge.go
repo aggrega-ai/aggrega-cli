@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package usesedge publishes the halting conditions of `uses` edge wiring so a
 // consumer can match them with errors.Is.

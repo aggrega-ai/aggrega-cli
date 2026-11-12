@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Unit tests for the per-entity-kind name-shape rule. Fixtures
 //! cover each catalog kind's documented pattern + at least one

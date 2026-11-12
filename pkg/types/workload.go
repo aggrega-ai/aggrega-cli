@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Workload struct surface — the platform-owned `aggrega.ai/v1beta1` Workload
 // kind referenced by Recipes that adopt the synthesized input kind. The Workload

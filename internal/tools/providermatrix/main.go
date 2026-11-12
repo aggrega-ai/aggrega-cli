@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Command providermatrix refreshes the published provider capability grid from
 // the render-behavior contract each provider guest declares for itself.

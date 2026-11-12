@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package difyimport is the Dify importer: it reads an application Dify exports
 // in its DSL — the YAML document Dify writes for an application — and drafts an

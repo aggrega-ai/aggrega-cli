@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package types defines the typed in-memory boundaries between compiler
 // stages and is the leaf package consumed by every other package in the

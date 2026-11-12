@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package viewnarrowing reports a constraint check that declares a wider view
 // than the facts its predicate reads, and names the narrower view that would

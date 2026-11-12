@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // A container naming one environment variable both as a plain variable and as an
 // attachments entry delivered as env is refused by the rule declared over the

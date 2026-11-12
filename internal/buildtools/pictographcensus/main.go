@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Command pictographcensus reports pictographic characters that appear inside a
 // Go comment on a surface Go publishes, and exits non-zero when it finds any.

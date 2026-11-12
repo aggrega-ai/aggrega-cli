@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package branchout is a view chain that is not a chain: two views embed the
 // base, so the facts they declare are complete at points with no order between

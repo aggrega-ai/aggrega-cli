@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Direct walker tests for `visit_schemas_recursive`. Asserts:
 //!   - All JSON Schema 2020-12 sub-schema-bearing keywords are

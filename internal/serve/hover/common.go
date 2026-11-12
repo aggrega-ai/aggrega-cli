@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package hover renders LSP MarkupContent for cursor positions across
 // the entity-kind set. The daemon's aggrega/hover dispatcher classifies

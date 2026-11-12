@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for what a refusal raised while resolving a remote source may say when a
 // coordinate it names was produced by a template reading a value an author declared

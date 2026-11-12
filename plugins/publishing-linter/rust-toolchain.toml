@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Cognitio S.r.l.
+# Copyright 2026 Cognitio s.r.l.
 #
 # The toolchain this guest is compiled with. It is one exact release, never a
 # moving one such as stable: the compiler's own code reaches the guest's bytes, so

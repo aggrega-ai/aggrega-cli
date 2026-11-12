@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Unit tests for collectNodeFeatures and the helper functions in
 // features.go — focused per-behaviour coverage that complements the

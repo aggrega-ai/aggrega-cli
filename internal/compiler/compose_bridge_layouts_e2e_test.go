@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // This test reads catalog entities from the aggrega-hub repository checked out
 // beside this one, as the compose-bridge end-to-end test does.

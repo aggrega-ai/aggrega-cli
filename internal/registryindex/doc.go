@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package registryindex holds the local searchable index a registry refresh
 // writes: its record shape, its on-disk read, the withdrawal facts it records,

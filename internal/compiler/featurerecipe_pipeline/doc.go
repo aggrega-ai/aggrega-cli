@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package featurerecipe_pipeline is the home of the FeatureRecipe-Pipeline
 // (FRP) Wasm-guest ABI: the JSON contract a pipeline-step plugin binds

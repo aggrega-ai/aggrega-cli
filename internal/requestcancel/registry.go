@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package requestcancel holds the registry that makes one in-flight request
 // addressable by its id, so a client can cancel that request and leave every

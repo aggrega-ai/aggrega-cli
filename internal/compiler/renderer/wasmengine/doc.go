@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package wasmengine is a host-only adapter that implements the host renderer's
 // Provider interface, and the optional render interfaces beside it, by rendering

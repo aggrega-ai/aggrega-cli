@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package verdicttest provides shared fixtures for tests that need a
 // verdict-socket plugin already present in a workspace the way a completed

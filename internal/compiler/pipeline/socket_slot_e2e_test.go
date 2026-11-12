@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proofs that a slot a dependency socket declares holds each
 // connection's fill to the demands a component's own slot holds its fill to: the

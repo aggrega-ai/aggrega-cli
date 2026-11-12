@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package entitysynth assembles a Plugin catalog entity from a Wasm guest's
 // describe() self-report. The routing-relevant contract fields — pluginType,

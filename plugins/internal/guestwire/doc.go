@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package guestwire holds the assertions that hold across the guests under
 // plugins/ rather than within one guest: properties of a socket, or of every

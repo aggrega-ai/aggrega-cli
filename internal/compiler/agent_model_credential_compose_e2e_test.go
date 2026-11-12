@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // End-to-end proofs that a core/secret-value credential reaches the service it
 // is attached for on Docker Compose, whichever document attaches it: the

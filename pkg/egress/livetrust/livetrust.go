@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package livetrust is the network-egress gate for the live Sigstore trust
 // root. It is a sibling of the egress core rather than part of it: the live

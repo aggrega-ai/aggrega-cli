@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Cognitio S.r.l.
+# Copyright 2026 Cognitio s.r.l.
 
 # The edge-read Release with the two stacks placed in different accounts: a value
 # the application's template copies off the connection reaches its stack as a

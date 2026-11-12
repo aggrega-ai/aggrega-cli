@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Package stepwalk is the host's runtime for a Recipe or FeatureRecipe
 // `pipeline:`. [Walk] evaluates each step's `with` (and its optional `when`

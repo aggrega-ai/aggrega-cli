@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Tests for nested-envelope frame rendering: every *CompilerError frame
 // in a wrapped chain reaches the terminal — the outermost as the

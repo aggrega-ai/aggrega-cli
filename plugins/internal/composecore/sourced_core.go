@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 // Filesystem-free sourced-mode rendering core for the compose provider. A Recipe
 // with `source: <path>` plus `valuesMapping:` produces:

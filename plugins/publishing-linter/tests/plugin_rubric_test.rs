@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Plugin-kind schema-evolution rubric coverage. The classifier scores a
 //! re-published Plugin entity from the change to its describe()-surface —

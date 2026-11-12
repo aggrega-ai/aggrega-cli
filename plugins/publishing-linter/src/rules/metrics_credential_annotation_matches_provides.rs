@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Cognitio S.r.l.
+// Copyright 2026 Cognitio s.r.l.
 
 //! Advise where a Component's statement of how its metrics authenticate and
 //! its declaration of whether an instance's metrics need a credential
