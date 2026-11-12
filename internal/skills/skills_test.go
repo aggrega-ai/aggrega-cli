@@ -461,8 +461,8 @@ type decodedServer struct {
 
 // TestThePluginManifestsCarryTheOneSourcedValues decodes every plugin manifest
 // the generator writes and holds each to the values its format carries: the
-// plugin's name, description, homepage, repository, licence and author where the
-// format has the field, the aggrega MCP server started as `aggrega mcp` where it
+// plugin's name, description, homepage, repository, licence and author, and the
+// marketplace's owner, where the format has the field, the aggrega MCP server started as `aggrega mcp` where it
 // has a server list, and the exact $schema identifiers of the formats that
 // publish one. A key the row does not name is refused, so a manifest cannot
 // grow a field — a release version, say — without this test saying so. The
@@ -488,7 +488,10 @@ func TestThePluginManifestsCarryTheOneSourcedValues(t *testing.T) {
 		repository = "https://github.com/aggrega-ai/aggrega-skills"
 		license    = "Apache-2.0"
 	)
-	author := pluginPerson{Name: "Aggrega", URL: "https://aggrega.ai"}
+	// The author names who writes the plugin and the owner names who publishes
+	// the marketplace, so they are two expected values, not one.
+	author := pluginPerson{Name: "Cognitio s.r.l.", URL: "https://aggrega.ai"}
+	owner := pluginPerson{Name: "aggrega-ai", URL: "https://github.com/aggrega-ai"}
 	if strings.TrimSpace(pluginDescription) == "" {
 		t.Fatal("the plugin's description is empty, so comparing every manifest with it proves nothing")
 	}
@@ -593,10 +596,11 @@ func TestThePluginManifestsCarryTheOneSourcedValues(t *testing.T) {
 			if m.Version != nil && *m.Version == "" {
 				t.Error("version is empty")
 			}
-			for key, p := range map[string]*pluginPerson{"author": m.Author, "owner": m.Owner} {
-				if p != nil && *p != author {
-					t.Errorf("%s = %+v, want %+v", key, *p, author)
-				}
+			if m.Author != nil && *m.Author != author {
+				t.Errorf("author = %+v, want %+v", *m.Author, author)
+			}
+			if m.Owner != nil && *m.Owner != owner {
+				t.Errorf("owner = %+v, want %+v", *m.Owner, owner)
 			}
 			if m.Interface != nil && m.Interface.DisplayName != "Aggrega" {
 				t.Errorf("interface.displayName = %q, want %q", m.Interface.DisplayName, "Aggrega")

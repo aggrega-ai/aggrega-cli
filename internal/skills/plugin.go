@@ -20,13 +20,21 @@ import (
 // there; the manifests differ only in the shape their format gives those
 // values.
 
+// codeHost is the address of the code host the public skills repository and its
+// owner live on, ending in a separator so a path appends directly.
+const codeHost = "https://github.com/"
+
+// repositoryOwner is the organisation that owns the public skills repository on
+// its code host, the name a user types before the repository's.
+const repositoryOwner = "aggrega-ai"
+
 // repositorySlug is the public skills repository as its code host names it,
 // owner and repository, which is the form several assistants' install commands
 // take.
-const repositorySlug = "aggrega-ai/aggrega-skills"
+const repositorySlug = repositoryOwner + "/aggrega-skills"
 
 // repositoryURL is the public skills repository's address.
-const repositoryURL = "https://github.com/" + repositorySlug
+const repositoryURL = codeHost + repositorySlug
 
 // pluginName is the name the plugin is installed and listed under.
 //
@@ -67,9 +75,16 @@ const (
 	pluginLicenseName = "the Apache License, Version 2.0"
 )
 
-// pluginAuthor is who the manifests name as the plugin's author, and the
-// marketplaces as their owner.
-var pluginAuthor = pluginPerson{Name: "Aggrega", URL: "https://aggrega.ai"}
+// pluginAuthor is who the plugin manifests name as the plugin's author: the
+// company that writes Aggrega, as its copyright lines name it, with the
+// product's address.
+var pluginAuthor = pluginPerson{Name: "Cognitio s.r.l.", URL: "https://aggrega.ai"}
+
+// marketplaceOwner is who a marketplace file names as the marketplace's owner:
+// the organisation that publishes the repository the marketplace is read from,
+// by the name a user types, with its address on the code host. It is not the
+// author, which names who writes the plugin.
+var marketplaceOwner = pluginPerson{Name: repositoryOwner, URL: codeHost + repositoryOwner}
 
 // The MCP server every manifest connects: the aggrega binary started with the
 // single argument mcp, speaking the protocol over its standard input and
@@ -279,7 +294,7 @@ func pluginFiles() ([]File, error) {
 		{claudeMarketplacePath, claudeMarketplace{
 			Name:        marketplaceName,
 			Description: pluginDescription,
-			Owner:       pluginAuthor,
+			Owner:       marketplaceOwner,
 			Plugins:     []claudeMarketplaceEntry{{Name: pluginName, Source: "./", Description: pluginDescription}},
 		}},
 		{codexMarketplacePath, codexMarketplace{
