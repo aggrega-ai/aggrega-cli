@@ -634,12 +634,21 @@ func (s *walkState) resolveAll(ctx context.Context, lookup Lookup) error {
 // and a catalog lookup reports what it finds while it reads, so an order the
 // runtime randomises would change both from one run to the next over identical
 // input.
+//
+// A lookup that can read ahead (RegistryPrefetcher) is first probed with every
+// reference in that same order, so what the references need from a registry is
+// fetched several at once; the resolution that follows is unchanged by it.
 func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 	keys := make([]EntityKey, 0, len(s.entities))
 	for key := range s.entities {
 		keys = append(keys, key)
 	}
 	sort.Slice(keys, func(i, j int) bool { return keys[i].Less(keys[j]) })
+	prefetchRegistryReads(ctx, lookup, func(probe Lookup) {
+		for _, key := range keys {
+			_, _ = s.entities[key].resolve(ctx, probe, key.URI)
+		}
+	})
 	for _, key := range keys {
 		uri := key.URI
 		pending := s.entities[key]
@@ -733,25 +742,33 @@ func entityNotFound(uri, referencedFrom string, unsatisfiedPin error) error {
 // registry would be reported as read from the cache, and the pull-time signature
 // verification, which reads that report, would pass it by. A new requirement that
 // moves the selected version still re-resolves it at the new one.
+//
+// A lookup that can read ahead (RegistryPrefetcher) is first probed with the
+// libraries in that same order, as resolveEntities probes its references.
 func (s *walkState) resolveLibraries(ctx context.Context, axis LibraryAxis, lookup Lookup) error {
 	pending := axis.pendingLibs(s)
-	for _, uri := range slices.Sorted(maps.Keys(pending)) {
+	uris := slices.Sorted(maps.Keys(pending))
+	// The read ahead asks for what the loop below asks for, in its order, and stops
+	// where the loop's own selection would refuse.
+	prefetchRegistryReads(ctx, lookup, func(probe Lookup) {
+		for _, uri := range uris {
+			_, resolveURI, ask, err := libraryRequest(uri, pending[uri])
+			if err != nil {
+				return
+			}
+			if ask {
+				_, _ = probe.ResolveLibrary(ctx, axis, resolveURI)
+			}
+		}
+	})
+	for _, uri := range uris {
 		lib := pending[uri]
-		selected, err := selectMVSVersion(uri, consumerVersionLabels(lib.versionByConsumer))
+		selected, resolveURI, ask, err := libraryRequest(uri, lib)
 		if err != nil {
 			return err
 		}
-		if lib.resolution != nil && selected != "" && lib.resolution.ResolvedVersion == selected {
+		if !ask {
 			continue
-		}
-		// Thread the MVS-selected version (the optional `@version` floor) to the
-		// lookup as a `name:version` URI, so a Tier-3 pull resolves that tag. A
-		// pure bare-name reference (no floor) leaves the version empty for the
-		// lookup to resolve at first pull (the list-tags→highest path). The stored
-		// library key stays the host-less bare name regardless.
-		resolveURI := uri
-		if selected != "" {
-			resolveURI = uri + ":" + selected
 		}
 		res, err := lookup.ResolveLibrary(ctx, axis, resolveURI)
 		if err != nil {
@@ -769,6 +786,33 @@ func (s *walkState) resolveLibraries(ctx context.Context, axis LibraryAxis, look
 		lib.resolution = &res
 	}
 	return nil
+}
+
+// libraryRequest is what resolveLibraries asks the lookup for the library recorded
+// under uri: the version minimum version selection settles on across its consumers,
+// the reference that asks for that version, and whether to ask at all — a library
+// already resolved at the selected version is not asked again (see resolveLibraries).
+// It is the one statement of the request, so the read ahead asks for what the
+// resolution goes on to ask for.
+//
+// The selected version (the optional `@version` floor) reaches the lookup as a
+// `name:version` reference, so a registry pull resolves that tag. A pure bare-name
+// reference (no floor) leaves the version empty for the lookup to resolve at first
+// pull (the list-tags→highest path). The stored library key stays the host-less bare
+// name regardless.
+func libraryRequest(uri string, lib *pendingLibrary) (selected, resolveURI string, ask bool, err error) {
+	selected, err = selectMVSVersion(uri, consumerVersionLabels(lib.versionByConsumer))
+	if err != nil {
+		return "", "", false, err
+	}
+	if lib.resolution != nil && selected != "" && lib.resolution.ResolvedVersion == selected {
+		return selected, "", false, nil
+	}
+	resolveURI = uri
+	if selected != "" {
+		resolveURI = uri + ":" + selected
+	}
+	return selected, resolveURI, true, nil
 }
 
 // selectMVSVersion applies the standard minimum version selection

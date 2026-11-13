@@ -492,9 +492,12 @@ func stopped(ctx context.Context) error {
 // runContext returns the context one run of the resolution is carried out under:
 // the caller's, holding a live trust root of the run's own (livetrust.WithSharedRoot),
 // so every verification in the run shares one fetch of it and no root fetched for
-// an earlier run, in a process that runs many, is handed to this one.
+// an earlier run, in a process that runs many, is handed to this one; and a memo of
+// registry reads of the run's own (oci.WithRegistryReadMemo), so each pass of the
+// dependency walk can fetch what it is about to read several at once, and no answer
+// read for an earlier run is handed to this one.
 func runContext(ctx context.Context) context.Context {
-	return livetrust.WithSharedRoot(ctx)
+	return oci.WithRegistryReadMemo(livetrust.WithSharedRoot(ctx))
 }
 
 // Run executes the dependency resolution against the supplied configuration.

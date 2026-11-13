@@ -10,7 +10,8 @@ import (
 )
 
 // RegistryRequestsAtOnce is how many artifacts a pull asks a registry about at once
-// — in its signature pass and its deprecation-marker pass. A pull's cost there is
+// — in its signature pass, its deprecation-marker pass, and the reads it makes ahead
+// of each pass of its dependency walk (WithRegistryReadMemo). A pull's cost there is
 // round-trip latency rather than data volume, each artifact costing a handful of
 // small sequential requests, so asking about several at once shortens it roughly in
 // proportion while keeping the load one pull puts on a registry modest. The number
@@ -21,9 +22,8 @@ import (
 // A registry index walk reads at a width of its own, and the two are deliberately
 // not one number. The index walk lists every repository a registry serves and
 // reads each of them, so its width is sized for a whole registry. A pull's passes
-// ask about the artifacts one Release depends on — a few dozen — after its
-// dependency walk has already reached the same registry, so a smaller width
-// already removes most of the waiting while keeping a pull, which an author runs
+// ask about the artifacts one Release depends on — a few dozen — so a smaller
+// width already removes most of the waiting while keeping a pull, which an author runs
 // often and many machines run at once, the lighter of the two on the registry.
 const RegistryRequestsAtOnce = 8
 

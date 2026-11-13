@@ -201,7 +201,7 @@ func (p DefaultOCIPuller) Pull(ctx context.Context, reference, tag string) (*oci
 	if err != nil {
 		return nil, err
 	}
-	return oci.Pull(ctx, repo, tag)
+	return oci.MemoizedPull(ctx, reference, repo, tag)
 }
 
 // PullLibrary pulls a library by its host-less identity (bare name + kind),
@@ -219,20 +219,13 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 	if err != nil {
 		return nil, "", err
 	}
-	version := floorVersion
-	if version == "" {
-		tags, terr := oci.ListTags(ctx, repo)
-		if terr != nil {
-			return nil, "", terr
-		}
-		version, terr = p.selectScreenedPullVersion(reference, tags)
-		if terr != nil {
-			return nil, "", terr
-		}
-	} else {
-		p.reportPinnedVersion(reference, version)
+	version, err := p.discoverVersion(reference, floorVersion, func() ([]string, error) {
+		return oci.MemoizedListTags(ctx, reference, repo)
+	})
+	if err != nil {
+		return nil, "", err
 	}
-	result, perr := oci.Pull(ctx, repo, version)
+	result, perr := oci.MemoizedPull(ctx, reference, repo, version)
 	if perr != nil {
 		return nil, "", perr
 	}
@@ -256,20 +249,13 @@ func (p DefaultOCIPuller) PullAggregate(ctx context.Context, name, floorVersion 
 	if err != nil {
 		return nil, "", err
 	}
-	tag := floorVersion
-	if tag == "" {
-		tags, terr := oci.ListTags(ctx, repo)
-		if terr != nil {
-			return nil, "", terr
-		}
-		tag, terr = p.selectScreenedPullVersion(reference, tags)
-		if terr != nil {
-			return nil, "", terr
-		}
-	} else {
-		p.reportPinnedVersion(reference, tag)
+	tag, err := p.discoverVersion(reference, floorVersion, func() ([]string, error) {
+		return oci.MemoizedListTags(ctx, reference, repo)
+	})
+	if err != nil {
+		return nil, "", err
 	}
-	result, perr := oci.Pull(ctx, repo, tag)
+	result, perr := oci.MemoizedPull(ctx, reference, repo, tag)
 	if perr != nil {
 		return nil, "", perr
 	}
@@ -296,18 +282,11 @@ func (p DefaultOCIPuller) PullEntity(ctx context.Context, identity, kind, floorV
 	if err != nil {
 		return nil, "", err
 	}
-	version := floorVersion
-	if version == "" {
-		tags, terr := oci.ListTags(ctx, repo)
-		if terr != nil {
-			return nil, "", terr
-		}
-		version, terr = p.selectScreenedPullVersion(reference, tags)
-		if terr != nil {
-			return nil, "", terr
-		}
-	} else {
-		p.reportPinnedVersion(reference, version)
+	version, err := p.discoverVersion(reference, floorVersion, func() ([]string, error) {
+		return oci.MemoizedListTags(ctx, reference, repo)
+	})
+	if err != nil {
+		return nil, "", err
 	}
 	// A Plugin publishes as ONE OCI manifest whose CONFIG blob is the entity YAML
 	// and whose single layer is the inline .wasm. A generic content-layer pull
@@ -317,17 +296,33 @@ func (p DefaultOCIPuller) PullEntity(ctx context.Context, identity, kind, floorV
 	// only the content descriptor read differs. Every other kind reads the content
 	// layer through Pull unchanged.
 	if kind == "Plugin" {
-		result, perr := oci.FetchPluginEntity(ctx, repo, version)
+		result, perr := oci.MemoizedFetchPluginEntity(ctx, reference, repo, version)
 		if perr != nil {
 			return nil, "", perr
 		}
 		return result, version, nil
 	}
-	result, perr := oci.Pull(ctx, repo, version)
+	result, perr := oci.MemoizedPull(ctx, reference, repo, version)
 	if perr != nil {
 		return nil, "", perr
 	}
 	return result, version, nil
+}
+
+// discoverVersion is the discovery step the three pull entrypoints share: an empty
+// floorVersion lists reference's tags through listTags and selects the highest
+// version the attached withdrawal screen leaves eligible; a non-empty one is the
+// version, and the screen announces it when it holds a withdrawal record for it.
+func (p DefaultOCIPuller) discoverVersion(reference, floorVersion string, listTags func() ([]string, error)) (string, error) {
+	if floorVersion != "" {
+		p.reportPinnedVersion(reference, floorVersion)
+		return floorVersion, nil
+	}
+	tags, err := listTags()
+	if err != nil {
+		return "", err
+	}
+	return p.selectScreenedPullVersion(reference, tags)
 }
 
 // RegistryPrefix reports the location prefix this puller binds host-less

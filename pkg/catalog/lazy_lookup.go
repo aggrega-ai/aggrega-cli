@@ -134,6 +134,98 @@ func (l *LazyLookup) noticeWriter() io.Writer {
 	return l.notices
 }
 
+// What a probe may not do, each in one place.
+//
+// A probe (probing) reads what the view holds and writes nothing a later read would
+// observe. Three things the view's reads write would otherwise be left behind by a
+// probe — a notice line, a refusal record, the retained bytes of an entity — and
+// each goes through the one helper below that writes it, which is where a probe is
+// turned away; so a read added to the view later meets the rule by writing the way
+// every read already writes. Laying a cache slot's artifact out on disk goes through
+// one helper too (layOutRegistryDocument).
+//
+// A build that runs once per index — an index, the recipe shell, the schema library
+// set — is the exception, and outsideProbe carries it: what such a build makes does
+// not depend on the walk, and the build marks itself done before it runs, so a build
+// a probe reached is never left half-made. A probe that reaches one runs it as it
+// would run outside a probe, holding back only the notices it meets until the
+// build's next call outside a probe. The recipe shell and the schema library set
+// are built before any walk and rebuilt only when the pins change (SetPins), so no
+// probe reaches either today; their guards are there for a read that would.
+
+// writeNotice writes line to the surface's notice writer; it is the one place a
+// notice line is written. Inside a build a probe reached (outsideProbe) the line is
+// held for that build's next call; while probing otherwise it is not written,
+// because the read that met it runs again outside the probe and writes it then.
+func (l *LazyLookup) writeNotice(line string) {
+	switch {
+	case l.holdingFor != "":
+		if l.heldNotices == nil {
+			l.heldNotices = map[string][]string{}
+		}
+		l.heldNotices[l.holdingFor] = append(l.heldNotices[l.holdingFor], line)
+	case l.dropsNotices():
+		// Left unwritten; the read that met it writes it outside the probe.
+	default:
+		fmt.Fprint(l.noticeWriter(), line)
+	}
+}
+
+// dropsNotices reports whether a notice met now is left unwritten (writeNotice).
+func (l *LazyLookup) dropsNotices() bool {
+	return l.probing && l.holdingFor == ""
+}
+
+// recordRefusal records reason as why the catalog file at path was refused — the
+// record the surfaces reporting a miss read (SkippedEntities). While probing it
+// records nothing: the read that resolves the reference records it.
+func (l *LazyLookup) recordRefusal(path string, reason error) {
+	if l.probing {
+		return
+	}
+	l.recipeSkips[path] = reason
+}
+
+// retainEntityBytes keeps data as the bytes of the entity under key, the bytes its
+// digest is taken over. While probing it keeps nothing: the read that resolves the
+// entity keeps them.
+func (l *LazyLookup) retainEntityBytes(key string, data []byte) {
+	if l.probing {
+		return
+	}
+	l.entityBytes[key] = data
+}
+
+// outsideProbe begins a build of the view that runs once, named kind, and returns
+// the function that ends it; such a build opens with `defer l.outsideProbe(kind)()`.
+// Outside a probe it changes nothing. While probing, the build runs as it would
+// outside one, writing what it writes, except that the notices it meets are held
+// (writeNotice) for releaseHeldNotices(kind) to write at the build's next call
+// outside a probe — the call that would have run it, and printed them, had no probe
+// come first.
+func (l *LazyLookup) outsideProbe(kind string) (end func()) {
+	if !l.probing {
+		return func() {}
+	}
+	l.probing, l.holdingFor = false, kind
+	return func() { l.probing, l.holdingFor = true, "" }
+}
+
+// releaseHeldNotices writes, outside a probe, the notices a build of kind held while
+// a probe ran it (outsideProbe). Every build that runs once calls it on entry, before
+// it asks whether it has already run. It writes them through writeNotice, so a
+// build reached from inside another a probe is running holds them for that one.
+func (l *LazyLookup) releaseHeldNotices(kind string) {
+	if l.probing || len(l.heldNotices[kind]) == 0 {
+		return
+	}
+	held := l.heldNotices[kind]
+	delete(l.heldNotices, kind)
+	for _, line := range held {
+		l.writeNotice(line)
+	}
+}
+
 // SchemaAdvisories returns the advisories this view raised over the schema
 // content of the Components and Features it has resolved, in the order it first
 // resolved them: one entry per x-aggrega-* extension keyword an entity authors
@@ -211,10 +303,10 @@ func (l *LazyLookup) noteExtendsFailure(err error) {
 	// The failure names its own entity, kind included, so the line adds no
 	// prefix of its own — one identity per diagnostic, and the same line shape
 	// the whole-catalog resolution pass prints.
-	fmt.Fprintf(l.noticeWriter(), "  extends: %s\n", renderer.RenderDiagnosticText(renderer.Diagnostic{
+	l.writeNotice(fmt.Sprintf("  extends: %s\n", renderer.RenderDiagnosticText(renderer.Diagnostic{
 		Severity: abi.SeverityWarn,
 		Message:  err.Error(),
-	}))
+	})))
 }
 
 // ForRequest returns a request-scoped *LazyLookup carrying its OWN pin set and
@@ -511,6 +603,7 @@ func (l *LazyLookup) Reset() {
 	l.linkFault = nil
 	l.recipeCat = nil
 	l.announced = map[string]struct{}{}
+	l.heldNotices = nil
 	l.schemaAdvisories = nil
 	l.schemaAdvisorySeen = map[string]struct{}{}
 	l.entityBytes = map[string][]byte{}
@@ -726,6 +819,21 @@ type LazyLookup struct {
 	// announced. SetPins keeps it; Reset clears it, because a changed workspace can
 	// hold a different set of such files.
 	announced map[string]struct{}
+
+	// probing is set while a read ahead probes which of a pass's references would be
+	// asked of a registry (lazyClosureLookup.PrefetchRegistryReads). The view's own
+	// reads answer as they always do, but write nothing a later read observes (see
+	// writeNotice and the helpers beside it). It is set and cleared under mu, inside
+	// one probing call.
+	probing bool
+
+	// holdingFor names the build that runs once a probe is running right now
+	// (outsideProbe), and is empty otherwise; heldNotices holds, per such build, the
+	// notices it met, for its next call outside a probe to write
+	// (releaseHeldNotices), so they are printed at the point and in the order they
+	// would have been. Reset drops them with the builds they belong to.
+	holdingFor  string
+	heldNotices map[string][]string
 
 	// notices is where this view writes the notice lines a reader at a terminal is
 	// shown — a file the view did not place, an extends chain that would not
@@ -1590,9 +1698,9 @@ func (l *LazyLookup) localComponentTiers(uri string) (types.Component, bool, boo
 	case tier2Use:
 		// parseComponentEntity is the shared per-entity resolve; a non-Component
 		// kind returns an error and the cascade falls through to Tier-3.
-		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
+		if path, doc, ok := l.layOutRegistryDocument(slot, bytes, uri); ok {
 			if comp, err := parseComponentEntity(doc, path); err == nil {
-				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
+				l.retainEntityBytes(entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)), bytes)
 				return comp, true, true
 			}
 		}
@@ -1629,7 +1737,7 @@ func (l *LazyLookup) resolveComponentContext(ctx context.Context, uri string, pu
 	if err == nil && bytes != nil {
 		if path, doc, ok := registryDocumentAt(l.workspaceRoot, l.cacheDir, componentKind, uri, res, bytes); ok {
 			if comp, perr := parseComponentEntity(doc, path); perr == nil {
-				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
+				l.retainEntityBytes(entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)), bytes)
 				return comp, true
 			}
 		}
@@ -1667,6 +1775,17 @@ func registryDocument(workspaceRoot, cacheDir, slot string, published []byte, la
 	return path, document, err == nil
 }
 
+// layOutRegistryDocument is registryDocument over this view's workspace and cache
+// directory: the document inside the artifact published, laid out in slot. It is
+// how the view's local tiers lay a cache slot out. While the view is probing it
+// lays nothing out and answers not-ok, because laying out writes into the cache.
+func (l *LazyLookup) layOutRegistryDocument(slot string, published []byte, label string) (string, []byte, bool) {
+	if l.probing {
+		return "", nil, false
+	}
+	return registryDocument(l.workspaceRoot, l.cacheDir, slot, published, label)
+}
+
 // registryDocumentAt is registryDocument for the bytes a registry fetch of uri
 // wrote under the resolution res: the slot the write used (tier3Slot), laid out
 // and read. A slot the version cannot address is a miss, in the shape the
@@ -1689,9 +1808,9 @@ func (l *LazyLookup) localFeatureTiers(uri string) (types.Feature, bool, bool) {
 	bytes, _, slot, outcome := l.tier2Verified(featureKind, uri)
 	switch outcome {
 	case tier2Use:
-		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
+		if path, doc, ok := l.layOutRegistryDocument(slot, bytes, uri); ok {
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
-				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
+				l.retainEntityBytes(entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)), bytes)
 				return feat, true, true
 			}
 		}
@@ -1714,7 +1833,7 @@ func (l *LazyLookup) resolveFeatureContext(ctx context.Context, uri string, pull
 	if err == nil && bytes != nil {
 		if path, doc, ok := registryDocumentAt(l.workspaceRoot, l.cacheDir, featureKind, uri, res, bytes); ok {
 			if feat, perr := parseFeatureEntity(doc, path); perr == nil {
-				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
+				l.retainEntityBytes(entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)), bytes)
 				return feat, true
 			}
 		}
@@ -1785,10 +1904,10 @@ func (l *LazyLookup) tier1ReadComponentDocument(uri string) (types.Component, in
 		// Keeping the reason means the surfaces that report the miss can say
 		// which file was refused and why — in the refusal the whole-catalog load
 		// records for it, so the reason reads as a build's annotation reads it.
-		l.recipeSkips[doc.path] = refusalOr(loadRefusal(l.workspaceRoot, data, doc.path), perr)
+		l.recordRefusal(doc.path, refusalOr(loadRefusal(l.workspaceRoot, data, doc.path), perr))
 		return types.Component{}, indexedDocument{}, false
 	}
-	l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = data
+	l.retainEntityBytes(entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)), data)
 	return comp, doc, true
 }
 
@@ -1813,10 +1932,10 @@ func (l *LazyLookup) tier1ReadFeatureDocument(uri string) (types.Feature, indexe
 	}
 	feat, perr := parseFeatureEntity(data, doc.path)
 	if perr != nil {
-		l.recipeSkips[doc.path] = refusalOr(loadRefusal(l.workspaceRoot, data, doc.path), perr)
+		l.recordRefusal(doc.path, refusalOr(loadRefusal(l.workspaceRoot, data, doc.path), perr))
 		return types.Feature{}, indexedDocument{}, false
 	}
-	l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = data
+	l.retainEntityBytes(entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)), data)
 	return feat, doc, true
 }
 
@@ -1825,19 +1944,23 @@ func (l *LazyLookup) tier1ReadFeatureDocument(uri string) (types.Feature, indexe
 // Component identity found. Idempotent: a second call is a no-op once
 // componentIndexBuilt is true.
 func (l *LazyLookup) buildComponentIndex() {
+	l.releaseHeldNotices("Component")
 	if l.componentIndexBuilt {
 		return
 	}
 	l.componentIndexBuilt = true
+	defer l.outsideProbe("Component")()
 	l.walkAndIndex("Component", l.componentIndex)
 }
 
 // buildFeatureIndex mirrors buildComponentIndex for the Feature surface.
 func (l *LazyLookup) buildFeatureIndex() {
+	l.releaseHeldNotices("Feature")
 	if l.featureIndexBuilt {
 		return
 	}
 	l.featureIndexBuilt = true
+	defer l.outsideProbe("Feature")()
 	l.walkAndIndex("Feature", l.featureIndex)
 }
 
@@ -1970,10 +2093,12 @@ func (l *LazyLookup) findWhatYouCan() catalogWalk {
 // caller that must reject (the conformance test; a future serve gate) observes the
 // returned error.
 func (l *LazyLookup) buildSchemaLibraries() error {
+	l.releaseHeldNotices("SchemaLibrary")
 	if l.schemaLibrariesBuilt {
 		return nil
 	}
 	l.schemaLibrariesBuilt = true
+	defer l.outsideProbe("SchemaLibrary")()
 	var firstErr error
 	w := l.findWhatYouCan()
 	for _, dir := range l.catalogDirs {
@@ -1998,11 +2123,11 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 				// closure-level diagnostic when the closure references it — as the
 				// refusal the whole-catalog load records for it, while the error
 				// returned below stays the parse's own.
-				l.recipeSkips[path] = refusalOr(loadRefusal(l.workspaceRoot, data, path), perr)
+				l.recordRefusal(path, refusalOr(loadRefusal(l.workspaceRoot, data, path), perr))
 				return nil
 			}
 			l.schemaLibraries[lib.Metadata.Name] = lib
-			l.entityBytes[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = data
+			l.retainEntityBytes(entityBytesKey("SchemaLibrary", lib.Metadata.Name), data)
 			l.origins[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = authoredOrigin(path)
 			return nil
 		})
@@ -2155,10 +2280,12 @@ func (l *LazyLookup) localPathFor(kind, scope, name, version string) (string, bo
 // does not read: it is passed over, and the first one met is recorded as the halt
 // CheckLinks answers with.
 func (l *LazyLookup) buildRecipeIndex() {
+	l.releaseHeldNotices("recipe shell")
 	if l.recipeIndexBuilt {
 		return
 	}
 	l.recipeIndexBuilt = true
+	defer l.outsideProbe("recipe shell")()
 	l.shellClaims = map[string]int{}
 	// The links leading out of a directory's root are recorded here rather than by
 	// the two index walks, because every catalog file passes through this walk; the
@@ -2180,12 +2307,12 @@ func (l *LazyLookup) buildRecipeIndex() {
 			var hdr fileHeader
 			if uerr := yaml.Unmarshal(data, &hdr); uerr != nil {
 				if refusal := loadRefusal(l.workspaceRoot, data, path); refusal != nil {
-					l.recipeSkips[path] = refusal
+					l.recordRefusal(path, refusal)
 				}
 				return nil
 			}
 			if refusal := unheldKindRefusal(path, data, hdr.Kind); refusal != nil {
-				l.recipeSkips[path] = refusal
+				l.recordRefusal(path, refusal)
 				return nil
 			}
 			l.foldRecipeShellEntity(hdr.Kind, data, data, path, "", "", position)
@@ -2274,7 +2401,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		key := recipeIdentityKey(e.Spec.Capability, e.Metadata.Name, e.Metadata.Version)
 		claimShellIdentity(l, l.recipes, "Recipe", key, e, src, parseData, dir,
 			func() {
-				l.entityBytes[entityBytesKey("Recipe", key)] = rawBytes
+				l.retainEntityBytes(entityBytesKey("Recipe", key), rawBytes)
 				l.origins[entityBytesKey("Recipe", key)] = foldedOrigin(src, slot, docPath, manifestDigest)
 				if local {
 					l.recordedPins.Record(src, pins)
@@ -2302,7 +2429,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		key := recipeIdentityKey(e.Spec.Capability, e.Metadata.Name, e.Metadata.Version)
 		claimShellIdentity(l, l.featureRecipes, "FeatureRecipe", key, e, src, parseData, dir,
 			func() {
-				l.entityBytes[entityBytesKey("FeatureRecipe", key)] = rawBytes
+				l.retainEntityBytes(entityBytesKey("FeatureRecipe", key), rawBytes)
 				l.origins[entityBytesKey("FeatureRecipe", key)] = foldedOrigin(src, slot, docPath, manifestDigest)
 				if local {
 					l.recordedPins.Record(src, pins)
@@ -2319,7 +2446,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		claimShellIdentity(l, l.aggregates, "Aggregate", key, e, src, parseData, dir,
 			func() {
 				l.origins[entityBytesKey("Aggregate", key)] = foldedOrigin(src, slot, "", manifestDigest)
-				l.entityBytes[entityBytesKey("Aggregate", key)] = rawBytes
+				l.retainEntityBytes(entityBytesKey("Aggregate", key), rawBytes)
 			},
 			func() error { return fmt.Errorf("duplicate aggregate name %q; this file is shadowed", e.Metadata.Name) })
 	case "MappingLibrary":
@@ -2330,7 +2457,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		}
 		claimShellIdentity(l, l.mappingLibraries, "MappingLibrary", e.Metadata.Name, e, src, parseData, dir,
 			func() {
-				l.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = rawBytes
+				l.retainEntityBytes(entityBytesKey("MappingLibrary", e.Metadata.Name), rawBytes)
 				l.origins[entityBytesKey("MappingLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
 			},
 			func() error {
@@ -2344,7 +2471,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		}
 		claimShellIdentity(l, l.workloadLibraries, "WorkloadLibrary", e.Metadata.Name, e, src, parseData, dir,
 			func() {
-				l.entityBytes[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = rawBytes
+				l.retainEntityBytes(entityBytesKey("WorkloadLibrary", e.Metadata.Name), rawBytes)
 				l.origins[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
 			},
 			func() error {
@@ -2358,7 +2485,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		}
 		claimShellIdentity(l, l.artifactLibraries, "ArtifactLibrary", e.Metadata.Name, e, src, parseData, dir,
 			func() {
-				l.entityBytes[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = rawBytes
+				l.retainEntityBytes(entityBytesKey("ArtifactLibrary", e.Metadata.Name), rawBytes)
 				l.origins[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
 			},
 			func() error {
@@ -2373,7 +2500,7 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 		key := entityIndexKey(e.Coordinate(), e.Metadata.Version)
 		claimShellIdentity(l, l.plugins, "Plugin", key, e, src, parseData, dir,
 			func() {
-				l.entityBytes[entityBytesKey("Plugin", key)] = rawBytes
+				l.retainEntityBytes(entityBytesKey("Plugin", key), rawBytes)
 				l.origins[entityBytesKey("Plugin", key)] = foldedOrigin(src, slot, "", manifestDigest)
 			},
 			func() error { return fmt.Errorf("duplicate wasm plugin identity %q; this file is shadowed", key) })
@@ -2433,7 +2560,7 @@ func (l *LazyLookup) recordShellDuplicate(src string, data []byte, dir int, clai
 	if _, already := l.recipeSkips[src]; !already {
 		l.announceSkip(src, duplicate)
 	}
-	l.recipeSkips[src] = reason
+	l.recordRefusal(src, reason)
 }
 
 // recordParseRefusal records a document that failed to parse. A catalog-directory
@@ -2450,7 +2577,7 @@ func (l *LazyLookup) recordParseRefusal(src string, data []byte, local bool, per
 	if _, already := l.recipeSkips[src]; !already {
 		l.announceSkip(src, perr)
 	}
-	l.recipeSkips[src] = reason
+	l.recordRefusal(src, reason)
 }
 
 // loadRefusal is the refusal the whole-catalog load records for the
@@ -2621,14 +2748,14 @@ func contentAnchor(workspaceRoot, cacheDir, src, slot string, rawBytes []byte) (
 func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src, slot, manifestDigest string) {
 	lib, perr := parseSchemaLibraryEntity(parseData, src)
 	if perr != nil {
-		l.recipeSkips[src] = perr
+		l.recordRefusal(src, perr)
 		return
 	}
 	if _, dup := l.schemaLibraries[lib.Metadata.Name]; dup {
 		return
 	}
 	l.schemaLibraries[lib.Metadata.Name] = lib
-	l.entityBytes[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = rawBytes
+	l.retainEntityBytes(entityBytesKey("SchemaLibrary", lib.Metadata.Name), rawBytes)
 	l.origins[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
 }
 
@@ -2650,7 +2777,7 @@ func (l *LazyLookup) recordRecipeSkip(source string, err error) {
 	if _, already := l.recipeSkips[source]; !already {
 		l.announceSkip(source, err)
 	}
-	l.recipeSkips[source] = err
+	l.recordRefusal(source, err)
 }
 
 // announceSkip is the one-line tolerance warning for a file the recipe-shell
@@ -2671,12 +2798,17 @@ func (l *LazyLookup) recordShadowedComponent(kind, name, path string) {
 // announce writes one notice line to the view's notice writer unless this view
 // has already written it (announced). Every notice about a file the view did not
 // place is written through here, so none is repeated by a walk that runs again.
+// A line a probe meets is not marked as written, since a probe writes none
+// (writeNotice), so the read that writes it later is not taken for a repeat.
 func (l *LazyLookup) announce(line string) {
+	if l.dropsNotices() {
+		return
+	}
 	if _, done := l.announced[line]; done {
 		return
 	}
 	l.announced[line] = struct{}{}
-	fmt.Fprint(l.noticeWriter(), line)
+	l.writeNotice(line)
 }
 
 // recipeCatalog returns the cached *Catalog shell over the tolerantly-enumerated
@@ -3857,6 +3989,9 @@ func (l *LazyLookup) ClosureLookup(puller OCIPuller, workspaceRoot, cacheDir str
 type lazyClosureLookup struct {
 	l    *LazyLookup
 	base closure.Lookup
+	// probing marks the lookup a read ahead probes through (PrefetchRegistryReads):
+	// each of its entity resolutions runs with the view probing.
+	probing bool
 }
 
 // The recipe axis is reached by assertion rather than through the Lookup method
@@ -3870,6 +4005,11 @@ var _ closure.RecipeLoaderSource = (*lazyClosureLookup)(nil)
 // lookup lacking it — so without this a signature drift would quietly send every
 // pinned socket entity down that cascade instead of failing to compile here.
 var _ closure.PinnedSocketEntityResolver = (*lazyClosureLookup)(nil)
+
+// Reading ahead is reached by assertion as well, and a walk over a lookup lacking it
+// simply reads one reference at a time — so without this a signature drift would
+// quietly turn the reading ahead off instead of failing to compile here.
+var _ closure.RegistryPrefetcher = (*lazyClosureLookup)(nil)
 
 func (x *lazyClosureLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHint string) (closure.Resolution, error) {
 	return x.resolveEntity(uri, kindHint, func() (closure.Resolution, error) {
@@ -3896,6 +4036,10 @@ func (x *lazyClosureLookup) resolveEntity(uri, kindHint string, base func() (clo
 	// alias the lookup's maps), so it takes the lookup lock here.
 	x.l.mu.Lock()
 	defer x.l.mu.Unlock()
+	if x.probing {
+		x.l.probing = true
+		defer func() { x.l.probing = false }()
+	}
 	// Route by the collection-site kind, so a reference is read as the kind it was
 	// collected as and as no other: a Component probe answers only a Component
 	// reference, a Feature probe only a Feature one, and a reference of any other
@@ -4022,15 +4166,28 @@ func (x *lazyClosureLookup) ResolvePlugin(ctx context.Context, uri, version stri
 //
 // It has no registry tier, and that is deliberate rather than an omission: see
 // lazyClosureLookup for why every registry read of the walk belongs to the base.
+//
+// While the view is probing it answers ok, with no resolution, wherever a copy
+// holds the Component, and digests nothing: a probe needs only to know that the
+// registry is not asked. A cache slot that verifies against its pin counts as held
+// before its document is read, because the probe cannot lay it out
+// (layOutRegistryDocument) and the read outside the probe that can is the one that
+// would refuse a slot whose document does not parse.
 func (l *LazyLookup) resolveComponentForClosure(uri string) (closure.Resolution, bool, error) {
 	if comp, doc, ok := l.tier1ReadComponentDocument(uri); ok {
+		if l.probing {
+			return closure.Resolution{}, true, nil
+		}
 		res, err := l.closureResolution("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version), doc.path, comp.Metadata.Version)
 		return res, err == nil, err
 	}
 	if bytes, manifest, slot, outcome := l.tier2Verified(componentKind, uri); outcome == tier2Use {
-		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
+		if l.probing {
+			return closure.Resolution{}, true, nil
+		}
+		if path, doc, ok := l.layOutRegistryDocument(slot, bytes, uri); ok {
 			if comp, err := parseComponentEntity(doc, path); err == nil {
-				l.entityBytes[entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version))] = bytes
+				l.retainEntityBytes(entityBytesKey("Component", entityIndexKey(comp.Metadata.Name, comp.Metadata.Version)), bytes)
 				res, rerr := cacheHitResolution(closureVersion(uri, comp.Metadata.Version), bytes, manifest)
 				return res, rerr == nil, rerr
 			}
@@ -4043,13 +4200,19 @@ func (l *LazyLookup) resolveComponentForClosure(uri string) (closure.Resolution,
 // surface, and reads no registry for the same reason.
 func (l *LazyLookup) resolveFeatureForClosure(uri string) (closure.Resolution, bool, error) {
 	if feat, doc, ok := l.tier1ReadFeatureDocument(uri); ok {
+		if l.probing {
+			return closure.Resolution{}, true, nil
+		}
 		res, err := l.closureResolution("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version), doc.path, feat.Metadata.Version)
 		return res, err == nil, err
 	}
 	if bytes, manifest, slot, outcome := l.tier2Verified(featureKind, uri); outcome == tier2Use {
-		if path, doc, ok := registryDocument(l.workspaceRoot, l.cacheDir, slot, bytes, uri); ok {
+		if l.probing {
+			return closure.Resolution{}, true, nil
+		}
+		if path, doc, ok := l.layOutRegistryDocument(slot, bytes, uri); ok {
 			if feat, err := parseFeatureEntity(doc, path); err == nil {
-				l.entityBytes[entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version))] = bytes
+				l.retainEntityBytes(entityBytesKey("Feature", entityIndexKey(feat.Metadata.Name, feat.Metadata.Version)), bytes)
 				res, rerr := cacheHitResolution(closureVersion(uri, feat.Metadata.Version), bytes, manifest)
 				return res, rerr == nil, rerr
 			}

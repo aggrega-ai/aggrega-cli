@@ -462,6 +462,43 @@ type PinnedSocketEntityResolver interface {
 	ResolvePinnedSocketEntity(ctx context.Context, uri string) (Resolution, error)
 }
 
+// RegistryPrefetcher is the optional Lookup capability that reads ahead: before a
+// pass of the walk resolves its references one after another, it learns which of
+// them would be read from a registry and fetches those reads several at once, so the
+// pass finds each answer waiting rather than asking for it in turn. Nothing the pass
+// resolves, reports or refuses changes; only how long it waits.
+//
+// PrefetchRegistryReads hands probe a Lookup that resolves through the same tiers as
+// this one, except that where this one would read a registry, it notes the read and
+// reads nothing. Nothing it meets reaches the pass's reader early or leaves a record
+// the pass would not have left: where it reaches an index of the catalog that is
+// built once, it builds that index then, as the pass would have, and holds what the
+// build announces until the first read outside the probe that would have built it;
+// it records and prints nothing else. probe resolves through
+// it every reference the pass is about to resolve, in the pass's order, and what it
+// returns is not an answer and is not used. Once probe returns, the noted reads are
+// made, at once, and held for the pass's own reads to take. A lookup that cannot read
+// ahead under ctx calls nothing.
+//
+// Two reads ahead can go untaken, each a request the pass reading one at a time
+// would not have made, with no change to anything it reports. A pass that refuses
+// one reference may have read ahead for references after it, which it then never
+// reads. And a bare reference whose selected tag differs from the version its
+// fetched body declares is cached at that declared version, so a reference pinned to
+// that version, read ahead before the bare one was fetched, is then answered from
+// what the bare one cached and never takes its read.
+type RegistryPrefetcher interface {
+	PrefetchRegistryReads(ctx context.Context, probe func(Lookup))
+}
+
+// prefetchRegistryReads reads ahead through lookup when it can (RegistryPrefetcher),
+// with probe resolving, through the Lookup it is handed, what the pass is about to.
+func prefetchRegistryReads(ctx context.Context, lookup Lookup, probe func(Lookup)) {
+	if p, ok := lookup.(RegistryPrefetcher); ok {
+		p.PrefetchRegistryReads(ctx, probe)
+	}
+}
+
 // ResolvePinnedSocketEntity resolves the Plugin entity a pinned workspace-socket
 // attachment names: through lookup's PinnedSocketEntityResolver capability where it
 // has one, and otherwise as any other Plugin entity reference is resolved. It is the
