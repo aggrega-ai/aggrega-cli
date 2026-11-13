@@ -34,8 +34,10 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/signing"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // Registry is an in-process registry on loopback publishing catalog snapshots.
@@ -184,10 +186,15 @@ func (r *Registry) serveTampered(w http.ResponseWriter, req *http.Request) bool 
 }
 
 // repository returns the snapshot repository on the registry, reached over plain
-// HTTP as every loopback registry is.
+// HTTP as every loopback registry is, through the client network egress hands an
+// online workspace.
 func (r *Registry) repository(t testing.TB) *remote.Repository {
 	t.Helper()
-	repo, err := oci.NewRemoteRepository(r.Reference(), &http.Client{})
+	client, err := egress.HTTPClient(workspaceconfig.Config{})
+	if err != nil {
+		t.Fatalf("obtain a network client for the snapshot repository %s: %v", r.Reference(), err)
+	}
+	repo, err := oci.NewRemoteRepository(r.Reference(), client)
 	if err != nil {
 		t.Fatalf("reach the snapshot repository %s: %v", r.Reference(), err)
 	}
