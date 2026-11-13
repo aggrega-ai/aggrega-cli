@@ -126,7 +126,7 @@ func registryReadMemoOf(ctx context.Context) *registryReadMemo {
 // errReadAheadAbandoned answers a read ahead that waited on another read ahead of
 // the same thing which ended in a panic rather than an answer. Only a read ahead can
 // see it; the panicking read's slot is removed, so a later read asks the registry.
-var errReadAheadAbandoned = errors.New("oci: a read ahead of this registry read ended without an answer")
+var errReadAheadAbandoned = errors.New("a read ahead of this registry read ended without an answer")
 
 // memoizedRead answers read through the memo ctx holds: under PrefetchingRegistryReads
 // it keeps what fetch answers; otherwise it takes a kept answer if one is held and
