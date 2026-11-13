@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // server is one MCP server a source lists, as the draft writes it: its name,

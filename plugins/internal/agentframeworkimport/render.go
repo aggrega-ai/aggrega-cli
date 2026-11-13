@@ -8,7 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // The drafts are written by hand rather than marshalled, so the key order is

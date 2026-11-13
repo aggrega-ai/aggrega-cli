@@ -17,8 +17,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/plugins/parsercore"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // The Dify importer on the host toolchain: each case hands Import a request and

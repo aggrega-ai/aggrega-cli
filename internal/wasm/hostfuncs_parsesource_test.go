@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // parseSourceRequest encodes a ParseInput into the request bytes the

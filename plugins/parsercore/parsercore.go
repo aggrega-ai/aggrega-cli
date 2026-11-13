@@ -24,7 +24,7 @@ import (
 	"bytes"
 	"encoding/json"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // nullTree is the canonical tree for a source that failed to parse: a JSON null.

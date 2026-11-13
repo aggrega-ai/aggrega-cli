@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // Wire-level tests for the two source callbacks — aggrega_pack_source and

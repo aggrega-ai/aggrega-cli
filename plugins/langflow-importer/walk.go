@@ -10,7 +10,7 @@ import (
 	"strconv"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/mcpconfig"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // walkTree lifts the nodes and edges out of the canonical tree of a Langflow

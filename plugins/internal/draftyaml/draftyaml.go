@@ -16,7 +16,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // CommentLine writes one comment line of a drafted Aggregate — indent, the hash,

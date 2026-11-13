@@ -20,7 +20,7 @@ import (
 	pdk "github.com/extism/go-pdk"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/mutatorcore"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
 
 // descriptor is the describe() self-report: a governance plugin whose

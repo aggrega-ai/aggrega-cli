@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/sourcewalk"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )

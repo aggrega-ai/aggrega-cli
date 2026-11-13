@@ -6,7 +6,7 @@ package serve
 import (
 	"context"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"

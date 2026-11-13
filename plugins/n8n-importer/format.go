@@ -7,8 +7,8 @@ package main
 
 import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/selectormatch"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // n8n is the one format this importer serves: an exported n8n workflow, parsed

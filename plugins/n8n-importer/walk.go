@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/treememo"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // walkTree lifts the nodes, and the connections between them, out of the

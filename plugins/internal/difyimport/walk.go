@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // This file reads a Dify DSL's tree: the nodes the draft decides — each node of

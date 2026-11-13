@@ -10,7 +10,7 @@ package pluginwire
 
 import (
 	"encoding/json"
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"

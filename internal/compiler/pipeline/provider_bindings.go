@@ -7,7 +7,7 @@ import (
 	stderrors "errors"
 	"fmt"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"

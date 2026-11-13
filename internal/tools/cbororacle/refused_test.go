@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	cbor "github.com/fxamacker/cbor/v2"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline/stepwalk"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"

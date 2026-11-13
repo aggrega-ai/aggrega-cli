@@ -6,7 +6,7 @@ package mcpconfig
 import (
 	"encoding/json"
 
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // Reference reports whether a member's value is a JSON text that is wholly a

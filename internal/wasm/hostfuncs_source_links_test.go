@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // TestASourceSelectionLeadingOutThroughALinkIsRefused drives every shape of

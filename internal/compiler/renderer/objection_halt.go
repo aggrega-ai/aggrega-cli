@@ -6,7 +6,7 @@ package renderer
 import (
 	stderrors "errors"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )

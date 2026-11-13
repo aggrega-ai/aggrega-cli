@@ -11,7 +11,7 @@
 // a Dify DSL is recognised by and the export wiring; everything it does with a
 // source is here, so it compiles and is tested on the host toolchain as well.
 // It is built on the plugin kit's importer package,
-// github.com/aggrega-ai/aggrega-pdk-go/pkg/importer, whose platform draft, in its
+// github.com/aggrega-ai/aggrega-pdk/go/pkg/importer, whose platform draft, in its
 // module form, writes the draft.
 //
 // # What a source holds
@@ -70,8 +70,8 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // Format is the one format the importer serves: a Dify application DSL.

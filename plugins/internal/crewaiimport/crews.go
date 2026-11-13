@@ -12,8 +12,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/yamlorder"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // declaration is what one source declares, read off its name — or, for a source

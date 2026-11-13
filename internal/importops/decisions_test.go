@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // decisionLineCasesPath is the case manifest the mapping-decision line is held to

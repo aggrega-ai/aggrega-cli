@@ -4,7 +4,7 @@
 package renderctx
 
 import (
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 

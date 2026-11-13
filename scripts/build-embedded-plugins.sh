@@ -126,7 +126,7 @@ build_go() {
   local embed="$dir/$name.wasm.gz" wasm="$TMP/$name.wasm"
   echo "=== build $name (go $GO_GUEST_TOOLCHAIN: GOOS=wasip1 GOARCH=wasm) ==="
   GOTOOLCHAIN="$GO_GUEST_TOOLCHAIN" GOWORK=off GOOS=wasip1 GOARCH=wasm go build -trimpath \
-    -ldflags "-X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Version=$_ver -X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Commit=$_sha -buildid=" \
+    -ldflags "-X github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega.Version=$_ver -X github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega.Commit=$_sha -buildid=" \
     -buildvcs=false -buildmode=c-shared -o "$wasm" "$src"
   compress_and_describe "$name" "$wasm" "$embed" "$digest_out"
 }

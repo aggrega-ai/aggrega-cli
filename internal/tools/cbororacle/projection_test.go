@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // The reference encoder walks a value by reflection, and an order-keeping

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // The shared vector suite lives beside the codec in the aggrega-abi module, one

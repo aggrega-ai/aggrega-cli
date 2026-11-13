@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // This file holds how the workflow core/ai-agent/n8n carries reaches each part of

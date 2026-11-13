@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // What a sync judges and what it writes, driven over the operation's own planning

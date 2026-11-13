@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )

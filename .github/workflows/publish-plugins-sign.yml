@@ -1023,8 +1023,8 @@ jobs:
           # Every sibling tags v-prefixed, so each go.mod require matches its git
           # tag directly — no rewriting needed.
           schemas_ref="$(require_pin github.com/aggrega-ai/aggrega-schemas)"
-          abi_ref="$(require_pin github.com/aggrega-ai/aggrega-abi-go)"
-          pdk_ref="$(require_pin github.com/aggrega-ai/aggrega-pdk-go)"
+          abi_ref="$(require_pin github.com/aggrega-ai/aggrega-abi/go)"
+          pdk_ref="$(require_pin github.com/aggrega-ai/aggrega-pdk/go)"
           {
             echo "schemas_ref=$schemas_ref"
             echo "abi_ref=$abi_ref"

@@ -6,7 +6,7 @@ package importops
 import (
 	"strconv"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // DecisionLine renders one mapping decision as the sentence a person reads:

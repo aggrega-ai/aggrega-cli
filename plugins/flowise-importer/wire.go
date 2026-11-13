@@ -13,7 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/mcpconfig"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/treememo"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // This file holds how the chatflow core/ai-agent/flowise carries reaches each

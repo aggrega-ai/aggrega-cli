@@ -3,7 +3,7 @@
 
 package lintops
 
-import "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+import "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
 // FindingLocation is where a lint finding points.
 //

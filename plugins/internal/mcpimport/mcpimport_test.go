@@ -15,11 +15,11 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/plugins/parsercore"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
 
 // The MCP importer on the host toolchain: each case hands Import a request and

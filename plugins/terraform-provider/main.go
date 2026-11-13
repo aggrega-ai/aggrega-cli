@@ -101,11 +101,11 @@ import (
 	"errors"
 	"strings"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/terraformcore"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 	"github.com/hashicorp/hcl/v2"
 )

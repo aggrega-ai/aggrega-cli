@@ -11,7 +11,7 @@ package composeimport
 import (
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // imageRow is one row of the image table: an image repository, the catalog

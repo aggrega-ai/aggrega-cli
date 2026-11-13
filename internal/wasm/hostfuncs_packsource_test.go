@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // writePackFixture lays out a small source tree for the packer tests: a.txt at

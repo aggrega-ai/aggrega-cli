@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // TestThePluginKitDraftsTheVersionTheSchemasDeclare drafts through the plugin

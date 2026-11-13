@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )

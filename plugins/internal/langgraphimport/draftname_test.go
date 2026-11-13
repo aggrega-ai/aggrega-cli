@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
 
 // TestTheDraftIsNamedAfterTheGraph imports LangGraph configurations under each

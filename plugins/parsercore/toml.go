@@ -6,7 +6,7 @@ package parsercore
 import (
 	"github.com/BurntSushi/toml"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // ParseTOML reads TOML source into a canonical JSON tree. A TOML table becomes a

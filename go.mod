@@ -5,8 +5,8 @@ go 1.26.0
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/Masterminds/sprig/v3 v3.3.0
-	github.com/aggrega-ai/aggrega-abi-go v0.9.0-rc.6
-	github.com/aggrega-ai/aggrega-pdk-go v0.9.0-rc.6
+	github.com/aggrega-ai/aggrega-abi/go v0.9.0-rc.6
+	github.com/aggrega-ai/aggrega-pdk/go v0.9.0-rc.6
 	github.com/aggrega-ai/aggrega-schemas v0.13.1-rc.2
 	github.com/awslabs/goformation/v7 v7.14.9
 	github.com/evanphx/json-patch v5.9.11+incompatible
@@ -226,7 +226,7 @@ replace github.com/aggrega-ai/aggrega-schemas => ../aggrega-schemas
 // Removed at release together with the schemas replace above. The Go PDK and the
 // portable ABI codec are sibling repositories; the helm provider guest consumes
 // the PDK's host-function bindings (the pinned external-input fetch channel).
-replace github.com/aggrega-ai/aggrega-pdk-go => ../aggrega-pdk/go
+replace github.com/aggrega-ai/aggrega-pdk/go => ../aggrega-pdk/go
 
 // Removed at release together with the two replaces above.
-replace github.com/aggrega-ai/aggrega-abi-go => ../aggrega-abi/go
+replace github.com/aggrega-ai/aggrega-abi/go => ../aggrega-abi/go

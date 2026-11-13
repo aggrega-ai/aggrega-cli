@@ -29,7 +29,7 @@ import (
 
 	"oras.land/oras-go/v2/content/memory"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"

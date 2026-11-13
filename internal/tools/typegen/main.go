@@ -1499,7 +1499,7 @@ var codecTargets = map[string]codecTarget{
 		pkg:              "abi",
 		vocabulary:       parseGuestVocabulary,
 		externalDefTypes: []string{"Diagnostic"},
-		pkgPath:          "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
+		pkgPath:          "github.com/aggrega-ai/aggrega-abi/go/pkg/abi",
 		wireExports: []wireExport{
 			{pluginType: plugintype.Parser, export: exportname.Parse, inputDef: "ParseInput", outputDef: "ParseOutput"},
 		},
@@ -1544,7 +1544,7 @@ var codecTargets = map[string]codecTarget{
 		pkg:              "abi",
 		vocabulary:       importGuestVocabulary,
 		externalDefTypes: []string{"Diagnostic"},
-		pkgPath:          "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
+		pkgPath:          "github.com/aggrega-ai/aggrega-abi/go/pkg/abi",
 		wireExports: []wireExport{
 			{pluginType: plugintype.Importer, export: exportname.Import, inputDef: "ImportInput", outputDef: "ImportOutput"},
 		},
@@ -1664,7 +1664,7 @@ var knownImports = map[string]string{
 	"types":     "github.com/aggrega-ai/aggrega-cli/pkg/types",
 	"renderctx": "github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx",
 	"frp":       "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline",
-	"abi":       "github.com/aggrega-ai/aggrega-abi-go/pkg/abi",
+	"abi":       "github.com/aggrega-ai/aggrega-abi/go/pkg/abi",
 }
 
 // schemaNode is a decoded JSON Schema object node preserving the declared

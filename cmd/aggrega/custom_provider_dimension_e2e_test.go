@@ -129,7 +129,7 @@ func ensureRenderProviderWasm(t *testing.T, capabilities ...string) string {
 	// the publish cross-check halts on a mismatch. This build bypasses the
 	// example's build.sh, so the stamp is applied here rather than inherited.
 	cmd := exec.Command("go", "build", "-buildmode=c-shared",
-		"-ldflags", "-X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Version=1.0.0",
+		"-ldflags", "-X github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega.Version=1.0.0",
 		"-o", artifact, "./")
 	cmd.Dir = scratch
 	cmd.Env = append(os.Environ(), "GOWORK=off", "GOOS=wasip1", "GOARCH=wasm")

@@ -19,7 +19,7 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // Kind is what a member of a server configuration is.

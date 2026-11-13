@@ -6,7 +6,7 @@ package importersocket
 import (
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/parsercore"
 )

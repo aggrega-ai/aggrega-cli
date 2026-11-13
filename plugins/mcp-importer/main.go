@@ -14,7 +14,7 @@
 // The guest holds what the host reads off it: this descriptor, the signatures
 // the files are recognised by, and the export wiring. What it does with a source
 // is the mcpimport package (plugins/internal/mcpimport), which builds on the
-// plugin kit's importer package, github.com/aggrega-ai/aggrega-pdk-go/pkg/importer,
+// plugin kit's importer package, github.com/aggrega-ai/aggrega-pdk/go/pkg/importer,
 // for the settings, the credential decision and the drafts' shared conventions.
 //
 // It obtains each source's tree through the host rather than parsing the source
@@ -27,10 +27,10 @@
 // imports covers it.
 //
 // The import payload is decoded and the result encoded through the generated ABI
-// codec (github.com/aggrega-ai/aggrega-abi-go/pkg/abi, re-exported by the plugin
+// codec (github.com/aggrega-ai/aggrega-abi/go/pkg/abi, re-exported by the plugin
 // kit), in the canonical CBOR the importer socket carries in both directions.
 //
-// Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -ldflags "-X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Version=<version>" -o mcp.wasm ./plugins/mcp-importer
+// Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -ldflags "-X github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega.Version=<version>" -o mcp.wasm ./plugins/mcp-importer
 package main
 
 import (
@@ -40,7 +40,7 @@ import (
 	pdk "github.com/extism/go-pdk"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/mcpimport"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
 
 // descriptor is the static describe() self-report: an importer plugin

@@ -31,7 +31,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/chartignore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/helmcore"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 	"helm.sh/helm/v4/pkg/chart/loader/archive"
 	chart "helm.sh/helm/v4/pkg/chart/v2"

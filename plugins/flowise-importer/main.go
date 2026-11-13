@@ -20,7 +20,7 @@
 // platform (format.go). The rest — the
 // confidence scorer, the decisions, the drafts, the renderers and the settings —
 // is the plugin kit's importer package,
-// github.com/aggrega-ai/aggrega-pdk-go/pkg/importer, which every importer built on
+// github.com/aggrega-ai/aggrega-pdk/go/pkg/importer, which every importer built on
 // the kit shares. All of it runs in this guest: the host mediates the pipeline and
 // stays agnostic to what a node means. The scorer weighs each node against the
 // Components of the workspace's own catalog, which the host hands the guest on its
@@ -36,12 +36,12 @@
 // declared host functions against the binary's imports covers it.
 //
 // The import payload is decoded and the result encoded through the generated ABI
-// codec (github.com/aggrega-ai/aggrega-abi-go/pkg/abi, re-exported by the plugin
+// codec (github.com/aggrega-ai/aggrega-abi/go/pkg/abi, re-exported by the plugin
 // kit) rather than hand-declared wire types, so the wire shape stays single-sourced
 // from the schema. The importer socket carries canonical CBOR in both directions:
 // the input is read with DecodeCBOR and the output is written with EncodeCBOR.
 //
-// Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -ldflags "-X github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Version=<version>" -o flowise.wasm ./plugins/flowise-importer
+// Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -ldflags "-X github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega.Version=<version>" -o flowise.wasm ./plugins/flowise-importer
 package main
 
 import (
@@ -50,8 +50,8 @@ import (
 
 	pdk "github.com/extism/go-pdk"
 
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // descriptor is the static describe() self-report: an importer plugin

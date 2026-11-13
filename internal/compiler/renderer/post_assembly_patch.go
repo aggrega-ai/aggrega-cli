@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sort"
 
-	abi "github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 

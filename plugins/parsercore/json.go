@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 )
 
 // ParseJSON reads JSON source into a canonical JSON tree. The document may be an

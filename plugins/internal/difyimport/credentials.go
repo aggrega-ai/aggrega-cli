@@ -8,7 +8,7 @@ import (
 	"strconv"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
-	"github.com/aggrega-ai/aggrega-pdk-go/pkg/importer"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // This file locates the values a Dify DSL holds that can carry a credential,

@@ -6,7 +6,7 @@ package lintops
 import (
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-abi-go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )

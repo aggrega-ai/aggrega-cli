@@ -388,7 +388,7 @@ const coreGuestDefaultVersion = "1.0.0"
 
 // pdkVersionSymbol is the linker symbol the Go plugin kit folds into a guest's
 // describe() descriptor as the version the guest reports about its own build.
-const pdkVersionSymbol = "github.com/aggrega-ai/aggrega-pdk-go/pkg/aggrega.Version"
+const pdkVersionSymbol = "github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega.Version"
 
 // isGoGuest reports whether pluginDir holds a Go guest: a main.go at its root.
 func isGoGuest(pluginDir string) bool {
