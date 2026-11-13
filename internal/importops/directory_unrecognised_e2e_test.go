@@ -4,7 +4,7 @@
 package importops
 
 // End-to-end coverage for the refusal of a source no importer's signatures
-// recognise, through the real Import over a workspace whose catalog holds no
+// recognise, through the real Import over a workspace whose catalog folder holds no
 // importer, so the importers recognition reads are the compiler's own core
 // importers and nothing else. The core importers' signatures are read off the
 // entities the binary carries, so recognising reaches no registry.
@@ -78,6 +78,22 @@ func formatsDeclaringFilePatterns(t *testing.T, rw *workspaceconfig.ResolvedWork
 	return readers, advertised
 }
 
+// aWorkspaceWithAnEmptyCatalogFolder resolves a real workspace, as aWorkspace
+// does, whose conventional catalog folder exists and holds nothing: a catalog
+// holding no importer, read from a folder, so the importers recognition reads are
+// the core importers alone and no published catalog snapshot is asked for.
+func aWorkspaceWithAnEmptyCatalogFolder(t *testing.T) *workspaceconfig.ResolvedWorkspace {
+	t.Helper()
+	wsDir := aWorkspaceDir(t)
+	if err := os.WriteFile(filepath.Join(wsDir, workspaceconfig.ConfigFilename), []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write workspace config: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir), 0o755); err != nil {
+		t.Fatalf("create the empty catalog folder: %v", err)
+	}
+	return resolveWorkspaceAt(t, wsDir)
+}
+
 // flagExamples renders formats as the terminal's remedy offers them: each behind
 // the flag, the last joined by "or".
 func flagExamples(formats []string) string {
@@ -109,7 +125,7 @@ func flagExamples(formats []string) string {
 // the declarations: the directory row reddens on the formats it offers.
 func TestADirectoryNoImporterRecognisesIsOfferedWhatCanHelpIt(t *testing.T) {
 	t.Parallel()
-	rw := aWorkspace(t)
+	rw := aWorkspaceWithAnEmptyCatalogFolder(t)
 	readers, advertised := formatsDeclaringFilePatterns(t, rw)
 	if len(readers) == 0 {
 		t.Fatal("no core importer declares a file pattern, so nothing here can show which formats are offered")

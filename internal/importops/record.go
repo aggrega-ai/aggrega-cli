@@ -39,13 +39,22 @@ const RecordFileName = ".aggrega-import.json"
 // import given none. A sync given no target reuses it, so a sync that leaves the
 // target out drafts the same Manifest the import it brings up to date drafted.
 //
+// CatalogSnapshot is the manifest digest of the published catalog snapshot the
+// import read its catalog from, for a workspace that names no catalog folder, and
+// is empty, and left out of the record, for an import that read catalog folders.
+// Which snapshot an import reads: with Upgrade, the newest; otherwise the one the
+// record beside the drafts names, fetched by its digest when this machine does not
+// hold it; otherwise the one the workspace last fetched as the newest; otherwise
+// the newest.
+//
 // Files is in the order the importer drafted the files, each path once. A file
 // owned whole carries Digest; a drafted Aggregate or Release carries Parts, one
 // per mapping entry, in document order. Both are slices rather than maps, so the
 // record's bytes are a function of the draft alone.
 type importRecord struct {
-	Target string       `json:"target,omitempty"`
-	Files  []recordFile `json:"files"`
+	Target          string       `json:"target,omitempty"`
+	CatalogSnapshot string       `json:"catalogSnapshot,omitempty"`
+	Files           []recordFile `json:"files"`
 }
 
 // recordFile is one drafted file in the record.
@@ -139,9 +148,12 @@ func recordBytes(rec importRecord) string {
 }
 
 // recordScaffold is the record as one more file an import writes, placed after
-// the drafts it describes.
-func recordScaffold(target string, files []draftedFile) abi.ScaffoldFile {
-	return abi.ScaffoldFile{Path: RecordFileName, Content: recordBytes(recordFor(target, files))}
+// the drafts it describes, naming the catalog snapshot the draft was composed
+// against where it read one.
+func recordScaffold(target, catalogSnapshot string, files []draftedFile) abi.ScaffoldFile {
+	rec := recordFor(target, files)
+	rec.CatalogSnapshot = catalogSnapshot
+	return abi.ScaffoldFile{Path: RecordFileName, Content: recordBytes(rec)}
 }
 
 // parseRecord reads a record's bytes, refusing anything that is not a record an
@@ -157,6 +169,10 @@ func parseRecord(data []byte) (importRecord, error) {
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return importRecord{}, fmt.Errorf("it holds more than one JSON value")
+	}
+	if rec.CatalogSnapshot != "" && !wellFormedDigest(rec.CatalogSnapshot) {
+		return importRecord{}, fmt.Errorf("it names the catalog snapshot %q, which is not a digest an import writes",
+			rec.CatalogSnapshot)
 	}
 	paths := make(map[string]bool, len(rec.Files))
 	for _, f := range rec.Files {

@@ -131,6 +131,15 @@ func (e *ExistingAggregateError) Error() string {
 // place for all of them — see [Import]. Under Sync an empty Target is the target
 // the record of the import being brought up to date names, where it names one.
 //
+// Upgrade applies to an import in a workspace that names no catalog folder. Which
+// catalog snapshot such an import reads: with Upgrade, the newest; otherwise the
+// one the record beside the drafts names, fetched by its digest when this machine
+// does not hold it; otherwise the one the workspace last fetched as the newest;
+// otherwise the newest. Under Upgrade the newest is fetched now, and the workspace
+// reads it from then on. It is refused under the offline posture, since
+// only the registry can say which snapshot is the newest. Where the workspace names
+// a catalog folder no snapshot is read, and it changes nothing.
+//
 // There is no field for the importer's with-config. What an importer is handed
 // is read by [Import] from the workspace's own plugins.importer attachments,
 // once the importer is resolved, because which attachment's inputs apply
@@ -143,6 +152,7 @@ type Options struct {
 	Target        string
 	OutputDir     string
 	Sync          bool
+	Upgrade       bool
 	Delivery      authoredcontent.Delivery
 	ResolvePlugin PluginBytesResolver
 	BeforeWrite   func(Result)
@@ -258,6 +268,20 @@ func (r Result) Halted() bool {
 // it from there and reaches no registry. Where it can be neither read nor
 // fetched, the import is refused, naming the importer, its version and what puts
 // its module on the machine.
+//
+// The catalog view is the workspace's catalog folders. A workspace that names none
+// reads the catalog its default registry publishes as one signed snapshot, laid out
+// as a folder in the content cache and read through the same folder path. Which
+// snapshot: with Options.Upgrade, the newest; otherwise the one the record beside
+// the drafts names, fetched by its digest when this machine does not hold it;
+// otherwise the one the workspace last fetched as the newest; otherwise the
+// newest. A snapshot the content cache holds is read from there, held to its
+// digest, and no registry is asked for it; one it does not hold is fetched, held
+// to the manifest it came in and to its signature under the registry's trust
+// policy, and kept. The record the import writes names the snapshot it read, by
+// its manifest digest. Under the offline posture an import needing a
+// fetch is refused, naming what to run. A registry that publishes no snapshot
+// leaves the import with no catalog, and a warning among the diagnostics says so.
 //
 // 🔴 The write is CONTAINED, and the containment is the reused judgement rather
 // than a check written here. A scaffold path comes from the importer plugin, so
@@ -389,10 +413,37 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		}
 	}
 
+	// A workspace naming no catalog folder reads the published catalog snapshot the
+	// record beside the drafts names, where there is one: a sync's record, read
+	// above, and otherwise the record of an earlier import into the same directory,
+	// whatever this import does with it. A record a plain import cannot read pins
+	// nothing — it is written over with the record this import writes — while a
+	// sync's was refused above. A seam over catalog folders, and a harness standing
+	// in for the seam, read no snapshot and no record for one.
+	var snapshot catalogSnapshot
+	if seam.readSnapshot != nil {
+		read := catalogSnapshotRead{upgrade: opts.Upgrade}
+		pinning := rec
+		if !opts.Sync {
+			pinning, _, _ = readRecord(writescope.RootFor(rw.Root(), outputDir), outputDir)
+		}
+		if pinning != nil {
+			read.pinned = pinning.CatalogSnapshot
+		}
+		if seam, snapshot, err = seam.readSnapshot(ctx, read); err != nil {
+			return Result{}, err
+		}
+	}
+
 	// A target no Recipe of the catalog binds to is refused as soon as the catalog
 	// is in hand, before the source is recognised or the importer runs, so nothing
-	// is read through a parser, nothing is drafted and nothing is written.
+	// is read through a parser, nothing is drafted and nothing is written. Where
+	// the catalog is empty because the registry publishes no snapshot, the refusal
+	// says that too.
 	if err := checkTarget(target, target != opts.Target, seam.Recipes); err != nil {
+		if snapshot.notice != "" {
+			return Result{}, fmt.Errorf("%w; %s", err, snapshot.notice)
+		}
 		return Result{}, err
 	}
 
@@ -441,6 +492,9 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 	diagnostics := imported.Diagnostics
+	if snapshot.notice != "" {
+		diagnostics = append([]abi.Diagnostic{warnDiagnostic(snapshot.notice)}, diagnostics...)
+	}
 	if len(composed) > 0 {
 		diagnostics = append(append(make([]abi.Diagnostic, 0, len(diagnostics)+len(composed)), diagnostics...),
 			composed...)
@@ -458,7 +512,8 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	drafted := draftedFiles(draft)
 	files := draft
 	if len(drafted) > 0 {
-		files = append(append(make([]abi.ScaffoldFile, 0, len(files)+1), files...), recordScaffold(target, drafted))
+		files = append(append(make([]abi.ScaffoldFile, 0, len(files)+1), files...),
+			recordScaffold(target, snapshot.digest, drafted))
 	}
 	// Every drafted path is judged before anything is written and before anything
 	// is reported, so a reporting delivery refuses exactly what the write refuses.
@@ -469,7 +524,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 	if opts.Sync {
-		return syncImport(rw.Root(), outputDir, target, opts, res, drafted, rec, recordOnDisk)
+		return syncImport(rw.Root(), outputDir, target, snapshot.digest, opts, res, drafted, rec, recordOnDisk)
 	}
 	// An Aggregate already at a drafted path is judged after the paths are, so it
 	// is read only at a place already held inside the root, and before either

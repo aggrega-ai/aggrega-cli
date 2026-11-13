@@ -78,6 +78,12 @@ import (
 // write and every part that would drift, and write nothing. A sync that would
 // change or remove what an author wrote, or that no record answers for, is
 // refused in this surface's words, naming this field.
+//
+// upgrade is the command line's --upgrade, carried as a field for the reason
+// sync is one: where the workspace names no catalog folder, it asks for the newest
+// catalog snapshot the workspace's default registry publishes to be fetched and
+// read, and held from then on. It is handed to the import as sent, so the session
+// refreshes exactly as the command and the assistant's tool do.
 type importParams struct {
 	Source    string `json:"source"`
 	OutputDir string `json:"outputDir"`
@@ -85,6 +91,7 @@ type importParams struct {
 	Target    string `json:"target"`
 	DryRun    bool   `json:"dryRun"`
 	Sync      bool   `json:"sync"`
+	Upgrade   bool   `json:"upgrade"`
 }
 
 // importedFile is one drafted file on the wire: the path it is for, relative to
@@ -209,10 +216,13 @@ type importResult struct {
 // the drafts it produces still land inside the workspace.
 //
 // The one registry it may reach is the session workspace's default registry, and
-// only for a core importer of the compiler's release that the machine does not
-// hold yet: the import fetches it there, verifies it as every fetched plugin is
-// verified, and keeps it in the workspace's content cache, so later imports reach
-// no network. Every other importer, and the parser it draws on, is resolved from
+// only for two things the machine does not hold yet: a core importer of the
+// compiler's release, which the import fetches there, verifies as every fetched
+// plugin is verified, and keeps in the workspace's content cache, so later imports
+// reach no network for it; and, where the workspace names no catalog folder, the
+// published catalog snapshot the import reads as its catalog, fetched, verified
+// and kept the same way and named in the record beside the drafts. Every
+// other importer, and the parser it draws on, is resolved from
 // the workspace's own catalog with its bytes from the shared plugin cascade —
 // except a parser for a syntax the catalog serves none for, which is the one the
 // binary carries. The acquisition and the parser resolution are the import
@@ -267,6 +277,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		Target:        params.Target,
 		OutputDir:     outputDir,
 		Sync:          params.Sync,
+		Upgrade:       params.Upgrade,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
 	})

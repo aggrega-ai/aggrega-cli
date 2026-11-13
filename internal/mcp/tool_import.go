@@ -79,6 +79,11 @@ type importArgs struct {
 	// the source, changing only what the import wrote, rather than the draft being
 	// written whole.
 	Sync bool `json:"sync"`
+
+	// Upgrade is the command line's --upgrade, a request field for the reason Sync
+	// is one: where the workspace names no catalog folder, it asks for the newest
+	// published catalog snapshot to be fetched and read, and held from then on.
+	Upgrade bool `json:"upgrade"`
 }
 
 // importDrift is one part a sync brought up to date, or under `dry_run` would:
@@ -266,7 +271,17 @@ var importToolSpec = toolSpec{
 		"default registry with this machine's own login, held to the module the compiler's release publishes " +
 		"and verified as a pull verifies a plugin, then kept in the workspace's content cache, so later imports " +
 		"reach no registry; nothing in the call names a registry or carries a credential. Where it cannot be " +
-		"fetched, the call is refused naming the importer, its version and what puts it on the machine. A " +
+		"fetched, the call is refused naming the importer, its version and what puts it on the machine. The " +
+		"catalog an import reads is the workspace's catalog folders; where the workspace names none, it reads " +
+		"the catalog its default registry publishes as one signed snapshot, at catalog/snapshot. A snapshot is " +
+		"fetched once: its signature is verified under that registry's trust policy, and it is kept in the " +
+		"workspace's content cache and read there, held to its digest, with no registry asked for it again. " +
+		"Which snapshot an import reads: with `upgrade`, the newest; otherwise the one the record beside the " +
+		"drafts names, fetched by its digest when this machine does not hold it; otherwise the one the " +
+		"workspace last fetched as the newest; otherwise the newest. The record an import writes names the " +
+		"snapshot it read by its digest. Offline, a call that would have to fetch one is refused " +
+		"naming what to do; a registry that publishes no snapshot leaves the import with no catalog, with a " +
+		"warning saying so. A " +
 		"`plugins.importer` attachment whose `uri` names an importer " +
 		"advertising the format, by identity and version, runs that importer at that version whatever other " +
 		"importer advertises the format too, and hands it — and no other importer — its `with.sources` and " +
@@ -294,7 +309,8 @@ var importToolSpec = toolSpec{
 		"the write's, the same importer over the same source reporting the same diagnostics, so a source the " +
 		"write would refuse is refused under it too. Every import that drafts anything also writes, beside its " +
 		"drafts, `.aggrega-import.json`, the record of what it wrote — the `target` it was sent, where it was sent " +
-		"one, each drafted file, and each key of a drafted Aggregate or Release at every depth, with a digest of " +
+		"one, the catalog snapshot it read, where it read one, each drafted file, and each key of a drafted " +
+		"Aggregate or Release at every depth, with a digest of " +
 		"its text, any other drafted file recorded whole — and `dry_run` hands it back among the " +
 		"drafts. A call whose drafts would be written over an Aggregate " +
 		"already in the output directory is refused, naming it, and nothing is written — under `dry_run` too — because " +
@@ -348,6 +364,10 @@ var importToolSpec = toolSpec{
     "sync": {
       "type": "boolean",
       "description": "Bring what an earlier import drafted up to date with the source, changing only what the import wrote, as the record beside the drafts lists it. The answer's drift names each part brought up to date, or under dry_run each part that would be."
+    },
+    "upgrade": {
+      "type": "boolean",
+      "description": "Where the workspace names no catalog folder, fetch the newest catalog snapshot its default registry publishes, verify it and import against it, holding it from then on in place of the one the workspace holds or the one the record beside the drafts names. It changes nothing where the workspace names a catalog folder, and is refused offline."
     },
     "workspace_root": {
       "type": "string",
@@ -457,6 +477,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		Target:        target,
 		OutputDir:     outputDir,
 		Sync:          a.Sync,
+		Upgrade:       a.Upgrade,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
 	})

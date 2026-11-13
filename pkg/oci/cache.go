@@ -123,6 +123,52 @@ func EntitiesRoot(workspaceRoot, cacheDir string) string {
 	return filepath.Join(workspaceRoot, cacheDir, "entities")
 }
 
+// CatalogSnapshotsRoot returns the root of the catalog-snapshot subtree of the
+// workspace's artifact cache:
+//
+//	<workspaceRoot>/<cacheDir>/catalog-snapshots/
+//
+// It is the single site that names the `catalog-snapshots/` segment; a published
+// catalog snapshot an import fetched is kept in a slot beneath it
+// ([CatalogSnapshotSlot]), beside the file naming the one this workspace reads by
+// default ([CatalogSnapshotCurrentPath]). It is a sibling of EntitiesRoot rather
+// than a slot beneath it, because a snapshot is no entity of any kind: it carries
+// a whole catalog, and is addressed by nothing but its manifest digest.
+func CatalogSnapshotsRoot(workspaceRoot, cacheDir string) string {
+	return filepath.Join(workspaceRoot, cacheDir, "catalog-snapshots")
+}
+
+// CatalogSnapshotSlot returns the slot a published catalog snapshot is kept in,
+// addressed by its manifest digest:
+//
+//	<workspaceRoot>/<cacheDir>/catalog-snapshots/<encoded-digest>/
+//
+// The digest is spelled through [JoinCacheLocation], as every cache location's
+// directory names are, so `sha256:<hex>` is the directory
+// `sha256+zx00003a<hex>`; a digest that would name a place other than one
+// directory — one carrying a separator, or naming `.` or `..`, as a record read
+// back from disk might — is refused with the condition
+// [ErrCacheLocationOutsideCache] names, before anything is read or written there.
+func CatalogSnapshotSlot(workspaceRoot, cacheDir, manifestDigest string) (string, error) {
+	return JoinCacheLocation(CatalogSnapshotsRoot(workspaceRoot, cacheDir), "catalog snapshot",
+		CacheSegment{Key: "digest", Value: manifestDigest, Segment: manifestDigest})
+}
+
+// CatalogSnapshotCurrentFile is the name, in [CatalogSnapshotsRoot], of the file
+// naming the catalog snapshot the workspace reads where nothing names another.
+const CatalogSnapshotCurrentFile = "current"
+
+// CatalogSnapshotCurrentPath returns the file naming, by its manifest digest, the
+// catalog snapshot the workspace reads where nothing names another:
+//
+//	<workspaceRoot>/<cacheDir>/catalog-snapshots/current
+//
+// It is not a directory name any digest's slot can take, since every slot is
+// spelled from a digest and a digest carries a colon.
+func CatalogSnapshotCurrentPath(workspaceRoot, cacheDir string) string {
+	return filepath.Join(CatalogSnapshotsRoot(workspaceRoot, cacheDir), CatalogSnapshotCurrentFile)
+}
+
 // IndexRoot returns the root of the local searchable-index subtree of the
 // workspace's artifact cache:
 //
@@ -439,7 +485,7 @@ func (e *pullRemedyError) Unwrap() error { return e.refusal }
 // function with a directory-walking variant; callers should consult
 // the layout convention in effect at their entry point.
 func ReadCached(workspaceRoot, cacheDir, kind, uri, version string) ([]byte, error) {
-	data, err := ReadCachedFile(workspaceRoot, cacheDir, kind, uri, version, "blob")
+	data, err := ReadCachedFile(workspaceRoot, cacheDir, kind, uri, version, SlotBlobFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("oci: cache miss for %s@%s: %w", uri, version, ErrFetchNotFound())
@@ -474,7 +520,30 @@ func ReadCachedFile(workspaceRoot, cacheDir, kind, uri, version, name string) ([
 	if err != nil {
 		return nil, err
 	}
-	file := filepath.Join(dir, name)
+	return ReadSlotFile(workspaceRoot, cacheDir, dir, name)
+}
+
+// The files a cache slot holds its artifact in: the content blob and the
+// manifest it was published under. Every slot that keeps an artifact names them so,
+// an entity's slot and a catalog snapshot's alike.
+const (
+	SlotBlobFile     = "blob"
+	SlotManifestFile = "manifest"
+)
+
+// ReadSlotFile returns the bytes stored under name in the cache slot directory
+// slot, a slot beneath the cache directory of the workspace at workspaceRoot
+// whatever addresses it — an entity's reference and version ([CachePath]), or a
+// catalog snapshot's digest ([CatalogSnapshotSlot]).
+//
+// It is the one read of a file a slot holds: [ReadCachedFile] reads through it. The
+// file is held, before it is opened, to the root the cache directory picks
+// ([writescope.RootForCache]), so a directory on the way to the slot, or the file
+// itself, that is a link leading out of the cache directory is refused with the read
+// hold's condition and nothing is read through it. A file that is not there is
+// reported as [os.ReadFile] reports it, so [os.IsNotExist] tells a miss apart.
+func ReadSlotFile(workspaceRoot, cacheDir, slot, name string) ([]byte, error) {
+	file := filepath.Join(slot, name)
 	if err := readscope.CheckCacheRead(writescope.RootForCache(workspaceRoot, cacheDir), file); err != nil {
 		return nil, err
 	}
@@ -497,7 +566,7 @@ func heldOrMisplaced(err error) bool {
 //
 // The slot is held to the cache directory first: see [WriteCachedFile].
 func WriteCached(workspaceRoot, cacheDir, kind, uri, version string, data []byte) error {
-	return WriteCachedFile(workspaceRoot, cacheDir, kind, uri, version, "blob", data)
+	return WriteCachedFile(workspaceRoot, cacheDir, kind, uri, version, SlotBlobFile, data)
 }
 
 // WriteCachedFile stores data under name in the cache slot for uri@version,
@@ -518,12 +587,27 @@ func WriteCachedFile(workspaceRoot, cacheDir, kind, uri, version, name string, d
 	if err != nil {
 		return err
 	}
-	file := filepath.Join(dir, name)
+	return WriteSlotFile(workspaceRoot, cacheDir, dir, name, data)
+}
+
+// WriteSlotFile stores data under name in the cache slot directory slot, creating
+// the slot as needed — the write [ReadSlotFile] reads back, for a slot whatever
+// addresses it. [WriteCachedFile] writes through it.
+//
+// The file is held, before anything is written, to the root the cache directory
+// picks ([writescope.RootForCache]): a directory on the way to the slot, or the
+// file, that is a link leading out of the cache directory — or a cache directory
+// leading out of the workspace — is refused with the halt the write-scope rule
+// declares, rather than written through. A failure to create the slot or write the
+// file is said as what was being done and with which path, followed by the
+// operating system's reason.
+func WriteSlotFile(workspaceRoot, cacheDir, slot, name string, data []byte) error {
+	file := filepath.Join(slot, name)
 	if err := writescope.CheckWrite(writescope.RootForCache(workspaceRoot, cacheDir), file); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return filefailure.Wrap("create the cache directory", dir, err)
+	if err := os.MkdirAll(slot, 0o755); err != nil {
+		return filefailure.Wrap("create the cache directory", slot, err)
 	}
 	if err := os.WriteFile(file, data, 0o644); err != nil {
 		return filefailure.Wrap("write the cache file", file, err)
@@ -540,7 +624,7 @@ func WriteCachedFile(workspaceRoot, cacheDir, kind, uri, version, name string, d
 // leading out is returned as itself; other errors surface as wrapped read
 // failures. Mirrors ReadCached; the filename is "manifest".
 func ReadCachedManifest(workspaceRoot, cacheDir, kind, uri, version string) ([]byte, error) {
-	data, err := ReadCachedFile(workspaceRoot, cacheDir, kind, uri, version, "manifest")
+	data, err := ReadCachedFile(workspaceRoot, cacheDir, kind, uri, version, SlotManifestFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("oci: manifest cache miss for %s@%s: %w", uri, version, ErrFetchNotFound())
@@ -560,7 +644,7 @@ func ReadCachedManifest(workspaceRoot, cacheDir, kind, uri, version string) ([]b
 // read re-derive the manifest digest from a stored artifact rather than trusting
 // a recorded value with nothing to check it against.
 func WriteCachedManifest(workspaceRoot, cacheDir, kind, uri, version string, manifestBytes []byte) error {
-	return WriteCachedFile(workspaceRoot, cacheDir, kind, uri, version, "manifest", manifestBytes)
+	return WriteCachedFile(workspaceRoot, cacheDir, kind, uri, version, SlotManifestFile, manifestBytes)
 }
 
 // bareReference returns an OCI reference (such as

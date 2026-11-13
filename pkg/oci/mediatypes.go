@@ -111,6 +111,14 @@ const (
 	// through MediaTypeFor: no entity kind lowercases to "docs", so the
 	// bundle carries no entity envelope and rides the kind-agnostic transport.
 	MediaTypeDocs = mediaTypeVendor + "docs." + mediaTypeVersion + archiveSuffix
+	// MediaTypeCatalogSnapshot is the mediatype of a published catalog snapshot —
+	// a gzipped tar of a whole catalog tree as one publication published it, the
+	// layout catalog.WriteSnapshot writes, which a reader lays out as a folder in
+	// the content cache through sourcecache.RegenerateExtracted. Like a
+	// documentation bundle it is a non-kind artifact, never resolved through
+	// MediaTypeFor: it carries many entities and is the envelope of none. It is
+	// both the manifest's artifact type and its one layer's media type.
+	MediaTypeCatalogSnapshot = mediaTypeVendor + "catalogsnapshot." + mediaTypeVersion + archiveSuffix
 	// MediaTypeSignatureBundle is the cosign-compatible Sigstore bundle media
 	// type a signature is attached under: the artifactType of the OCI referrer
 	// that carries the bundle, and the media type of that referrer's one layer.

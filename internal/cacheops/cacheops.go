@@ -264,6 +264,20 @@ func (l Locations) sourceArtifactsRoot() string {
 	return cacheslot.SourceArtifactsRoot(l.WorkspaceRoot, l.CacheDir)
 }
 
+// catalogSnapshotsRoot returns the workspace catalog-snapshot subtree root, or ""
+// when no workspace resolved.
+func (l Locations) catalogSnapshotsRoot() string {
+	if l.WorkspaceRoot == "" {
+		return ""
+	}
+	return oci.CatalogSnapshotsRoot(l.WorkspaceRoot, l.CacheDir)
+}
+
+// CatalogSnapshotClassName is the display name of the workspace's catalog-snapshot
+// cache class. It is the single spelling the class assembly and every surface that
+// names the class share.
+const CatalogSnapshotClassName = "workspace catalog-snapshot cache"
+
 // inputsRoot returns the workspace external-input store root, or "" when no
 // workspace resolved.
 func (l Locations) inputsRoot() string {
@@ -299,6 +313,10 @@ func (l Locations) workspaceClasses() []workspaceClass {
 		{Class{Name: "workspace entity cache", Root: l.entitiesRoot(), Reach: ReachWorkspace, Prunable: true}, enumEntities},
 		{Class{Name: "workspace source-artifact cache", Root: l.sourceArtifactsRoot(), Reach: ReachWorkspace, Prunable: true}, enumSourceArtifacts},
 		{Class{Name: "workspace external-input store", Root: l.inputsRoot(), Reach: ReachWorkspace, Prunable: true}, enumInputs},
+		// No lockfile references a catalog snapshot — the record beside an import's
+		// drafts pins it — so no prune can tell a pinned one from an abandoned one,
+		// and only a clear reclaims the class, as for the documentation bundle.
+		{Class{Name: CatalogSnapshotClassName, Root: l.catalogSnapshotsRoot(), Reach: ReachWorkspace, Prunable: false}, enumCatalogSnapshots},
 	}
 }
 
@@ -602,6 +620,43 @@ func enumInputs(ctx context.Context, root string, hold func(path string) error) 
 	})
 	if walkErr != nil {
 		return out, walkErr
+	}
+	sortElements(out)
+	return out, nil
+}
+
+// enumCatalogSnapshots enumerates the catalog-snapshot slots of the workspace's
+// cache: each a directory named for a published catalog snapshot's manifest digest
+// (oci.CatalogSnapshotSlot), holding the archive, its manifest and the tree it is
+// laid out as. Each is labelled with the digest read back from its name and sized
+// whole. The file naming the snapshot the workspace reads by default sits beside
+// the slots and is no slot, so it is not listed; a clear of the class removes it
+// with them.
+//
+// Every slot is held (hold) before it is sized, and the hold's refusal ends the
+// enumeration. A root that does not exist lists nothing.
+func enumCatalogSnapshots(ctx context.Context, root string, hold func(path string) error) ([]Element, error) {
+	var out []Element
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return out, nil
+	}
+	for _, e := range entries {
+		if serr := stopped(ctx); serr != nil {
+			return out, serr
+		}
+		if !e.IsDir() {
+			continue
+		}
+		slot := filepath.Join(root, e.Name())
+		if herr := hold(slot); herr != nil {
+			return out, herr
+		}
+		out = append(out, Element{
+			Label: readName(e.Name()),
+			Path:  slot,
+			Size:  dirSize(slot),
+		})
 	}
 	sortElements(out)
 	return out, nil

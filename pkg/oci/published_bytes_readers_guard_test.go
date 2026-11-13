@@ -107,6 +107,7 @@ var publishedByteReaders = map[string]string{
 	"internal/importops.acquireCarriedImporter":                "a core importer's plugin .wasm artifact, held to the digest the binary carries for it and verified before it is written to the content cache; never an entity document",
 	"cmd/aggrega.productionInstallPluginFetch":                 "a plugin artifact fetched for installation; never an entity document",
 	"pkg/docscache.ResolveAndCache":                            "a documentation bundle, refused unless it carries the docs mediatype; never an entity document",
+	"internal/importops.fetchCatalogSnapshot":                  "a catalog snapshot archive, refused unless it carries the catalog-snapshot mediatype, verified against its signature and written to its cache slot to be laid out as a catalog tree; the archive itself is never parsed as an entity document",
 	"pkg/externalinputs.Service.ociPull":                       "an external input artifact; never an entity document",
 	"pkg/sourceresolver/helm.ociAdapter.Resolve":               "a Helm chart artifact cached by its own digest; never an entity document",
 

@@ -21,8 +21,10 @@ import (
 // The chokepoint is not confined to one package: the verification home and its
 // host-function primitive are declared in internal/pluginfetchverify, the fetch
 // tiers that must route through them are declared here, the install command's
-// fetch is declared in the command package, and an import's fetch of a core
-// importer is declared in the import operation's package. A guard walking one
+// fetch is declared in the command package, and an import's fetches — of a core
+// importer, and of a published catalog snapshot — are declared in the import
+// operation's package. The documentation bundle's acquisition verifies an artifact
+// of no catalog kind too, and is declared in its own package. A guard walking one
 // directory would see the call sites in it and pass blind on the others, so it
 // walks every one of them and reports one caller set per callee across them.
 type verificationUnit struct {
@@ -35,6 +37,7 @@ var verificationUnits = []verificationUnit{
 	{dir: filepath.Join("..", "pluginfetchverify"), prefix: "pluginfetchverify"},
 	{dir: filepath.Join("..", "..", "cmd", "aggrega"), prefix: "main"},
 	{dir: filepath.Join("..", "importops"), prefix: "importops"},
+	{dir: filepath.Join("..", "docsbundle"), prefix: "docsbundle"},
 }
 
 // qualify resolves a call expression to the package-qualified name of its
@@ -147,18 +150,27 @@ func enclosingCallers(t *testing.T) map[string]map[string]bool {
 // TestPluginFetchVerificationChokepoint locks the single-verification-home
 // invariant structurally: every plugin fetch reaches verification, and a new
 // fetch path cannot silently skip it. It pins the exact set of functions that
-// call each of the four verification surfaces:
+// call each of the five verification surfaces:
 //
 //   - pluginfetchverify.Verify is the single home the cache-not-pin tiers route
 //     through. Its only callers are the verdict-socket cache verify, the CLI
 //     install fetch and an import's acquisition of a core importer. A new
 //     cache-not-pin fetch that skips it (or a second copy that re-implements
 //     verification inline) breaks this set.
-//   - pullverify.Verify (the registry-signature primitive) is reachable from
-//     exactly two homes: the closure signature pass (the pinned tier), through
-//     the one call it shares with a verifying pull, recordSignatureAnswers, and
-//     pluginfetchverify.Verify (every other tier). A third caller means a fetch
-//     path grew its own signature-verify copy instead of routing through a home.
+//   - pullverify.Verify (the registry-signature primitive) is called, among the
+//     packages walked here, from exactly three homes: the closure signature pass
+//     (the pinned tier), through the one call it shares with a verifying pull,
+//     recordSignatureAnswers; pluginfetchverify.Verify (every other plugin tier);
+//     and the documentation bundle's pull-time check, docsbundle.Verifier. A
+//     fourth caller means a fetch path grew its own signature-verify copy instead
+//     of routing through a home.
+//   - pullverify.VerifyKindlessArtifact — the entry, inside the pullverify package
+//     and calling pullverify.Verify there, that verifies one artifact of no catalog
+//     kind under a check requiring a signature wherever any requirement is active —
+//     is called by an import's fetch of a published catalog snapshot alone. A
+//     snapshot is no plugin and carries no host functions, so it asks the
+//     registry-signature primitive alone, as the documentation bundle does. A
+//     second caller is a new kindless route, and is added here consciously.
 //   - pluginfetchverify.VerifyWithoutSignature (that home's half that asks no
 //     registry) is called by pluginfetchverify.Verify and by the verdict-socket
 //     cache verify alone, which runs it on its own only where it then reports the
@@ -186,7 +198,11 @@ func TestPluginFetchVerificationChokepoint(t *testing.T) {
 		},
 		{
 			callee: "pullverify.Verify",
-			want:   []string{"pluginfetchverify.Verify", "pullops.recordSignatureAnswers"},
+			want:   []string{"docsbundle.Verifier", "pluginfetchverify.Verify", "pullops.recordSignatureAnswers"},
+		},
+		{
+			callee: "pullverify.VerifyKindlessArtifact",
+			want:   []string{"importops.fetchCatalogSnapshot"},
 		},
 		{
 			callee: "pluginfetchverify.VerifyWithoutSignature",

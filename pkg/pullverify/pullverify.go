@@ -185,6 +185,34 @@ func Verify(ctx context.Context, entities []Entity, opts Options) ([]Result, err
 	return results, nil
 }
 
+// VerifyKindlessArtifact runs [Verify] for one artifact that publishes under no
+// catalog kind — a published catalog snapshot, say — at reference, whose manifest
+// digest is manifestDigest, read from target, and returns its verified fact, or nil
+// where it is admitted without one.
+//
+// It is the one place such an artifact's entity is built: its identity is the
+// reference with the digest, its host the one the reference names, and its kind
+// empty, so [workspaceconfig.Config.SignatureCheckFor] counts it as required under
+// any active requirement whatever kinds that requirement is scoped to — an
+// artifact nothing classifies is never exempted for that reason. Every other step
+// is Verify's own.
+func VerifyKindlessArtifact(ctx context.Context, cfg workspaceconfig.Config, reference, manifestDigest string,
+	target oras.ReadOnlyTarget, warn func(string)) (*Result, error) {
+	results, err := Verify(ctx, []Entity{{
+		URI:            reference + "@" + manifestDigest,
+		ManifestDigest: manifestDigest,
+		Host:           registryhost.Of(reference),
+	}}, Options{
+		Config: cfg,
+		Target: func(Entity) (oras.ReadOnlyTarget, string, error) { return target, manifestDigest, nil },
+		Warn:   warn,
+	})
+	if err != nil || len(results) == 0 {
+		return nil, err
+	}
+	return &results[0], nil
+}
+
 // VerifyStored decides whether an artifact is admitted on the strength of the
 // signature bundles a pull fetched for it earlier and kept, under the
 // configuration's own check for the artifact, without asking the registry

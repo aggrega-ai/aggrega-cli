@@ -147,6 +147,7 @@ func TestCacheClassReachIsDeclared(t *testing.T) {
 		"workspace entity cache":          ReachWorkspace,
 		"workspace source-artifact cache": ReachWorkspace,
 		"workspace external-input store":  ReachWorkspace,
+		CatalogSnapshotClassName:          ReachWorkspace,
 		CompiledModuleClassName:           ReachMachine,
 		"plugin-describe cache":           ReachMachine,
 		DocsBundleClassName:               ReachMachine,

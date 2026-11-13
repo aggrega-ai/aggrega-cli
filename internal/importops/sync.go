@@ -203,14 +203,16 @@ func readRecord(root, outputDir string) (*importRecord, string, error) {
 // rec and onDisk are the record beside the drafts and its bytes as [readRecord]
 // read them — rec nil where there is none — read by [Import] before the draft was
 // composed, because a sync given no target takes the one the record names. The
-// record the sync writes names target, the one the draft was composed for.
+// record the sync writes names target, the one the draft was composed for, and
+// catalogSnapshot, the published catalog snapshot it was composed against, empty
+// where it read catalog folders.
 //
 // Nothing is written or removed until every part is judged, and a sync with any
 // conflict writes nothing; a sync whose importer reported a halt writes nothing
 // either, because a draft the importer could not finish would read as the
 // source having dropped the parts it did not reach.
-func syncImport(workspaceRoot, outputDir, target string, opts Options, res Result, drafted []draftedFile,
-	rec *importRecord, onDisk string) (Result, error) {
+func syncImport(workspaceRoot, outputDir, target, catalogSnapshot string, opts Options, res Result,
+	drafted []draftedFile, rec *importRecord, onDisk string) (Result, error) {
 	root := writescope.RootFor(workspaceRoot, outputDir)
 	for _, f := range drafted {
 		place, err := draftPlace(outputDir, f.path)
@@ -237,7 +239,7 @@ func syncImport(workspaceRoot, outputDir, target string, opts Options, res Resul
 	}
 	files := plan.writes
 	if rec != nil || len(drafted) > 0 {
-		if record := recordScaffold(target, drafted); record.Content != onDisk {
+		if record := recordScaffold(target, catalogSnapshot, drafted); record.Content != onDisk {
 			files = append(files, record)
 		}
 	}

@@ -94,6 +94,17 @@ func importSourceWorkspace(t *testing.T, rel string, content []byte) (root, relP
 	return root, rel
 }
 
+// layEmptyCatalogFolder creates the workspace's conventional catalog folder at
+// root, holding nothing. A workspace naming no catalog folder reads the catalog
+// its default registry publishes instead, and these workspaces are offline and
+// hold none, so a case over a catalog holding nothing names an empty folder.
+func layEmptyCatalogFolder(t *testing.T, root string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, workspaceconfig.ConventionalCatalogDir), 0o755); err != nil {
+		t.Fatalf("create the empty catalog folder: %v", err)
+	}
+}
+
 // readImportFixture reads one of the committed source fixtures.
 func readImportFixture(t *testing.T, path string) []byte {
 	t.Helper()
@@ -458,9 +469,11 @@ func TestTheImportToolRefusesASourceWhoseShapeItDoesNotRecognise(t *testing.T) {
 // offers sending one of the directory's files on its own, or a format whose
 // importer reads a directory, and never names langflow. Which formats those are is
 // held to the importers' declarations where the refusal is built; here the case
-// holds that this surface reaches the directory's wording at all.
+// holds that this surface reaches the directory's wording at all. The workspace's
+// catalog folder holds nothing, so the importers are the core importers alone.
 func TestTheImportToolOffersADirectoryNoImporterRecognisesWhatCanHelpIt(t *testing.T) {
 	root, _ := importSourceWorkspace(t, "notes.txt", []byte("notes\n"))
+	layEmptyCatalogFolder(t, root)
 	dir := filepath.Join(root, "flows")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("create the directory source: %v", err)
@@ -586,9 +599,11 @@ const unadvertisedFormat = "unadvertised"
 // format no plugin advertises, carrying the capability an importer would have to
 // advertise — which is what a reader has to attach. Composing a sentence here
 // instead would be this surface inventing an account of a resolution it does not
-// perform.
+// perform. The workspace's catalog folder holds nothing, so no importer of its
+// catalog advertises the format either.
 func TestTheImportToolRefusesWhenNoImporterAdvertisesTheFormat(t *testing.T) {
 	root, rel := importSourceWorkspace(t, "flow.json", readImportFixture(t, langflowFixture))
+	layEmptyCatalogFolder(t, root)
 	before := treeUnder(t, root)
 	s := importToolServer(t, root)
 

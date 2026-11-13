@@ -146,7 +146,10 @@ func TestAWorkspaceHoldingNoParserImportsThroughTheBinarysParser(t *testing.T) {
 
 // TestAWorkspaceHoldingNothingRecognisesAndImportsALoneFileThroughACoreImporter is
 // the case as a user first meets it: an offline workspace whose catalog holds
-// nothing at all — no importer and no parser — while the binary is made to carry
+// nothing at all — no importer and no parser. It names no catalog folder, so its
+// catalog is the published catalog snapshot it holds, fetched earlier from a
+// registry of the test's own: the snapshot of an empty catalog. Meanwhile the
+// binary is made to carry
 // importer/langflow, an entity generated from the reference Langflow importer
 // held to that importer's own digest, and the importer's module is on this
 // machine through the tier a module compiled into the binary is read from.
@@ -174,6 +177,7 @@ func TestAWorkspaceHoldingNothingRecognisesAndImportsALoneFileThroughACoreImport
 	t.Cleanup(embedded.SeedForTest("importer/langflow", moduleAt(t, langflow)))
 
 	wsDir := aWorkspaceDir(t)
+	holdSnapshotOf(t, wsDir, t.TempDir())
 	importopstest.WriteOfflineConfiguration(t, wsDir)
 	rw := resolveWorkspaceAt(t, wsDir)
 	if _, err := os.Stat(filepath.Join(rw.Root(), workspaceconfig.ConventionalCatalogDir)); !errors.Is(err, os.ErrNotExist) {

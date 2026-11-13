@@ -55,11 +55,21 @@ type Seam struct {
 	Recipes      RecipeIndex
 
 	// loadIn is the one loader of the real seam, serving both sockets, bound to
-	// the context of the import that runs it, so the one step of an import that
-	// can reach a registry — acquiring a core importer the machine does not hold —
+	// the context of the import that runs it, so a step of an import that can
+	// reach a registry — acquiring a core importer the machine does not hold —
 	// ends with the import that asked for it. A harness standing in for the seam
 	// leaves it nil, and its ImporterLoad and ParserLoad are what run.
 	loadIn func(ctx context.Context) func(types.Plugin) (wasm.PluginSpec, error)
+
+	// readSnapshot is set on the real seam of a workspace that names no catalog
+	// folder, whose view is then the published catalog snapshot rather than an
+	// empty catalog: it reads the snapshot read says (readCatalogSnapshot), under
+	// the context of the import that runs it, and returns the seam built over it
+	// and the snapshot read. Where the workspace's registry publishes none it
+	// returns this seam, over no catalog, and the snapshot's notice. A seam over
+	// catalog folders, and a harness standing in for the seam, leave it nil, and
+	// nothing is fetched for them.
+	readSnapshot func(ctx context.Context, read catalogSnapshotRead) (Seam, catalogSnapshot, error)
 }
 
 // importerLoader returns the loader an import under ctx runs its importer
@@ -188,8 +198,7 @@ var BuildSeam = buildSeam
 //
 // The importer's view of the catalog's Components is projected from this same
 // view, once, so the import loads the catalog once and shows the importer
-// exactly the catalog it was selected from — nothing a Release contributes, and
-// nothing fetched.
+// exactly the catalog it was selected from — nothing a Release contributes.
 //
 // The importers whose signatures recognise a source are read from this same
 // view too — every importer entity its catalog holds, every version, whether its
@@ -197,10 +206,21 @@ var BuildSeam = buildSeam
 // is recognised only as a format an importer this view holds advertises.
 //
 // So are the Recipes an import given a target drafts its Manifest from: the
-// Recipes of the catalog directories this view loaded, and nothing a registry
-// holds that the workspace has not pulled.
+// Recipes of the catalog this view loaded, and nothing a registry holds that the
+// workspace has not pulled.
+//
+// The view is the workspace's catalog folders, as the workspace's own search
+// stack names them. A workspace whose stack names none — no catalog folder in
+// AGGREGA_CATALOG_DIRS or under workspace.catalog_dirs, and none at the
+// conventional place in its root — reads the catalog its default registry
+// publishes as one signed snapshot instead: the seam built here is then over no
+// catalog and carries the step that reads the snapshot (Seam.readSnapshot), which
+// [Import] runs under its own context once it knows which snapshot to read, and
+// which returns the seam built the same way over the folder the snapshot is laid
+// out as. So the projection, the importers and the Recipes come from the snapshot
+// through exactly the folder path a catalog folder takes. A workspace that names a
+// catalog folder never reads a snapshot.
 func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesResolver) (Seam, error) {
-	wsCfg := rw.Config()
 	// An import concerns no one Release, so it reads the workspace's own stack.
 	dirs, err := rw.ResolveCatalogDirs("", nil)
 	if err != nil {
@@ -210,6 +230,31 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 	if err != nil {
 		return Seam{}, err
 	}
+	seam, err := seamOver(rw, resolvePlugin, named, dirs)
+	if err != nil || len(dirs) > 0 {
+		return seam, err
+	}
+	seam.readSnapshot = func(ctx context.Context, read catalogSnapshotRead) (Seam, catalogSnapshot, error) {
+		snapshot, err := readCatalogSnapshot(ctx, rw, read)
+		if err != nil {
+			return Seam{}, catalogSnapshot{}, err
+		}
+		if snapshot.dir == "" {
+			return seam, snapshot, nil
+		}
+		// The snapshot's folder is named rather than conventional, so it has the root
+		// any named catalog folder has: the workspace's, where the content cache lies
+		// inside the workspace.
+		over, err := seamOver(rw, resolvePlugin, []string{snapshot.dir}, []string{snapshot.dir})
+		return over, snapshot, err
+	}
+	return seam, nil
+}
+
+// seamOver builds the real seam over the catalog folders dirs, of which named are
+// the ones somebody named, as [buildSeam] describes.
+func seamOver(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesResolver, named, dirs []string) (Seam, error) {
+	wsCfg := rw.Config()
 	cat, err := catalog.LoadAllWithNamedDirs(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), named, dirs...)
 	if err != nil {
 		return Seam{}, fmt.Errorf("load catalog for import resolution: %w", err)
