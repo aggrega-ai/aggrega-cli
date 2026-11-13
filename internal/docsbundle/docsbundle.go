@@ -529,11 +529,16 @@ func targetOf(ctx context.Context, target TargetFor) TargetFor {
 // version X.Y.Z bounds the choice inclusively. A version a build describes
 // itself by as some commits after a release — X.Y.Z-N-gHASH, with or without a
 // trailing -dirty — is taken as built after X.Y.Z, so X.Y.Z bounds it, rather
-// than as a pre-release of X.Y.Z, which would sort before it. Any other
-// pre-release version bounds the choice strictly, and a pre-release is never
-// chosen. A version that is not a release number at all — a development build
-// stamped with none — has nothing to be at or below, and the failure to acquire
-// the exact version is returned as it is.
+// than as a pre-release of X.Y.Z, which would sort before it. A version a build
+// describes itself by as some commits after a pre-release — X.Y.Z-PRE-N-gHASH,
+// with or without a trailing -dirty — is taken as built after X.Y.Z-PRE, so
+// X.Y.Z-PRE bounds it inclusively, and that bound alone admits a pre-release:
+// X.Y.Z-PRE is chosen where it is published, else the newest version published
+// below it in SemVer order, pre-release or release. Any other pre-release
+// version bounds the choice strictly, and under every bound but that one a
+// pre-release is never chosen. A version that is not a release number at all —
+// a development build stamped with none — has nothing to be at or below, and the
+// failure to acquire the exact version is returned as it is.
 //
 // The bound is the same one attempt's ([AcquireTimeout]) for each acquisition,
 // and a failure leaves the cache exactly as it was.
@@ -547,13 +552,13 @@ func EnsureCachedAtOrBelow(ctx context.Context, cfg workspaceconfig.Config, cach
 	if err == nil {
 		return version, acquired, nil
 	}
-	bound, ok := versionBound(version)
+	bound, preReleases, ok := versionBound(version)
 	if !ok {
 		return "", false, err
 	}
 	switch {
 	case errors.Is(err, egress.ErrOfflineEgress()):
-		if cached, ok := newestCachedAtOrBelow(ctx, cfg, cacheRoot, ref, bound, warn); ok {
+		if cached, ok := newestCachedAtOrBelow(ctx, cfg, cacheRoot, ref, bound, preReleases, warn); ok {
 			return cached, false, nil
 		}
 		return "", false, err
@@ -562,7 +567,7 @@ func EnsureCachedAtOrBelow(ctx context.Context, cfg workspaceconfig.Config, cach
 		if lerr != nil {
 			return "", false, fmt.Errorf("%w; listing the versions the registry publishes failed: %w", err, lerr)
 		}
-		chosen := atOrBelow(published, bound)
+		chosen := atOrBelow(published, bound, preReleases)
 		if chosen == "" {
 			return "", false, fmt.Errorf("%w; the registry publishes no version of it at or below %s", err, bound)
 		}
@@ -626,32 +631,50 @@ func (e *NoBundleForVersionError) Unwrap() error { return e.missing }
 func (e *NoBundleForVersionError) Is(target error) bool { return errors.Is(e.earlier, target) }
 
 // describedBuild matches a version a build describes itself by as some commits
-// after a release: the release, the count of commits since it, and the commit
-// the build was made from, marked when the tree it was built from held changes.
-var describedBuild = regexp.MustCompile(`^(\d+\.\d+\.\d+)-\d+-g[0-9a-f]+(-dirty)?$`)
+// after a release or a pre-release: the version it was built after (submatch 1),
+// that version's pre-release where it has one (submatch 2), the count of commits
+// since it, and the commit the build was made from, marked when the tree it was
+// built from held changes. A version with no pre-release before the count of
+// commits matches with submatch 2 empty.
+var describedBuild = regexp.MustCompile(`^(\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?)-\d+-g[0-9a-f]+(-dirty)?$`)
 
-// versionBound returns the release number version is at or below — version
-// itself, or the release a described build was made after — and whether version
-// is a release number at all.
-func versionBound(version string) (string, bool) {
+// versionBound returns the version version is at or below — version itself, or
+// the release or pre-release a described build was made after — whether a
+// pre-release may be chosen under that bound, and whether version is a release
+// number at all. A pre-release may be chosen only under the bound of a build
+// described after a pre-release.
+func versionBound(version string) (bound string, preReleases, ok bool) {
 	if m := describedBuild.FindStringSubmatch(version); m != nil {
-		return m[1], true
+		return m[1], m[2] != "", true
 	}
 	if oci.HasAnySemverTag([]string{version}) {
-		return version, true
+		return version, false, true
 	}
-	return "", false
+	return "", false, false
 }
 
 // atOrBelow returns the version among versions equal to bound, else the newest
-// release strictly below it, else "".
-func atOrBelow(versions []string, bound string) string {
+// version strictly below it, else "". Where preReleases is false only a release
+// is chosen below bound; where it is true a pre-release is chosen as readily as
+// a release, by SemVer precedence. A bound that is not strict SemVer has nothing
+// below it.
+func atOrBelow(versions []string, bound string, preReleases bool) string {
 	for _, v := range versions {
 		if v == bound {
 			return v
 		}
 	}
-	return oci.SelectHighestBelow(versions, bound)
+	if !preReleases {
+		return oci.SelectHighestBelow(versions, bound)
+	}
+	// No version equals bound, so bound occurs once in the ordering, and a
+	// version of equal precedence carries build metadata and sorts after it:
+	// the one before it is the newest strictly below.
+	ordered := oci.SortedSemverTags(append(slices.Clone(versions), bound))
+	if i := slices.Index(ordered, bound); i > 0 {
+		return ordered[i-1]
+	}
+	return ""
 }
 
 // publishedVersions lists the versions the registry publishes the bundle at,
@@ -673,18 +696,19 @@ func publishedVersions(ctx context.Context, cfg workspaceconfig.Config, ref, ver
 	return tags, err
 }
 
-// newestCachedAtOrBelow returns the newest version at or below bound that the
-// cache under cacheRoot holds a copy of for ref that the workspace configured as
-// cfg admits, and whether there is one.
+// newestCachedAtOrBelow returns the newest version at or below bound — chosen
+// as [atOrBelow] chooses, pre-releases admitted only where preReleases is true —
+// that the cache under cacheRoot holds a copy of for ref that the workspace
+// configured as cfg admits, and whether there is one.
 func newestCachedAtOrBelow(ctx context.Context, cfg workspaceconfig.Config, cacheRoot, ref, bound string,
-	warn func(string)) (string, bool) {
+	preReleases bool, warn func(string)) (string, bool) {
 	versions, err := docscache.CachedVersions(cacheRoot, ref)
 	if err != nil {
 		return "", false
 	}
 	admit := Admission(ctx, cfg, ref, warn)
 	for len(versions) > 0 {
-		v := atOrBelow(versions, bound)
+		v := atOrBelow(versions, bound, preReleases)
 		if v == "" {
 			return "", false
 		}
