@@ -59,6 +59,7 @@ var publishedByteSources = map[string]bool{
 	"tier2ReadVerified":             true, // the same verified read, with the manifest dropped
 	"tier2Verified":                 true, // the lazy lookup's verified Tier-2 read
 	"tier3PullCatalogEntity":        true, // the entity Tier-3 pull primitive
+	"MemoizedPull":                  true, // the fetch by reference + tag through a run's memo of registry reads: hands on oci.Pull's answer, or the one a read ahead kept for the same reference and tag
 }
 
 // publishedByteReaders is the recorded set. The key is
@@ -71,10 +72,12 @@ var publishedByteSources = map[string]bool{
 // through oci.EntityYAML first.
 var publishedByteReaders = map[string]string{
 	// --- the transport itself: it yields bytes and reads none of them ---
-	"pkg/catalog.DefaultOCIPuller.Pull":            "the fetch; returns what the registry served, parses nothing",
-	"pkg/catalog.DefaultOCIPuller.PullEntity":      "the kind-bound fetch; returns what the registry served, parses nothing",
-	"pkg/catalog.DefaultOCIPuller.PullLibrary":     "the kind-bound fetch; returns what the registry served, parses nothing",
-	"pkg/catalog.DefaultOCIPuller.PullAggregate":   "the bare-name fetch; returns what the registry served, parses nothing",
+	"pkg/catalog.DefaultOCIPuller.Pull":            "the fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
+	"pkg/catalog.DefaultOCIPuller.PullEntity":      "the kind-bound fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
+	"pkg/catalog.DefaultOCIPuller.PullLibrary":     "the kind-bound fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
+	"pkg/catalog.DefaultOCIPuller.PullAggregate":   "the bare-name fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
+	"pkg/catalog.DefaultOCIPuller.readAhead":       "makes a dependency walk's fetches ahead through the puller's own fetches, so their answers wait in the run's memo of registry reads for the walk's own fetch; discards every result and parses nothing",
+	"pkg/oci.MemoizedPull":                         "hands on oci.Pull's answer unread: its own, or the one a read ahead kept for the same reference and tag, handed out once; parses nothing",
 	"pkg/catalog.tier2ReadVerifiedWithManifest":    "the pin-verified cache read; holds the persisted manifest to its pin where one is recorded, then the bytes to that manifest's descriptor, then to the content pin over the subject its row records (catalog.PinDigest, which reads the entity through oci.EntityYAML to learn its kind), and returns the bytes beside the manifest",
 	"pkg/catalog.tier2ReadVerified":                "hands on the verified read's bytes unread and drops the manifest; verifies nothing itself",
 	"pkg/catalog.catalogLookup.tier2":              "hands the slot's bytes to the cascade after the reuse-check, described through catalog.PinDigest (oci.EntityYAML); parses nothing else",
