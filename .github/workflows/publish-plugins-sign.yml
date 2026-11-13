@@ -219,7 +219,8 @@ name: Publish and sign core plugins
 #                        OIDC token, and runs no action but checkout and that one.
 #                        The token reaches the writer's git commands through their
 #                        environment and is never written to disk.
-#   publish-skills       Once sign-and-publish has succeeded, publishes the
+#   publish-skills       Once sign-and-publish has succeeded, for a tag with
+#                        no pre-release suffix, publishes the
 #                        skills built into the aggrega binary, and the plugin
 #                        manifests generated beside them, to the public
 #                        aggrega-skills repository: the tree committed at
@@ -242,7 +243,8 @@ name: Publish and sign core plugins
 #                        shell's own utilities. The token reaches git through its
 #                        environment and is never written to disk.
 #   publish-package-channels
-#                        Once sign-and-publish has succeeded, commits the
+#                        Once sign-and-publish has succeeded, for a tag with
+#                        no pre-release suffix, commits the
 #                        Homebrew formula it rendered, Formula/aggrega.rb, to the
 #                        aggrega-ai/homebrew-tap repository, and the Scoop
 #                        manifest, bucket/aggrega.json, to aggrega-ai/scoop-bucket,
@@ -261,7 +263,8 @@ name: Publish and sign core plugins
 #                        utilities. The token reaches git through its
 #                        environment and is never written to disk.
 #   open-winget-pull-request
-#                        Once sign-and-publish has succeeded, opens the pull
+#                        Once sign-and-publish has succeeded, for a tag with
+#                        no pre-release suffix, opens the pull
 #                        request that adds the winget manifest sign-and-publish
 #                        rendered to the winget community repository,
 #                        microsoft/winget-pkgs, through
@@ -317,6 +320,14 @@ name: Publish and sign core plugins
 #                        temporary directory of anything the runner left there.
 #                        It may delete the run's artifacts (actions: write) and
 #                        holds nothing else: no checkout, no action, no secret.
+#
+# publish-skills, publish-package-channels and open-winget-pull-request publish
+# final releases alone. For a tag carrying a pre-release suffix (v0.9.0-rc.1),
+# a dry run's included, each is skipped by its if:, which reads
+# sign-and-publish's prerelease output, and sign-and-publish's release step
+# names the three in its log; so a pre-release run shows them skipped, not
+# failed. On a real publish each still refuses, in its own step, any other tag
+# that is not a release tag.
 #
 # The sources, build, sign-windows, windows-installer, sign-windows-installer,
 # sign-and-publish, record-published and
@@ -473,7 +484,8 @@ name: Publish and sign core plugins
 # AGGREGA_WINGET_PULL_REQUEST is true, open-winget-pull-request's one branch on
 # the organization's fork of microsoft/winget-pkgs, a new branch holding one
 # commit that adds the winget manifest's three files, from which it opens a pull
-# request on microsoft/winget-pkgs.
+# request on microsoft/winget-pkgs. A real publish of a pre-release makes
+# record-published's write alone: the three jobs after it are skipped.
 #
 # The manual-dispatch entry defaults to a dry run. It checks the credential,
 # builds everything a real run builds — the tooling image and the Windows
@@ -489,7 +501,9 @@ name: Publish and sign core plugins
 # the manifest it would commit, pushing nothing, and open-winget-pull-request
 # prints the pull request it would open on microsoft/winget-pkgs and what
 # AGGREGA_WINGET_PULL_REQUEST would make of it, opening nothing and reading no
-# token; last, notarization-check reads
+# token — save for a tag carrying a pre-release suffix, for which those three
+# are skipped, as on a real run, so the dry run shows the run graph the real
+# run would; last, notarization-check reads
 # Apple's answer to the submission as on a real run, which publishes nothing.
 #
 # Which refs may sign is decided by the signing identity's federated
@@ -566,7 +580,7 @@ name: Publish and sign core plugins
 #                                        (read by registry-credential alone)
 #              AGGREGA_WINGET_PULL_REQUEST
 #                                        true to open the pull request that
-#                                        adds each release's winget manifest
+#                                        adds each final release's winget manifest
 #                                        to microsoft/winget-pkgs, in
 #                                        open-winget-pull-request, on a real
 #                                        publish, which then needs the secret
@@ -3144,12 +3158,21 @@ jobs:
     # line each as scripts/open-winget-pull-request.sh --pack writes them:
     # open-winget-pull-request adds them to winget-pkgs. Set on a dry run too,
     # which renders them.
+    #
+    # Whether the tag carries a pre-release suffix, true or false, as the
+    # release step decides it, on a dry run too: publish-skills,
+    # publish-package-channels and open-winget-pull-request are skipped when
+    # it is true. Each reads it as not true rather than as false, so were it
+    # ever missing, each would run as on a final release, and on a real
+    # publish its own refusal of a tag that is not a release tag would fail a
+    # pre-release loudly rather than a final release's channels being skipped.
     outputs:
       plugin_push_output: ${{ steps.plugins.outputs.push_output }}
       homebrew_formula: ${{ steps.package-channels.outputs.formula }}
       scoop_manifest: ${{ steps.package-channels.outputs.manifest }}
       winget_manifest: ${{ steps.package-channels.outputs.winget }}
       release_version: ${{ steps.package-channels.outputs.version }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
 
     env:
       # Destination registry host, the same variable the build named the image
@@ -3651,6 +3674,7 @@ jobs:
         # and serves every platform its manifest declares. The install scripts'
         # names carry no version, so a link to the latest release's copy never
         # changes.
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -3832,11 +3856,21 @@ jobs:
           # A tag carrying a pre-release suffix (v0.9.0-rc.1) is published as a
           # pre-release and never as the latest release: the install scripts,
           # run with no version, download from the latest release, which must
-          # keep naming the newest final one.
+          # keep naming the newest final one. This is the one place the run
+          # decides whether its tag is a pre-release. The step hands that on as
+          # its prerelease output, true or false, written before a dry run stops
+          # so a dry run writes it too; publish-skills, publish-package-channels
+          # and open-winget-pull-request, which publish final releases alone, are
+          # skipped by their if: when it is true, and the log says so here.
           RELEASE_KIND=()
+          PRERELEASE=false
           case "$TAG" in
-            v*.*.*-*) RELEASE_KIND=(--prerelease --latest=false) ;;
+            v*.*.*-*) RELEASE_KIND=(--prerelease --latest=false); PRERELEASE=true ;;
           esac
+          printf 'prerelease=%s\n' "$PRERELEASE" >> "$GITHUB_OUTPUT"
+          if [ "$PRERELEASE" = "true" ]; then
+            echo "publish-plugins: '$TAG' carries a pre-release suffix, so publish-skills, publish-package-channels and open-winget-pull-request are skipped on this run: aggrega-skills, the Homebrew tap and the Scoop bucket, and winget take final releases alone"
+          fi
 
           if [ "$DRY" = "true" ]; then
             if [ "${#RELEASE_KIND[@]}" -gt 0 ]; then
@@ -4140,18 +4174,22 @@ jobs:
     #
     # It runs once sign-and-publish has succeeded, on a dry run too: a dry run
     # prints the tree it would publish and mints no token, reads nothing from
-    # aggrega-skills and pushes nothing. A job of its own, on a GitHub-hosted
-    # runner, so the token that writes aggrega-skills shares a job with no other
-    # credential but the run's own token, which here reads this repository and
-    # nothing more. It runs no action but checkout and GitHub's own
-    # create-github-app-token, and no program but git and the shell's own
-    # utilities; it compiles nothing, which is why the comparison with the
-    # generator runs in the build job. The if: names both jobs it needs as
+    # aggrega-skills and pushes nothing. When the tag carries a pre-release
+    # suffix, a dry run's included, it is skipped: aggrega-skills takes final
+    # releases alone, and sign-and-publish's prerelease output, which its if:
+    # reads, says the tag is a pre-release. Any other tag that is not a release
+    # tag is still refused by the publishing step below. A job of its own, on a
+    # GitHub-hosted runner, so the token that writes aggrega-skills shares a
+    # job with no other credential but the run's own token, which here reads
+    # this repository and nothing more. It runs no action but checkout and
+    # GitHub's own create-github-app-token, and no program but git and the
+    # shell's own utilities; it compiles nothing, which is why the comparison
+    # with the generator runs in the build job. The if: names both jobs it needs as
     # having succeeded rather than leaving it to the default, since
     # sign-and-publish may run beside a sign-macos skipped while macOS signing
     # is off.
     needs: [build, sign-and-publish]
-    if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' }}
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' && needs.sign-and-publish.outputs.prerelease != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -4320,12 +4358,16 @@ jobs:
     #
     # It runs once sign-and-publish has succeeded, on a dry run too: a dry run
     # prints both files and where each would go, mints no token, reads nothing
-    # from either repository and pushes nothing. A job of its own, on a
-    # GitHub-hosted runner, so the token that writes the two repositories shares
-    # a job with no other credential. It checks nothing out, since what it
-    # commits reaches it as sign-and-publish's outputs, and runs no action but
-    # GitHub's own create-github-app-token and no program but git and the
-    # shell's own utilities.
+    # from either repository and pushes nothing. When the tag carries a
+    # pre-release suffix, a dry run's included, it is skipped: the tap and the
+    # bucket take final releases alone, and sign-and-publish's prerelease
+    # output, which its if: reads, says the tag is a pre-release. Any other tag
+    # that is not a release tag is still refused by the commit step below. A
+    # job of its own, on a GitHub-hosted runner, so the token that writes the
+    # two repositories shares a job with no other credential. It checks
+    # nothing out, since what it commits reaches it as sign-and-publish's
+    # outputs, and runs no action but GitHub's own create-github-app-token and
+    # no program but git and the shell's own utilities.
     #
     # The two repositories' names are written once, in the workflow's env,
     # which the token step and the commit step both read.
@@ -4334,7 +4376,7 @@ jobs:
     # it to the default, since sign-and-publish may run beside a sign-macos
     # skipped while macOS signing is off.
     needs: [sign-and-publish]
-    if: ${{ !cancelled() && needs.sign-and-publish.result == 'success' }}
+    if: ${{ !cancelled() && needs.sign-and-publish.result == 'success' && needs.sign-and-publish.outputs.prerelease != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -4498,18 +4540,23 @@ jobs:
     # request; with the variable anything else, unset included, it opens
     # nothing and says the gate is off; on a dry run it prints the pull request
     # it would open and opens nothing, whatever the variable is. Only the first
-    # path reads the token or reaches the network. A job of its own, on a
-    # GitHub-hosted runner, so the token that writes the fork shares a job with
-    # no other credential but the run's own token, which here reads this
-    # repository and nothing more. It runs no action but checkout and no program
-    # but gh, git and the shell's own utilities.
+    # path reads the token or reaches the network. When the tag carries a
+    # pre-release suffix, a dry run's included, it is skipped, whatever the
+    # variable is: winget takes final releases alone, and sign-and-publish's
+    # prerelease output, which its if: reads, says the tag is a pre-release.
+    # On a real publish the script still refuses any other version that is not
+    # MAJOR.MINOR.PATCH. A job of its own, on a GitHub-hosted runner, so the
+    # token that writes the fork shares a job with no other credential but the
+    # run's own token, which here reads this repository and nothing more. It
+    # runs no action but checkout and no program but gh, git and the shell's
+    # own utilities.
     #
     # The fork's name is written once, in this job's env. The if: names both
     # jobs it needs as having succeeded rather than leaving it to the default,
     # since sign-and-publish may run beside a sign-macos skipped while macOS
     # signing is off.
     needs: [build, sign-and-publish]
-    if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' }}
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' && needs.sign-and-publish.outputs.prerelease != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
