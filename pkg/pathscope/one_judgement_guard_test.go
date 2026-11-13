@@ -86,7 +86,10 @@ var decidersOfInside = map[string]string{
 	// readscope.CheckCacheRead, against the root the cache's writes are held to. A
 	// reader of the cache that opens a file of it without asking stops being found
 	// here, and fails.
-	"pkg/oci:ReadCachedFile":                                 "every file a cache slot holds: a plugin's or an entity's bytes, its manifest, a library document",
+	"pkg/oci:ReadSlotFile": "every file a cache slot holds, whatever addresses the slot — an entity's reference " +
+		"and version, through ReadCachedFile, or a catalog snapshot's digest: a plugin's or an entity's bytes, its " +
+		"manifest, a library document, a snapshot's archive and manifest, and the pointer to the snapshot the " +
+		"workspace reads",
 	"pkg/catalog:LazyLookup.unverifiedCachedSchemaLibraries": "the cached SchemaLibraries a failed resolution's remedy names",
 	"pkg/oci:readCachedSignatureBundle":                      "the cached signature bundle a recorded signature fact is checked against",
 	"pkg/sourcecache:LookupAndExtract":                       "a pinned source artifact's cached archive, metadata and manifest",
