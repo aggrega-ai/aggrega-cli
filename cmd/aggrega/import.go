@@ -55,7 +55,7 @@ fetches it from the workspace's default registry, holds it to the module the
 compiler's release publishes, verifies its signature under that registry's
 trust policy and the host functions it uses, and keeps it in the workspace's
 content cache, so every later import reads it from there and reaches no
-network. Nothing else is written for it: no lockfile, and no record of trusted
+network for it. Nothing else is written for it: no lockfile, and no record of trusted
 plugins. A module that does not verify is refused, and nothing is kept. Where
 the module cannot be fetched — the workspace is offline, its registry cannot be
 reached, or the registry does not hold it — import stops, naming the importer
