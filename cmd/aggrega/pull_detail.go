@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"sort"
@@ -82,8 +83,13 @@ func printPullDetail(out io.Writer, cl closure.Closure) {
 		return rows[i].kind < rows[j].kind
 	})
 
-	fmt.Fprintf(out, "resolved %d entities (this pull):\n", len(rows))
-	tw := tabwriter.NewWriter(out, 2, 2, 2, ' ', 0)
+	// The report is composed whole and written once. A tabwriter writes cell by
+	// cell, and the report is written while a progress checklist may be drawn on
+	// the terminal; a write that ends part way along a line would be drawn over by
+	// the checklist's next redraw.
+	var report bytes.Buffer
+	fmt.Fprintf(&report, "resolved %s (this pull):\n", countOfNoun(len(rows), "entity", "entities"))
+	tw := tabwriter.NewWriter(&report, 2, 2, 2, ' ', 0)
 	for _, r := range rows {
 		if r.hasRef {
 			fmt.Fprintf(tw, "  %s\t%s\t%s\t← %s\n", r.tier, r.kind, r.uri, r.ref)
@@ -92,6 +98,7 @@ func printPullDetail(out io.Writer, cl closure.Closure) {
 		}
 	}
 	tw.Flush()
+	_, _ = out.Write(report.Bytes())
 }
 
 // printLockfileToolchain renders the toolchain stamp an existing lockfile

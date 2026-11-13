@@ -187,7 +187,7 @@ func TestRegistryUpdateProgress_NotATerminalShowsNothing(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Indexed 2 entities from first.example.com\n",
-		"Indexed 1 entities from second.example.com\n",
+		"Indexed 1 entity from second.example.com\n",
 		"Indexed 2 registries.\n",
 		"  first.example.com: 2 entities, 0 reads retried\n",
 		"  second.example.com: 1 entity, 0 reads retried\n",

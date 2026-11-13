@@ -238,8 +238,8 @@ func writeEmbeddedPointer(w io.Writer, summaries []embeddedPluginSummary) error 
 	if len(summaries) == 0 {
 		return nil
 	}
-	_, err := fmt.Fprintf(w, "embedded  %d plugins version %s — `aggrega plugin list` for details\n",
-		len(summaries), sharedEmbeddedVersion(summaries))
+	_, err := fmt.Fprintf(w, "embedded  %s version %s — `aggrega plugin list` for details\n",
+		countOfNoun(len(summaries), "plugin", "plugins"), sharedEmbeddedVersion(summaries))
 	return err
 }
 

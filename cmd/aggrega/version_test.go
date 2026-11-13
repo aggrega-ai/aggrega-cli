@@ -250,7 +250,7 @@ func TestVersionEmbeddedPointer(t *testing.T) {
 	}
 	for _, want := range []string{
 		"embedded",
-		"plugins version",
+		countOfNoun(len(summaries), "plugin", "plugins") + " version",
 		"`aggrega plugin list` for details",
 	} {
 		if !strings.Contains(out, want) {

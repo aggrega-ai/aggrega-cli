@@ -575,7 +575,7 @@ func writeTrustFetchNotice(out, errOut io.Writer, delivery authoredcontent.Deliv
 func trustFetchNotice(host string, t registryops.TrustFetchOutcome) string {
 	switch {
 	case t.Pinned:
-		return fmt.Sprintf("Pinned advertised trust policy from %s (%d identities)\n", host, t.Identities)
+		return fmt.Sprintf("Pinned advertised trust policy from %s (%s)\n", host, countOfNoun(t.Identities, "identity", "identities"))
 	case t.Baseline:
 		return fmt.Sprintf("%s; using the built-in trust baseline for %s instead\n", t.Reason, host)
 	case t.NotAdvertised:

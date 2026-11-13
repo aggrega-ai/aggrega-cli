@@ -175,7 +175,7 @@ func TestTheCommandLineAndTheLanguageServerWriteTheDefaultOutputBeneathTheWorksp
 			} else if !reflect.DeepEqual(tree, reference) {
 				t.Errorf("the build wrote a different tree beneath %s than the first row did", dist)
 			}
-			want := fmt.Sprintf("Build completed: %d files written to %s", len(tree), dist)
+			want := fmt.Sprintf("Build completed: %s written to %s", countOfNoun(len(tree), "file", "files"), dist)
 			if got := buildClosingLine(stdout); got != want {
 				t.Errorf("the closing line reads %q, want %q", got, want)
 			}
@@ -274,7 +274,7 @@ func TestABuildWhoseResolutionFellBackToTheFolderItStartedInWritesThere(t *testi
 	}
 	dist := filepath.Join(startedIn, "dist")
 	tree := renderedTree(t, dist)
-	if want := fmt.Sprintf("Build completed: %d files written to %s", len(tree), dist); buildClosingLine(stdout) != want {
+	if want := fmt.Sprintf("Build completed: %s written to %s", countOfNoun(len(tree), "file", "files"), dist); buildClosingLine(stdout) != want {
 		t.Errorf("the closing line reads %q, want %q", buildClosingLine(stdout), want)
 	}
 	if stray := strayBuildOutput(app); len(stray) > 0 {

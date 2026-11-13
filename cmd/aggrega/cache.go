@@ -135,7 +135,7 @@ func runCacheStatus(ctx context.Context, w io.Writer, loc cacheops.Locations) er
 		}
 	}
 	printProvenance(w, report.Provenance)
-	fmt.Fprintf(w, "\n%d elements, %s\n", report.TotalCount, cacheops.HumanSize(report.TotalSize))
+	fmt.Fprintf(w, "\n%s, %s\n", countOfNoun(report.TotalCount, "element", "elements"), cacheops.HumanSize(report.TotalSize))
 	printMachineWideReach(w, cacheops.MachineWideClasses(report.Classes))
 	return nil
 }

@@ -684,7 +684,7 @@ func TestARefreshReadsAgainWhatChangedSinceTheEarlierIndex(t *testing.T) {
 		if got := f.files(t); !maps.Equal(got, built) {
 			t.Errorf("the refresh changed the index:\nbuilt %v\nnow   %v", built, got)
 		}
-		if !strings.Contains(out, "Recorded 1 deprecation markers from "+f.reg.host) {
+		if !strings.Contains(out, "Recorded 1 deprecation marker from "+f.reg.host) {
 			t.Errorf("the refresh does not report the marker the index still records:\n%s", out)
 		}
 	})

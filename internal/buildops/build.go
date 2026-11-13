@@ -117,11 +117,11 @@ func (r Reporter) note(format string, args ...any) {
 // irGraph hands the run's graph to a caller that asked for one. A caller that
 // asked for none is silent and reports no error, which is what keeps the
 // callback its own request rather than needing a switch beside it.
-func (o RunOptions) irGraph(graph *types.IRGraph) error {
+func (o RunOptions) irGraph(out io.Writer, graph *types.IRGraph) error {
 	if o.IRGraph == nil {
 		return nil
 	}
-	return o.IRGraph(graph)
+	return o.IRGraph(out, graph)
 }
 
 // Pull runs the dependency fill the build's automatic-pull step performs:
@@ -252,6 +252,13 @@ type RunOptions struct {
 	// callback IS the request, so there is no second switch beside it that could
 	// disagree with it.
 	//
+	// It is handed that status stream too ([Config.Out], or its default), and the
+	// graph goes there: the graph and the rest of the run's status output share one
+	// stream, so whatever the caller made of that stream — a writer that keeps a
+	// terminal's progress block out of the way of what is written, say — the graph
+	// passes through it like every other line, rather than through a second writer
+	// the caller would have to keep in step.
+	//
 	// It hands over the graph rather than bytes, for the same reason the advisory
 	// reports hand over their records: how a graph is serialized, and whether the
 	// values an author declared sensitive are withheld from it, belong to the
@@ -262,7 +269,7 @@ type RunOptions struct {
 	// whose failure is a failed write to the caller's own stream: a run that could
 	// not hand back the document it was asked for has not done what was asked, and
 	// swallowing that would leave a truncated document behind a successful build.
-	IRGraph func(graph *types.IRGraph) error
+	IRGraph func(out io.Writer, graph *types.IRGraph) error
 
 	// PolicyInputDir, when non-empty, is the directory the payload each
 	// governance role hands a policy is written to, one JSON file per role (or per
@@ -750,7 +757,7 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 	// completion summary the caller writes when Run returns. A build already holds
 	// the graph it rendered from, so handing it back costs no second resolution
 	// and cannot disagree with the artifacts written below.
-	if err := run.irGraph(result.IRGraph); err != nil {
+	if err := run.irGraph(out, result.IRGraph); err != nil {
 		return Result{}, err
 	}
 
@@ -801,12 +808,7 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 		if err := artifactout.WriteDryRunReport(out, outDir, result.Artifacts); err != nil {
 			return Result{}, fmt.Errorf("write output: %w", err)
 		}
-		summary = fmt.Sprintf("Dry run: %d files would be written to %s; nothing was written", len(result.Artifacts), outDir)
-		if run.PolicyInputDir != "" {
-			// The one write a dry run makes is the one it was asked for, and the
-			// summary says so rather than claiming nothing was written.
-			summary = fmt.Sprintf("Dry run: %d files would be written to %s; only the policy inputs were written", len(result.Artifacts), outDir)
-		}
+		summary = completionSummary(len(result.Artifacts), outDir, true, run.PolicyInputDir != "", 0)
 	} else {
 		// Write output. The boundaries subtree from a prior build of a different
 		// variant is cleared as part of the write, so GitOps consumers see exactly
@@ -815,15 +817,14 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 		if werr != nil {
 			return Result{}, fmt.Errorf("write output: %w", werr)
 		}
-		summary = fmt.Sprintf("Build completed: %d files written to %s", len(result.Artifacts), outDir)
 		// A file the write found beside its own and did not produce is left where it
 		// is and told once, in the sentence every surface performing a build uses,
 		// and the summary counts it: a directory mixing this build's files with
 		// others reads as one build's output unless something says otherwise.
 		if len(unwritten) > 0 {
 			fmt.Fprintf(diagOut, "  warning: %s\n", artifactout.UnwrittenAdvisory(unwritten))
-			summary += fmt.Sprintf(", beside %d file(s) this build did not write", len(unwritten))
 		}
+		summary = completionSummary(len(result.Artifacts), outDir, false, false, len(unwritten))
 	}
 
 	// Trace surface — write the collected per-step intermediate state
@@ -852,6 +853,37 @@ func Run(ctx context.Context, cfg Config) (res Result, err error) {
 	// render was held to is the lockfile this operation leaves behind.
 
 	return Result{Summary: summary}, nil
+}
+
+// completionSummary is the one composition of the sentence a finished run closes
+// on: how many files it wrote, or would write, and where. dryRun selects the
+// report a dry run closes on, and policyInputs whether that dry run wrote the
+// policy inputs it was asked for, which then are the one thing it wrote.
+// unwritten counts the files a build found beside its own in the output directory
+// and did not write; it is reported on a build that wrote, and a dry run passes 0.
+//
+// A count of one reads "1 file" and any other count "files", in both places the
+// sentence counts files.
+func completionSummary(written int, outDir string, dryRun, policyInputs bool, unwritten int) string {
+	files := "files"
+	if written == 1 {
+		files = "file"
+	}
+	if dryRun {
+		if policyInputs {
+			return fmt.Sprintf("Dry run: %d %s would be written to %s; only the policy inputs were written", written, files, outDir)
+		}
+		return fmt.Sprintf("Dry run: %d %s would be written to %s; nothing was written", written, files, outDir)
+	}
+	summary := fmt.Sprintf("Build completed: %d %s written to %s", written, files, outDir)
+	if unwritten > 0 {
+		others := "files"
+		if unwritten == 1 {
+			others = "file"
+		}
+		summary += fmt.Sprintf(", beside %d %s this build did not write", unwritten, others)
+	}
+	return summary
 }
 
 // writePolicyInputs writes the governance payloads a run recorded into dir and

@@ -166,32 +166,30 @@ func runBuild(cmd *cobra.Command, args []string, opts *buildFlags) error {
 	if err != nil {
 		return err
 	}
-	// The graph shares the stream the build's own output already uses, named once
-	// here so the two cannot come to write to different places.
-	out := os.Stdout
 	return dispatchBuildWithDiag(cmd.Context(), rw, opts.releasePath, opts.catalogDirs, opts.traceEnabled,
 		buildDiagOptions{quiet: opts.quiet, debug: opts.debug, progress: opts.progress, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
-		buildRunOptions(opts, out), os.Stderr, out)
+		buildRunOptions(opts), os.Stderr, os.Stdout)
 }
 
 // buildRunOptions composes the shared build layer's knobs from this command's
 // flag state, including the graph hand-back when the graph was asked for.
 //
-// The graph goes to out, the stream the build's own output goes to, and through
-// the one writer every command that offers the document shares. Whether it is
-// withheld is the reader's --unredacted, passed through as set: the values an
-// author declared sensitive are withheld unless that flag asks for them. The
-// .trace/ files carry a reveal of their own, which reaches them and nothing else.
+// The graph goes to the stream the shared layer hands the hand-back, which is
+// the stream the build's own output goes to, and through the one writer every
+// command that offers the document shares. Whether it is withheld is the
+// reader's --unredacted, passed through as set: the values an author declared
+// sensitive are withheld unless that flag asks for them. The .trace/ files carry
+// a reveal of their own, which reaches them and nothing else.
 //
 // It is a function of the flag state rather than inline in runBuild so a test
 // can drive the same composition the command performs — the flag reaching the
 // writer is the wiring under test, and a test that assembled the hand-back
 // itself would pass while the command ignored the flag.
-func buildRunOptions(opts *buildFlags, out io.Writer) buildops.RunOptions {
+func buildRunOptions(opts *buildFlags) buildops.RunOptions {
 	run := buildops.RunOptions{Detail: opts.detail, DisablePluginCache: opts.disablePluginCache, VerifyDeterminism: opts.verifyDeterminism, AutoPull: opts.autoPull, Upgrade: opts.upgrade, SuppressUnsupportedFieldWarnings: opts.noUnsupportedFieldWarns, TraceUnredacted: opts.traceUnredacted, DryRun: opts.dryRun, PolicyInputDir: opts.policyInput}
 	if opts.irGraph {
 		unredacted := opts.unredacted
-		run.IRGraph = func(graph *types.IRGraph) error {
+		run.IRGraph = func(out io.Writer, graph *types.IRGraph) error {
 			return writeIRGraph(out, "build", graph, unredacted)
 		}
 	}
@@ -267,9 +265,23 @@ func dispatchBuildWithDiag(ctx context.Context, rw *workspaceconfig.ResolvedWork
 // binary's own build identity, the pull the auto-pull step runs, and the
 // progress and advisory rendering the terminal surface owns.
 //
-// progress may be nil, which reports nothing — the shape the acquisition command
-// uses, whose own report is the only thing a reader is meant to see.
+// progress may be nil, which reports nothing.
+//
+// Every line the build writes while its checklist is drawn reaches the two
+// streams through the reporter's beside, so it lands whole above the block
+// rather than under the next redraw: the shared layer's own lines, the display,
+// the advisories and notes rendered here, and the dependency fill, which is
+// handed these same streams and writes its report and completion line through
+// them. Where nothing is drawn in place the lines pass straight through, so what
+// each stream carries is the same either way. A stream left nil stays nil, so
+// the shared layer's own default for it still applies.
 func buildDispatchConfig(rw *workspaceconfig.ResolvedWorkspace, releasePath string, catalogFlagDirs []string, traceEnabled bool, run buildops.RunOptions, progress *progressReporter, diagOut, out io.Writer) buildops.Config {
+	if diagOut != nil {
+		diagOut = progress.beside(diagOut)
+	}
+	if out != nil {
+		out = progress.beside(out)
+	}
 	// One display for the whole command: a build that fills its own lockfile makes
 	// a run in the fill and may make another to render, and an advisory both raise
 	// is told to the reader once.

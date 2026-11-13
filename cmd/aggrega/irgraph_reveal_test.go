@@ -94,7 +94,7 @@ func TestBuildIRGraph_WithholdsUnlessRevealed(t *testing.T) {
 			ws := resolveTempWorkspace(t, tempWorkspaceOptions{Root: root})
 
 			var out, diag bytes.Buffer
-			run := rootedBuildOptions(t, root, buildRunOptions(&buildFlags{irGraph: true, unredacted: row.unredacted}, &out))
+			run := rootedBuildOptions(t, root, buildRunOptions(&buildFlags{irGraph: true, unredacted: row.unredacted}))
 			if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 				buildDiagOptions{}, run, &diag, &out); err != nil {
 				t.Fatalf("build --ir-graph (unredacted=%v): %v\ndiagnostics:\n%s", row.unredacted, err, diag.String())

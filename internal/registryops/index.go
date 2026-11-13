@@ -607,7 +607,11 @@ func Update(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Upd
 			continue
 		}
 		res.Hosts = append(res.Hosts, hu)
-		fmt.Fprintf(notices, "Indexed %d entities from %s\n", hu.Indexed, host)
+		entities := "entities"
+		if hu.Indexed == 1 {
+			entities = "entity"
+		}
+		fmt.Fprintf(notices, "Indexed %d %s from %s\n", hu.Indexed, entities, host)
 	}
 	if len(res.Failed) > 0 {
 		return res, fmt.Errorf("aggrega registry update: %d of %d registries failed to update", len(res.Failed), len(hosts))
@@ -709,7 +713,11 @@ func reportDeprecationScan(notices io.Writer, hu HostUpdate, host string) {
 		fmt.Fprintf(notices, "Deprecation markers not examined for %s: signature verification is disabled for this registry\n", host)
 		return
 	}
-	fmt.Fprintf(notices, "Recorded %d deprecation markers from %s\n", hu.DeprecationsRecorded, host)
+	markers := "markers"
+	if hu.DeprecationsRecorded == 1 {
+		markers = "marker"
+	}
+	fmt.Fprintf(notices, "Recorded %d deprecation %s from %s\n", hu.DeprecationsRecorded, markers, host)
 }
 
 // priorIndex is the index a conditional refresh compares against: the previous

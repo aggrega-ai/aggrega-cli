@@ -364,8 +364,8 @@ func TestBuildIRGraph_IsAdditiveAndStillWritesTheArtifacts(t *testing.T) {
 		var out, diag bytes.Buffer
 		opts := rootedBuildOptions(t, root, buildops.RunOptions{})
 		if withGraph {
-			opts.IRGraph = func(graph *types.IRGraph) error {
-				return writeIRGraph(&out, "build", graph, false)
+			opts.IRGraph = func(status io.Writer, graph *types.IRGraph) error {
+				return writeIRGraph(status, "build", graph, false)
 			}
 		}
 		if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
@@ -432,8 +432,8 @@ func TestBuildIRGraph_CombinesWithADryRun(t *testing.T) {
 
 	var out, diag bytes.Buffer
 	opts := buildops.RunOptions{DryRun: true}
-	opts.IRGraph = func(graph *types.IRGraph) error {
-		return writeIRGraph(&out, "build", graph, false)
+	opts.IRGraph = func(status io.Writer, graph *types.IRGraph) error {
+		return writeIRGraph(status, "build", graph, false)
 	}
 	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, opts, &diag, &out); err != nil {
@@ -466,7 +466,7 @@ func TestBuildIRGraph_WithholdsDeclaredValues(t *testing.T) {
 
 	var out, diag bytes.Buffer
 	opts := buildops.RunOptions{OutDir: filepath.Join(root, "dist")}
-	opts.IRGraph = func(graph *types.IRGraph) error {
+	opts.IRGraph = func(status io.Writer, graph *types.IRGraph) error {
 		// The unredacted arm is asserted here, in the same case, so the
 		// withholding below is known to be the writer's doing rather than a
 		// fixture that declares nothing sensitive.
@@ -481,7 +481,7 @@ func TestBuildIRGraph_WithholdsDeclaredValues(t *testing.T) {
 		if revealed.String() == withheld.String() && strings.Contains(revealed.String(), redact.WithheldMarkerKey()) {
 			t.Error("the two arms produced the same bytes and both carry a marker; the writer is not the thing withholding")
 		}
-		return writeIRGraph(&out, "build", graph, false)
+		return writeIRGraph(status, "build", graph, false)
 	}
 	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, []string{catalogDir}, false,
 		buildDiagOptions{}, opts, &diag, &out); err != nil {

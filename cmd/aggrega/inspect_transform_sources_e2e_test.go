@@ -184,7 +184,7 @@ func assertInspectDrawsTheBuildsNodes(t *testing.T, moment string, ws *workspace
 	t.Helper()
 
 	var buildOut bytes.Buffer
-	run := rootedBuildOptions(t, root, buildRunOptions(&buildFlags{irGraph: true}, &buildOut))
+	run := rootedBuildOptions(t, root, buildRunOptions(&buildFlags{irGraph: true}))
 	if err := dispatchBuildWithDiag(context.Background(), ws, releasePath, nil, false,
 		buildDiagOptions{quiet: true}, run, io.Discard, &buildOut); err != nil {
 		t.Fatalf("%s: build --ir-graph: %v", moment, err)

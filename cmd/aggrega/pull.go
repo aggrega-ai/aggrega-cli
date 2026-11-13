@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -433,6 +434,15 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	}
 	progress, ctx := newOwnProgress(ctx, "pull", diagOut, diag, pullProgressSpine())
 	defer progress.finish()
+	// Every line this run writes while its checklist is drawn goes through the
+	// reporter's beside, so it lands whole above the block rather than under the
+	// next redraw. Where nothing is drawn in place — a plain or silent surface, or
+	// the block finished — the lines pass straight through, so what each stream
+	// carries is the same either way. A build's fill runs with its own surface
+	// silenced, so its lines pass through to the streams the build handed it,
+	// which go through the build's reporter in turn.
+	diagOut = progress.beside(diagOut)
+	out = progress.beside(out)
 
 	opts := cfg.resolutionRequest()
 	opts.CompilerVersion = provenanceCompilerVersion()
@@ -444,7 +454,7 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	// discovery render both raise is shown once.
 	opts.Display = cfg.display
 	if opts.Display == nil {
-		opts.Display = pipeline.NewOperationDisplay(os.Stderr)
+		opts.Display = pipeline.NewOperationDisplay(progress.beside(os.Stderr))
 	}
 	// A failure the resolution reports and survives is printed in the rendering
 	// this command's own refusals use, so it carries the same head and condition
@@ -469,8 +479,15 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 	// Left unattached — a piped invocation, a --quiet one, or any caller with
 	// nobody watching — an ambiguously-served capability halts loudly instead, so
 	// the run never hangs waiting on input.
+	//
+	// The question is put to a person at the terminal, so the checklist is taken
+	// out of their way first (hold): a prompt left waiting on the same line as a
+	// drawn block would be drawn over by the next redraw.
 	if providerBindingHelperEligible(cfg) {
-		opts.ResolveProviderAmbiguity = runProviderBindingHelper
+		opts.ResolveProviderAmbiguity = func(target string, candidates []types.Plugin, rw *workspaceconfig.ResolvedWorkspace, wsCfg *workspaceconfig.Config, prompt io.Writer) error {
+			progress.hold()
+			return runProviderBindingHelper(target, candidates, rw, wsCfg, prompt)
+		}
 	}
 
 	// The resolution takes the caller's context so a caller that withdraws stops
@@ -506,7 +523,7 @@ func pullRunWithResult(ctx context.Context, cfg pullConfig) (pullops.Result, err
 		// surface a person is looking at — a surface answering in a structured
 		// payload takes the same material and renders none of this.
 		dryrunreport.Write(out, res.DryRunFiles)
-		fmt.Fprintf(out, "Dry run: %d files would be written; nothing was written\n", len(res.DryRunFiles))
+		fmt.Fprintf(out, "Dry run: %s would be written; nothing was written\n", countOfNoun(len(res.DryRunFiles), "file", "files"))
 		if res.ExternalInputDiscovery != nil {
 			fmt.Fprintf(out, "The reported lockfile is short of what a pull would write: its external-input pins could not all be discovered (see the diagnostics above). Every other pin it carries, and every other file named above, is what a pull would produce\n")
 		}

@@ -174,9 +174,10 @@ func TestTheCommandLineTheLanguageServerAndTheBuildToolWriteOneTree(t *testing.T
 					t.Fatalf("aggrega %s failed: %v\n%s", strings.Join(args, " "), err, cobraOut)
 				}
 				line := buildClosingLine(stdout)
-				named, found := strings.CutPrefix(line, fmt.Sprintf("Build completed: %d files written to ", len(expected)))
+				written := countOfNoun(len(expected), "file", "files")
+				named, found := strings.CutPrefix(line, fmt.Sprintf("Build completed: %s written to ", written))
 				if !found {
-					t.Fatalf("the closing line reads %q; want it to name %d files written to a directory", line, len(expected))
+					t.Fatalf("the closing line reads %q; want it to name %s written to a directory", line, written)
 				}
 				return named
 			},

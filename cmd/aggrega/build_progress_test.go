@@ -1141,7 +1141,7 @@ func TestBuild_SingleFinalBlockOnStdout(t *testing.T) {
 	if !strings.HasPrefix(lines[0], "Total build time: ") {
 		t.Errorf("first stdout line must be the total-build-time line; got %q", lines[0])
 	}
-	if !strings.HasPrefix(lines[1], "Build completed: ") || !strings.Contains(lines[1], "files written to") {
+	if !strings.HasPrefix(lines[1], "Build completed: ") || !strings.Contains(lines[1], " written to ") {
 		t.Errorf("second stdout line must be the files-written line; got %q", lines[1])
 	}
 	// The old duplicated "Build time:" (no "Total") and a bare "Build completed:"

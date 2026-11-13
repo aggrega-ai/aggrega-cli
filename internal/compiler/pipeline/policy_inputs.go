@@ -193,7 +193,11 @@ func (p *PolicyInputs) Files() PolicyInputFiles {
 		}
 		complete := len(r.payloads) == max(r.attachments, 1)
 		if !complete {
-			out.Missing = append(out.Missing, PolicyInputGap{Role: role, Reason: fmt.Sprintf("the run stopped after %d of its %d attachments", len(r.payloads), r.attachments)})
+			attachments := "attachments"
+			if r.attachments == 1 {
+				attachments = "attachment"
+			}
+			out.Missing = append(out.Missing, PolicyInputGap{Role: role, Reason: fmt.Sprintf("the run stopped after %d of its %d %s", len(r.payloads), r.attachments, attachments)})
 		}
 		if len(r.payloads) == 0 {
 			continue

@@ -398,7 +398,7 @@ func renderCacheStatusText(p cacheStatusResult) string {
 		}
 		b.WriteByte('\n')
 	}
-	fmt.Fprintf(&b, "\n%d elements, %s\n", p.TotalCount, p.TotalSizeText)
+	fmt.Fprintf(&b, "\n%d %s, %s\n", p.TotalCount, plural(p.TotalCount, "element", "elements"), p.TotalSizeText)
 	if len(p.MachineWideClasses) > 0 {
 		fmt.Fprintf(&b, "Machine-wide: %s. Reclaiming from these reaches workspaces this session has not named.\n",
 			strings.Join(p.MachineWideClasses, ", "))

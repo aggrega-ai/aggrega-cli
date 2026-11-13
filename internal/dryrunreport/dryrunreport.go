@@ -20,6 +20,7 @@
 package dryrunreport
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 )
@@ -46,13 +47,20 @@ type File struct {
 // A trailing newline is supplied where a file's own bytes lack one, so the next
 // header starts at a column rather than butting onto the last line of content;
 // the blank line after each file is the separator between them.
+//
+// Each file's block — header, content and separator — reaches out in one write,
+// so a writer that places whole lines, such as one keeping a terminal's progress
+// display clear of what is written, never receives a line in pieces.
 func Write(out io.Writer, files []File) {
+	var block bytes.Buffer
 	for _, f := range files {
-		fmt.Fprintf(out, "==> %s <==\n", f.Path)
-		_, _ = out.Write(f.Content)
+		block.Reset()
+		fmt.Fprintf(&block, "==> %s <==\n", f.Path)
+		block.Write(f.Content)
 		if len(f.Content) > 0 && f.Content[len(f.Content)-1] != '\n' {
-			fmt.Fprintln(out)
+			block.WriteByte('\n')
 		}
-		fmt.Fprintln(out)
+		block.WriteByte('\n')
+		_, _ = out.Write(block.Bytes())
 	}
 }
