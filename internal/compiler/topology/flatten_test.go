@@ -24,7 +24,7 @@
 //     cycle detection on the inclusion graph: a sub-aggregate that
 //     transitively imports itself returns ErrSubAggregateLoad.
 //   - TestFlattenAggregate_MaxDepth — pins the depth bound: invoking
-//     flattenAggregate with depth above maxSubAggregateDepth returns
+//     flattenAggregate with depth above MaxModuleDepth returns
 //     ErrMaxDepth.
 //   - TestFlattenAggregate_FeatureAttachments — pins
 //     collectAttachments: Feature and Secret attachments authored on
@@ -212,7 +212,7 @@ func TestFlattenAggregate_CircularSubAggregate(t *testing.T) {
 func TestFlattenAggregate_MaxDepth(t *testing.T) {
 	t.Parallel()
 
-	_, err := flattenAggregate(types.Normalize(&types.Aggregate{}), "", "", "", nil, map[string]bool{}, maxSubAggregateDepth+1, nil)
+	_, err := flattenAggregate(types.Normalize(&types.Aggregate{}), "", "", "", nil, map[string]bool{}, MaxModuleDepth+1, nil)
 	if err == nil {
 		t.Fatal("expected error for max depth")
 	}

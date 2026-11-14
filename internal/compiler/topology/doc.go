@@ -33,7 +33,7 @@
 //     Feature-authored edges separable from Component-authored edges.
 //     The IR builder reads this field directly into IREdge.
 //   - Sub-aggregate depth bound. flattenAggregate enforces a maximum
-//     inclusion depth of 10 (maxSubAggregateDepth), halting with
+//     inclusion depth of 10 (MaxModuleDepth), halting with
 //     ErrMaxDepth on overflow. The bound caps pathological depth and
 //     converts cyclic includes into deterministic compile-time errors.
 //   - Map-based root topology. Aggregate.Spec.Components, Subsystems,

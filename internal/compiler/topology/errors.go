@@ -21,7 +21,7 @@ var errSubAggregateLoad = cerrors.Register("sub-aggregate-not-loadable", cerrors
 })
 
 // ErrMaxDepth fires from flattenAggregate when sub-aggregate inclusion
-// recursion exceeds maxSubAggregateDepth. The bound
+// recursion exceeds MaxModuleDepth. The bound
 // caps both pathological-depth authoring mistakes and any sub-aggregate
 // cycle that would otherwise recurse to stack-overflow. The wrapped
 // error carries the depth reached and the prefix path of the offending

@@ -122,9 +122,11 @@ func (e *ExistingAggregateError) Error() string {
 //
 // Target names the provider capability — compose or helm, say, the word a
 // Recipe's spec.capability binds to — the import drafts a Manifest for, beside
-// the importer's drafts, mapping each drafted component type to the one Recipe of
-// that capability the workspace's catalog offers for it, and pointing the drafted
-// Release at it. An empty Target drafts no Manifest, and the import is then
+// the importer's drafts, mapping each component type and feature type the drafts
+// need to the Recipe or FeatureRecipe of that capability the workspace's catalog
+// offers for it — the one there is, or among several the one named after the
+// type — completing a Manifest the importer drafted itself, and pointing the
+// drafted Release at it. An empty Target drafts no Manifest, and the import is then
 // exactly the importer's drafts. A Target no Recipe of that catalog binds to is
 // refused before the importer runs ([ErrImportTargetUnbound]). Every surface
 // hands its target here as it received it, so the Manifest is composed in one

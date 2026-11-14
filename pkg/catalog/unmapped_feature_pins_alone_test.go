@@ -34,7 +34,14 @@ import (
 //   - one pinned FeatureRecipe implements it for another capability: the list is
 //     named, and the claim beside it is made of the pins;
 //   - nothing pinned implements it, and the capability is not known: the claim
-//     is made of the pins, with no capability named.
+//     is made of the pins, with no capability named;
+//   - the attachment names no type, with and without a catalog directory: the
+//     halt says so, keeps the condition, and never prints the empty type or a
+//     search for it.
+//
+// 🔴 PLANTED DEFECT: drop the empty-type branch at the head of
+// unmappedFeatureFault (pkg/catalog/manifest_lookup.go): both untyped rows
+// redden, reading `(type "")` and "implements ;".
 //
 // 🔴 PLANTED DEFECT: in LazyLookup.recipeCatalog (pkg/catalog/lazy_lookup.go),
 // leave recipeSetsFromPinsAlone false: every row with no catalog directory
@@ -66,6 +73,12 @@ func TestAnUnmappedFeatureNamesWhatItSearchedWithNoCatalogDirectory(t *testing.T
 	}
 
 	const scope = "; with no catalog directory, the feature recipes searched are only those the lockfile pins, not a registry's"
+	// An attachment naming no type is refused for that, in either view, and never
+	// as a search for an empty type.
+	const untypedHalt = `feature "backup" is attached with no type, so no feature recipe can be chosen for it: an ` +
+		`attachment the Release writes names its Feature under type, unless the Aggregate declares an attachment of ` +
+		`the same name for it to configure; name the Feature under the attachment's type in the Release, or declare ` +
+		`the attachment in the Aggregate and configure it from the Release`
 	cases := []struct {
 		name        string
 		catalogDirs []string
@@ -111,6 +124,21 @@ func TestAnUnmappedFeatureNamesWhatItSearchedWithNoCatalogDirectory(t *testing.T
 				`for capability "compose", the capability its component's Recipe binds to; feature recipes implementing it ` +
 				`for other capabilities: [helm/backup-elsewhere:1.0.0]; pin one of those in the Manifest`,
 			notWant: "lockfile pins",
+		},
+		{
+			name:        "no catalog directory, the attachment names no type",
+			manifest:    hostMapped(),
+			featureType: "",
+			want:        untypedHalt,
+			notWant:     `(type "")`,
+		},
+		{
+			name:        "control: an empty catalog directory, the attachment names no type",
+			catalogDirs: []string{t.TempDir()},
+			manifest:    hostMapped(),
+			featureType: "",
+			want:        untypedHalt,
+			notWant:     "implements ;",
 		},
 		{
 			name:        "no catalog directory, the component's capability is not known",

@@ -297,11 +297,13 @@ var importToolSpec = toolSpec{
 		"those — and a source " +
 		"signatures of more than one format match is refused naming them, rather than guessed at. Send `target`, a " +
 		"provider capability such as compose or helm — the word a Recipe's spec.capability binds to — to have a " +
-		"Manifest drafted beside the importer's drafts as manifest.yaml: each component type the drafted Aggregate " +
-		"declares is mapped to the one Recipe of that capability the workspace's catalog offers for it, by its " +
-		"capability-qualified name with no version, and a type with none, or with Recipes of more than one name, is " +
-		"left unmapped with a warning naming it, so a build of the drafts stops naming each instance of it; Feature " +
-		"attachments are not mapped. The Manifest takes the drafted Release's name and version and the Release's " +
+		"Manifest drafted beside the importer's drafts as manifest.yaml: each component type and feature type the " +
+		"drafts need, the types of a catalog Aggregate the drafted one composes included, is mapped to the Recipe or " +
+		"feature recipe of that capability the workspace's catalog offers for it, by its capability-qualified name " +
+		"with no version — the one there is, or among several the one named after the type — and a type with none, " +
+		"or with several and none so named, is left unmapped with a warning naming it, so a build of the drafts stops " +
+		"naming each instance or attachment of it; a mapping an importer drafted itself is kept where the catalog " +
+		"offers it for that type and capability and dropped with a warning otherwise. The Manifest takes the drafted Release's name and version and the Release's " +
 		"spec.manifest is set to it, nothing else in the Release changing; a Release already naming a Manifest is left " +
 		"as it is. A `target` no Recipe in the catalog binds to is refused before the importer runs, naming it and the " +
 		"capabilities the catalog's Recipes bind to, and nothing is written. Send `dry_run` to be " +
@@ -350,7 +352,7 @@ var importToolSpec = toolSpec{
     "target": {
       "type": "string",
       "minLength": 1,
-      "description": "A provider capability, such as compose or helm — the word a Recipe's spec.capability binds to — to draft a Manifest for beside the importer's drafts, mapping each drafted component type to the one Recipe of that capability the workspace's catalog offers for it and pointing the drafted Release at it. A capability no Recipe in the catalog binds to is refused before the importer runs. Leave it out and no Manifest is drafted, except under sync, which uses the target the earlier import was sent."
+      "description": "A provider capability, such as compose or helm — the word a Recipe's spec.capability binds to — to draft a Manifest for beside the importer's drafts, mapping each component type and feature type the drafts need to the Recipe or feature recipe of that capability the workspace's catalog offers for it — the one there is, or among several the one named after the type — and pointing the drafted Release at it. A capability no Recipe in the catalog binds to is refused before the importer runs. Leave it out and no Manifest is drafted, except under sync, which uses the target the earlier import was sent."
     },
     "output_dir": {
       "type": "string",

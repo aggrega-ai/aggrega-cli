@@ -256,6 +256,28 @@ func mappingRefusesRequest(
 	return !manifestMappingSatisfiedByAncestry(implements, bases)
 }
 
+// ManifestMappingAccepts reports whether the mapping-consistency rule accepts a
+// Recipe or FeatureRecipe declaring implements as the realization of request,
+// the type it would serve, in a Manifest's components mapping (featureTier false)
+// or its features mapping (featureTier true): directly, or — for a component type
+// — through a base request extends, read through ancestry, as a build judges it.
+//
+// It is the rule's own judgement handed to a reader outside the build, so that
+// reader cannot come to drop a mapping the build accepts, or keep one it refuses.
+// Where ancestry cannot be walked the rule leaves the mapping unjudged, and so
+// does this: it accepts.
+func ManifestMappingAccepts(implements, request string, featureTier bool,
+	ancestry func(componentType string) ([]string, bool)) bool {
+	tier := constraint.MappingTierComponents
+	if featureTier {
+		tier = constraint.MappingTierFeatures
+	}
+	if ancestry == nil {
+		ancestry = func(string) ([]string, bool) { return nil, true }
+	}
+	return !mappingRefusesRequest(implements, request, tier, ancestry)
+}
+
 // mappedRecipeImplements resolves a Manifest mapping value against the catalog
 // and returns what the recipe it names declares it implements, plus whether the
 // reference resolved at all.

@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/scaffoldops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -28,6 +29,11 @@ const ManifestFileName = "manifest.yaml"
 // manifestKindToken is the schema kind token the Manifest's starter document is
 // drafted from.
 const manifestKindToken = "manifest"
+
+// manifestCommentPrefix begins the comment line a drafted Release writes where,
+// or directly above where, its spec.manifest goes: the line the composition
+// replaces with the key, or drops once the key above which it stands is written.
+const manifestCommentPrefix = "# manifest:"
 
 // checkTarget refuses a target that no Recipe in the import's catalog binds to,
 // as the occurrence of [ErrImportTargetUnbound] naming the target exactly as
@@ -96,31 +102,58 @@ func recipeCapabilities(recipes RecipeIndex) []string {
 //
 // With one, it drafts the Manifest the drafted Release needs, and adds no
 // Component, no Feature and no instance: only a mapping file the operator reviews
-// and owns. For each distinct component type the drafted Aggregate declares — on
-// its top-level components or on any subsystem's, in the order the Aggregate
-// first declares each, a type the import itself drafted as a new Component
-// included — it asks the catalog for the Recipes implementing the type (the
-// enumeration the no-mapping diagnostic lists its pin candidates from, which asks
-// for a type naming no version at the version a build resolves it to, the
-// highest of that Component the catalog holds) and keeps those whose bare
-// spec.capability is the target. The mapping is keyed by the type as the
-// Aggregate writes it, so a key naming no version matches the type at any
-// version, as a build matches it. Several versions of one Recipe
-// are one Recipe. Exactly one Recipe maps the type, by its capability-qualified
-// reference with no version, which the dependency resolution pins at the
-// version it resolves; none, or Recipes of more than one name, leave the type
-// unmapped and say so in a warning naming the type and why — the several each by
-// reference — so a build of the drafts halts naming each instance of it, as it
-// does for any unmapped type. Feature attachments are not mapped. What a Recipe
-// renders, templates or means is never read: only its capability and the type it
-// implements.
+// and owns. What it maps is every type the drafts need realized (draftNeeds):
+// each component type of the drafted Aggregate's instances, at every depth of its
+// subsystems, and each feature type its instances, their connections and its
+// subsystems attach; the same of every catalog Aggregate it composes as a module,
+// read from the catalog the import loaded, and of the modules those compose in
+// turn, as deep as a build follows them — a module or an instance whose `active`
+// toggle is written false left out, as a build leaves it out; and each feature
+// type the drafted Release attaches, on its
+// boundaries, their components and those components' connections. Types are
+// mapped in the order the drafts first declare each — the Aggregate's own, then
+// its modules', then the Release's — a type the import itself drafted as a new
+// Component included.
+//
+// For each type it asks the catalog for the Recipes implementing it — or, for a
+// feature type, the FeatureRecipes — through the enumeration the build's
+// unmapped-instance refusal lists its pin candidates from, which asks for a type
+// naming no version at the version a build resolves it to, and keeps those whose
+// bare spec.capability is the target. Several versions of one Recipe are one
+// Recipe. Exactly one Recipe maps the type, by its capability-qualified reference
+// with no version, which the dependency resolution pins at the version it
+// resolves. Recipes of more than one name map the type to the one named after the
+// type's own last segment — compose/postgres for core/datastore/postgres — where
+// there is one: the catalog's standard realization of that type, beside variants
+// that wrap a chart or need a control plane. None, or several with none so named,
+// leave the type unmapped and say so in a warning naming the type and why — the
+// several each by reference — so a build of the drafts halts naming each
+// instance or attachment of it, as it does for any unmapped type. The mapping is
+// keyed by the type as the drafts write it, so a key naming no version matches the
+// type at any version, as a build matches it. What a Recipe renders, templates or
+// means is never read: only its name, its capability and the type it implements.
+//
+// An importer may draft the Manifest itself, holding what only the importer can
+// choose: the Recipe one named instance renders through, or the FeatureRecipe one
+// named attachment or a feature type is realized by, where the catalog offers
+// several. Each mapping it drafts is kept where a build of the drafts accepts it
+// — the reference, resolved by the catalog's own reading of a mapping value, is a
+// Recipe or FeatureRecipe of the target that the build's mapping-consistency rule
+// accepts for that type, or, for a mapping by name, which a build does not check,
+// for the type of every instance or attachment of that name, the composer's own
+// condition ([confirms]) — and dropped with a warning saying why where it does
+// not; a type is then mapped as above unless a kept mapping already maps it, or every instance or
+// attachment of it is mapped by name, which needs no type mapping and draws no
+// warning. Each tier's annotation bindings the importer drafted are kept as
+// drafted; nothing else of its Manifest is read, and the composed Manifest takes
+// its place.
 //
 // The Manifest is drafted from the Manifest kind's own starter document
 // ([scaffoldops.Skeleton]), so its envelope has the one spelling every drafted
 // starter document has, and it is named and versioned as the drafted Release is
 // — or, where the import drafted none, as the drafted Aggregate is. It is placed
 // beside that document as [ManifestFileName] and appended after the importer's
-// files.
+// files, or written where the importer drafted its own.
 //
 // Where the drafted Release names no Manifest — it declares spec.manifest empty,
 // or not at all — its spec.manifest is set to the drafted Manifest's name, the
@@ -132,17 +165,19 @@ func recipeCapabilities(recipes RecipeIndex) []string {
 // naming a Manifest is left as written, and an information diagnostic says so; so is a
 // target with no drafted Release, where the diagnostic says nothing references
 // the Manifest. An import that drafted no Aggregate drafts no Manifest, and says
-// so; nor does one whose importer already drafted a file where the Manifest
-// would go, which is reported as a warning rather than written over.
+// so; nor does one whose importer already drafted a file that is not a Manifest
+// where the Manifest would go, which is reported as a warning rather than written
+// over.
 //
-// The diagnostics it returns follow the importer's, in the order the types are
-// declared, so one source drafts one byte sequence on every run.
+// The diagnostics it returns follow the importer's, in the order the drafts
+// declare what each concerns, so one source drafts one byte sequence on every
+// run.
 func composeDraftSet(target string, recipes RecipeIndex, files []abi.ScaffoldFile) ([]abi.ScaffoldFile,
 	[]abi.Diagnostic, error) {
 	if target == "" {
 		return files, nil, nil
 	}
-	aggregateAt, releaseAt := -1, -1
+	aggregateAt, releaseAt, manifestAt := -1, -1, -1
 	for i, f := range files {
 		switch draftKind(f.Content) {
 		case entitykind.Aggregate:
@@ -152,6 +187,10 @@ func composeDraftSet(target string, recipes RecipeIndex, files []abi.ScaffoldFil
 		case entitykind.Release:
 			if releaseAt < 0 {
 				releaseAt = i
+			}
+		case entitykind.Manifest:
+			if manifestAt < 0 {
+				manifestAt = i
 			}
 		}
 	}
@@ -173,11 +212,15 @@ func composeDraftSet(target string, recipes RecipeIndex, files []abi.ScaffoldFil
 	}
 
 	manifestPath := path.Join(path.Dir(namedByPath), ManifestFileName)
-	for _, f := range files {
-		if f.Path == manifestPath {
-			return files, []abi.Diagnostic{warnDiagnostic(fmt.Sprintf("the target %s drafts no Manifest, since the "+
-				"importer already drafted %s, which is left as it drafted it", strconv.Quote(target),
-				strconv.Quote(manifestPath)))}, nil
+	if manifestAt >= 0 {
+		manifestPath = files[manifestAt].Path
+	} else {
+		for _, f := range files {
+			if f.Path == manifestPath {
+				return files, []abi.Diagnostic{warnDiagnostic(fmt.Sprintf("the target %s drafts no Manifest, since the "+
+					"importer already drafted %s, which is left as it drafted it", strconv.Quote(target),
+					strconv.Quote(manifestPath)))}, nil
+			}
 		}
 	}
 
@@ -187,18 +230,30 @@ func composeDraftSet(target string, recipes RecipeIndex, files []abi.ScaffoldFil
 		version = scalarAt(aggregate, "metadata", "version")
 	}
 
-	var mappings []manifestMapping
-	var diags []abi.Diagnostic
-	for _, componentType := range declaredComponentTypes(aggregate) {
-		reference, unmapped := mappingFor(target, componentType, recipes)
-		if unmapped != "" {
-			diags = append(diags, warnDiagnostic(unmapped))
-			continue
-		}
-		mappings = append(mappings, manifestMapping{componentType: componentType, reference: reference})
+	var releaseFile *abi.ScaffoldFile
+	if releaseAt >= 0 {
+		releaseFile = &files[releaseAt]
 	}
+	needs, diags, err := readDraftNeeds(files[aggregateAt], releaseFile, recipes)
+	if err != nil {
+		return nil, nil, err
+	}
+	var drafted types.ManifestMappings
+	if manifestAt >= 0 {
+		var m types.Manifest
+		if err := yaml.Unmarshal([]byte(files[manifestAt].Content), &m); err != nil {
+			return nil, nil, fmt.Errorf("read the Manifest the importer drafted as %q to complete it: %w",
+				files[manifestAt].Path, err)
+		}
+		drafted = m.Spec.Mappings
+	}
+	components, componentDiags := composeTier(target, componentRealizations(target, recipes), needs.components,
+		drafted.Components)
+	features, featureDiags := composeTier(target, featureRealizations(target, recipes), needs.features,
+		drafted.Features)
+	diags = append(append(diags, componentDiags...), featureDiags...)
 
-	manifest, err := draftManifest(name, version, mappings)
+	manifest, err := draftManifest(name, version, components, features)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -226,57 +281,275 @@ func composeDraftSet(target string, recipes RecipeIndex, files []abi.ScaffoldFil
 				strconv.Quote(files[releaseAt].Path), strconv.Quote(name))))
 		}
 	}
+	if manifestAt >= 0 {
+		out[manifestAt] = abi.ScaffoldFile{Path: manifestPath, Content: manifest}
+		return out, diags, nil
+	}
 	return append(out, abi.ScaffoldFile{Path: manifestPath, Content: manifest}), diags, nil
 }
 
-// manifestMapping is one entry of the drafted Manifest's component type mapping.
-type manifestMapping struct {
-	componentType string
-	reference     string
+// realization is the catalog identity of one Recipe or FeatureRecipe: its bare
+// capability, its name and its version.
+type realization struct {
+	capability, name, version string
 }
 
-// mappingFor answers what the drafted Manifest maps componentType to for target:
-// the capability-qualified, unversioned reference of the one Recipe of that
-// capability implementing it, or, where there is none or more than one, the
-// warning saying so and nothing to map.
+// realizationKind is what the composition reads and says for one kind of type:
+// the realizations of the target the catalog offers for a type of it, what a
+// Manifest reference resolves to, whether the build accepts that as a type's
+// realization, and the words its diagnostics use.
 //
-// componentType is handed to the Recipe index exactly as the drafted Aggregate
-// writes it: the index resolves a type naming no version to the version a build
-// resolves it to, so no version is chosen here. A type the catalog holds no
-// Component of — one the import drafted new — finds a Recipe only where one
-// implements that unversioned type itself.
-func mappingFor(target, componentType string, recipes RecipeIndex) (reference, unmapped string) {
-	var references []string
+// Its catalog readings are unset where the composition has no catalog view, and
+// then answer nothing: no offer, no resolution ([realizationKind.offered],
+// [realizationKind.resolved]).
+type realizationKind struct {
+	// offers answers the realizations binding to the target that implement typ.
+	offers func(typ string) []realization
+	// resolve answers the bare capability and the declared spec.implements of
+	// what the catalog resolves reference to, as it resolves a Manifest mapping
+	// value, and whether it resolves one.
+	resolve func(reference string) (capability, implements string, ok bool)
+	// accepts is the build's own mapping-consistency judgement of a realization
+	// declaring implements for typ.
+	accepts func(implements, typ string) bool
+	// typeNoun names a type of the kind, recipeNoun what realizes one,
+	// memberNoun what a Manifest's name tier addresses, and haltNoun what a
+	// build refusing an unmapped one names.
+	typeNoun, recipeNoun, memberNoun, haltNoun string
+}
+
+// offered is offers, or nothing where the composition reads no catalog.
+func (k realizationKind) offered(typ string) []realization {
+	if k.offers == nil {
+		return nil
+	}
+	return k.offers(typ)
+}
+
+// resolved is resolve, or no resolution where the composition reads no catalog.
+func (k realizationKind) resolved(reference string) (capability, implements string, ok bool) {
+	if k.resolve == nil {
+		return "", "", false
+	}
+	return k.resolve(reference)
+}
+
+// readCatalog sets kind's catalog readings over one entity kind of the catalog:
+// implementing is its enumeration of the entities implementing a type, byURI its
+// resolution of a mapping value, identity reads an entity's capability, name,
+// version and declared spec.implements, and ancestry is the catalog's extends
+// ancestry of a component type, which the build's judgement reads.
+func readCatalog[R any](kind *realizationKind, target string, featureTier bool, implementing func(string) []R,
+	byURI func(string) (R, bool), identity func(R) (capability, name, version, implements string),
+	ancestry func(string) ([]string, error)) {
+	kind.offers = func(typ string) []realization {
+		var out []realization
+		for _, r := range implementing(typ) {
+			capability, name, version, _ := identity(r)
+			if found := (realization{types.BareCapability(capability), name, version}); found.capability == target {
+				out = append(out, found)
+			}
+		}
+		return out
+	}
+	kind.resolve = func(reference string) (string, string, bool) {
+		r, ok := byURI(reference)
+		if !ok {
+			return "", "", false
+		}
+		capability, _, _, implements := identity(r)
+		return types.BareCapability(capability), implements, true
+	}
+	kind.accepts = func(implements, typ string) bool {
+		return resolver.ManifestMappingAccepts(implements, typ, featureTier, func(t string) ([]string, bool) {
+			bases, err := ancestry(t)
+			return bases, err == nil
+		})
+	}
+}
+
+// componentRealizations is the realization kind of component types: the Recipes
+// of the target implementing one.
+func componentRealizations(target string, recipes RecipeIndex) realizationKind {
+	kind := realizationKind{typeNoun: "component type", recipeNoun: "Recipe", memberNoun: "component instance",
+		haltNoun: "instance"}
 	if recipes != nil {
-		for _, r := range recipes.RecipesImplementing(componentType) {
-			if types.ParseVersionPin(r.Spec.Capability).Base() != target {
+		readCatalog(&kind, target, false, recipes.RecipesImplementing, recipes.RecipeByURI,
+			func(r types.Recipe) (string, string, string, string) {
+				return r.Spec.Capability, r.Metadata.Name, r.Metadata.Version, r.Spec.Implements
+			}, recipes.ComponentAncestry)
+	}
+	return kind
+}
+
+// featureRealizations is the realization kind of feature types: the
+// FeatureRecipes of the target implementing one.
+func featureRealizations(target string, recipes RecipeIndex) realizationKind {
+	kind := realizationKind{typeNoun: "feature type", recipeNoun: "feature recipe", memberNoun: "attachment",
+		haltNoun: "attachment"}
+	if recipes != nil {
+		readCatalog(&kind, target, true, recipes.FeatureRecipesImplementing, recipes.FeatureRecipeByURI,
+			func(r types.FeatureRecipe) (string, string, string, string) {
+				return r.Spec.Capability, r.Metadata.Name, r.Metadata.Version, r.Spec.Implements
+			}, recipes.ComponentAncestry)
+	}
+	return kind
+}
+
+// confirms reports whether reference, an importer's mapping for typ, is one a
+// build of the drafts accepts at target: the catalog resolves it, by its own
+// reading of a mapping value — capability-qualified or bare, at an exact version,
+// a caret range or none — to a realization binding to target, and the build's own
+// mapping-consistency rule accepts what that realization declares it implements
+// as typ's realization, through typ's extends ancestry for a component type.
+//
+// The binding to target is the composition's own condition, not the build's: a
+// build renders a realization of any capability, but a Manifest drafted for one
+// target maps every type to that target.
+func confirms(target, reference, typ string, kind realizationKind) bool {
+	capability, implements, ok := kind.resolved(reference)
+	return ok && capability == target && kind.accepts(implements, typ)
+}
+
+// composedTier is one mapping of the drafted Manifest — its component or its
+// feature mapping — as the composition settles it: the type tier and the name
+// tier, each in order, and the annotation bindings the importer drafted for it.
+type composedTier struct {
+	byType      types.OrderedMap[string]
+	byName      types.OrderedMap[string]
+	annotations *types.OrderedMap[types.AnnotationBinding]
+}
+
+// composeTier settles one mapping of the drafted Manifest for target from the
+// types the drafts need of the kind and the mapping the importer drafted for it,
+// nil where it drafted none, and returns it with the warnings it draws, in
+// order: the importer's name-tier mappings dropped, its type-tier mappings
+// dropped, then each type left unmapped, in the order the drafts declare it.
+//
+// An importer's name-tier mapping is kept where the drafts hold an instance or
+// attachment of that name and [confirms] accepts the reference for the type of
+// every one of them; a type-tier mapping where it accepts it for that type. A type a kept mapping maps, or every instance or attachment of
+// which a kept name-tier mapping maps, is settled; every other type is mapped by
+// [mappingFor]. A type-tier mapping the importer drafted for a type the drafts do
+// not declare is kept after the rest, in the importer's order.
+func composeTier(target string, kind realizationKind, uses typeUses, drafted *types.MappingTier) (composedTier,
+	[]abi.Diagnostic) {
+	var tier composedTier
+	var diags []abi.Diagnostic
+	importerTypes := types.OrderedMap[string]{}
+	if drafted != nil {
+		tier.annotations = drafted.Annotations
+		for member, reference := range drafted.Name.All() {
+			typs := uses.typesOf(member)
+			if len(typs) == 0 {
+				diags = append(diags, warnDiagnostic(fmt.Sprintf("the drafted Manifest drops the importer's mapping "+
+					"of the %s %s to %s: the drafts declare no %s of that name", kind.memberNoun,
+					strconv.Quote(member), strconv.Quote(reference), kind.memberNoun)))
 				continue
 			}
-			ref := target + "/" + r.Metadata.Name
-			if !slices.Contains(references, ref) {
-				references = append(references, ref)
+			kept := true
+			for _, typ := range typs {
+				if !confirms(target, reference, typ, kind) {
+					diags = append(diags, warnDiagnostic(fmt.Sprintf("the drafted Manifest drops the importer's "+
+						"mapping of the %s %s to %s: the workspace's catalog holds no %s of that name binding to the "+
+						"target %s that implements its type %s", kind.memberNoun, strconv.Quote(member),
+						strconv.Quote(reference), kind.recipeNoun, strconv.Quote(target), strconv.Quote(typ))))
+					kept = false
+					break
+				}
 			}
+			if kept {
+				tier.byName.Set(member, reference)
+			}
+		}
+		for typ, reference := range drafted.Type.All() {
+			if !confirms(target, reference, typ, kind) {
+				diags = append(diags, warnDiagnostic(fmt.Sprintf("the drafted Manifest drops the importer's mapping "+
+					"of the %s %s to %s: the workspace's catalog holds no %s of that name binding to the target %s "+
+					"that implements it", kind.typeNoun, strconv.Quote(typ), strconv.Quote(reference), kind.recipeNoun,
+					strconv.Quote(target))))
+				continue
+			}
+			importerTypes.Set(typ, reference)
+		}
+	}
+	for _, use := range uses {
+		if reference, ok := importerTypes.Get(use.typ); ok {
+			tier.byType.Set(use.typ, reference)
+			continue
+		}
+		if allNamed(use.names, &tier.byName) {
+			continue
+		}
+		reference, unmapped := mappingFor(target, kind, use.typ)
+		if unmapped != "" {
+			diags = append(diags, warnDiagnostic(unmapped))
+			continue
+		}
+		tier.byType.Set(use.typ, reference)
+	}
+	for typ, reference := range importerTypes.All() {
+		if _, ok := tier.byType.Get(typ); !ok {
+			tier.byType.Set(typ, reference)
+		}
+	}
+	return tier, diags
+}
+
+// allNamed reports whether byName maps every one of names.
+func allNamed(names []string, byName *types.OrderedMap[string]) bool {
+	for _, name := range names {
+		if _, ok := byName.Get(name); !ok {
+			return false
+		}
+	}
+	return len(names) > 0
+}
+
+// mappingFor answers what the drafted Manifest maps typ to for target: the
+// capability-qualified, unversioned reference of the one realization of that
+// capability the catalog offers for it — or, where it offers several, of the one
+// named after the type's own last segment — or, where there is none, or several
+// with none so named, the warning saying so and nothing to map.
+//
+// typ is handed to the catalog's enumeration exactly as the drafts write it: the
+// enumeration resolves a type naming no version to the version a build resolves
+// it to, so no version is chosen here. A type the catalog holds no entity of —
+// one the import drafted new — finds a realization only where one implements that
+// unversioned type itself.
+func mappingFor(target string, kind realizationKind, typ string) (reference, unmapped string) {
+	var references []string
+	for _, r := range kind.offered(typ) {
+		ref := target + "/" + r.name
+		if !slices.Contains(references, ref) {
+			references = append(references, ref)
 		}
 	}
 	switch len(references) {
 	case 1:
 		return references[0], ""
 	case 0:
-		return "", fmt.Sprintf("the drafted Manifest leaves the component type %s unmapped: no Recipe in the "+
-			"workspace's catalog binds to the target %s and implements it, so a build of the drafts halts naming "+
-			"each instance of it until a mapping is added", strconv.Quote(componentType), strconv.Quote(target))
-	default:
-		return "", fmt.Sprintf("the drafted Manifest leaves the component type %s unmapped: the workspace's catalog "+
-			"holds more than one Recipe binding to the target %s that implements it (%s), and the import does not "+
-			"choose between them, so a build of the drafts halts naming each instance of it until the one wanted is "+
-			"mapped", strconv.Quote(componentType), strconv.Quote(target), quotedList(references))
+		return "", fmt.Sprintf("the drafted Manifest leaves the %s %s unmapped: no %s in the workspace's catalog "+
+			"binds to the target %s and implements it, so a build of the drafts halts naming each %s of it until a "+
+			"mapping is added", kind.typeNoun, strconv.Quote(typ), kind.recipeNoun, strconv.Quote(target),
+			kind.haltNoun)
 	}
+	named := path.Base(types.ParseVersionPin(typ).Base())
+	if standard := target + "/" + named; slices.Contains(references, standard) {
+		return standard, ""
+	}
+	return "", fmt.Sprintf("the drafted Manifest leaves the %s %s unmapped: the workspace's catalog holds more than "+
+		"one %s binding to the target %s that implements it (%s), none of them named %s after the type, so the "+
+		"import does not choose between them, and a build of the drafts halts naming each %s of it until the one "+
+		"wanted is mapped", kind.typeNoun, strconv.Quote(typ), kind.recipeNoun, strconv.Quote(target),
+		quotedList(references), strconv.Quote(named), kind.haltNoun)
 }
 
 // draftManifest renders the drafted Manifest: the Manifest kind's starter
-// document with its name and version filled and its component type mapping set,
-// in the order given.
-func draftManifest(name, version string, mappings []manifestMapping) (string, error) {
+// document with its name and version filled and its mappings set — the
+// component mapping's type tier always, and every other tier where it holds
+// something.
+func draftManifest(name, version string, components, features composedTier) (string, error) {
 	skeleton, err := scaffoldops.Skeleton(manifestKindToken, name)
 	if err != nil {
 		return "", fmt.Errorf("draft the Manifest's starter document: %w", err)
@@ -296,14 +569,19 @@ func draftManifest(name, version string, mappings []manifestMapping) (string, er
 	if mappingsNode == nil {
 		return "", fmt.Errorf("the Manifest's starter document carries no spec.mappings to fill")
 	}
-	byType := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-	for _, m := range mappings {
-		byType.Content = append(byType.Content, plainScalar(m.componentType), plainScalar(m.reference))
+	componentsNode, err := tierNode(components, true)
+	if err != nil {
+		return "", err
 	}
-	components := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map",
-		Content: []*yaml.Node{plainScalar("type"), byType}}
 	*mappingsNode = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map",
-		Content: []*yaml.Node{plainScalar("components"), components}}
+		Content: []*yaml.Node{plainScalar("components"), componentsNode}}
+	featuresNode, err := tierNode(features, false)
+	if err != nil {
+		return "", err
+	}
+	if len(featuresNode.Content) > 0 {
+		mappingsNode.Content = append(mappingsNode.Content, plainScalar("features"), featuresNode)
+	}
 
 	var b strings.Builder
 	enc := yaml.NewEncoder(&b)
@@ -316,6 +594,34 @@ func draftManifest(name, version string, mappings []manifestMapping) (string, er
 		return "", fmt.Errorf("encode the drafted Manifest: %w", err)
 	}
 	return b.String(), nil
+}
+
+// tierNode renders one composed mapping: its type tier — written even when
+// empty where withType says so — its name tier where it holds any entry, and
+// the importer's annotation bindings where it drafted any.
+func tierNode(tier composedTier, withType bool) (*yaml.Node, error) {
+	node := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	entries := func(m *types.OrderedMap[string]) *yaml.Node {
+		out := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		for key, value := range m.All() {
+			out.Content = append(out.Content, plainScalar(key), plainScalar(value))
+		}
+		return out
+	}
+	if withType || tier.byType.Len() > 0 {
+		node.Content = append(node.Content, plainScalar("type"), entries(&tier.byType))
+	}
+	if tier.byName.Len() > 0 {
+		node.Content = append(node.Content, plainScalar("name"), entries(&tier.byName))
+	}
+	if tier.annotations != nil {
+		annotations := &yaml.Node{}
+		if err := annotations.Encode(*tier.annotations); err != nil {
+			return nil, fmt.Errorf("encode the annotation bindings the importer drafted: %w", err)
+		}
+		node.Content = append(node.Content, plainScalar("annotations"), annotations)
+	}
+	return node, nil
 }
 
 // namesManifestOtherwise reports whether the drafted Release declares
@@ -342,9 +648,9 @@ func manifestDeclaredEmpty(value *yaml.Node) bool {
 // The text is edited by line rather than decoded and re-encoded, so every byte
 // the importer wrote outside the lines it replaces is kept: a spec.manifest key
 // declared empty is written with the name, and the comment line beginning
-// "# manifest:" directly above it, at spec's own indentation, is dropped; else
-// such a comment line standing in the key's place is replaced by the key; and
-// where there is neither the key is added directly beneath spec.
+// [manifestCommentPrefix] directly above it, at spec's own indentation, is
+// dropped; else such a comment line standing in the key's place is replaced by
+// the key; and where there is neither the key is added directly beneath spec.
 func setReleaseManifest(content string, release *yaml.Node, name string) (string, bool) {
 	specKey, spec := mappingEntry(release, "spec")
 	if spec == nil || spec.Kind != yaml.MappingNode || spec.Style&yaml.FlowStyle != 0 || len(spec.Content) == 0 {
@@ -360,6 +666,9 @@ func setReleaseManifest(content string, release *yaml.Node, name string) (string
 		eol = "\r\n"
 	}
 	entry := strings.Repeat(" ", col) + "manifest: " + yamlScalarText(name) + eol
+	manifestComment := func(line string) bool {
+		return commentAt(line, col) && strings.HasPrefix(lineText(line)[col:], manifestCommentPrefix)
+	}
 	// The lines spec's block holds run from the line after its key to the line
 	// before the next entry at the top level.
 	end := len(lines)
@@ -370,14 +679,13 @@ func setReleaseManifest(content string, release *yaml.Node, name string) (string
 		key.Line > specKey.Line && key.Line <= len(lines) {
 		at := key.Line - 1
 		lines[at] = entry
-		if above := at - 1; above >= specKey.Line && commentAt(lines[above], col) &&
-			strings.HasPrefix(lineText(lines[above])[col:], "# manifest:") {
+		if above := at - 1; above >= specKey.Line && manifestComment(lines[above]) {
 			lines = append(lines[:above], lines[at:]...)
 		}
 		return strings.Join(lines, ""), true
 	}
 	for i := specKey.Line; i < end; i++ {
-		if commentAt(lines[i], col) && strings.HasPrefix(lineText(lines[i])[col:], "# manifest:") {
+		if manifestComment(lines[i]) {
 			lines[i] = entry
 			return strings.Join(lines, ""), true
 		}
@@ -398,33 +706,6 @@ func nextTopLevelKeyLine(root, key *yaml.Node) int {
 		}
 	}
 	return 0
-}
-
-// declaredComponentTypes returns each distinct component type the drafted
-// Aggregate declares, on its top-level components and on every subsystem's, in
-// the order the Aggregate first declares it. A type is read as the identity the
-// document writes, and never resolved.
-func declaredComponentTypes(aggregate *yaml.Node) []string {
-	var out []string
-	add := func(components *yaml.Node) {
-		if components == nil || components.Kind != yaml.MappingNode {
-			return
-		}
-		for i := 1; i < len(components.Content); i += 2 {
-			typ := scalarValue(mappingValue(components.Content[i], "type"))
-			if typ != "" && !slices.Contains(out, typ) {
-				out = append(out, typ)
-			}
-		}
-	}
-	spec := mappingValue(aggregate, "spec")
-	add(mappingValue(spec, "components"))
-	if subsystems := mappingValue(spec, "subsystems"); subsystems != nil && subsystems.Kind == yaml.MappingNode {
-		for i := 1; i < len(subsystems.Content); i += 2 {
-			add(mappingValue(subsystems.Content[i], "components"))
-		}
-	}
-	return out
 }
 
 // draftKind is the top-level kind a drafted file's content declares, or "" for

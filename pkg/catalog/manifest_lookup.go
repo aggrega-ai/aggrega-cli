@@ -1374,6 +1374,26 @@ func implementingFeatureRecipes(frs map[string]types.FeatureRecipe, featureType 
 	return requested, out
 }
 
+// FeatureRecipesImplementing returns every FeatureRecipe this catalog holds whose
+// spec.implements satisfies featureType, ordered by identity
+// (capability/name:version), every version of a FeatureRecipe included. A
+// featureType naming no version is asked at the version this catalog's Feature
+// resolution selects for it; one this catalog holds no Feature of is asked as
+// written.
+//
+// It is the enumeration the unmapped-feature halt lists its pin candidates from,
+// handed on whole, as [Catalog.RecipesImplementing] is for Recipes: it suggests
+// and never resolves, so a reader drafting a feature mapping from this answer
+// drafts a file the operator reviews, and the build reads only what that file
+// says.
+func (c *Catalog) FeatureRecipesImplementing(featureType string) []types.FeatureRecipe {
+	if c == nil {
+		return nil
+	}
+	_, out := implementingFeatureRecipes(c.FeatureRecipes, featureType, c.featureOfType)
+	return out
+}
+
 // featureRecipeIdentity is a FeatureRecipe's catalog identity key.
 func featureRecipeIdentity(fr types.FeatureRecipe) string {
 	return recipeIdentityKey(fr.Spec.Capability, fr.Metadata.Name, fr.Metadata.Version)
@@ -1551,6 +1571,10 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 //     the component's rather than into it, or write one for target;
 //   - target is "": it names every implementer.
 //
+// An attachment naming no type — one the Release writes with no Aggregate
+// attachment of its name to configure — is none of those: there is no type to
+// search for, so the refusal says the attachment names none and where to write it.
+//
 // Every case is the one condition, no-recipe-resolved: what is missing in each is
 // a Manifest mapping naming a FeatureRecipe that implements the type. One binding
 // to a capability other than the component's still renders, as its own output
@@ -1571,6 +1595,18 @@ func (c *Catalog) resolveFeatureRecipeForVerify(manifest *types.Manifest, instan
 //   - implementers for other capabilities alone: case three, its claim made of
 //     the pins.
 func unmappedFeatureFault(instanceName, featureType, requested string, implementers []types.FeatureRecipe, target string, pinsAlone bool) error {
+	if featureType == "" {
+		// An attachment naming no type has no Feature to search a realization for,
+		// so naming the search would print an empty type twice. The Aggregate's
+		// schema requires a type on every attachment it declares, so what reaches
+		// here is an attachment the Release writes without one and with no
+		// Aggregate attachment of that name for it to configure.
+		return fmt.Errorf("%w: feature %q is attached with no type, so no feature recipe can be chosen for it: an "+
+			"attachment the Release writes names its Feature under type, unless the Aggregate declares an "+
+			"attachment of the same name for it to configure; name the Feature under the attachment's type in the "+
+			"Release, or declare the attachment in the Aggregate and configure it from the Release",
+			ErrNoRecipeResolved(), instanceName)
+	}
 	searched, scope := "in the catalog", ""
 	if pinsAlone {
 		searched = "the lockfile pins"

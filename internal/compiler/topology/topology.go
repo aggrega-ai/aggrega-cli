@@ -423,7 +423,7 @@ type BuildConfig struct {
 //     The map-based authoring shape (root-topology blocks are YAML maps
 //     keyed by user-authored instance names) gives stable per-block
 //     instance IDs; dot-notation IDs flow from sub-aggregate flattening;
-//     a depth bound on inclusion recursion (maxSubAggregateDepth = 10)
+//     a depth bound on inclusion recursion (MaxModuleDepth = 10)
 //     terminates pathological chains. The result carries the per-node
 //     FeatureAttachments / ExportedComponents.
 //  2. Populate Labels from the catalog. Labels live on the Component

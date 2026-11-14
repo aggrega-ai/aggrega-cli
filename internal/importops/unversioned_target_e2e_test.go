@@ -262,21 +262,38 @@ func TestTheBuildOffersAnUnmappedInstanceOfATypeWithNoVersionItsRecipes(t *testi
 	}
 }
 
-// TestATargetLeavesATypeWithRecipesOfSeveralNamesUnmapped imports a Visual Studio
-// Code configuration holding a server started from a command line and one reached
-// at an address — two instances of core/ai-tool/mcp, written with no version — for
-// the compose target and for the helm target, and requires the one warning each
-// draws for the type to give the reason the catalog offers Recipes of more than
-// one name for that provider, naming each, rather than the reason that it offers
-// none.
-func TestATargetLeavesATypeWithRecipesOfSeveralNamesUnmapped(t *testing.T) {
+// TestATypeWithRecipesOfSeveralNamesMapsToTheOneNamedAfterIt imports a Visual
+// Studio Code configuration holding a server started from a command line and one
+// reached at an address — two instances of core/ai-tool/mcp, written with no
+// version — for the helm target and for the compose target, over a catalog
+// holding the hub's three helm Recipes of the type and two of its compose ones.
+// For helm, where one of the three is named mcp after the type, the drafted
+// Manifest maps the type to helm/mcp and no warning calls it unmapped. For
+// compose, where neither is so named, the one warning the type draws gives that
+// reason, naming each Recipe, rather than the reason that the catalog offers none.
+//
+// 🔴 PLANTED DEFECT: in mappingFor (internal/importops/compose.go) drop the
+// same-name branch: the helm row reddens on the Manifest and on a warning.
+func TestATypeWithRecipesOfSeveralNamesMapsToTheOneNamedAfterIt(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		target     string
-		references string
+		target   string
+		manifest string
+		warnings []string
 	}{
-		{target: "compose", references: `("compose/mcp-remote", "compose/mcp-stdio-bridge")`},
-		{target: "helm", references: `("helm/mcp-remote", "helm/mcp-stdio-bridge", "helm/mcp")`},
+		{
+			target:   "helm",
+			manifest: "      type:\n        core/ai-tool/mcp: helm/mcp\n",
+		},
+		{
+			target:   "compose",
+			manifest: "      type: {}\n",
+			warnings: []string{`the drafted Manifest leaves the component type "core/ai-tool/mcp" unmapped: the ` +
+				`workspace's catalog holds more than one Recipe binding to the target "compose" that implements it ` +
+				`("compose/mcp-remote", "compose/mcp-stdio-bridge"), none of them named "mcp" after the type, so the ` +
+				`import does not choose between them, and a build of the drafts halts naming each instance of it ` +
+				`until the one wanted is mapped`},
+		},
 	} {
 		t.Run(tc.target, func(t *testing.T) {
 			t.Parallel()
@@ -285,12 +302,12 @@ func TestATargetLeavesATypeWithRecipesOfSeveralNamesUnmapped(t *testing.T) {
 			if res.Format != "mcp" || res.Halted() {
 				t.Fatalf("the source was read as %q, halted %v: %+v", res.Format, res.Halted(), res.Diagnostics)
 			}
-			want := []string{`the drafted Manifest leaves the component type "core/ai-tool/mcp" unmapped: the ` +
-				`workspace's catalog holds more than one Recipe binding to the target "` + tc.target + `" that ` +
-				`implements it ` + tc.references + `, and the import does not choose between them, so a build of the ` +
-				`drafts halts naming each instance of it until the one wanted is mapped`}
-			if got := unmappedWarnings(res); !slices.Equal(got, want) {
-				t.Errorf("the import warned %q\nwant %q", got, want)
+			if got := unmappedWarnings(res); !slices.Equal(got, tc.warnings) {
+				t.Errorf("the import warned %q\nwant %q", got, tc.warnings)
+			}
+			manifest := fileNamed(t, res, ManifestFileName)
+			if !strings.Contains(manifest, "\n    components:\n"+tc.manifest) {
+				t.Errorf("the drafted Manifest does not map the component types as\n%s\nit is\n%s", tc.manifest, manifest)
 			}
 		})
 	}

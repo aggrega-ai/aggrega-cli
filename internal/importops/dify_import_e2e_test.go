@@ -30,6 +30,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -459,6 +460,67 @@ func TestADifyDraftBuildsOnlyWithTheReleaseFulfillingItsSecretKey(t *testing.T) 
 			}
 		})
 	}
+}
+
+// TestADifyImportForHelmMapsTheTypesOfTheInstallation imports the authored chat
+// application for the helm target through the real Import, over a catalog folder
+// holding core/dify, its ten Components with the Helm Recipe of each, and the
+// referenced-secret Feature with its existing-Secret realization. The drafted
+// Aggregate declares no component of its own and composes core/dify, so every
+// type the drafted Manifest maps is one the installation declares: it maps each of
+// the ten, in the order core/dify declares them, and the Feature every one of its
+// credentials is attached as, read from the catalog the import loaded; and no
+// warning calls a type unmapped or the installation unread.
+//
+// 🔴 PLANTED DEFECT: in addAggregate (internal/importops/draft_needs.go) drop the loop
+// over the composed Aggregates: the Manifest maps nothing and the case fails.
+func TestADifyImportForHelmMapsTheTypesOfTheInstallation(t *testing.T) {
+	t.Parallel()
+	rw, folder := catalogFolderImportWorkspaceAttaching(t, nil)
+	entities := []string{
+		"aggregate/core/dify/1.0.0/aggregate.yaml",
+		"schemalibrary/base-components/1.0.0/library.yaml",
+		"feature/core/referenced-secret/1.0.0/feature.yaml",
+		"feature-recipe/helm/k8s-existing-secret/1.0.0/recipe.yaml",
+	}
+	want := "    components:\n      type:\n"
+	for _, c := range difyInstallationOrder {
+		entities = append(entities, "component/"+c.component+"/1.0.0/component.yaml",
+			"recipe/helm/"+c.recipe+"/1.0.0/recipe.yaml")
+		want += "        " + c.component + ": helm/" + c.recipe + "\n"
+	}
+	want += "    features:\n      type:\n        core/referenced-secret: helm/k8s-existing-secret\n"
+	layHubEntities(t, folder.Dir, entities)
+
+	res, _ := targetedImport(t, rw, "support-assistant.yml", readDifyFixture(t, "authored/chat.yml"), "helm",
+		authoredcontent.DeliveryReport)
+	if res.Format != "dify" || res.Halted() {
+		t.Fatalf("the source was read as %q, halted %v: %+v", res.Format, res.Halted(), res.Diagnostics)
+	}
+	if manifest := fileNamed(t, res, ManifestFileName); !strings.Contains(manifest, "\n  mappings:\n"+want) {
+		t.Errorf("the drafted Manifest does not map the installation's types as\n%s\nit is\n%s", want, manifest)
+	}
+	for _, d := range res.Diagnostics {
+		if strings.HasPrefix(d.Message, "the drafted Manifest ") {
+			t.Errorf("the import warned: %s", d.Message)
+		}
+	}
+}
+
+// difyInstallationOrder is difyBuildComponents in the order core/dify declares
+// its components: the datastores, the egress proxy, the code sandbox, the plugin
+// runtime, the API server, the worker, the scheduler and the web front end.
+var difyInstallationOrder = []struct{ component, recipe string }{
+	{"core/datastore/postgres", "postgres"},
+	{"core/datastore/redis", "redis"},
+	{"core/datastore/weaviate", "weaviate"},
+	{"core/ai-agent/dify-ssrf-proxy", "dify-ssrf-proxy"},
+	{"core/ai-agent/dify-sandbox", "dify-sandbox"},
+	{"core/ai-agent/dify-plugin-daemon", "dify-plugin-daemon"},
+	{"core/ai-agent/dify", "dify"},
+	{"core/ai-agent/dify-worker", "dify-worker"},
+	{"core/ai-agent/dify-worker-beat", "dify-worker-beat"},
+	{"core/ai-agent/dify-web", "dify-web"},
 }
 
 // TestTwoImportsOfADifyApplicationAreByteIdentical imports the workflow

@@ -94,12 +94,13 @@ func fileNamed(t *testing.T, res Result, path string) string {
 // wantComposedWarnings are the warnings an import given the compose target over
 // the draft-composition catalog reports after the importer's own diagnostics, in
 // the order the Aggregate declares the types: example/y with both of its compose
-// Recipes named, then example/z, which no compose Recipe implements.
+// Recipes named, neither of them named y after the type, then example/z, which no
+// compose Recipe implements.
 var wantComposedWarnings = []abi.Diagnostic{
 	{Severity: abi.SeverityWarn, Message: `the drafted Manifest leaves the component type "example/y:1.0.0" unmapped: ` +
 		`the workspace's catalog holds more than one Recipe binding to the target "compose" that implements it ` +
-		`("compose/y-one", "compose/y-two"), and the import does not choose between them, so a build of the ` +
-		`drafts halts naming each instance of it until the one wanted is mapped`},
+		`("compose/y-one", "compose/y-two"), none of them named "y" after the type, so the import does not choose ` +
+		`between them, and a build of the drafts halts naming each instance of it until the one wanted is mapped`},
 	{Severity: abi.SeverityWarn, Message: `the drafted Manifest leaves the component type "example/z:1.0.0" unmapped: ` +
 		`no Recipe in the workspace's catalog binds to the target "compose" and implements it, so a build of the ` +
 		`drafts halts naming each instance of it until a mapping is added`},
@@ -408,9 +409,63 @@ func TestTheTargetIsComposedFromTheSharedOperationAlone(t *testing.T) {
 }
 
 // stubRecipes is a Recipe index standing in for a catalog, answering the
-// Recipes it holds by the type each implements.
+// Recipes and FeatureRecipes it holds by the type each implements, exactly as
+// written, and the Aggregates it holds by name.
 type stubRecipes struct {
-	recipes []types.Recipe
+	recipes        []types.Recipe
+	featureRecipes []types.FeatureRecipe
+	aggregates     map[string]*types.Aggregate
+	// ancestry is each component type's extends ancestry, nearest base first.
+	ancestry map[string][]string
+}
+
+func (s stubRecipes) ComponentAncestry(componentType string) ([]string, error) {
+	return s.ancestry[componentType], nil
+}
+
+func (s stubRecipes) FeatureRecipesImplementing(featureType string) []types.FeatureRecipe {
+	var out []types.FeatureRecipe
+	for _, r := range s.featureRecipes {
+		if r.Spec.Implements == featureType {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// RecipeByURI resolves a capability-qualified reference, with an exact version
+// or none, among the stub's Recipes; a stand-in for the catalog's ladder that
+// reads only the two forms these cases write.
+func (s stubRecipes) RecipeByURI(uri string) (types.Recipe, bool) {
+	for _, r := range s.recipes {
+		if stubReferenceNames(uri, r.Spec.Capability, r.Metadata.Name, r.Metadata.Version) {
+			return r, true
+		}
+	}
+	return types.Recipe{}, false
+}
+
+// FeatureRecipeByURI is RecipeByURI over the stub's FeatureRecipes.
+func (s stubRecipes) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) {
+	for _, r := range s.featureRecipes {
+		if stubReferenceNames(uri, r.Spec.Capability, r.Metadata.Name, r.Metadata.Version) {
+			return r, true
+		}
+	}
+	return types.FeatureRecipe{}, false
+}
+
+// stubReferenceNames reports whether uri names the entity of capability, name
+// and version: capability/name, or capability/name:version.
+func stubReferenceNames(uri, capability, name, version string) bool {
+	return uri == capability+"/"+name || uri == capability+"/"+name+":"+version
+}
+
+func (s stubRecipes) AggregateLookup() resolver.AggregateLookup {
+	return func(name string) (resolver.ResolvedAggregate, bool) {
+		agg, ok := s.aggregates[name]
+		return resolver.ResolvedAggregate{Aggregate: agg}, ok
+	}
 }
 
 func (s stubRecipes) RecipeCapabilities() []string {
@@ -446,8 +501,9 @@ func (s stubRecipes) RecipesImplementing(componentType string) []types.Recipe {
 // Release already naming a Manifest, and one declaring it null, each left as
 // drafted with an information diagnostic; no Release, where the Manifest is
 // drafted beside the Aggregate with its name and version and nothing references
-// it; no Aggregate, where no Manifest is drafted; and a file the importer already
-// drafted where the Manifest would go, left as it is with a warning.
+// it; no Aggregate, where no Manifest is drafted; and a file that is not a
+// Manifest, which the importer already drafted where the Manifest would go, left
+// as it is with a warning.
 func TestTheCompositionAroundEachShapeOfDraft(t *testing.T) {
 	t.Parallel()
 	recipes := stubRecipes{recipes: []types.Recipe{{
@@ -566,7 +622,7 @@ func TestTheCompositionAroundEachShapeOfDraft(t *testing.T) {
 				`Aggregate whose component types it could map`},
 		},
 		{
-			name: "a file already drafted where the Manifest would go",
+			name: "a file that is not a Manifest already drafted where the Manifest would go",
 			files: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
 				{Path: "manifest.yaml", Content: "kept\n"}},
 			wantFiles: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},

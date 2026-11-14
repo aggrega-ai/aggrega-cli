@@ -42,9 +42,10 @@ import (
 // supplies its loaders. The real seam leaves both nil and loads through its one
 // loader, bound to the context of the import that runs it.
 //
-// Recipes is the same catalog view's Recipes, which an import given a target
-// drafts its Manifest from. A nil Recipes is a catalog holding no Recipe, so a
-// harness standing in for the catalog that supplies none refuses every target.
+// Recipes is the same catalog view's Recipes, FeatureRecipes and Aggregates,
+// which an import given a target drafts its Manifest from. A nil Recipes is a
+// catalog holding no Recipe, so a harness standing in for the catalog that
+// supplies none refuses every target.
 type Seam struct {
 	ImporterRes  ImporterResolver
 	ImporterLoad importersocket.ImporterLoader
@@ -103,18 +104,33 @@ type ImporterResolver interface {
 	ImporterPluginForFormat(format string, attached []string) (types.Plugin, int, error)
 }
 
-// RecipeIndex is what an import given a target reads of the catalog's Recipes:
-// the capabilities they bind to, and the Recipes implementing a component type.
+// RecipeIndex is what an import given a target reads of the catalog to draft
+// its Manifest: the capabilities the catalog's Recipes bind to, the Recipes
+// implementing a component type, the FeatureRecipes implementing a feature type,
+// the Recipe or FeatureRecipe a Manifest mapping value resolves to, a component
+// type's extends ancestry, and the catalog Aggregates a drafted Aggregate
+// composes as modules, whose own types the Manifest maps too.
 //
 // The catalog is the implementation an import runs through, and its answers are
-// the catalog's own suggestion enumeration — the one the no-mapping diagnostic
-// lists its pin candidates from, which resolves a type naming no version to the
+// the catalog's own suggestion enumerations — the ones the no-mapping refusals
+// list their pin candidates from, which resolve a type naming no version to the
 // version a build resolves it to before matching — so a draft Manifest names
-// exactly the Recipes a build halting on an unmapped instance would offer. A
-// harness standing in for the catalog answers both itself.
+// exactly the Recipes and FeatureRecipes a build halting on an unmapped instance
+// or attachment would offer; its resolution of a mapping value reads a
+// reference by the catalog's own ladder — capability-qualified or bare, at an
+// exact version, a caret range or none; its ancestry is the one the build's
+// mapping-consistency rule reads, so a mapping an importer drafted is judged as a
+// build judges it; and its Aggregate lookup selects a
+// module's version as the build's loading of a module does. A harness standing in
+// for the catalog answers each itself.
 type RecipeIndex interface {
 	RecipeCapabilities() []string
 	RecipesImplementing(componentType string) []types.Recipe
+	FeatureRecipesImplementing(featureType string) []types.FeatureRecipe
+	RecipeByURI(uri string) (types.Recipe, bool)
+	FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool)
+	ComponentAncestry(componentType string) ([]string, error)
+	AggregateLookup() resolver.AggregateLookup
 }
 
 // BuildSeam is how [Import] obtains its resolvers and loaders.
@@ -205,9 +221,9 @@ var BuildSeam = buildSeam
 // module sits beside it or not, and the binary's own core importers — so a source
 // is recognised only as a format an importer this view holds advertises.
 //
-// So are the Recipes an import given a target drafts its Manifest from: the
-// Recipes of the catalog this view loaded, and nothing a registry holds that the
-// workspace has not pulled.
+// So are the Recipes, FeatureRecipes and composed Aggregates an import given a
+// target drafts its Manifest from: those of the catalog this view loaded, and
+// nothing a registry holds that the workspace has not pulled.
 //
 // The view is the workspace's catalog folders, as the workspace's own search
 // stack names them. A workspace whose stack names none — no catalog folder in

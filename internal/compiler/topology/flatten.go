@@ -13,7 +13,11 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-const maxSubAggregateDepth = 10
+// MaxModuleDepth is how many levels of modules flattening follows — an
+// Aggregate composing a module composing a module, and so on — before it halts
+// with [ErrMaxDepth]. A reader walking the same composition outside a build
+// stops where the build stops by reading this rather than a bound of its own.
+const MaxModuleDepth = 10
 
 // flattenResult is the intermediate output of aggregate flattening.
 //
@@ -128,26 +132,45 @@ type ModuleDeclaration struct {
 	Exports []string
 }
 
+// ActiveLiteral reads a component's or module's `active` toggle as flattening
+// reads it: a nil toggle is one the author never wrote, and the entity is
+// present; a written one is the boolean its literal parses as, surrounding space
+// ignored. literal reports whether the toggle reads as a boolean at all — omitted,
+// or written as one. A toggle that does not — empty, or a parameter template not
+// yet rendered — reads as present with literal false, and what that means is the
+// caller's: flattening, which only ever sees rendered literals, halts on it
+// ([evalActive]); a reader of drafts not yet rendered keeps the entity.
+//
+// It is the one reading of the literal, so a reader outside the build cannot
+// come to prune an entity the build keeps, or the reverse.
+func ActiveLiteral(active *types.ActiveFlag) (present, literal bool) {
+	if active == nil {
+		return true, true
+	}
+	b, err := strconv.ParseBool(strings.TrimSpace(string(*active)))
+	if err != nil {
+		return true, false
+	}
+	return b, true
+}
+
 // evalActive interprets a component's or module's `active` toggle.
 //
 // A nil toggle is one the author never wrote, and the entity is present. A
 // toggle the author did write must resolve to a boolean: it reaches flatten
 // already resolved to a literal — a boolean written directly, or a parameter
 // template the resolver rendered before unmarshal — and a literal that does not
-// parse as a boolean is a Loud Guardrail naming the node and the offending
-// value.
+// parse as a boolean ([ActiveLiteral]) is a Loud Guardrail naming the node and
+// the offending value.
 //
 // An empty literal is one such value, and separating it from an omitted toggle
 // is why the toggle arrives as a pointer. A toggle reading a parameter resolves
 // to nothing while that parameter is unfulfilled, so treating empty as "present"
 // would deploy the very entity the author gated behind that parameter.
 func evalActive(active *types.ActiveFlag, nodeID string) (bool, error) {
-	if active == nil {
-		return true, nil
-	}
-	s := strings.TrimSpace(string(*active))
-	b, err := strconv.ParseBool(s)
-	if err != nil {
+	present, literal := ActiveLiteral(active)
+	if !literal {
+		s := strings.TrimSpace(string(*active))
 		hint := ""
 		if s == "" {
 			// Stated as what a parameter-driven toggle does rather than as a
@@ -163,7 +186,7 @@ func evalActive(active *types.ActiveFlag, nodeID string) (bool, error) {
 		return false, cerrors.Wrap(ErrInvalidActive(), cerrors.DeveloperError, cerrors.SourceLocation{Instance: nodeID},
 			cerrors.ComposeMessage(ErrInvalidActive(), values, hint))
 	}
-	return b, nil
+	return present, nil
 }
 
 // flattenAggregate recursively walks an Aggregate tree, flattening all
@@ -203,7 +226,7 @@ func evalActive(active *types.ActiveFlag, nodeID string) (bool, error) {
 //     branch (copyVisited) so siblings don't poison each other; a
 //     repeat type URI on the same branch produces ErrSubAggregateLoad
 //     wrapping a "circular" message.
-//   - The `depth` counter is bounded by maxSubAggregateDepth;
+//   - The `depth` counter is bounded by MaxModuleDepth;
 //     exceeding it produces ErrMaxDepth. The depth bound subsumes cycle
 //     detection when the visited-set check would have otherwise allowed
 //     infinite recursion via type-renaming tricks.
@@ -239,7 +262,7 @@ func flattenAggregate(
 	depth int,
 	params map[string]any,
 ) (*flattenResult, error) {
-	if depth > maxSubAggregateDepth {
+	if depth > MaxModuleDepth {
 		return nil, cerrors.Wrap(ErrMaxDepth(), cerrors.DeveloperError, cerrors.SourceLocation{Instance: prefix},
 			cerrors.ComposeMessage(ErrMaxDepth(), []string{
 				fmt.Sprintf("depth %d", depth),
