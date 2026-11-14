@@ -140,11 +140,28 @@ func (s *server) scaffoldExample(ctx context.Context, form exampleops.Form, a sc
 		return tw.answer(errorResult(explainToolErrorAt(action, err, docScaffoldReference)))
 	}
 	written.Dir = named
-	return tw.answer(textResult(note+written.Report(), scaffoldResult{
-		Example: written.Name,
-		Dir:     named,
-		Files:   written.Files,
-		Next:    written.Next,
-		Version: examples.Version,
+	outputDir, outputDirWithheld := tw.reportedLocationField(dest)
+	return tw.answer(textResult(note+written.Report()+writtenFolderLine(named, outputDir), scaffoldResult{
+		Example:           written.Name,
+		Dir:               named,
+		OutputDir:         outputDir,
+		OutputDirWithheld: outputDirWithheld,
+		Files:             written.Files,
+		Next:              written.Next,
+		Version:           examples.Version,
 	}))
+}
+
+// writtenFolderLine is the line closing the account of an example written,
+// naming the folder it went into as the caller is told that location (told,
+// from reportedLocationField) — so a caller that named the folder relative to a
+// workspace whose place on the machine it cannot see reads where the example
+// went. Where that spelling is the one the call named already, or the location is
+// kept back, the account above already says all the caller may be told, and
+// nothing is added.
+func writtenFolderLine(named string, told *string) string {
+	if told == nil || *told == named {
+		return ""
+	}
+	return "\nThe folder written is " + *told + ".\n"
 }

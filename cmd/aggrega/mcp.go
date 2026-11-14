@@ -211,6 +211,18 @@ directory. Over
 standard input and output both arguments are honoured: the client that
 launched the server is running on this machine.
 
+A workspace_root such a call sends is read the same way by every tool,
+the tools that run a command included. An absolute one is used as
+given. A relative one is read from the root a call naming no workspace
+of its own is answered in — the folder --workspace-root or
+AGGREGA_WORKSPACE_ROOT names, which the desktop application sets from
+its Workspace folder, or, where neither names one, the workspace root
+the directory the server was started in resolves to — so a client that
+cannot see where that folder sits on the machine still names a folder
+inside it, as quickstart-ai/1. Where there is no such root to read it
+from, a relative one is refused as a call naming none is refused, and
+an absolute one is answered as it always is.
+
 Asking the process itself to stop — an interrupt from the terminal, or a
 termination request from a supervisor or container runtime — shuts the
 server down on the first request, whether or not a client is sending

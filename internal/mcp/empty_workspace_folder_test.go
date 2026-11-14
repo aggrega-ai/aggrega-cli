@@ -26,23 +26,30 @@ import (
 // refusal, closing with the pointer to this server's own page: a tool running
 // inside the server, the listing that answers over a held workspace, the
 // configuration reading, the cache inventory, and a tool running a command in a
-// separate process, which starts no command. A catalog read and a documentation
-// read each answer with an error carrying it. What acts in no workspace answers
-// as on any server — a schema read by tool, and the tool listing — and a call
-// naming a workspace of its own is answered there. A listener is refused one at
-// construction.
+// separate process, which starts no command. A call naming a RELATIVE workspace
+// root of its own meets it too, inside the server and in a command alike: there
+// is no Workspace folder to read it from, and the working folder is the one the
+// refusal keeps from being taken for it. A catalog read and a documentation read
+// each answer with an error carrying it. What acts in no workspace answers as on
+// any server — a schema read by tool, and the tool listing — and a call naming
+// an absolute workspace of its own is answered there. A listener is refused one
+// at construction.
 //
 // 🔴 PLANTED DEFECTS: have launchRefusalFor return nil whatever it holds, and
 // every refusal row fails, answered from the working folder's workspace; drop it
 // from resolveListingWorkspace alone and the list-entities row fails; drop it
-// from launchRootRefusal alone and the cli-work row fails with a command
-// started, and the cache-status row with the machine-wide caches; drop the
-// refusal from NewHTTPHandler and the listener row fails.
+// from launchRootDir alone and the cli-work rows fail with a command started,
+// the cache-status row with the machine-wide caches, and the relative-root rows
+// answered from the working folder; drop the refusal from NewHTTPHandler and the
+// listener row fails.
 func TestALaunchRefusedForAnEmptyWorkspaceFolderIsTheAnswerToEveryCallNamingNoWorkspace(t *testing.T) {
 	// Not parallel: it moves the process working directory into a workspace.
 	startedIn := t.TempDir()
 	if err := os.WriteFile(filepath.Join(startedIn, workspaceconfig.ConfigFilename), []byte("workspace: {}\n"), 0o644); err != nil {
 		t.Fatalf("write the workspace in the started-in folder: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(startedIn, "inside"), 0o755); err != nil {
+		t.Fatalf("make a folder inside the started-in folder: %v", err)
 	}
 	t.Chdir(startedIn)
 	global := filepath.Join(t.TempDir(), "machine-wide.yaml")
@@ -67,6 +74,10 @@ func TestALaunchRefusedForAnEmptyWorkspaceFolderIsTheAnswerToEveryCallNamingNoWo
 		{"config-show", map[string]any{}},
 		{"cache-status", map[string]any{}},
 		{"cli-work", map[string]any{}},
+		// The working folder holds a folder by this name, so a relative root read
+		// from it would be answered rather than refused.
+		{"list-entities", map[string]any{"workspace_root": "inside"}},
+		{"cli-work", map[string]any{"workspace_root": "inside"}},
 	} {
 		res := callTool(t, s, c.tool, c.args)
 		if !res.IsError || !strings.Contains(res.Content[0].Text, want) {

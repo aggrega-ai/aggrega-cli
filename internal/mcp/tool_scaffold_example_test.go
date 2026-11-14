@@ -173,6 +173,15 @@ func TestScaffoldExampleToolWritesTheExampleAndListsTheExamples(t *testing.T) {
 	if written.Example != "demo" || written.Dir != "apps/my-demo" || written.Version != toolExampleVersion {
 		t.Errorf("the answer is %+v, want example demo into apps/my-demo at %s", written, toolExampleVersion)
 	}
+	// Over the process's own streams the folder is also told in full, in the
+	// payload and in the account's closing line.
+	wantDir := filepath.Join(f.ws, "apps", "my-demo")
+	if written.OutputDir == nil || *written.OutputDir != wantDir || written.OutputDirWithheld {
+		t.Errorf("the answer's output_dir is %v (withheld %v), want %s", written.OutputDir, written.OutputDirWithheld, wantDir)
+	}
+	if !strings.Contains(res.Content[0].Text, "The folder written is "+wantDir+".") {
+		t.Errorf("the account does not name the folder written in full:\n%s", res.Content[0].Text)
+	}
 	if !slices.Equal(written.Next, docsbundletest.ExampleNext) {
 		t.Errorf("the next commands are %q, want %q", written.Next, docsbundletest.ExampleNext)
 	}

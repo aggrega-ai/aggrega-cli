@@ -388,7 +388,7 @@ var publishEntityToolSpec = toolSpec{
     },
     "workspace_root": {
       "type": "string",
-      "description": "Optional workspace root override. Defaults to the workspace root the server was launched with, or, where it was launched with none, to discovery from its working directory."
+      "description": "Optional workspace root override. ` + workspaceRootArgumentRule + `"
     }
   },
   "required": ["entity"]
@@ -624,7 +624,7 @@ var publishArtifactToolSpec = toolSpec{
     },
     "workspace_root": {
       "type": "string",
-      "description": "Optional workspace root override. Defaults to the workspace root the server was launched with, or, where it was launched with none, to discovery from its working directory."
+      "description": "Optional workspace root override. ` + workspaceRootArgumentRule + `"
     }
   },
   "required": ["file", "name", "tag"]
@@ -813,7 +813,7 @@ var signArtifactsToolSpec = toolSpec{
     },
     "workspace_root": {
       "type": "string",
-      "description": "Optional workspace root override. Defaults to the workspace root the server was launched with, or, where it was launched with none, to discovery from its working directory."
+      "description": "Optional workspace root override. ` + workspaceRootArgumentRule + `"
     },
     "jobs": {
       "type": "integer",
@@ -1038,7 +1038,7 @@ var deprecateArtifactToolSpec = toolSpec{
     },
     "workspace_root": {
       "type": "string",
-      "description": "Optional workspace root override. Defaults to the workspace root the server was launched with, or, where it was launched with none, to discovery from its working directory."
+      "description": "Optional workspace root override. ` + workspaceRootArgumentRule + `"
     }
   },
   "anyOf": [

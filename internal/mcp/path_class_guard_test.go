@@ -61,8 +61,14 @@ var workspacePathArguments = map[string]string{
 	// split is the point: the source is only opened, and the drafted files land
 	// under the directory output_dir names, or under the resolved workspace root
 	// where it names none.
-	"import: source":          "the foreign description draft authoring files are translated from",
-	"import: output_dir":      "the directory drafted authoring files are WRITTEN into",
+	"import: source":     "the foreign description draft authoring files are translated from",
+	"import: output_dir": "the directory drafted authoring files are WRITTEN into",
+	// Read and WRITTEN: the answers file the values the drafts owe are read from,
+	// and that every answer kept is written back to. Resolved by the same helper,
+	// so over a listener it stays inside the served workspace like the drafts it
+	// answers for; where a call names none, the import layer picks its own default
+	// beside the source or from the record, and nothing here resolves that one.
+	"import: answers":         "the answers file owed values are READ from and WRITTEN to",
 	"gen-catalog: plugin":     "the .wasm an entity is generated for",
 	"gen-catalog: output_dir": "the directory generated entities are WRITTEN into",
 	"gen-catalog: overlay":    "the authored overlay a generated entity takes its identity from",
@@ -102,8 +108,10 @@ var resolversReachedOnlyAtABoundary = map[string][]string{
 // path a caller named comes in through, and the one a location this server holds
 // goes out through.
 //
-// workspacePath is the incoming one, and the only function here that turns a
-// caller's value into somewhere to open. reportedLocation and heldLocations are
+// workspacePath is the incoming one for every path a call names inside its
+// workspace, and callRoot for the root that names the workspace itself; they are
+// the only functions here that turn a caller's value into somewhere to open.
+// reportedLocation and heldLocations are
 // the outgoing one, and are exempt for the reason pathscope.ReportedName is
 // absent above. The first spells a location this server already holds in the
 // name a caller may be told it by, through the same containment judgement that
@@ -111,11 +119,20 @@ var resolversReachedOnlyAtABoundary = map[string][]string{
 // locations to absolute, cleaned ones, so that a relative string is never matched
 // in prose. Neither composes a place to open from anything a caller sent.
 //
+// callRoot reads one argument only: the root a call names for its own
+// workspace, which is not a path inside a workspace and so is not
+// workspacePath's to resolve — it decides which workspace there is, and
+// workspacePath needs that workspace's root before it can resolve anything. An
+// absolute root is taken as sent and a relative one is read from the root a call
+// naming none is answered in. Nothing else on this surface reads that argument;
+// every resolution of a call's workspace is handed what callRoot read.
+//
 // Each must be FOUND reaching a resolver, as each sanctioned argument must be
 // found resolved, so a rename cannot leave an exemption standing that nothing
 // exercises.
 var boundaryFunctions = map[string]string{
 	"workspacePath":    "resolves a path a caller named, and writes the refusal where it may not reach",
+	"callRoot":         "reads the workspace root a call names, a relative one from the root a call naming none is answered in",
 	"reportedLocation": "spells a location this server holds as a caller may be told it",
 	"heldLocations":    "lists the server's own locations, absolute and cleaned, for prose to be matched against",
 }

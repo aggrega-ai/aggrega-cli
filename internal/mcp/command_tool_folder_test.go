@@ -124,13 +124,14 @@ func recordingFolderRunner(seen *recordedRun) commandRunner {
 // naming a root per row, and asserts the folder the runner is handed and the
 // workspace root the command line carries.
 //
-// The folder is the call's own non-empty workspace_root, made absolute against
-// this process's working folder and handed to the command in that absolute form;
-// else the launch root. Where nothing names a root, or the root named is not an
-// existing folder, the runner is handed no folder — the command starts where this
-// server runs, as it always has — and the command line carries what was sent.
+// The folder is the call's own non-empty workspace_root — an absolute one as
+// sent, a relative one read from the root a call naming none is answered in —
+// handed to the command in its absolute form; else the launch root. Where nothing
+// names a root, or the root named is not an existing folder, the runner is handed
+// no folder — the command starts where this server runs, as it always has — and
+// the command line carries the root as it was read.
 //
-// Not parallel: one row moves the process working directory.
+// Not parallel: rows move the process working directory.
 func TestACommandToolStartsInTheWorkspaceRootItsCallOrLaunchNames(t *testing.T) {
 	launch := t.TempDir()
 	named := t.TempDir()
@@ -160,16 +161,52 @@ func TestACommandToolStartsInTheWorkspaceRootItsCallOrLaunchNames(t *testing.T) 
 			},
 		},
 		{
-			name:       "a relative workspace_root starts the command in that folder, handed in its absolute form",
+			// The working folder holds a folder by the same name, so a relative root
+			// read from it rather than from the launch root starts the command there
+			// and fails the row.
+			name:       "a relative workspace_root is read from the launch root, the command started there in its absolute form",
 			launchRoot: launch,
 			arrange: func(t *testing.T) (map[string]any, string, string) {
+				ws := filepath.Join(launch, "ws")
 				parent := t.TempDir()
-				ws := filepath.Join(parent, "ws")
-				if err := os.MkdirAll(ws, 0o755); err != nil {
-					t.Fatal(err)
+				for _, dir := range []string{ws, filepath.Join(parent, "ws")} {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
+						t.Fatal(err)
+					}
 				}
 				t.Chdir(parent)
 				return map[string]any{"workspace_root": "ws"}, ws, "--workspace-root=" + ws
+			},
+		},
+		{
+			// With no launch root the root a call naming none is answered in is the
+			// workspace the working folder resolves to, which here is above it.
+			name:       "with no launch root, a relative workspace_root is read from the workspace the working folder resolves to",
+			launchRoot: "",
+			arrange: func(t *testing.T) (map[string]any, string, string) {
+				ws := t.TempDir()
+				if err := os.WriteFile(filepath.Join(ws, ".aggrega-config.yaml"), []byte("workspace: {}\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				below := filepath.Join(ws, "below")
+				for _, dir := range []string{filepath.Join(ws, "step"), filepath.Join(below, "step")} {
+					if err := os.MkdirAll(dir, 0o755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				t.Chdir(below)
+				want := filepath.Join(ws, "step")
+				return map[string]any{"workspace_root": "step"}, want, "--workspace-root=" + want
+			},
+		},
+		{
+			// Read from the launch root, the folder it names does not exist, so the
+			// command is handed what was looked for and answers with its own refusal.
+			name:       "a relative workspace_root naming no folder is handed in the form it was read as",
+			launchRoot: launch,
+			arrange: func(*testing.T) (map[string]any, string, string) {
+				return map[string]any{"workspace_root": "absent-q7x3"}, "",
+					"--workspace-root=" + filepath.Join(launch, "absent-q7x3")
 			},
 		},
 		{

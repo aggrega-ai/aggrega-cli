@@ -37,6 +37,16 @@ const (
 	// than at the tool's own call site, so no one tool's name is the one asking:
 	// the call is.
 	catalogDirsCaller = "the call"
+
+	// workspaceRootArgumentRule is what every tool taking workspace_root says of
+	// it once it has said what the root is for: which root a call naming none is
+	// answered in, and how a relative one is read (callRoot). It is declared once
+	// and composed into each tool's argument schema, so the rule a caller is told
+	// and the rule callRoot applies have one wording rather than one per tool.
+	workspaceRootArgumentRule = "Defaults to the workspace root the server was launched with, or, where it " +
+		"was launched with none, to discovery from its working directory. A relative value is read from that " +
+		"same root (in the desktop application, the Workspace folder), so a folder inside it is named as, " +
+		"say, quickstart-ai/1; an absolute value is used as given."
 )
 
 // workspaceSelection is the slice of a tool's arguments that names a workspace,
@@ -415,6 +425,10 @@ type toolWorkspace struct {
 // of that workspace as it starts — takes its inputs from here, so none of them
 // can come to treat a launch root as a folder to search upward from while the
 // others take it as the root.
+//
+// rootArg is the call's root as callRoot read it: absolute where the call sent a
+// relative one, so nothing here resolves a relative root against the folder this
+// process happens to be running in.
 func resolutionInputs(launchRoot, rootArg string) (start, root string) {
 	root = rootArg
 	if root == "" {
@@ -453,21 +467,92 @@ func rootSourceOf(rootArg, launchSource string) string {
 // every call refused for its workspace is (toolWorkspaceRefusal), and nil where
 // the launch named no root and was not refused for it, or named one that is.
 //
+// It is launchRootDir's refusal, asked where a call is answered without
+// resolving the root first.
+func (s *server) launchRootRefusal() error {
+	_, err := s.launchRootDir()
+	return err
+}
+
+// launchRootDir returns, absolute, the root this server was launched with, and
+// the empty string where it was launched with none; or the refusal
+// launchRootRefusal names where that launch was refused for naming none, or
+// named a root that is not an existing folder.
+//
 // It asks the judgement every resolution of that root asks
 // (workspaceconfig.NamedRootDir) and names the source the resolution names
-// (rootSourceOf), so it is the refusal the server's own tools answer such a call
-// with. It is asked where a call is answered without resolving the root first.
-func (s *server) launchRootRefusal() error {
+// (rootSourceOf), so its refusal is the one the server's own tools answer a call
+// naming no workspace of its own with.
+func (s *server) launchRootDir() (string, error) {
 	if refusal := s.launchRefusalFor(""); refusal != nil {
-		return refusal
+		return "", refusal
 	}
 	if s.launchRoot == "" {
-		return nil
+		return "", nil
 	}
-	if _, err := workspaceconfig.NamedRootDir(s.launchRoot); err != nil {
-		return toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf("", s.launchRootSource)))
+	abs, err := workspaceconfig.NamedRootDir(s.launchRoot)
+	if err != nil {
+		return "", toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf("", s.launchRootSource)))
 	}
-	return nil
+	return abs, nil
+}
+
+// callRoot returns the root a call's own workspace_root names, as every
+// resolution of that call's workspace is handed it: an absolute one exactly as
+// it was sent, and a relative one read from the root a call naming no workspace
+// of its own is answered in (servedRoot) — the root this server was launched
+// with, or, where it was launched with none, the root its working directory
+// resolves to. An empty rootArg names no root and is returned as it is.
+//
+// It is the one place a call's root is read, so every tool running inside this
+// server (resolveToolWorkspace, resolveListingWorkspace) and every command a
+// generated tool runs (commandFolder) read a relative root alike. A client that
+// launched this server has no way to know where the folder it serves sits on the
+// machine — the desktop application's Workspace folder is its user's setting,
+// and the folder the application starts the process in is the application's own
+// choice — so a call naming a folder inside that workspace names it relative to
+// it, as every other path a call names is read relative to the workspace root.
+//
+// A relative root is refused where the root it is read from cannot be had — a
+// launch refused for naming no root, a launch root that is not an existing
+// folder, or a working directory whose workspace does not resolve — with the
+// refusal a call naming none meets, because there is nothing to read it from.
+// An absolute root asks none of that and resolves as it always has.
+//
+// A caller reaching a listener cannot name a root at all
+// (workspaceSelectionRefusal), so this is not asked over one; a value that did
+// reach it there would be returned as it was sent.
+func (s *server) callRoot(rootArg string) (string, error) {
+	if rootArg == "" || filepath.IsAbs(rootArg) || s.transport == transportHTTP {
+		return rootArg, nil
+	}
+	base, err := s.servedRoot()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, rootArg), nil
+}
+
+// servedRoot returns, absolute, the root a call naming no workspace of its own
+// is answered in: the root this server was launched with, or, where it was
+// launched with none, the root the resolution every such call makes finds from
+// the process working directory, read from its held view where its
+// configuration is held. It returns the refusal such a call meets where there is
+// none to be had (launchRootDir), or where that resolution fails.
+func (s *server) servedRoot() (string, error) {
+	root, err := s.launchRootDir()
+	if err != nil || root != "" {
+		return root, err
+	}
+	start, pinned := resolutionInputs(s.launchRoot, "")
+	rw, held, err := workspaceconfig.ResolveOrHold(start, pinned, s.flags)
+	if err != nil {
+		return "", toolWorkspaceRefusal(err)
+	}
+	if held != nil {
+		return held.Root(), nil
+	}
+	return rw.Root(), nil
 }
 
 // launchRefusalFor returns the refusal a call meets where it names no workspace
@@ -478,10 +563,11 @@ func (s *server) launchRootRefusal() error {
 //
 // It is that refusal's one entry point. Every site resolving the workspace of a
 // call naming none asks it before anything is resolved — resolveToolWorkspace,
-// resolveListingWorkspace and launchRootRefusal — because the root such a call
-// would otherwise be handed is empty, and an empty root is discovery from this
-// server's working directory, the folder the launch's refusal exists to keep
-// from being taken for the workspace.
+// resolveListingWorkspace and launchRootDir, which a call naming a relative root
+// asks too (callRoot) — because the root such a call would otherwise be handed
+// is empty, and an empty root is discovery from this server's working directory,
+// the folder the launch's refusal exists to keep from being taken for the
+// workspace.
 func (s *server) launchRefusalFor(rootArg string) error {
 	if rootArg != "" || s.launchRefusal == nil {
 		return nil
@@ -490,8 +576,9 @@ func (s *server) launchRefusalFor(rootArg string) error {
 }
 
 // resolveToolWorkspace resolves the workspace a tool call operates in: the root
-// rootArg names, else the root this process was launched with, taken as the
-// workspace root, else the workspace discovered from the process working
+// rootArg names, a relative one read from the root a call naming none is
+// answered in (callRoot), else the root this process was launched with, taken
+// as the workspace root, else the workspace discovered from the process working
 // directory (resolutionInputs) — except on a launch refused for naming no root,
 // where a call naming none is refused before anything is resolved
 // (launchRefusalFor). catalogDirs are the call's catalog search
@@ -517,7 +604,11 @@ func (s *server) resolveToolWorkspace(rootArg string, catalogDirs []string) (*to
 	if refusal := s.launchRefusalFor(rootArg); refusal != nil {
 		return nil, refusal
 	}
-	start, root := resolutionInputs(s.launchRoot, rootArg)
+	named, err := s.callRoot(rootArg)
+	if err != nil {
+		return nil, err
+	}
+	start, root := resolutionInputs(s.launchRoot, named)
 	rw, err := workspaceconfig.ResolveWithFlags(start, root, s.flags)
 	if err != nil {
 		return nil, toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf(rootArg, s.launchRootSource)))
@@ -664,7 +755,11 @@ func (s *server) resolveListingWorkspace(operation, rootArg string, catalogDirs 
 	if refusal := s.launchRefusalFor(rootArg); refusal != nil {
 		return nil, refusal
 	}
-	start, root := resolutionInputs(s.launchRoot, rootArg)
+	named, err := s.callRoot(rootArg)
+	if err != nil {
+		return nil, err
+	}
+	start, root := resolutionInputs(s.launchRoot, named)
 	rw, held, err := workspaceconfig.ResolveOrHold(start, root, s.flags)
 	if err != nil {
 		return nil, toolWorkspaceRefusal(workspaceconfig.NameRootSource(err, rootSourceOf(rootArg, s.launchRootSource)))

@@ -517,10 +517,19 @@ func commandInputSchema(ct commandTool) string {
 // commandArgumentSchema renders one flag as its JSON Schema fragment, carrying
 // the flag's own help text as the description and naming its default where the
 // command records a meaningful one.
+//
+// The property a call names its workspace with also carries the rule every tool
+// here states for it (workspaceRootArgumentRule), because this server reads that
+// argument before the command does (commandFolder) and the command is handed
+// what it read: a relative value is read from the root the server serves, which
+// the flag's own help, written for a terminal, does not say.
 func commandArgumentSchema(a commandArgument) string {
 	desc := strings.TrimSpace(a.usage)
 	if desc == "" {
 		desc = "The --" + a.flag + " flag."
+	}
+	if a.property == argumentWorkspaceRoot {
+		desc = strings.TrimSuffix(desc, ".") + ". " + workspaceRootArgumentRule
 	}
 	if d := strings.TrimSpace(a.def); d != "" && d != "false" && d != "[]" && d != "0" {
 		desc += " Defaults to " + d
@@ -582,18 +591,17 @@ func (ct commandTool) invoke(s *server, ctx context.Context, args json.RawMessag
 		}
 	}
 	// A call naming no workspace of its own would start its command in the root
-	// this server was launched with, and be handed that root. Where that root is
-	// not an existing folder the call is answered with the refusal every tool
-	// running inside the server answers it with, and no command is started: there
-	// is no folder to start it in.
-	if _, named := supplied[argumentWorkspaceRoot]; !named {
-		if refusal := s.launchRootRefusal(); refusal != nil {
-			return errorResult(explainToolError(
-				fmt.Sprintf("Could not resolve the workspace to run `aggrega %s` in.", strings.Join(ct.path, " ")),
-				refusal, ""))
-		}
+	// this server was launched with, and be handed that root, and a call naming a
+	// relative one has it read from that same root. Where there is no such root to
+	// be had the call is answered with the refusal every tool running inside the
+	// server answers it with, and no command is started: there is no folder to
+	// start it in.
+	dir, supplied, unresolved := s.commandFolder(supplied)
+	if unresolved != nil {
+		return errorResult(explainToolError(
+			fmt.Sprintf("Could not resolve the workspace to run `aggrega %s` in.", strings.Join(ct.path, " ")),
+			unresolved, ""))
 	}
-	dir, supplied := commandFolder(s.launchRoot, supplied)
 	var serverFlags []string
 	if !ct.forwardsFlags {
 		serverFlags = append(ct.servedRootFlag(s.launchRoot, supplied), s.flags.Args()...)
@@ -676,56 +684,65 @@ func (ct commandTool) servedRootFlag(root string, supplied map[string]json.RawMe
 }
 
 // commandFolder returns the folder a call's command starts in, and the arguments
-// the call is answered with.
+// the call is answered with — or the refusal a call meets where the root it
+// would be answered in cannot be had, in which case no command is started.
 //
 // The folder is the workspace root the call or this server's launch names, so a
 // relative path the command reads — a Release, a catalog directory, the lockfile
 // beside a Release — is read inside that workspace, as it would be at a terminal
 // opened there:
 //
-//   - A call sending a non-empty workspace_root that names an existing folder
-//     starts its command there. The value is made absolute exactly as this
-//     server's own tools make it (workspaceconfig.NamedRootDir, against this
-//     server's working folder), and the command is handed that absolute form in
-//     place of the one sent, so it never resolves a relative value a second time
-//     from the folder it now starts in.
+//   - A call sending a non-empty workspace_root is read as this server's own
+//     tools read it (callRoot): an absolute one as sent, and a relative one from
+//     the root a call naming none is answered in. Where what it names is an
+//     existing folder the command starts there, and is handed that folder in its
+//     absolute form (workspaceconfig.NamedRootDir) in place of the value sent, so
+//     it never resolves a relative value a second time from the folder it now
+//     starts in. A relative root with nothing to read it from is refused, as
+//     callRoot refuses it.
 //   - A call sending none starts its command in the root this server was launched
 //     with — the root servedRootFlag hands it — which was made absolute when the
 //     server started. A command that passes its arguments on verbatim starts
 //     there too, though it is handed no flag. Where that root is not an existing
-//     folder the call is refused before this is asked (invoke), so the folder
-//     handed back is never one that does not exist.
+//     folder the call is refused (launchRootRefusal), so the folder handed back is
+//     never one that does not exist.
 //
 // Where nothing names a root — no launch root, and no workspace_root or an empty
 // one — the folder is empty and the command starts in this server's own working
 // folder, finding its workspace from there as it would at a terminal in that
 // folder; the second pass from an absolute Release's own folder needs that start.
-// A workspace_root that is not an existing folder leaves the folder empty and the
-// value as sent, so the command answers it with its own refusal, quoting what was
-// sent: the folder is never set to one that does not exist.
-func commandFolder(launchRoot string, supplied map[string]json.RawMessage) (string, map[string]json.RawMessage) {
+// A workspace_root that is not an existing folder leaves the folder empty, and
+// the command is handed it as callRoot read it — an absolute one as sent, a
+// relative one in the absolute form it was read as — so the command answers it
+// with its own refusal, naming the folder that was looked for: the folder is
+// never set to one that does not exist.
+func (s *server) commandFolder(supplied map[string]json.RawMessage) (string, map[string]json.RawMessage, error) {
 	raw, named := supplied[argumentWorkspaceRoot]
 	if !named {
-		return launchRoot, supplied
+		return s.launchRoot, supplied, s.launchRootRefusal()
 	}
 	var given string
 	if err := json.Unmarshal(raw, &given); err != nil || given == "" {
-		return "", supplied
+		return "", supplied, nil
 	}
-	abs, err := workspaceconfig.NamedRootDir(given)
+	root, err := s.callRoot(given)
 	if err != nil {
-		return "", supplied
+		return "", supplied, err
 	}
-	if abs == given {
-		return abs, supplied
+	folder := ""
+	if abs, err := workspaceconfig.NamedRootDir(root); err == nil {
+		folder, root = abs, abs
 	}
-	encoded, err := json.Marshal(abs)
+	if root == given {
+		return folder, supplied, nil
+	}
+	encoded, err := json.Marshal(root)
 	if err != nil {
-		return "", supplied
+		return "", supplied, nil
 	}
 	rewritten := maps.Clone(supplied)
 	rewritten[argumentWorkspaceRoot] = encoded
-	return abs, rewritten
+	return folder, rewritten, nil
 }
 
 // commandToolResultPayload is a generated tool's structured payload: the

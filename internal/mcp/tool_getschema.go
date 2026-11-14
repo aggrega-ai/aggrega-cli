@@ -107,17 +107,27 @@ type scaffoldExample struct {
 // tool's three forms, each carrying its own fields and leaving the others out:
 // the kind a skeleton was built for and the rendered YAML skeleton; the list of
 // examples; or the example written, the directory it went into as the call named
-// it, the files written relative to that directory, the commands its page gives
-// for building it, and the version of the documentation it was read from.
+// it, the same directory as a location on this host, the files written relative
+// to that directory, the commands its page gives for building it, and the version
+// of the documentation it was read from.
+//
+// OutputDir is the directory the example was written into, told the way every
+// location here is: in full over the process's own streams, so a caller that
+// cannot know where the workspace sits on the machine reads where the example
+// went, and relative to the workspace root over a listener. OutputDirWithheld
+// marks one kept back rather than unset, and is omitted where nothing was. Both
+// are absent from every form but a write that succeeded.
 type scaffoldResult struct {
-	Kind     string            `json:"kind,omitempty"`
-	Skeleton string            `json:"skeleton,omitempty"`
-	Examples []scaffoldExample `json:"examples,omitempty"`
-	Example  string            `json:"example,omitempty"`
-	Dir      string            `json:"dir,omitempty"`
-	Files    []string          `json:"files,omitempty"`
-	Next     []string          `json:"next,omitempty"`
-	Version  string            `json:"version,omitempty"`
+	Kind              string            `json:"kind,omitempty"`
+	Skeleton          string            `json:"skeleton,omitempty"`
+	Examples          []scaffoldExample `json:"examples,omitempty"`
+	Example           string            `json:"example,omitempty"`
+	Dir               string            `json:"dir,omitempty"`
+	OutputDir         *string           `json:"output_dir,omitempty"`
+	OutputDirWithheld bool              `json:"output_dir_withheld,omitempty"`
+	Files             []string          `json:"files,omitempty"`
+	Next              []string          `json:"next,omitempty"`
+	Version           string            `json:"version,omitempty"`
 }
 
 var scaffoldToolSpec = toolSpec{
@@ -132,9 +142,10 @@ var scaffoldToolSpec = toolSpec{
 		"`aggrega scaffold <kind> [name]`, which prints these exact bytes to standard output. " +
 		"Send `example` instead of `kind` to WRITE one of the documentation's runnable examples into a new " +
 		"directory of the workspace — `dir`, relative to the workspace root, or a directory named after the " +
-		"example there when `dir` is left out — and be answered with the files written, relative to that " +
-		"directory, the commands the example's page gives for building it, and the documentation version it " +
-		"was read from; send `list: true` alone to be answered with every example there is, each with its level " +
+		"example there when `dir` is left out — and be answered with the directory's location (`output_dir`, " +
+		"in full over standard input and output), the files written, relative to that directory, the commands " +
+		"the example's page gives for building it, and the documentation version it was read from; send " +
+		"`list: true` alone to be answered with every example there is, each with its level " +
 		"and the first sentence of its page, writing nothing. The directory must not exist yet or must be " +
 		"empty: one holding anything is refused and left as it is. Over HTTP `dir` must lie inside the " +
 		"workspace this server serves; over standard input and output it is taken as named, as every path " +
@@ -173,7 +184,7 @@ var scaffoldToolSpec = toolSpec{
     },
     "workspace_root": {
       "type": "string",
-      "description": "Optional workspace root override for writing or listing an example. Defaults to the workspace root the server was launched with, or, where it was launched with none, to discovery from its working directory."
+      "description": "Optional workspace root override for writing or listing an example. ` + workspaceRootArgumentRule + `"
     }
   },
   "anyOf": [

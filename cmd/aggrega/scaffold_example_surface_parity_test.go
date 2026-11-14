@@ -140,7 +140,8 @@ func exampleStrings(t *testing.T, field string, raw json.RawMessage) []string {
 // proof that one implementation does the work: the command line, the daemon and
 // the tool, asked for the same example, write the same files with the same
 // content and report the same next commands — and the tool's account is the
-// command line's, word for word.
+// command line's, word for word, closed by the one line naming the folder it
+// wrote in full.
 func TestScaffoldExampleSurfacesWriteTheSameFilesAndReportTheSameNextCommands(t *testing.T) {
 	isolateCLIEnvironment(t)
 	signer := docsbundletest.NewSigner(t)
@@ -191,8 +192,15 @@ func TestScaffoldExampleSurfacesWriteTheSameFilesAndReportTheSameNextCommands(t 
 			t.Errorf("%s reports the directory %s (%v), want demo", surface, answer["dir"], err)
 		}
 	}
-	if toolText != cliOut {
-		t.Errorf("the tool's account differs from the command line's.\ntool:\n%s\ncommand line:\n%s", toolText, cliOut)
+	// The tool's account is the command line's, closed by one line naming the
+	// folder in full: the tool's caller named it relative to a workspace whose place
+	// on the machine it may not know, which a terminal's reader always does.
+	var outputDir string
+	if err := json.Unmarshal(tool["output_dir"], &outputDir); err != nil || !sameDirectory(t, outputDir, filepath.Join(fromToolWS, "demo")) {
+		t.Errorf("the tool reports the folder %s (%v), want %s in full", tool["output_dir"], err, filepath.Join(fromToolWS, "demo"))
+	}
+	if want := cliOut + "\nThe folder written is " + outputDir + ".\n"; toolText != want {
+		t.Errorf("the tool's account is not the command line's closed by the folder it wrote.\ntool:\n%s\nwant:\n%s", toolText, want)
 	}
 }
 

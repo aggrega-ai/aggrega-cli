@@ -159,7 +159,7 @@ var pluginListToolSpec = toolSpec{
   "properties": {
     "workspace_root": {
       "type": "string",
-      "description": "Optional workspace root override. Defaults to the workspace root the server was launched with, or, where it was launched with none, to discovery from its working directory."
+      "description": "Optional workspace root override. ` + workspaceRootArgumentRule + `"
     },
     "response_format": {
       "type": "string",
