@@ -252,7 +252,9 @@ func admittedBy(t *testing.T, p networkPolicy) admitted {
 //     affirmation and no address range;
 //   - the comment above the instance's entry of the drafted Release names, for
 //     the Release, the affirmation, the address ranges and the namespace the
-//     attachment's realization halts without, and the Aggregate names none of it;
+//     attachment's realization halts without, the entry writes no key of the
+//     attachment — the affirmation is a boolean and the ranges a list, so an empty
+//     string at either would be no value — and the Aggregate names none of it;
 //   - the import reports the attachment once, as information, and the wired model
 //     part's decision says the attachment admits its connection;
 //   - the same import with the setting false drafts no attachment and reports none.
@@ -295,22 +297,26 @@ func TestAnImportAskingForTheOutboundOnlyFeatureAttachesItToThePlatform(t *testi
 				t.Errorf("the platform declares the features %v, want exactly %v", features, want)
 			}
 			release := readDraftedRelease(t, dir)
-			for _, line := range []string{
-				"        egress-allowlist:\n          infra:\n" +
-					"            # Left for the Release, since the source cannot supply it: " +
-					"features.egress-allowlist.infra.control_plane_present, the affirmation that the " +
-					"cluster's network plugin enforces network policy, without which the build halts\n" +
-					"            control_plane_present: \"\"\n",
-				"            # Left for the Release, since the source cannot supply it: " +
-					"features.egress-allowlist.infra.admitted_destinations, an address range for each " +
-					"connection whose target the cluster does not run, such as a hosted model, without which the " +
-					"build halts naming that connection\n            admitted_destinations: \"\"\n",
+			above := "    # Left for the Release, since the source cannot supply it:\n" +
+				"    #   - features.egress-allowlist.infra.control_plane_present, true, the affirmation that the " +
+				"cluster's network plugin enforces network policy, which only the operator gives and without which the " +
+				"build halts\n" +
+				"    #   - features.egress-allowlist.infra.admitted_destinations, a list holding, for each connection " +
+				"whose target the cluster does not run, such as a hosted model, an entry naming that target and an " +
+				"address range, without which the build halts naming that connection\n" +
 				"    #   - aggrega.ai/namespace on the boundary holding langflow, where the target emits its " +
-					"workloads into no namespace: the attachment's network policy is placed in its workload's " +
-					"namespace, and the build halts without one\n    langflow:\n",
-			} {
-				if !strings.Contains(release, line) {
-					t.Errorf("the drafted Release does not leave for the Release\n%s\nit reads\n%s", line, release)
+				"workloads into no namespace: the attachment's network policy is placed in its workload's " +
+				"namespace, and the build halts without one\n    langflow:\n"
+			if !strings.Contains(release, above) {
+				t.Errorf("the drafted Release does not leave for the Release\n%s\nit reads\n%s", above, release)
+			}
+			// The affirmation is a boolean and the ranges a list: an empty string at
+			// either is neither a value owed nor a valid one, so neither key is written.
+			for _, line := range strings.Split(release, "\n") {
+				if key := strings.TrimSpace(line); strings.HasPrefix(key, "control_plane_present:") ||
+					strings.HasPrefix(key, "admitted_destinations:") || strings.HasPrefix(key, "egress-allowlist:") {
+					t.Errorf("the drafted Release writes %q; the import drafts nothing of the attachment's "+
+						"infrastructure:\n%s", line, release)
 				}
 			}
 			if strings.Contains(text, "Left for the Release") {
