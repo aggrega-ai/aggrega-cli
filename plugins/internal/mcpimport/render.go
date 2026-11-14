@@ -41,129 +41,107 @@ func renderAggregate(name string, servers []server) string {
 	return b.String()
 }
 
-// renderRelease writes the drafted Release, named name and deploying the
-// Aggregate of that name: for each server, under its key, the infrastructure the
-// source states and the server_env attachment carrying its environment, with a
-// comment above it naming what the draft leaves for the Release, what it does
-// not carry, the headers the server is sent and the parts of its address
-// infra.endpoint leaves out. The Release's environment and its Manifest are left
-// unset, each named in a comment where it belongs.
-func renderRelease(name string, servers []server) string {
-	var b strings.Builder
-	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
-	b.WriteString("kind: Release\n")
-	b.WriteString("metadata:\n")
-	b.WriteString("  name: " + name + "\n")
-	b.WriteString("  # environment: left for the operator, since no source names the environment this Release deploys to.\n")
-	b.WriteString("  version: 0.1.0\n")
-	b.WriteString("  description: Draft Release imported from a source in the " + Format + " format.\n")
-	b.WriteString("spec:\n")
-	b.WriteString("  aggregate: " + name + "\n")
-	b.WriteString("  # manifest: left for the operator, since the import drafts no Manifest, which names the target " +
-		"the servers are built for.\n")
-	b.WriteString("  components:\n")
+// mcpRelease is the drafted Release, as the plugin kit's Release writer writes
+// it: for each server, under its key, the infrastructure the source states and
+// the server_env attachment carrying its environment, leaving for the Release
+// what the draft does not write, with a comment above it naming what it does not
+// carry, the headers the server is sent and the parts of its address
+// infra.endpoint leaves out.
+func mcpRelease(servers []server) importer.ReleaseDraft {
+	draft := importer.ReleaseDraft{}
 	for _, s := range servers {
-		writeServer(&b, s)
+		draft.Entries = append(draft.Entries, serverEntry(s))
 	}
-	return b.String()
+	return draft
 }
 
-// writeServer writes one server's entry of the Release.
-func writeServer(b *strings.Builder, s server) {
+// serverEntry is one server's entry of the Release.
+func serverEntry(s server) importer.ReleaseEntry {
+	entry := importer.ReleaseEntry{Key: s.key}
 	runtime := s.runtime
 	if s.runtimeFrom && len(s.command) > 0 {
 		runtime = runtimeOf(s.command[0].text)
 	}
-	left := append([]string{}, s.left...)
+	entry.Left = append(entry.Left, s.left...)
 	for j, c := range s.command {
 		if c.unset {
-			left = append(left, fmt.Sprintf("infra.stdio_command.%d, written empty, since %s", j, c.hint))
+			entry.Left = append(entry.Left, importer.LeftItem{Path: fmt.Sprintf("infra.stdio_command.%d", j),
+				Text: "written empty, since " + c.hint})
 		}
 	}
 	switch {
 	case !s.stdio || len(s.command) == 0 || runtime != "":
 	case s.command[0].text == "":
-		left = append(left, "infra.stdio_runtime, since the command is written empty")
+		entry.Left = append(entry.Left, importer.LeftItem{Path: "infra.stdio_runtime",
+			Text: "since the command is written empty"})
 	default:
-		left = append(left, "infra.stdio_runtime, since the command names no launcher a bridge image carries")
+		entry.Left = append(entry.Left, importer.LeftItem{Path: "infra.stdio_runtime",
+			Text: "since the command names no launcher a bridge image carries"})
 	}
 	var entries []namedValue
 	for _, e := range s.env {
+		value := "the value of " + envSlot + "." + commentText(e.name)
 		switch {
 		case e.value != nil && e.value.reference:
-			left = append(left, "the value of "+envSlot+"."+commentText(e.name)+", which the source reads from "+
-				commentText(e.value.text))
+			entry.Left = append(entry.Left, importer.LeftItem{Text: value + ", which the source reads from " +
+				commentText(e.value.text)})
 		case e.value == nil && e.hint != "":
-			left = append(left, "the value of "+envSlot+"."+commentText(e.name)+", since "+e.hint)
+			entry.Left = append(entry.Left, importer.LeftItem{Text: value + ", since " + e.hint})
 		case e.value == nil:
-			left = append(left, "the value of "+envSlot+"."+commentText(e.name))
+			entry.Left = append(entry.Left, importer.LeftItem{Text: value})
 		}
 		entries = append(entries, e)
 	}
 
-	if len(left) > 0 {
-		b.WriteString("    # Left for the Release, since the draft does not write it:\n")
-		for _, l := range left {
-			b.WriteString("    #   - " + l + "\n")
-		}
-	}
 	if len(s.notCarried) > 0 {
-		b.WriteString("    # Not carried, since no infrastructure key of " + Component + " takes it: " +
-			commentList(s.notCarried) + ".\n")
+		entry.Comments = append(entry.Comments, "Not carried, since no infrastructure key of "+Component+" takes it: "+
+			commentList(s.notCarried)+".")
 	}
 	if len(s.headers) > 0 {
-		b.WriteString("    # The headers the source sends this server, which no infrastructure key of " + Component +
-			" takes, since a remote server's credential is held by each consumer, on its connection to the tool:\n")
+		entry.Comments = append(entry.Comments, "The headers the source sends this server, which no infrastructure key of "+
+			Component+" takes, since a remote server's credential is held by each consumer, on its connection to the tool:")
 		for _, h := range s.headers {
-			b.WriteString("    #   - " + headerLine(h) + "\n")
+			entry.Comments = append(entry.Comments, "  - "+headerLine(h))
 		}
 	}
-	for _, line := range AddressComment(s.addressParts) {
-		b.WriteString("    # " + line + "\n")
-	}
-	for _, n := range s.notes {
-		b.WriteString("    # " + n + "\n")
-	}
+	entry.Comments = append(entry.Comments, AddressComment(s.addressParts)...)
+	entry.Comments = append(entry.Comments, s.notes...)
 
-	b.WriteString("    " + s.key + ":\n")
 	var infra []string
 	if len(s.command) > 0 {
-		infra = append(infra, "        stdio_command:\n")
+		infra = append(infra, "  stdio_command:")
 		for _, c := range s.command {
-			infra = append(infra, "          - "+yamlString(c.text)+"\n")
+			infra = append(infra, "    - "+yamlString(c.text))
 		}
 	}
 	if s.stdio && runtime != "" {
-		infra = append(infra, "        stdio_runtime: "+runtime+"\n")
+		infra = append(infra, "  stdio_runtime: "+runtime)
 	}
 	if s.endpoint != nil {
-		infra = append(infra, "        endpoint: "+yamlString(s.endpoint.text)+"\n")
+		infra = append(infra, "  endpoint: "+yamlString(s.endpoint.text))
 	}
 	if s.image != "" {
-		infra = append(infra, "        image: "+yamlString(s.image)+"\n")
+		infra = append(infra, "  image: "+yamlString(s.image))
 	}
-	if len(infra) == 0 {
-		b.WriteString("      infra: {}\n")
-	} else {
-		b.WriteString("      infra:\n")
-		for _, line := range infra {
-			b.WriteString(line)
-		}
+	if len(infra) > 0 {
+		entry.Lines = append(append(entry.Lines, "infra:"), infra...)
 	}
 	if !s.stdio || len(entries) == 0 {
-		return
+		return entry
 	}
-	b.WriteString("      features:\n")
-	b.WriteString("        " + envSlot + ":\n")
-	b.WriteString("          type: " + secretSet + "\n")
-	b.WriteString("          infra:\n")
-	b.WriteString("            entries:\n")
+	entry.Lines = append(entry.Lines,
+		"features:",
+		"  "+envSlot+":",
+		"    type: "+secretSet,
+		"    infra:",
+		"      entries:")
 	for _, e := range entries {
-		b.WriteString("              - key: " + yamlString(e.name) + "\n")
+		entry.Lines = append(entry.Lines, "        - key: "+yamlString(e.name))
 		if e.value != nil && !e.value.reference {
-			b.WriteString("                value: " + yamlString(e.value.text) + "\n")
+			entry.Lines = append(entry.Lines, "          value: "+yamlString(e.value.text))
 		}
 	}
+	return entry
 }
 
 // headerLine writes one header a server is sent, for the comment above its

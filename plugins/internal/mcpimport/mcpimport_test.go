@@ -118,12 +118,14 @@ const desktopRelease = `apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: imported/flow
-  # environment: left for the operator, since no source names the environment this Release deploys to.
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
   version: 0.1.0
   description: Draft Release imported from a source in the mcp format.
 spec:
   aggregate: imported/flow
-  # manifest: left for the operator, since the import drafts no Manifest, which names the target the servers are built for.
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
   components:
     brave-search:
       infra:
@@ -156,8 +158,8 @@ spec:
 // and the entities naming them: a referenced core/ai-tool/mcp per server, the
 // drafted Aggregate and the drafted Release.
 //
-// 🔴 PLANTED DEFECT: in renderRelease (render.go), drop the call to writeServer:
-// the Release holds no component, and the case fails comparing it.
+// 🔴 PLANTED DEFECT: in mcpRelease (render.go), drop the call to serverEntry: the
+// Release holds no component, and the case fails comparing it.
 func TestAClientConfigurationIsDraftedAsAnAggregateAndARelease(t *testing.T) {
 	t.Parallel()
 	out := importOne(fixture(t, "claude_desktop_config.json"), "")
@@ -795,12 +797,14 @@ func TestTheAddressCarriesItsLeftOutPartsInTheComment(t *testing.T) {
 			if !strings.Contains(release, lead) {
 				t.Errorf("the Release does not open the comment with %q:\n%s", lead, release)
 			}
-			if !strings.Contains(release, "    #   - query, its value read from ${env:BETA_QUERY}\n    beta-api:\n") {
+			// The entry's key follows the comment directly; it holds infra.endpoint, or,
+			// where the address is left for the Release, nothing.
+			if !strings.Contains(release, "    #   - query, its value read from ${env:BETA_QUERY}\n    beta-api:") {
 				t.Errorf("the Release does not write the reference the second server's query reads from:\n%s", release)
 			}
 			endpoint := "    alpha-api:\n      infra:\n        endpoint: \"https://api.example.com/mcp\"\n"
 			if emptied {
-				endpoint = "    alpha-api:\n      infra: {}\n"
+				endpoint = "    alpha-api: {}\n"
 			}
 			if !strings.Contains(release, endpoint) {
 				t.Errorf("the Release does not write %q:\n%s", endpoint, release)

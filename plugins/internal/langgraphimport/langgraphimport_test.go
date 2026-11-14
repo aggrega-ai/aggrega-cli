@@ -274,10 +274,14 @@ func TestAnApplicationIsDraftedAsOneAgentPerGraphWiredToItsDatastore(t *testing.
 	if got := strings.Count(release, "    #   - infra.image, the container image running the application\n"); got != 2 {
 		t.Errorf("the Release leaves the image for the Release above %d graphs, want both:\n%s", got, release)
 	}
-	// The image contract opens the Release's graphs once: the application's own
-	// image, and the variables the Recipes hand it.
-	if got := strings.Count(release, imageContract); got != 1 || !strings.HasPrefix(strings.SplitN(release,
-		"  components:\n", 2)[1], imageContract) {
+	// The image contract is written once, among the comments above the first
+	// graph's entry, after what that entry leaves for the Release: the
+	// application's own image, and the variables the Recipes hand it, one comment
+	// line each.
+	contract := "    # " + strings.Join(imageContract, "\n    # ") + "\n"
+	entries := strings.SplitN(release, "  components:\n", 2)[1]
+	first := strings.Index(entries, "    triage: {}\n")
+	if got := strings.Count(release, contract); got != 1 || first < 0 || !strings.Contains(entries[:first], contract) {
 		t.Errorf("the Release states the image contract %d times, want once, above the first graph:\n%s", got, release)
 	}
 	for _, want := range []string{
@@ -322,11 +326,11 @@ func TestAnApplicationIsDraftedAsOneAgentPerGraphWiredToItsDatastore(t *testing.
 // places only the instances a Release names, so an instance without an entry
 // halts it. The datastore's entry holds no infrastructure, since the
 // configuration states none. Each importer package holds a test of this name
-// over its own renderer, since each importer renders its own Release and the
-// plugin kit renders none.
+// over the entries it hands the plugin kit's Release writer, since each importer
+// decides what its Release holds.
 //
-// 🔴 PLANTED DEFECT: in renderRelease (render.go), drop the loop over the
-// datastore parts: every row fails naming its datastore.
+// 🔴 PLANTED DEFECT: in langgraphRelease (render.go), drop the loop over the datastore
+// parts: every row fails naming its datastore.
 func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testing.T) {
 	t.Parallel()
 	agentOnly := &aggrega.CatalogProjection{Components: []aggrega.CatalogComponent{
@@ -359,7 +363,7 @@ func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testi
 			if len(unplaced) > 0 {
 				t.Errorf("the Release names no entry for %v, which the Aggregate declares:\n%s", unplaced, release)
 			}
-			if !strings.Contains(release, "    "+row.datastore+":\n      infra: {}\n") {
+			if !strings.Contains(release, "    "+row.datastore+": {}\n") {
 				t.Errorf("the Release holds no entry %s holding no infrastructure:\n%s", row.datastore, release)
 			}
 		})
@@ -449,8 +453,8 @@ func TestTheInlineEnvironmentIsCarriedAsTheSettingSays(t *testing.T) {
 // diagnostic, nor is any named in a credential warning, whatever the setting
 // says.
 //
-// 🔴 PLANTED DEFECT: in writeEnvironment (render.go), write each name followed by
-// the rest of its line: every row fails on the needles.
+// 🔴 PLANTED DEFECT: in environmentComment (render.go), write each name followed
+// by the rest of its line: every row fails on the needles.
 func TestAnEnvironmentFileHasItsNamesReadAndNeverItsValues(t *testing.T) {
 	t.Parallel()
 	env := fixture(t, "envfile/local.env")

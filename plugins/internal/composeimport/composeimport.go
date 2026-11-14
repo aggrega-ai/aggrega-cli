@@ -77,9 +77,9 @@
 // of the draft carries, for the author to place where the Component takes them;
 // and an empty entry for each model's instance, of ModelRuntime or drafted,
 // since a build places only the instances a Release names and no source states
-// infrastructure for a model. The Release's environment and its Manifest are
-// left unset, each named in a comment, since no source names either and the
-// import drafts no Manifest.
+// infrastructure for a model. It is written by the plugin kit's Release writer,
+// importer.DraftRelease, whose documentation states what every drafted Release
+// declares beside its entries.
 //
 // # Credential values
 //
@@ -256,14 +256,10 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	}
 	name := importer.DraftName(in, titles...)
 	aggregate := renderAggregate(name, read, types)
-	release := renderRelease(name, read, types)
 	out.Entities = append(components,
 		aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft", Body: aggregate},
-		aggrega.EmittedEntity{Kind: "Release", Name: name, Mode: "draft", Body: release})
+		importer.DraftRelease(in, composeRelease(read, types), titles...))
 	out.Files = importer.Render(in.Settings, out.Entities, out.Decisions)
-	if slices.ContainsFunc(out.Files, func(f aggrega.ScaffoldFile) bool { return f.Path == "aggregate.yaml" }) {
-		out.Files = append(out.Files, aggrega.ScaffoldFile{Path: "release.yaml", Content: release})
-	}
 	return out
 }
 

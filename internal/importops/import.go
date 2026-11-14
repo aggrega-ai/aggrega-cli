@@ -478,7 +478,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 
 	imported, err := importersocket.ImportArtifact(ctx, resolvedImporter{plugin: importer, err: resolveErr},
 		seam.importerLoader(ctx), seam.ParserRes, seam.parserLoader(ctx), format, primary, primaryName, sources, settings,
-		seam.Catalog)
+		seam.Catalog, target)
 	if err != nil {
 		return Result{}, err
 	}

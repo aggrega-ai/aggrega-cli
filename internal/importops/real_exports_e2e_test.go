@@ -81,6 +81,7 @@ var realExports = []struct {
 			"components/imported-component-arxivcomponent.yaml",
 			"components/imported-component-loopcomponent.yaml",
 			"components/imported-component-parsercomponent.yaml",
+			"release.yaml",
 		},
 	},
 	{
@@ -93,6 +94,7 @@ var realExports = []struct {
 			"components/imported-ai-model-chatoutput.yaml",
 			"components/imported-ai-model-languagemodelcomponent.yaml",
 			"components/imported-component-prompt.yaml",
+			"release.yaml",
 		},
 	},
 	{
@@ -105,6 +107,7 @@ var realExports = []struct {
 			"components/imported-ai-model-chatoutput.yaml",
 			"components/imported-ai-model-languagemodelcomponent.yaml",
 			"components/imported-component-prompt.yaml",
+			"release.yaml",
 		},
 	},
 	{
@@ -121,6 +124,7 @@ var realExports = []struct {
 			"components/imported-component-faiss.yaml",
 			"components/imported-component-prompt.yaml",
 			"components/imported-component-remixdocumentation.yaml",
+			"release.yaml",
 		},
 	},
 	{
@@ -138,6 +142,7 @@ var realExports = []struct {
 			"components/imported-component-buffermemory.yaml",
 			"components/imported-component-pinecone.yaml",
 			"components/imported-component-pinecone.yaml",
+			"release.yaml",
 		},
 	},
 	{
@@ -151,6 +156,7 @@ var realExports = []struct {
 			"components/imported-ai-agent-agentagentflow.yaml",
 			"components/imported-ai-agent-conditionagentagentflow.yaml",
 			"components/imported-ai-agent-startagentflow.yaml",
+			"release.yaml",
 		},
 	},
 }
@@ -273,9 +279,10 @@ func (d draftedDocument) credentialSlots() []string {
 	return slices.Sorted(maps.Keys(d.Spec.FeaturesSchema))
 }
 
-// draftedDocuments reads every drafted file a result carries, by metadata.name.
-// Two nodes of one type draft one document, reported once each, so a name read
-// twice must carry the same content both times.
+// draftedDocuments reads every drafted file a result carries but the Release, by
+// metadata.name: the Release is named as the Aggregate it deploys. Two nodes of
+// one type draft one document, reported once each, so a name read twice must
+// carry the same content both times.
 func draftedDocuments(t *testing.T, res Result) map[string]draftedDocument {
 	t.Helper()
 	docs := map[string]draftedDocument{}
@@ -287,6 +294,9 @@ func draftedDocuments(t *testing.T, res Result) map[string]draftedDocument {
 		var doc draftedDocument
 		if err := yaml.Unmarshal([]byte(f.Content), &doc); err != nil {
 			t.Fatalf("the drafted %s is not YAML: %v", f.Path, err)
+		}
+		if doc.Kind == "Release" {
+			continue
 		}
 		if prior, seen := contents[doc.Metadata.Name]; seen && prior != f.Content {
 			t.Fatalf("two drafted files are both named %s and differ", doc.Metadata.Name)

@@ -89,10 +89,10 @@ var composeFixtures = []struct {
 // TestEveryComposeApplicationIsRecognisedAndDraftedAsAnAggregateAndARelease
 // imports each committed application laid down as compose.yaml, naming no format,
 // and requires it read as the compose format and drafted as an Aggregate and a
-// Release holding its services and models in the order the file writes them; the
-// authored application's PostgreSQL and Redis services drafted with the hints
-// naming core/datastore/postgres and core/datastore/redis, its API an instance of
-// core/compute/server.
+// Release holding its services and models in the order the file writes them;
+// under the hints-only reuse mode the authored application's PostgreSQL and Redis
+// services drafted with the hints naming core/datastore/postgres and
+// core/datastore/redis, its API an instance of core/compute/server.
 //
 // 🔴 PLANTED DEFECT: in detect (plugins/compose-importer/main.go), write
 // `{Path: "services", Is: "array"}`: every row is refused asking for the format.
@@ -101,7 +101,8 @@ func TestEveryComposeApplicationIsRecognisedAndDraftedAsAnAggregateAndARelease(t
 	for _, f := range composeFixtures {
 		t.Run(f.fixture, func(t *testing.T) {
 			t.Parallel()
-			res, dir := writtenImport(t, composeWorkspace(t, nil), "compose.yaml", readComposeFixture(t, f.fixture))
+			res, dir := writtenImport(t, composeWorkspace(t, map[string]any{"reuse_mode": "hints-only"}), "compose.yaml",
+				readComposeFixture(t, f.fixture))
 			if res.Format != "compose" {
 				t.Fatalf("the source was read as the %q format, want compose", res.Format)
 			}

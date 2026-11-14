@@ -47,8 +47,9 @@
 // published as an image as infra.image; and a server's environment as the
 // server_env attachment, core/referenced-secret-set, one entry per variable. What
 // the source cannot state is left unset and named in a comment, so the build
-// halts naming it. The Release's environment and its Manifest are left unset
-// too, since no source names either and the import drafts no Manifest.
+// halts naming it. The Release is written by the plugin kit's Release writer,
+// importer.DraftRelease, whose documentation states what every drafted Release
+// declares beside its entries.
 //
 // The Aggregate and the Release are named as importer.DraftName names a draft: a
 // registry server description gives the server it describes a name, and a draft
@@ -194,18 +195,15 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		titles = append(titles, s.title)
 	}
 	name := importer.DraftName(in, titles...)
-	aggregate, release := renderAggregate(name, servers), renderRelease(name, servers)
+	aggregate := renderAggregate(name, servers)
 	for _, s := range servers {
 		out.Entities = append(out.Entities, aggrega.EmittedEntity{Kind: "Component", Name: Component, Mode: "reference",
 			SourceRef: s.ref})
 	}
 	out.Entities = append(out.Entities,
 		aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft", Body: aggregate},
-		aggrega.EmittedEntity{Kind: "Release", Name: name, Mode: "draft", Body: release})
-	out.Files = []aggrega.ScaffoldFile{
-		{Path: "aggregate.yaml", Content: aggregate},
-		{Path: "release.yaml", Content: release},
-	}
+		importer.DraftRelease(in, mcpRelease(servers), titles...))
+	out.Files = importer.Render(in.Settings, out.Entities, out.Decisions)
 	return out
 }
 
@@ -394,12 +392,12 @@ func readBack(servers []server, written []byte) error {
 		for j := range s.command {
 			if j < len(v.Command) && v.Command[j] == "" && s.command[j].text != "" {
 				s.command[j].text = ""
-				s.left = append(s.left, "infra.stdio_command."+strconv.Itoa(j)+", written empty")
+				s.left = append(s.left, importer.LeftItem{Path: "infra.stdio_command." + strconv.Itoa(j), Text: "written empty"})
 			}
 		}
 		if s.endpoint != nil && v.Endpoint != nil && *v.Endpoint == "" && s.endpoint.text != "" {
 			s.endpoint = nil
-			s.left = append(s.left, "infra.endpoint")
+			s.left = append(s.left, importer.LeftItem{Path: "infra.endpoint"})
 		}
 		for j := range s.addressParts {
 			p := &s.addressParts[j]

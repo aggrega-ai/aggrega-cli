@@ -134,9 +134,10 @@ func codesAndRefs(out aggrega.ImportOutput) []string {
 // authored workflow application with no setting: the draft is aggregate.yaml
 // alone, composing core/dify with the application carried byte for byte in its
 // app_definition — Dify's {{#…#}} references and the double quotes included —
-// secret_key passed down to it, and the comment naming the secret_key parameter
-// and the owner account the Release supplies and that the import does not check
-// the catalog for core/dify. No Component is drafted and nothing
+// secret_key passed down to it, and the comment saying the import does not check
+// the catalog for core/dify; the Release routes the installation's entry under
+// its boundary, naming above it the secret_key parameter and the owner account
+// the Release supplies. No Component is drafted and nothing
 // is wired. The secret variable and the HTTP request node's key, each holding a
 // value, are carried as written and named in a credential-carried warning, as
 // are the request's headers; the secret written empty raises nothing. The tool,
@@ -151,8 +152,23 @@ func TestAWorkflowApplicationIsDraftedAsTheInstallationCarryingIt(t *testing.T) 
 	source := fixture(t, "authored/workflow.yml")
 	out := importOne(source, "")
 
-	if len(out.Files) != 1 {
-		t.Fatalf("the import wrote %+v, want aggregate.yaml alone", out.Files)
+	if len(out.Files) != 2 || out.Files[1].Path != "release.yaml" {
+		t.Fatalf("the import wrote %+v, want aggregate.yaml and release.yaml alone", out.Files)
+	}
+	// The Release places the installation's entry, a module of the drafted
+	// Aggregate, under the boundary it routes it into.
+	if release := out.Files[1].Content; !strings.HasSuffix(release,
+		"  boundaries:\n    platform:\n      aggregates:\n"+
+			"        # Left for the Release, since the source cannot supply it:\n"+
+			"        #   - the secret_key parameter, under the Release's spec.parameters, which the drafted Aggregate "+
+			"declares and passes down to core/dify\n"+
+			"        #   - components.api.infra.owner_email, the email of the installation's owner account the "+
+			"application is imported under, on the api component of core/dify\n"+
+			"        #   - components.api.features.owner_password, the owner account's password, attached with type "+
+			"core/referenced-secret\n"+
+			"        dify: {}\n") ||
+		!strings.Contains(release, "\n  environment: development\n") {
+		t.Errorf("the Release does not route the installation under its boundary:\n%s", release)
 	}
 	app, ok, text := carried(t, out)
 	if !ok || app != string(source) {
@@ -162,9 +178,6 @@ func TestAWorkflowApplicationIsDraftedAsTheInstallationCarryingIt(t *testing.T) 
 		"  aggregates:\n",
 		"    # An import sees the Components of the workspace's catalog and none of its Aggregates, so it does not " +
 			"check that the catalog holds core/dify.\n",
-		"    #   - infra.owner_email on the api component of core/dify, ",
-		"    #   - the owner_password slot on that api component, ",
-		"    #   - the secret_key parameter declared above, which this entry passes down to core/dify\n",
 		"    dify:\n      type: core/dify\n      parameters:\n        secret_key: \"{{ .parameters.secret_key }}\"\n" +
 			"        app_definition: |\n          app:\n",
 		`'Answer {{"{{"}}#1760000000001.question#}} from {{"{{"}}#context#}} only, or`,
@@ -172,6 +185,9 @@ func TestAWorkflowApplicationIsDraftedAsTheInstallationCarryingIt(t *testing.T) 
 		if !strings.Contains(text, want) {
 			t.Errorf("the draft does not hold %q:\n%s", want, text)
 		}
+	}
+	if strings.Contains(text, "Left for the Release") {
+		t.Errorf("the Aggregate names what the Release supplies; the Release's entry does:\n%s", text)
 	}
 	wantDiags := []string{
 		"credential-carried workflow",
@@ -219,7 +235,8 @@ func TestAWorkflowApplicationIsDraftedAsTheInstallationCarryingIt(t *testing.T) 
 		entities = append(entities, e.Kind+" "+e.Mode+" "+e.Name)
 	}
 	// The drafted Aggregate is named after the application, Support Answers.
-	if want := []string{"Aggregate reference core/dify", "Aggregate draft imported/support-answers"}; !reflect.DeepEqual(entities, want) {
+	if want := []string{"Aggregate reference core/dify", "Aggregate draft imported/support-answers",
+		"Release draft imported/support-answers"}; !reflect.DeepEqual(entities, want) {
 		t.Errorf("the import emitted %v, want %v", entities, want)
 	}
 }
@@ -555,8 +572,8 @@ type draftedSecretKey struct {
 // passes of secret_key. It fails where the draft declares any other parameter.
 func readSecretKey(t *testing.T, out aggrega.ImportOutput) draftedSecretKey {
 	t.Helper()
-	if len(out.Files) != 1 || out.Files[0].Path != "aggregate.yaml" {
-		t.Fatalf("the import wrote %+v, want aggregate.yaml alone", out.Files)
+	if len(out.Files) != 2 || out.Files[0].Path != "aggregate.yaml" || out.Files[1].Path != "release.yaml" {
+		t.Fatalf("the import wrote %+v, want aggregate.yaml and release.yaml alone", out.Files)
 	}
 	doc := readDrafted(t, out.Files[0].Content)
 	if len(doc.Spec.Parameters) != 1 {
@@ -652,8 +669,8 @@ func TestAPassedDownDescriptionReadsBackThroughAYAMLReader(t *testing.T) {
 
 	out := importer.Import(aggrega.ImportInput{Format: Format, Bytes: fixture(t, "authored/chat.yml"), Catalog: catalog},
 		format, hostParse)
-	if len(out.Files) != 1 || out.Files[0].Path != "aggregate.yaml" {
-		t.Fatalf("the import wrote %+v, want aggregate.yaml alone", out.Files)
+	if len(out.Files) != 2 || out.Files[0].Path != "aggregate.yaml" || out.Files[1].Path != "release.yaml" {
+		t.Fatalf("the import wrote %+v, want aggregate.yaml and release.yaml alone", out.Files)
 	}
 	text := out.Files[0].Content
 	if strings.ContainsAny(text, controls) {

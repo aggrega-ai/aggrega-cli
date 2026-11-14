@@ -28,7 +28,8 @@ var flowise = importer.Format{
 // socket draws a single connection, a referenced model is given the model its
 // node selects (model.go), the inputs the Component requires that a chatflow
 // cannot supply are left for the Release, and the lines the compose Recipe
-// needs for the owner's password are shown for an author building for compose.
+// needs for the owner's password are declared by an import for compose and
+// shown, commented out, by an import naming no target.
 var platform = importer.Platform{
 	Component:       "core/ai-agent/flowise",
 	DefinitionValue: "flow_definition",
@@ -41,10 +42,11 @@ var platform = importer.Platform{
 	Single:          singleSockets,
 	Standing:        standingOf,
 	Model:           modelOf,
-	LeftForRelease: []string{
-		"infra.image, the container image running Flowise",
-		"infra.owner_email, the email address of the platform's owner account, required while values.flow_definition is set",
-		"the owner_password slot, that account's password, required while values.flow_definition is set",
+	LeftForRelease: []importer.LeftItem{
+		{Path: "infra.image", Text: "the container image running Flowise"},
+		{Path: "infra.owner_email", Text: "the email address of the platform's owner account, required while " +
+			"values.flow_definition is set"},
+		{Path: "features.owner_password", Text: "that account's password, required while values.flow_definition is set"},
 	},
 	TargetAttachments: []importer.TargetAttachment{composeOwnerPassword},
 }

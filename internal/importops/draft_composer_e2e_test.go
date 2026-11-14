@@ -32,6 +32,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
@@ -107,8 +109,8 @@ var wantComposedWarnings = []abi.Diagnostic{
 // compose target under a reporting delivery and reads the three files and the
 // warnings back: the Manifest maps example/x alone, to its one compose Recipe by
 // the capability-qualified reference with no version, though the catalog holds it
-// at two versions; the Release names that Manifest, its comment line replaced and
-// every other byte kept; the Aggregate is exactly as drafted; and the warnings
+// at two versions; the Release names that Manifest in the key it declared empty,
+// the comment line above it dropped and every other byte kept; the Aggregate is exactly as drafted; and the warnings
 // name example/y with both of its Recipes and example/z.
 //
 // 🔴 PLANTED DEFECTS:
@@ -149,8 +151,8 @@ func TestATargetDraftsTheManifestTheDraftedReleaseNeeds(t *testing.T) {
 
 // TestNoTargetDraftsExactlyTheImportersFiles imports the same draft set with no
 // target and holds the result to the importer's own files and nothing else: no
-// Manifest, the Release with its comment line, the Aggregate as drafted, and no
-// diagnostic the composition would add.
+// Manifest, the Release declaring its manifest empty, the Aggregate as drafted,
+// and no diagnostic the composition would add.
 //
 // 🔴 PLANTED DEFECT: have composeDraftSet ignore an empty target (drop its first
 // return): it then drafts a Manifest for the empty capability, and this test
@@ -435,12 +437,17 @@ func (s stubRecipes) RecipesImplementing(componentType string) []types.Recipe {
 // TestTheCompositionAroundEachShapeOfDraft drives composeDraftSet over the
 // shapes of draft set an importer can return, one row each, with a Recipe index
 // holding one compose Recipe for example/x: a Release with no comment line where
-// the Manifest goes, which gains the key as spec's first entry; a Release
-// already naming a Manifest, left as drafted with an information diagnostic; no
-// Release, where the Manifest is drafted beside the Aggregate with its name and
-// version and nothing references it; no Aggregate, where no Manifest is drafted;
-// and a file the importer already drafted where the Manifest would go, left as it
-// is with a warning.
+// the Manifest goes, which gains the key as spec's first entry; a comment line
+// beginning "# manifest:" standing in the key's place, which the key replaces; a
+// Release declaring its manifest empty, as a drafted Release does with no target,
+// whose key takes the Manifest's name and loses the comment line above it, and one
+// with no such comment, whose key alone takes the name; the Release the plugin
+// kit's own writer drafts, read as it writes it, which composes the same way; a
+// Release already naming a Manifest, and one declaring it null, each left as
+// drafted with an information diagnostic; no Release, where the Manifest is
+// drafted beside the Aggregate with its name and version and nothing references
+// it; no Aggregate, where no Manifest is drafted; and a file the importer already
+// drafted where the Manifest would go, left as it is with a warning.
 func TestTheCompositionAroundEachShapeOfDraft(t *testing.T) {
 	t.Parallel()
 	recipes := stubRecipes{recipes: []types.Recipe{{
@@ -455,6 +462,20 @@ func TestTheCompositionAroundEachShapeOfDraft(t *testing.T) {
 	}
 	releaseHead := "apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: app-dev\n  environment: dev\n" +
 		"  version: 0.2.0\nspec:\n"
+	// written is the Release the plugin kit's writer drafts for an import of
+	// app.yaml, and writtenComposed the same with its empty spec.manifest and the
+	// comment line above it replaced by the Manifest's name, every other byte kept.
+	in := aggrega.ImportInput{Format: "compose", Name: "app.yaml"}
+	written := importer.DraftRelease(in, importer.ReleaseDraft{Entries: []importer.ReleaseEntry{{Key: "a",
+		Left: []importer.LeftItem{{Path: "infra.image", Text: "the image running it"}}}}}).Body
+	writtenName := importer.DraftName(in)
+	before, rest, commented := strings.Cut(written, "  # manifest:")
+	_, after, emptied := strings.Cut(rest, "\n  manifest: \"\"\n")
+	if !commented || !emptied {
+		t.Fatalf("the plugin kit's Release writer no longer declares spec.manifest empty beneath its comment:\n%s",
+			written)
+	}
+	writtenComposed := before + "  manifest: " + writtenName + "\n" + after
 	for _, tc := range []struct {
 		name      string
 		files     []abi.ScaffoldFile
@@ -470,6 +491,45 @@ func TestTheCompositionAroundEachShapeOfDraft(t *testing.T) {
 				{Path: "deploy/manifest.yaml", Content: manifestFor("app-dev", "0.2.0")}},
 		},
 		{
+			name: "a Release declaring its manifest empty beneath the comment saying why",
+			files: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
+				{Path: "release.yaml", Content: releaseHead + "  aggregate: app\n" +
+					"  # manifest: left empty, since the import was given no target.\n  manifest: \"\"\n" +
+					"  components:\n    a: {}\n"}},
+			wantFiles: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
+				{Path: "release.yaml", Content: releaseHead + "  aggregate: app\n  manifest: app-dev\n" +
+					"  components:\n    a: {}\n"},
+				{Path: "manifest.yaml", Content: manifestFor("app-dev", "0.2.0")}},
+		},
+		{
+			name: "a comment line standing in the key's place",
+			files: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
+				{Path: "release.yaml", Content: releaseHead + "  aggregate: app\n" +
+					"  # manifest: left for the author.\n  components:\n    a: {}\n"}},
+			wantFiles: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
+				{Path: "release.yaml", Content: releaseHead + "  aggregate: app\n  manifest: app-dev\n" +
+					"  components:\n    a: {}\n"},
+				{Path: "manifest.yaml", Content: manifestFor("app-dev", "0.2.0")}},
+		},
+		{
+			name: "the Release the plugin kit's writer drafts",
+			files: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
+				{Path: "release.yaml", Content: written}},
+			wantFiles: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
+				{Path: "release.yaml", Content: writtenComposed},
+				{Path: "manifest.yaml", Content: manifestFor(writtenName, "0.1.0")}},
+		},
+		{
+			name: "a Release declaring its manifest empty with no comment above it",
+			files: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
+				{Path: "release.yaml", Content: releaseHead + "  manifest: \"\"\n  aggregate: app\n  components:\n" +
+					"    a: {}\n"}},
+			wantFiles: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
+				{Path: "release.yaml", Content: releaseHead + "  manifest: app-dev\n  aggregate: app\n  components:\n" +
+					"    a: {}\n"},
+				{Path: "manifest.yaml", Content: manifestFor("app-dev", "0.2.0")}},
+		},
+		{
 			name: "a Release already naming a Manifest",
 			files: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
 				{Path: "release.yaml", Content: releaseHead + "  aggregate: app\n  manifest: ops\n  components:\n    a: {}\n"}},
@@ -478,6 +538,17 @@ func TestTheCompositionAroundEachShapeOfDraft(t *testing.T) {
 				{Path: "manifest.yaml", Content: manifestFor("app-dev", "0.2.0")}},
 			wantDiags: []string{`info: the drafted Release "release.yaml" already names the Manifest "ops", so it is ` +
 				`left as the importer drafted it; the drafted Manifest "manifest.yaml" is not referenced by it`},
+		},
+		{
+			name: "a Release declaring its manifest null, with no value written",
+			files: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
+				{Path: "release.yaml", Content: releaseHead + "  aggregate: app\n  manifest:\n  components:\n    a: {}\n"}},
+			wantFiles: []abi.ScaffoldFile{{Path: "aggregate.yaml", Content: aggregate},
+				{Path: "release.yaml", Content: releaseHead + "  aggregate: app\n  manifest:\n  components:\n    a: {}\n"},
+				{Path: "manifest.yaml", Content: manifestFor("app-dev", "0.2.0")}},
+			wantDiags: []string{`info: the drafted Release "release.yaml" declares spec.manifest with no name written ` +
+				`in it, so it is left as the importer drafted it; the drafted Manifest "manifest.yaml" is not ` +
+				`referenced by it`},
 		},
 		{
 			name:  "no Release",

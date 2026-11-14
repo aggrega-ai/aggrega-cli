@@ -279,7 +279,7 @@ func TestImportLangflow_AutoApplyReferencesAndDrafts(t *testing.T) {
 	source := readFixture(t, "langflow-flow.json")
 
 	settings := settingsJSON(t, map[string]any{"reuse_mode": "auto-apply-above-threshold", "layout": "nodes"})
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, "", nil, settings, standardCatalogView(t))
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, "", nil, settings, standardCatalogView(t), "")
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -328,17 +328,46 @@ func TestImportLangflow_AutoApplyReferencesAndDrafts(t *testing.T) {
 	}
 }
 
-// TestImportLangflow_HintsOnlyDraftsEverything proves the locked default posture:
-// with reuse_mode unset (hints-only), the importer references nothing — every node
-// is drafted — but a HIGH match against the catalog view still records a strong
-// swap hint the author can act on. Nothing is silently referenced.
+// TestImportLangflow_TheDefaultReferencesAsAutoApplyDoes proves the default reuse
+// posture through the real guest: with reuse_mode unset, the import is byte for
+// byte the one auto-apply-above-threshold makes, so a HIGH match is referenced.
+//
+// 🔴 PLANTED DEFECT: in the plugin kit's parseSettings (pkg/importer/settings.go),
+// default ReuseMode to hints-only: the two imports differ and the case fails.
+func TestImportLangflow_TheDefaultReferencesAsAutoApplyDoes(t *testing.T) {
+	t.Parallel()
+	fixture := wasmtest.EnsureFixtureBuilt(t, "langflow-importer.wasm")
+	source := readFixture(t, "langflow-flow.json")
+	run := func(settings map[string]any) abi.ImportOutput {
+		parserRes, parserLoad, _ := realJSONParserSeam(t)
+		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture),
+			parserRes, parserLoad, "langflow", source, "", nil, settingsJSON(t, settings), standardCatalogView(t), "")
+		if err != nil {
+			t.Fatalf("ImportArtifact: %v", err)
+		}
+		return out
+	}
+	def := run(nodesLayout())
+	auto := run(map[string]any{"reuse_mode": "auto-apply-above-threshold", "layout": "nodes"})
+	a, _ := json.Marshal(def)
+	b, _ := json.Marshal(auto)
+	if !bytes.Equal(a, b) {
+		t.Errorf("the default import differs from auto-apply's:\ndefault: %s\n   auto: %s", a, b)
+	}
+	findEntity(t, def, "Component", "reference", "core/ai-model/openai")
+}
+
+// TestImportLangflow_HintsOnlyDraftsEverything proves the hints-only posture: with
+// reuse_mode hints-only, the importer references nothing — every node is drafted —
+// but a HIGH match against the catalog view still records a strong swap hint the
+// author can act on. Nothing is silently referenced.
 func TestImportLangflow_HintsOnlyDraftsEverything(t *testing.T) {
 	t.Parallel()
 	fixture := wasmtest.EnsureFixtureBuilt(t, "langflow-importer.wasm")
 	parserRes, parserLoad, _ := realJSONParserSeam(t)
 	source := readFixture(t, "langflow-flow.json")
 
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, "", nil, settingsJSON(t, nodesLayout()), standardCatalogView(t))
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, "", nil, settingsJSON(t, map[string]any{"reuse_mode": "hints-only", "layout": "nodes"}), standardCatalogView(t), "")
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -367,7 +396,7 @@ func TestImportLangflow_Deterministic(t *testing.T) {
 
 	run := func() []byte {
 		parserRes, parserLoad, _ := realJSONParserSeam(t)
-		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, "", nil, settingsJSON(t, nodesLayout()), standardCatalogView(t))
+		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, "", nil, settingsJSON(t, nodesLayout()), standardCatalogView(t), "")
 		if err != nil {
 			t.Fatalf("ImportArtifact: %v", err)
 		}
@@ -394,7 +423,7 @@ func TestImportLangflow_MultiFile(t *testing.T) {
 		{Name: "flow-a.json", Bytes: readFixture(t, "langflow-flow.json")},
 		{Name: "flow-b.json", Bytes: readFixture(t, "langflow-flow-b.json")},
 	}
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", sources[0].Bytes, "", sources, settingsJSON(t, nodesLayout()), standardCatalogView(t))
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", sources[0].Bytes, "", sources, settingsJSON(t, nodesLayout()), standardCatalogView(t), "")
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -430,7 +459,7 @@ func TestImportLangflow_TwoRenderersOneRecord(t *testing.T) {
 
 	do := func(mode string) abi.ImportOutput {
 		parserRes, parserLoad, _ := realJSONParserSeam(t)
-		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, "", nil, settingsJSON(t, map[string]any{"render_mode": mode, "layout": "nodes"}), standardCatalogView(t))
+		out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", source, "", nil, settingsJSON(t, map[string]any{"render_mode": mode, "layout": "nodes"}), standardCatalogView(t), "")
 		if err != nil {
 			t.Fatalf("ImportArtifact(%s): %v", mode, err)
 		}
@@ -481,7 +510,7 @@ func TestImportLangflow_TieBrokenByName(t *testing.T) {
 	// candidate shares — so every ai-model candidate scores exactly the category
 	// weight and ties.
 	tie := []byte(`{"data":{"nodes":[{"id":"GenericModel-1","data":{"type":"GenericModel","node":{"template":{"unshared_param":{"type":"str"}}}}}],"edges":[]}}`)
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", tie, "", nil, settingsJSON(t, nodesLayout()), standardCatalogView(t))
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "langflow", tie, "", nil, settingsJSON(t, nodesLayout()), standardCatalogView(t), "")
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -505,15 +534,17 @@ func TestImportLangflow_TieBrokenByName(t *testing.T) {
 
 // TestImportLangflow_DraftedYAMLValidates proves the drafted authoring is what the
 // CLI accepts: the drafted Component passes the single-entity validation path
-// (schema envelope + pillar structure), and the drafted Aggregate passes the same
-// envelope schema gate the catalog loader runs at each parse boundary.
+// (schema envelope + pillar structure), and the drafted Aggregate and the drafted
+// Release pass the same envelope schema gate the loader runs at each parse
+// boundary — the Release's required environment among what that gate reads. The
+// import asks for the hints-only reuse mode, so every node is drafted and read.
 func TestImportLangflow_DraftedYAMLValidates(t *testing.T) {
 	t.Parallel()
 	fixture := wasmtest.EnsureFixtureBuilt(t, "flowise-importer.wasm")
 	parserRes, parserLoad, _ := realJSONParserSeam(t)
 	source := readFixture(t, "flowise-flow.json")
 
-	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "flowise", source, "", nil, settingsJSON(t, nodesLayout()), standardCatalogView(t))
+	out, err := importersocket.ImportArtifact(context.Background(), agentFlowResolver{}, agentFlowLoader(fixture), parserRes, parserLoad, "flowise", source, "", nil, settingsJSON(t, map[string]any{"reuse_mode": "hints-only", "layout": "nodes"}), standardCatalogView(t), "")
 	if err != nil {
 		t.Fatalf("ImportArtifact: %v", err)
 	}
@@ -545,5 +576,9 @@ func TestImportLangflow_DraftedYAMLValidates(t *testing.T) {
 	agg := findEntity(t, out, "Aggregate", "", "")
 	if _, verr := envelope.ValidateBytes(envelope.KindAggregate, []byte(agg.Body), "drafted-aggregate"); verr != nil {
 		t.Errorf("drafted aggregate failed the envelope schema gate:\n%s\nerr: %v", agg.Body, verr)
+	}
+	release := findEntity(t, out, "Release", "draft", "")
+	if _, verr := envelope.ValidateBytes(envelope.KindRelease, []byte(release.Body), "drafted-release"); verr != nil {
+		t.Errorf("drafted release failed the envelope schema gate:\n%s\nerr: %v", release.Body, verr)
 	}
 }

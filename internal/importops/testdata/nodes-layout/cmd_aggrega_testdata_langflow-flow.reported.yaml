@@ -39,3 +39,20 @@ documents:
               openaimodel-abc12:
                 openaimodel-abc12:
                   target: openaimodel-abc12
+  - path: release.yaml
+    content: |
+      apiVersion: aggrega.ai/v1beta1
+      kind: Release
+      metadata:
+        name: imported/sample-flow
+        # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+        environment: development
+        version: 0.1.0
+        description: Draft Release imported from a source in the langflow format.
+      spec:
+        aggregate: imported/sample-flow
+        # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+        manifest: ""
+        components:
+          openaimodel-abc12: {}
+          chatoutput-def34: {}

@@ -152,11 +152,11 @@ var platform = importer.Platform{
 	Credentials:   credentialsOf,
 	Configured:    configuredOf,
 	EmptyInSource: emptyInSource,
-	LeftForRelease: []string{
-		"infra.owner_email on the api component of " + Module + ", the email of the installation's owner account the " +
-			"application is imported under, set under components.api in the Release's routing entry for this entry",
-		"the owner_password slot on that api component, the owner account's password, attached in the same routing " +
-			"entry with type core/referenced-secret",
+	LeftForRelease: []importer.LeftItem{
+		{Path: "components.api.infra.owner_email", Text: "the email of the installation's owner account the " +
+			"application is imported under, on the api component of " + Module},
+		{Path: "components.api.features.owner_password", Text: "the owner account's password, attached with type " +
+			"core/referenced-secret"},
 	},
 }
 

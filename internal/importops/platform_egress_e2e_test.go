@@ -250,8 +250,9 @@ func admittedBy(t *testing.T, p networkPolicy) admitted {
 //   - the platform's instance declares exactly one attachment, egress-allowlist,
 //     of type core/egress-allowlist, carrying nothing else — no infra, so no
 //     affirmation and no address range;
-//   - the comment above the instance names, for the Release, the affirmation, the
-//     address ranges and the namespace the attachment's realization halts without;
+//   - the comment above the instance's entry of the drafted Release names, for
+//     the Release, the affirmation, the address ranges and the namespace the
+//     attachment's realization halts without, and the Aggregate names none of it;
 //   - the import reports the attachment once, as information, and the wired model
 //     part's decision says the attachment admits its connection;
 //   - the same import with the setting false drafts no attachment and reports none.
@@ -293,19 +294,23 @@ func TestAnImportAskingForTheOutboundOnlyFeatureAttachesItToThePlatform(t *testi
 			if !reflect.DeepEqual(features, want) {
 				t.Errorf("the platform declares the features %v, want exactly %v", features, want)
 			}
+			release := readDraftedRelease(t, dir)
 			for _, line := range []string{
-				"    #   - infra.control_plane_present of the egress-allowlist attachment, the affirmation that the " +
+				"    #   - features.egress-allowlist.infra.control_plane_present, the affirmation that the " +
 					"cluster's network plugin enforces network policy, without which the build halts\n",
-				"    #   - infra.admitted_destinations of the egress-allowlist attachment, an address range for each " +
+				"    #   - features.egress-allowlist.infra.admitted_destinations, an address range for each " +
 					"connection whose target the cluster does not run, such as a hosted model, without which the " +
 					"build halts naming that connection\n",
 				"    #   - aggrega.ai/namespace on the boundary holding langflow, where the target emits its " +
 					"workloads into no namespace: the attachment's network policy is placed in its workload's " +
-					"namespace, and the build halts without one\n",
+					"namespace, and the build halts without one\n    langflow: {}\n",
 			} {
-				if !strings.Contains(text, line) {
-					t.Errorf("the draft does not leave for the Release\n%s", line)
+				if !strings.Contains(release, line) {
+					t.Errorf("the drafted Release does not leave for the Release\n%s\nit reads\n%s", line, release)
 				}
+			}
+			if strings.Contains(text, "Left for the Release") {
+				t.Errorf("the drafted Aggregate names what the Release supplies; the Release's entry does:\n%s", text)
 			}
 			wantReported := []string{"langflow carries core/egress-allowlist, attached as egress-allowlist, which lets " +
 				"it connect only to the components it is wired to; the import sets none of its infrastructure: the " +

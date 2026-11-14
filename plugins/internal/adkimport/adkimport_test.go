@@ -17,6 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/plugins/parsercore"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // The Google ADK importer on the host toolchain: each case hands Import a
@@ -289,6 +290,14 @@ func TestEachCommittedApplicationIsDraftedAsOneInstancePerTree(t *testing.T) {
 				"application built on ADK, holding its configurations\n") {
 				t.Errorf("the Release does not leave the image for the Release:\n%s", files(out)["release.yaml"])
 			}
+			// The credential the tree presents on its wired model connection is left for
+			// the Release above the tree's entry: the positive control of the case for
+			// an unwired model, whose Release names none.
+			if credential := importer.ConnectionCredential(tc.key, modelSocket, tc.part, tc.part); !strings.Contains(
+				files(out)["release.yaml"], "#   - "+credential.Path+", "+credential.Text+"\n") {
+				t.Errorf("the Release does not leave the credential %s for the Release:\n%s", credential.Path,
+					files(out)["release.yaml"])
+			}
 		})
 	}
 }
@@ -300,11 +309,11 @@ func TestEachCommittedApplicationIsDraftedAsOneInstancePerTree(t *testing.T) {
 // model included: a build places only the instances a Release names, so an
 // instance without an entry halts it. The model's entry holds no infrastructure,
 // since no configuration states any. Each importer package holds a test of this
-// name over its own renderer, since each importer renders its own Release and
-// the plugin kit renders none.
+// name over the entries it hands the plugin kit's Release writer, since each
+// importer decides what its Release holds.
 //
-// 🔴 PLANTED DEFECT: in renderRelease (render.go), drop the loop over the model
-// parts: every row fails naming its model.
+// 🔴 PLANTED DEFECT: in adkRelease (render.go), drop the loop over the model parts:
+// every row fails naming its model.
 func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testing.T) {
 	agentOnly := &aggrega.CatalogProjection{Components: []aggrega.CatalogComponent{
 		{Name: Component, Version: "1.0.0", Labels: map[string]string{categoryLabel: "ai-agent"}},
@@ -336,7 +345,7 @@ func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testi
 				slices.Sort(unplaced)
 				t.Errorf("the Release names no entry for %v, which the Aggregate declares:\n%s", unplaced, text)
 			}
-			if !strings.Contains(text, "    "+row.model+":\n      infra: {}\n") {
+			if !strings.Contains(text, "    "+row.model+": {}\n") {
 				t.Errorf("the Release holds no entry %s holding no infrastructure:\n%s", row.model, text)
 			}
 		})
@@ -588,7 +597,8 @@ func TestHowATreesModelIsWired(t *testing.T) {
 				}
 			}
 			if release := files(out)["release.yaml"]; strings.Contains(release, row.token) ||
-				strings.Contains(release, "the credential routed presents to the model") {
+				strings.Contains(release, "features.credential") ||
+				strings.Contains(release, "the credential routed presents") {
 				t.Errorf("the Release names an entry or a credential for the unwired model:\n%s", release)
 			}
 		})

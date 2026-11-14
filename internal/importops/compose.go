@@ -122,12 +122,14 @@ func recipeCapabilities(recipes RecipeIndex) []string {
 // beside that document as [ManifestFileName] and appended after the importer's
 // files.
 //
-// Where the drafted Release names no Manifest, its spec.manifest is set to the
-// drafted Manifest's name, the bare token a Release resolves by identity in its
-// own directory: the comment line the importer wrote in its place is replaced by
-// that one key, or, where there is none, the key is added as spec's first entry,
-// and every other byte the importer wrote is kept. A Release already naming a
-// Manifest is left as written, and an information diagnostic says so; so is a
+// Where the drafted Release names no Manifest — it declares spec.manifest empty,
+// or not at all — its spec.manifest is set to the drafted Manifest's name, the
+// bare token a Release resolves by identity in its own directory: an empty key is
+// written with that name, and the comment line beginning "# manifest:" directly
+// above it dropped; a comment line of that beginning standing in the key's place
+// is replaced by the key; where there is neither, the key is added as spec's
+// first entry; and every other byte the importer wrote is kept. A Release already
+// naming a Manifest is left as written, and an information diagnostic says so; so is a
 // target with no drafted Release, where the diagnostic says nothing references
 // the Manifest. An import that drafted no Aggregate drafts no Manifest, and says
 // so; nor does one whose importer already drafted a file where the Manifest
@@ -206,10 +208,14 @@ func composeDraftSet(target string, recipes RecipeIndex, files []abi.ScaffoldFil
 		diags = append(diags, infoDiagnostic(fmt.Sprintf("the importer drafted no Release, so nothing references "+
 			"the drafted Manifest %s; name it as a Release's spec.manifest to build against it",
 			strconv.Quote(manifestPath))))
-	} else if existing := scalarAt(release, "spec", "manifest"); existing != "" || hasKey(release, "spec", "manifest") {
-		diags = append(diags, infoDiagnostic(fmt.Sprintf("the drafted Release %s already names the Manifest %s, so "+
-			"it is left as the importer drafted it; the drafted Manifest %s is not referenced by it",
-			strconv.Quote(files[releaseAt].Path), strconv.Quote(existing), strconv.Quote(manifestPath))))
+	} else if existing := scalarAt(release, "spec", "manifest"); existing != "" || namesManifestOtherwise(release) {
+		declares := "already names the Manifest " + strconv.Quote(existing)
+		if existing == "" {
+			declares = "declares spec.manifest with no name written in it"
+		}
+		diags = append(diags, infoDiagnostic(fmt.Sprintf("the drafted Release %s %s, so it is left as the importer "+
+			"drafted it; the drafted Manifest %s is not referenced by it", strconv.Quote(files[releaseAt].Path),
+			declares, strconv.Quote(manifestPath))))
 	} else {
 		edited, ok := setReleaseManifest(files[releaseAt].Content, release, name)
 		if ok {
@@ -312,14 +318,33 @@ func draftManifest(name, version string, mappings []manifestMapping) (string, er
 	return b.String(), nil
 }
 
+// namesManifestOtherwise reports whether the drafted Release declares
+// spec.manifest with a value that is neither a name nor declared empty — null, or
+// a value that is not a scalar — which the composition leaves as written.
+func namesManifestOtherwise(release *yaml.Node) bool {
+	_, value := mappingEntry(mappingValue(release, "spec"), "manifest")
+	return value != nil && !manifestDeclaredEmpty(value)
+}
+
+// manifestDeclaredEmpty reports whether value, the value of a drafted Release's
+// spec.manifest, is the empty string, which names no Manifest: it is the key a
+// drafted Release declares where the import was given no target, and the
+// composition writes the name into it. Null is not: it is a value the author
+// wrote, which the composition leaves as written.
+func manifestDeclaredEmpty(value *yaml.Node) bool {
+	return value != nil && value.Kind == yaml.ScalarNode && value.Tag == "!!str" && value.Value == ""
+}
+
 // setReleaseManifest returns the drafted Release's text with spec.manifest set
 // to name, and whether it could be set: false where the Release carries no block
 // spec mapping to write the key into.
 //
 // The text is edited by line rather than decoded and re-encoded, so every byte
-// the importer wrote outside the one line is kept: the comment line naming the
-// unset manifest at spec's own indentation is replaced by the key, and where
-// there is no such line the key is added directly beneath spec.
+// the importer wrote outside the lines it replaces is kept: a spec.manifest key
+// declared empty is written with the name, and the comment line beginning
+// "# manifest:" directly above it, at spec's own indentation, is dropped; else
+// such a comment line standing in the key's place is replaced by the key; and
+// where there is neither the key is added directly beneath spec.
 func setReleaseManifest(content string, release *yaml.Node, name string) (string, bool) {
 	specKey, spec := mappingEntry(release, "spec")
 	if spec == nil || spec.Kind != yaml.MappingNode || spec.Style&yaml.FlowStyle != 0 || len(spec.Content) == 0 {
@@ -340,6 +365,16 @@ func setReleaseManifest(content string, release *yaml.Node, name string) (string
 	end := len(lines)
 	if next := nextTopLevelKeyLine(release, specKey); next > 0 {
 		end = next - 1
+	}
+	if key, value := mappingEntry(spec, "manifest"); key != nil && manifestDeclaredEmpty(value) &&
+		key.Line > specKey.Line && key.Line <= len(lines) {
+		at := key.Line - 1
+		lines[at] = entry
+		if above := at - 1; above >= specKey.Line && commentAt(lines[above], col) &&
+			strings.HasPrefix(lineText(lines[above])[col:], "# manifest:") {
+			lines = append(lines[:above], lines[at:]...)
+		}
+		return strings.Join(lines, ""), true
 	}
 	for i := specKey.Line; i < end; i++ {
 		if commentAt(lines[i], col) && strings.HasPrefix(lineText(lines[i])[col:], "# manifest:") {
@@ -434,12 +469,6 @@ func mappingEntry(n *yaml.Node, key string) (*yaml.Node, *yaml.Node) {
 func mappingValue(n *yaml.Node, key string) *yaml.Node {
 	_, v := mappingEntry(n, key)
 	return v
-}
-
-// hasKey reports whether the mapping at the path holds key.
-func hasKey(n *yaml.Node, parent, key string) bool {
-	k, _ := mappingEntry(mappingValue(n, parent), key)
-	return k != nil
 }
 
 // scalarAt is the scalar text at parent.key, or "" where there is none.

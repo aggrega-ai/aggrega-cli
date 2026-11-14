@@ -95,9 +95,9 @@
 // for the Release what no configuration states: each instance's image, which runs
 // the application and holds its configurations, and the credential it presents to
 // its model. Each model has an entry of its own, so the Release places it with
-// the instances. The Release's environment and its Manifest are left unset, each
-// named in a comment, since no source names either and the import drafts no
-// Manifest.
+// the instances. The Release is written by the plugin kit's Release writer,
+// importer.DraftRelease, whose documentation states what every drafted Release
+// declares beside its entries.
 //
 // # Credential values
 //
@@ -279,14 +279,10 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	}
 	name := importer.DraftName(in, titles...)
 	aggregate := renderAggregate(name, apps, parts, unread(r, apps))
-	release := renderRelease(name, apps, parts)
 	out.Entities = append(entities,
 		aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft", Body: aggregate},
-		aggrega.EmittedEntity{Kind: "Release", Name: name, Mode: "draft", Body: release})
+		importer.DraftRelease(in, adkRelease(apps, parts), titles...))
 	out.Files = importer.Render(in.Settings, out.Entities, out.Decisions)
-	if slices.ContainsFunc(out.Files, func(f aggrega.ScaffoldFile) bool { return f.Path == "aggregate.yaml" }) {
-		out.Files = append(out.Files, aggrega.ScaffoldFile{Path: "release.yaml", Content: release})
-	}
 	return out
 }
 

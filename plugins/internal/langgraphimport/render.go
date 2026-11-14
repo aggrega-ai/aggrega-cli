@@ -190,29 +190,15 @@ func aggregateText(text string) string {
 	return yamlString(importer.EscapeTemplateText(text))
 }
 
-// renderRelease writes the drafted Release, named name and deploying the
-// Aggregate of that name: above the first graph, what each graph's image holds
-// and the variables it is handed; for each graph, under its key, a comment
-// naming what the Release supplies — the image running the application — and,
-// above each application's first graph, the environment its configuration
-// states; then an entry for each datastore part, since a build places only the
-// instances a Release names. The Release's environment and its Manifest are left
-// unset, each named in a comment where it belongs. Each importer renders its own
-// Release; the plugin kit renders none.
-func renderRelease(name string, read []*application, parts []*datastorePart) string {
-	var b strings.Builder
-	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
-	b.WriteString("kind: Release\n")
-	b.WriteString("metadata:\n")
-	b.WriteString("  name: " + name + "\n")
-	b.WriteString("  # environment: left for the operator, since no source names the environment this Release deploys to.\n")
-	b.WriteString("  version: 0.1.0\n")
-	b.WriteString("  description: Draft Release imported from a source in the " + Format + " format.\n")
-	b.WriteString("spec:\n")
-	b.WriteString("  aggregate: " + name + "\n")
-	b.WriteString("  # manifest: left for the operator, since the import drafts no Manifest, which names the target " +
-		"the graphs are built for.\n")
-	b.WriteString("  components:\n")
+// langgraphRelease is the drafted Release, as the plugin kit's Release writer
+// writes it: for each graph, under its key, leaving for the Release the image
+// running the application, with a comment above the first graph naming what each
+// graph's image holds and the variables it is handed, and above each
+// application's first graph the environment its configuration states; then an
+// entry for each datastore part, since a build places only the instances a
+// Release names.
+func langgraphRelease(read []*application, parts []*datastorePart) importer.ReleaseDraft {
+	draft := importer.ReleaseDraft{}
 	contract := true
 	for _, a := range read {
 		first := true
@@ -220,77 +206,79 @@ func renderRelease(name string, read []*application, parts []*datastorePart) str
 			if g.entrypoint == "" {
 				continue
 			}
+			entry := importer.ReleaseEntry{Key: g.key, Left: []importer.LeftItem{{Path: "infra.image",
+				Text: "the container image running the application"}}}
 			if contract {
-				b.WriteString(imageContract)
+				entry.Comments = append(entry.Comments, imageContract...)
 				contract = false
 			}
 			if first {
-				writeEnvironment(&b, a)
+				entry.Comments = append(entry.Comments, environmentComment(a)...)
 				first = false
 			}
-			b.WriteString("    # Left for the Release, since no configuration states it:\n")
-			b.WriteString("    #   - infra.image, the container image running the application\n")
-			b.WriteString("    " + g.key + ":\n")
-			b.WriteString("      infra: {}\n")
+			draft.Entries = append(draft.Entries, entry)
 		}
 	}
 	for _, p := range parts {
-		b.WriteString("    " + p.key + ":\n")
-		b.WriteString("      infra: {}\n")
+		draft.Entries = append(draft.Entries, importer.ReleaseEntry{Key: p.key})
 	}
-	return b.String()
+	return draft
 }
 
-// imageContract is the comment above the Release's first graph: what each
-// graph's image holds, the variables the Recipes of Component hand it, who reads
-// each, and which inject block replaces which default name. Every variable it
-// names is checked against what a build through each of the catalog's Recipes
-// renders, so a name changed on either side fails that check.
-const imageContract = "    # Each graph's image is the application's own, not the server image langgraph build builds: its " +
-	"code, with LangGraph installed.\n" +
-	"    # It is handed, for its code to read, the graph to run as LANGGRAPH_GRAPH_ENTRYPOINT, the model's name as " +
-	"OPENAI_MODEL, the checkpointer store's host and port as LANGGRAPH_CHECKPOINTER_HOST and " +
-	"LANGGRAPH_CHECKPOINTER_PORT, its user and database, where the store publishes them, as " +
-	"LANGGRAPH_CHECKPOINTER_USER and LANGGRAPH_CHECKPOINTER_DATABASE, and a password attached on the " +
-	checkpointerSocket + " connection as LANGGRAPH_CHECKPOINTER_PASSWORD.\n" +
-	"    # It is also handed the model's address as OPENAI_BASE_URL and a key attached on the " + modelSocket +
-	" connection as OPENAI_API_KEY, which the OpenAI client library reads, and recursion_limit as " +
-	"LANGGRAPH_DEFAULT_RECURSION_LIMIT, which LangGraph reads.\n" +
-	"    # An inject: block on the graph's own instance, through an entry reading graph_entrypoint alone, replaces " +
-	"LANGGRAPH_GRAPH_ENTRYPOINT with the name it writes; one on the " + modelSocket + " connection replaces " +
-	"OPENAI_MODEL, and one on the " + checkpointerSocket + " connection the store's host, port, user and database, " +
-	"with the names it writes.\n"
+// imageContract is the comment above the Release's first graph, one comment line
+// each: what each graph's image holds, the variables the Recipes of Component
+// hand it, who reads each, and which inject block replaces which default name.
+// Every variable it names is checked against what a build through each of the
+// catalog's Recipes renders, so a name changed on either side fails that check.
+var imageContract = []string{
+	"Each graph's image is the application's own, not the server image langgraph build builds: its code, with " +
+		"LangGraph installed.",
+	"It is handed, for its code to read, the graph to run as LANGGRAPH_GRAPH_ENTRYPOINT, the model's name as " +
+		"OPENAI_MODEL, the checkpointer store's host and port as LANGGRAPH_CHECKPOINTER_HOST and " +
+		"LANGGRAPH_CHECKPOINTER_PORT, its user and database, where the store publishes them, as " +
+		"LANGGRAPH_CHECKPOINTER_USER and LANGGRAPH_CHECKPOINTER_DATABASE, and a password attached on the " +
+		checkpointerSocket + " connection as LANGGRAPH_CHECKPOINTER_PASSWORD.",
+	"It is also handed the model's address as OPENAI_BASE_URL and a key attached on the " + modelSocket +
+		" connection as OPENAI_API_KEY, which the OpenAI client library reads, and recursion_limit as " +
+		"LANGGRAPH_DEFAULT_RECURSION_LIMIT, which LangGraph reads.",
+	"An inject: block on the graph's own instance, through an entry reading graph_entrypoint alone, replaces " +
+		"LANGGRAPH_GRAPH_ENTRYPOINT with the name it writes; one on the " + modelSocket + " connection replaces " +
+		"OPENAI_MODEL, and one on the " + checkpointerSocket + " connection the store's host, port, user and database, " +
+		"with the names it writes.",
+}
 
-// writeEnvironment writes, in a comment, the environment an application's
-// configuration states, for the Release to carry for each of its graphs: each
-// variable an inline env names with its value as the credential decision left
-// it — written with no value where it holds none or was written empty — or each
-// variable its environment file names, by its name alone.
-func writeEnvironment(b *strings.Builder, a *application) {
+// environmentComment is the comment stating the environment an application's
+// configuration states, for the Release to carry for each of its graphs, one
+// comment line each: each variable an inline env names with its value as the
+// credential decision left it — written with no value where it holds none or was
+// written empty — or each variable its environment file names, by its name alone.
+func environmentComment(a *application) []string {
 	of := commentText(a.name())
+	var out []string
 	switch {
 	case len(a.env.entries) > 0:
-		b.WriteString("    # The environment " + of + " states for its application, for the Release to carry where " +
-			Component + " takes it for each of its graphs:\n")
+		out = append(out, "The environment "+of+" states for its application, for the Release to carry where "+
+			Component+" takes it for each of its graphs:")
 		for _, e := range a.env.entries {
 			if !e.located || e.emptied {
-				b.WriteString("    #   " + commentText(e.name) + "\n")
+				out = append(out, "  "+commentText(e.name))
 				continue
 			}
-			b.WriteString("    #   " + commentText(e.name) + ": " + yamlString(e.text) + "\n")
+			out = append(out, "  "+commentText(e.name)+": "+yamlString(e.text))
 		}
 	case a.env.read != "":
-		b.WriteString("    # The environment file " + commentText(a.env.read) + ", which " + of + " names, names " +
-			"these variables for its application, each left for the Release to supply for each of its graphs, " +
-			"since the import reads the file's names and never its values:\n")
+		out = append(out, "The environment file "+commentText(a.env.read)+", which "+of+" names, names these "+
+			"variables for its application, each left for the Release to supply for each of its graphs, since the "+
+			"import reads the file's names and never its values:")
 		for _, n := range a.env.names {
-			b.WriteString("    #   - " + commentText(n) + "\n")
+			out = append(out, "  - "+commentText(n))
 		}
 		if len(a.env.skipped) > 0 {
-			b.WriteString("    # Not read, naming no variable: " + lineNumbers(a.env.skipped) + " of " +
-				commentText(a.env.read) + ".\n")
+			out = append(out, "Not read, naming no variable: "+lineNumbers(a.env.skipped)+" of "+
+				commentText(a.env.read)+".")
 		}
 	}
+	return out
 }
 
 // renderDatastore writes the drafted Component of a datastore the catalog holds

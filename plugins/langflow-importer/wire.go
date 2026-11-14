@@ -292,8 +292,8 @@ func wireServer(server mcpServer, part importer.Part, at func(tokens ...string) 
 		reads = append(reads, "the address the exported flow held there is written empty")
 	}
 	w.Reads = strings.Join(reads, "; ")
-	w.LeftForRelease = []string{fmt.Sprintf("infra.endpoint of %s, the address of the MCP server the flow names %s",
-		part.Key, part.Alias)}
+	w.LeftForRelease = []importer.LeftItem{{Path: "infra.endpoint",
+		Text: "the address of the MCP server the flow names " + part.Alias}}
 	return w
 }
 

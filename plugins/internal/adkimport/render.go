@@ -193,43 +193,26 @@ func aggregateText(text string) string {
 	return yamlString(importer.EscapeTemplateText(text))
 }
 
-// renderRelease writes the drafted Release, named name and deploying the
-// Aggregate of that name: for each tree, under its instance's key, a comment
-// naming what the Release supplies — the image running the application, and the
-// credential the instance presents to its model — and the values the tree's
-// configurations hand their tools and their model requests, written as stated or,
-// where the credential decision wrote one empty, with no value; then an entry for
-// each model part, since a build places only the instances a Release names. The
-// Release's environment and its Manifest are left unset, each named in a comment
-// where it belongs. Each importer renders its own Release; the plugin kit
-// renders none.
-func renderRelease(name string, apps []*application, parts []*modelPart) string {
-	var b strings.Builder
-	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
-	b.WriteString("kind: Release\n")
-	b.WriteString("metadata:\n")
-	b.WriteString("  name: " + name + "\n")
-	b.WriteString("  # environment: left for the operator, since no source names the environment this Release deploys to.\n")
-	b.WriteString("  version: 0.1.0\n")
-	b.WriteString("  description: Draft Release imported from a source in the " + Format + " format.\n")
-	b.WriteString("spec:\n")
-	b.WriteString("  aggregate: " + name + "\n")
-	b.WriteString("  # manifest: left for the operator, since the import drafts no Manifest, which names the target " +
-		"the applications are built for.\n")
-	b.WriteString("  components:\n")
+// adkRelease is the drafted Release, as the plugin kit's Release writer writes
+// it: for each tree, under its instance's key, leaving for the Release the image
+// running the application and the credential the instance presents to its model,
+// with a comment naming the values the tree's configurations hand their tools and
+// their model requests, written as stated or, where the credential decision wrote
+// one empty, with no value; then an entry for each model part, since a build
+// places only the instances a Release names.
+func adkRelease(apps []*application, parts []*modelPart) importer.ReleaseDraft {
+	draft := importer.ReleaseDraft{}
 	for _, app := range apps {
-		b.WriteString("    # Left for the Release, since no configuration states it:\n")
-		b.WriteString("    #   - infra.image, the container image running the application built on ADK, holding its " +
-			"configurations\n")
+		entry := importer.ReleaseEntry{Key: app.key, Left: []importer.LeftItem{{Path: "infra.image",
+			Text: "the container image running the application built on ADK, holding its configurations"}}}
 		if app.part != nil {
-			b.WriteString("    #   - the credential " + app.key + " presents to the model it reaches, attached under " +
-				"credential on its connection uses." + modelSocket + "." + app.part.key + "\n")
+			entry.Left = append(entry.Left, importer.ConnectionCredential(app.key, modelSocket, app.part.key, app.part.key))
 		}
 		if len(app.stated) > 0 {
-			b.WriteString("    # The configurations also hand these values to their tools and their model requests, which " +
-				"the application reads from its own configurations, written here for review:\n")
+			entry.Comments = append(entry.Comments, "The configurations also hand these values to their tools and their "+
+				"model requests, which the application reads from its own configurations, written here for review:")
 			for _, v := range app.stated {
-				line := "    #   " + commentText(v.agent.ref) + " " + commentText(v.field)
+				line := "  " + commentText(v.agent.ref) + " " + commentText(v.field)
 				switch {
 				case v.emptied:
 				case v.located:
@@ -238,17 +221,15 @@ func renderRelease(name string, apps []*application, parts []*modelPart) string 
 					// A number, a boolean or null, written as the configuration writes it.
 					line += ": " + v.text
 				}
-				b.WriteString(line + "\n")
+				entry.Comments = append(entry.Comments, line)
 			}
 		}
-		b.WriteString("    " + app.key + ":\n")
-		b.WriteString("      infra: {}\n")
+		draft.Entries = append(draft.Entries, entry)
 	}
 	for _, p := range parts {
-		b.WriteString("    " + p.key + ":\n")
-		b.WriteString("      infra: {}\n")
+		draft.Entries = append(draft.Entries, importer.ReleaseEntry{Key: p.key})
 	}
-	return b.String()
+	return draft
 }
 
 // renderModel writes the drafted Gemini Component, named name, for a catalog

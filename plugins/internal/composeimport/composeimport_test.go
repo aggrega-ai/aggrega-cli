@@ -166,12 +166,15 @@ const (
 // TestAComposeFileIsDraftedAsAnAggregateAndARelease imports the authored fixture
 // with no setting: its services in the order the file writes them; the
 // PostgreSQL and Redis services, whose images rows of the image table map,
-// drafted with the hint naming core/datastore/postgres and core/datastore/redis
-// at the HIGH tier, since the rows carry those Components' labels as traits;
-// the API, whose image no row maps, an instance of core/compute/server running
-// its image on its port, connected to the database it depends on; the
-// environment value naming the cache it does not depend on recorded as a hint
-// and drawing no connection; and the Release carrying what each service states.
+// referenced as core/datastore/postgres and core/datastore/redis, matched at the
+// HIGH tier since the rows carry those Components' labels as traits, and the
+// default reuse mode references a HIGH match; the API, whose image no row maps,
+// an instance of core/compute/server running its image on its port, connected
+// to the database it depends on; the environment value naming the cache it does
+// not depend on recorded as a hint and drawing no connection; and the Release
+// carrying what each service states, its environment the drafted default. Under
+// the hints-only reuse mode the two datastores are drafted instead, each with
+// the hint naming the Component it resembles.
 //
 // 🔴 PLANTED DEFECT: in decide (composeimport.go), drop the !mapped branch: the
 // API is drafted as a Component of its own, and the case fails on its type.
@@ -181,8 +184,7 @@ func TestAComposeFileIsDraftedAsAnAggregateAndARelease(t *testing.T) {
 	if out.Error != "" || len(codes(out, "parse-failed")) > 0 {
 		t.Fatalf("the import failed: %s %+v", out.Error, out.Diagnostics)
 	}
-	if want := []string{"components/imported-datastore-postgres.yaml", "components/imported-datastore-redis.yaml",
-		"aggregate.yaml", "release.yaml"}; !slices.Equal(paths(out), want) {
+	if want := []string{"aggregate.yaml", "release.yaml"}; !slices.Equal(paths(out), want) {
 		t.Errorf("the import wrote %v, want %v", paths(out), want)
 	}
 	aggregate := fileContent(t, out, "aggregate.yaml")
@@ -190,8 +192,8 @@ func TestAComposeFileIsDraftedAsAnAggregateAndARelease(t *testing.T) {
 		t.Errorf("the Aggregate composes %v, want the file's order db, cache, api", got)
 	}
 	for _, want := range []string{
-		"    db:\n      type: imported/datastore/postgres\n",
-		"    cache:\n      type: imported/datastore/redis\n",
+		"    db:\n      type: core/datastore/postgres\n",
+		"    cache:\n      type: core/datastore/redis\n",
 		"    api:\n      type: core/compute/server\n      uses:\n        db:\n          db:\n            target: db\n",
 	} {
 		if !strings.Contains(aggregate, want) {
@@ -201,13 +203,6 @@ func TestAComposeFileIsDraftedAsAnAggregateAndARelease(t *testing.T) {
 	if strings.Contains(aggregate, "target: cache") {
 		t.Errorf("an environment value naming the cache drew a connection:\n%s", aggregate)
 	}
-	if !strings.Contains(fileContent(t, out, "components/imported-datastore-postgres.yaml"),
-		"# resembles core/datastore/postgres") {
-		t.Errorf("the drafted PostgreSQL Component carries no hint naming core/datastore/postgres")
-	}
-	if !strings.Contains(fileContent(t, out, "components/imported-datastore-redis.yaml"), "# resembles core/datastore/redis") {
-		t.Errorf("the drafted Redis Component carries no hint naming core/datastore/redis")
-	}
 
 	if len(out.Decisions) != 3 {
 		t.Fatalf("the import made %d decisions, want one per service", len(out.Decisions))
@@ -215,9 +210,36 @@ func TestAComposeFileIsDraftedAsAnAggregateAndARelease(t *testing.T) {
 	for i, want := range []string{"core/datastore/postgres", "core/datastore/redis"} {
 		d := out.Decisions[i]
 		if len(d.Candidates) == 0 || d.Candidates[0].ComponentName != want || d.Candidates[0].Tier != "HIGH" ||
-			!strings.Contains(d.SwapHint, "reference it by setting type: "+want) {
-			t.Errorf("the decision for %s hints %q over %+v, want %s at the HIGH tier", d.SourceNode.ID, d.SwapHint,
-				d.Candidates, want)
+			d.Chosen == nil || d.Chosen.Mode != "reference" || d.Chosen.Target != want {
+			t.Errorf("the decision for %s chose %+v over %+v, want %s referenced at the HIGH tier", d.SourceNode.ID,
+				d.Chosen, d.Candidates, want)
+		}
+	}
+
+	hinted := importOne(fixture(t, "authored/compose.yaml"), `{"reuse_mode":"hints-only"}`)
+	if want := []string{"components/imported-datastore-postgres.yaml", "components/imported-datastore-redis.yaml",
+		"aggregate.yaml", "release.yaml"}; !slices.Equal(paths(hinted), want) {
+		t.Errorf("under hints-only the import wrote %v, want %v", paths(hinted), want)
+	}
+	hintedAggregate := fileContent(t, hinted, "aggregate.yaml")
+	for _, want := range []string{"    db:\n      type: imported/datastore/postgres\n",
+		"    cache:\n      type: imported/datastore/redis\n"} {
+		if !strings.Contains(hintedAggregate, want) {
+			t.Errorf("under hints-only the Aggregate does not hold\n%s\nin\n%s", want, hintedAggregate)
+		}
+	}
+	if !strings.Contains(fileContent(t, hinted, "components/imported-datastore-postgres.yaml"),
+		"# resembles core/datastore/postgres") {
+		t.Errorf("the drafted PostgreSQL Component carries no hint naming core/datastore/postgres")
+	}
+	if !strings.Contains(fileContent(t, hinted, "components/imported-datastore-redis.yaml"),
+		"# resembles core/datastore/redis") {
+		t.Errorf("the drafted Redis Component carries no hint naming core/datastore/redis")
+	}
+	for i, want := range []string{"core/datastore/postgres", "core/datastore/redis"} {
+		if d := hinted.Decisions[i]; !strings.Contains(d.SwapHint, "reference it by setting type: "+want) {
+			t.Errorf("under hints-only the decision for %s hints %q, want one naming %s", d.SourceNode.ID, d.SwapHint,
+				want)
 		}
 	}
 	api := out.Decisions[2]
@@ -241,7 +263,10 @@ func TestAComposeFileIsDraftedAsAnAggregateAndARelease(t *testing.T) {
 		"    #   environment:\n    #     POSTGRES_USER: \"shop\"\n    #     POSTGRES_DB: \"shop\"\n",
 		"    #     UPSTREAM_TOKEN: \"${UPSTREAM_TOKEN}\"\n",
 		"    # Not carried, since the draft reads no infrastructure from it: command.\n",
-		"  # manifest: left for the operator, since the import drafts no Manifest",
+		"  # manifest: left empty, since the import was given no target; an import given a target drafts the " +
+			"Manifest and names it here.\n  manifest: \"\"\n",
+		"  # environment is a drafted default, since no source names the environment this Release deploys to; " +
+			"change it to name the one it deploys to.\n  environment: development\n",
 	} {
 		if !strings.Contains(release, want) {
 			t.Errorf("the Release does not hold\n%s\nin\n%s", want, release)
@@ -648,7 +673,8 @@ func TestAnOverrideMapsAnImageNoRowNames(t *testing.T) {
 	}{
 		{"no row", "", Server},
 		{"an override under auto-apply", `{"reuse_mode":"auto-apply-above-threshold",` + override + `}`, "core/datastore/redis"},
-		{"an override under hints-only", `{` + override + `}`, "imported/datastore/bitnami-redis"},
+		{"an override under the default reuse mode", `{` + override + `}`, "core/datastore/redis"},
+		{"an override under hints-only", `{"reuse_mode":"hints-only",` + override + `}`, "imported/datastore/bitnami-redis"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
@@ -989,9 +1015,10 @@ func TestAModelIsAnInstanceOfTheModelRuntimeWhereTheCatalogHoldsIt(t *testing.T)
 			}
 
 			// The reference is made whatever the reuse mode says.
-			auto := importOver(body, `{"reuse_mode":"auto-apply-above-threshold"}`, catalogHoldingTheRuntime)
-			if _, got, _ := strings.Cut(fileContent(t, auto, "aggregate.yaml"), row.first); got != models {
-				t.Errorf("under auto-apply the models are drafted\n%s\nnot as under hints-only\n%s", got, models)
+			hinted := importOver(body, `{"reuse_mode":"hints-only"}`, catalogHoldingTheRuntime)
+			if _, got, _ := strings.Cut(fileContent(t, hinted, "aggregate.yaml"), row.first); got != models {
+				t.Errorf("under hints-only the models are drafted\n%s\nnot as under the default reuse mode\n%s", got,
+					models)
 			}
 		})
 	}
@@ -1009,7 +1036,7 @@ func TestAModelIsAnInstanceOfTheModelRuntimeWhereTheCatalogHoldsIt(t *testing.T)
 // 🔴 PLANTED DEFECT: in holdsModelRuntime (composeimport.go), return true for a
 // nil catalog: the row naming no catalog references the runtime and fails.
 //
-// 🔴 PLANTED DEFECT: in renderRelease (render.go), write an entry only for a
+// 🔴 PLANTED DEFECT: in composeRelease (render.go), write an entry only for a
 // model whose instance is of the runtime: both rows fail on release.yaml, which
 // then places neither drafted model.
 func TestAModelDraftsAsBeforeWhereTheCatalogLacksTheRuntime(t *testing.T) {

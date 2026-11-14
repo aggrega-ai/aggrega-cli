@@ -53,7 +53,8 @@ type server struct {
 	notCarried []string
 	// left names what the draft leaves for the Release, and notes says what else
 	// a reader of the draft needs to know about the server.
-	left, notes []string
+	left  []importer.LeftItem
+	notes []string
 }
 
 // item is one value the draft writes: its text, and what the draft says of it.
@@ -177,10 +178,10 @@ func clientServer(name string, fields []importer.ObjectEntry) server {
 	if s.stdio {
 		s.runtimeFrom = true
 		if len(s.command) == 0 {
-			s.left = append(s.left, "infra.stdio_command, since the server names no command")
+			s.left = append(s.left, importer.LeftItem{Path: "infra.stdio_command", Text: "since the server names no command"})
 		}
 	} else if s.endpoint == nil {
-		s.left = append(s.left, "infra.endpoint, since the server names no address")
+		s.left = append(s.left, importer.LeftItem{Path: "infra.endpoint", Text: "since the server names no address"})
 	}
 	return s
 }
@@ -237,8 +238,8 @@ func registryServer(top []importer.ObjectEntry) server {
 		}
 	default:
 		s.stdio = true
-		s.left = append(s.left, "infra.stdio_command, infra.endpoint or infra.image, since the description lists no "+
-			"package and no remote")
+		s.left = append(s.left, importer.LeftItem{Text: "infra.stdio_command, infra.endpoint or infra.image, since the " +
+			"description lists no package and no remote"})
 	}
 	if len(others) > 0 {
 		s.notes = append(s.notes, "The description also lists "+strings.Join(others, ", ")+
@@ -297,8 +298,8 @@ func registryPackage(s *server, fields []importer.ObjectEntry) {
 		return
 	default:
 		s.stdio = true
-		s.left = append(s.left, "infra.stdio_command and infra.stdio_runtime, since the package is a "+
-			strconv.Quote(registryType)+" package, and infra.stdio_runtime takes npm or pypi")
+		s.left = append(s.left, importer.LeftItem{Text: "infra.stdio_command and infra.stdio_runtime, since the package " +
+			"is a " + strconv.Quote(registryType) + " package, and infra.stdio_runtime takes npm or pypi"})
 		s.notCarried = append(s.notCarried, startingMembers(fields)...)
 		return
 	}
@@ -360,7 +361,7 @@ func registryRemote(s *server, fields []importer.ObjectEntry) {
 		}
 	}
 	if s.endpoint == nil {
-		s.left = append(s.left, "infra.endpoint, since the remote names no address")
+		s.left = append(s.left, importer.LeftItem{Path: "infra.endpoint", Text: "since the remote names no address"})
 	}
 }
 

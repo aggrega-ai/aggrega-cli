@@ -99,13 +99,14 @@ func sharedAttachedImport(t *testing.T, root, file, namespace, other string) imp
 		if f.Path == importops.RecordFileName {
 			continue
 		}
-		if f.Path != "aggregate.yaml" && !strings.HasPrefix(f.Path, "components/"+namespace+"-") {
+		drafted := f.Path == "aggregate.yaml" || f.Path == "release.yaml"
+		if !drafted && !strings.HasPrefix(f.Path, "components/"+namespace+"-") {
 			t.Fatalf("the shared import of %s drafted %s, which is not named in the namespace %q its "+
 				"importer's attachment hands it", file, f.Path, namespace)
 		}
-		if f.Path == "aggregate.yaml" && !strings.Contains(f.Content, "\nmetadata:\n  name: "+namespace+"/") {
-			t.Fatalf("the shared import of %s drafted an Aggregate not named in the namespace %q:\n%s",
-				file, namespace, f.Content)
+		if drafted && !strings.Contains(f.Content, "\nmetadata:\n  name: "+namespace+"/") {
+			t.Fatalf("the shared import of %s drafted %s not named in the namespace %q:\n%s",
+				file, f.Path, namespace, f.Content)
 		}
 		if strings.Contains(f.Path, other) || strings.Contains(f.Content, other+"/") {
 			t.Fatalf("the shared import of %s drafted %s carrying the namespace %q another attachment hands "+

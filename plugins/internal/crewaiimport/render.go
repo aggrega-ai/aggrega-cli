@@ -191,63 +191,47 @@ func aggregateText(text string) string {
 	return yamlString(importer.EscapeTemplateText(text))
 }
 
-// renderRelease writes the drafted Release, named name and deploying the
-// Aggregate of that name: for each agent, under its key, a comment naming what
-// the Release supplies — the image running the crew's program, and the
-// credential the agent presents to its model — and for each model part an entry
-// under its key, since a build places only the instances a Release names, with
-// the members of an llm object it is declared with in a comment above it. The
-// Release's environment and its Manifest are left unset, each named in a comment
-// where it belongs. Each importer renders its own Release; the plugin kit
-// renders none.
-func renderRelease(name string, read []*crew, parts []*modelPart) string {
-	var b strings.Builder
-	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
-	b.WriteString("kind: Release\n")
-	b.WriteString("metadata:\n")
-	b.WriteString("  name: " + name + "\n")
-	b.WriteString("  # environment: left for the operator, since no source names the environment this Release deploys to.\n")
-	b.WriteString("  version: 0.1.0\n")
-	b.WriteString("  description: Draft Release imported from a source in the " + Format + " format.\n")
-	b.WriteString("spec:\n")
-	b.WriteString("  aggregate: " + name + "\n")
-	b.WriteString("  # manifest: left for the operator, since the import drafts no Manifest, which names the target " +
-		"the agents are built for.\n")
-	b.WriteString("  components:\n")
+// crewaiRelease is the drafted Release, as the plugin kit's Release writer
+// writes it: for each agent, under its key, leaving for the Release the image
+// running the crew's program and the credential the agent presents to its model;
+// and for each model part an entry under its key, since a build places only the
+// instances a Release names, with the members of an llm object it is declared
+// with in a comment above it.
+func crewaiRelease(read []*crew, parts []*modelPart) importer.ReleaseDraft {
+	draft := importer.ReleaseDraft{}
 	for _, c := range read {
 		for _, a := range c.agents {
 			if a.missing {
 				continue
 			}
-			b.WriteString("    # Left for the Release, since no declaration states it:\n")
-			b.WriteString("    #   - infra.image, the container image running the crew's program\n")
+			entry := importer.ReleaseEntry{Key: a.key, Left: []importer.LeftItem{{Path: "infra.image",
+				Text: "the container image running the crew's program"}}}
 			if a.part != nil {
-				b.WriteString("    #   - the credential " + a.key + " presents to the model it reaches, attached under " +
-					"credential on its connection uses." + modelSocket + "." + a.part.key + "\n")
+				entry.Left = append(entry.Left, importer.ConnectionCredential(a.key, modelSocket, a.part.key, a.part.key))
 			}
-			b.WriteString("    " + a.key + ":\n")
-			b.WriteString("      infra: {}\n")
+			draft.Entries = append(draft.Entries, entry)
 		}
 	}
 	for _, p := range parts {
+		entry := importer.ReleaseEntry{Key: p.key}
 		if len(p.stated) > 0 {
-			b.WriteString("    # The declaration also states, for the Release to carry where " + p.component + " takes it:\n")
+			entry.Comments = append(entry.Comments, "The declaration also states, for the Release to carry where "+
+				p.component+" takes it:")
 		}
 		for _, m := range p.stated {
 			switch {
 			case m.emptied:
-				b.WriteString("    #   " + commentText(m.name) + "\n")
+				entry.Comments = append(entry.Comments, "  "+commentText(m.name))
 			case m.located:
-				b.WriteString("    #   " + commentText(m.name) + ": " + yamlString(m.text) + "\n")
+				entry.Comments = append(entry.Comments, "  "+commentText(m.name)+": "+yamlString(m.text))
 			default:
 				// A number or a boolean, written as the source writes it.
-				b.WriteString("    #   " + commentText(m.name) + ": " + m.text + "\n")
+				entry.Comments = append(entry.Comments, "  "+commentText(m.name)+": "+m.text)
 			}
 		}
-		b.WriteString("    " + p.key + ":\n")
-		b.WriteString("      infra: {}\n")
+		draft.Entries = append(draft.Entries, entry)
 	}
-	return b.String()
+	return draft
 }
 
 // renderModel writes the drafted Component of a model provider the catalog

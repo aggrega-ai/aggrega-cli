@@ -155,3 +155,23 @@ documents:
               conditionagentagentflow-0:
                 conditionagentagentflow-0:
                   target: conditionagentagentflow-0
+  - path: release.yaml
+    content: |
+      apiVersion: aggrega.ai/v1beta1
+      kind: Release
+      metadata:
+        name: imported/agents-handoff
+        # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+        environment: development
+        version: 0.1.0
+        description: Draft Release imported from a source in the flowise format.
+      spec:
+        aggregate: imported/agents-handoff
+        # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+        manifest: ""
+        components:
+          startagentflow-0: {}
+          conditionagentagentflow-0: {}
+          agentagentflow-0: {}
+          agentagentflow-1: {}
+          agentagentflow-2: {}

@@ -58,3 +58,20 @@ documents:
               chatopenai-0:
                 chatopenai-0:
                   target: chatopenai-0
+  - path: release.yaml
+    content: |
+      apiVersion: aggrega.ai/v1beta1
+      kind: Release
+      metadata:
+        name: imported/flowise-flow
+        # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+        environment: development
+        version: 0.1.0
+        description: Draft Release imported from a source in the flowise format.
+      spec:
+        aggregate: imported/flowise-flow
+        # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+        manifest: ""
+        components:
+          chatopenai-0: {}
+          httprequest-0: {}

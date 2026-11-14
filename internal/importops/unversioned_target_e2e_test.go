@@ -130,10 +130,10 @@ func unmappedWarnings(res Result) []string {
 // the compose target and requires the drafted Aggregate to write the type with no
 // version, the drafted Manifest to map it to compose/postgres — the one compose
 // Recipe, which declares that it implements core/datastore/postgres:1.0.0 — and no
-// warning to call the type unmapped. It then fills the drafted Release's
-// metadata.environment, as the comment the importer wrote in its place asks, adds
-// nothing else, and builds the draft set through the build-faithful harness over
-// the hub's Component and Recipe: it renders through the compose provider.
+// warning to call the type unmapped. It then builds the draft set as drafted,
+// the Release naming the drafted default environment, through the build-faithful
+// harness over the hub's Component and Recipe: it renders through the compose
+// provider.
 //
 // 🔴 PLANTED DEFECT: in implementsRequest (pkg/catalog/manifest_lookup.go), make the
 // first statement `return componentType`: the drafted Manifest maps nothing, the
@@ -171,19 +171,8 @@ func TestATargetMapsATypeDraftedWithNoVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the drafted Release: %v", err)
 	}
-	lines := strings.Split(string(body), "\n")
-	filled := 0
-	for i, l := range lines {
-		if strings.HasPrefix(l, "  # environment:") {
-			lines[i] = "  environment: testing"
-			filled++
-		}
-	}
-	if filled != 1 {
-		t.Fatalf("the drafted Release holds %d comment lines where its environment goes; want one:\n%s", filled, body)
-	}
-	if err := os.WriteFile(release, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
-		t.Fatalf("fill the drafted Release's environment: %v", err)
+	if !strings.Contains(string(body), "\n  environment: development\n") {
+		t.Fatalf("the drafted Release names no environment:\n%s", body)
 	}
 	rendered := pipelinetest.Build(t, pipelinetest.Input{
 		ReleasePath: release,
@@ -205,8 +194,8 @@ func TestATargetMapsATypeDraftedWithNoVersion(t *testing.T) {
 
 // TestTheBuildOffersAnUnmappedInstanceOfATypeWithNoVersionItsRecipes writes the
 // drafts the compose target composes for the PostgreSQL application, empties the
-// drafted Manifest's mapping and fills the Release's metadata.environment, and
-// builds them through the build-faithful harness over the hub's Component and its
+// drafted Manifest's mapping, and builds them, the Release as drafted, through
+// the build-faithful harness over the hub's Component and its
 // compose and helm Recipes: the build halts on the unmapped-instance condition
 // naming the db instance, and offers both Recipes as the ones implementing its
 // type — which the drafted Aggregate writes with no version, and each Recipe
@@ -238,19 +227,6 @@ func TestTheBuildOffersAnUnmappedInstanceOfATypeWithNoVersionItsRecipes(t *testi
 		t.Fatalf("empty the drafted Manifest's mapping: %v", err)
 	}
 	release := filepath.Join(dir, "release.yaml")
-	text, err := os.ReadFile(release)
-	if err != nil {
-		t.Fatalf("read the drafted Release: %v", err)
-	}
-	lines := strings.Split(string(text), "\n")
-	for i, l := range lines {
-		if strings.HasPrefix(l, "  # environment:") {
-			lines[i] = "  environment: testing"
-		}
-	}
-	if err := os.WriteFile(release, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
-		t.Fatalf("fill the drafted Release's environment: %v", err)
-	}
 
 	_, err = pipelinetest.BuildE(t, pipelinetest.Input{
 		ReleasePath: release,

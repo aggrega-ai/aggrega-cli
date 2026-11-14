@@ -344,11 +344,12 @@ func TestAnMCPServerAFlowNamesIsWiredByNameItsAddressWrittenEmptyAsWiring(t *tes
 		partType, modelType string
 		emptied             bool
 	}{
-		{name: "drafting every part", partType: "imported/ai-tool/mcptools",
-			modelType: "imported/ai-model/languagemodelcomponent"},
+		{name: "drafting every part", settings: map[string]any{"reuse_mode": "hints-only"},
+			partType: "imported/ai-tool/mcptools", modelType: "imported/ai-model/languagemodelcomponent"},
 		{name: "referencing a HIGH match", settings: map[string]any{"reuse_mode": "auto-apply-above-threshold"},
 			partType: "core/ai-tool/mcp", modelType: "core/ai-model/openai"},
-		{name: "drafting every part, marked emptied", settings: map[string]any{"empty_credentials": "marked"},
+		{name: "drafting every part, marked emptied",
+			settings: map[string]any{"empty_credentials": "marked", "reuse_mode": "hints-only"},
 			partType: "imported/ai-tool/mcptools", modelType: "imported/ai-model/languagemodelcomponent", emptied: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -416,12 +417,13 @@ func TestAnMCPServerAFlowNamesIsWiredByNameItsAddressWrittenEmptyAsWiring(t *tes
 			if slices.Sort(parts); !slices.Equal(parts, []string{"docs-server", modelPart, "remix"}) {
 				t.Errorf("the Aggregate's parts are %v, want the two servers and the model", parts)
 			}
+			release := readDraftedRelease(t, outputDir)
 			for _, line := range []string{
-				"    #   - infra.endpoint of remix, the address of the MCP server the flow names remix\n",
-				"    #   - infra.endpoint of docs-server, the address of the MCP server the flow names docs-server\n",
+				"    #   - infra.endpoint, the address of the MCP server the flow names remix\n    remix: {}\n",
+				"    #   - infra.endpoint, the address of the MCP server the flow names docs-server\n    docs-server: {}\n",
 			} {
-				if !strings.Contains(text, line) {
-					t.Errorf("the Aggregate does not leave for the Release\n%s", line)
+				if !strings.Contains(release, line) {
+					t.Errorf("the drafted Release does not leave for the Release\n%s", line)
 				}
 			}
 
@@ -542,7 +544,7 @@ func TestTheMCPToolsNodeOfARealExportNamingNoServerIsReportedAndNeverWired(t *te
 		name     string
 		settings map[string]any
 	}{
-		{name: "drafting every part"},
+		{name: "drafting every part", settings: map[string]any{"reuse_mode": "hints-only"}},
 		{name: "referencing a HIGH match", settings: map[string]any{"reuse_mode": "auto-apply-above-threshold"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1271,9 +1273,10 @@ func TestAPlatformsModelSocketDrawsOneConnection(t *testing.T) {
 
 // TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads imports a copy of
 // the committed Langflow export Basic Prompting with every line break written CR
-// LF: the platform carries the export itself, byte for byte — each CR LF written
-// as the line feed the export holds — and one warning says how many carriage
-// returns were written so, beside the report of how the flow reaches its model.
+// LF, under the hints-only reuse mode, so its model part is drafted: the platform
+// carries the export itself, byte for byte — each CR LF written as the line feed
+// the export holds — and one warning says how many carriage returns were written
+// so, beside the report of how the flow reaches its model.
 //
 // 🔴 PLANTED DEFECT: in carry (aggrega-pdk/go/pkg/importer/platform.go), replace
 // `text, returns := lineFeedsFor(string(scrubbed))` with
@@ -1286,7 +1289,7 @@ func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) 
 	if returns == 0 {
 		t.Fatal("the copy holds no carriage return, so the case measures nothing")
 	}
-	res, outputDir := writtenImport(t, platformCatalogWorkspace(t, nil), "crlf-flow.json", crlf)
+	res, outputDir := writtenImport(t, platformCatalogWorkspace(t, draftingEveryPart()), "crlf-flow.json", crlf)
 	content, err := os.ReadFile(filepath.Join(outputDir, "aggregate.yaml"))
 	if err != nil {
 		t.Fatalf("read the drafted Aggregate: %v", err)

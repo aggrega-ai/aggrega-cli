@@ -412,7 +412,8 @@ const agentFrameworkImage = "ghcr.io/example/agent-framework-app:1.0.0"
 // writeAgentFrameworkRelease writes beside the drafted Aggregate in dir a
 // Manifest realizing the agent, the model and the MCP tool through their
 // Kubernetes Recipes, and rewrites the drafted Release with only what it leaves
-// for the Release added: an environment, the Manifest, a boundary holding the
+// for the Release added: an environment in place of the drafted default, the
+// Manifest, a boundary holding the
 // drafted entries — the model's endpoint as the draft writes it — the agent's
 // image, and a credential on its model connection. It returns the Release's
 // path.
@@ -438,8 +439,10 @@ func writeAgentFrameworkRelease(t *testing.T, dir, key, part string) string {
 	// name is replaced.
 	_, named, _ := strings.Cut(release, "\nmetadata:\n  name: ")
 	draftName, _, _ := strings.Cut(named, "\n")
-	replace("  name: "+draftName+"\n", "  name: imported-agent-framework\n  environment: production\n")
-	replace("  components:\n", "  manifest: imported-agent-framework\n  boundaries:\n    main:\n"+
+	replace("  name: "+draftName+"\n", "  name: imported-agent-framework\n")
+	replace("  environment: development\n", "  environment: production\n")
+	replace("  manifest: \"\"\n", "  manifest: imported-agent-framework\n")
+	replace("  components:\n", "  boundaries:\n    main:\n"+
 		"      directory: ./dist/helm\n      components:\n")
 	head, entries, _ := strings.Cut(release, "      components:\n")
 	var b strings.Builder
@@ -454,7 +457,7 @@ func writeAgentFrameworkRelease(t *testing.T, dir, key, part string) string {
 			"                    type: core/referenced-secret\n                    infra:\n" +
 			"                      origin: " + name + "\n"
 	}
-	replace("        "+key+":\n          infra: {}\n", "        "+key+":\n          infra:\n            image: "+
+	replace("        "+key+": {}\n", "        "+key+":\n          infra:\n            image: "+
 		agentFrameworkImage+"\n          uses:\n            model:\n              "+part+":\n"+credential("model-key"))
 	for file, body := range map[string]string{"manifest.yaml": manifest, "release.yaml": release} {
 		if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644); err != nil {

@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -52,7 +53,9 @@ type draftedEntity struct {
 // The plugin kit holds its own drafts to the same rule by a twin check in its
 // importer package, TestEveryDraftOfThePackageIsNamedThroughDraftName: the kit is
 // a module published apart that imports nothing from this one, so the check is
-// written once on each side.
+// written once on each side. An importer drafts its Release through the kit's
+// writer, which names it itself, as TestEveryImporterDraftsItsReleaseThroughTheKit
+// requires; a Release literal this check would read is refused there.
 //
 // 🔴 PLANTED DEFECT: in Import (plugins/internal/composeimport/composeimport.go),
 // write the name as importer.TargetNamespace(in.Settings) + "/flow": this test
@@ -175,6 +178,170 @@ func draftedEntities(t *testing.T, at string, src []byte) []draftedEntity {
 		})
 	}
 	return out
+}
+
+// releaseWriter is the plugin kit's one writer of a drafted Release, as an
+// importer's source calls it.
+const releaseWriter = "DraftRelease"
+
+// releaseComposedApart is one place an importer's source composes a Release
+// other than through the kit's writer: where, and how.
+type releaseComposedApart struct {
+	at, how string
+}
+
+// releaseDrafting is what one Go source does about a Release: every place it
+// composes one itself, and how many times it calls the kit's writer.
+type releaseDrafting struct {
+	apart  []releaseComposedApart
+	writes int
+}
+
+// releaseDraftingOf parses one Go source and returns what it does about a
+// Release: each string literal holding a Release's kind line and each
+// EmittedEntity literal — written with its package, bare, or elided inside a
+// composite of them — whose Kind is Release and whose Mode is not reference,
+// each of which composes one apart from the kit; and each call of the kit's
+// writer.
+func releaseDraftingOf(t *testing.T, at string, src []byte) releaseDrafting {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, at, src, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse %s: %v", at, err)
+	}
+	var out releaseDrafting
+	where := func(n ast.Node) string { return at + ":" + strconv.Itoa(fset.Position(n.Pos()).Line) }
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch e := n.(type) {
+		case *ast.BasicLit:
+			if e.Kind == token.STRING && strings.Contains(stringLiteral(e), "kind: Release") {
+				out.apart = append(out.apart, releaseComposedApart{at: where(e),
+					how: "a string literal writing a Release's kind"})
+			}
+		case *ast.CompositeLit:
+			if !isEmittedEntity(e.Type) {
+				return true
+			}
+			fields := keyedFields(e)
+			if stringLiteral(fields["Kind"]) == "Release" && stringLiteral(fields["Mode"]) != "reference" {
+				out.apart = append(out.apart, releaseComposedApart{at: where(e), how: "an EmittedEntity of kind Release"})
+			}
+		case *ast.CallExpr:
+			if sel, ok := e.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == releaseWriter {
+				if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == kitPackage {
+					out.writes++
+				}
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// TestEveryImporterDraftsItsReleaseThroughTheKit parses the source of every
+// importer the plugins tree holds — each plugins/<name>-importer guest and each
+// plugins/internal/<name>import core — and holds every Release it drafts to the
+// plugin kit's one writer, DraftRelease: no string literal writes a Release's
+// kind line and no EmittedEntity literal is a drafted Release, each refused
+// naming the file and the line. The writer names the Release as DraftName names
+// the Aggregate it deploys, so a Release written through it is named the kit's
+// way by construction.
+//
+// The cores drafting their own Aggregate are the ones listed in wantDrafting,
+// and each is required to call the writer, so a scan that read nothing, or a
+// core that stopped drafting a Release, fails rather than passing over nothing.
+// The check is first run over a planted source holding each form it refuses and
+// a call of the writer, which it must count and pass. An importer drafting
+// through the kit's Import drafts its Release in the kit, whose own source is
+// held to the same rule by a twin check in its importer package,
+// TestEveryReleaseOfThePackageIsWrittenByDraftRelease.
+//
+// 🔴 PLANTED DEFECT: in Import (plugins/internal/composeimport/composeimport.go),
+// replace the call of importer.DraftRelease with
+// aggrega.EmittedEntity{Kind: "Release", Name: name, Mode: "draft", Body: "kind: Release\n"}:
+// this test reddens naming composeimport.go twice — the literal and the kind
+// line — and names composeimport as drafting no Release through the kit.
+func TestEveryImporterDraftsItsReleaseThroughTheKit(t *testing.T) {
+	t.Parallel()
+	const planted = `package p
+
+func (p *planted) text() string {
+	return "apiVersion: v\nkind: Release\n"
+}
+
+func (p *planted) selected(in aggrega.ImportInput) aggrega.EmittedEntity {
+	return aggrega.EmittedEntity{Kind: "Release", Name: importer.DraftName(in), Mode: "draft"}
+}
+
+func (p *planted) elided(in aggrega.ImportInput) []EmittedEntity {
+	return []EmittedEntity{{Kind: "Release", Name: importer.DraftName(in), Mode: "draft"}}
+}
+
+func (p *planted) written(in aggrega.ImportInput) aggrega.EmittedEntity {
+	return importer.DraftRelease(in, importer.ReleaseDraft{})
+}
+`
+	control := releaseDraftingOf(t, "planted.go", []byte(planted))
+	var hows []string
+	for _, c := range control.apart {
+		hows = append(hows, c.how)
+	}
+	if want := []string{"a string literal writing a Release's kind", "an EmittedEntity of kind Release",
+		"an EmittedEntity of kind Release"}; !slices.Equal(hows, want) || control.writes != 1 {
+		t.Fatalf("the check found %v and %d call(s) of %s.%s in the planted source; want the kind line and both "+
+			"literals refused, and the one call counted", hows, control.writes, kitPackage, releaseWriter)
+	}
+
+	root := moduleRoot(t)
+	guests, err := filepath.Glob(filepath.Join(root, "plugins", "*-importer"))
+	if err != nil {
+		t.Fatalf("glob the importer guests: %v", err)
+	}
+	cores, err := filepath.Glob(filepath.Join(root, "plugins", "internal", "*import"))
+	if err != nil {
+		t.Fatalf("glob the importer cores: %v", err)
+	}
+	dirs := append(guests, cores...)
+	sort.Strings(dirs)
+
+	writing := map[string]bool{}
+	for _, dir := range dirs {
+		rel, err := filepath.Rel(root, dir)
+		if err != nil {
+			t.Fatalf("relativize %s: %v", dir, err)
+		}
+		rel = filepath.ToSlash(rel)
+		for _, path := range nonTestGoFiles(t, dir) {
+			src, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read %s: %v", path, err)
+			}
+			got := releaseDraftingOf(t, rel+"/"+filepath.Base(path), src)
+			for _, c := range got.apart {
+				t.Errorf("%s composes a Release with %s; an importer drafts its Release through %s.%s, so a Release is "+
+					"written one way by every importer", c.at, c.how, kitPackage, releaseWriter)
+			}
+			if got.writes > 0 {
+				writing[rel] = true
+			}
+		}
+	}
+
+	wantDrafting := []string{
+		"plugins/internal/adkimport",
+		"plugins/internal/agentframeworkimport",
+		"plugins/internal/composeimport",
+		"plugins/internal/crewaiimport",
+		"plugins/internal/langgraphimport",
+		"plugins/internal/mcpimport",
+	}
+	for _, want := range wantDrafting {
+		if !writing[want] {
+			t.Errorf("found no call of %s.%s in %s, which drafts its own Aggregate and the Release beside it; the "+
+				"scan is not reading what it checks", kitPackage, releaseWriter, want)
+		}
+	}
 }
 
 // isEmittedEntity reports whether a composite literal's type is the kit's

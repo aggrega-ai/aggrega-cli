@@ -2,12 +2,14 @@ apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
   name: imported/flow
-  # environment: left for the operator, since no source names the environment this Release deploys to.
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
   version: 0.1.0
   description: Draft Release imported from a source in the compose format.
 spec:
   aggregate: imported/flow
-  # manifest: left for the operator, since the import drafts no Manifest, which names the target the services are built for.
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
   components:
     app:
       infra:

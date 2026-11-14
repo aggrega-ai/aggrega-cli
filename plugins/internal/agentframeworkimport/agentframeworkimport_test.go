@@ -357,11 +357,12 @@ func TestEachCommittedAgentIsDraftedAsOneInstanceWiredToItsModelAlone(t *testing
 // only the instances a Release names, so an instance without an entry halts it.
 // The docs agent's model, whose connection states no endpoint, has an entry
 // holding no infrastructure, the Component's own default being its address. Each
-// importer package holds a test of this name over its own renderer, since each
-// importer renders its own Release and the plugin kit renders none.
+// importer package holds a test of this name over the entries it hands the
+// plugin kit's Release writer, since each importer decides what its Release
+// holds.
 //
-// 🔴 PLANTED DEFECT: in writePartEntry (render.go), return with no entry where the
-// connection states no endpoint: the docs agent's rows fail naming openai-model.
+// 🔴 PLANTED DEFECT: in agentFrameworkRelease (render.go), skip a part whose connection
+// states no endpoint: the docs agent's rows fail naming openai-model.
 func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testing.T) {
 	agentOnly := &aggrega.CatalogProjection{Components: []aggrega.CatalogComponent{
 		{Name: Component, Version: "1.0.0", Labels: map[string]string{categoryLabel: "ai-agent"}},
@@ -392,7 +393,7 @@ func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testi
 				slices.Sort(unplaced)
 				t.Errorf("the Release names no entry for %v, which the Aggregate declares:\n%s", unplaced, release)
 			}
-			if row.empty != "" && !strings.Contains(release, "    "+row.empty+":\n      infra: {}\n") {
+			if row.empty != "" && !strings.Contains(release, "    "+row.empty+": {}\n") {
 				t.Errorf("the Release holds no entry %s holding no infrastructure:\n%s", row.empty, release)
 			}
 		})
@@ -685,7 +686,7 @@ func TestAnAnonymousConnectionIsWrittenUnauthenticated(t *testing.T) {
 	if edge.Target != "llama3" || edge.Values["unauthenticated"] != true {
 		t.Errorf("the anonymous connection is %+v, want it targeting llama3 with unauthenticated true:\n%s", edge, text)
 	}
-	if strings.Contains(release, "the credential probe presents to the model") {
+	if strings.Contains(release, "features.credential") || strings.Contains(release, "the credential probe presents") {
 		t.Errorf("the Release asks for a credential an anonymous connection does not present:\n%s", release)
 	}
 	if got := r.Spec.Components["llama3"].Infra["endpoint"]; got != "http://ollama:11434/v1" {

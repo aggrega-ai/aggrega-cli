@@ -269,3 +269,27 @@ documents:
               retrievertool-2:
                 retrievertool-2:
                   target: retrievertool-2
+  - path: release.yaml
+    content: |
+      apiVersion: aggrega.ai/v1beta1
+      kind: Release
+      metadata:
+        name: imported/multiple-documents-qna
+        # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+        environment: development
+        version: 0.1.0
+        description: Draft Release imported from a source in the flowise format.
+      spec:
+        aggregate: imported/multiple-documents-qna
+        # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+        manifest: ""
+        components:
+          pinecone-0: {}
+          openaiembeddings-0: {}
+          pinecone-1: {}
+          openaiembeddings-1: {}
+          buffermemory-0: {}
+          retrievertool-2: {}
+          retrievertool-1: {}
+          chatopenai-0: {}
+          toolagent-0: {}

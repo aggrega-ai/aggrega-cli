@@ -134,9 +134,16 @@ func layHubEntities(t *testing.T, dir string, rels []string) {
 }
 
 // referencing are the settings referencing every part whose best candidate is
-// a HIGH match.
+// a HIGH match: the default reuse mode, written out so a case reading it says
+// which draft it reads.
 func referencing() map[string]any {
 	return map[string]any{"reuse_mode": "auto-apply-above-threshold"}
+}
+
+// draftingEveryPart are the settings drafting a Component for every part, the
+// hints-only reuse mode, for a case reading what a drafted part is written as.
+func draftingEveryPart() map[string]any {
+	return map[string]any{"reuse_mode": "hints-only"}
 }
 
 // referencingLanguageModel is referencing with a mapping override mapping
@@ -199,8 +206,8 @@ var aSelectedModel = map[string]map[string]any{
 //     taking it from another node — leaves values.model unwritten, with a comment
 //     in the part saying it is left for the author and why, a model-not-named
 //     warning naming the node, and its decision saying so;
-//   - a part the draft drafts rather than references is written with no value
-//     and nothing is reported of a model.
+//   - a part the draft drafts rather than references, under the hints-only reuse
+//     mode, is written with no value and nothing is reported of a model.
 //
 // 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source:
 //
@@ -261,8 +268,8 @@ func TestAReferencedModelPartIsWrittenWithTheModelItsNodeSelects(t *testing.T) {
 				return promptingWith(t, map[string]map[string]any{"model": {"value": "connect_other_models"}})
 			},
 			key: langflowKey, node: promptingNodeID, why: "takes its model from another node connected to it"},
-		{name: "a drafted part", settings: nil, source: flowiseChatflow, key: flowiseKey, node: "chatOpenAI_0",
-			drafted: true},
+		{name: "a drafted part", settings: draftingEveryPart(), source: flowiseChatflow, key: flowiseKey,
+			node: "chatOpenAI_0", drafted: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -673,6 +680,16 @@ func readDraftedAggregate(t *testing.T, dir string) string {
 	return string(content)
 }
 
+// readDraftedRelease reads the Release an import wrote under dir.
+func readDraftedRelease(t *testing.T, dir string) string {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(dir, "release.yaml"))
+	if err != nil {
+		t.Fatalf("read the drafted Release: %v", err)
+	}
+	return string(content)
+}
+
 // draftedAggregateName returns the name the drafted Aggregate in dir declares at
 // metadata.name, which an import derives from the source, so a Release written
 // beside it names the Aggregate it was drafted as.
@@ -831,14 +848,14 @@ func TestADraftedPlatformBuildsWithTheReleaseSupplyingWhatTheDraftLeavesIt(t *te
 // TestALangflowLanguageModelNodeIsWiredAsTheFlowsModelWithNoOverride imports
 // Langflow 1.6.0's Basic Prompting — the starter flow whose Language Model node
 // runs on OpenAI and selects gpt-4.1 — under the default layout, over the hub's
-// Components and with no mapping override, as an import naming no setting of its
-// own reads it:
+// Components and with no mapping override:
 //
-//   - drafting every part, the default: the node is the flow's model, drafted as
-//     a Component of its own resembling core/ai-model/openai, its decision says it
-//     is wired to the platform's model socket, and that socket draws one
-//     connection to it, under the alias of its key;
-//   - referencing every HIGH match: the part is core/ai-model/openai written with
+//   - drafting every part, under the hints-only reuse mode: the node is the
+//     flow's model, drafted as a Component of its own resembling
+//     core/ai-model/openai, its decision says it is wired to the platform's model
+//     socket, and that socket draws one connection to it, under the alias of its
+//     key;
+//   - referencing every HIGH match, the default: the part is core/ai-model/openai written with
 //     values.model gpt-4.1, and the draft builds on compose with a Release
 //     supplying only what the draft leaves it, the model connection the platform
 //     requires drawn by the draft itself.
@@ -856,7 +873,7 @@ func TestALangflowLanguageModelNodeIsWiredAsTheFlowsModelWithNoOverride(t *testi
 		partType string
 		build    bool
 	}{
-		{name: "drafting every part", partType: "imported/ai-model/languagemodelcomponent"},
+		{name: "drafting every part", settings: draftingEveryPart(), partType: "imported/ai-model/languagemodelcomponent"},
 		{name: "referencing a HIGH match", settings: referencing(), partType: "core/ai-model/openai", build: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -933,7 +950,7 @@ func TestALangflowLanguageModelNodeOnAnotherProviderStaysInTheFlow(t *testing.T)
 		name     string
 		settings map[string]any
 	}{
-		{name: "drafting every part"},
+		{name: "drafting every part", settings: draftingEveryPart()},
 		{name: "referencing a HIGH match", settings: referencing()},
 		{name: "referencing it through an override", settings: referencingLanguageModel()},
 	} {

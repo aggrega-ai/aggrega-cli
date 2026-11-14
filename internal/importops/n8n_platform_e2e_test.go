@@ -219,12 +219,13 @@ func TestAnN8nWorkflowIsDraftedAsThePlatformCarryingIt(t *testing.T) {
 		}
 	}
 
+	release := readDraftedRelease(t, dir)
 	for _, left := range []string{
-		"#   - infra.image, the container image running n8n\n",
-		"#   - infra.endpoint of docs-mcp, the address of the MCP server the node calls\n",
+		"    #   - infra.image, the container image running n8n\n",
+		"    #   - infra.endpoint, the address of the MCP server the node calls\n    docs-mcp: {}\n",
 	} {
-		if !strings.Contains(text, left) {
-			t.Errorf("the draft does not leave %q for the Release:\n%s", strings.TrimSpace(left), text)
+		if !strings.Contains(release, left) {
+			t.Errorf("the drafted Release does not leave %q for the Release:\n%s", strings.TrimSpace(left), release)
 		}
 	}
 	if strings.Contains(text, "allow_env_access_in_nodes") {

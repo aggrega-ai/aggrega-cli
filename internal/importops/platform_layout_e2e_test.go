@@ -238,9 +238,10 @@ func readAsTheCompilerDoes(t *testing.T, content string) platformAggregate {
 var uuidOfAPlatform = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 // TestEveryLangflowAndFlowiseFixtureIsDraftedAsThePlatformCarryingIt imports
-// every committed Langflow and Flowise source under the default layout, over a
-// catalog holding the two platforms and the Components their parts resemble, and
-// reads the drafted Aggregate as the compiler reads one. For each:
+// every committed Langflow and Flowise source under the default layout and the
+// hints-only reuse mode, over a catalog holding the two platforms and the
+// Components their parts resemble, and reads the drafted Aggregate as the
+// compiler reads one. For each:
 //
 //   - the Aggregate holds one instance of the source's platform, and its
 //     definition value, once interpolated, is the source's own bytes — double
@@ -258,7 +259,7 @@ func TestEveryLangflowAndFlowiseFixtureIsDraftedAsThePlatformCarryingIt(t *testi
 	for _, fx := range flowFixtures {
 		t.Run(fx.golden, func(t *testing.T) {
 			t.Parallel()
-			res := importFlow(t, platformCatalogWorkspace(t, nil), fx.path)
+			res := importFlow(t, platformCatalogWorkspace(t, map[string]any{"reuse_mode": "hints-only"}), fx.path)
 			if res.Halted() {
 				t.Fatalf("the import halted: %+v", res.Diagnostics)
 			}
@@ -323,9 +324,9 @@ func TestEveryLangflowAndFlowiseFixtureIsDraftedAsThePlatformCarryingIt(t *testi
 				t.Errorf("the Aggregate's other components are %v and the connections reach %v; want exactly the parts %v",
 					parts, targets, wantParts)
 			}
-			if components := len(draftPaths(res)) - 1; components != len(wantParts) {
-				t.Errorf("the import drafted %d Component(s) beside the Aggregate, want one per part, %d", components,
-					len(wantParts))
+			if components := len(draftPaths(res)) - 2; components != len(wantParts) {
+				t.Errorf("the import drafted %d Component(s) beside the Aggregate and the Release, want one per part, %d",
+					components, len(wantParts))
 			}
 
 			chosen := 0

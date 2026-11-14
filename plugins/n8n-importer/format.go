@@ -40,8 +40,8 @@ var platform = importer.Platform{
 	Single:          singleSockets,
 	Standing:        standingOf,
 	Model:           modelOf,
-	LeftForRelease: []string{
-		"infra.image, the container image running n8n",
+	LeftForRelease: []importer.LeftItem{
+		{Path: "infra.image", Text: "the container image running n8n"},
 	},
 }
 

@@ -48,8 +48,8 @@ func wireOf(_ json.RawMessage, part importer.Part) importer.Wiring {
 				"draft carries — the one the export held, or none where the empty_credentials setting writes it empty, "+
 				"until an address is set again; the platform delivers this connection's address as %s, but %s",
 				variables, envAccess),
-			LeftForRelease: []string{fmt.Sprintf("infra.endpoint of %s, the address of the MCP server the node calls",
-				part.Key)},
+			LeftForRelease: []importer.LeftItem{{Path: "infra.endpoint",
+				Text: "the address of the MCP server the node calls"}},
 		}
 	}
 	if variables == "" {

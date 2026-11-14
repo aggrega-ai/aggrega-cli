@@ -209,57 +209,40 @@ func aggregateText(text string) string {
 	return yamlString(importer.EscapeTemplateText(text))
 }
 
-// renderRelease writes the drafted Release, named name and deploying the
-// Aggregate of that name: for each agent, under its instance's key, a comment
-// naming what the Release supplies — the image running the application and the
-// credential it presents to its model — and the values its declarative agent
-// states for its model and its MCP servers, each server's url among them,
-// written as stated or, where the credential decision wrote one empty, with no
-// value; then for each model part, an entry, with the endpoint its connection
-// states where it states one. The Release's environment and its Manifest are
-// left unset, each named in a comment where it belongs. Each importer renders
-// its own Release; the plugin kit renders none.
-func renderRelease(name string, agents []*agent, parts []*modelPart) string {
-	var b strings.Builder
-	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
-	b.WriteString("kind: Release\n")
-	b.WriteString("metadata:\n")
-	b.WriteString("  name: " + name + "\n")
-	b.WriteString("  # environment: left for the operator, since no source names the environment this Release deploys to.\n")
-	b.WriteString("  version: 0.1.0\n")
-	b.WriteString("  description: Draft Release imported from a source in the " + Format + " format.\n")
-	b.WriteString("spec:\n")
-	b.WriteString("  aggregate: " + name + "\n")
-	b.WriteString("  # manifest: left for the operator, since the import drafts no Manifest, which names the target " +
-		"the agents are built for.\n")
-	b.WriteString("  components:\n")
+// agentFrameworkRelease is the drafted Release, as the plugin kit's Release
+// writer writes it: for each agent, under its instance's key, leaving for the
+// Release the image running the application and the credential it presents to
+// its model, with a comment naming the values its declarative agent states for
+// its model and its MCP servers, each server's url among them, written as stated
+// or, where the credential decision wrote one empty, with no value; then for each
+// model part, an entry, with the endpoint its connection states where it states
+// one.
+func agentFrameworkRelease(agents []*agent, parts []*modelPart) importer.ReleaseDraft {
+	draft := importer.ReleaseDraft{}
 	for _, a := range agents {
-		writeAgentEntry(&b, a)
+		draft.Entries = append(draft.Entries, agentEntry(a))
 	}
 	for _, p := range parts {
-		writePartEntry(&b, p)
+		draft.Entries = append(draft.Entries, partEntry(p))
 	}
-	return b.String()
+	return draft
 }
 
-// writeAgentEntry writes one agent's entry of the Release.
-func writeAgentEntry(b *strings.Builder, a *agent) {
-	b.WriteString("    # Left for the Release, since the declarative agent does not state it:\n")
-	b.WriteString("    #   - infra.image, the container image running the application built on Agent Framework, " +
-		"holding its declarative agent\n")
+// agentEntry is one agent's entry of the Release.
+func agentEntry(a *agent) importer.ReleaseEntry {
+	entry := importer.ReleaseEntry{Key: a.key, Left: []importer.LeftItem{{Path: "infra.image",
+		Text: "the container image running the application built on Agent Framework, holding its declarative agent"}}}
 	if p := a.part; p != nil && a.model.connection.kind != "anonymous" {
-		b.WriteString("    #   - the credential " + a.key + " presents to the model it reaches, attached under credential " +
-			"on its connection uses." + modelSocket + "." + p.key + "\n")
+		entry.Left = append(entry.Left, importer.ConnectionCredential(a.key, modelSocket, p.key, p.key))
 	}
 	if len(a.stated) > 0 {
-		b.WriteString("    # The declarative agent also states these values for its model and its MCP servers, written here " +
-			"for review:\n")
+		entry.Comments = append(entry.Comments, "The declarative agent also states these values for its model and its MCP "+
+			"servers, written here for review:")
 		for _, v := range a.stated {
-			b.WriteString("    #   - " + statedLine(v) + "\n")
+			entry.Comments = append(entry.Comments, "  - "+statedLine(v))
 		}
 	}
-	b.WriteString("    " + a.key + ":\n")
-	b.WriteString("      infra: {}\n")
+	return entry
 }
 
 // statedLine writes one stated value for the comment above an agent's entry:
@@ -283,34 +266,32 @@ func statedLine(v statedValue) string {
 	return field + ": " + yamlString(v.text.value)
 }
 
-// writePartEntry writes one model part's entry of the Release, since a build
-// places only the instances a Release names: the endpoint its connection states
-// as infra.endpoint, or a comment naming the reference it is written as, saying it
+// partEntry is one model part's entry of the Release, since a build places only
+// the instances a Release names: the endpoint its connection states as
+// infra.endpoint, or a comment naming the reference it is written as, saying it
 // is computed, or leaving it for the Release where it was written empty. A part
 // whose connection states no endpoint has an entry holding no infrastructure:
 // the Component's own default is its address.
-func writePartEntry(b *strings.Builder, p *modelPart) {
+func partEntry(p *modelPart) importer.ReleaseEntry {
+	entry := importer.ReleaseEntry{Key: p.key}
 	e := p.endpointText
 	switch {
 	case p.endpoint != nil:
 	case e.variable != "":
-		b.WriteString("    # infra.endpoint is left at the Component's default, while the declarative agent writes its " +
-			"model's address as " + envReference(commentText(e.variable)) + ".\n")
+		entry.Comments = append(entry.Comments, "infra.endpoint is left at the Component's default, while the declarative "+
+			"agent writes its model's address as "+envReference(commentText(e.variable))+".")
 	case e.expression:
-		b.WriteString("    # infra.endpoint is left at the Component's default, while the declarative agent computes its " +
-			"model's address with an expression the import does not evaluate.\n")
+		entry.Comments = append(entry.Comments, "infra.endpoint is left at the Component's default, while the declarative "+
+			"agent computes its model's address with an expression the import does not evaluate.")
 	case e.literal():
-		b.WriteString("    # Left for the Release, since the draft does not write it:\n")
-		b.WriteString("    #   - infra.endpoint, " + emptiedNote + "; until it is set, the Component's default " +
-			"address is used\n")
+		entry.Left = append(entry.Left, importer.LeftItem{Path: "infra.endpoint",
+			Text: emptiedNote + "; until it is set, the Component's default address is used"})
 	}
-	b.WriteString("    " + p.key + ":\n")
 	if p.endpoint == nil {
-		b.WriteString("      infra: {}\n")
-		return
+		return entry
 	}
-	b.WriteString("      infra:\n")
-	b.WriteString("        endpoint: " + yamlString(*p.endpoint) + "\n")
+	entry.Lines = []string{"infra:", "  endpoint: " + yamlString(*p.endpoint)}
+	return entry
 }
 
 // renderModel writes the drafted OpenAI Component, named name, for a catalog

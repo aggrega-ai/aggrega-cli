@@ -337,6 +337,10 @@ func TestSuite_CBORVectors(t *testing.T) {
 	// string of its bytes, which the reference encoder writes the same way, so it
 	// stays anchored.
 	vec[abi.ImportInput](t, "ImportInputNamed", false)
+	// A file imported for a target: a text string naming the provider capability
+	// beside the format's, which the reference encoder writes the same way, so it
+	// stays anchored. The two keys are one length, so their bytewise order is pinned.
+	vec[abi.ImportInput](t, "ImportInputTarget", false)
 	vec[abi.ImportOutput](t, "ImportOutput", false)
 	vec[abi.ParseSourceResponse](t, "ParseSourceResponse", false)
 	// The parse-source reply's SUCCESS shape, which its failure envelope above

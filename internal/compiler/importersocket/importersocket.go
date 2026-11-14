@@ -98,6 +98,11 @@ type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 // wire, so a payload built for a catalog holding no Component is byte-identical
 // to one built with no view at all.
 //
+// target is the provider capability the import drafts for, piped through as the
+// payload's target so the importer can write what only that target needs; an
+// empty target is omitted from the wire payload, so a payload built for no target
+// is byte-identical to one built before the payload carried one.
+//
 // parserRes and parserLoad are the parser-socket seams the host wires into the
 // importer for host-mediated parsing. An importer that needs a source's
 // canonical structured tree does not carry its own language parser: it asks the
@@ -113,7 +118,7 @@ type ImporterLoader func(types.Plugin) (wasm.PluginSpec, error)
 // importer reports it as a source that does not parse rather than walking an
 // empty tree. The tree arrives through this callback, never through the import
 // input payload.
-func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoader, parserRes parsersocket.ParserResolver, parserLoad parsersocket.ParserLoader, format string, source []byte, sourceName string, sources []abi.ImportSource, settings json.RawMessage, catalogView *abi.CatalogProjection) (abi.ImportOutput, error) {
+func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoader, parserRes parsersocket.ParserResolver, parserLoad parsersocket.ParserLoader, format string, source []byte, sourceName string, sources []abi.ImportSource, settings json.RawMessage, catalogView *abi.CatalogProjection, target string) (abi.ImportOutput, error) {
 	plugin, err := res.ImporterPluginForFormat(format)
 	if err != nil {
 		return abi.ImportOutput{}, fmt.Errorf("resolve importer for format %q: %w", format, err)
@@ -126,7 +131,7 @@ func ImportArtifact(ctx context.Context, res ImporterResolver, load ImporterLoad
 	spec.PluginType = wasm.PluginTypeImporter
 
 	payload, err := abi.ImportInput{Format: format, Bytes: source, Name: sourceName, Sources: sources, Settings: settings,
-		Catalog: catalogView}.EncodeCBOR()
+		Catalog: catalogView, Target: target}.EncodeCBOR()
 	if err != nil {
 		return abi.ImportOutput{}, fmt.Errorf("encode import input for %q: %w", format, err)
 	}

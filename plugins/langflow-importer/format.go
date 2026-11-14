@@ -32,7 +32,8 @@ var langflow = importer.Format{
 // OpenAI takes (wire.go), a referenced model is given the model its node
 // selects (model.go), the inputs the Component requires that a flow cannot
 // supply are left for the Release, and the lines the compose Recipe needs for
-// the administrator's password are shown for an author building for compose.
+// the administrator's password are declared by an import for compose and shown,
+// commented out, by an import naming no target.
 var platform = importer.Platform{
 	Component:       "core/ai-agent/langflow",
 	DefinitionValue: "flow_definition",
@@ -47,9 +48,10 @@ var platform = importer.Platform{
 	Single:          singleSockets,
 	Standing:        standingOf,
 	Model:           modelOf,
-	LeftForRelease: []string{
-		"infra.image, the container image running Langflow",
-		"the admin_password slot, the administrator's password, while values.require_authentication stays true",
+	LeftForRelease: []importer.LeftItem{
+		{Path: "infra.image", Text: "the container image running Langflow"},
+		{Path: "features.admin_password", Text: "the administrator's password, while values.require_authentication stays " +
+			"true"},
 	},
 	TargetAttachments: []importer.TargetAttachment{composeAdminPassword},
 }

@@ -181,3 +181,24 @@ documents:
               loopcomponent-e7ur0:
                 loopcomponent-e7ur0:
                   target: loopcomponent-e7ur0
+  - path: release.yaml
+    content: |
+      apiVersion: aggrega.ai/v1beta1
+      kind: Release
+      metadata:
+        name: imported/research-translation-loop
+        # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+        environment: development
+        version: 0.1.0
+        description: Draft Release imported from a source in the langflow format.
+      spec:
+        aggregate: imported/research-translation-loop
+        # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+        manifest: ""
+        components:
+          arxivcomponent-zgqwh: {}
+          chatoutput-scvyg: {}
+          chatinput-mblfd: {}
+          languagemodelcomponent-ps5yd: {}
+          loopcomponent-e7ur0: {}
+          parsercomponent-v2o48: {}

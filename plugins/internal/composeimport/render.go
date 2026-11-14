@@ -191,32 +191,18 @@ func writeFilesRead(b *strings.Builder, read []*project) {
 	}
 }
 
-// renderRelease writes the drafted Release, named name and deploying the
-// Aggregate of that name: for each service, under its key, the infrastructure
-// the draft writes — the image and the port of an instance of Server — with a
-// comment above it naming what the draft leaves for the Release, what else the
-// source states for the service's operation, and the members it does not
-// carry; then, for each model, of ModelRuntime or drafted, an empty entry under
-// its key. The Release's environment and its Manifest are left unset, each named
-// in a comment where it belongs. Each importer renders its own Release; the
-// plugin kit renders none.
-func renderRelease(name string, read []*project, types map[*service]string) string {
-	var b strings.Builder
-	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
-	b.WriteString("kind: Release\n")
-	b.WriteString("metadata:\n")
-	b.WriteString("  name: " + name + "\n")
-	b.WriteString("  # environment: left for the operator, since no source names the environment this Release deploys to.\n")
-	b.WriteString("  version: 0.1.0\n")
-	b.WriteString("  description: Draft Release imported from a source in the " + Format + " format.\n")
-	b.WriteString("spec:\n")
-	b.WriteString("  aggregate: " + name + "\n")
-	b.WriteString("  # manifest: left for the operator, since the import drafts no Manifest, which names the target " +
-		"the services are built for.\n")
-	b.WriteString("  components:\n")
+// composeRelease is the drafted Release, as the plugin kit's Release writer
+// writes it: for each service, under its key, the infrastructure the draft
+// writes — the image and the port of an instance of Server — leaving for the
+// Release what the draft does not write, with a comment above it naming what
+// else the source states for the service's operation and the members it does
+// not carry; then, for each model, of ModelRuntime or drafted, an empty entry
+// under its key.
+func composeRelease(read []*project, types map[*service]string) importer.ReleaseDraft {
+	draft := importer.ReleaseDraft{}
 	for _, p := range read {
 		for _, s := range p.services {
-			writeService(&b, s, types[s])
+			draft.Entries = append(draft.Entries, serviceEntry(s, types[s]))
 		}
 	}
 	// A build places only the instances a Release names, so each model's
@@ -226,81 +212,71 @@ func renderRelease(name string, read []*project, types map[*service]string) stri
 	// the Recipe, with no entry to add by hand.
 	for _, p := range read {
 		for _, m := range p.models {
-			b.WriteString("    " + m.key + ": {}\n")
+			draft.Entries = append(draft.Entries, importer.ReleaseEntry{Key: m.key})
 		}
 	}
-	return b.String()
+	return draft
 }
 
-// writeService writes one service's entry of the Release.
-func writeService(b *strings.Builder, s *service, typ string) {
+// serviceEntry is one service's entry of the Release.
+func serviceEntry(s *service, typ string) importer.ReleaseEntry {
+	entry := importer.ReleaseEntry{Key: s.key}
 	server := typ == Server
-	var infra, left []string
+	var infra []string
 	if server {
 		switch {
 		case s.image != "":
-			infra = append(infra, "        image: "+yamlString(s.image)+"\n")
+			infra = append(infra, "  image: "+yamlString(s.image))
 		case s.build:
-			left = append(left, "infra.image, since the service builds its image rather than naming one")
+			entry.Left = append(entry.Left, importer.LeftItem{Path: "infra.image",
+				Text: "since the service builds its image rather than naming one"})
 		default:
-			left = append(left, "infra.image, since the service names no image")
+			entry.Left = append(entry.Left, importer.LeftItem{Path: "infra.image", Text: "since the service names no image"})
 		}
 		if first, ok := firstPort(s); ok {
 			if n, err := strconv.Atoi(first); err == nil {
-				infra = append(infra, "        port: "+strconv.Itoa(n)+"\n")
+				infra = append(infra, "  port: "+strconv.Itoa(n))
 			} else {
-				left = append(left, "infra.port, since the container port the source states first, "+commentText(first)+
-					", is not one number")
+				entry.Left = append(entry.Left, importer.LeftItem{Path: "infra.port",
+					Text: "since the container port the source states first, " + commentText(first) + ", is not one number"})
 			}
 		}
 	}
 
-	if len(left) > 0 {
-		b.WriteString("    # Left for the Release, since the draft does not write it:\n")
-		for _, l := range left {
-			b.WriteString("    #   - " + l + "\n")
-		}
-	}
 	var stated []string
 	if !server && s.image != "" {
-		stated = append(stated, "    #   image: "+yamlString(s.image)+"\n")
+		stated = append(stated, "  image: "+yamlString(s.image))
 	}
 	stated = append(stated, statedList("ports", portTexts(s.ports))...)
 	stated = append(stated, statedList("expose", s.expose)...)
 	stated = append(stated, statedList("volumes", volumeTexts(s.volumes))...)
 	if len(s.env) > 0 {
-		stated = append(stated, "    #   environment:\n")
+		stated = append(stated, "  environment:")
 		for _, e := range s.env {
 			if e.value == nil {
-				stated = append(stated, "    #     "+commentText(e.name)+"\n")
+				stated = append(stated, "    "+commentText(e.name))
 				continue
 			}
-			stated = append(stated, "    #     "+commentText(e.name)+": "+yamlString(*e.value)+"\n")
+			stated = append(stated, "    "+commentText(e.name)+": "+yamlString(*e.value))
 		}
 	}
 	if len(stated) > 0 {
 		if server {
-			b.WriteString("    # The source also states, for the Release to carry where " + typ + " takes it:\n")
+			entry.Comments = append(entry.Comments, "The source also states, for the Release to carry where "+typ+" takes it:")
 		} else {
-			b.WriteString("    # The source states, for the Release to carry where " + typ + " takes it:\n")
+			entry.Comments = append(entry.Comments, "The source states, for the Release to carry where "+typ+" takes it:")
 		}
-		for _, line := range stated {
-			b.WriteString(line)
-		}
+		entry.Comments = append(entry.Comments, stated...)
 	}
 	if len(s.others) > 0 {
-		b.WriteString("    # Not carried, since the draft reads no infrastructure from it: " + commentList(s.others) + ".\n")
+		entry.Comments = append(entry.Comments, "Not carried, since the draft reads no infrastructure from it: "+
+			commentList(s.others)+".")
 	}
 
-	b.WriteString("    " + s.key + ":\n")
-	if len(infra) == 0 {
-		b.WriteString("      infra: {}\n")
-		return
+	if len(infra) > 0 {
+		entry.Lines = append([]string{"infra:"}, infra...)
 	}
-	b.WriteString("      infra:\n")
-	for _, line := range infra {
-		b.WriteString(line)
-	}
+	return entry
 }
 
 // firstPort returns the port the container listens on that the source states
@@ -317,14 +293,15 @@ func firstPort(s *service) (string, bool) {
 }
 
 // statedList writes a list the source states for a service into the comment
-// above its entry, each item as yamlString writes it; nothing for an empty list.
+// above its entry, one comment line each, each item as yamlString writes it;
+// nothing for an empty list.
 func statedList(key string, items []string) []string {
 	if len(items) == 0 {
 		return nil
 	}
-	out := []string{"    #   " + key + ":\n"}
+	out := []string{"  " + key + ":"}
 	for _, item := range items {
-		out = append(out, "    #     - "+yamlString(item)+"\n")
+		out = append(out, "    - "+yamlString(item))
 	}
 	return out
 }

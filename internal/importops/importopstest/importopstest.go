@@ -614,8 +614,9 @@ spec:
 `
 
 // DraftedRelease is the Release a draft-composition case drafts beside
-// DraftedAggregate: it deploys that Aggregate, names no Manifest, and carries the
-// comment line the importers that draft a Release write where the Manifest goes.
+// DraftedAggregate, in the shape the plugin kit's Release writer drafts one: it
+// deploys that Aggregate and names no Manifest, declaring spec.manifest empty
+// beneath a comment line beginning "# manifest:" saying why.
 const DraftedRelease = "apiVersion: " + apiversion.APIVersion + "\n" + `kind: Release
 metadata:
   name: drafted
@@ -623,7 +624,8 @@ metadata:
   version: 0.1.0
 spec:
   aggregate: drafted
-  # manifest: left for the operator, since the import drafts no Manifest, which names the target the components are built for.
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
   components:
     x-one: {}
     y-one: {}
@@ -632,9 +634,9 @@ spec:
 `
 
 // DraftedReleaseComposed is DraftedRelease as an import given the compose target
-// over the draft-composition catalog hands it back: the comment line where the
-// Manifest goes replaced by spec.manifest naming the drafted Manifest, every
-// other byte as drafted.
+// over the draft-composition catalog hands it back: spec.manifest naming the
+// drafted Manifest, the comment line above it dropped, every other byte as
+// drafted.
 const DraftedReleaseComposed = "apiVersion: " + apiversion.APIVersion + "\n" + `kind: Release
 metadata:
   name: drafted

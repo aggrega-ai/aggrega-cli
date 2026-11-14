@@ -38,10 +38,11 @@ import (
 // holding no Component.
 //
 // drafts are the files the node-by-node layout drafts, in which every node is
-// drafted; they are compared as a set, since the importer's own order is the
-// reported order and these cases are not about it. Under the default layout the
-// one file drafted is the Aggregate, naming platform as the platform carrying
-// the flow — the catalog holds no Component a part could be drafted after — and
+// drafted, and the Release; they are compared as a set, since the importer's own
+// order is the reported order and these cases are not about it. Under the default
+// layout the files drafted are the Aggregate, naming platform as the platform
+// carrying the flow — the catalog holds no Component a part could be drafted
+// after — and the Release deploying it, and
 // nodes are the source's nodes, by id in the importer's order, each of which keeps
 // a decision whichever layout drafts it.
 var catalogFolderSources = []catalogFolderSource{
@@ -53,6 +54,7 @@ var catalogFolderSources = []catalogFolderSource{
 			"components/imported-ai-model-openaimodel.yaml",
 			"components/imported-ai-tool-retrieval.yaml",
 			"components/imported-component-custompythoncomponent.yaml",
+			"release.yaml",
 		},
 		platform: "core/ai-agent/langflow",
 		nodes:    []string{"OpenAIModel-a1b2", "Retrieval-c3d4", "CustomLogic-e5f6"},
@@ -64,6 +66,7 @@ var catalogFolderSources = []catalogFolderSource{
 			"aggregate.yaml",
 			"components/imported-ai-model-chatopenai.yaml",
 			"components/imported-ai-tool-httprequest.yaml",
+			"release.yaml",
 		},
 		platform: "core/ai-agent/flowise",
 		nodes:    []string{"chatOpenAI_0", "httpRequest_0"},
@@ -82,14 +85,14 @@ type catalogFolderSource struct {
 }
 
 // assertTheDefaultDraft holds an import's result to what the default layout
-// drafts from src over a catalog holding no Component: the Aggregate alone, its
-// one component the platform src names, carrying the flow, and a decision for
-// every node of the source, in the importer's order — what says the importer read
-// the source's real tree.
+// drafts from src over a catalog holding no Component: the Aggregate, its one
+// component the platform src names, carrying the flow, and the Release beside it,
+// and a decision for every node of the source, in the importer's order — what
+// says the importer read the source's real tree.
 func assertTheDefaultDraft(t *testing.T, res Result, src catalogFolderSource) {
 	t.Helper()
-	if got := draftPaths(res); !slices.Equal(got, []string{"aggregate.yaml"}) {
-		t.Errorf("the importer drafted %v, want the Aggregate alone", got)
+	if got := draftPaths(res); !slices.Equal(got, []string{"aggregate.yaml", "release.yaml"}) {
+		t.Errorf("the importer drafted %v, want the Aggregate and the Release", got)
 	}
 	for _, f := range res.Files {
 		if f.Path != "aggregate.yaml" {

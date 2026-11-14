@@ -195,7 +195,7 @@ func TestAClassicProjectIsDraftedAsOneAgentPerDeclaration(t *testing.T) {
 	if !strings.Contains(text, "takes no value for it: max_iter.\n") {
 		t.Errorf("the Aggregate does not name max_iter as not carried:\n%s", text)
 	}
-	if !strings.Contains(files(out)["release.yaml"], "    brief-writer:\n      infra: {}\n") {
+	if !strings.Contains(files(out)["release.yaml"], "    brief-writer: {}\n") {
 		t.Errorf("the Release holds no entry for the brief writer:\n%s", files(out)["release.yaml"])
 	}
 
@@ -249,7 +249,7 @@ func TestAJSONCProjectIsDraftedAsOneAgentPerDeclaration(t *testing.T) {
 	}
 	release := files(out)["release.yaml"]
 	for _, want := range []string{"    #   api_key: \"sk-planted-crewai-llm-needle-7c41e9d2\"\n", "    #   temperature: 0.2\n",
-		"    gpt-4o-mini:\n      infra: {}\n"} {
+		"    gpt-4o-mini: {}\n"} {
 		if !strings.Contains(release, want) {
 			t.Errorf("the Release does not hold %q:\n%s", want, release)
 		}
@@ -267,10 +267,10 @@ func TestAJSONCProjectIsDraftedAsOneAgentPerDeclaration(t *testing.T) {
 // the drafted Aggregate declares, the models included: a build places only the
 // instances a Release names, so an instance without an entry halts it. A model's
 // entry holds no infrastructure, since no declaration states any. Each importer
-// package holds a test of this name over its own renderer, since each importer
-// renders its own Release and the plugin kit renders none.
+// package holds a test of this name over the entries it hands the plugin kit's
+// Release writer, since each importer decides what its Release holds.
 //
-// 🔴 PLANTED DEFECT: in renderRelease (render.go), skip a model part whose llm
+// 🔴 PLANTED DEFECT: in crewaiRelease (render.go), skip a model part whose llm
 // states no member besides its model: the classic rows fail naming gpt-4o.
 func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testing.T) {
 	t.Parallel()
@@ -308,7 +308,7 @@ func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testi
 				t.Errorf("the Release names no entry for %v, which the Aggregate declares:\n%s", unplaced, text)
 			}
 			for _, model := range row.models {
-				if !strings.Contains(text, "    "+model+":\n      infra: {}\n") {
+				if !strings.Contains(text, "    "+model+": {}\n") {
 					t.Errorf("the Release holds no entry %s holding no infrastructure:\n%s", model, text)
 				}
 			}
