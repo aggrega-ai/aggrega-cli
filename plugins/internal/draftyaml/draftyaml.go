@@ -65,6 +65,33 @@ func CommentList(names []string) string {
 	return strings.Join(out, ", ")
 }
 
+// Injected is one variable a connection of a drafted Aggregate delivers into its
+// consumer's environment: the name the consumer reads it under, which may be read
+// from a source, and the provides key of the connection's target it is read from.
+type Injected struct {
+	In, From string
+}
+
+// InjectEnv writes the inject block a connection of a drafted Aggregate delivers
+// entries through, at indent, the indentation of the connection's own keys: its
+// env list, one entry per item in the order given, each name written as String
+// writes it, escaped first so it reads back as itself once the Aggregate is
+// evaluated as a template. It writes nothing for no entry. Every importer drafting
+// a connection's inject block writes it through this, so one is written one way.
+func InjectEnv(indent string, entries []Injected) string {
+	if len(entries) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(indent + "inject:\n")
+	b.WriteString(indent + "  env:\n")
+	for _, e := range entries {
+		b.WriteString(indent + "    - in: " + String(importer.EscapeTemplateText(e.In)) + "\n")
+		b.WriteString(indent + "      from: " + e.From + "\n")
+	}
+	return b.String()
+}
+
 // ScalarText returns the text a scalar of a source's parsed tree is written as:
 // a string's text, and a number's or a boolean's as written. An object, a list
 // and null have none.

@@ -42,11 +42,11 @@ func renderAggregate(name string, servers []server) string {
 }
 
 // mcpRelease is the drafted Release, as the plugin kit's Release writer writes
-// it: for each server, under its key, the infrastructure the source states and
-// the server_env attachment carrying its environment, leaving for the Release
-// what the draft does not write, with a comment above it naming what it does not
-// carry, the headers the server is sent and the parts of its address
-// infra.endpoint leaves out.
+// it: for each server, under its key, the infrastructure the source states, the
+// server_env attachment carrying its environment as a secret set and the
+// realization of how it runs, leaving for the Release what the draft does not
+// write, with a comment above it naming what it does not carry, the headers the
+// server is sent and the parts of its address infra.endpoint leaves out.
 func mcpRelease(servers []server) importer.ReleaseDraft {
 	draft := importer.ReleaseDraft{}
 	for _, s := range servers {
@@ -78,19 +78,21 @@ func serverEntry(s server) importer.ReleaseEntry {
 		entry.Left = append(entry.Left, importer.LeftItem{Path: "infra.stdio_runtime",
 			Text: "since the command names no launcher a bridge image carries"})
 	}
-	var entries []namedValue
+	entry.Realization = realization(s)
+	var entries []importer.SecretEntry
 	for _, e := range s.env {
 		value := "the value of " + envSlot + "." + commentText(e.name)
 		switch {
-		case e.value != nil && e.value.reference:
-			entry.Left = append(entry.Left, importer.LeftItem{Text: value + ", which the source reads from " +
-				commentText(e.value.text)})
 		case e.value == nil && e.hint != "":
 			entry.Left = append(entry.Left, importer.LeftItem{Text: value + ", since " + e.hint})
 		case e.value == nil:
 			entry.Left = append(entry.Left, importer.LeftItem{Text: value})
 		}
-		entries = append(entries, e)
+		text := ""
+		if e.value != nil {
+			text = e.value.text
+		}
+		entries = append(entries, importer.SecretEntry{Key: e.name, Value: text})
 	}
 
 	if len(s.notCarried) > 0 {
@@ -126,22 +128,32 @@ func serverEntry(s server) importer.ReleaseEntry {
 	if len(infra) > 0 {
 		entry.Lines = append(append(entry.Lines, "infra:"), infra...)
 	}
-	if !s.stdio || len(entries) == 0 {
-		return entry
-	}
-	entry.Lines = append(entry.Lines,
-		"features:",
-		"  "+envSlot+":",
-		"    type: "+secretSet,
-		"    infra:",
-		"      entries:")
-	for _, e := range entries {
-		entry.Lines = append(entry.Lines, "        - key: "+yamlString(e.name))
-		if e.value != nil && !e.value.reference {
-			entry.Lines = append(entry.Lines, "          value: "+yamlString(e.value.text))
-		}
+	if s.stdio && len(entries) > 0 {
+		entry.Secrets = append(entry.Secrets, importer.Secret{Path: "features." + envSlot, Entries: entries,
+			Text: "the environment " + s.key + " is started with"})
 	}
 	return entry
+}
+
+// The Recipes of Component realizing a server, by how it runs: from its command
+// line behind the bridge, at an address someone else serves it at, or from its
+// image. Each target the catalog realizes the tool on names its realizations
+// alike, so a drafted Manifest maps a server by its key to the one of its target.
+const (
+	bridgeRealization = "mcp-stdio-bridge"
+	remoteRealization = "mcp-remote"
+	imageRealization  = "mcp"
+)
+
+// realization is the Recipe realizing s, by how it runs.
+func realization(s server) string {
+	switch {
+	case s.stdio:
+		return bridgeRealization
+	case s.image != "":
+		return imageRealization
+	}
+	return remoteRealization
 }
 
 // headerLine writes one header a server is sent, for the comment above its

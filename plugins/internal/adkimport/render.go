@@ -8,6 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/modelcred"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
@@ -34,7 +35,7 @@ var (
 // Agent Config, and the handed files no tree reads; comments above an instance
 // name the tree's other agents, the sub-agents it does not read, its tools, the
 // classes ADK deprecates and the models its other agents ask for.
-func renderAggregate(name string, apps []*application, parts []*modelPart, unread []string) string {
+func renderAggregate(name, target string, apps []*application, parts []*modelPart, unread []string) string {
 	var b strings.Builder
 	writeHeader(&b, apps, unread)
 	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
@@ -46,7 +47,7 @@ func renderAggregate(name string, apps []*application, parts []*modelPart, unrea
 	b.WriteString("spec:\n")
 	b.WriteString("  components:\n")
 	for _, app := range apps {
-		writeApplication(&b, app)
+		writeApplication(&b, app, target)
 	}
 	for _, p := range parts {
 		b.WriteString(commentLine("    ", "The model "+commentText(p.ref)+"."))
@@ -89,11 +90,12 @@ func writeHeader(b *strings.Builder, apps []*application, unread []string) {
 }
 
 // writeApplication writes one tree's instance of Component: its root agent's
-// description, and its model connection where it has a model part, with comments
-// above it naming the tree, its other agents, the sub-agents it does not read,
-// its tools, the classes ADK deprecates, the models its other agents ask for, and
-// why its model is not wired where it is not.
-func writeApplication(b *strings.Builder, app *application) {
+// description, and its model connection where it has a model part, declaring
+// there for target the credential the drafted Release attaches on it, with
+// comments above it naming the tree, its other agents, the sub-agents it does
+// not read, its tools, the classes ADK deprecates, the models its other agents
+// ask for, and why its model is not wired where it is not.
+func writeApplication(b *strings.Builder, app *application, target string) {
 	root := app.root
 	tree := "the configuration handed"
 	if app.file != "" {
@@ -173,7 +175,18 @@ func writeApplication(b *strings.Builder, app *application) {
 		b.WriteString("        " + modelSocket + ":\n")
 		b.WriteString("          " + app.part.key + ":\n")
 		b.WriteString("            target: " + app.part.key + "\n")
+		b.WriteString(credentialOf(app).Declaration(target).Text("            ", app.part.key, false))
 	}
+}
+
+// credentialOf is the credential the instance of app presents to its model
+// part, which the drafted Release attaches on its model connection and the
+// drafted Aggregate declares there where the target needs it: read from the
+// variable the model's provider's client libraries read the API key from, since
+// an agent configuration names none — the application reads it from its own
+// environment file, which the import does not read.
+func credentialOf(app *application) importer.Secret {
+	return modelcred.Credential(app.key, modelSocket, app.part.key, app.part.key, app.part.component, "")
 }
 
 // containsText reports whether texts holds text.
@@ -207,8 +220,7 @@ func adkRelease(apps []*application, parts []*modelPart) importer.ReleaseDraft {
 		entry := importer.ReleaseEntry{Key: app.key, Left: []importer.LeftItem{importer.LeftImage(
 			"the container image running the application built on ADK, holding its configurations")}}
 		if app.part != nil {
-			entry.Secrets = append(entry.Secrets,
-				importer.ConnectionCredential(app.key, modelSocket, app.part.key, app.part.key, ""))
+			entry.Secrets = append(entry.Secrets, credentialOf(app))
 		}
 		if len(app.stated) > 0 {
 			entry.Comments = append(entry.Comments, "The configurations also hand these values to their tools and their "+

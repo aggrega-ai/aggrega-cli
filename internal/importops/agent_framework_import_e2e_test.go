@@ -47,7 +47,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
-	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // agentFrameworkFixtureDir holds the committed declarative agents, relative to
@@ -458,8 +457,16 @@ func writeAgentFrameworkRelease(t *testing.T, dir, key, part string) string {
 	// image, and, for helm, names the Secret holding the credential.
 	replace("            image: \"\"\n", "            image: "+agentFrameworkImage+"\n")
 	replace("                    type: core/secret-value\n", "                    type: core/referenced-secret\n")
-	variable := importer.ConnectionCredential(key, "model", part, part, "").Variable
-	replace("origin: \"${"+variable+"}\"\n", "origin: model-key\n")
+	// The variable the credential is read from is the one the declarative agent's
+	// connection names, or else the one the model's provider's client libraries
+	// read; whichever it is, the Release names the Secret in its place.
+	at := strings.Index(release, "origin: \"${")
+	if at < 0 {
+		t.Fatalf("the drafted Release attaches no credential by a variable reference on %s's connection to %s:\n%s",
+			key, part, release)
+	}
+	end := at + strings.IndexByte(release[at:], '\n')
+	release = release[:at] + "origin: model-key" + release[end:]
 	for file, body := range map[string]string{"manifest.yaml": manifest, "release.yaml": release} {
 		if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644); err != nil {
 			t.Fatalf("write the %s: %v", file, err)

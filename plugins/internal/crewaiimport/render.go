@@ -4,10 +4,12 @@
 package crewaiimport
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/modelcred"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
@@ -40,7 +42,7 @@ const (
 // part, serving its model. Comments above it name the declarations read, what the
 // draft does not read, and each crew's tasks; comments above an agent name what
 // of its declaration the draft does not carry.
-func renderAggregate(name string, read []*crew, parts []*modelPart) string {
+func renderAggregate(name, target string, read []*crew, parts []*modelPart) string {
 	var b strings.Builder
 	writeHeader(&b, read)
 	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
@@ -54,7 +56,7 @@ func renderAggregate(name string, read []*crew, parts []*modelPart) string {
 	for _, c := range read {
 		for _, a := range c.agents {
 			if !a.missing {
-				writeAgent(&b, a)
+				writeAgent(&b, a, target)
 			}
 		}
 	}
@@ -66,8 +68,26 @@ func renderAggregate(name string, read []*crew, parts []*modelPart) string {
 		b.WriteString("      type: " + p.component + "\n")
 		b.WriteString("      values:\n")
 		b.WriteString("        model: " + aggregateText(p.model) + "\n")
+		for _, m := range p.stated {
+			if !p.carries(m) {
+				continue
+			}
+			if m.located {
+				b.WriteString("        " + m.name + ": " + aggregateText(m.text) + "\n")
+			} else {
+				b.WriteString("        " + m.name + ": " + m.text + "\n")
+			}
+		}
 	}
 	return b.String()
+}
+
+// carries reports whether the drafted Aggregate writes m, a member of the llm
+// object p was declared with, as a value of p's instance: a member holding a
+// value, other than the model the part already writes, under a name the
+// catalog's Component it is an instance of declares a value of.
+func (p *modelPart) carries(m member) bool {
+	return m.name != "model" && !m.emptied && slices.Contains(p.declares, m.name)
 }
 
 // writeHeader writes the comments opening the Aggregate: the declaration files
@@ -119,11 +139,12 @@ func writeHeader(b *strings.Builder, read []*crew) {
 }
 
 // writeAgent writes one agent's instance of Component: its values, and its model
-// connection where it has a model part, with comments above it naming the agent
-// where its key does not, the tools its program defines, what of its
+// connection where it has a model part, declaring there for target the
+// credential the drafted Release attaches on it, with comments above it naming
+// the agent where its key does not, the tools its program defines, what of its
 // declaration the draft does not carry, and why its model is not wired where it
 // is not.
-func writeAgent(b *strings.Builder, a *agent) {
+func writeAgent(b *strings.Builder, a *agent, target string) {
 	if a.ref != a.key {
 		b.WriteString(commentLine("    ", "The agent "+commentText(a.ref)+"."))
 	}
@@ -181,7 +202,17 @@ func writeAgent(b *strings.Builder, a *agent) {
 		b.WriteString("        " + modelSocket + ":\n")
 		b.WriteString("          " + a.part.key + ":\n")
 		b.WriteString("            target: " + a.part.key + "\n")
+		b.WriteString(credentialOf(a).Declaration(target).Text("            ", a.part.key, false))
 	}
+}
+
+// credentialOf is the credential agent a presents to its model part, which the
+// drafted Release attaches on its model connection and the drafted Aggregate
+// declares there where the target needs it: read from the variable the model's
+// provider's client libraries read the API key from, since a declaration names
+// none.
+func credentialOf(a *agent) importer.Secret {
+	return modelcred.Credential(a.key, modelSocket, a.part.key, a.part.key, a.part.component, "")
 }
 
 // aggregateText writes text read from a source as a value of the drafted
@@ -208,19 +239,24 @@ func crewaiRelease(read []*crew, parts []*modelPart) importer.ReleaseDraft {
 			entry := importer.ReleaseEntry{Key: a.key, Left: []importer.LeftItem{
 				importer.LeftImage("the container image running the crew's program")}}
 			if a.part != nil {
-				entry.Secrets = append(entry.Secrets,
-					importer.ConnectionCredential(a.key, modelSocket, a.part.key, a.part.key, ""))
+				entry.Secrets = append(entry.Secrets, credentialOf(a))
 			}
 			draft.Entries = append(draft.Entries, entry)
 		}
 	}
 	for _, p := range parts {
 		entry := importer.ReleaseEntry{Key: p.key}
-		if len(p.stated) > 0 {
+		var stated []member
+		for _, m := range p.stated {
+			if !p.carries(m) {
+				stated = append(stated, m)
+			}
+		}
+		if len(stated) > 0 {
 			entry.Comments = append(entry.Comments, "The declaration also states, for the Release to carry where "+
 				p.component+" takes it:")
 		}
-		for _, m := range p.stated {
+		for _, m := range stated {
 			switch {
 			case m.emptied:
 				entry.Comments = append(entry.Comments, "  "+commentText(m.name))

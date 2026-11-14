@@ -7,28 +7,33 @@ package composeimport
 
 // TableRevision is the aggrega-hub revision whose Compose Recipes and
 // Components the image table was generated from.
-const TableRevision = "6beb9d6ee853eac53625a6872bc14c1abbd04a8f"
+const TableRevision = "b90d8a27764785bb314595ad8c1493b1ae6423aa"
 
 // imageTable maps each image repository the main container of a Compose
 // Recipe of the hub names literally to the Component the Recipe implements,
 // with every label of that Component but its category as the row's traits,
-// ordered by repository.
+// and what its Recipes say of how a service running the image is
+// configured, ordered by repository.
 var imageTable = []imageRow{
 	{Repository: "adminer", Component: "core/devtool/adminer", Traits: map[string]string{
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Values: map[string]string{
+		"ADMINER_DESIGN": "design",
+	}, Host: "host"},
 	{Repository: "chrislusf/seaweedfs", Component: "core/storage/s3-object-store", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "resource",
 		"component.aggrega.ai/upstream-licensing": "not-applicable",
-	}},
+	}, Provides: map[string]string{
+		"bucket": "bucket",
+	}, Host: "host"},
 	{Repository: "chromadb/chroma", Component: "core/datastore/chroma", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "vector",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "cr.agentgateway.dev/agentgateway", Component: "core/gateway/agentgateway", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "server",
@@ -38,95 +43,116 @@ var imageTable = []imageRow{
 		"dataplane.aggrega.ai/prompt-guard":       "pattern-list",
 		"gateway.aggrega.ai/intelligence":         "semantic",
 		"model.aggrega.ai/api":                    "openai",
-	}},
+	}, Host: "host"},
 	{Repository: "cr.weaviate.io/semitechnologies/weaviate", Component: "core/datastore/weaviate", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "vector",
-	}},
+	}, Tag: "engine_version", Values: map[string]string{
+		"AUTHENTICATION_APIKEY_USERS": "api_key_user",
+	}, Host: "host"},
 	{Repository: "docker.elastic.co/elasticsearch/elasticsearch", Component: "core/datastore/elasticsearch", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "source-available",
 		"datastore.aggrega.ai/engine":             "search",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "docker.tyk.io/tyk-gateway/tyk-gateway", Component: "core/gateway/tyk", Traits: map[string]string{
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"dataplane.aggrega.ai/upstream-pinning":   "public-key",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "fluent/fluent-bit", Component: "core/observability/fluent-bit", Traits: map[string]string{
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "fluent/fluentd", Component: "core/observability/fluentd", Traits: map[string]string{
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "ghcr.io/berriai/litellm", Component: "core/ai-model/litellm", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "open-core",
 		"model.aggrega.ai/api":                    "openai",
 		"model.aggrega.ai/capability":             "generative",
-	}},
+	}, Tag: "engine_version", Provides: map[string]string{
+		"model": "model",
+	}, Host: "host"},
 	{Repository: "ghcr.io/danny-avila/librechat", Component: "core/ai-agent/librechat", Traits: map[string]string{
 		"agent.aggrega.ai/autonomy":               "copilot",
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Values: map[string]string{
+		"ALLOW_REGISTRATION": "allow_registration",
+		"APP_TITLE":          "app_title",
+	}, Host: "host"},
 	{Repository: "ghcr.io/data-privacy-stack/presidio-analyzer", Component: "core/security/presidio-analyzer", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"security.aggrega.ai/text-anonymization":  "analyzer",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "ghcr.io/data-privacy-stack/presidio-anonymizer", Component: "core/security/presidio-anonymizer", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"security.aggrega.ai/text-anonymization":  "anonymizer",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "ghcr.io/ferretdb/ferretdb", Component: "core/datastore/ferretdb", Traits: map[string]string{
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "ghcr.io/ferretdb/postgres-documentdb", Component: "core/datastore/documentdb", Traits: map[string]string{
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Values: map[string]string{
+		"POSTGRES_DB":   "database",
+		"POSTGRES_USER": "user",
+	}, Provides: map[string]string{
+		"database": "database",
+		"user":     "user",
+	}, Host: "host"},
 	{Repository: "ghcr.io/huggingface/text-embeddings-inference", Component: "core/ai-model/tei", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"model.aggrega.ai/api":                    "openai",
 		"model.aggrega.ai/capability":             "embedding",
-	}},
+	}, Tag: "engine_version", Provides: map[string]string{
+		"model": "model",
+	}, Host: "host"},
 	{Repository: "ghcr.io/huggingface/text-generation-inference", Component: "core/ai-model/tgi", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"model.aggrega.ai/api":                    "openai",
 		"model.aggrega.ai/capability":             "generative",
-	}},
+	}, Tag: "engine_version", Provides: map[string]string{
+		"model": "model",
+	}, Host: "host"},
 	{Repository: "grafana/grafana", Component: "core/observability/grafana", Traits: map[string]string{
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Values: map[string]string{
+		"GF_SECURITY_ADMIN_USER": "admin_user",
+	}, Host: "host"},
 	{Repository: "grafana/loki", Component: "core/observability/loki", Traits: map[string]string{
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"observability.aggrega.ai/logs":           "otlp-http",
-	}},
+	}, Host: "host"},
 	{Repository: "grafana/tempo", Component: "core/observability/tempo", Traits: map[string]string{
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"observability.aggrega.ai/traces":         "otlp-grpc",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "greeter", Component: "example/compute/greeter", Traits: map[string]string{
 		"component.aggrega.ai/type": "server",
+	}, Values: map[string]string{
+		"MESSAGE": "message",
 	}},
 	{Repository: "kong", Component: "core/gateway/kong", Traits: map[string]string{
 		"component.aggrega.ai/type":               "server",
@@ -134,109 +160,178 @@ var imageTable = []imageRow{
 		"dataplane.aggrega.ai/prompt-guard":       "pattern-list",
 		"dataplane.aggrega.ai/upstream-tls":       "trust-anchor",
 		"model.aggrega.ai/api":                    "openai",
-	}},
+	}, Tag: "engine_version", Host: "host"},
+	{Repository: "langgenius/dify-sandbox", Component: "core/ai-agent/dify-sandbox", Traits: map[string]string{
+		"component.aggrega.ai/hosting":            "self-hosted",
+		"component.aggrega.ai/type":               "server",
+		"component.aggrega.ai/upstream-licensing": "osi-approved",
+	}, Tag: "engine_version", Values: map[string]string{
+		"ENABLE_NETWORK": "enable_network",
+		"WORKER_TIMEOUT": "worker_timeout",
+	}, Host: "host"},
+	{Repository: "langgenius/dify-web", Component: "core/ai-agent/dify-web", Traits: map[string]string{
+		"component.aggrega.ai/hosting":            "self-hosted",
+		"component.aggrega.ai/type":               "server",
+		"component.aggrega.ai/upstream-licensing": "source-available",
+	}, Tag: "engine_version", Values: map[string]string{
+		"ALLOW_EMBED":                "allow_embed",
+		"MAX_ITERATIONS_NUM":         "max_iterations",
+		"MAX_PARALLEL_LIMIT":         "max_parallel_limit",
+		"MAX_TOOLS_NUM":              "max_tools",
+		"TEXT_GENERATION_TIMEOUT_MS": "text_generation_timeout_ms",
+		"TOP_K_MAX_VALUE":            "top_k_max",
+	}, Host: "host"},
 	{Repository: "mariadb", Component: "core/datastore/mariadb", Traits: map[string]string{
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Values: map[string]string{
+		"MARIADB_CHARACTER_SET_SERVER": "charset",
+		"MARIADB_COLLATION_SERVER":     "collation",
+		"MARIADB_DATABASE":             "database",
+		"MARIADB_USER":                 "user",
+	}, Provides: map[string]string{
+		"database": "database",
+		"user":     "user",
+	}, Host: "host"},
 	{Repository: "memcached", Component: "core/datastore/memcached", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "kv",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "milvusdb/milvus", Component: "core/datastore/milvus", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "vector",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "mysql", Component: "core/datastore/mysql", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Values: map[string]string{
+		"MYSQL_DATABASE": "database",
+		"MYSQL_USER":     "user",
+	}, Provides: map[string]string{
+		"database": "database",
+		"user":     "user",
+	}, Host: "host"},
 	{Repository: "nats", Component: "core/messaging/nats", Traits: map[string]string{
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "nginx", Component: "core/gateway/nginx", Traits: map[string]string{
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"dataplane.aggrega.ai/concurrency-cap":    "total",
 		"dataplane.aggrega.ai/request-mirroring":  "full-rate",
 		"dataplane.aggrega.ai/upstream-tls":       "trust-anchor",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "ollama/ollama", Component: "core/ai-model/ollama", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"model.aggrega.ai/api":                    "openai",
 		"model.aggrega.ai/capability":             "generative",
-	}},
+	}, Tag: "engine_version", Provides: map[string]string{
+		"model": "model",
+	}, Host: "host"},
 	{Repository: "opensearchproject/opensearch", Component: "core/datastore/opensearch", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "search",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "otel/opentelemetry-collector-contrib", Component: "core/observability/otel-collector", Traits: map[string]string{
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "pgvector/pgvector", Component: "core/datastore/pgvector", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "vector",
-	}},
+	}, Tag: "engine_version", Values: map[string]string{
+		"POSTGRES_DB":   "database",
+		"POSTGRES_USER": "user",
+	}, Provides: map[string]string{
+		"database": "database",
+		"user":     "user",
+	}, Host: "host"},
 	{Repository: "postgres", Component: "core/datastore/postgres", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Values: map[string]string{
+		"POSTGRES_DB":   "database",
+		"POSTGRES_USER": "user",
+	}, Secrets: map[string]string{
+		"POSTGRES_PASSWORD": "password",
+	}, Provides: map[string]string{
+		"database": "database",
+		"user":     "user",
+	}, Host: "host"},
 	{Repository: "prom/prometheus", Component: "core/observability/prometheus", Traits: map[string]string{
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"observability.aggrega.ai/metrics":        "otlp-http",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "qdrant/qdrant", Component: "core/datastore/qdrant", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "vector",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "quay.io/coreos/etcd", Component: "core/datastore/etcd", Traits: map[string]string{
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Values: map[string]string{
+		"ETCD_NAME": "name",
+	}, Host: "host"},
 	{Repository: "rabbitmq", Component: "core/messaging/rabbitmq", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
-	}},
+	}, Tag: "engine_version", Values: map[string]string{
+		"RABBITMQ_DEFAULT_USER": "user",
+	}, Host: "host"},
 	{Repository: "redis", Component: "core/datastore/redis", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "mixed",
 		"datastore.aggrega.ai/engine":             "kv",
-	}},
+	}, Tag: "engine_version", Secrets: map[string]string{
+		"REDIS_PASSWORD": "password",
+	}, Host: "host"},
 	{Repository: "timescale/timescaledb", Component: "core/datastore/timescaledb", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "stateful-server",
 		"component.aggrega.ai/upstream-licensing": "open-core",
-	}},
+	}, Tag: "engine_version", Values: map[string]string{
+		"POSTGRES_DB":   "database",
+		"POSTGRES_USER": "user",
+	}, Provides: map[string]string{
+		"database": "database",
+		"user":     "user",
+	}, Host: "host"},
+	{Repository: "ubuntu/squid", Component: "core/ai-agent/dify-ssrf-proxy", Traits: map[string]string{
+		"component.aggrega.ai/hosting":            "self-hosted",
+		"component.aggrega.ai/type":               "server",
+		"component.aggrega.ai/upstream-licensing": "osi-approved",
+	}, Tag: "engine_version", Host: "host"},
 	{Repository: "valkey/valkey", Component: "core/datastore/valkey", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "mixed",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"datastore.aggrega.ai/engine":             "kv",
-	}},
+	}, Tag: "engine_version", Secrets: map[string]string{
+		"VALKEY_PASSWORD": "password",
+	}, Host: "host"},
 	{Repository: "vllm/vllm-openai", Component: "core/ai-model/vllm", Traits: map[string]string{
 		"component.aggrega.ai/hosting":            "self-hosted",
 		"component.aggrega.ai/type":               "server",
 		"component.aggrega.ai/upstream-licensing": "osi-approved",
 		"model.aggrega.ai/api":                    "openai",
 		"model.aggrega.ai/capability":             "generative",
-	}},
+	}, Tag: "engine_version", Host: "host"},
 }

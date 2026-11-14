@@ -8,6 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/modelcred"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
@@ -34,7 +35,7 @@ var (
 // tools drafted as no Component, each MCP server the model's provider reaches,
 // why its model is not wired where it is not, and a model name left for the
 // author.
-func renderAggregate(name string, agents []*agent, parts []*modelPart) string {
+func renderAggregate(name, target string, agents []*agent, parts []*modelPart) string {
 	var b strings.Builder
 	var files []string
 	for _, a := range agents {
@@ -60,7 +61,7 @@ func renderAggregate(name string, agents []*agent, parts []*modelPart) string {
 	b.WriteString("spec:\n")
 	b.WriteString("  components:\n")
 	for _, a := range agents {
-		writeAgent(&b, a)
+		writeAgent(&b, a, target)
 	}
 	for _, p := range parts {
 		writePart(&b, p)
@@ -70,10 +71,11 @@ func renderAggregate(name string, agents []*agent, parts []*modelPart) string {
 
 // writeAgent writes one declarative agent's instance of Component: its
 // displayName and its description, and its model connection where it has a
-// model part, with comments above it naming the agent, what the application
+// model part, declaring there for target the credential the drafted Release
+// attaches on it, with comments above it naming the agent, what the application
 // reads from the declarative agent, its tools drafted as no Component, each MCP
 // server it names, and why its model is not wired where it is not.
-func writeAgent(b *strings.Builder, a *agent) {
+func writeAgent(b *strings.Builder, a *agent, target string) {
 	of := ""
 	if a.file != "" {
 		of = ", of " + commentText(a.file)
@@ -142,7 +144,20 @@ func writeAgent(b *strings.Builder, a *agent) {
 	if a.model.connection.kind == "anonymous" {
 		b.WriteString("            values:\n")
 		b.WriteString("              unauthenticated: true\n")
+		return
 	}
+	b.WriteString(credentialOf(a).Declaration(target).Text("            ", p.key, false))
+}
+
+// credentialOf is the credential agent a presents to its model part, which the
+// drafted Release attaches on its model connection and the drafted Aggregate
+// declares there where the target needs it: read from the environment variable
+// the declarative agent's model connection names its key by, where it names one,
+// and otherwise from the one the model's provider's client libraries read the API
+// key from.
+func credentialOf(a *agent) importer.Secret {
+	p := a.part
+	return modelcred.Credential(a.key, modelSocket, p.key, p.key, p.component, a.model.connection.key.variable)
 }
 
 // writePart writes one model part's instance, serving its model: its id as
@@ -233,8 +248,8 @@ func agentFrameworkRelease(agents []*agent, parts []*modelPart) importer.Release
 func agentEntry(a *agent) importer.ReleaseEntry {
 	entry := importer.ReleaseEntry{Key: a.key, Left: []importer.LeftItem{importer.LeftImage(
 		"the container image running the application built on Agent Framework, holding its declarative agent")}}
-	if p := a.part; p != nil && a.model.connection.kind != "anonymous" {
-		entry.Secrets = append(entry.Secrets, importer.ConnectionCredential(a.key, modelSocket, p.key, p.key, ""))
+	if a.part != nil && a.model.connection.kind != "anonymous" {
+		entry.Secrets = append(entry.Secrets, credentialOf(a))
 	}
 	if len(a.stated) > 0 {
 		entry.Comments = append(entry.Comments, "The declarative agent also states these values for its model and its MCP "+

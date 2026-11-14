@@ -45,11 +45,19 @@
 // part, its query and its fragment, each written in the comment above its entry
 // beside the address; a package
 // published as an image as infra.image; and a server's environment as the
-// server_env attachment, core/referenced-secret-set, one entry per variable. What
-// the source cannot state is left unset and named in a comment, so the build
-// halts naming it. The Release is written by the plugin kit's Release writer,
-// importer.DraftRelease, whose documentation states what every drafted Release
-// declares beside its entries.
+// server_env attachment, a set of secrets as the plugin kit's importer.Secret
+// writes one for the import's target: for helm, core/referenced-secret naming a
+// Secret already in the namespace that holds one data key per variable, the
+// Secret's name left for the Release; for every other target and for none,
+// core/referenced-secret-set, one entry per variable, its value as the source
+// writes it, a variable reference staying one. What the source cannot state is
+// left unset and named in a comment, so the build halts naming it. Given a target,
+// the import also drafts a Manifest mapping each server by its key to the
+// target's realization of how it runs — mcp-stdio-bridge for a server run from
+// its command line, mcp-remote for one reached at an address, mcp for one run
+// from its image — since the catalog offers the three for one type. The Release
+// is written by the plugin kit's Release writer, importer.DraftRelease, whose
+// documentation states what every drafted Release declares beside its entries.
 //
 // The Aggregate and the Release are named as importer.DraftName names a draft: a
 // registry server description gives the server it describes a name, and a draft
@@ -114,12 +122,8 @@ const Component = "core/ai-tool/mcp"
 // the address the registry publishes each version of its schema under.
 const SchemaPrefix = "https://static.modelcontextprotocol.io/schemas/"
 
-// secretSet is the Feature a server's environment is attached as, on the
-// server_env slot of core/ai-tool/mcp.
-const (
-	secretSet = "core/referenced-secret-set"
-	envSlot   = "server_env"
-)
+// envSlot is the slot of core/ai-tool/mcp a server's environment is attached on.
+const envSlot = "server_env"
 
 // where completes each credential report, naming where the value is written.
 const where = "in the Release the draft writes"

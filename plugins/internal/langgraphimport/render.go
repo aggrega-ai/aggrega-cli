@@ -8,6 +8,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/modelcred"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
@@ -29,12 +30,16 @@ var (
 // renderAggregate writes the drafted Aggregate, named name: one instance of
 // Component per graph, application by application in the order the
 // configurations write them, carrying its import path and its description and
-// wired to its application's datastore; then one instance per datastore part.
+// wired to its application's datastore and to model, where the import drafts
+// one, declaring for target the credentials it presents; then one instance per
+// datastore part, and of the datastore it keeps its data in, where that is
+// another; then model.
 // Comments above it name the configurations read, what the draft does not read
 // or carry, the environment files read for their names alone and those, unread,
 // that no configuration names; comments above a graph name what the draft leaves
 // for the author.
-func renderAggregate(name string, read []*application, parts []*datastorePart, unread []string) string {
+func renderAggregate(name, target string, read []*application, parts []*datastorePart, model *modelPart,
+	unread []string) string {
 	var b strings.Builder
 	writeHeader(&b, read, unread)
 	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
@@ -48,25 +53,62 @@ func renderAggregate(name string, read []*application, parts []*datastorePart, u
 	for _, a := range read {
 		for _, g := range a.graphs {
 			if g.entrypoint != "" {
-				writeGraph(&b, a, g)
+				writeGraph(&b, target, a, g, model)
 			}
 		}
 	}
 	for _, p := range parts {
-		of := ""
-		if p.ref != "checkpointer" {
-			of = ", " + commentText(p.ref)
-		}
-		b.WriteString(commentLine("    ", "The "+p.backend.product+" database the configuration's checkpointer"+of+
-			" keeps each graph's state in."))
-		if p.drafted {
-			b.WriteString(commentLine("    ", p.component+" is drafted beside this Aggregate, since the catalog holds no "+
-				p.backend.component+"; a Recipe publishing its host and port is the author's to supply."))
-		}
-		b.WriteString("    " + p.key + ":\n")
-		b.WriteString("      type: " + p.component + "\n")
+		writeStore(&b, target, p)
+	}
+	if model != nil {
+		b.WriteString(commentLine("    ", "The model every graph calls, which the configuration does not name."))
+		b.WriteString("    " + model.key + ":\n")
+		b.WriteString("      type: " + model.component + "\n")
+		b.WriteString("      values:\n")
+		b.WriteString(commentLine("        ", "Left for the author, since the configuration names no model: values.model, "+
+			"the name of the model "+model.component+" serves."))
+		b.WriteString("        model: \"\"\n")
 	}
 	return b.String()
+}
+
+// writeStore writes the instance of the datastore p, and of its backing where
+// its store keeps its data in another, the store wired to it as the backend's
+// table says, each declaring for target the password the drafted Release
+// attaches.
+func writeStore(b *strings.Builder, target string, p *datastorePart) {
+	of := ""
+	if p.ref != "checkpointer" {
+		of = ", " + commentText(p.ref)
+	}
+	secrets := p.secrets()
+	b.WriteString(commentLine("    ", "The database the configuration's checkpointer"+of+" keeps each graph's state in, "+
+		p.backend.product+"."))
+	if p.drafted {
+		b.WriteString(commentLine("    ", p.component+" is drafted beside this Aggregate, since the catalog holds no "+
+			p.backend.component+"; a Recipe publishing its host and port is the author's to supply."))
+	}
+	b.WriteString("    " + p.key + ":\n")
+	b.WriteString("      type: " + p.component + "\n")
+	b.WriteString(importer.DeclarationsText(target, "      ", p.key, secrets[p.key], false))
+	if bk := p.backend.behind; bk != nil {
+		b.WriteString("      uses:\n")
+		b.WriteString("        " + bk.socket + ":\n")
+		b.WriteString("          " + p.behindKey + ":\n")
+		b.WriteString("            target: " + p.behindKey + "\n")
+		b.WriteString(commentLine("            ", "What "+p.behindKey+" publishes of the database, delivered under the "+
+			"names "+p.key+" reads."))
+		b.WriteString(draftyaml.InjectEnv("            ", bk.inject))
+		for _, s := range secrets[p.key] {
+			if !s.OwnSlot() {
+				b.WriteString(s.Declaration(target).Text("            ", p.behindKey, false))
+			}
+		}
+		b.WriteString(commentLine("    ", "The database "+p.key+" keeps its data in, "+bk.product+"."))
+		b.WriteString("    " + p.behindKey + ":\n")
+		b.WriteString("      type: " + bk.component + "\n")
+		b.WriteString(importer.DeclarationsText(target, "      ", p.behindKey, secrets[p.behindKey], false))
+	}
 }
 
 // writeHeader writes the comments opening the Aggregate: the configurations read
@@ -155,10 +197,12 @@ func prefixed(prefix string, names []string) []string {
 }
 
 // writeGraph writes one graph's instance of Component: its import path and its
-// description, and its datastore connection where its application has a
-// datastore part, with comments above it naming the graph where its key does
-// not, and why a connection is left for the author.
-func writeGraph(b *strings.Builder, a *application, g *graph) {
+// description, its datastore connection where its application has a datastore
+// part, and its model connection where the import drafts model, each declaring
+// for target the credential the drafted Release attaches on it, with comments
+// above it naming the graph where its key does not, and why a connection is
+// left for the author.
+func writeGraph(b *strings.Builder, target string, a *application, g *graph, model *modelPart) {
 	if g.ref != g.key {
 		b.WriteString(commentLine("    ", "The graph "+commentText(g.ref)+"."))
 	}
@@ -166,8 +210,10 @@ func writeGraph(b *strings.Builder, a *application, g *graph) {
 		b.WriteString(commentLine("    ", "The "+checkpointerSocket+" connection is left for the author, since the checkpointer "+
 			a.checkpointer.why+"; the build halts naming the socket until one is wired."))
 	}
-	b.WriteString(commentLine("    ", "The "+modelSocket+" connection is left for the author, since the configuration names no "+
-		"model; the build halts naming the socket until one is wired."))
+	if model == nil {
+		b.WriteString(commentLine("    ", "The "+modelSocket+" connection is left for the author, since the configuration names "+
+			"no model and the catalog holds no "+modelComponent+"; the build halts naming the socket until one is wired."))
+	}
 	b.WriteString("    " + g.key + ":\n")
 	b.WriteString("      type: " + Component + "\n")
 	b.WriteString("      values:\n")
@@ -175,12 +221,31 @@ func writeGraph(b *strings.Builder, a *application, g *graph) {
 	if g.description != nil {
 		b.WriteString("        description: " + aggregateText(*g.description) + "\n")
 	}
+	if a.part == nil && model == nil {
+		return
+	}
+	b.WriteString("      uses:\n")
 	if a.part != nil {
-		b.WriteString("      uses:\n")
 		b.WriteString("        " + checkpointerSocket + ":\n")
 		b.WriteString("          " + a.part.key + ":\n")
 		b.WriteString("            target: " + a.part.key + "\n")
+		if !a.part.drafted {
+			b.WriteString(checkpointerCredential(g, a.part).Declaration(target).Text("            ", a.part.key, false))
+		}
 	}
+	if model != nil {
+		b.WriteString("        " + modelSocket + ":\n")
+		b.WriteString("          " + model.key + ":\n")
+		b.WriteString("            target: " + model.key + "\n")
+		b.WriteString(modelCredential(g, model).Declaration(target).Text("            ", model.key, false))
+	}
+}
+
+// modelCredential is the credential graph g presents to model on its model
+// connection, read from the variable the model's provider's client libraries
+// read the API key from.
+func modelCredential(g *graph, model *modelPart) importer.Secret {
+	return modelcred.Credential(g.key, modelSocket, model.key, model.key, model.component, "")
 }
 
 // aggregateText writes text read from a source as a value of the drafted
@@ -192,12 +257,14 @@ func aggregateText(text string) string {
 
 // langgraphRelease is the drafted Release, as the plugin kit's Release writer
 // writes it: for each graph, under its key, leaving for the Release the image
-// running the application, with a comment above the first graph naming what each
+// running the application and attaching the credentials it presents to its
+// datastore and to model, with a comment above the first graph naming what each
 // graph's image holds and the variables it is handed, and above each
 // application's first graph the environment its configuration states; then an
-// entry for each datastore part, since a build places only the instances a
-// Release names.
-func langgraphRelease(read []*application, parts []*datastorePart) importer.ReleaseDraft {
+// entry for each datastore part, and for the datastore it keeps its data in,
+// attaching their password, and one for model, since a build places only the
+// instances a Release names.
+func langgraphRelease(read []*application, parts []*datastorePart, model *modelPart) importer.ReleaseDraft {
 	draft := importer.ReleaseDraft{}
 	contract := true
 	for _, a := range read {
@@ -208,6 +275,12 @@ func langgraphRelease(read []*application, parts []*datastorePart) importer.Rele
 			}
 			entry := importer.ReleaseEntry{Key: g.key, Left: []importer.LeftItem{
 				importer.LeftImage("the container image running the application")}}
+			if a.part != nil && !a.part.drafted {
+				entry.Secrets = append(entry.Secrets, checkpointerCredential(g, a.part))
+			}
+			if model != nil {
+				entry.Secrets = append(entry.Secrets, modelCredential(g, model))
+			}
 			if contract {
 				entry.Comments = append(entry.Comments, imageContract...)
 				contract = false
@@ -220,7 +293,14 @@ func langgraphRelease(read []*application, parts []*datastorePart) importer.Rele
 		}
 	}
 	for _, p := range parts {
-		draft.Entries = append(draft.Entries, importer.ReleaseEntry{Key: p.key})
+		secrets := p.secrets()
+		draft.Entries = append(draft.Entries, importer.ReleaseEntry{Key: p.key, Secrets: secrets[p.key]})
+		if p.backend.behind != nil {
+			draft.Entries = append(draft.Entries, importer.ReleaseEntry{Key: p.behindKey, Secrets: secrets[p.behindKey]})
+		}
+	}
+	if model != nil {
+		draft.Entries = append(draft.Entries, importer.ReleaseEntry{Key: model.key})
 	}
 	return draft
 }

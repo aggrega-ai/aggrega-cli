@@ -7,18 +7,27 @@
 // with that Component's labels as the row's traits, written as the Go source the
 // importer embeds.
 //
-// It reads, of each Recipe under aggrega-catalog/recipe/compose/, two things and
-// nothing else: the Component its spec.implements names, and the image of the
-// container named main in its workload — the literal repository the image names,
-// or the literal locals entry the image is in whole. It renders nothing and
-// evaluates no template: a Recipe whose main image takes its repository from the
-// Release, or composes it in any other way, contributes no row; so do the images
-// of init containers, of the other containers beside main and of artifacts. Two
-// Recipes naming one repository for one Component make one row; two naming it
-// for different Components are refused, naming both, and no table is written,
-// since a table naming one of them would decide which Component a service of that
-// image is. The rows are ordered by repository, so one set of Recipes always
-// writes the same bytes.
+// It reads, of each Recipe under aggrega-catalog/recipe/compose/, the Component
+// its spec.implements names, and the image of the container named main in its
+// workload — the literal repository the image names, or the literal locals entry
+// the image is in whole. It renders nothing and evaluates no template: a Recipe
+// whose main image takes its repository from the Release, or composes it in any
+// other way, contributes no row; so do the images of init containers, of the
+// other containers beside main and of artifacts. Two Recipes naming one
+// repository for one Component make one row; two naming it for different
+// Components are refused, naming both, and no table is written, since a table
+// naming one of them would decide which Component a service of that image is.
+// The rows are ordered by repository, so one set of Recipes always writes the
+// same bytes.
+//
+// Of a Recipe contributing a row it also reads, literally, what lets a Compose
+// service running that image be drafted as an instance configured as the service
+// is: the infra key a literal repository's tag is written from; the variables of
+// the main container's environment written as one value of the Component; the
+// variable an attached secret is read under where the attachment declares no key
+// of its own, and the slot it is attached on; and the provides keys publishing a
+// value of the Component, or the instance's own name, whole. Two Recipes of one
+// Component saying different things of one key keep neither.
 //
 // Of each Component a row names it takes the labels, and nothing else, from the
 // checkout's catalog (aggrega-catalog/component/, loaded with the schema
@@ -50,6 +59,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -115,12 +125,39 @@ func run(hub, out, revision string, report bool) error {
 	return os.WriteFile(out, content, 0o644)
 }
 
-// row is one row of the table: a repository, the Component it maps to, and the
+// row is one row of the table: a repository, the Component it maps to, the
 // traits the Component's labels give it, which are absent until withTraits
-// writes them.
+// writes them, and what the Recipes running an image of the repository say of
+// how a service running it is configured.
 type row struct {
 	repository, component string
 	traits                map[string]string
+	translation
+}
+
+// translation is what the Compose Recipes of one Component, read literally, say
+// of the service they write, so a Compose service running an image of theirs
+// can be drafted as an instance of that Component configured as the service is:
+//
+//   - tag, the infra key whose value is the tag of the main container's image,
+//     where the image is written as a literal repository, a colon and that key;
+//   - values, each variable of the main container's environment whose value is
+//     one value of the Component and nothing else, mapped to that value's key;
+//   - secrets, each variable a Recipe reads an attached secret's value under
+//     where the attachment declares no key of its own, mapped to the slot the
+//     secret is attached on;
+//   - provides, each value of the Component a provides key publishes whole,
+//     mapped to that key; and host, the provides key publishing the instance's
+//     own name, the address a peer reaches it at.
+//
+// Where two Recipes of one Component say different things of one key, neither
+// is kept, so the table never chooses between them.
+type translation struct {
+	tag      string
+	values   map[string]string
+	secrets  map[string]string
+	provides map[string]string
+	host     string
 }
 
 // generateFromHub generates the table's rows from the Compose Recipes of the
@@ -209,6 +246,8 @@ func generate(dir string) ([]row, []string, error) {
 	}
 	slices.Sort(paths)
 	byRepository := map[string]string{}
+	tags := map[string]*string{}
+	translations := map[string]*translation{}
 	namedBy := map[string][]string{}
 	conflicts := map[string]bool{}
 	var notes []string
@@ -219,22 +258,34 @@ func generate(dir string) ([]row, []string, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		component, repositories, why, err := readRecipe(raw)
+		r, err := readRecipe(raw)
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s: %w", rel, err)
 		}
-		if len(repositories) == 0 {
-			notes = append(notes, rel+": no row, since "+why)
+		if len(r.repositories) == 0 {
+			notes = append(notes, rel+": no row, since "+r.why)
 			continue
 		}
-		notes = append(notes, rel+": "+strings.Join(repositories, ", ")+" -> "+component)
-		for _, r := range repositories {
-			namedBy[r] = append(namedBy[r], rel+" implements "+component)
-			if prior, seen := byRepository[r]; seen && prior != component {
-				conflicts[r] = true
+		notes = append(notes, rel+": "+strings.Join(r.repositories, ", ")+" -> "+r.component)
+		if prior, seen := translations[r.component]; seen {
+			prior.merge(r.translation)
+		} else {
+			t := r.translation
+			translations[r.component] = &t
+		}
+		for _, repository := range r.repositories {
+			namedBy[repository] = append(namedBy[repository], rel+" implements "+r.component)
+			if prior, seen := tags[repository]; !seen {
+				tag := r.tag
+				tags[repository] = &tag
+			} else if *prior != r.tag {
+				*prior = ""
+			}
+			if prior, seen := byRepository[repository]; seen && prior != r.component {
+				conflicts[repository] = true
 				continue
 			}
-			byRepository[r] = component
+			byRepository[repository] = r.component
 		}
 	}
 	if len(conflicts) > 0 {
@@ -247,9 +298,49 @@ func generate(dir string) ([]row, []string, error) {
 	}
 	rows := make([]row, 0, len(byRepository))
 	for _, r := range slices.Sorted(maps.Keys(byRepository)) {
-		rows = append(rows, row{repository: r, component: byRepository[r]})
+		t := *translations[byRepository[r]]
+		t.tag = *tags[r]
+		rows = append(rows, row{repository: r, component: byRepository[r], translation: t})
 	}
 	return rows, notes, nil
+}
+
+// merge keeps in t what t and o, read from two Recipes of one Component, say
+// alike: each key both map to one thing, or one of them alone maps; a key they
+// map to two things is dropped, and so is host where they name two.
+func (t *translation) merge(o translation) {
+	for _, m := range []struct{ into, from *map[string]string }{{&t.values, &o.values}, {&t.secrets, &o.secrets},
+		{&t.provides, &o.provides}} {
+		*m.into = mergedMap(*m.into, *m.from)
+	}
+	if t.host != o.host {
+		if t.host == "" {
+			t.host = o.host
+		} else if o.host != "" {
+			t.host = ""
+		}
+	}
+}
+
+// mergedMap is a and b together, a key the two map to different things dropped.
+func mergedMap(a, b map[string]string) map[string]string {
+	out := map[string]string{}
+	dropped := map[string]bool{}
+	for _, m := range []map[string]string{a, b} {
+		for k, v := range m {
+			if prior, seen := out[k]; seen && prior != v {
+				dropped[k] = true
+			}
+			out[k] = v
+		}
+	}
+	for k := range dropped {
+		delete(out, k)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // recipe is what the tool reads of a Recipe document.
@@ -258,27 +349,219 @@ type recipe struct {
 		Implements string         `yaml:"implements"`
 		Workload   string         `yaml:"workload"`
 		Locals     map[string]any `yaml:"locals"`
+		Provides   map[string]any `yaml:"provides"`
 	} `yaml:"spec"`
 }
 
-// readRecipe returns the Component a Recipe implements, less its version, and the
-// repositories its main container's image names literally — or, where it names
-// none, why.
-func readRecipe(raw []byte) (string, []string, string, error) {
+// readRecipeResult is what the tool reads of one Recipe: the Component it
+// implements, less its version; the repositories its main container's image
+// names literally — or, where it names none, why; and its translation.
+type readRecipeResult struct {
+	component    string
+	repositories []string
+	why          string
+	translation
+}
+
+// readRecipe reads one Recipe document.
+func readRecipe(raw []byte) (readRecipeResult, error) {
 	var r recipe
 	if err := yaml.Unmarshal(raw, &r); err != nil {
-		return "", nil, "", err
+		return readRecipeResult{}, err
 	}
 	component, _, _ := strings.Cut(r.Spec.Implements, ":")
 	if component == "" {
-		return "", nil, "", errors.New("the Recipe implements no Component")
+		return readRecipeResult{}, errors.New("the Recipe implements no Component")
 	}
+	out := readRecipeResult{component: component}
 	image, ok := mainImage(r.Spec.Workload)
 	if !ok {
-		return component, nil, "its workload writes no image for a container named main", nil
+		out.why = "its workload writes no image for a container named main"
+		return out, nil
 	}
-	repositories, why := repositoriesOf(image, r.Spec.Locals)
-	return component, repositories, why, nil
+	out.repositories, out.why = repositoriesOf(image, r.Spec.Locals)
+	out.tag = tagKeyOf(image)
+	out.values = mainValues(r.Spec.Workload)
+	out.secrets = secretVariables(r.Spec.Workload)
+	out.provides, out.host = publishedValues(r.Spec.Provides)
+	return out, nil
+}
+
+// infraKey and valueKey match an action reading one infra key or one value of
+// the Component whole, capturing the key.
+var (
+	infraKey = regexp.MustCompile(`^\.infra\.([a-z][a-z0-9_]*)$`)
+	valueKey = regexp.MustCompile(`^\.values\.([a-z][a-z0-9_]*)$`)
+)
+
+// tagKeyOf returns the infra key the tag of an image value is, where some branch
+// of the template writes a literal repository, a colon and an action reading
+// that key whole — postgres:{{ .infra.engine_version }} — and every branch
+// doing so reads one key; empty otherwise.
+func tagKeyOf(image string) string {
+	parts := splitActions(image)
+	key := ""
+	for i, p := range parts {
+		if p.action || !strings.HasSuffix(p.text, ":") || i+1 >= len(parts) || !parts[i+1].action {
+			continue
+		}
+		m := infraKey.FindStringSubmatch(parts[i+1].text)
+		if m == nil {
+			continue
+		}
+		if key != "" && key != m[1] {
+			return ""
+		}
+		key = m[1]
+	}
+	return key
+}
+
+// variableLine matches one variable of a container's environment written on one
+// line as NAME: VALUE, the value quoted or not, capturing both.
+var variableLine = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$`)
+
+// mainValues returns each variable of the main container's environment — the
+// lines written one level beneath its variables key — whose value is one action
+// reading one value of the Component whole, {{ .values.KEY }}, mapped to KEY.
+// Lines holding a template action alone are passed over, as mainImage passes
+// them over.
+func mainValues(workload string) map[string]string {
+	out := map[string]string{}
+	containers, main, child, variables, entry := -1, -1, -1, -1, -1
+	for _, raw := range strings.Split(workload, "\n") {
+		line := strings.TrimRight(raw, " \r")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "{{") {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " "))
+		switch {
+		case containers < 0:
+			if trimmed == "containers:" {
+				containers = indent
+			}
+			continue
+		case indent <= containers:
+			return nilIfEmpty(out)
+		case main < 0:
+			if trimmed == "main:" {
+				main = indent
+			}
+			continue
+		case indent <= main:
+			return nilIfEmpty(out)
+		}
+		if child < 0 {
+			child = indent
+		}
+		switch {
+		case indent == child:
+			variables, entry = -1, -1
+			if trimmed == "variables:" {
+				variables = indent
+			}
+		case variables >= 0 && indent > variables:
+			if entry < 0 {
+				entry = indent
+			}
+			if indent != entry {
+				continue
+			}
+			m := variableLine.FindStringSubmatch(trimmed)
+			if m == nil {
+				continue
+			}
+			parts := splitActions(unquote(strings.TrimSpace(m[2])))
+			if len(parts) != 1 || !parts[0].action {
+				continue
+			}
+			if k := valueKey.FindStringSubmatch(parts[0].text); k != nil {
+				out[m[1]] = k[1]
+			}
+		}
+	}
+	return nilIfEmpty(out)
+}
+
+// passwordDefault matches the line a Recipe reads an attached secret's key on,
+// taking the attachment's values.key and, where it declares none, a default
+// variable — default "NAME" ( … "key" … ) — capturing that variable; and slotOf
+// the slot of the Component's own features the line reads the attachment from,
+// as .features.SLOT or index .features "SLOT", never a connection's.
+var (
+	passwordDefault = regexp.MustCompile(`default "([A-Za-z_][A-Za-z0-9_]*)" .*"key"`)
+	slotOf          = regexp.MustCompile(`(?:^|[^$\w])\.features\.([a-z][a-z0-9_]*)\b|index \.features "([a-z][a-z0-9_]*)"`)
+)
+
+// secretVariables returns each variable a Recipe reads an attached secret's
+// value under where the attachment declares no key of its own, mapped to the
+// slot of the Component's own features the secret is attached on, read from the
+// line choosing that key. A line naming no such slot, or two, is passed over.
+func secretVariables(workload string) map[string]string {
+	out := map[string]string{}
+	for _, line := range strings.Split(workload, "\n") {
+		m := passwordDefault.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		slots := map[string]bool{}
+		for _, s := range slotOf.FindAllStringSubmatch(line, -1) {
+			slots[s[1]+s[2]] = true
+		}
+		if len(slots) == 1 {
+			for s := range slots {
+				out[m[1]] = s
+			}
+		}
+	}
+	return nilIfEmpty(out)
+}
+
+// publishedValues returns, of a Recipe's provides, each value of the Component a
+// key publishes whole — {{ .values.KEY }} — mapped to the provides key, and the
+// key publishing the instance's own name, {{ .context.instance_id }}, empty where
+// none does or two do.
+func publishedValues(provides map[string]any) (map[string]string, string) {
+	out := map[string]string{}
+	host := ""
+	hosts := 0
+	for _, key := range slices.Sorted(maps.Keys(provides)) {
+		text, ok := provides[key].(string)
+		if !ok {
+			continue
+		}
+		parts := splitActions(strings.TrimSpace(text))
+		if len(parts) != 1 || !parts[0].action {
+			continue
+		}
+		if parts[0].text == ".context.instance_id" {
+			host, hosts = key, hosts+1
+			continue
+		}
+		if m := valueKey.FindStringSubmatch(parts[0].text); m != nil {
+			if _, seen := out[m[1]]; seen {
+				delete(out, m[1])
+				continue
+			}
+			out[m[1]] = key
+		}
+	}
+	if hosts != 1 {
+		host = ""
+	}
+	return nilIfEmpty(out), host
+}
+
+// nilIfEmpty returns m, nil where it holds nothing, so an empty translation is
+// written as none. DELIBERATE NEAR-DUPLICATE of the provider core's unexported
+// helper of that name: this generator is a command of its own, run at build time
+// beside the importer, and imports nothing from a provider plugin's package.
+func nilIfEmpty(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 // mainImage returns the value the workload template writes for the image of the
@@ -495,18 +778,22 @@ func render(rows []row, revision string) ([]byte, error) {
 	b.WriteString("// imageTable maps each image repository the main container of a Compose\n")
 	b.WriteString("// Recipe of the hub names literally to the Component the Recipe implements,\n")
 	b.WriteString("// with every label of that Component but its category as the row's traits,\n")
-	b.WriteString("// ordered by repository.\n")
+	b.WriteString("// and what its Recipes say of how a service running the image is\n")
+	b.WriteString("// configured, ordered by repository.\n")
 	b.WriteString("var imageTable = []imageRow{\n")
 	for _, r := range rows {
-		if len(r.traits) == 0 {
-			fmt.Fprintf(&b, "\t{Repository: %q, Component: %q},\n", r.repository, r.component)
-			continue
+		fmt.Fprintf(&b, "\t{Repository: %q, Component: %q,", r.repository, r.component)
+		writeMap(&b, "Traits", r.traits)
+		if r.tag != "" {
+			fmt.Fprintf(&b, " Tag: %q,", r.tag)
 		}
-		fmt.Fprintf(&b, "\t{Repository: %q, Component: %q, Traits: map[string]string{\n", r.repository, r.component)
-		for _, k := range slices.Sorted(maps.Keys(r.traits)) {
-			fmt.Fprintf(&b, "\t\t%q: %q,\n", k, r.traits[k])
+		writeMap(&b, "Values", r.values)
+		writeMap(&b, "Secrets", r.secrets)
+		writeMap(&b, "Provides", r.provides)
+		if r.host != "" {
+			fmt.Fprintf(&b, " Host: %q,", r.host)
 		}
-		b.WriteString("\t}},\n")
+		b.WriteString("},\n")
 	}
 	b.WriteString("}\n")
 	formatted, err := format.Source(b.Bytes())
@@ -514,4 +801,17 @@ func render(rows []row, revision string) ([]byte, error) {
 		return nil, fmt.Errorf("format the generated table: %w", err)
 	}
 	return formatted, nil
+}
+
+// writeMap writes m as the field named field of a row, its keys ordered, so one
+// set of rows always writes the same bytes; nothing where m holds nothing.
+func writeMap(b *bytes.Buffer, field string, m map[string]string) {
+	if len(m) == 0 {
+		return
+	}
+	fmt.Fprintf(b, " %s: map[string]string{\n", field)
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		fmt.Fprintf(b, "\t\t%q: %q,\n", k, m[k])
+	}
+	b.WriteString("\t},")
 }

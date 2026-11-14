@@ -95,7 +95,10 @@
 // for the Release what no configuration states: each instance's image, which runs
 // the application and holds its configurations; it attaches the credential each
 // presents to its model by reference, as importer.Secret describes, never a
-// value. Each model has an entry of its own, so the Release places it with
+// value, read from the variable the model's provider's client libraries read the
+// API key from — GOOGLE_API_KEY for Gemini — since no configuration names one
+// (modelcred.Credential), and declared with that key on the instance's model
+// connection for compose. Each model has an entry of its own, so the Release places it with
 // the instances. The Release is written by the plugin kit's Release writer,
 // importer.DraftRelease, whose documentation states what every drafted Release
 // declares beside its entries.
@@ -280,7 +283,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	}
 	name := importer.DraftName(in, titles...)
 	aggregate := aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft",
-		Body: renderAggregate(name, apps, parts, unread(r, apps))}
+		Body: renderAggregate(name, in.Target, apps, parts, unread(r, apps))}
 	out.Entities = append(append(entities, aggregate),
 		importer.DraftRelease(in, aggregate, adkRelease(apps, parts))...)
 	out.Files = importer.Render(in.Settings, out.Entities, out.Decisions)

@@ -190,8 +190,16 @@ func TestTheTableMovesWithARecipesImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	want := []row{{repository: "planted/postgres-needle", component: "core/datastore/postgres"},
-		{repository: "redis", component: "core/datastore/redis"}}
+	want := []row{
+		{repository: "planted/postgres-needle", component: "core/datastore/postgres", translation: translation{
+			tag:      "engine_version",
+			values:   map[string]string{"POSTGRES_USER": "user", "POSTGRES_DB": "database"},
+			secrets:  map[string]string{"POSTGRES_PASSWORD": "password"},
+			provides: map[string]string{"user": "user", "database": "database"},
+			host:     "host"}},
+		{repository: "redis", component: "core/datastore/redis", translation: translation{tag: "engine_version",
+			secrets: map[string]string{"REDIS_PASSWORD": "password"}, host: "host"}},
+	}
 	if !reflect.DeepEqual(rows, want) {
 		t.Errorf("the planted table holds %v, want %v", rows, want)
 	}
@@ -312,7 +320,66 @@ func TestTwoRecipesNamingOneRepositoryForDifferentComponentsAreRefused(t *testin
 	}
 	dir = writeRecipes(t, map[string]string{"a": recipeDoc("core/x/a", "", workload), "b": recipeDoc("core/x/a", "", workload)})
 	rows, _, err = generate(dir)
-	if err != nil || !reflect.DeepEqual(rows, []row{{repository: "acme/db", component: "core/x/a"}}) {
+	if err != nil || !reflect.DeepEqual(rows, []row{{repository: "acme/db", component: "core/x/a",
+		translation: translation{tag: "v"}}}) {
 		t.Errorf("two Recipes naming acme/db for one Component generated %v, %v; want one row", rows, err)
+	}
+}
+
+// TestWhatARecipeSaysOfItsServiceIsReadLiterally generates the table from Recipes
+// written for the purpose and requires each row's translation as the Recipes
+// write it: the infra key the image's tag is written from; each variable of the
+// main container written as one value whole, and none written as anything more,
+// nor a variable of another container; the variable an attached secret is read
+// under where the attachment names no key, mapped to the Component's own slot,
+// and none read off a connection's attachment; and the provides keys publishing
+// a value or the instance's name whole. Two Recipes of one Component disagreeing
+// on a key keep neither reading of it, and agreeing keep it.
+//
+// 🔴 PLANTED DEFECT: in secretVariables, drop the slotOf check and take the
+// first .features. segment of the line: the connection's credential is read as
+// a slot and the case fails.
+func TestWhatARecipeSaysOfItsServiceIsReadLiterally(t *testing.T) {
+	t.Parallel()
+	doc := func(component, variables, provides string) string {
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: r\n  version: 1.0.0\nspec:\n" +
+			"  capability: compose\n  implements: " + component + ":1.0.0\n  provides:\n" + provides +
+			"  workload: |\n" +
+			"    {{- $k := default \"DB_PASSWORD\" (optional (default dict .features.password.values) \"key\" \"\") }}\n" +
+			"    {{- $c := default \"PEER_TOKEN\" (optional (default dict $features.credential.values) \"key\" \"\") }}\n" +
+			"    kind: Workload\n    containers:\n      main:\n        image: \"acme/db:{{ .infra.engine_version }}\"\n" +
+			"        variables:\n" + variables +
+			"      sidecar:\n        image: \"acme/side:1\"\n        variables:\n          SIDE_USER: \"{{ .values.user }}\"\n"
+	}
+	main := "          DB_USER: \"{{ .values.user }}\"\n" +
+		"          DB_NAME: {{ .values.database }}\n" +
+		"          DB_URL: \"db://{{ .values.user }}@{{ .context.instance_id }}\"\n" +
+		"    {{- if .values.locale }}\n" +
+		"          DB_LOCALE: \"{{ .values.locale }}\"\n" +
+		"    {{- end }}\n"
+	provides := "    host: \"{{ .context.instance_id }}\"\n    user: \"{{ .values.user }}\"\n" +
+		"    database: \"{{ .values.database }}\"\n    url: \"db://{{ .values.user }}\"\n"
+	dir := writeRecipes(t, map[string]string{"a": doc("core/x/db", main, provides)})
+	rows, notes, err := generate(dir)
+	if err != nil {
+		t.Fatalf("generate: %v (%v)", err, notes)
+	}
+	want := []row{{repository: "acme/db", component: "core/x/db", translation: translation{tag: "engine_version",
+		values:   map[string]string{"DB_USER": "user", "DB_NAME": "database", "DB_LOCALE": "locale"},
+		secrets:  map[string]string{"DB_PASSWORD": "password"},
+		provides: map[string]string{"user": "user", "database": "database"}, host: "host"}}}
+	if !reflect.DeepEqual(rows, want) {
+		t.Errorf("the Recipe generated %+v, want %+v", rows, want)
+	}
+
+	other := "          DB_USER: \"{{ .values.login }}\"\n          DB_NAME: \"{{ .values.database }}\"\n"
+	dir = writeRecipes(t, map[string]string{"a": doc("core/x/db", main, provides), "b": doc("core/x/db", other, provides)})
+	rows, notes, err = generate(dir)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("generate two Recipes of one Component: %v, %v (%v)", rows, err, notes)
+	}
+	if got, want := rows[0].values, map[string]string{"DB_NAME": "database", "DB_LOCALE": "locale"}; !reflect.DeepEqual(got,
+		want) {
+		t.Errorf("two Recipes disagreeing on DB_USER kept %v, want %v", got, want)
 	}
 }

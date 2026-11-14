@@ -15,9 +15,9 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/modelcred"
 	"github.com/aggrega-ai/aggrega-cli/plugins/parsercore"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
-	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // The Google ADK importer on the host toolchain: each case hands Import a
@@ -291,13 +291,15 @@ func TestEachCommittedApplicationIsDraftedAsOneInstancePerTree(t *testing.T) {
 				t.Errorf("the Release does not leave the image empty for the Release:\n%s", files(out)["release.yaml"])
 			}
 			// The credential the tree presents on its wired model connection is attached by
-			// reference on that connection: the positive control of the case for an
-			// unwired model, whose Release attaches none.
-			credential := importer.ConnectionCredential(tc.key, modelSocket, tc.part, tc.part, "")
+			// reference on that connection, read from the variable Google's client
+			// libraries read the Gemini API's key from, since a configuration names
+			// none: the positive control of the case for an unwired model, whose
+			// Release attaches none.
+			credential := modelcred.Credential(tc.key, modelSocket, tc.part, tc.part, modelComponent, "")
 			if want := "      uses:\n        " + modelSocket + ":\n          " + tc.part + ":\n            features:\n" +
 				"              credential:\n                type: core/secret-value\n"; !strings.Contains(
-				files(out)["release.yaml"], want) || !strings.Contains(files(out)["release.yaml"],
-				"origin: \"${"+credential.Variable+"}\"\n") {
+				files(out)["release.yaml"], want) || credential.Variable != "GOOGLE_API_KEY" ||
+				!strings.Contains(files(out)["release.yaml"], "origin: \"${GOOGLE_API_KEY}\"\n") {
 				t.Errorf("the Release does not attach the credential %s by reference:\n%s", credential.Path,
 					files(out)["release.yaml"])
 			}

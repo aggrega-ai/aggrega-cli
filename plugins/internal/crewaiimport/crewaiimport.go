@@ -66,7 +66,10 @@
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and
 // leaves for the Release what no declaration states: each agent's image, which
 // runs the crew's program; it attaches the credential each agent presents to its
-// model by reference, as importer.Secret describes, never a value. Each model has
+// model by reference, as importer.Secret describes, never a value, read from the
+// variable the model's provider's client libraries read the API key from, since
+// no declaration names one (modelcred.Credential), and declared with that key on
+// the agent's model connection for compose. Each model has
 // an entry of its own, so the Release places it with the agents.
 // The Release is written by the plugin kit's Release writer,
 // importer.DraftRelease, whose documentation states what every drafted Release
@@ -76,8 +79,10 @@
 //
 // An llm written as an object can carry a key — under api_key, in an address, in
 // headers. Each member of such an object other than the one naming the model is
-// written into a comment above the model's entry of the Release, for the author
-// to place where the Component takes it, and each that is not a number or a
+// written as a value of the model's instance where the catalog's Component it is
+// an instance of declares a value of that name, and otherwise into a comment
+// above the model's entry of the Release, for the author to place where the
+// Component takes it; and each that is not a number or a
 // boolean is handed to the plugin kit's credential decision,
 // importer.CarryCredentials, as an input its format marks as no credential that
 // can carry one — CrewAI marks none, and a member's name is not read for what it
@@ -128,8 +133,10 @@ const Component = "core/ai-agent/crewai"
 // modelSocket is the socket of Component an agent's model is wired to.
 const modelSocket = "model"
 
-// where completes each credential report, naming where the value is written.
-const where = "in the Release the draft writes"
+// where completes each credential report, naming where the value is written: as
+// a value of a model's instance in the drafted Aggregate, or in a comment of the
+// drafted Release.
+const where = "in the drafts"
 
 // toolCategory is the category of the catalog Components a tool's name is
 // matched against for a hint.
@@ -156,6 +163,9 @@ type modelPart struct {
 	// stated are the members of the llm object it was declared with, where it was
 	// declared as one; such a part is the one agent's own.
 	stated []member
+	// declares are the values the catalog's Component it is an instance of
+	// declares, as the request's catalog view names them; none for a drafted one.
+	declares []string
 	// agents are the agents wired to it, by ref.
 	agents []string
 }
@@ -253,7 +263,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	}
 	name := importer.DraftName(in, titles...)
 	aggregate := aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft",
-		Body: renderAggregate(name, read, parts)}
+		Body: renderAggregate(name, in.Target, read, parts)}
 	out.Entities = append(append(entities, aggregate),
 		importer.DraftRelease(in, aggregate, crewaiRelease(read, parts))...)
 	out.Files = importer.Render(in.Settings, out.Entities, out.Decisions)
@@ -267,10 +277,10 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 // request's catalog view holds it, and a Component drafted under the target
 // namespace otherwise.
 func wire(in aggrega.ImportInput, read []*crew, used map[string]bool) []*modelPart {
-	held := map[string]bool{}
+	held := map[string][]string{}
 	if in.Catalog != nil {
 		for _, c := range in.Catalog.Components {
-			held[c.Name] = true
+			held[c.Name] = append([]string{}, c.Values...)
 		}
 	}
 	namespace := importer.TargetNamespace(in.Settings)
@@ -293,7 +303,9 @@ func wire(in aggrega.ImportInput, read []*crew, used map[string]bool) []*modelPa
 				} else {
 					shared[id] = p
 				}
-				if !held[name] {
+				if declares, ok := held[name]; ok {
+					p.declares = declares
+				} else {
 					p.component = namespace + "/ai-model/" + importer.UniqueKey(map[string]bool{}, a.llm.provider)
 					p.drafted = true
 				}

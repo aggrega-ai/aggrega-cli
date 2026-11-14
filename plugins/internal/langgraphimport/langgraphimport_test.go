@@ -320,14 +320,13 @@ func TestAnApplicationIsDraftedAsOneAgentPerGraphWiredToItsDatastore(t *testing.
 // TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares imports the
 // python application, whose checkpointer names no backend, over a catalog holding
 // PostgreSQL and over one holding none, so its datastore's Component is drafted,
-// and the envfile application, whose checkpointer names MongoDB, which the
-// catalog does not hold; and requires the drafted Release to hold an entry for
-// every instance the drafted Aggregate declares, the datastore included: a build
-// places only the instances a Release names, so an instance without an entry
-// halts it. The datastore's entry holds no infrastructure, since the
-// configuration states none. Each importer package holds a test of this name
-// over the entries it hands the plugin kit's Release writer, since each importer
-// decides what its Release holds.
+// and the envfile application, whose checkpointer names mongo, whose FerretDB
+// the catalog does not hold, so no datastore is drafted for it; and requires the
+// drafted Release to hold an entry for every instance the drafted Aggregate
+// declares, the datastore included: a build places only the instances a Release
+// names, so an instance without an entry halts it. Each importer package holds a
+// test of this name over the entries it hands the plugin kit's Release writer,
+// since each importer decides what its Release holds.
 //
 // 🔴 PLANTED DEFECT: in langgraphRelease (render.go), drop the loop over the datastore
 // parts: every row fails naming its datastore.
@@ -343,7 +342,7 @@ func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testi
 	}{
 		{"a datastore the catalog holds", "postgres", python(t), catalog},
 		{"a datastore whose Component is drafted", "postgres", python(t), agentOnly},
-		{"a datastore the configuration names by its backend", "mongodb", envfile(t), catalog},
+		{"a backend whose datastore the catalog does not hold", "", envfile(t), catalog},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
@@ -363,8 +362,8 @@ func TestTheDraftedReleaseNamesEveryInstanceTheDraftedAggregateDeclares(t *testi
 			if len(unplaced) > 0 {
 				t.Errorf("the Release names no entry for %v, which the Aggregate declares:\n%s", unplaced, release)
 			}
-			if !strings.Contains(release, "    "+row.datastore+": {}\n") {
-				t.Errorf("the Release holds no entry %s holding no infrastructure:\n%s", row.datastore, release)
+			if row.datastore != "" && !slices.Contains(named, row.datastore) {
+				t.Errorf("the Release holds no entry %s:\n%s", row.datastore, release)
 			}
 		})
 	}
@@ -587,33 +586,48 @@ func TestAnEnvironmentFileNoConfigurationNamesIsNotRead(t *testing.T) {
 	}
 }
 
+// ferretCatalog is catalog with the standard library's FerretDB and DocumentDB
+// beside its Components.
+var ferretCatalog = &aggrega.CatalogProjection{Components: append(slices.Clone(catalog.Components),
+	aggrega.CatalogComponent{Name: "core/datastore/documentdb", Version: "1.0.0",
+		Labels: map[string]string{catalogLabel: "datastore"}},
+	aggrega.CatalogComponent{Name: "core/datastore/ferretdb", Version: "1.0.0",
+		Labels: map[string]string{catalogLabel: "datastore"}})}
+
 // TestACheckpointerBackendDecidesTheDatastore imports one configuration per
-// checkpointer backend against a catalog view holding PostgreSQL and no MongoDB:
-// mongo drafts <target_namespace>/datastore/mongodb beside the Aggregate and
-// wires the graph to it; default wires core/datastore/postgres, referenced;
-// custom, and a backend the importer maps to nothing, wire no datastore, leaving
-// checkpointer_db for the author and saying why, in a comment and in the
-// checkpointer's decision.
+// checkpointer backend against a catalog view holding PostgreSQL and no FerretDB:
+// default wires core/datastore/postgres, referenced; mongo, whose FerretDB and
+// DocumentDB the catalog does not hold, custom, and a backend the importer maps
+// to nothing, wire no datastore, leaving checkpointer_db for the author and saying
+// why, in a comment and in the checkpointer's decision. Against a view holding
+// both, mongo wires core/datastore/ferretdb, referenced, itself wired to an
+// instance of core/datastore/documentdb on its backend socket.
 func TestACheckpointerBackendDecidesTheDatastore(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct {
 		name, checkpointer string
+		view               *aggrega.CatalogProjection
 		component          string
 		drafted            bool
 		why                string
 	}{
-		{"mongo", `{"backend":"mongo"}`, "imported/datastore/mongodb", true, ""},
-		{"default", `{"backend":"default"}`, "core/datastore/postgres", false, ""},
-		{"custom", `{"backend":"custom","path":"./src/saver.py:make_saver"}`, "", false,
+		{"mongo", `{"backend":"mongo"}`, ferretCatalog, "core/datastore/ferretdb", false, ""},
+		{"mongo over a catalog holding no FerretDB", `{"backend":"mongo"}`, catalog, "", false,
+			"names the backend mongo, which the import drafts as core/datastore/ferretdb over " +
+				"core/datastore/documentdb, and the workspace's catalog holds no core/datastore/ferretdb and no " +
+				"core/datastore/documentdb"},
+		{"default", `{"backend":"default"}`, catalog, "core/datastore/postgres", false, ""},
+		{"custom", `{"backend":"custom","path":"./src/saver.py:make_saver"}`, catalog, "", false,
 			"is custom: a checkpointer the application's code defines at ./src/saver.py:make_saver"},
-		{"unmapped", `{"backend":"sqlite"}`, "", false,
+		{"unmapped", `{"backend":"sqlite"}`, catalog, "", false,
 			"names the backend sqlite, which the import maps to no datastore"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
 			config := []byte(`{"dependencies":["."],"graphs":{"agent":"./agent.py:graph"},"checkpointer":` +
 				row.checkpointer + `}`)
-			out := importSources(t, "", aggrega.ImportSource{Name: "langgraph.json", Bytes: config})
+			out := Import(aggrega.ImportInput{Format: Format, Catalog: row.view,
+				Sources: []aggrega.ImportSource{{Name: "langgraph.json", Bytes: config}}}, hostParse(t))
 			d, text := drafted(t, out)
 			agent := d.Spec.Components["agent"]
 			if row.component == "" {
@@ -652,6 +666,72 @@ func TestACheckpointerBackendDecidesTheDatastore(t *testing.T) {
 			}
 			if draftedFile != row.drafted {
 				t.Errorf("the import drafted a Component file for %s: %v, want %v", row.component, draftedFile, row.drafted)
+			}
+			if row.component == "core/datastore/ferretdb" {
+				backend := d.Spec.Components["ferretdb"].Uses["backend"]["documentdb"].Target
+				if backend != "documentdb" || d.Spec.Components["documentdb"].Type != "core/datastore/documentdb" {
+					t.Errorf("FerretDB is not wired to an instance of core/datastore/documentdb on its backend "+
+						"socket:\n%s", text)
+				}
+			}
+		})
+	}
+}
+
+// TestTheGraphCallsADraftedModelAndPresentsTheStoresPassword imports a
+// configuration naming the mongo checkpointer against a catalog view holding the
+// OpenAI model, FerretDB and DocumentDB, for compose and for helm, and requires
+// every graph wired to one drafted instance of core/ai-model/openai whose
+// values.model is written empty for the author, the graph presenting the model a
+// key read from OPENAI_API_KEY; and one password, read from FERRETDB_PASSWORD,
+// attached to DocumentDB as its own, to FerretDB on its connection to DocumentDB
+// and to the graph on its checkpointer_db connection — each declared with the key
+// its Recipes read it under for compose, and named by its Secret for helm.
+//
+// 🔴 PLANTED DEFECT: in draftModel (langgraphimport.go), return nil: the graph's
+// model socket is left unwired and the case fails.
+func TestTheGraphCallsADraftedModelAndPresentsTheStoresPassword(t *testing.T) {
+	t.Parallel()
+	view := &aggrega.CatalogProjection{Components: append(slices.Clone(ferretCatalog.Components),
+		aggrega.CatalogComponent{Name: modelComponent, Version: "1.0.0", Labels: map[string]string{catalogLabel: "ai-model"}})}
+	config := []byte(`{"graphs":{"agent":"./agent.py:graph"},"checkpointer":{"backend":"mongo"}}`)
+	for _, target := range []string{"compose", "helm"} {
+		t.Run(target, func(t *testing.T) {
+			t.Parallel()
+			out := Import(aggrega.ImportInput{Format: Format, Catalog: view, Target: target,
+				Sources: []aggrega.ImportSource{{Name: "langgraph.json", Bytes: config}}}, hostParse(t))
+			d, text := drafted(t, out)
+			release := files(out)["release.yaml"]
+			if got := d.Spec.Components["agent"].Uses[modelSocket]["model"].Target; got != "model" {
+				t.Errorf("the graph's model connection targets %q, want the drafted model:\n%s", got, text)
+			}
+			if model := d.Spec.Components["model"]; model.Type != modelComponent || model.Values["model"] != "" {
+				t.Errorf("the drafted model is %+v, want %s with values.model empty", model, modelComponent)
+			}
+			if !strings.Contains(text, "        # Left for the author, since the configuration names no model: "+
+				"values.model, the name of the model core/ai-model/openai serves.\n        model: \"\"\n") {
+				t.Errorf("the Aggregate does not leave values.model for the author:\n%s", text)
+			}
+			for _, key := range []string{"agent", "ferretdb", "documentdb", "model"} {
+				if !slices.Contains(componentKeys(t, release), key) {
+					t.Errorf("the Release places no %s:\n%s", key, release)
+				}
+			}
+			if target == "compose" {
+				for _, want := range []string{"key: OPENAI_API_KEY\n", "key: FERRETDB_PASSWORD\n", "key: PGPASSWORD\n",
+					"key: POSTGRES_PASSWORD\n"} {
+					if !strings.Contains(text, want) {
+						t.Errorf("for compose the Aggregate does not declare %q:\n%s", want, text)
+					}
+				}
+				if got := strings.Count(release, "origin: \"${FERRETDB_PASSWORD}\"\n"); got != 3 {
+					t.Errorf("for compose the password is attached %d times by reference, want three:\n%s", got, release)
+				}
+				return
+			}
+			if strings.Contains(text, "values:\n                  key:") || strings.Count(release,
+				"type: core/referenced-secret\n") != 4 {
+				t.Errorf("for helm each secret is not named by its Secret, undeclared:\n%s\n%s", text, release)
 			}
 		})
 	}
@@ -763,4 +843,122 @@ func evaluatedAggregate(t *testing.T, text string) string {
 		t.Fatalf("the drafted Aggregate does not run as a template: %v\n%s", err, text)
 	}
 	return evaluated.String()
+}
+
+// hubCatalog is the catalog of the aggrega-hub repository checked out beside
+// this one. The check below reads it, and without that checkout fails rather
+// than skipping, so check out aggrega-hub beside this repository first.
+var hubCatalog = filepath.Join("..", "..", "..", "..", "aggrega-hub", "aggrega-catalog")
+
+// hubFile reads one file of the hub's catalog, by its path beneath it.
+func hubFile(t *testing.T, rel string) string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(hubCatalog, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatalf("read the hub's %s: %v", rel, err)
+	}
+	return string(body)
+}
+
+// TestTheBackendsTableIsWhatTheHubsEntitiesSay holds the backends table, which
+// writes facts the catalog holds, to the hub's entities: each datastore's
+// Component declares the password slot the table attaches its password on, and
+// its Compose Recipe reads that password under the key the table declares —
+// PostgreSQL's under the attachment's key with the table's key as its default,
+// DocumentDB's under the table's key; FerretDB's Compose Recipe reads the
+// password presented on its backend connection under the table's edge key, and
+// its Component declares that socket and a credential slot on it; and the
+// catalog's core/ferretdb Aggregate composes FerretDB and DocumentDB, wiring the
+// one to the other on that socket and delivering exactly the variables the table
+// delivers, in its order.
+//
+// It reads files outside this module, which the test cache does not track: a
+// cached pass says nothing of the hub as it is now, so a run meant to catch the
+// hub drifting is made with -count=1.
+//
+// 🔴 PLANTED DEFECT: in backends (langgraphimport.go), write the edge key as
+// "PG_PASSWORD": the case fails naming FerretDB's Recipe.
+func TestTheBackendsTableIsWhatTheHubsEntitiesSay(t *testing.T) {
+	t.Parallel()
+	last := func(component string) string { return component[strings.LastIndex(component, "/")+1:] }
+	readsKey := func(recipe, key string, slotLine func(string) bool) bool {
+		for _, line := range strings.Split(recipe, "\n") {
+			if strings.Contains(line, `"`+key+`"`) && slotLine(line) {
+				return true
+			}
+		}
+		return false
+	}
+	declaresSlot := func(component, slot string) bool {
+		return strings.Contains(component, "\n  featuresSchema:\n") && strings.Contains(component, "\n    "+slot+":\n")
+	}
+	pg := backends["default"]
+	recipe := hubFile(t, "recipe/compose/"+last(pg.component)+"/1.0.0/recipe.yaml")
+	if !readsKey(recipe, pg.key, func(l string) bool {
+		return strings.Contains(l, "default ") && strings.Contains(l, ".features."+pg.slot+".")
+	}) || !declaresSlot(hubFile(t, "component/"+pg.component+"/1.0.0/component.yaml"), pg.slot) {
+		t.Errorf("%s does not read its %s password under %s by default, or its Component declares no such slot",
+			pg.component, pg.slot, pg.key)
+	}
+
+	ferret := backends["mongo"]
+	bk := ferret.behind
+	if !readsKey(hubFile(t, "recipe/compose/"+bk.name+"/1.0.0/recipe.yaml"), bk.key, func(l string) bool {
+		return strings.Contains(l, ".context.inject.env")
+	}) || !declaresSlot(hubFile(t, "component/"+bk.component+"/1.0.0/component.yaml"), bk.slot) {
+		t.Errorf("%s does not read its %s password under %s, or its Component declares no such slot", bk.component,
+			bk.slot, bk.key)
+	}
+	proxy := hubFile(t, "component/"+ferret.component+"/1.0.0/component.yaml")
+	if !readsKey(hubFile(t, "recipe/compose/"+ferret.name+"/1.0.0/recipe.yaml"), bk.edgeKey, func(l string) bool {
+		return strings.Contains(l, "$env") || strings.Contains(l, "inject.env")
+	}) || !strings.Contains(proxy, "\n  usesSchema:\n") || !strings.Contains(proxy, "\n    "+bk.socket+":\n") ||
+		!strings.Contains(proxy, "        credential:\n") {
+		t.Errorf("%s does not read the password presented on its %s connection under %s, or its Component declares "+
+			"no such socket and credential slot", ferret.component, bk.socket, bk.edgeKey)
+	}
+
+	var stack struct {
+		Spec struct {
+			Components map[string]struct {
+				Type string `yaml:"type"`
+				Uses map[string]map[string]struct {
+					Target string `yaml:"target"`
+					Inject struct {
+						Env []struct {
+							In   string `yaml:"in"`
+							From string `yaml:"from"`
+						} `yaml:"env"`
+					} `yaml:"inject"`
+				} `yaml:"uses"`
+			} `yaml:"components"`
+		} `yaml:"spec"`
+	}
+	if err := yaml.Unmarshal([]byte(hubFile(t, "aggregate/core/ferretdb/1.0.0/aggregate.yaml")), &stack); err != nil {
+		t.Fatalf("the hub's FerretDB stack does not read as YAML: %v", err)
+	}
+	var delivered []string
+	found := false
+	for _, c := range stack.Spec.Components {
+		if c.Type != ferret.component {
+			continue
+		}
+		for _, edge := range c.Uses[bk.socket] {
+			if stack.Spec.Components[edge.Target].Type != bk.component {
+				continue
+			}
+			found = true
+			for _, e := range edge.Inject.Env {
+				delivered = append(delivered, e.In+"<-"+e.From)
+			}
+		}
+	}
+	var want []string
+	for _, e := range bk.inject {
+		want = append(want, e.In+"<-"+e.From)
+	}
+	if !found || !slices.Equal(delivered, want) {
+		t.Errorf("the hub's FerretDB stack wires %s to %s delivering %v, want the table's %v (wired: %v)",
+			ferret.component, bk.component, delivered, want, found)
+	}
 }

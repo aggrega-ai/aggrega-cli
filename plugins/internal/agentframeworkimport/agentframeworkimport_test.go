@@ -894,3 +894,31 @@ func TestTheDraftIsNamedAfterTheAgent(t *testing.T) {
 		}
 	}
 }
+
+// TestTheModelCredentialIsReadFromTheVariableTheConnectionNames imports a
+// declarative agent whose model connection names its key as =Env.SUPPORT_KEY and
+// one whose connection names none, for compose: the first agent's credential is
+// read from SUPPORT_KEY, and the second's from OPENAI_API_KEY, the variable
+// OpenAI's client libraries read, each attached by reference on the agent's
+// model connection and declared there with that key for compose.
+//
+// 🔴 PLANTED DEFECT: in credentialOf (render.go), pass "" as the stated variable:
+// the first row reads OPENAI_API_KEY and fails.
+func TestTheModelCredentialIsReadFromTheVariableTheConnectionNames(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		scenario, connection, variable string
+	}{
+		{"a key the connection names", "  connection:\n    kind: key\n    key: =Env.SUPPORT_KEY\n", "SUPPORT_KEY"},
+		{"no key named", "", "OPENAI_API_KEY"},
+	} {
+		body := []byte("kind: Prompt\nname: SupportAgent\nmodel:\n  id: gpt-4o\n  provider: OpenAI\n" + row.connection)
+		out := Import(aggrega.ImportInput{Format: Format, Bytes: body, Catalog: catalog, Target: "compose"}, hostParse)
+		_, text, _, release := drafted(t, out)
+		if !strings.Contains(release, "origin: \"${"+row.variable+"}\"\n") ||
+			!strings.Contains(text, "                values:\n                  key: "+row.variable+"\n") {
+			t.Errorf("%s: the credential is not read from %s and declared with that key:\n%s\n%s", row.scenario,
+				row.variable, text, release)
+		}
+	}
+}

@@ -262,15 +262,42 @@ func TestTheBuildOffersAnUnmappedInstanceOfATypeWithNoVersionItsRecipes(t *testi
 	}
 }
 
-// TestATypeWithRecipesOfSeveralNamesMapsToTheOneNamedAfterIt imports a Visual
-// Studio Code configuration holding a server started from a command line and one
-// reached at an address — two instances of core/ai-tool/mcp, written with no
-// version — for the helm target and for the compose target, over a catalog
-// holding the hub's three helm Recipes of the type and two of its compose ones.
-// For helm, where one of the three is named mcp after the type, the drafted
-// Manifest maps the type to helm/mcp and no warning calls it unmapped. For
-// compose, where neither is so named, the one warning the type draws gives that
-// reason, naming each Recipe, rather than the reason that the catalog offers none.
+// renamedComposePostgres lays, in the workspace's catalog folder dir, a copy of
+// the hub's compose Recipe of PostgreSQL under each of names, each realizing the
+// type under a name other than postgres.
+func renamedComposePostgres(t *testing.T, dir string, names ...string) {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(platformHub, "recipe", "compose", "postgres", "1.0.0", "recipe.yaml"))
+	if err != nil {
+		t.Fatalf("read the hub's compose Recipe of PostgreSQL: %v", err)
+	}
+	const named = "\nmetadata:\n  name: postgres\n"
+	if strings.Count(string(body), named) != 1 {
+		t.Fatalf("the hub's compose Recipe of PostgreSQL no longer opens its metadata with %q", named)
+	}
+	for _, name := range names {
+		importopstest.WriteSource(t, filepath.Join(dir, "recipe", "compose", name, "1.0.0", "recipe.yaml"),
+			strings.Replace(string(body), named, "\nmetadata:\n  name: "+name+"\n", 1))
+	}
+}
+
+// TestATypeWithRecipesOfSeveralNamesMapsToTheOneNamedAfterIt imports the
+// PostgreSQL application, whose service the Compose importer drafts as an
+// instance of core/datastore/postgres with no Manifest of its own:
+//
+//   - for helm, over a catalog holding the hub's three helm Recipes of the type —
+//     postgres, postgres-external and postgres-cloudnative-pg — the drafted
+//     Manifest maps the type to helm/postgres, the one named after it, and no
+//     warning calls it unmapped;
+//   - for compose, over a catalog holding two compose Recipes of the type, neither
+//     named postgres, the one warning the type draws gives that reason, naming
+//     each Recipe, rather than the reason that the catalog offers none.
+//
+// An importer that knows which of several Recipes an instance needs maps it by
+// name itself: the MCP importer, handed a Visual Studio Code configuration
+// holding a server started from a command line and one reached at an address,
+// drafts a Manifest mapping each by its key to the target's bridge and remote
+// realization, which the host keeps; no warning calls the type unmapped.
 //
 // 🔴 PLANTED DEFECT: in mappingFor (internal/importops/compose.go) drop the
 // same-name branch: the helm row reddens on the Manifest and on a warning.
@@ -283,23 +310,34 @@ func TestATypeWithRecipesOfSeveralNamesMapsToTheOneNamedAfterIt(t *testing.T) {
 	}{
 		{
 			target:   "helm",
-			manifest: "      type:\n        core/ai-tool/mcp: helm/mcp\n",
+			manifest: "      type:\n        core/datastore/postgres: helm/postgres\n",
 		},
 		{
 			target:   "compose",
 			manifest: "      type: {}\n",
-			warnings: []string{`the drafted Manifest leaves the component type "core/ai-tool/mcp" unmapped: the ` +
-				`workspace's catalog holds more than one Recipe binding to the target "compose" that implements it ` +
-				`("compose/mcp-remote", "compose/mcp-stdio-bridge"), none of them named "mcp" after the type, so the ` +
-				`import does not choose between them, and a build of the drafts halts naming each instance of it ` +
+			warnings: []string{`the drafted Manifest leaves the component type "core/datastore/postgres" unmapped: ` +
+				`the workspace's catalog holds more than one Recipe binding to the target "compose" that implements ` +
+				`it ("compose/postgres-a", "compose/postgres-b"), none of them named "postgres" after the type, so ` +
+				`the import does not choose between them, and a build of the drafts halts naming each instance of it ` +
 				`until the one wanted is mapped`},
 		},
 	} {
 		t.Run(tc.target, func(t *testing.T) {
 			t.Parallel()
-			res, _ := targetedImport(t, unversionedTargetWorkspace(t, nil), ".vscode/mcp.json",
-				readMCPFixture(t, "vscode.mcp.json"), tc.target, authoredcontent.DeliveryReport)
-			if res.Format != "mcp" || res.Halted() {
+			rw, folder := catalogFolderImportWorkspaceAttaching(t, referencing())
+			entities := []string{"component/core/datastore/postgres/1.0.0/component.yaml",
+				"schemalibrary/base-components/1.0.0/library.yaml"}
+			if tc.target == "helm" {
+				entities = append(entities, "recipe/helm/postgres/1.0.0/recipe.yaml",
+					"recipe/helm/postgres-external/1.0.0/recipe.yaml",
+					"recipe/helm/postgres-cloudnative-pg/1.0.0/recipe.yaml")
+			} else {
+				renamedComposePostgres(t, folder.Dir, "postgres-a", "postgres-b")
+			}
+			layHubEntities(t, folder.Dir, entities)
+			res, _ := targetedImport(t, rw, "compose.yaml", []byte(postgresComposeSource), tc.target,
+				authoredcontent.DeliveryReport)
+			if res.Format != "compose" || res.Halted() {
 				t.Fatalf("the source was read as %q, halted %v: %+v", res.Format, res.Halted(), res.Diagnostics)
 			}
 			if got := unmappedWarnings(res); !slices.Equal(got, tc.warnings) {
@@ -308,6 +346,24 @@ func TestATypeWithRecipesOfSeveralNamesMapsToTheOneNamedAfterIt(t *testing.T) {
 			manifest := fileNamed(t, res, ManifestFileName)
 			if !strings.Contains(manifest, "\n    components:\n"+tc.manifest) {
 				t.Errorf("the drafted Manifest does not map the component types as\n%s\nit is\n%s", tc.manifest, manifest)
+			}
+		})
+	}
+	for _, target := range []string{"helm", "compose"} {
+		t.Run("the MCP importer's own mapping for "+target, func(t *testing.T) {
+			t.Parallel()
+			res, _ := targetedImport(t, unversionedTargetWorkspace(t, nil), ".vscode/mcp.json",
+				readMCPFixture(t, "vscode.mcp.json"), target, authoredcontent.DeliveryReport)
+			if res.Format != "mcp" || res.Halted() {
+				t.Fatalf("the source was read as %q, halted %v: %+v", res.Format, res.Halted(), res.Diagnostics)
+			}
+			if got := unmappedWarnings(res); len(got) != 0 {
+				t.Errorf("the import warned %q, want no type left unmapped", got)
+			}
+			want := "      name:\n        docs: " + target + "/mcp-remote\n        perplexity: " + target +
+				"/mcp-stdio-bridge\n"
+			if manifest := fileNamed(t, res, ManifestFileName); !strings.Contains(manifest, want) {
+				t.Errorf("the drafted Manifest does not map each server by its key as\n%s\nit is\n%s", want, manifest)
 			}
 		})
 	}

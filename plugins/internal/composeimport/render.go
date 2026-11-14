@@ -36,17 +36,19 @@ func aggregateText(text string) string {
 	return yamlString(importer.EscapeTemplateText(text))
 }
 
-// renderAggregate writes the drafted Aggregate, named name: one instance per
-// service, of the Component its decision chose, in the order the projects write
-// them, connected to each service it depends on and each model it uses — each
-// connection under a socket and an alias both named for its target's key — a
-// comment above a connection to a model the service names in the long form
-// stating the variables it names; then one instance per model, of the Component
+// renderAggregate writes the drafted Aggregate, named name, for target: one
+// instance per service, of the Component its decision chose, in the order the
+// projects write them, carrying what translate read as its values and declaring
+// its secrets, connected to each service it depends on or reads a variable from
+// and each model it uses — each connection under a socket and an alias both
+// named for its target's key, delivering the variables translate read from that
+// service — a comment above a connection to a model the service names in the
+// long form stating the variables it names; then one instance per model, of the Component
 // its decision chose, writing the model's identifier, context size and runtime
 // flags as values — the context size under the key ModelRuntime declares for it
 // where the instance is of ModelRuntime. Comments above it state the files read
 // and what of them the draft does not read.
-func renderAggregate(name string, read []*project, types map[*service]string) string {
+func renderAggregate(name, target string, read []*project, types map[*service]string) string {
 	var b strings.Builder
 	writeFilesRead(&b, read)
 	b.WriteString("apiVersion: " + apiversion.APIVersion + "\n")
@@ -64,11 +66,15 @@ func renderAggregate(name string, read []*project, types map[*service]string) st
 			}
 			b.WriteString("    " + s.key + ":\n")
 			b.WriteString("      type: " + types[s] + "\n")
+			writeTranslated(&b, target, s, types[s])
 			var producers []string
 			for _, d := range s.dependsOn {
 				if i := slices.IndexFunc(p.services, func(o *service) bool { return o.name == d }); i >= 0 && p.services[i] != s {
 					producers = append(producers, p.services[i].key)
 				}
+			}
+			for key := range s.inject {
+				producers = append(producers, key)
 			}
 			// The report above a connection to a model, keyed by the model's
 			// instance key; read by key alone, never iterated.
@@ -96,6 +102,11 @@ func renderAggregate(name string, read []*project, types map[*service]string) st
 					b.WriteString("        " + producer + ":\n")
 					b.WriteString("          " + producer + ":\n")
 					b.WriteString("            target: " + producer + "\n")
+					if delivered := s.inject[producer]; len(delivered) > 0 {
+						b.WriteString(commentLine("            ", "The variables the source sets to what "+producer+
+							" publishes, delivered from it under the names the source gives them."))
+						b.WriteString(draftyaml.InjectEnv("            ", delivered))
+					}
 				}
 			}
 		}
@@ -151,6 +162,27 @@ func renderAggregate(name string, read []*project, types map[*service]string) st
 	return b.String()
 }
 
+// writeTranslated writes, inside the instance of s, an instance of typ, what
+// translate read of its environment: the values of typ its source sets, beneath
+// a comment naming the variables they are set as; then, for the secrets it
+// attaches, what the drafted Aggregate declares of them for target, as
+// importer.DeclarationsText writes it.
+func writeTranslated(b *strings.Builder, target string, s *service, typ string) {
+	if len(s.values) > 0 {
+		variables := make([]string, 0, len(s.values))
+		for _, a := range s.values {
+			variables = append(variables, a.variable)
+		}
+		b.WriteString(commentLine("      ", "The values of "+typ+" the source sets as "+commentList(variables)+
+			", the variables its Compose Recipes set from them."))
+		b.WriteString("      values:\n")
+		for _, a := range s.values {
+			b.WriteString("        " + a.key + ": " + aggregateText(a.text) + "\n")
+		}
+	}
+	b.WriteString(importer.DeclarationsText(target, "      ", s.key, s.secrets, false))
+}
+
 // writeFilesRead writes the comments opening the Aggregate: where the import
 // read named files, the files of each project in the order Compose merges them
 // and the files it does not read; and the top-level members of the files the
@@ -193,11 +225,12 @@ func writeFilesRead(b *strings.Builder, read []*project) {
 
 // composeRelease is the drafted Release, as the plugin kit's Release writer
 // writes it: for each service, under its key, the infrastructure the draft
-// writes — the image and the port of an instance of Server — leaving for the
-// Release what the draft does not write, with a comment above it naming what
-// else the source states for the service's operation and the members it does
-// not carry; then, for each model, of ModelRuntime or drafted, an empty entry
-// under its key.
+// writes — the image and the port of an instance of Server, and its image's tag
+// as the infra key the image table names for it — and the secrets it attaches,
+// leaving for the Release what the draft does not write, with a comment above it
+// naming what else the source states for the service's operation, which the
+// drafts do not translate, and the members it does not carry; then, for each
+// model, of ModelRuntime or drafted, an empty entry under its key.
 func composeRelease(read []*project, types map[*service]string) importer.ReleaseDraft {
 	draft := importer.ReleaseDraft{}
 	for _, p := range read {
@@ -242,16 +275,29 @@ func serviceEntry(s *service, typ string) importer.ReleaseEntry {
 		}
 	}
 
+	if s.tag != "" {
+		entry.Values = append(entry.Values, importer.ReleaseValue{Path: "infra." + s.row.Tag, Value: yamlString(s.tag),
+			Comment: "The tag of the image the source runs, " + commentText(s.image) + ", the " + s.row.Tag +
+				" of " + typ + " its Compose Recipes run."})
+	}
+	entry.Secrets = append(entry.Secrets, s.secrets...)
+
 	var stated []string
-	if !server && s.image != "" {
+	if !server && s.image != "" && s.tag == "" {
 		stated = append(stated, "  image: "+yamlString(s.image))
 	}
 	stated = append(stated, statedList("ports", portTexts(s.ports))...)
 	stated = append(stated, statedList("expose", s.expose)...)
 	stated = append(stated, statedList("volumes", volumeTexts(s.volumes))...)
-	if len(s.env) > 0 {
+	var env []envVar
+	for _, e := range s.env {
+		if !s.translated[e.name] {
+			env = append(env, e)
+		}
+	}
+	if len(env) > 0 {
 		stated = append(stated, "  environment:")
-		for _, e := range s.env {
+		for _, e := range env {
 			if e.value == nil {
 				stated = append(stated, "    "+commentText(e.name))
 				continue

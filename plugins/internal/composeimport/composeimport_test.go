@@ -171,8 +171,11 @@ const (
 // default reuse mode references a HIGH match; the API, whose image no row maps,
 // an instance of core/compute/server running its image on its port, connected
 // to the database it depends on; the environment value naming the cache it does
-// not depend on recorded as a hint and drawing no connection; and the Release
-// carrying what each service states, its environment the drafted default. Under
+// not depend on, within a longer address, recorded as a hint and drawing no
+// connection; and the Release carrying what each service states, each
+// datastore's image tag as its engine_version, and, the catalog view naming no
+// value or provides key of either datastore, every environment value in the
+// comment above its entry, its environment the drafted default. Under
 // the hints-only reuse mode the two datastores are drafted instead, each with
 // the hint naming the Component it resembles.
 //
@@ -259,7 +262,10 @@ func TestAComposeFileIsDraftedAsAnAggregateAndARelease(t *testing.T) {
 	}
 	for _, want := range []string{
 		"    api:\n      infra:\n        image: \"ghcr.io/example/shop-api:1.4.2\"\n        port: 8080\n",
-		"    #   image: \"postgres:16\"\n",
+		"    db:\n      infra:\n        # The tag of the image the source runs, postgres:16, the engine_version of " +
+			"core/datastore/postgres its Compose Recipes run.\n        engine_version: \"16\"\n",
+		"    cache:\n      infra:\n        # The tag of the image the source runs, redis:7.4, the engine_version of " +
+			"core/datastore/redis its Compose Recipes run.\n        engine_version: \"7.4\"\n",
 		"    #   environment:\n    #     POSTGRES_USER: \"shop\"\n    #     POSTGRES_DB: \"shop\"\n",
 		"    #     UPSTREAM_TOKEN: \"${UPSTREAM_TOKEN}\"\n",
 		"    # Not carried, since the draft reads no infrastructure from it: command.\n",
@@ -408,6 +414,130 @@ func TestModelsAreDraftedAsModelComponentsAndConnected(t *testing.T) {
 	}
 	if !strings.Contains(release, "    mcp-gateway:\n      infra:\n        image: \"docker/mcp-gateway:latest\"\n") {
 		t.Errorf("the Release does not run the gateway's image:\n%s", release)
+	}
+}
+
+// translatingCatalog is catalog with the value and provides keys the hub's
+// PostgreSQL and Redis Components declare, as the import socket projects them.
+var translatingCatalog = func() *aggrega.CatalogProjection {
+	view := &aggrega.CatalogProjection{Components: slices.Clone(catalog.Components)}
+	for i := range view.Components {
+		switch view.Components[i].Name {
+		case "core/datastore/postgres":
+			view.Components[i].Values = []string{"app_user", "custom_config", "database", "encoding", "init_scripts",
+				"locale", "user"}
+			view.Components[i].Provides = []string{"database", "host", "metrics_path", "metrics_pod_port",
+				"metrics_pod_selector", "port", "protocol", "user"}
+		case "core/datastore/redis":
+			view.Components[i].Provides = []string{"host", "port", "protocol", "vector_search"}
+		}
+	}
+	return view
+}()
+
+// notesSource is a Compose application whose API reaches its database and its
+// cache by the values it sets: the database's address, user and name, the
+// password the database reads from a variable, and the cache's address.
+const notesSource = "name: notes\nservices:\n" +
+	"  api:\n    image: ghcr.io/example/notes-api:2.3.0\n    ports: [\"8080:8080\"]\n    environment:\n" +
+	"      DATABASE_HOST: db\n      DATABASE_USER: notes\n      DATABASE_NAME: notes\n" +
+	"      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}\n      CACHE_HOST: cache\n      LOG_LEVEL: debug\n" +
+	"    depends_on: [db, cache]\n" +
+	"  db:\n    image: postgres:16\n    environment:\n      POSTGRES_USER: notes\n      POSTGRES_DB: notes\n" +
+	"      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}\n" +
+	"  cache:\n    image: redis:7\n"
+
+// TestTheSourcesFactsAreTranslatedIntoTheDrafts imports notesSource over a
+// catalog view declaring the datastores' values and provides, for compose, for
+// helm and for no target, and requires its facts written as the drafts' own keys
+// rather than as comments: each variable of the API naming the database or the
+// cache, or holding a value the database sets for a value it publishes,
+// delivered on the API's connection to it from that provides key — the user and
+// the name, which both hold notes, told apart by the variable's name and by the
+// key the user already took; the database's user and name as its values; its
+// password a secret read from POSTGRES_PASSWORD, declared with that key for
+// compose; each image's tag as engine_version; and the API's password, read from
+// the variable the database's secret reads, a secret of the API where the target
+// writes it as a value, and left in the comment for helm, whose realization of
+// the server takes no secret by reference. A variable read as none of these
+// stays in the comment, and no translated variable is reported as a carried
+// credential value but the values the Aggregate writes.
+//
+// 🔴 PLANTED DEFECT: in byName (translate.go), return false wherever two
+// candidates remain: DATABASE_USER is left in the comment and the case fails.
+func TestTheSourcesFactsAreTranslatedIntoTheDrafts(t *testing.T) {
+	t.Parallel()
+	for _, target := range []string{"compose", "helm", ""} {
+		t.Run("target "+target, func(t *testing.T) {
+			t.Parallel()
+			out := Import(aggrega.ImportInput{Format: Format, Bytes: []byte(notesSource), Catalog: translatingCatalog,
+				Target: target}, hostParse)
+			if out.Error != "" || len(codes(out, "parse-failed")) > 0 {
+				t.Fatalf("the import failed: %s %+v", out.Error, out.Diagnostics)
+			}
+			aggregate, release := fileContent(t, out, "aggregate.yaml"), fileContent(t, out, "release.yaml")
+			for _, want := range []string{
+				"        cache:\n          cache:\n            target: cache\n",
+				"            inject:\n              env:\n                - in: \"CACHE_HOST\"\n                  from: host\n",
+				"            inject:\n              env:\n                - in: \"DATABASE_HOST\"\n                  from: host\n" +
+					"                - in: \"DATABASE_USER\"\n                  from: user\n" +
+					"                - in: \"DATABASE_NAME\"\n                  from: database\n",
+				"    db:\n      type: core/datastore/postgres\n",
+				"      values:\n        user: \"notes\"\n        database: \"notes\"\n",
+			} {
+				if !strings.Contains(aggregate, want) {
+					t.Errorf("the Aggregate does not hold\n%s\nin\n%s", want, aggregate)
+				}
+			}
+			for _, want := range []string{
+				"        engine_version: \"16\"\n", "        engine_version: \"7\"\n",
+				"    #     LOG_LEVEL: \"debug\"\n",
+				"      features:\n        password:\n",
+			} {
+				if !strings.Contains(release, want) {
+					t.Errorf("the Release does not hold\n%s\nin\n%s", want, release)
+				}
+			}
+			for _, gone := range []string{"DATABASE_HOST", "DATABASE_USER", "DATABASE_NAME", "CACHE_HOST",
+				"POSTGRES_USER", "POSTGRES_DB", "image: \"postgres:16\"", "image: \"redis:7\""} {
+				if strings.Contains(release, gone) {
+					t.Errorf("the Release still names %s, which the drafts translate:\n%s", gone, release)
+				}
+			}
+			declared := strings.Contains(aggregate, "        password:\n          type: core/secret-value\n          values:\n"+
+				"            key: POSTGRES_PASSWORD\n")
+			serverSecret := strings.Contains(release, "        database_password:\n")
+			switch target {
+			case "compose":
+				if !declared || !serverSecret || !strings.Contains(release, "origin: \"${POSTGRES_PASSWORD}\"\n") {
+					t.Errorf("for compose the password is not declared with its key and attached on db and api by "+
+						"reference:\n%s\n%s", aggregate, release)
+				}
+			case "helm":
+				if declared || serverSecret || !strings.Contains(release, "          type: core/referenced-secret\n") ||
+					!strings.Contains(release, "    #     DATABASE_PASSWORD: \"${POSTGRES_PASSWORD}\"\n") {
+					t.Errorf("for helm the password is not named by its Secret on db alone, the API's left in the "+
+						"comment:\n%s\n%s", aggregate, release)
+				}
+			case "":
+				if declared || !serverSecret || !strings.Contains(aggregate, "#       key: POSTGRES_PASSWORD\n") {
+					t.Errorf("with no target the compose declaration is not shown commented out, and the secrets "+
+						"attached by reference:\n%s\n%s", aggregate, release)
+				}
+			}
+			carried := strings.Join(codes(out, "credential-carried"), "\n")
+			for _, field := range []string{"DATABASE_HOST", "DATABASE_USER", "DATABASE_NAME", "CACHE_HOST"} {
+				if strings.Contains(carried, "environment."+field+" ") {
+					t.Errorf("the variable %s, delivered on a connection and written nowhere, is reported carried:\n%s",
+						field, carried)
+				}
+			}
+			for _, field := range []string{"environment.POSTGRES_USER of node db", "environment.LOG_LEVEL of node api"} {
+				if !strings.Contains(carried, field) {
+					t.Errorf("the value of %s, written into a draft, is not reported carried:\n%s", field, carried)
+				}
+			}
+		})
 	}
 }
 
@@ -785,6 +915,30 @@ func TestRepositoryReadsAReferenceAsDockerDoes(t *testing.T) {
 		got, ok := Repository(row.ref)
 		if got != row.want || ok != row.ok {
 			t.Errorf("Repository(%q) = %q, %v; want %q, %v", row.ref, got, ok, row.want, row.ok)
+		}
+	}
+}
+
+// TestReferenceReadsTheTagAReferenceNames reads, beside the repository
+// Repository reads, the tag a reference names: none where it names none or its
+// tag is empty, and none where a digest pins it, whatever its tag says; a port
+// of a registry is no tag.
+func TestReferenceReadsTheTagAReferenceNames(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		ref, repository, tag string
+	}{
+		{"postgres:16", "postgres", "16"},
+		{"redis:7.4-alpine", "redis", "7.4-alpine"},
+		{"postgres", "postgres", ""},
+		{"redis:", "redis", ""},
+		{"localhost:5000/app", "localhost:5000/app", ""},
+		{"localhost:5000/app:dev", "localhost:5000/app", "dev"},
+		{"cr.agentgateway.dev/agentgateway:v1.6.0@sha256:9d3e", "cr.agentgateway.dev/agentgateway", ""},
+	} {
+		repository, tag, ok := Reference(row.ref)
+		if !ok || repository != row.repository || tag != row.tag {
+			t.Errorf("Reference(%q) = %q, %q, %v; want %q, %q", row.ref, repository, tag, ok, row.repository, row.tag)
 		}
 	}
 }

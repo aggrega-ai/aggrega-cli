@@ -46,9 +46,22 @@
 // auto-applies a HIGH match and drafted as a new Component otherwise, with the
 // match recorded as a hint. A service no row maps, or that builds its image, is
 // an instance of core/compute/server, its image written into the Release.
-// depends_on draws a connection from each service to each service it depends on;
-// an environment value naming another service the service does not depend on is
-// recorded as a hint in its decision and draws nothing. Each model is an instance
+// depends_on draws a connection from each service to each service it depends on.
+//
+// What a service's image and environment say is translated into the drafts, as
+// translate describes, from what the hub's Compose Recipes of the Component its
+// row names say of how a service running that image is configured — read into
+// the image table with its rows, so no Recipe is read at import: the image's tag
+// is written as the infra key the Recipes write a tag from, engine_version for
+// PostgreSQL and Redis; each variable the Recipes set from one value of the
+// Component is written as that value, where the catalog's Component declares it;
+// a password the source reads from a variable is attached as a secret read from
+// that variable, through the plugin kit's importer.Secret; and a variable of any
+// service whose value names another service, or equals a value another service
+// sets for a value its Component publishes, is delivered on a connection to that
+// service from the provides key publishing it, the connection drawn where
+// depends_on draws none. A value naming another service inside other text draws
+// nothing and is recorded as a hint in its decision. Each model is an instance
 // of ModelRuntime where the catalog the import is handed holds a Component of that
 // name, whatever the reuse mode says, and no Component is drafted for it: its
 // identifier is written as values.model, its context size as
@@ -72,10 +85,11 @@
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and
 // carries per service what the source states for its operation: for an instance
 // of core/compute/server, its image and the port its container listens on as
-// infra.image and infra.port; and for every service, in a comment above its
-// entry, the image, ports, volumes and environment the source writes and no key
-// of the draft carries, for the author to place where the Component takes them;
-// and an empty entry for each model's instance, of ModelRuntime or drafted,
+// infra.image and infra.port; for a service whose image's tag the drafts
+// translate, that tag; the secrets it attaches; and for every service, in a
+// comment above its entry, the image, ports, volumes and environment the source
+// writes and no key of the drafts carries, for the author to place where the
+// Component takes them; and an empty entry for each model's instance, of ModelRuntime or drafted,
 // since a build places only the instances a Release names and no source states
 // infrastructure for a model. It is written by the plugin kit's Release writer,
 // importer.DraftRelease, whose documentation states what every drafted Release
@@ -88,11 +102,14 @@
 // an input its format marks as no credential that can carry one. Each is handed
 // to the plugin kit's credential decision, importer.CarryCredentials, which reads
 // the empty_credentials setting: by default each is carried as written into the
-// Release and named in a credential-carried warning by its service and its
-// variable, never by its value; where the setting is all, each is written empty
-// and reported under credential-emptied, its variable named in the Release with
-// no value. A value that is one variable reference and nothing else — ${NAME} or
-// $NAME — holds no value of its own, and is written as the text it is.
+// drafts — as a value of the service's Component, or in the comment above its
+// entry in the Release — and named in a credential-carried warning by its
+// service and its variable, never by its value; where the setting is all, each is
+// written empty and reported under credential-emptied, its variable named in the
+// Release with no value. A variable a connection delivers writes no value into
+// any draft, so it is not handed to the decision. A value that is one variable
+// reference and nothing else — ${NAME} or $NAME — holds no value of its own, and
+// is written as the text it is.
 package composeimport
 
 import (
@@ -135,8 +152,10 @@ var (
 		"docker-compose.override.yaml"}
 )
 
-// where completes each credential report, naming where the value is written.
-const where = "in the Release the draft writes"
+// where completes each credential report, naming where the value is written: in
+// the drafted Aggregate, as a value of a service's Component, or in a comment of
+// the drafted Release.
+const where = "in the drafts"
 
 // arm is the format as the kit decides a service by: its name, its syntax and
 // the image table read as its mapping arm.
@@ -200,9 +219,23 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		}
 	}
 
-	// The hints are read off the environment as the source states it, before the
-	// credential decision writes any value empty: a hint names a variable and a
-	// service, never a value.
+	// Each service is decided from its image alone, and its environment then read
+	// as translate reads it, before the credential decision writes any value
+	// empty: a connection names a variable and a provides key, never a value.
+	// The hints are read off the environment as the source states it too: a hint
+	// names a variable and a service, never a value.
+	held := holdsModelRuntime(in.Catalog)
+	types := map[*service]string{}
+	referenced := map[*service]bool{}
+	decided := map[*service]serviceDecision{}
+	for _, p := range read {
+		for _, s := range p.services {
+			decision, entity := decide(in, s)
+			decided[s] = serviceDecision{decision, entity}
+			types[s], referenced[s] = entity.Name, entity.Mode == "reference"
+		}
+	}
+	translate(in, read, types, referenced)
 	hints := map[*service][]string{}
 	for _, p := range read {
 		for _, s := range p.services {
@@ -224,8 +257,6 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		return out
 	}
 
-	held := holdsModelRuntime(in.Catalog)
-	types := map[*service]string{}
 	drafted := map[string]bool{}
 	var components []aggrega.EmittedEntity
 	for _, p := range read {
@@ -236,9 +267,11 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 			models = append(models, entity)
 		}
 		for _, s := range p.services {
-			decision, entity := decide(in, s, hints[s])
+			decision, entity := decided[s].decision, decided[s].entity
+			if notes := append(slices.Clone(hints[s]), modelVarsReports(s)...); len(notes) > 0 {
+				decision.Rationale += "; " + strings.Join(notes, "; ")
+			}
 			out.Decisions = append(out.Decisions, decision)
-			types[s] = entity.Name
 			if entity.Mode == "draft" {
 				if drafted[entity.Name] {
 					continue
@@ -256,7 +289,7 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 	}
 	name := importer.DraftName(in, titles...)
 	aggregate := aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft",
-		Body: renderAggregate(name, read, types)}
+		Body: renderAggregate(name, in.Target, read, types)}
 	out.Entities = append(append(components, aggregate),
 		importer.DraftRelease(in, aggregate, composeRelease(read, types))...)
 	out.Files = importer.Render(in.Settings, out.Entities, out.Decisions)
@@ -272,12 +305,19 @@ func refOf(read []*project, p *project, name string) string {
 	return p.files[0].Name + "#" + name
 }
 
+// serviceDecision is one service's decision and the entity it emits.
+type serviceDecision struct {
+	decision aggrega.ImportDecision
+	entity   aggrega.EmittedEntity
+}
+
 // decide makes the decision for one service: a service whose image a row of the
 // image table or of the mapping_overrides setting maps is decided by the kit; a
-// service no row maps, or that names no image, is an instance of Server. Either
-// way, hints, and the variables a long-form models entry names a model's address
-// and identifier under, are recorded in the decision's rationale.
-func decide(in aggrega.ImportInput, s *service, hints []string) (aggrega.ImportDecision, aggrega.EmittedEntity) {
+// service no row maps, or that names no image, is an instance of Server. The
+// hints, and the variables a long-form models entry names a model's address and
+// identifier under, are added to the decision's rationale once the service's
+// environment is read.
+func decide(in aggrega.ImportInput, s *service) (aggrega.ImportDecision, aggrega.EmittedEntity) {
 	repository, ok := Repository(s.image)
 	var decision aggrega.ImportDecision
 	var entity aggrega.EmittedEntity
@@ -306,28 +346,27 @@ func decide(in aggrega.ImportInput, s *service, hints []string) (aggrega.ImportD
 		entity = aggrega.EmittedEntity{Kind: "Component", Name: Server, Mode: "reference", SourceRef: s.ref,
 			DecisionRef: "decision:" + s.ref}
 	}
-	if notes := append(slices.Clone(hints), modelVarsReports(s)...); len(notes) > 0 {
-		decision.Rationale += "; " + strings.Join(notes, "; ")
-	}
 	return decision, entity
 }
 
-// environmentHints returns a hint for each environment variable of s whose value
-// names another service of p that s does not depend on: a token of the value,
+// environmentHints returns a hint for each environment variable of s, not read
+// as a connection, whose value names another service of p that s neither depends
+// on nor reaches through a connection the import drew: a token of the value,
 // split at every character a host name is not written with, equal to that
 // service's name. The hint names the variable and the service, never the value,
 // and draws no connection.
 func environmentHints(p *project, s *service) []string {
 	var hints []string
 	for _, e := range s.env {
-		if e.value == nil {
+		if e.value == nil || s.translated[e.name] {
 			continue
 		}
 		tokens := strings.FieldsFunc(*e.value, func(r rune) bool {
 			return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.')
 		})
 		for _, other := range p.services {
-			if other == s || slices.Contains(s.dependsOn, other.name) || !slices.Contains(tokens, other.name) {
+			if other == s || slices.Contains(s.dependsOn, other.name) || len(s.inject[other.key]) > 0 ||
+				!slices.Contains(tokens, other.name) {
 				continue
 			}
 			hints = append(hints, "hint: the value of its environment variable "+e.name+" names the service "+
@@ -473,14 +512,16 @@ func draftedValues(read []*project) []byte {
 
 // located returns every environment value of draftedValues the credential
 // decision judges, in the order the draft writes them: each that holds
-// something and is not one variable reference, named by its service and its
-// variable, as an input its format marks as no credential.
+// something, is not one variable reference and is written into a draft — as a
+// value of its service's Component, or in the comment above its entry — named by
+// its service and its variable, as an input its format marks as no credential. A
+// variable a connection delivers writes no value, so it is not judged.
 func located(read []*project) []importer.Credential {
 	var out []importer.Credential
 	for _, p := range read {
 		for _, s := range p.services {
 			for j, e := range s.env {
-				if e.value == nil || isReference(*e.value) {
+				if e.value == nil || isReference(*e.value) || (s.translated[e.name] && !s.sets(e.name)) {
 					continue
 				}
 				out = append(out, importer.Credential{Node: s.ref, Field: "environment." + e.name,
@@ -491,10 +532,18 @@ func located(read []*project) []importer.Credential {
 	return out
 }
 
+// sets reports whether the draft writes the variable name of s as a value of its
+// Component.
+func (s *service) sets(name string) bool {
+	return slices.ContainsFunc(s.values, func(a assigned) bool { return a.variable == name })
+}
+
 // readBack reads the values the credential decision wrote empty back onto the
 // services: an environment value that held something and is written empty is
-// written with no value. A value the decision carried is left exactly as the
-// source writes it.
+// written with no value, and, where the draft wrote it as a value of the
+// service's Component, is no longer written so: it is named, with no value, in
+// the comment above the service's entry. A value the decision carried is left
+// exactly as the source writes it.
 func readBack(read []*project, written []byte) error {
 	var values map[string]struct {
 		Environment []*string `json:"environment"`
@@ -511,6 +560,10 @@ func readBack(read []*project, written []byte) error {
 					continue
 				}
 				e.value = nil
+				if s.sets(e.name) {
+					s.values = slices.DeleteFunc(s.values, func(a assigned) bool { return a.variable == e.name })
+					delete(s.translated, e.name)
+				}
 			}
 		}
 	}

@@ -60,6 +60,22 @@ type service struct {
 	modelVars []modelVars
 	// others names the members of the service the draft does not carry, sorted.
 	others []string
+
+	// What translate reads of the service. row and held are the image table's row
+	// for its image and the catalog's Component that row names, where its decision
+	// references that Component; tag is its image's tag where the row names the
+	// infra key a tag is written from; values are the values of its Component its
+	// source sets, and secrets the secrets it attaches, in the order its
+	// environment writes them; inject holds, by the key of the service a
+	// connection reaches, the variables that connection delivers; translated
+	// names each variable of its environment read as one of these.
+	row        *imageRow
+	held       *aggrega.CatalogComponent
+	tag        string
+	values     []assigned
+	secrets    []importer.Secret
+	inject     map[string][]draftyaml.Injected
+	translated map[string]bool
 }
 
 // modelVars is what one long-form entry of a service's models states: the model

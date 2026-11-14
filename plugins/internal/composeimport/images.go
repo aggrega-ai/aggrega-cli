@@ -16,11 +16,28 @@ import (
 
 // imageRow is one row of the image table: an image repository, the catalog
 // Component a Compose Recipe of the hub that runs an image of that repository
-// implements, and every label of that Component in the hub but its category.
+// implements, every label of that Component in the hub but its category, and
+// what the hub's Compose Recipes of that Component say of how a service running
+// the image is configured, each read from the Recipes as they are written:
+//
+//   - Tag, the infra key the image's tag is written from;
+//   - Values, each variable of the service's environment the Recipes write as
+//     one value of the Component, mapped to that value's key;
+//   - Secrets, each variable the Recipes read an attached secret's value under
+//     where the attachment declares no key of its own, mapped to the slot the
+//     secret is attached on;
+//   - Provides, each value of the Component a provides key publishes whole,
+//     mapped to that key, and Host, the provides key publishing the instance's
+//     own name, which a peer on the network reaches it by.
 type imageRow struct {
 	Repository string
 	Component  string
 	Traits     map[string]string
+	Tag        string
+	Values     map[string]string
+	Secrets    map[string]string
+	Provides   map[string]string
+	Host       string
 }
 
 // Repository returns the repository an image reference names, without its tag
@@ -33,14 +50,26 @@ type imageRow struct {
 // generating the table and off a service's image by the importer, so both read
 // one repository from one reference.
 func Repository(ref string) (string, bool) {
+	repository, _, ok := Reference(ref)
+	return repository, ok
+}
+
+// Reference reads an image reference as Repository does, returning beside the
+// repository the tag the reference names: empty where it names none, and where
+// it is pinned by a digest, which names the image whatever its tag says.
+func Reference(ref string) (repository, tag string, ok bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" || strings.ContainsAny(ref, "${} \t\n\r\"'") {
-		return "", false
+		return "", "", false
 	}
+	digested := false
 	if at := strings.IndexByte(ref, '@'); at >= 0 {
-		ref = ref[:at]
+		ref, digested = ref[:at], true
 	}
 	if colon := strings.LastIndexByte(ref, ':'); colon > strings.LastIndexByte(ref, '/') {
+		if !digested {
+			tag = ref[colon+1:]
+		}
 		ref = ref[:colon]
 	}
 	parts := strings.Split(ref, "/")
@@ -50,11 +79,11 @@ func Repository(ref string) (string, bool) {
 	}
 	for _, p := range parts[start:] {
 		if !pathComponent(p) {
-			return "", false
+			return "", "", false
 		}
 	}
 	if start == 1 && !hostComponent(parts[0]) {
-		return "", false
+		return "", "", false
 	}
 	if len(parts) > 1 && (parts[0] == "docker.io" || parts[0] == "index.docker.io") {
 		parts = parts[1:]
@@ -62,7 +91,7 @@ func Repository(ref string) (string, bool) {
 	if len(parts) > 1 && parts[0] == "library" {
 		parts = parts[1:]
 	}
-	return strings.Join(parts, "/"), true
+	return strings.Join(parts, "/"), tag, true
 }
 
 // registryHost reports whether the first segment of a reference names a

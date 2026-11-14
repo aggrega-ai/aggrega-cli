@@ -138,6 +138,7 @@ spec:
         server_env:
           type: core/referenced-secret-set
           infra:
+            # Attached by reference wherever the source names a variable: the environment brave-search is started with, one entry per variable, each written as the source writes it, so a variable reference stays one, which a target substituting variable references, as Docker Compose does when the stack starts, reads from the environment, and an empty value is one still owed.
             entries:
               - key: "APPDATA"
                 value: "C:\\Users\\user\\AppData\\Roaming\\"
@@ -247,7 +248,7 @@ func TestTheEmptyCredentialsSettingDecidesWhatTheReleaseCarries(t *testing.T) {
 				}
 			}
 			if row.emptied {
-				for _, want := range []string{"              - key: \"BRAVE_API_KEY\"\n    # ",
+				for _, want := range []string{"              - key: \"BRAVE_API_KEY\"\n                value: \"\"\n    # ",
 					"    postgres:\n      infra:\n        stdio_command:\n          - \"\"\n          - \"\"\n          - \"\"\n" +
 						"          - \"\"\n",
 					"    #   - the value of server_env.BRAVE_API_KEY\n", "    #   - infra.stdio_command.3, written empty\n"} {
@@ -269,20 +270,20 @@ func TestTheEmptyCredentialsSettingDecidesWhatTheReleaseCarries(t *testing.T) {
 // TestAVariableReferenceIsWrittenAsTheTextItIs imports a server whose command
 // line, address and environment hold variable references, under no setting and
 // under marked: a value that is one reference and nothing else holds no value,
-// so it is written as written, located by no credential report, and an
-// environment variable whose value is one is left for the Release, its reference
-// named; a reference carrying a default, or text beside one, holds a value and
-// is written empty under marked like any other.
+// so it is written as written, located by no credential report — an environment
+// variable whose value is one written as that reference, its entry's value; a
+// reference carrying a default, or text beside one, holds a value and is written
+// empty under marked like any other.
 func TestAVariableReferenceIsWrittenAsTheTextItIs(t *testing.T) {
 	t.Parallel()
 	body := []byte(`{"mcpServers":{"tool":{"command":"node","args":["${input:script}","--token=${TOKEN}","${TOKEN}",` +
 		`"${MODE:-fast}"],"env":{"KEY":"${env:KEY}","PLAIN":"plain-value"}}}}`)
 	for _, row := range []struct {
-		settings string
-		command  []string
+		settings, plain string
+		command         []string
 	}{
-		{"", []string{"node", "${input:script}", "--token=${TOKEN}", "${TOKEN}", "${MODE:-fast}"}},
-		{`{"empty_credentials":"marked"}`, []string{"", "${input:script}", "", "${TOKEN}", ""}},
+		{"", "plain-value", []string{"node", "${input:script}", "--token=${TOKEN}", "${TOKEN}", "${MODE:-fast}"}},
+		{`{"empty_credentials":"marked"}`, "", []string{"", "${input:script}", "", "${TOKEN}", ""}},
 	} {
 		out := importOne(body, row.settings)
 		release := fileContent(t, out, "release.yaml")
@@ -295,10 +296,10 @@ func TestAVariableReferenceIsWrittenAsTheTextItIs(t *testing.T) {
 			t.Errorf("under %q the Release does not write the command line\n%s\nin\n%s", row.settings, want.String(),
 				release)
 		}
-		if !strings.Contains(release, "    #   - the value of server_env.KEY, which the source reads from ${env:KEY}\n") ||
-			!strings.Contains(release, "              - key: \"KEY\"\n              - key: \"PLAIN\"\n") {
-			t.Errorf("under %q the Release does not leave KEY for the Release naming its reference:\n%s", row.settings,
-				release)
+		if want := "              - key: \"KEY\"\n                value: \"${env:KEY}\"\n" +
+			"              - key: \"PLAIN\"\n                value: \"" + row.plain + "\"\n"; !strings.Contains(release, want) {
+			t.Errorf("under %q the Release does not write KEY as the reference it reads from:\n%s\nin\n%s", row.settings,
+				want, release)
 		}
 		reported := strings.Join(append(codes(out, "credential-carried"), codes(out, "credential-emptied")...), "\n")
 		for _, position := range []string{"infra.stdio_command.1 ", "infra.stdio_command.3 ", "server_env.KEY "} {
@@ -311,6 +312,76 @@ func TestAVariableReferenceIsWrittenAsTheTextItIs(t *testing.T) {
 				t.Errorf("under %q no report names %s:\n%s", row.settings, position, reported)
 			}
 		}
+	}
+}
+
+// TestEachServerIsMappedByNameToTheRealizationOfHowItRuns imports a client's
+// configuration listing a server run from its command line with an environment
+// variable read from a variable reference, one reached at an address, and a
+// registry description's server published as an image, for compose, for helm and
+// for no target: given a target, the drafted Manifest maps each server by its key
+// to that target's realization of how it runs — the bridge, the remote, the image
+// — and, for helm, core/referenced-secret to helm/k8s-existing-secret; given
+// none, no Manifest is drafted. The environment is attached for compose and for
+// none as core/referenced-secret-set, its entry's value the reference as written,
+// so the Release passes its own schema, and for helm as core/referenced-secret
+// named by a Secret holding the variable under its own name, its value nowhere.
+//
+// 🔴 PLANTED DEFECT: in realization (render.go), return bridgeRealization for
+// every server: the remote and image rows fail on the Manifest.
+func TestEachServerIsMappedByNameToTheRealizationOfHowItRuns(t *testing.T) {
+	t.Parallel()
+	client := []byte(`{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"],` +
+		`"env":{"GITHUB_PERSONAL_ACCESS_TOKEN":"${GITHUB_TOKEN}"}},"docs":{"type":"http",` +
+		`"url":"https://mcp.example.com/docs/mcp"}}}`)
+	image := fixture(t, "registry-oci.server.json")
+	for _, target := range []string{"compose", "helm", ""} {
+		t.Run("target "+target, func(t *testing.T) {
+			t.Parallel()
+			out := Import(aggrega.ImportInput{Format: Format, Bytes: client, Target: target}, hostParse)
+			imageOut := Import(aggrega.ImportInput{Format: Format, Bytes: image, Target: target}, hostParse)
+			release := fileContent(t, out, "release.yaml")
+			var manifest, imageManifest string
+			for _, f := range out.Files {
+				if f.Path == "manifest.yaml" {
+					manifest = f.Content
+				}
+			}
+			for _, f := range imageOut.Files {
+				if f.Path == "manifest.yaml" {
+					imageManifest = f.Content
+				}
+			}
+			if target == "" {
+				if manifest != "" || imageManifest != "" {
+					t.Errorf("with no target a Manifest is drafted:\n%s\n%s", manifest, imageManifest)
+				}
+			} else {
+				for _, want := range []string{"    components:\n      name:\n        github: " + target + "/mcp-stdio-bridge\n" +
+					"        docs: " + target + "/mcp-remote\n"} {
+					if !strings.Contains(manifest, want) {
+						t.Errorf("the Manifest does not map\n%s\nin\n%s", want, manifest)
+					}
+				}
+				if want := "        io-github-example-notes: " + target + "/mcp\n"; !strings.Contains(imageManifest, want) {
+					t.Errorf("the image server's Manifest does not map\n%s\nin\n%s", want, imageManifest)
+				}
+			}
+			if target == "helm" {
+				if !strings.Contains(release, "        server_env:\n          type: core/referenced-secret\n") ||
+					!strings.Contains(release, "each named as the variable it holds: GITHUB_PERSONAL_ACCESS_TOKEN.\n"+
+						"            origin: \"\"\n") || strings.Contains(release, "${GITHUB_TOKEN}") ||
+					!strings.Contains(manifest, "core/referenced-secret: helm/k8s-existing-secret\n") {
+					t.Errorf("for helm the environment is not named by its Secret:\n%s\n%s", release, manifest)
+				}
+				return
+			}
+			if !strings.Contains(release, "        server_env:\n          type: core/referenced-secret-set\n") ||
+				!strings.Contains(release, "              - key: \"GITHUB_PERSONAL_ACCESS_TOKEN\"\n"+
+					"                value: \"${GITHUB_TOKEN}\"\n") {
+				t.Errorf("the environment is not attached as its entries:\n%s", release)
+			}
+		})
 	}
 }
 
@@ -510,7 +581,7 @@ func TestEachShapeIsReadAlike(t *testing.T) {
 			"    # The headers the source sends this server, which no infrastructure key of core/ai-tool/mcp takes, " +
 				"since a remote server's credential is held by each consumer, on its connection to the tool:\n" +
 				"    #   - Authorization: \"Bearer ${API_KEY}\"\n",
-			"    #   - the value of server_env.GITHUB_PERSONAL_ACCESS_TOKEN, which the source reads from ${GITHUB_TOKEN}\n",
+			"              - key: \"GITHUB_PERSONAL_ACCESS_TOKEN\"\n                value: \"${GITHUB_TOKEN}\"\n",
 			"    github:\n      infra:\n        stdio_command:\n          - \"npx\"\n          - \"-y\"\n" +
 				"          - \"@modelcontextprotocol/server-github\"\n        stdio_runtime: npm\n",
 		}},
@@ -547,7 +618,7 @@ func TestEachShapeIsReadAlike(t *testing.T) {
 				"the first it lists.\n",
 			"        stdio_command:\n          - \"npx\"\n          - \"@example/weather-mcp@1.2.0\"\n" +
 				"          - \"--units=metric\"\n          - \"\"\n        stdio_runtime: npm\n",
-			"              - key: \"WEATHER_API_KEY\"\n              - key: \"WEATHER_REGION\"\n" +
+			"              - key: \"WEATHER_API_KEY\"\n                value: \"\"\n              - key: \"WEATHER_REGION\"\n" +
 				"                value: \"eu-west\"\n",
 		}},
 		{"registry-remote.server.json", []string{

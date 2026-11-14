@@ -56,11 +56,14 @@ const langgraphFixtureDir = "testdata/langgraph"
 
 // langgraphHubEntities are the hub's entities the import's catalog view holds, by
 // their path beneath platformHub: the LangGraph agent, the PostgreSQL its
-// checkpointer's default backend maps to, and the schema library their values
-// read. The catalog holds no MongoDB, so a checkpointer naming mongo drafts one.
+// checkpointer's default backend maps to, the FerretDB and DocumentDB its mongo
+// backend maps to, and the schema library their values read. The catalog holds
+// no OpenAI model, so no model is drafted.
 var langgraphHubEntities = []string{
 	"component/core/ai-agent/langgraph/1.0.0/component.yaml",
 	"component/core/datastore/postgres/1.0.0/component.yaml",
+	"component/core/datastore/ferretdb/1.0.0/component.yaml",
+	"component/core/datastore/documentdb/1.0.0/component.yaml",
 	"schemalibrary/base-components/1.0.0/library.yaml",
 }
 
@@ -124,16 +127,17 @@ type graphDraft struct {
 // holds: the drafted paths; the instance keys of the Aggregate and of the
 // Release, in the order each writes them; each graph's import path; the
 // datastore every graph is wired to on checkpointer_db and the Component it is
-// an instance of; and the address, the user and the database the hub's Recipe —
-// or, for a drafted datastore, the scratch Recipe the build case writes — gives
-// each graph, the host by target, and a user or database left empty where that
-// Recipe publishes none.
+// an instance of, and the instance it keeps its data in and that one's
+// Component, where it keeps them in another; and the address, the user and the
+// database the hub's Recipe gives each graph, the host by target, and a user or
+// database left empty where that Recipe publishes none.
 var langgraphApplications = []struct {
 	app                        string
 	paths                      []string
 	aggregateKeys, releaseKeys []string
 	entrypoints                map[string]string
 	datastore, component       string
+	backing, backingComponent  string
 	hosts                      map[string]string
 	port                       string
 	user, database             string
@@ -151,12 +155,13 @@ var langgraphApplications = []struct {
 	},
 	{
 		app:           "envfile",
-		paths:         []string{"aggregate.yaml", "components/imported-datastore-mongodb.yaml", "release.yaml"},
-		aggregateKeys: []string{"researcher", "mongodb"},
-		releaseKeys:   []string{"researcher", "mongodb"},
+		paths:         []string{"aggregate.yaml", "release.yaml"},
+		aggregateKeys: []string{"researcher", "ferretdb", "documentdb"},
+		releaseKeys:   []string{"researcher", "ferretdb", "documentdb"},
 		entrypoints:   map[string]string{"researcher": "./src/researcher.ts:graph"},
-		datastore:     "mongodb", component: "imported/datastore/mongodb",
-		hosts: map[string]string{"helm": scratchMongoHost, "compose": scratchMongoHost}, port: "27017",
+		datastore:     "ferretdb", component: "core/datastore/ferretdb",
+		backing: "documentdb", backingComponent: "core/datastore/documentdb",
+		hosts: map[string]string{"helm": "ferretdb-default", "compose": "ferretdb"}, port: "27017",
 	},
 }
 
@@ -230,6 +235,14 @@ func TestEveryLangGraphApplicationIsRecognisedAndDraftedAsAgentsWiredToTheirData
 			}
 			if got := draft.Spec.Components[a.datastore].Type; got != a.component {
 				t.Errorf("the datastore %s is an instance of %q, want %s", a.datastore, got, a.component)
+			}
+			if a.backing == "" {
+				return
+			}
+			if got := draft.Spec.Components[a.datastore].Uses["backend"][a.backing].Target; got != a.backing ||
+				draft.Spec.Components[a.backing].Type != a.backingComponent {
+				t.Errorf("the datastore %s is not wired on its backend socket to an instance %s of %s:\n%s", a.datastore,
+					a.backing, a.backingComponent, text)
 			}
 		})
 	}
@@ -518,37 +531,28 @@ func TestALangGraphConfigurationTheParserRefusesHaltsTheImport(t *testing.T) {
 	}
 }
 
-// scratchMongoHost is the address the scratch Recipe the build case writes for a
-// drafted MongoDB publishes.
-const scratchMongoHost = "mongo.example.internal"
-
-// scratchMongoRecipe is a reference Recipe realizing the drafted MongoDB on
-// target, publishing scratchMongoHost and port 27017: the Recipe the drafted
-// Component's comment leaves for the author.
-func scratchMongoRecipe(target string) string {
-	return "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: mongodb-external\n" +
-		"  version: 0.1.0\nspec:\n  capability: " + target + "\n  implements: imported/datastore/mongodb:0.1.0\n" +
-		"  provides:\n    host: \"" + scratchMongoHost + "\"\n    port: \"27017\"\n  workload: |\n" +
-		"    apiVersion: aggrega.ai/v1beta1\n    kind: Workload\n    form: reference\n" +
-		"    endpoint: \"" + scratchMongoHost + "\"\n    port: 27017\n"
-}
-
 // langgraphBuildPaths are the catalog paths a drafted application is built
-// against: the LangGraph agent, PostgreSQL and the OpenAI model with their
-// Kubernetes and Docker Compose Recipes, the schema library, the secret Features
-// a connection's credential is attached as with their realizations, the provider
-// Plugin entities, and local, the directory the case laid a drafted Component and
-// its scratch Recipe in.
+// against: the LangGraph agent, PostgreSQL, FerretDB, DocumentDB and the OpenAI
+// model with their Kubernetes and Docker Compose Recipes, the schema library, the
+// secret Features a connection's credential is attached as with their
+// realizations, the provider Plugin entities, and local, a directory the case
+// lays nothing in.
 func langgraphBuildPaths(local string) []string {
 	paths := []string{"../compiler/testdata/flow-definition-escape/catalog", local}
 	for _, rel := range []string{
 		"component/core/ai-agent/langgraph/1.0.0/component.yaml",
 		"component/core/datastore/postgres/1.0.0/component.yaml",
+		"component/core/datastore/ferretdb/1.0.0/component.yaml",
+		"component/core/datastore/documentdb/1.0.0/component.yaml",
 		"component/core/ai-model/openai/1.0.0/component.yaml",
 		"recipe/helm/langgraph/1.0.0/recipe.yaml",
 		"recipe/compose/langgraph/1.0.0/recipe.yaml",
 		"recipe/helm/postgres/1.0.0/recipe.yaml",
 		"recipe/compose/postgres/1.0.0/recipe.yaml",
+		"recipe/helm/ferretdb/1.0.0/recipe.yaml",
+		"recipe/compose/ferretdb/1.0.0/recipe.yaml",
+		"recipe/helm/documentdb/1.0.0/recipe.yaml",
+		"recipe/compose/documentdb/1.0.0/recipe.yaml",
 		"recipe/helm/openai/1.0.0/recipe.yaml",
 		"recipe/compose/openai/1.0.0/recipe.yaml",
 		"schemalibrary/base-components/1.0.0/library.yaml",
@@ -573,10 +577,11 @@ func langgraphBuildPaths(local string) []string {
 // two attached by the Release alone would both arrive under the key value, so
 // the Aggregate attaches the checkpointer_db one, naming its key, and the
 // Release gives its origin, as the LangGraph walkthrough's review does. A
-// drafted datastore Component, written under dir's components/, is laid with
-// the scratch Recipe for target in local. It returns the Release's path, which
-// replaces the drafted Release.
-func writeGraphRelease(t *testing.T, dir, local, target string, graphs []string, datastore, component string) string {
+// datastore keeping its data in another, backing, an instance of
+// backingComponent, has both mapped and placed. It returns the Release's path,
+// which replaces the drafted Release.
+func writeGraphRelease(t *testing.T, dir, target string, graphs []string, datastore, component, backing,
+	backingComponent string) string {
 	t.Helper()
 	secret, realization, environment := "core/referenced-secret", "helm/k8s-existing-secret", "production"
 	modelOrigin, storeOrigin := "model-key", "checkpointer-password"
@@ -599,29 +604,24 @@ func writeGraphRelease(t *testing.T, dir, local, target string, graphs []string,
 	if err := os.WriteFile(filepath.Join(dir, "aggregate.yaml"), []byte(wired), 0o644); err != nil {
 		t.Fatalf("write the wired Aggregate: %v", err)
 	}
-	mapping := "core/datastore/postgres:1.0.0: " + target + "/postgres:1.0.0"
-	if component != "core/datastore/postgres" {
-		body, err := os.ReadFile(filepath.Join(dir, "components", "imported-datastore-mongodb.yaml"))
-		if err != nil {
-			t.Fatalf("read the drafted datastore Component: %v", err)
-		}
-		importopstest.WriteSource(t, filepath.Join(local, "component", "imported", "datastore", "mongodb", "0.1.0",
-			"component.yaml"), string(body))
-		importopstest.WriteSource(t, filepath.Join(local, "recipe", target, "mongodb-external", "0.1.0", "recipe.yaml"),
-			scratchMongoRecipe(target))
-		mapping = component + ":0.1.0: " + target + "/mongodb-external:0.1.0"
+	mapping := component + ":1.0.0: " + target + "/" + component[strings.LastIndexByte(component, '/')+1:] + ":1.0.0\n"
+	placed := "        " + datastore + ": {}\n"
+	if backing != "" {
+		mapping += "        " + backingComponent + ":1.0.0: " + target + "/" +
+			backingComponent[strings.LastIndexByte(backingComponent, '/')+1:] + ":1.0.0\n"
+		placed += "        " + backing + ": {}\n"
 	}
 	manifest := "apiVersion: aggrega.ai/v1beta1\nkind: Manifest\nmetadata:\n  name: imported-langgraph\n" +
 		"  version: \"1.0.0\"\nspec:\n  mappings:\n    components:\n      type:\n" +
 		"        core/ai-agent/langgraph:1.0.0: " + target + "/langgraph:1.0.0\n" +
 		"        core/ai-model/openai:1.0.0: " + target + "/openai:1.0.0\n" +
-		"        " + mapping + "\n" +
+		"        " + mapping +
 		"    features:\n      type:\n        " + secret + ":1.0.0: " + realization + ":1.0.0\n"
 	var b strings.Builder
 	b.WriteString("apiVersion: aggrega.ai/v1beta1\nkind: Release\nmetadata:\n  name: imported-langgraph\n" +
 		"  environment: " + environment + "\n  version: \"1.0.0\"\nspec:\n  aggregate: " + draftedAggregateName(t, dir) + "\n" +
 		"  manifest: imported-langgraph\n  boundaries:\n    main:\n      directory: ./dist/" + target + "\n" +
-		"      components:\n        gpt-4o: {}\n        " + datastore + ": {}\n")
+		"      components:\n        gpt-4o: {}\n" + placed)
 	for _, g := range graphs {
 		b.WriteString("        " + g + ":\n          infra:\n            image: " + graphImage + "\n" +
 			"          uses:\n            model:\n              gpt-4o:\n                features:\n" +
@@ -730,7 +730,8 @@ func TestEachLangGraphDraftBuildsReachingTheDatastoreItsCheckpointerNames(t *tes
 					}
 				}
 				result := pipelinetest.Build(t, pipelinetest.Input{
-					ReleasePath:  writeGraphRelease(t, dir, local, target, graphs, a.datastore, a.component),
+					ReleasePath: writeGraphRelease(t, dir, target, graphs, a.datastore, a.component, a.backing,
+						a.backingComponent),
 					CatalogPaths: langgraphBuildPaths(local),
 				})
 				for _, g := range graphs {
