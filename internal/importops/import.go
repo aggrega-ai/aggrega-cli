@@ -6,9 +6,7 @@ package importops
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -157,7 +155,12 @@ func (e *ExistingAggregateError) Error() string {
 // file. Only a surface with a person at a terminal sets it; with it unset nothing is
 // asked, and every value still owed is reported among the diagnostics and as
 // [Result.OwedRefusal]. A reporting delivery asks nothing either, since it would
-// keep no answer.
+// keep no answer, and neither does a sync whose importer halted, since it writes
+// nothing. An import refused for anything that does not turn on the answers — a
+// drafted path, an Aggregate already on disk, the answers file itself — is refused
+// before the first question; and each answer given reaches the answers file as
+// soon as it is accepted, so a refusal judged on the answered drafts, or a write
+// that fails, still leaves it there for the next run.
 //
 // Pull, where set, is how the surface pulls the dependencies of a Release, as
 // `aggrega pull` does: an import that drafted a Release, writes, finished and owes
@@ -396,12 +399,12 @@ func (r Result) Halted() bool {
 // answer is the same everywhere; what differs by machine is only that, where the
 // process runs on Windows, a draft Windows cannot hold as written is refused too.
 //
-// 🔴 Every path is judged BEFORE any file is written and before a reporting
-// delivery answers, in one place (checkFiles), so a dry run refuses exactly the
-// drafts a write refuses, and an importer returning one contained path and one
-// escaping path writes neither. Validating as it went would leave the contained
-// prefix on disk from a run that was refused, which is a partial result nobody
-// asked for.
+// 🔴 Every path is judged BEFORE any file is written, before a reporting delivery
+// answers and before anyone is asked for an owed value, in one place (checkFiles),
+// so a dry run refuses exactly the drafts a write refuses, and an importer
+// returning one contained path and one escaping path writes neither. Validating as
+// it went would leave the contained prefix on disk from a run that was refused,
+// which is a partial result nobody asked for.
 //
 // That containment analysis is lexical and resolves no symbolic link, so every
 // drafted path is also held, with its links resolved, to the root the output
@@ -445,8 +448,8 @@ func (r Result) Halted() bool {
 // column. A reporting delivery hands the record back among the files.
 //
 // Without Options.Sync, an Aggregate already at a drafted path refuses the import
-// whatever the delivery, before anything is written or reported, so a dry run
-// refuses it as the write does. Every other file already at a drafted path is
+// whatever the delivery, before anything is asked, written or reported, so a dry
+// run refuses it as the write does. Every other file already at a drafted path is
 // written over, and a file an earlier import drafted that this one does not draft
 // is left where it is.
 //
@@ -601,12 +604,27 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 			composed...)
 	}
 
+	// 🔴 Every refusal that does not turn on the answers is judged here, before
+	// anyone is asked anything, so an import that would be refused asks nothing:
+	// a person never types an answer into a run that then throws it away. The
+	// answers change what a draft holds, never where it lands or what kind it is,
+	// so what is judged here is what the answered drafts would be judged as.
+	if err := checkDraftPlaces(rw.Root(), outputDir, draft, opts.Sync, rec); err != nil {
+		return Result{}, err
+	}
+
 	// What the drafts still leave empty is read off the composed draft, answered
 	// from the answers file and, where a person is asked, from them, and the
 	// answers are written into the drafts — all before the record of them is
 	// composed, so a re-run given the same answers drafts the same bytes and a
-	// sync finds the drafts in step.
-	owing, err := answerDrafts(outputDir, prior, opts, seam.Recipes, draft)
+	// sync finds the drafts in step. Nobody is asked under a reporting delivery,
+	// which keeps no answer, nor by a sync whose importer halted, which writes
+	// nothing.
+	ask := opts.Ask
+	if opts.Delivery.Reports() || (opts.Sync && (Result{Diagnostics: diagnostics}).Halted()) {
+		ask = nil
+	}
+	owing, err := answerDrafts(rw.Root(), outputDir, prior, opts, ask, seam.Recipes, draft)
 	if err != nil {
 		return Result{}, err
 	}
@@ -621,25 +639,20 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		Decisions:   imported.Decisions,
 		Owed:        owing.remaining,
 		reported:    opts.Delivery.Reports(),
+		// An answers file written as the questions were answered was written by
+		// this import, whether or not the end of it writes the file again.
+		AnswersWritten: owing.kept,
 	}
 	if owing.path != "" {
 		res.Answers = owing.path
 	}
 	// The record of what the import writes is composed from the draft, and placed
-	// after it, so it is judged with the drafted paths below.
+	// after it, at the place judged with the drafted paths above.
 	drafted := draftedFiles(draft)
 	files := draft
 	if len(drafted) > 0 {
 		files = append(append(make([]abi.ScaffoldFile, 0, len(files)+1), files...),
 			recordScaffold(target, snapshot.digest, owing.pointer, drafted))
-	}
-	// Every drafted path is judged before anything is written and before anything
-	// is reported, so a reporting delivery refuses exactly what the write refuses.
-	if err := checkFiles(rw.Root(), outputDir, files); err != nil {
-		return Result{}, err
-	}
-	if err := checkRecordPlace(outputDir, draft); err != nil {
-		return Result{}, err
 	}
 	// The offline posture is known now, so a pull it will not let the import make
 	// is named among the diagnostics a surface reports before anything is written.
@@ -652,12 +665,6 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 			return Result{}, err
 		}
 		return finishImport(ctx, rw, opts, res, owing, release)
-	}
-	// An Aggregate already at a drafted path is judged after the paths are, so it
-	// is read only at a place already held inside the root, and before either
-	// delivery answers, so a dry run refuses what the write refuses.
-	if err := checkExistingAggregate(outputDir, draft); err != nil {
-		return Result{}, err
 	}
 	res.Files = files
 	if opts.BeforeWrite != nil {
@@ -678,8 +685,9 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 // owing is what answering the drafts' owed values produced: the drafts with the
 // answers written in, the values still owed, the diagnostics naming them, and the
 // answers file — its place on this host, empty where the drafts owe nothing, its
-// pointer from the output directory, and the content it is written with, empty
-// where it already holds exactly that.
+// pointer from the output directory, the content it is written with, empty
+// where it already holds exactly that, and whether it was written already, as
+// the questions were answered.
 type owing struct {
 	files       []abi.ScaffoldFile
 	remaining   []Owed
@@ -687,14 +695,20 @@ type owing struct {
 	path        string
 	pointer     string
 	content     string
+	kept        bool
 }
 
 // answerDrafts lists what the drafts owe ([readOwed]), answers it from the
 // answers file — the one opts names, the one the record of an earlier import into
-// the same directory names, or the one beside the source — and through opts.Ask
-// where it is set and the delivery writes, and composes the answers file that
-// lists every owed value with its answer.
-func answerDrafts(outputDir string, prior *importRecord, opts Options, recipes RecipeIndex,
+// the same directory names, or the one beside the source — and through ask where
+// it is set, and composes the answers file that lists every owed value with its
+// answer.
+//
+// Each answer a person gives is written into the answers file at once, held to
+// the root a file there is written beneath against the workspace at
+// workspaceRoot, so a refusal judged after the questions — a sync's conflicts, or
+// a write that fails — leaves what was typed in the file for the next run to read.
+func answerDrafts(workspaceRoot, outputDir string, prior *importRecord, opts Options, ask Ask, recipes RecipeIndex,
 	draft []abi.ScaffoldFile) (owing, error) {
 	out := owing{files: draft}
 	owed := readOwed(draft, recipes)
@@ -722,26 +736,25 @@ func answerDrafts(outputDir string, prior *importRecord, opts Options, recipes R
 	if err != nil {
 		return owing{}, err
 	}
-	ask := opts.Ask
-	if opts.Delivery.Reports() {
-		ask = nil
+	kept := false
+	keep := func(given answers) error {
+		content, err := answersFileUpdate(path, owed, given)
+		if err != nil || content == "" {
+			return err
+		}
+		if err := writeAnswersFile(workspaceRoot, path, content); err != nil {
+			return err
+		}
+		kept = true
+		return nil
 	}
-	ans, err := answerOwed(draft, owed, fromFile, path, ask)
+	ans, err := answerOwed(draft, owed, fromFile, path, ask, keep)
 	if err != nil {
 		return owing{}, err
 	}
-	// The file is read as bytes too, so what it holds that this import does not own
-	// is written back as it is; readAnswers above refused one it cannot read.
-	existing, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return owing{}, &AnswersFileError{Path: path, Err: err}
-	}
-	content, changed, err := answersFileContent(existing, owed, ans.given)
+	content, err := answersFileUpdate(path, owed, ans.given)
 	if err != nil {
-		return owing{}, fmt.Errorf("compose the answers file %s: %w", path, err)
-	}
-	if !changed {
-		content = ""
+		return owing{}, err
 	}
 	// The record points at the answers file only where it is not the one beside
 	// the source: that one is found again from the source every later import
@@ -751,7 +764,7 @@ func answerDrafts(outputDir string, prior *importRecord, opts Options, recipes R
 	if path != beside {
 		pointer = answersPointer(outputDir, path)
 	}
-	out = owing{files: ans.files, remaining: ans.remaining, path: path, pointer: pointer, content: content}
+	out = owing{files: ans.files, remaining: ans.remaining, path: path, pointer: pointer, content: content, kept: kept}
 	out.diagnostics = append(out.diagnostics, ans.notices...)
 	for _, o := range ans.remaining {
 		out.diagnostics = append(out.diagnostics, owedDiagnostic(o))
@@ -828,6 +841,49 @@ func finishImport(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, op
 	}
 	res.pulled = true
 	return res, nil
+}
+
+// checkDraftPlaces takes every judgement of a draft set that turns on where its
+// files land and what is on disk there, and none on what they hold: each drafted
+// path, and the record's, held inside the output directory and, with its links
+// resolved, to the root it picks against the workspace at workspaceRoot
+// ([checkFiles]); no draft at the record's own place ([checkRecordPlace]); and,
+// without sync, no Aggregate already on disk at a drafted path
+// ([checkExistingAggregate]) — with sync, none there that rec, the record of the
+// import being brought up to date, does not list ([ImportRecordError]).
+//
+// They are taken together, once, before the drafts' owed values are answered and
+// before either delivery answers, so a dry run refuses what the write refuses and
+// an import these refuse asks nobody anything. Answering an owed value changes
+// what a draft holds and never its path or its kind, so the answered drafts are
+// judged by what is judged here. An Aggregate on disk is read only after every
+// path is held inside the root, so it is read only at a place already judged.
+func checkDraftPlaces(workspaceRoot, outputDir string, draft []abi.ScaffoldFile, sync bool, rec *importRecord) error {
+	drafted := draftedFiles(draft)
+	files := draft
+	if len(drafted) > 0 {
+		files = append(append(make([]abi.ScaffoldFile, 0, len(draft)+1), draft...),
+			abi.ScaffoldFile{Path: RecordFileName})
+	}
+	if err := checkFiles(workspaceRoot, outputDir, files); err != nil {
+		return err
+	}
+	if err := checkRecordPlace(outputDir, draft); err != nil {
+		return err
+	}
+	if !sync {
+		return checkExistingAggregate(outputDir, draft)
+	}
+	for _, f := range drafted {
+		place, err := draftPlace(outputDir, f.path)
+		if err != nil {
+			return err
+		}
+		if isAggregateFile(place) && (rec == nil || !recordLists(*rec, f.path)) {
+			return &ImportRecordError{Record: RecordFileName, OutputDir: outputDir, Aggregate: f.path}
+		}
+	}
+	return nil
 }
 
 // checkRecordPlace refuses a draft the importer placed where the import keeps

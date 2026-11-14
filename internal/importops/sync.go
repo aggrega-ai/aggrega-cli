@@ -81,7 +81,9 @@ func ConflictLine(c SyncConflict) string {
 }
 
 // SyncConflictError reports a sync refused because bringing the drafts up to
-// date would change or remove what an author wrote. Nothing is written.
+// date would change or remove what an author wrote. No draft is written; an
+// answer a person gave before the conflict was judged is already in the answers
+// file, so the next sync asks for it no more.
 //
 // It carries every conflicting part, in the order the draft names them, so the
 // reader can reconcile them all before syncing again rather than one per run.
@@ -98,7 +100,7 @@ type SyncConflictError struct {
 func (e *SyncConflictError) Error() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "--sync stopped: bringing the drafts beneath %q up to date with the source would change or "+
-		"remove what an author wrote, so no files were written; reconcile each part below by hand, or put back what "+
+		"remove what an author wrote, so no draft was written; reconcile each part below by hand, or put back what "+
 		"the import wrote there, and sync again:", e.OutputDir)
 	for _, c := range e.Conflicts {
 		b.WriteString("\n  ")
@@ -208,22 +210,16 @@ func readRecord(root, outputDir string) (*importRecord, string, error) {
 // where it read catalog folders, and answers, the answers file the draft's owed
 // values were answered from, empty where the draft owes none.
 //
+// An Aggregate on disk at a drafted path that rec does not list was refused by
+// [checkDraftPlaces] before the draft's owed values were answered.
+//
 // Nothing is written or removed until every part is judged, and a sync with any
-// conflict writes nothing; a sync whose importer reported a halt writes nothing
+// conflict writes no draft; a sync whose importer reported a halt writes nothing
 // either, because a draft the importer could not finish would read as the
 // source having dropped the parts it did not reach.
 func syncImport(workspaceRoot, outputDir, target, catalogSnapshot, answers string, opts Options, res Result,
 	drafted []draftedFile, rec *importRecord, onDisk string) (Result, error) {
 	root := writescope.RootFor(workspaceRoot, outputDir)
-	for _, f := range drafted {
-		place, err := draftPlace(outputDir, f.path)
-		if err != nil {
-			return Result{}, err
-		}
-		if isAggregateFile(place) && (rec == nil || !recordLists(*rec, f.path)) {
-			return Result{}, &ImportRecordError{Record: RecordFileName, OutputDir: outputDir, Aggregate: f.path}
-		}
-	}
 	res.Files = nil
 	if res.Halted() {
 		if opts.BeforeWrite != nil {

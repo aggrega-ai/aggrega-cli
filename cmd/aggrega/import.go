@@ -256,8 +256,8 @@ one line each:
 
 Where the sync would change or remove a part you edited, add a part where you
 already wrote one, or remove a part holding something you added, import stops,
-naming each such part and why, and writes nothing; reconcile them by hand and
-sync again. A comment you write directly above a drafted key edits that key.
+naming each such part and why, and writes no draft (an answer you typed is kept
+in the answers file); reconcile them by hand and sync again. A comment you write directly above a drafted key edits that key.
 An Aggregate at a drafted path that no record lists stops the sync too, saying
 so, as does a record that cannot be read. Where the importer reports a
 diagnostic that stops the import, a sync writes nothing. A sync into a directory

@@ -261,8 +261,27 @@ type answered struct {
 // for a key these drafts do not leave empty is kept in the file and not applied,
 // and one information line names each: one answers file serves the drafts of
 // every target, and a value one target owes another does not.
-func answerOwed(files []abi.ScaffoldFile, owed []Owed, fromFile answers, path string, ask Ask) (answered, error) {
+//
+// 🔴 Every answer the file gives is judged before the first question, so a file
+// the import refuses refuses it before anyone has typed anything. And each answer
+// a person gives is handed to keep as soon as it is accepted, with every answer
+// known so far — the file's and the ones given — so it reaches the answers file
+// before anything later can refuse the import: what someone typed is never lost
+// to a refusal that follows the questions. An answer refused as a secret's is
+// never handed to keep.
+func answerOwed(files []abi.ScaffoldFile, owed []Owed, fromFile answers, path string, ask Ask,
+	keep func(answers) error) (answered, error) {
 	out := answered{given: answers{}}
+	for _, o := range owed {
+		answer, ok := fromFile.get(o)
+		if ok && o.Sensitive && !AnswerIsAName(answer) {
+			return answered{}, &SecretAnswerError{Answers: path, File: o.File, Key: o.Key()}
+		}
+		if out.given[o.File] == nil {
+			out.given[o.File] = map[string]string{}
+		}
+		out.given[o.File][o.Key()] = answer
+	}
 	owes := map[string]map[string]bool{}
 	for _, o := range owed {
 		if owes[o.File] == nil {
@@ -286,10 +305,7 @@ func answerOwed(files []abi.ScaffoldFile, owed []Owed, fromFile answers, path st
 
 	asking := ask != nil
 	for _, o := range owed {
-		answer, ok := fromFile.get(o)
-		if ok && o.Sensitive && !AnswerIsAName(answer) {
-			return answered{}, &SecretAnswerError{Answers: path, File: o.File, Key: o.Key()}
-		}
+		_, ok := fromFile.get(o)
 		if !ok && asking {
 			refused := ""
 			for {
@@ -306,19 +322,18 @@ func answerOwed(files []abi.ScaffoldFile, owed []Owed, fromFile answers, path st
 					refused = secretAnswerRefusal
 					continue
 				}
-				answer, ok = given, true
+				out.given[o.File][o.Key()], ok = given, true
+				if keep != nil {
+					if err := keep(out.given); err != nil {
+						return answered{}, err
+					}
+				}
 				break
 			}
 		}
-		if out.given[o.File] == nil {
-			out.given[o.File] = map[string]string{}
-		}
 		if !ok {
-			out.given[o.File][o.Key()] = ""
 			out.remaining = append(out.remaining, o)
-			continue
 		}
-		out.given[o.File][o.Key()] = answer
 	}
 
 	out.files = make([]abi.ScaffoldFile, 0, len(files))
@@ -455,6 +470,26 @@ func answersFileContent(existing []byte, owed []Owed, given answers) (string, bo
 		return "", false, err
 	}
 	return b.String(), true, nil
+}
+
+// answersFileUpdate composes the answers file at path for the owed values and the
+// answers given ([answersFileContent]) from the file as it stands on disk now, and
+// returns the content to write, empty where the file already holds exactly that.
+// The file is read as bytes, so what it holds that this import does not own is
+// written back as it is; [readAnswers] refused one it cannot read before this runs.
+func answersFileUpdate(path string, owed []Owed, given answers) (string, error) {
+	existing, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", &AnswersFileError{Path: path, Err: err}
+	}
+	content, changed, err := answersFileContent(existing, owed, given)
+	if err != nil {
+		return "", fmt.Errorf("compose the answers file %s: %w", path, err)
+	}
+	if !changed {
+		return "", nil
+	}
+	return content, nil
 }
 
 // answersCommentWidth is the width a comment in the answers file is wrapped at.
