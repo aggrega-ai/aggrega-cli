@@ -278,7 +278,7 @@ func wireServer(server mcpServer, part importer.Part, at func(tokens ...string) 
 		"where the connection carries a credential, the name of the variable holding it under the header the tool " +
 		"publishes"}
 	if part.Alias != part.Name {
-		w.Edits = append(w.Edits, importer.Edit{Pointer: at(server.nameAt...), Value: jsonString(part.Alias)})
+		w.Edits = append(w.Edits, importer.Edit{Pointer: at(server.nameAt...), Value: importer.String(part.Alias)})
 		reads = append(reads, "the node names its server "+part.Alias+", the connection's alias")
 	}
 	// The credential locator (walk.go) locates this address on every node, and
@@ -288,7 +288,7 @@ func wireServer(server mcpServer, part importer.Part, at func(tokens ...string) 
 	// reported here, as part of how the node reaches its connection, and not as a
 	// credential value.
 	if server.hasURL {
-		w.Edits = append(w.Edits, importer.Edit{Pointer: at("mcp_server", "value", "config", "url"), Value: jsonString("")})
+		w.Edits = append(w.Edits, importer.Edit{Pointer: at("mcp_server", "value", "config", "url"), Value: importer.String("")})
 		reads = append(reads, "the address the exported flow held there is written empty")
 	}
 	w.Reads = strings.Join(reads, "; ")
@@ -542,7 +542,7 @@ func wireFields(template flowTemplate, part importer.Part, at func(tokens ...str
 			continue
 		}
 		w.Edits = append(w.Edits,
-			importer.Edit{Pointer: at(f.field, "value"), Value: jsonString(variable)},
+			importer.Edit{Pointer: at(f.field, "value"), Value: importer.String(variable)},
 			importer.Edit{Pointer: at(f.field, "load_from_db"), Value: json.RawMessage("true")})
 		reads = append(reads, fmt.Sprintf("its field %s names the variable %s", f.field, variable))
 		addressed = addressed || f.address
@@ -793,10 +793,4 @@ func memberOf(raw json.RawMessage, key string) json.RawMessage {
 		}
 	}
 	return nil
-}
-
-// jsonString writes s as a JSON string.
-func jsonString(s string) json.RawMessage {
-	b, _ := json.Marshal(s)
-	return b
 }

@@ -25,7 +25,8 @@ var langflow = importer.Format{
 
 // platform is the Langflow platform as the standard library's
 // core/ai-agent/langflow Component runs it: the flow is carried as the
-// Component's flow_definition and named by its flow_id, an MCP Tools node
+// Component's flow_definition, each edge's handles written as Langflow's editor
+// writes them (handles.go), and named by its flow_id, an MCP Tools node
 // reaches the MCP server it names through the tools connection of that name,
 // and no other node reaches a tools connection (wire.go), the model socket
 // draws a single connection, which no model node naming a provider other than
@@ -48,6 +49,7 @@ var platform = importer.Platform{
 	Refuse:          refuseOf,
 	Wire:            wireOf,
 	Reached:         reachedOf,
+	Respell:         editorHandles,
 	Single:          singleSockets,
 	Standing:        standingOf,
 	Model:           modelOf,

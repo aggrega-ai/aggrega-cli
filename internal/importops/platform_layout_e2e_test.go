@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -235,6 +236,79 @@ func readAsTheCompilerDoes(t *testing.T, content string) platformAggregate {
 	return agg
 }
 
+// asTheEditorSpells returns a Langflow export as the platform draft carries it:
+// each edge's handle text written as Langflow's editor writes it — the handle
+// read back as JSON with every "œ" a double quote, written with its keys sorted
+// and no whitespace, every double quote then written "œ" — and every other byte
+// as the export holds it. The spelling is computed here with the JSON encoder
+// rather than with the importer's own writer, so a case comparing the two holds
+// the importer to what the editor reads. A handle already spelled so is left as
+// written, and so, as the importer leaves them, is one that does not read as the
+// editor reads it and one holding a number.
+func asTheEditorSpells(t *testing.T, export []byte) []byte {
+	t.Helper()
+	var doc struct {
+		Data struct {
+			Edges []map[string]any `json:"edges"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(export, &doc); err != nil {
+		t.Fatalf("decode the export's edges: %v", err)
+	}
+	encode := func(v any) string {
+		var b strings.Builder
+		enc := json.NewEncoder(&b)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(v); err != nil {
+			t.Fatalf("encode %v: %v", v, err)
+		}
+		return strings.TrimSuffix(b.String(), "\n")
+	}
+	var edits []importer.Edit
+	for i, edge := range doc.Data.Edges {
+		for _, key := range []string{"sourceHandle", "targetHandle"} {
+			text, ok := edge[key].(string)
+			if !ok {
+				continue
+			}
+			dec := json.NewDecoder(strings.NewReader(strings.ReplaceAll(text, "œ", `"`)))
+			dec.UseNumber()
+			var handle any
+			if dec.Decode(&handle) != nil || holdsNumber(handle) {
+				continue
+			}
+			spelled := strings.ReplaceAll(encode(handle), `"`, "œ")
+			if spelled == text {
+				continue
+			}
+			edits = append(edits, importer.Edit{Pointer: importer.Pointer("data", "edges", strconv.Itoa(i), key),
+				Value: json.RawMessage(encode(spelled))})
+		}
+	}
+	out, err := importer.Rewrite(export, edits)
+	if err != nil {
+		t.Fatalf("write the export's handles as the editor spells them: %v", err)
+	}
+	return out
+}
+
+// holdsNumber reports whether a decoded JSON value holds a number anywhere.
+func holdsNumber(v any) bool {
+	switch v := v.(type) {
+	case json.Number:
+		return true
+	case []any:
+		return slices.ContainsFunc(v, holdsNumber)
+	case map[string]any:
+		for _, e := range v {
+			if holdsNumber(e) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // uuidOfAPlatform is the shape a flow platform takes a flow identifier in.
 var uuidOfAPlatform = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
@@ -248,7 +322,9 @@ var uuidOfAPlatform = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]
 //     definition value, once interpolated, is the source's own bytes — double
 //     braces, a missing final line break, every credential value it holds and
 //     all — since the default writes no credential value empty and what a wired
-//     part of these sources is written with is what its node already holds;
+//     part of these sources is written with is what its node already holds —
+//     but for a Langflow source's edge handles, written as Langflow's editor
+//     spells them (asTheEditorSpells);
 //   - the flow's identifier is the source's own where it gives one, and a UUID of
 //     the shape the platforms take where it gives none;
 //   - each socket draws exactly the connections the table names, each reaching a
@@ -285,9 +361,13 @@ func TestEveryLangflowAndFlowiseFixtureIsDraftedAsThePlatformCarryingIt(t *testi
 				t.Fatalf("the Aggregate holds the platform as %v, want one instance keyed %s", platforms, fx.key)
 			}
 			inst := agg.Spec.Components[fx.key]
-			if got, _ := inst.Values["flow_definition"].(string); got != string(export) {
+			carried := export
+			if fx.format == "langflow" {
+				carried = asTheEditorSpells(t, export)
+			}
+			if got, _ := inst.Values["flow_definition"].(string); got != string(carried) {
 				t.Errorf("the definition the platform carries is not the source's bytes (%d bytes carried, %d expected)",
-					len(got), len(export))
+					len(got), len(carried))
 			}
 			id, _ := inst.Values[fx.ident].(string)
 			switch {

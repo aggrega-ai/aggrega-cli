@@ -547,7 +547,7 @@ func rewrittenCredential(nodeID, name, pointer string, written json.RawMessage, 
 	}
 	value := json.RawMessage(rewritten)
 	if text {
-		value = jsonText(string(rewritten))
+		value = importer.String(string(rewritten))
 	}
 	return importer.Credential{Node: nodeID, Field: name, Pointer: pointer, Value: value, Detail: what}
 }
@@ -592,16 +592,6 @@ func serverConfigEdits(config json.RawMessage) ([]importer.Edit, string) {
 	default:
 		return edits, strings.Join(found[:len(found)-1], ", ") + " and " + found[len(found)-1]
 	}
-}
-
-// jsonText writes s as a JSON string, its characters as they are wherever JSON
-// allows it.
-func jsonText(s string) json.RawMessage {
-	var b strings.Builder
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(s)
-	return json.RawMessage(strings.TrimSuffix(b.String(), "\n"))
 }
 
 // credentialIDInput is the name Flowise keeps a selected credential's

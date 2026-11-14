@@ -365,7 +365,7 @@ func TestAnMCPServerAFlowNamesIsWiredByNameItsAddressWrittenEmptyAsWiring(t *tes
 			}
 
 			flow, text := carriedFlow(t, outputDir, "langflow")
-			want := decoded(t, source)
+			want := decoded(t, asTheEditorSpells(t, source))
 			server := func(f map[string]any, id string) map[string]any {
 				return asObject(asObject(langflowNode(t, f, id)["mcp_server"])["value"])
 			}
@@ -529,7 +529,8 @@ func TestAnMCPServerAFlowNamesIsWiredByNameItsAddressWrittenEmptyAsWiring(t *tes
 //     names no server, and one warning says so by the node's id;
 //   - no connection of the platform's tools socket is drawn and no Component
 //     stands for the node;
-//   - the flow the platform carries is the export, byte for byte, the node
+//   - the flow the platform carries is the export, byte for byte but for its
+//     edges' handles, written as Langflow's editor spells them, the node
 //     included as the export writes it.
 //
 // 🔴 PLANTED DEFECT: in reachOf (plugins/langflow-importer/wire.go), replace
@@ -589,9 +590,10 @@ func TestTheMCPToolsNodeOfARealExportNamingNoServerIsReportedAndNeverWired(t *te
 					t.Errorf("a Component stands for the node naming no server: %s, a %s", key, c.Type)
 				}
 			}
-			if got, _ := agg.Spec.Components["langflow"].Values["flow_definition"].(string); got != string(export) {
-				t.Errorf("the flow the platform carries is not the export, byte for byte (%d bytes carried, %d exported)",
-					len(got), len(export))
+			carried := asTheEditorSpells(t, export)
+			if got, _ := agg.Spec.Components["langflow"].Values["flow_definition"].(string); got != string(carried) {
+				t.Errorf("the flow the platform carries is not the export, byte for byte but for its edges' handles "+
+					"(%d bytes carried, %d expected)", len(got), len(carried))
 			}
 		})
 	}
@@ -733,8 +735,8 @@ func TestALangflowNodeThatIsNoMCPToolsNodeIsNeverWiredToTheToolsSocket(t *testin
 // 🔴 PLANTED DEFECTS, each rebuilt into the importer fixtures from its source:
 //
 //   - in wireFields (plugins/langflow-importer/wire.go), replace
-//     `importer.Edit{Pointer: at(f.field, "value"), Value: jsonString(variable)},`
-//     with `importer.Edit{Pointer: at(f.field, "value"), Value: jsonString("")},`:
+//     `importer.Edit{Pointer: at(f.field, "value"), Value: importer.String(variable)},`
+//     with `importer.Edit{Pointer: at(f.field, "value"), Value: importer.String("")},`:
 //     the Langflow model row fails, its fields carrying no variable's name;
 //   - in wireOf (plugins/flowise-importer/wire.go), replace
 //     `basepath != nil && !mcpconfig.Blank(basepath)` with
@@ -959,7 +961,8 @@ func TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI(t
 		// through it.
 		reads, literal string
 		// carried writes, into the decoded source, what the flow the draft carries
-		// holds written anew; where it is nil, the flow is carried byte for byte.
+		// holds written anew; where it is nil, the flow is carried byte for byte
+		// but for its edges' handles, written as Langflow's editor spells them.
 		carried func(flow map[string]any)
 		// keyCarried marks a node whose api_key the import reports carried as
 		// written, and planted the values that must be in the flow the draft
@@ -998,13 +1001,14 @@ func TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI(t
 
 			flow, text := carriedFlow(t, outputDir, "langflow")
 			agg := readAsTheCompilerDoes(t, text)
+			spelled := asTheEditorSpells(t, body)
 			if tc.carried == nil {
-				if got, _ := agg.Spec.Components["langflow"].Values["flow_definition"].(string); got != string(body) {
-					t.Errorf("the flow is not carried as the export, byte for byte (%d bytes carried, %d exported)",
-						len(got), len(body))
+				if got, _ := agg.Spec.Components["langflow"].Values["flow_definition"].(string); got != string(spelled) {
+					t.Errorf("the flow is not carried as the export, byte for byte but for its edges' handles (%d bytes "+
+						"carried, %d expected)", len(got), len(spelled))
 				}
 			} else {
-				want := decoded(t, body)
+				want := decoded(t, spelled)
 				tc.carried(want)
 				if !reflect.DeepEqual(flow, want) {
 					got, _ := json.Marshal(langflowNode(t, flow, tc.node))
@@ -1277,8 +1281,9 @@ func TestAPlatformsModelSocketDrawsOneConnection(t *testing.T) {
 // the committed Langflow export Basic Prompting with every line break written CR
 // LF, under the hints-only reuse mode, so its model part is drafted: the platform
 // carries the export itself, byte for byte — each CR LF written as the line feed
-// the export holds — and one warning says how many carriage returns were written
-// so, beside the report of how the flow reaches its model.
+// the export holds, and each edge's handles as Langflow's editor spells them —
+// and one warning says how many carriage returns were written so, beside the
+// report of the respelled edges and of how the flow reaches its model.
 //
 // 🔴 PLANTED DEFECT: in carry (aggrega-pdk/go/pkg/importer/platform.go), replace
 // `text, returns := lineFeedsFor(string(scrubbed))` with
@@ -1297,13 +1302,15 @@ func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) 
 		t.Fatalf("read the drafted Aggregate: %v", err)
 	}
 	agg := readAsTheCompilerDoes(t, string(content))
-	if got, _ := agg.Spec.Components["langflow"].Values["flow_definition"].(string); got != string(export) {
+	spelled := asTheEditorSpells(t, export)
+	if got, _ := agg.Spec.Components["langflow"].Values["flow_definition"].(string); got != string(spelled) {
 		t.Errorf("the carried flow is not the export with each CR LF written as its line feed (%d bytes carried, %d "+
-			"exported)", len(got), len(export))
+			"expected)", len(got), len(spelled))
 	}
-	// Beside the carriage returns, the one other report is the export's Language
-	// Model node, wired to the model socket and selecting no model provider,
-	// reached other than through its connection.
+	// Beside the carriage returns, the other reports are the export's edges,
+	// whose handles are written as Langflow's editor spells them, and its
+	// Language Model node, wired to the model socket and selecting no model
+	// provider, reached other than through its connection.
 	var codes []string
 	reported := diagnosticsBesideTheOwed(res)
 	for _, d := range reported {
@@ -1313,9 +1320,10 @@ func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) 
 		}
 		codes = append(codes, d.Code)
 	}
-	if !slices.Equal(codes, []string{"carriage-returns-rewritten", "part-address-in-flow " + promptingNodeID}) {
-		t.Fatalf("the import raised %+v, want the one warning naming the carriage returns and the model part's report",
-			reported)
+	if !slices.Equal(codes, []string{"carriage-returns-rewritten", "definition-respelled",
+		"part-address-in-flow " + promptingNodeID}) {
+		t.Fatalf("the import raised %+v, want the one warning naming the carriage returns, the one naming the "+
+			"respelled edges and the model part's report", reported)
 	}
 	if want := "the flow holds " + strconv.Itoa(returns) +
 		" carriage return(s), each written as a line feed in values.flow_definition, since a YAML literal block cannot " +

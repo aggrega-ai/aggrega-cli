@@ -484,6 +484,9 @@ func TestTheSessionImportMethodReadsADirectory(t *testing.T) {
 
 // jsonText is s as it reads inside a JSON string, without the quotes, so a
 // sentence carrying a character JSON escapes is looked for as the frame spells it.
+// It is kept apart from the plugin kit's String on purpose: it is the test's own
+// reading of what the frame holds, and sharing the writer under test would let
+// the two agree for the wrong reason.
 func jsonText(t *testing.T, s string) string {
 	t.Helper()
 	b, err := json.Marshal(s)

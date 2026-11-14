@@ -6,7 +6,8 @@
 // Command langflow-importer is the Langflow importer Wasm guest. It reads
 // Langflow flow JSON and drafts an Aggregate. By default the draft is the
 // Langflow platform, core/ai-agent/langflow, carrying the flow as written with
-// its credential values emptied, and each node of the flow the workspace's
+// its credential values emptied and its edges' handles written as Langflow's
+// editor writes them, and each node of the flow the workspace's
 // catalog matches as a model, a tool or a store drafted as a Component of its
 // own, wired to the platform's socket that takes it; with the layout setting
 // nodes, every node of the flow is drafted as a Component, referencing a
@@ -16,7 +17,8 @@
 // The guest holds only what is particular to Langflow: this descriptor and the
 // export wiring, the walker lifting a flow's nodes and edges and locating its
 // credential values (walk.go), how the flow reaches each part wired to the
-// platform (wire.go), and the format's mapping arm, syntactic format and
+// platform (wire.go), how its edges' handles are spelled for Langflow's editor
+// (handles.go), and the format's mapping arm, syntactic format and
 // platform (format.go). The rest — the
 // confidence scorer, the decisions, the drafts, the renderers and the settings —
 // is the plugin kit's importer package,

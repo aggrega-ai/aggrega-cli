@@ -316,7 +316,7 @@ func textValues(node string, raw json.RawMessage, in requestInput, field string,
 		return importer.Credential{Node: node, Field: field, Pointer: pointer,
 			Detail: "what is inside it cannot be located in its text, and " + unmarkedDetail(in.member)}, true
 	}
-	return importer.Credential{Node: node, Field: field, Pointer: pointer, Value: jsonText(string(rewritten)),
+	return importer.Credential{Node: node, Field: field, Pointer: pointer, Value: importer.String(string(rewritten)),
 		Detail: in.member + " values (" + strings.Join(names, ", ") + ")"}, true
 }
 
@@ -343,14 +343,4 @@ func memberAt(raw json.RawMessage, path []string) json.RawMessage {
 		raw = found
 	}
 	return raw
-}
-
-// jsonText writes s as a JSON string, its characters as they are wherever JSON
-// allows it.
-func jsonText(s string) json.RawMessage {
-	var b strings.Builder
-	enc := json.NewEncoder(&b)
-	enc.SetEscapeHTML(false)
-	_ = enc.Encode(s)
-	return json.RawMessage(strings.TrimSuffix(b.String(), "\n"))
 }

@@ -751,7 +751,8 @@ func asSeeded(carried string) string {
 // which must be exactly the platform's own secret — the Flowise owner's password,
 // the Langflow administrator's password — declared with its own key. The build
 // succeeds on both, the model part the platform's model socket draws is written
-// with the model its node selects, the draft carries the export byte for byte,
+// with the model its node selects, the draft carries the export byte for byte
+// (a Langflow export's edge handles written as Langflow's editor spells them),
 // the flow the platform is seeded with is the flow the draft carries, and the
 // platform reaches the wired model at the address the model publishes. The
 // Langflow export's Language Model node names its key as the global variable
@@ -814,8 +815,12 @@ func TestADraftedPlatformBuildsWithTheReleaseSupplyingWhatTheDraftLeavesIt(t *te
 				if carried == "" {
 					t.Fatal("the draft carries no flow")
 				}
-				if export := string(readRealExport(t, tc.source)); carried != export {
-					t.Errorf("the draft does not carry the export byte for byte (%d bytes carried, %d exported)",
+				export := readRealExport(t, tc.source)
+				if tc.platform == "langflow" {
+					export = asTheEditorSpells(t, export)
+				}
+				if carried != string(export) {
+					t.Errorf("the draft does not carry the export byte for byte (%d bytes carried, %d expected)",
 						len(carried), len(export))
 				}
 
