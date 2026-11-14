@@ -158,7 +158,8 @@ func appName(tree json.RawMessage) string {
 }
 
 // platform is the Dify installation: core/dify, running core/ai-agent/dify,
-// whose app_definition carries the application.
+// whose app_definition carries the application, its API server and its front
+// end published on Docker Compose at the ports below.
 var platform = importer.Platform{
 	Component:       Server,
 	DefinitionValue: DefinitionParameter,
@@ -178,7 +179,22 @@ var platform = importer.Platform{
 	},
 	Secrets: []importer.Secret{{Path: "components.api.features.owner_password", Variable: OwnerPasswordVariable,
 		Text: "the owner account's password", Referenced: true}},
+	Published: []importer.PublishedPort{
+		{At: "components.api", Port: APIPort},
+		{At: "components.console", Port: ConsolePort},
+	},
 }
+
+// The ports a draft publishes the installation's API server, the module's api,
+// and its front end, the module's console, on, on Docker Compose. Each is chosen
+// so that no two of the documentation's import examples publish one host port,
+// and a reader runs several of them on one machine at once: the API on the port
+// it serves on inside its container, and the front end one above the port it
+// serves on, which another example publishes.
+const (
+	APIPort     = 5001
+	ConsolePort = 3001
+)
 
 // Import turns one import request into the drafts: each source — the request's
 // named sources, or its primary bytes — is parsed as YAML through parse, the

@@ -147,6 +147,12 @@ const RootFile = "root_agent.yaml"
 // of.
 const Component = "core/ai-agent/google-adk"
 
+// Port is the port a draft publishes each application on, on Docker Compose:
+// the one Component's infra.port gives the application's server to listen on by
+// default. A second application of one import is published on the next port
+// the first does not take.
+const Port = 8000
+
 // The model provider ADK uses by default, and the catalog Component serving it,
 // named by the provider.
 const (

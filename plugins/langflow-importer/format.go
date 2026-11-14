@@ -32,8 +32,9 @@ var langflow = importer.Format{
 // draws a single connection, which no model node naming a provider other than
 // OpenAI takes (wire.go), a referenced model is given the model its node
 // selects (model.go), the image is drafted at the version below, with the
-// version the flow was last tested with named where it differs, the
-// administrator's password and the model connection's credential are attached
+// version the flow was last tested with named where it differs, the editor is
+// published on Docker Compose at the port below, the administrator's password
+// and the model connection's credential are attached
 // by reference, read from LANGFLOW_ADMIN_PASSWORD and OPENAI_API_KEY — the
 // variable the Language Model node's own key field names — and, for the compose
 // target, the administrator's password is declared with the key the compose
@@ -55,6 +56,7 @@ var platform = importer.Platform{
 	Model:           modelOf,
 	Image:           image,
 	SourceVersion:   lastTestedVersion,
+	Published:       []importer.PublishedPort{{Port: editorPort}},
 	Secrets: []importer.Secret{{Path: "features.admin_password", Variable: "LANGFLOW_ADMIN_PASSWORD",
 		Key:  "LANGFLOW_SUPERUSER_PASSWORD",
 		Text: "the administrator's password, read while values.require_authentication stays true"}},
@@ -66,6 +68,11 @@ var platform = importer.Platform{
 // directory at startup as those Recipes deliver it; an image at Langflow 1.5.1
 // or older does not.
 const image = "langflowai/langflow:1.6.0"
+
+// editorPort is the port a draft publishes the editor on, on Docker Compose:
+// the one Langflow serves on inside its container and names in its own
+// documentation.
+const editorPort = 7860
 
 // detect is how a Langflow flow is recognised when an import names no format,
 // declared in describe() and recorded on the importer's Plugin entity. A

@@ -225,7 +225,8 @@ func writeFilesRead(b *strings.Builder, read []*project) {
 
 // composeRelease is the drafted Release, as the plugin kit's Release writer
 // writes it: for each service, under its key, the infrastructure the draft
-// writes — the image and the port of an instance of Server, and its image's tag
+// writes — the image and the port of an instance of Server, and, for the
+// compose target, the host port the same ports entry publishes, and its image's tag
 // as the infra key the image table names for it — and the secrets it attaches,
 // leaving for the Release what the draft does not write, with a comment above it
 // naming what else the source states for the service's operation, which the
@@ -268,6 +269,14 @@ func serviceEntry(s *service, typ string) importer.ReleaseEntry {
 		if first, ok := firstPort(s); ok {
 			if n, err := strconv.Atoi(first); err == nil {
 				infra = append(infra, "  port: "+strconv.Itoa(n))
+				// The host side of that same entry, where the source publishes one,
+				// is the port the stack is reached at on Docker Compose: the source's
+				// own, so never moved.
+				if len(s.ports) > 0 {
+					if host, err := strconv.Atoi(s.ports[0].published); err == nil {
+						entry.Published = append(entry.Published, importer.PublishedPort{Port: host, Stated: true})
+					}
+				}
 			} else {
 				entry.Left = append(entry.Left, importer.LeftItem{Path: "infra.port",
 					Text: "since the container port the source states first, " + commentText(first) + ", is not one number"})

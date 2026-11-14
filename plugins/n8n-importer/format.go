@@ -28,7 +28,8 @@ var n8n = importer.Format{
 // and named by its workflow_id, each part wired to it is reached as the workflow
 // writes it (wire.go), the model socket draws a single connection, a referenced
 // model is given the model its node selects (model.go), the image is drafted at
-// the version below, and the model connection's credential is attached by
+// the version below, the editor is published on Docker Compose at the port
+// below, and the model connection's credential is attached by
 // reference, read from OPENAI_API_KEY, the variable the platform delivers the key
 // as.
 var platform = importer.Platform{
@@ -43,6 +44,7 @@ var platform = importer.Platform{
 	Standing:            standingOf,
 	Model:               modelOf,
 	Image:               image,
+	Published:           []importer.PublishedPort{{Port: editorPort}},
 	CredentialVariables: map[string]string{"model": "OPENAI_API_KEY"},
 }
 
@@ -50,6 +52,12 @@ var platform = importer.Platform{
 // standard library's n8n Recipes are known to run. An exported workflow states
 // no version of n8n, so no other is named.
 const image = "n8nio/n8n:1.110.1"
+
+// editorPort is the port a draft publishes the editor on, on Docker Compose:
+// the one n8n serves on inside its container, which the addresses n8n shows for
+// its editor and its webhooks name unless infra.external_base_url says
+// otherwise, so on this port the draft needs no such address.
+const editorPort = 5678
 
 // detect is how an n8n workflow is recognised when an import names no format,
 // declared in describe() and recorded on the importer's Plugin entity. An

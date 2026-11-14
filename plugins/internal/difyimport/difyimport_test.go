@@ -264,6 +264,19 @@ func releaseTail(target string) string {
 			"holding, under the data key value, the owner account's password.\n" +
 			"                    origin: \"\"\n"
 	}
+	// For compose the API server's and the front end's published ports, the
+	// comment written out rather than read from the kit, so the case pins the text
+	// the draft writes (a deliberate second copy).
+	published := func(port string) string {
+		return "                # Published on this machine's loopback address, 127.0.0.1: reachable from this " +
+			"machine only, by any process running on it. Delete this line to keep the service internal.\n" +
+			"                published_port: " + port + "\n"
+	}
+	apiPort, console := "", ""
+	if target == "compose" {
+		apiPort = published("5001")
+		console = "            console:\n              infra:\n" + published("3001")
+	}
 	return "  parameters:\n" + parameter +
 		"  boundaries:\n    platform:\n      aggregates:\n" +
 		"        dify:\n" +
@@ -272,11 +285,11 @@ func releaseTail(target string) string {
 		"              infra:\n" +
 		"                # " + leftHeading + "components.api.infra.owner_email, the email of the installation's " +
 		"owner account the application is imported under, on the api component of core/dify\n" +
-		"                owner_email: \"\"\n" +
+		"                owner_email: \"\"\n" + apiPort +
 		"              features:\n" +
 		"                owner_password:\n" +
 		"                  type: core/referenced-secret\n" +
-		"                  infra:\n" + origin
+		"                  infra:\n" + origin + console
 }
 
 // TestTheInstallationsSecretsAreWrittenForTheTarget imports the authored chat
@@ -287,6 +300,8 @@ func releaseTail(target string) string {
 // core/referenced-secret to the one Compose realization the catalog offers; for
 // helm each is written empty, the Secret's name owed, and the drafted Manifest
 // maps core/referenced-secret to helm/k8s-existing-secret. No row writes a value.
+// For compose alone the API server, api, publishes 5001 and the front end,
+// console, 3001, each beneath the comment the kit writes for a published port.
 //
 // 🔴 PLANTED DEFECT: in Secret.Form (aggrega-pdk/go/pkg/importer/secret.go),
 // move the Referenced case above the helm case: the helm row fails, its secrets

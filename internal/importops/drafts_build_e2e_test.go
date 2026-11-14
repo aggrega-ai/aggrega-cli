@@ -55,11 +55,14 @@ const asDraftedRelease = "release.yaml:spec."
 // example's format, the source its walkthrough names to the import, and the
 // values the drafts leave for the user, each with its answer, keyed as
 // draftedScalars keys a place. check, where set, holds what the build rendered to
-// what the source states.
+// what the source states. published are, on compose, every port the rendered
+// Docker Compose file publishes, as Compose writes each, in any order: the ports
+// the drafted Release sets, on the host's loopback address.
 type asDraftedCase struct {
 	format, argument, target string
 	owed                     map[string]string
 	check                    func(t *testing.T, artifacts map[string][]byte)
+	published                []string
 }
 
 // asDraftedCases are the ten documentation examples, each imported for the
@@ -71,12 +74,13 @@ type asDraftedCase struct {
 // variable the source names or the provider's conventional one, so it is not.
 var asDraftedCases = []asDraftedCase{
 	{format: "compose", argument: "compose.yaml", target: "compose", owed: map[string]string{},
-		check: assertTheNotesStackOnCompose},
+		check: assertTheNotesStackOnCompose, published: []string{"127.0.0.1:8080:8080"}},
 	{format: "compose", argument: "compose.yaml", target: "helm", owed: map[string]string{
 		asDraftedRelease + "components.db.features.password.infra.origin": answerSecret,
 	}, check: assertTheNotesStackOnHelm},
 
-	{format: "langflow", argument: "basic-prompting.json", target: "compose", owed: map[string]string{}},
+	{format: "langflow", argument: "basic-prompting.json", target: "compose", owed: map[string]string{},
+		published: []string{"127.0.0.1:7860:7860"}},
 	{format: "langflow", argument: "basic-prompting.json", target: "helm", owed: map[string]string{
 		asDraftedRelease + "components.langflow.features.admin_password.infra.origin":                                     answerSecret,
 		asDraftedRelease + "components.langflow.uses.model.languagemodelcomponent-kboja.features.credential.infra.origin": answerSecret,
@@ -84,21 +88,22 @@ var asDraftedCases = []asDraftedCase{
 
 	{format: "flowise", argument: "support-chat.json", target: "compose", owed: map[string]string{
 		asDraftedRelease + "components.flowise.infra.owner_email": answerOwner,
-	}},
+	}, published: []string{"127.0.0.1:3000:3000"}},
 	{format: "flowise", argument: "support-chat.json", target: "helm", owed: map[string]string{
 		asDraftedRelease + "components.flowise.infra.owner_email":                                        answerOwner,
 		asDraftedRelease + "components.flowise.features.owner_password.infra.origin":                     answerSecret,
 		asDraftedRelease + "components.flowise.uses.model.chatopenai-0.features.credential.infra.origin": answerSecret,
 	}},
 
-	{format: "n8n", argument: "support-agent.json", target: "compose", owed: map[string]string{}},
+	{format: "n8n", argument: "support-agent.json", target: "compose", owed: map[string]string{},
+		published: []string{"127.0.0.1:5678:5678"}},
 	{format: "n8n", argument: "support-agent.json", target: "helm", owed: map[string]string{
 		asDraftedRelease + "components.n8n.uses.model.openai-chat-model.features.credential.infra.origin": answerSecret,
 	}},
 
 	{format: "dify", argument: "support-assistant.yml", target: "compose", owed: map[string]string{
 		asDraftedRelease + "boundaries.platform.aggregates.dify.components.api.infra.owner_email": answerOwner,
-	}},
+	}, published: []string{"127.0.0.1:5001:5001", "127.0.0.1:3001:3000"}},
 	{format: "dify", argument: "support-assistant.yml", target: "helm", owed: difyOwedOnHelm},
 
 	{format: "agent-framework", argument: "support-agent.yaml", target: "compose", owed: map[string]string{
@@ -122,7 +127,7 @@ var asDraftedCases = []asDraftedCase{
 
 	{format: "google-adk", argument: "support_agent", target: "compose", owed: map[string]string{
 		asDraftedRelease + "components.support-agent.infra.image": answerImage,
-	}},
+	}, published: []string{"127.0.0.1:8000:8000"}},
 	{format: "google-adk", argument: "support_agent", target: "helm", owed: map[string]string{
 		asDraftedRelease + "components.support-agent.infra.image":                                                  answerImage,
 		asDraftedRelease + "components.support-agent.uses.model.gemini-2-5-flash.features.credential.infra.origin": answerSecret,
@@ -181,7 +186,9 @@ var difyOwedOnHelm = map[string]string{
 //   - for the Compose example, the stack the source describes: the API given the
 //     database's and the cache's addresses, the database's user, name and password
 //     reference, PostgreSQL 16 with the source's user and database and that
-//     password, and Redis 7.
+//     password, and Redis 7;
+//   - on compose, the rendered stack publishing exactly the case's published
+//     ports, each on the host's loopback address, as the drafted Release sets them.
 //
 // 🔴 PLANTED DEFECTS, each one the test is written to catch:
 //
@@ -206,7 +213,9 @@ var difyOwedOnHelm = map[string]string{
 //     default rather than 7;
 //   - in the kit's Release writer, write an owed infra.image as a comment rather
 //     than an empty value: the agent rows fail, the place expected and neither
-//     reported nor left empty.
+//     reported nor left empty;
+//   - in the kit's Release writer, write no published port for compose: every
+//     compose row expecting a published port fails, its stack publishing nothing.
 func TestEveryImportExampleBuildsAsTheImportDraftsIt(t *testing.T) {
 	t.Parallel()
 	drafted := []string{"aggregate.yaml", ManifestFileName, "release.yaml"}
@@ -286,7 +295,53 @@ func TestEveryImportExampleBuildsAsTheImportDraftsIt(t *testing.T) {
 			if tc.check != nil {
 				tc.check(t, artifacts)
 			}
+			if tc.target == "compose" {
+				var got []string
+				for _, service := range renderedComposeStack(t, artifacts).Services {
+					got = append(got, service.Ports...)
+				}
+				slices.Sort(got)
+				want := slices.Sorted(slices.Values(tc.published))
+				if !slices.Equal(got, want) {
+					t.Errorf("the rendered stack publishes %q, want %q", got, want)
+				}
+			}
 		})
+	}
+}
+
+// TestNoTwoImportExamplesPublishOnePortOnCompose holds the ports the
+// documentation examples publish on compose, as asDraftedCases states what each
+// build renders, to one rule: no host port is published by two of them, so a
+// reader runs several examples on one machine at once. Each case's own row in
+// TestEveryImportExampleBuildsAsTheImportDraftsIt proves its ports are the ones
+// its build renders.
+//
+// 🔴 PLANTED DEFECT: in the Dify importer (plugins/internal/difyimport), set
+// ConsolePort to 3000, and the dify compose row's published port to
+// 127.0.0.1:3000:3000: this test fails, Flowise and the Dify front end both
+// publishing 3000.
+func TestNoTwoImportExamplesPublishOnePortOnCompose(t *testing.T) {
+	t.Parallel()
+	by := map[string]string{}
+	for _, tc := range asDraftedCases {
+		if tc.target != "compose" {
+			continue
+		}
+		for _, p := range tc.published {
+			parts := strings.Split(p, ":")
+			if len(parts) != 3 || parts[0] != "127.0.0.1" {
+				t.Errorf("the %s example publishes %q, not a port on the host's loopback address", tc.format, p)
+				continue
+			}
+			if other, ok := by[parts[1]]; ok {
+				t.Errorf("the %s and %s examples both publish host port %s", other, tc.format, parts[1])
+			}
+			by[parts[1]] = tc.format
+		}
+	}
+	if len(by) == 0 {
+		t.Fatal("no example publishes a port; the case is not reading what it checks")
 	}
 }
 

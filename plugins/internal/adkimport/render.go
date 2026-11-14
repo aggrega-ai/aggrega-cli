@@ -207,7 +207,8 @@ func aggregateText(text string) string {
 }
 
 // adkRelease is the drafted Release, as the plugin kit's Release writer writes
-// it: for each tree, under its instance's key, leaving for the Release the image
+// it: for each tree, under its instance's key, the port it publishes on Docker
+// Compose, leaving for the Release the image
 // running the application and attaching, by reference, the credential the
 // instance presents to its model, with a comment naming the values the tree's
 // configurations hand their tools and
@@ -218,7 +219,8 @@ func adkRelease(apps []*application, parts []*modelPart) importer.ReleaseDraft {
 	draft := importer.ReleaseDraft{}
 	for _, app := range apps {
 		entry := importer.ReleaseEntry{Key: app.key, Left: []importer.LeftItem{importer.LeftImage(
-			"the container image running the application built on ADK, holding its configurations")}}
+			"the container image running the application built on ADK, holding its configurations")},
+			Published: []importer.PublishedPort{{Port: Port}}}
 		if app.part != nil {
 			entry.Secrets = append(entry.Secrets, credentialOf(app))
 		}

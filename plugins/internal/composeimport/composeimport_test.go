@@ -541,6 +541,53 @@ func TestTheSourcesFactsAreTranslatedIntoTheDrafts(t *testing.T) {
 	}
 }
 
+// TestTheHostPortAServicePublishesIsDraftedForCompose imports an API whose ports
+// entry publishes 9000 on the host for its container's 8080, and one whose
+// entry states the container's port alone, for compose, for helm and for no
+// target: infra.port is 8080 on every target; for compose alone the first also
+// sets infra.published_port 9000, the host side as the source states it,
+// beneath the comment the kit writes for it, and the second sets none. An entry
+// publishing 80, a port infra.published_port does not take, sets none either,
+// and the comment above the API's entry names 80 and why.
+//
+// 🔴 PLANTED DEFECT: in serviceEntry (render.go), publish `n` (the container's
+// port) rather than `host`: the compose row fails, published_port 8080.
+func TestTheHostPortAServicePublishesIsDraftedForCompose(t *testing.T) {
+	t.Parallel()
+	// The kit's comment, written out rather than read from the kit, so the case
+	// pins the text the draft writes (a deliberate second copy).
+	const comment = "        # Published on this machine's loopback address, 127.0.0.1: reachable from this machine only, " +
+		"by any process running on it. Delete this line to keep the service internal.\n"
+	const below = "    # The source publishes host port 80, which published_port does not take: it takes 1024 to 65535, " +
+		"so none is drafted. Set infra.published_port to a port in that range to publish the service on this " +
+		"machine's loopback address.\n"
+	for _, row := range []struct {
+		scenario, ports, target, want, note string
+	}{
+		{"host side, compose", `["9000:8080"]`, "compose", "        port: 8080\n" + comment + "        published_port: 9000\n",
+			""},
+		{"host side, helm", `["9000:8080"]`, "helm", "        port: 8080\n", ""},
+		{"host side, no target", `["9000:8080"]`, "", "        port: 8080\n", ""},
+		{"container port alone, compose", `["8080"]`, "compose", "        port: 8080\n", ""},
+		{"a host side below 1024, compose", `["80:8080"]`, "compose", "        port: 8080\n", below},
+	} {
+		source := "name: web\nservices:\n  api:\n    image: ghcr.io/example/api:1.0.0\n    ports: " + row.ports + "\n"
+		out := Import(aggrega.ImportInput{Format: Format, Bytes: []byte(source), Catalog: catalog, Target: row.target},
+			hostParse)
+		release := fileContent(t, out, "release.yaml")
+		if want := "        image: \"ghcr.io/example/api:1.0.0\"\n" + row.want; !strings.Contains(release, want) {
+			t.Errorf("%s: the Release does not hold\n%s\nin\n%s", row.scenario, want, release)
+		}
+		if published := strings.Contains(release, "published_port: "); published != strings.Contains(row.want,
+			"published_port: ") {
+			t.Errorf("%s: the Release writes published_port: %v:\n%s", row.scenario, published, release)
+		}
+		if row.note != "" && !strings.Contains(release, row.note) {
+			t.Errorf("%s: the Release does not name the port it leaves out:\n%s\nin\n%s", row.scenario, row.note, release)
+		}
+	}
+}
+
 // TestEachConnectionOfAServiceIsWrittenUnderAnAliasOfItsOwn imports a Compose
 // file whose API depends on two services and uses a model: each of its three
 // connections is written under the socket and the alias of its target's key, in

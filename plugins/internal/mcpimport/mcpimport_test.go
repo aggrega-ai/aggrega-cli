@@ -326,9 +326,14 @@ func TestAVariableReferenceIsWrittenAsTheTextItIs(t *testing.T) {
 // none as core/referenced-secret-set, its entry's value the reference as written,
 // so the Release passes its own schema, and for helm as core/referenced-secret
 // named by a Secret holding the variable under its own name, its value nowhere.
+// No server's entry sets infra.published_port, on any target.
 //
-// 🔴 PLANTED DEFECT: in realization (render.go), return bridgeRealization for
-// every server: the remote and image rows fail on the Manifest.
+// 🔴 PLANTED DEFECTS:
+//   - in realization (render.go), return bridgeRealization for every server: the
+//     remote and image rows fail on the Manifest;
+//   - in serverEntry (render.go), give the entry
+//     `Published: []importer.PublishedPort{{Port: 8081}}`: the compose row fails,
+//     a server publishing a port.
 func TestEachServerIsMappedByNameToTheRealizationOfHowItRuns(t *testing.T) {
 	t.Parallel()
 	client := []byte(`{"mcpServers":{"github":{"command":"npx","args":["-y","@modelcontextprotocol/server-github"],` +
@@ -341,6 +346,13 @@ func TestEachServerIsMappedByNameToTheRealizationOfHowItRuns(t *testing.T) {
 			out := Import(aggrega.ImportInput{Format: Format, Bytes: client, Target: target}, hostParse)
 			imageOut := Import(aggrega.ImportInput{Format: Format, Bytes: image, Target: target}, hostParse)
 			release := fileContent(t, out, "release.yaml")
+			// No server publishes a port on the host, on any target: a bridged
+			// server checks no caller while holding the user's credentials.
+			for _, drafted := range []string{release, fileContent(t, imageOut, "release.yaml")} {
+				if strings.Contains(drafted, "published_port") {
+					t.Errorf("target %q: a server publishes a port on the host:\n%s", target, drafted)
+				}
+			}
 			var manifest, imageManifest string
 			for _, f := range out.Files {
 				if f.Path == "manifest.yaml" {

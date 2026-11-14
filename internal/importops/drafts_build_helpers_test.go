@@ -381,11 +381,12 @@ func buildAsDrafted(t *testing.T, dir string) map[string][]byte {
 }
 
 // renderedStack is the part of a rendered Docker Compose file the as-drafted
-// proofs read: each service's image and environment.
+// proofs read: each service's image, environment and published ports.
 type renderedStack struct {
 	Services map[string]struct {
 		Image       string            `yaml:"image"`
 		Environment map[string]string `yaml:"environment"`
+		Ports       []string          `yaml:"ports"`
 	} `yaml:"services"`
 }
 

@@ -27,7 +27,8 @@ var flowise = importer.Format{
 // it is reached as the platform delivers its connection (wire.go), the model
 // socket draws a single connection, a referenced model is given the model its
 // node selects (model.go), the image is drafted at the version below, the
-// owner's email, which no chatflow holds, is left for the Release, the owner's
+// platform is published on Docker Compose at the port below, the owner's email,
+// which no chatflow holds, is left for the Release, the owner's
 // password and the model connection's credential are attached by reference,
 // read from FLOWISE_OWNER_PASSWORD and OPENAI_API_KEY, the variable the platform
 // delivers the key as, and, for the compose target, the owner's password is
@@ -46,6 +47,7 @@ var platform = importer.Platform{
 	Standing:        standingOf,
 	Model:           modelOf,
 	Image:           image,
+	Published:       []importer.PublishedPort{{Port: editorPort}},
 	LeftForRelease: []importer.LeftItem{
 		{Path: "infra.owner_email", Text: "the email address of the platform's owner account, required while " +
 			"values.flow_definition is set"},
@@ -59,6 +61,10 @@ var platform = importer.Platform{
 // standard library's Flowise Recipes are known to run. A chatflow states no
 // version of Flowise, so no other is named.
 const image = "flowiseai/flowise:3.1.3"
+
+// editorPort is the port a draft publishes the platform on, on Docker Compose:
+// the one Flowise serves on inside its container.
+const editorPort = 3000
 
 // detect is how a Flowise flow is recognised when an import names no format,
 // declared in describe() and recorded on the importer's Plugin entity. A Flowise

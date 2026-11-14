@@ -87,9 +87,10 @@ type modelVars struct {
 }
 
 // port is one entry of a service's ports: its text as written, the key Compose
-// merges entries by, and the port the container listens on.
+// merges entries by, the port it publishes on the host, empty where it states
+// none, and the port the container listens on.
 type port struct {
-	text, key, target string
+	text, key, published, target string
 }
 
 // volume is one entry of a service's volumes: its text as written and the path
@@ -437,7 +438,8 @@ func portOf(raw json.RawMessage) port {
 	if protocol == "" {
 		protocol = "tcp"
 	}
-	return port{text: text, key: ip + "|" + published + "|" + target + "|" + protocol, target: target}
+	return port{text: text, key: ip + "|" + published + "|" + target + "|" + protocol, published: published,
+		target: target}
 }
 
 // volumeOf reads one entry of volumes: in the short syntax, [source:]target with
