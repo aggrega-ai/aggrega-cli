@@ -1305,7 +1305,8 @@ func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) 
 	// Model node, wired to the model socket and selecting no model provider,
 	// reached other than through its connection.
 	var codes []string
-	for _, d := range res.Diagnostics {
+	reported := diagnosticsBesideTheOwed(res)
+	for _, d := range reported {
 		if d.Code == "part-address-in-flow" {
 			codes = append(codes, d.Code+" "+d.SourceRef)
 			continue
@@ -1314,12 +1315,12 @@ func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) 
 	}
 	if !slices.Equal(codes, []string{"carriage-returns-rewritten", "part-address-in-flow " + promptingNodeID}) {
 		t.Fatalf("the import raised %+v, want the one warning naming the carriage returns and the model part's report",
-			res.Diagnostics)
+			reported)
 	}
 	if want := "the flow holds " + strconv.Itoa(returns) +
 		" carriage return(s), each written as a line feed in values.flow_definition, since a YAML literal block cannot " +
-		"carry one: a JSON reader reads the carried flow as the same value"; res.Diagnostics[0].Message != want {
-		t.Errorf("the warning reads %q, want %q", res.Diagnostics[0].Message, want)
+		"carry one: a JSON reader reads the carried flow as the same value"; reported[0].Message != want {
+		t.Errorf("the warning reads %q, want %q", reported[0].Message, want)
 	}
 }
 

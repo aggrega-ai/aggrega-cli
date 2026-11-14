@@ -417,8 +417,9 @@ func TestTheNodesLayoutDraftsEveryFixtureAsItsGolden(t *testing.T) {
 			t.Parallel()
 			rw, _ := catalogFolderImportWorkspaceAttaching(t, importopstest.NodesLayout())
 			res := importFlow(t, rw, fx.path)
-			if len(res.Diagnostics) != 0 {
-				t.Errorf("the import raised %+v; the node-by-node draft of this source raises none", res.Diagnostics)
+			if got := diagnosticsBesideTheOwed(res); len(got) != 0 {
+				t.Errorf("the import raised %+v; the node-by-node draft of this source raises none but the values "+
+					"its drafts owe", got)
 			}
 
 			// The goldens hold what the importer drafts; the record the import writes

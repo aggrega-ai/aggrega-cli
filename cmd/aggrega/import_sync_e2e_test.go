@@ -35,14 +35,20 @@ func syncSources(t *testing.T, root string) (first, changed string) {
 	if bytes.Count(body, []byte(from)) != 1 {
 		t.Fatalf("the fixture holds %q %d times; the change needs it once", from, bytes.Count(body, []byte(from)))
 	}
+	// The draft with no target leaves its Release's spec.manifest empty, a value it
+	// owes; the answers file beside both sources answers it, so the imports below
+	// owe nothing and each run's outcome is the sync's alone. The workspace is
+	// offline, so a Release owing nothing is not pulled.
 	for name, content := range map[string][]byte{
-		"flow.json":         body,
-		"flow-changed.json": bytes.Replace(body, []byte(from), []byte(to), 1),
+		"flow.json":               body,
+		"flow-changed.json":       bytes.Replace(body, []byte(from), []byte(to), 1),
+		importops.AnswersFileName: []byte("release.yaml:\n  spec.manifest: drafted\n"),
 	} {
 		if err := os.WriteFile(filepath.Join(root, name), content, 0o644); err != nil {
 			t.Fatalf("write the source %s: %v", name, err)
 		}
 	}
+	t.Setenv("AGGREGA_OFFLINE", "1")
 	return "flow.json", "flow-changed.json"
 }
 

@@ -77,9 +77,10 @@ type InjectMappingDelivery struct {
 	Mapping      string
 	Keys         redact.DeliveryKeys
 
-	// Mechanisms pairs each mechanism the host component's own injection block
-	// declares with whether this mapping's rendered output carries a top-level
-	// key for it, and with the FeatureRecipe the mapping was read from.
+	// Mechanisms pairs each custom mechanism the host component's own injection
+	// block declares — any beyond env, file and arg — with whether this mapping's
+	// rendered output carries a top-level key for it, and with the FeatureRecipe
+	// the mapping was read from.
 	//
 	// It travels with the keys rather than beside them for the reason the keys
 	// travel with the authored text: both halves come out of one evaluation, and
@@ -168,8 +169,8 @@ type InjectMappingDelivery struct {
 // the rendered overlay while what the mapping READ is knowable only from its
 // authored text, and this is the one point where both are in scope.
 //
-// Each entry also carries the pairing between the mechanisms the host component
-// declared and the mechanisms that attachment's rendered output named. The
+// Each entry also carries the pairing between the custom mechanisms the host
+// component declared and the mechanisms that attachment's rendered output named. The
 // verdict on that pairing is not reached here: a mechanism the output leaves
 // unnamed is a delivery this attachment silently drops, and the rule declared
 // over the recorded pairing is what refuses it. Reaching the verdict here would
@@ -191,16 +192,14 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 				"phase A: authored-mechanism collection",
 			)
 		}
+		// Only the custom mechanisms are paired. A mapping's output is merged over
+		// the component's own deliveries rather than in place of them, so what the
+		// component delivers under env, file or arg reaches it whether or not the
+		// mapping names that mechanism: a component delivering a file of its own
+		// while an attachment's mapping adds environment variables drops nothing.
+		// A custom mechanism is one only the component's own plumbing reads, which
+		// is why a mapping that names mechanisms has to produce a value for it.
 		if rawBlock != nil {
-			if rawBlock.Env != nil {
-				authored = append(authored, "env")
-			}
-			if rawBlock.File != nil {
-				authored = append(authored, "file")
-			}
-			if rawBlock.Arg != nil {
-				authored = append(authored, "arg")
-			}
 			for k := range rawBlock.Additional.All() {
 				authored = append(authored, k)
 			}
@@ -303,10 +302,10 @@ func ExecutePhaseA(ctx *types.TemplateContext, featureRecipes []FeatureRecipeRef
 	return delivered, nil
 }
 
-// authoredMechanismsMapped pairs each mechanism the host component's own
-// injection block declares with whether one attachment's rendered injectMapping
-// output named it, and stamps the FeatureRecipe the output was read from onto
-// each pair.
+// authoredMechanismsMapped pairs each custom mechanism the host component's own
+// injection block declares — authored, as [ExecutePhaseA] collects it — with
+// whether one attachment's rendered injectMapping output named it, and stamps the
+// FeatureRecipe the output was read from onto each pair.
 //
 // The authored order is kept, because it is the order the component wrote its
 // mechanisms in and so the order an author reads them back in. The rendered

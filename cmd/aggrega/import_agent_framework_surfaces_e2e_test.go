@@ -63,9 +63,7 @@ func TestAnAgentFrameworkDeclarativeAgentIsDraftedAlikeAtEverySurface(t *testing
 		root, _ := catalogFolderWorkspace(t, true)
 		importopstest.WriteSource(t, filepath.Join(root, filepath.FromSlash(agentFrameworkSourceName)), string(body))
 		answer := callAssistantTool(t, root, "import", map[string]any{"source": agentFrameworkSourceName})
-		if answer.isError {
-			t.Fatalf("the import was refused: %s", answer.text)
-		}
+		assertImportToolDrafted(t, answer)
 		var payload struct {
 			Format  string   `json:"format"`
 			Written []string `json:"written"`

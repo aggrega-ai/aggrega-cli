@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"slices"
 
@@ -497,20 +498,7 @@ func (s *Server) fillDependencies(ctx context.Context, release string, opts pipe
 	}
 
 	var notices bytes.Buffer
-	res, err := pullops.Run(ctx, pullops.Config{
-		Workspace:       s.resolvedWorkspace,
-		ReleasePath:     releasePath,
-		CompilerVersion: s.compilerVersion,
-		Toolchain:       s.toolchain,
-		RenderOptions:   opts,
-		DiagOut:         &notices,
-		// The runs the fill makes show their advisories where this process says
-		// what it has to say, apart from the account the answer carries.
-		Display: s.runDisplay(),
-		// No prompt is supplied, on the same terms every operation here runs
-		// under: nobody is watching this stream, so a fork that would have been
-		// put to a person halts naming what to supply.
-	})
+	res, err := pullops.Run(ctx, s.dependencyResolution(releasePath, opts, &notices))
 	if err != nil {
 		return nil, nil, nil, &jsonRPCError{
 			Code:    errEntityNotResolvable,
@@ -526,6 +514,28 @@ func (s *Server) fillDependencies(ctx context.Context, release string, opts pipe
 		conserved = nil
 	}
 	return noticeLines(notices.String()), &report, conserved, nil
+}
+
+// dependencyResolution is the dependency resolution this session runs for the
+// Release at releasePath: over the workspace the session opened, under this
+// binary's identity, with the discovery render under opts and the resolution's
+// own account written to notices. A build's fill and an import's pull both run
+// it, so the two pin exactly what the other would.
+func (s *Server) dependencyResolution(releasePath string, opts pipeline.Options, notices io.Writer) pullops.Config {
+	return pullops.Config{
+		Workspace:       s.resolvedWorkspace,
+		ReleasePath:     releasePath,
+		CompilerVersion: s.compilerVersion,
+		Toolchain:       s.toolchain,
+		RenderOptions:   opts,
+		DiagOut:         notices,
+		// The runs the resolution makes show their advisories where this process
+		// says what it has to say, apart from the account the answer carries.
+		Display: s.runDisplay(),
+		// No prompt is supplied, on the same terms every operation here runs
+		// under: nobody is watching this stream, so a fork that would have been
+		// put to a person halts naming what to supply.
+	}
 }
 
 // dependencyResolutionNotices carries the fill's own lines onto the answer under

@@ -307,9 +307,13 @@ func TestImportWritesTheDraftsAnImporterFromTheCatalogFolderProduced(t *testing.
 
 	cascade := &recordingCascade{}
 	res, err := Import(context.Background(), rw, Options{
-		SourcePath:    src.source,
-		SourceName:    filepath.Base(src.source),
-		OutputDir:     outputDir,
+		SourcePath: src.source,
+		SourceName: filepath.Base(src.source),
+		OutputDir:  outputDir,
+		// The source is a committed fixture read where it sits, so the answers file
+		// the drafts owe values in is named in the test's own directory rather than
+		// written beside it.
+		Answers:       filepath.Join(t.TempDir(), AnswersFileName),
 		ResolvePlugin: cascade.resolve,
 	})
 	if err != nil {

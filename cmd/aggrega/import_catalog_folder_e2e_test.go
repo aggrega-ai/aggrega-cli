@@ -26,6 +26,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -339,9 +340,16 @@ func assertImportCommandDraftsTheSharedResult(t *testing.T, root, external, form
 		args = append(args, "--dry-run")
 	}
 	code, stdout, stderr, process := runImportAtTheRoot(t, root, args...)
-	if code != 0 {
-		t.Fatalf("aggrega import exited %d\nstdout:\n%s\ncommand error writer:\n%s\nprocess error stream:\n%s",
-			code, stdout, stderr, process)
+	// A write whose drafts still owe values nobody was asked for ends with the one
+	// sentence naming how many and where, after everything else it does; a dry
+	// run, and drafts owing nothing, end successfully.
+	owed := len(shared.Owed) > 0 && !dryRun
+	if (code != 0) != owed {
+		t.Fatalf("aggrega import exited %d (drafts owing %d value(s))\nstdout:\n%s\ncommand error writer:\n%s\n"+
+			"process error stream:\n%s", code, len(shared.Owed), stdout, stderr, process)
+	}
+	if owed && !strings.Contains(process, fmt.Sprintf("%d value", len(shared.Owed))) {
+		t.Errorf("the refusal does not say how many values are owed:\n%s", process)
 	}
 
 	// The preamble names this run's own root; what follows it is whatever the
@@ -404,6 +412,15 @@ func assertImportCommandDraftsTheSharedResult(t *testing.T, root, external, form
 		if string(got) != f.Content {
 			t.Errorf("%s on disk differs from the shared operation's draft:\n%s\nwant\n%s", f.Path, got, f.Content)
 		}
+	}
+	// The answers file listing the owed values is written beside the source, which
+	// sits outside the workspace, so the workspace's tree does not show it.
+	if owed {
+		answers, err := filepath.Rel(root, importops.DefaultAnswersPath(external))
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantOut.WriteString("wrote " + answers + "\n")
 	}
 	if stdout != wantOut.String() {
 		t.Errorf("the standard output stream carried %q; want %q", stdout, wantOut.String())
@@ -496,9 +513,10 @@ func TestTheAssistantImportToolRunsAnImporterFromTheCatalogFolder(t *testing.T) 
 	}
 
 	answer := callAssistantTool(t, root, "import", map[string]any{"source": "flow.json"})
-	if answer.isError {
-		t.Fatalf("the import was refused: %s", answer.text)
+	if answer.isError != (len(shared.Owed) > 0) {
+		t.Fatalf("the call failed %v where the drafts owe %d value(s): %s", answer.isError, len(shared.Owed), answer.text)
 	}
+	assertImportToolDrafted(t, answer)
 	var payload struct {
 		Written []string `json:"written"`
 	}
@@ -548,6 +566,21 @@ func TestTheSessionImportMethodRunsAnImporterFromTheCatalogFolder(t *testing.T) 
 		t.Errorf("the answer names %q as the output directory, want %q", result.OutputDir, want)
 	}
 	assertDraftsMatchTheSharedImport(t, filepath.Join(root, "drafts"), result.Written, shared)
+}
+
+// owedRefusalText opens the import tool's answer to drafts that still owe values
+// nobody was asked for: the count, then what they are.
+var owedRefusalText = regexp.MustCompile(`^\d+ values? the drafts leave empty (is|are) still owed`)
+
+// assertImportToolDrafted holds the assistant's import tool to having drafted:
+// its answer succeeds, or fails with the one sentence a call whose drafts still
+// owe values fails with — the drafts are written either way. Any other failure
+// fails the test.
+func assertImportToolDrafted(t *testing.T, answer assistantToolAnswer) {
+	t.Helper()
+	if answer.isError && !owedRefusalText.MatchString(answer.text) {
+		t.Fatalf("the import was refused: %s", answer.text)
+	}
 }
 
 // assertDraftsMatchTheSharedImport holds what a surface wrote to the shared

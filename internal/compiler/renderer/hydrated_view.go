@@ -412,8 +412,8 @@ func (v *hydratedView) AttachmentArtifactImportedPath(
 	return path
 }
 
-// AttachmentInjectMappingMechanisms returns the mechanisms the host component's
-// own injection block declares, paired with whether one attachment's rendered
+// AttachmentInjectMappingMechanisms returns the custom mechanisms the host
+// component's own injection block declares, paired with whether one attachment's rendered
 // injectMapping output named each of them, and with the FeatureRecipe that output
 // was read from.
 //

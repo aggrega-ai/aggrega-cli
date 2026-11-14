@@ -667,6 +667,109 @@ spec:
         example/x:1.0.0: compose/x-server
 `
 
+// OwingComponent and OwingFeature are catalog entities whose schemas declare the
+// values the owing drafts leave empty: a value and two infra keys on the
+// Component, none of them required, and a sensitive infra key on the Feature.
+const OwingComponent = "apiVersion: " + apiversion.APIVersion + "\n" + `kind: Component
+metadata:
+  name: example/owing
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: "server"
+spec:
+  schema:
+    values:
+      model: { type: string, description: "The model the server calls." }
+    infra:
+      image: { type: string, description: "Container image running the server." }
+      note: { type: string }
+`
+
+// OwingFeature is the secret-kind Feature the owing drafts attach.
+const OwingFeature = "apiVersion: " + apiversion.APIVersion + "\n" + `kind: Feature
+metadata:
+  name: example/credential
+  version: "1.0.0"
+  labels:
+    feature.aggrega.ai/kind: secret
+spec:
+  schema:
+    infra:
+      origin: { type: string, sensitive: true, description: "Where the credential comes from." }
+`
+
+// OwingAggregate and OwingRelease are drafts leaving values empty that no source
+// holds: an instance of example/owing whose model is empty, carrying an
+// example/credential attachment, and a Release naming no Manifest whose entry
+// leaves the image and the credential's origin empty. A key no schema declares
+// written empty (extra), a declared key written with a value (note), and an empty
+// string inside a block scalar (definition) are not owed.
+const OwingAggregate = "apiVersion: " + apiversion.APIVersion + "\n" + `kind: Aggregate
+metadata:
+  name: owing
+  version: 0.1.0
+spec:
+  components:
+    api:
+      type: example/owing:1.0.0
+      values:
+        model: ""
+        definition: |
+          text: ""
+      features:
+        cred:
+          type: example/credential:1.0.0
+`
+
+// OwingRelease is the Release drafted beside OwingAggregate.
+const OwingRelease = "apiVersion: " + apiversion.APIVersion + "\n" + `kind: Release
+metadata:
+  name: owing
+  environment: development
+  version: 0.1.0
+spec:
+  aggregate: owing
+  manifest: ""
+  components:
+    api:
+      infra:
+        # Left for the Release: the image the server runs.
+        image: ""
+        note: "kept"
+        extra: ""
+      features:
+        cred:
+          infra:
+            origin: ""
+`
+
+// OwingSource is the draft-set source drafting OwingAggregate as aggregate.yaml,
+// then OwingRelease as release.yaml.
+func OwingSource() string {
+	return DraftSetBody(abi.ScaffoldFile{Path: "aggregate.yaml", Content: OwingAggregate},
+		abi.ScaffoldFile{Path: "release.yaml", Content: OwingRelease})
+}
+
+// LayOwingCatalog lays down at dir, inside the workspace rooted at workspaceRoot,
+// the draft-composition catalog with the draft-set importer (LayDraftComposerCatalog)
+// and OwingComponent and OwingFeature beside it.
+func LayOwingCatalog(t *testing.T, workspaceRoot, dir string) {
+	t.Helper()
+	LayDraftComposerCatalog(t, workspaceRoot, dir)
+	for rel, body := range map[string]string{
+		"components/owing.yaml":    OwingComponent,
+		"features/credential.yaml": OwingFeature,
+	} {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("lay %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("lay %s: %v", rel, err)
+		}
+	}
+}
+
 // DraftComposerSource is the draft-set source a draft-composition case imports:
 // DraftedAggregate as aggregate.yaml, then DraftedRelease as release.yaml.
 func DraftComposerSource() string {

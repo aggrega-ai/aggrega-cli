@@ -92,9 +92,7 @@ func TestACrewAIProjectIsDraftedAlikeAtEverySurface(t *testing.T) {
 		root, _ := catalogFolderWorkspace(t, true)
 		layCrewAIProject(t, filepath.Join(root, "project"))
 		answer := callAssistantTool(t, root, "import", map[string]any{"source": "project"})
-		if answer.isError {
-			t.Fatalf("the import was refused: %s", answer.text)
-		}
+		assertImportToolDrafted(t, answer)
 		var payload struct {
 			Format  string   `json:"format"`
 			Written []string `json:"written"`

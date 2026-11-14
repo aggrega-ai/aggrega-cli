@@ -117,9 +117,7 @@ func TestAGoogleADKApplicationIsDraftedAlikeAtEverySurface(t *testing.T) {
 		root, _ := catalogFolderWorkspace(t, true)
 		layGoogleADKApplication(t, filepath.Join(root, "application"))
 		answer := callAssistantTool(t, root, "import", map[string]any{"source": "application"})
-		if answer.isError {
-			t.Fatalf("the import was refused: %s", answer.text)
-		}
+		assertImportToolDrafted(t, answer)
 		var payload struct {
 			Format  string   `json:"format"`
 			Written []string `json:"written"`

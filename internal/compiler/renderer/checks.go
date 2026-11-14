@@ -1270,14 +1270,15 @@ const attachmentMappingKeyAdvice = "Give one of the two attachments a key of its
 	"chosen by a value, attach that attachment in the Aggregate with the value, and keep giving the rest " +
 	"from the Release."
 
-// AttachmentInjectMappingCoversEveryAuthoredMechanism reports each delivery
-// mechanism the host component's own injection block declares that one
-// attachment's rendered injectMapping output carries no top-level key for.
+// AttachmentInjectMappingCoversEveryAuthoredMechanism reports each custom
+// delivery mechanism the host component's own injection block declares — one
+// beyond env, file and arg — that one attachment's rendered injectMapping output
+// carries no top-level key for.
 //
 // A FeatureRecipe's injectMapping rewrites the pipe the host component delivers
 // into, and it names the mechanisms it writes as the top-level keys of its own
-// rendered output. A component declaring a mechanism the output does not name has
-// therefore asked for a delivery this attachment drops on the floor: the merge
+// rendered output. A component declaring a custom mechanism the output does not
+// name has therefore asked for a delivery this attachment drops on the floor: the merge
 // applies what the output carried and the declaration reaches nothing. The build
 // halts rather than rendering against a pipe missing a mechanism the author
 // dictated, and the author resolves it by writing the mechanism's key into the

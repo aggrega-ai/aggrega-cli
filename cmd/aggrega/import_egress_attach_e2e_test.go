@@ -125,9 +125,7 @@ func TestEveryImportSurfaceAttachesTheOutboundOnlyFeatureAlike(t *testing.T) {
 		root := egressAttachingWorkspace(t)
 		seedSource(t, root, "flow.json", body)
 		answer := callAssistantTool(t, root, "import", map[string]any{"source": "flow.json"})
-		if answer.isError {
-			t.Fatalf("the import was refused: %s", answer.text)
-		}
+		assertImportToolDrafted(t, answer)
 		var payload struct {
 			Written []string `json:"written"`
 		}

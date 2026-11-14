@@ -4,6 +4,7 @@
 package serve
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,7 +14,9 @@ import (
 	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
+	"github.com/aggrega-ai/aggrega-cli/internal/pullops"
 )
 
 // importParams is what aggrega/import takes.
@@ -84,6 +87,11 @@ import (
 // catalog snapshot the workspace's default registry publishes to be fetched and
 // read, and held from then on. It is handed to the import as sent, so the session
 // refreshes exactly as the command and the assistant's tool do.
+//
+// answers is the command line's --answers, carried as a field: the answers file
+// the values the drafts owe are read from and written to. It is written to, so it
+// is resolved inside the workspace this session opened, as outputDir is; absent
+// hands the import none, and the import reads the one its own default names.
 type importParams struct {
 	Source    string `json:"source"`
 	OutputDir string `json:"outputDir"`
@@ -92,6 +100,7 @@ type importParams struct {
 	DryRun    bool   `json:"dryRun"`
 	Sync      bool   `json:"sync"`
 	Upgrade   bool   `json:"upgrade"`
+	Answers   string `json:"answers"`
 }
 
 // importedFile is one drafted file on the wire: the path it is for, relative to
@@ -265,10 +274,21 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		}
 	}
 
+	answers := ""
+	if params.Answers != "" {
+		if answers, err = s.workspacePath("answers", params.Answers); err != nil {
+			return s.writeRefusal(ctx, req.ID, jsonRPCInvalidParams, "import: ", err)
+		}
+	}
+
 	// The format the request named, or none, is handed on as it is: the import
 	// settles it, recognising an unnamed one from the signatures of the importers
 	// it resolves among. The source is handed on as the path resolved, a
 	// file or a directory, and the import reads it.
+	//
+	// Nothing is asked, and a value the drafts owe is reported among the
+	// diagnostics. The drafted Release's dependencies are pulled by the one
+	// resolution a build's fill performs here.
 	delivery := authoredcontent.DeliveryFor(params.DryRun)
 	res, err := importops.Import(ctx, s.resolvedWorkspace, importops.Options{
 		SourcePath:    sourcePath,
@@ -280,6 +300,12 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		Upgrade:       params.Upgrade,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
+		Answers:       answers,
+		Pull: func(ctx context.Context, release string) ([]string, error) {
+			var notices bytes.Buffer
+			_, err := pullops.Run(ctx, s.dependencyResolution(release, pipeline.Options{}, &notices))
+			return noticeLines(notices.String()), err
+		},
 	})
 	if ctx.Err() != nil {
 		return nil
@@ -337,13 +363,33 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 	// names each removal in its drift as it plans it; under dryRun the same entry
 	// names the file a write would delete. A second list would be a second home for
 	// that one fact.
+	//
+	// Each value still owed reaches this answer among the diagnostics, as a warning
+	// naming the file, the key and what it is, and the sentence the command line
+	// refuses with — how many values are owed and where they are written — closes
+	// the diagnostics, so a client reads the outcome where it reads every other
+	// finding. A pull that failed once the drafts were written closes them the same
+	// way, beside the files written and the pull's own account.
+	//
+	// projection-omits internal/importops.Result.Answers: the answers file is named
+	// by the sentence closing the diagnostics wherever the drafts still owe a value,
+	// and one whose every value is answered is the file the record names.
+	//
+	// projection-omits internal/importops.Result.AnswersWritten: whether it was
+	// written follows from the delivery this request chose, which the client holds.
+	diagnostics := importDiagnostics(res.Diagnostics)
+	for _, refusal := range []error{res.OwedRefusal(), res.PullRefusal()} {
+		if refusal != nil {
+			diagnostics = append(diagnostics, importDiagnostic{Severity: abi.SeverityWarn, Message: refusal.Error()})
+		}
+	}
 	return s.writeResult(ctx, req.ID, importResult{
 		Format:      res.Format,
 		OutputDir:   res.OutputDir,
 		Written:     importWrittenPaths(res, delivery),
 		Files:       importedFiles(res.Files),
 		Drift:       importDrifts(res.Drift),
-		Diagnostics: importDiagnostics(res.Diagnostics),
+		Diagnostics: diagnostics,
 		Decisions:   importDecisions(res.Decisions),
 		Halted:      res.Halted(),
 	})

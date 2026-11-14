@@ -6,7 +6,9 @@ package importops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -14,6 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -142,6 +145,34 @@ func (e *ExistingAggregateError) Error() string {
 // only the registry can say which snapshot is the newest. Where the workspace names
 // a catalog folder no snapshot is read, and it changes nothing.
 //
+// Answers is the answers file on this host ([AnswersFileName]) the values the
+// drafts leave empty that no source can hold are read from and written to. Empty
+// is the one the record beside the drafts names, where an earlier import into the
+// same directory wrote one, and otherwise [DefaultAnswersPath] of the source. Every
+// surface hands the path it was given here, resolved by its own rule for which
+// paths it may name, so the file is read and written in one place for all of them.
+//
+// Ask, where set, puts each value the answers file leaves unanswered to a person,
+// one at a time, and the answers are written into the drafts and into the answers
+// file. Only a surface with a person at a terminal sets it; with it unset nothing is
+// asked, and every value still owed is reported among the diagnostics and as
+// [Result.OwedRefusal]. A reporting delivery asks nothing either, since it would
+// keep no answer.
+//
+// Pull, where set, is how the surface pulls the dependencies of a Release, as
+// `aggrega pull` does: an import that drafted a Release, writes, finished and owes
+// nothing pulls that Release's dependencies through it once its files are written,
+// so the drafts validate and build at once. Drafts still owing a value are not
+// pulled: the pull would resolve a Release the reader has yet to finish, and the
+// refusal naming what is owed is what they need. A workspace under the offline
+// posture pulls nothing, and a diagnostic names the pull to run. It is a seam
+// rather than a call because the pull is the dependency resolution every surface
+// reaches through its own adapter, and the import reaches it the same way a
+// build's automatic fill does. It returns the lines of its own account the
+// surface did not show itself, each carried among the diagnostics as information,
+// and its failure is the import's [Result.PullRefusal] rather than an error, so
+// the result still says what was written.
+//
 // There is no field for the importer's with-config. What an importer is handed
 // is read by [Import] from the workspace's own plugins.importer attachments,
 // once the importer is resolved, because which attachment's inputs apply
@@ -158,6 +189,9 @@ type Options struct {
 	Delivery      authoredcontent.Delivery
 	ResolvePlugin PluginBytesResolver
 	BeforeWrite   func(Result)
+	Answers       string
+	Ask           Ask
+	Pull          func(ctx context.Context, release string) ([]string, error)
 }
 
 // Result is what one import produced.
@@ -204,15 +238,80 @@ type Options struct {
 // guessed, so every surface carries it in its answer, whatever the delivery and
 // whether or not the import halted. It is empty for an importer that reports no
 // decisions.
+//
+// Owed is every value the drafts still leave empty that no source could supply
+// and no answer did, in the order the drafts are written ([Owed]); each is also
+// among the Diagnostics, as a warning, so a surface reporting diagnostics reports
+// them. Answers is the answers file on this host they are read from and written
+// in, empty where the drafts owe nothing, and AnswersWritten reports whether the
+// import wrote it — an answers file already holding what it would be written with
+// is not written again. [Result.PullRefusal] says why a pull the import made of
+// the drafted Release's dependencies failed; a pull that succeeded is the
+// lockfile beside the Release, and its own account is among the Diagnostics.
 type Result struct {
-	Format      string
-	OutputDir   string
-	Files       []abi.ScaffoldFile
-	Written     []string
-	Drift       []Drift
-	Removed     []string
-	Diagnostics []abi.Diagnostic
-	Decisions   []abi.ImportDecision
+	Format         string
+	OutputDir      string
+	Files          []abi.ScaffoldFile
+	Written        []string
+	Drift          []Drift
+	Removed        []string
+	Diagnostics    []abi.Diagnostic
+	Decisions      []abi.ImportDecision
+	Owed           []Owed
+	Answers        string
+	AnswersWritten bool
+
+	// pulled is set where the import pulled the drafted Release's dependencies.
+	pulled bool
+
+	// answersHeld is set once the answers file holds every owed key, written by
+	// this run or already as it would be written.
+	answersHeld bool
+
+	// reported is set under a reporting delivery, which writes nothing and so
+	// refuses nothing for what the drafts owe.
+	reported bool
+
+	// pullFailed is the failure of the pull the import made, nil where it made
+	// none or the pull succeeded.
+	pullFailed *PullError
+}
+
+// PullRefusal returns the failure of the pull an import made of its drafted
+// Release's dependencies once its files were written ([PullError]), and nil where
+// it made none or the pull succeeded. The files are written either way, and the
+// result names them, so a surface reports what reached disk beside the refusal.
+func (r Result) PullRefusal() error {
+	if r.pullFailed == nil {
+		return nil
+	}
+	return r.pullFailed
+}
+
+// AnswersPath names the answers file as the paths written beside it are named:
+// relative to the output directory, by the rule the record's pointer is written
+// with, and empty where the drafts owe nothing.
+func (r Result) AnswersPath() string {
+	if r.Answers == "" {
+		return ""
+	}
+	return filepath.FromSlash(answersPointer(r.OutputDir, r.Answers))
+}
+
+// OwedRefusal returns the refusal of a writing import whose drafts still owe
+// values ([OwedValuesError]), naming how many and where they are written, and nil
+// when they owe none. Every surface with nobody to ask reports its import's
+// outcome through it, so the command line's exit status and a protocol answer
+// cannot come to disagree about whether the drafts are complete.
+//
+// A reporting delivery is refused nothing for what its drafts owe: it writes
+// nothing, the answers file included, and the owed values are among its
+// diagnostics, so what it reports is what a write would leave owed.
+func (r Result) OwedRefusal() error {
+	if len(r.Owed) == 0 || r.reported {
+		return nil
+	}
+	return &OwedValuesError{Owed: r.Owed, Answers: r.Answers, Written: r.answersHeld}
 }
 
 // Halted reports whether any diagnostic is of halt severity.
@@ -422,15 +521,15 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	// nothing — it is written over with the record this import writes — while a
 	// sync's was refused above. A seam over catalog folders, and a harness standing
 	// in for the seam, read no snapshot and no record for one.
+	prior := rec
+	if !opts.Sync {
+		prior, _, _ = readRecord(writescope.RootFor(rw.Root(), outputDir), outputDir)
+	}
 	var snapshot catalogSnapshot
 	if seam.readSnapshot != nil {
 		read := catalogSnapshotRead{upgrade: opts.Upgrade}
-		pinning := rec
-		if !opts.Sync {
-			pinning, _, _ = readRecord(writescope.RootFor(rw.Root(), outputDir), outputDir)
-		}
-		if pinning != nil {
-			read.pinned = pinning.CatalogSnapshot
+		if prior != nil {
+			read.pinned = prior.CatalogSnapshot
 		}
 		if seam, snapshot, err = seam.readSnapshot(ctx, read); err != nil {
 			return Result{}, err
@@ -502,12 +601,29 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 			composed...)
 	}
 
+	// What the drafts still leave empty is read off the composed draft, answered
+	// from the answers file and, where a person is asked, from them, and the
+	// answers are written into the drafts — all before the record of them is
+	// composed, so a re-run given the same answers drafts the same bytes and a
+	// sync finds the drafts in step.
+	owing, err := answerDrafts(outputDir, prior, opts, seam.Recipes, draft)
+	if err != nil {
+		return Result{}, err
+	}
+	draft = owing.files
+	diagnostics = append(diagnostics, owing.diagnostics...)
+
 	res := Result{
 		Format:      format,
 		OutputDir:   outputDir,
 		Files:       draft,
 		Diagnostics: diagnostics,
 		Decisions:   imported.Decisions,
+		Owed:        owing.remaining,
+		reported:    opts.Delivery.Reports(),
+	}
+	if owing.path != "" {
+		res.Answers = owing.path
 	}
 	// The record of what the import writes is composed from the draft, and placed
 	// after it, so it is judged with the drafted paths below.
@@ -515,7 +631,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	files := draft
 	if len(drafted) > 0 {
 		files = append(append(make([]abi.ScaffoldFile, 0, len(files)+1), files...),
-			recordScaffold(target, snapshot.digest, drafted))
+			recordScaffold(target, snapshot.digest, owing.pointer, drafted))
 	}
 	// Every drafted path is judged before anything is written and before anything
 	// is reported, so a reporting delivery refuses exactly what the write refuses.
@@ -525,8 +641,17 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	if err := checkRecordPlace(outputDir, draft); err != nil {
 		return Result{}, err
 	}
+	// The offline posture is known now, so a pull it will not let the import make
+	// is named among the diagnostics a surface reports before anything is written.
+	release := draftedReleasePlace(outputDir, draft)
+	res.Diagnostics = append(res.Diagnostics, pullNotice(opts, rw, res, release)...)
 	if opts.Sync {
-		return syncImport(rw.Root(), outputDir, target, snapshot.digest, opts, res, drafted, rec, recordOnDisk)
+		res, err = syncImport(rw.Root(), outputDir, target, snapshot.digest, owing.pointer, opts, res, drafted, rec,
+			recordOnDisk)
+		if err != nil {
+			return Result{}, err
+		}
+		return finishImport(ctx, rw, opts, res, owing, release)
 	}
 	// An Aggregate already at a drafted path is judged after the paths are, so it
 	// is read only at a place already held inside the root, and before either
@@ -547,6 +672,161 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 	res.Written = written
+	return finishImport(ctx, rw, opts, res, owing, release)
+}
+
+// owing is what answering the drafts' owed values produced: the drafts with the
+// answers written in, the values still owed, the diagnostics naming them, and the
+// answers file — its place on this host, empty where the drafts owe nothing, its
+// pointer from the output directory, and the content it is written with, empty
+// where it already holds exactly that.
+type owing struct {
+	files       []abi.ScaffoldFile
+	remaining   []Owed
+	diagnostics []abi.Diagnostic
+	path        string
+	pointer     string
+	content     string
+}
+
+// answerDrafts lists what the drafts owe ([readOwed]), answers it from the
+// answers file — the one opts names, the one the record of an earlier import into
+// the same directory names, or the one beside the source — and through opts.Ask
+// where it is set and the delivery writes, and composes the answers file that
+// lists every owed value with its answer.
+func answerDrafts(outputDir string, prior *importRecord, opts Options, recipes RecipeIndex,
+	draft []abi.ScaffoldFile) (owing, error) {
+	out := owing{files: draft}
+	owed := readOwed(draft, recipes)
+	if len(owed) == 0 {
+		return out, nil
+	}
+	path := opts.Answers
+	if path == "" && prior != nil && prior.Answers != "" {
+		path = filepath.FromSlash(prior.Answers)
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(outputDir, path)
+		}
+	}
+	beside := DefaultAnswersPath(opts.SourcePath)
+	if abs, err := filepath.Abs(beside); err == nil {
+		beside = abs
+	}
+	if path == "" {
+		path = beside
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	fromFile, _, err := readAnswers(path)
+	if err != nil {
+		return owing{}, err
+	}
+	ask := opts.Ask
+	if opts.Delivery.Reports() {
+		ask = nil
+	}
+	ans, err := answerOwed(draft, owed, fromFile, path, ask)
+	if err != nil {
+		return owing{}, err
+	}
+	// The file is read as bytes too, so what it holds that this import does not own
+	// is written back as it is; readAnswers above refused one it cannot read.
+	existing, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return owing{}, &AnswersFileError{Path: path, Err: err}
+	}
+	content, changed, err := answersFileContent(existing, owed, ans.given)
+	if err != nil {
+		return owing{}, fmt.Errorf("compose the answers file %s: %w", path, err)
+	}
+	if !changed {
+		content = ""
+	}
+	// The record points at the answers file only where it is not the one beside
+	// the source: that one is found again from the source every later import
+	// names, so pointing at it would add nothing but make the record depend on
+	// where the source happens to sit.
+	pointer := ""
+	if path != beside {
+		pointer = answersPointer(outputDir, path)
+	}
+	out = owing{files: ans.files, remaining: ans.remaining, path: path, pointer: pointer, content: content}
+	out.diagnostics = append(out.diagnostics, ans.notices...)
+	for _, o := range ans.remaining {
+		out.diagnostics = append(out.diagnostics, owedDiagnostic(o))
+	}
+	return out, nil
+}
+
+// draftedReleasePlace is the drafted Release's place on this host, or "" where the
+// drafts hold none.
+func draftedReleasePlace(outputDir string, draft []abi.ScaffoldFile) string {
+	for _, f := range draftedFiles(draft) {
+		if draftKind(f.content) == entitykind.Release {
+			if place, err := draftPlace(outputDir, f.path); err == nil {
+				return place
+			}
+		}
+	}
+	return ""
+}
+
+// pulls reports whether an import that produced res pulls the dependencies of
+// its drafted Release once its files are written: the surface supplies a pull,
+// the drafts hold a Release, the delivery writes, the importer finished and the
+// drafts owe nothing — a pull of a Release still owing values would resolve
+// against drafts the reader has yet to finish.
+func pulls(opts Options, res Result, release string) bool {
+	return opts.Pull != nil && release != "" && !opts.Delivery.Reports() && !res.Halted() && len(res.Owed) == 0
+}
+
+// pullNotice is the diagnostic an import that would pull says it did not under
+// the offline posture, naming the pull to run; it is none otherwise.
+func pullNotice(opts Options, rw *workspaceconfig.ResolvedWorkspace, res Result, release string) []abi.Diagnostic {
+	if !pulls(opts, res, release) || !rw.Config().Offline {
+		return nil
+	}
+	return []abi.Diagnostic{infoDiagnostic(fmt.Sprintf("the workspace is offline, so the dependencies of the "+
+		"drafted Release were not pulled; run aggrega pull --release %s next", release))}
+}
+
+// finishImport does what an import does once its drafts are written: it writes
+// the answers file where the drafts owe values, and pulls the drafted Release's
+// dependencies where [pulls] says it does and the workspace is not offline,
+// carrying the pull's own account among the diagnostics and its failure as the
+// result's [Result.PullRefusal]. A reporting delivery, and a sync whose importer
+// halted, wrote nothing, and do neither.
+func finishImport(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Options, res Result,
+	owe owing, release string) (Result, error) {
+	if opts.Delivery.Reports() || (opts.Sync && res.Halted()) {
+		return res, nil
+	}
+	// An answers file already holding every owed key with its answer is left as it
+	// is, so a run that changes nothing writes nothing.
+	if owe.path != "" {
+		res.answersHeld = true
+		if owe.content != "" {
+			if err := writeAnswersFile(rw.Root(), owe.path, owe.content); err != nil {
+				return res, err
+			}
+			res.AnswersWritten = true
+		}
+	}
+	// Under the offline posture the diagnostic composed before the write already
+	// names the pull to run.
+	if !pulls(opts, res, release) || rw.Config().Offline {
+		return res, nil
+	}
+	notices, err := opts.Pull(ctx, release)
+	for _, line := range notices {
+		res.Diagnostics = append(res.Diagnostics, infoDiagnostic(line))
+	}
+	if err != nil {
+		res.pullFailed = &PullError{Release: release, Err: err}
+		return res, nil
+	}
+	res.pulled = true
 	return res, nil
 }
 

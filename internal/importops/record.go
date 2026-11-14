@@ -47,6 +47,15 @@ const RecordFileName = ".aggrega-import.json"
 // hold it; otherwise the one the workspace last fetched as the newest; otherwise
 // the newest.
 //
+// Answers points at the answers file ([AnswersFileName]) the import read and
+// wrote the values no source can hold in, by its path relative to the output
+// directory, and is empty, and left out of the record, for an import whose drafts
+// owe nothing and for one whose answers file is the one beside its source
+// ([DefaultAnswersPath]), which every later import finds again from the source it
+// names. Only the pointer is recorded, never an answer: a later import into the
+// same directory, and a sync, read the answers from the file it names where they
+// are named no other.
+//
 // Files is in the order the importer drafted the files, each path once. A file
 // owned whole carries Digest; a drafted Aggregate or Release carries Parts, one
 // per mapping entry, in document order. Both are slices rather than maps, so the
@@ -54,6 +63,7 @@ const RecordFileName = ".aggrega-import.json"
 type importRecord struct {
 	Target          string       `json:"target,omitempty"`
 	CatalogSnapshot string       `json:"catalogSnapshot,omitempty"`
+	Answers         string       `json:"answers,omitempty"`
 	Files           []recordFile `json:"files"`
 }
 
@@ -149,10 +159,11 @@ func recordBytes(rec importRecord) string {
 
 // recordScaffold is the record as one more file an import writes, placed after
 // the drafts it describes, naming the catalog snapshot the draft was composed
-// against where it read one.
-func recordScaffold(target, catalogSnapshot string, files []draftedFile) abi.ScaffoldFile {
+// against where it read one, and the answers file where the drafts owe values.
+func recordScaffold(target, catalogSnapshot, answers string, files []draftedFile) abi.ScaffoldFile {
 	rec := recordFor(target, files)
 	rec.CatalogSnapshot = catalogSnapshot
+	rec.Answers = answers
 	return abi.ScaffoldFile{Path: RecordFileName, Content: recordBytes(rec)}
 }
 

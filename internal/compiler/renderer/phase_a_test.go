@@ -401,6 +401,52 @@ func TestExecutePhaseA_MappedCustomMechanismIsRecordedMapped(t *testing.T) {
 	}
 }
 
+// TestExecutePhaseA_AStandardMechanismIsNotPaired pins which of the component's
+// own mechanisms the pairing reads: the custom ones only. A component delivering
+// env, file and arg of its own beside a custom mechanism, and a mapping naming
+// env alone, records one pairing — the custom mechanism, unmapped — and none for
+// the three standard mechanisms, whose own deliveries the mapping's output is
+// merged over rather than in place of.
+func TestExecutePhaseA_AStandardMechanismIsNotPaired(t *testing.T) {
+	t.Parallel()
+
+	own := func(in string) []any { return []any{map[string]any{"in": in, "value": "v"}} }
+	authoredInject := &types.InjectBlock{Env: own("A"), File: own("/run/f"), Arg: own("--x")}
+	authoredInject.Additional.Set("ssm_param", []any{map[string]any{"in": "DB_PASSWORD", "from": "password"}})
+
+	ctx := &types.TemplateContext{
+		Context: types.ContextBlock{
+			InstanceID: "api",
+			Inject: types.InjectPipe{
+				Env:  types.OrderedMap[string]{},
+				File: types.OrderedMap[string]{},
+				Arg:  types.OrderedMap[string]{},
+				All:  types.OrderedMap[string]{},
+			},
+		},
+		InjectRaw: authoredInject,
+	}
+	refs := []FeatureRecipeRef{{
+		InstanceName: "creds",
+		FeatureRecipe: &types.FeatureRecipe{
+			Metadata: types.FeatureRecipeMetadata{Name: "env-only"},
+			Spec:     types.FeatureRecipeSpec{InjectMapping: `{"env": {"OTHER_VAR": "value"}}`},
+		},
+	}}
+
+	delivered, err := ExecutePhaseA(ctx, refs, hostWithheld{})
+	if err != nil {
+		t.Fatalf("ExecutePhaseA: %v", err)
+	}
+	if len(delivered) != 1 {
+		t.Fatalf("expected one delivery report; got %d", len(delivered))
+	}
+	got := delivered[0].Mechanisms
+	if len(got) != 1 || got[0].Mechanism != "ssm_param" || got[0].Mapped {
+		t.Fatalf("expected exactly the custom mechanism ssm_param, unmapped; got %+v", got)
+	}
+}
+
 // TestExecutePhaseA_FlatOutputRecordsNoPairing pins the reading that keeps the
 // env-only idiom legal: a flat delivery dictionary names no mechanism, so the
 // phase records NO pairing at all rather than recording every declared mechanism

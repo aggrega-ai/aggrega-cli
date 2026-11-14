@@ -4,8 +4,11 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -27,6 +30,7 @@ type importFlags struct {
 	outputDir string
 	sync      bool
 	upgrade   bool
+	answers   string
 }
 
 // newImportCmd turns a foreign source description into draft Aggrega authoring
@@ -167,6 +171,55 @@ not a mapping of keys, and the comment lines written directly above it at its
 own indentation. The record is JSON, so nothing that reads the workspace's YAML
 documents reads it; keep it beside the drafts for as long as you mean to sync
 them.
+
+Some values no source can hold: the image of an application built from your
+own code, the email of an owner account, a model the source does not name, the
+name of a Kubernetes Secret. The drafts write each such value as an empty
+string under a comment saying what it is. After drafting, import reads every
+drafted document against its own schema and against the catalog schema of each
+Component, Feature and connection it declares, and lists every value still
+empty where that schema requires one, or where it declares the key and nothing
+supplied it — each described by the schema's own description. The values are
+answered from the answers file: --answers names it, and without it import reads
+the one the record beside the drafts names, or else import-answers.yaml beside
+the source file, or inside the source directory. The answers file holds, under
+each drafted file's path, the key path inside that document and its answer as a
+string, with the schema's description in a comment above each key. Each answer
+is written into the drafts before anything is written or recorded, so an import
+of the same source, and --sync, read the same answers and draft the same files.
+An answer for a key these drafts do not leave empty — one only another
+target's drafts ask for, say — is kept in the file and not applied, so one
+answers file serves every target: import adds the keys it owes, sets the
+answers it is given, and leaves every other key and comment as it is, writing
+the file only where that changes it. The record beside the drafts names the
+answers file where it is not the one beside the source, and holds no answer.
+
+The answers file never holds a secret. A secret's value — one its schema marks
+sensitive — is answered with where the secret comes from: a variable name, a
+reference such as ${OPENAI_API_KEY}, or the name of a Kubernetes Secret.
+Anything else is refused, naming the key and never the answer, and nothing is
+written.
+
+Where standard input and standard output are both a terminal, and --dry-run is
+not given, import asks one question for each value the answers file leaves
+unanswered, worded from the schema's description; an empty answer leaves the
+value for later, and a secret's answer that is not a name is refused and asked
+again. Every answer is written into the answers file, so a later run asks
+nothing. Anywhere else — a pipe, continuous integration, the assistant's import
+tool, the editor — nothing is asked: the drafts keep their empty values, the
+answers file is written with every owed key present and empty, each owed value
+is named on standard error, and import exits 1 with one sentence saying how
+many values are owed and where to write them. Under --dry-run nothing is asked
+and nothing is written: each owed value is named on standard error, and the
+exit status is the dry run's own.
+
+When the drafts include a Release, owe nothing, and the importer finished,
+import pulls that Release's dependencies once the drafts are written, exactly
+as aggrega pull --release does, writing its release.lock, so aggrega validate
+and aggrega build work on the drafts at once. Under --offline nothing is pulled,
+and import names the aggrega pull to run next. A pull that fails leaves the
+drafts written and stops import, naming why and the pull to run once it is
+fixed.
 
 An import never writes over an Aggregate already at one of its drafted paths:
 an Aggregate is the document an author goes on editing once it is drafted, so
@@ -347,6 +400,15 @@ source the write would refuse is refused here too.`,
 				Upgrade:       opts.upgrade,
 				Delivery:      delivery,
 				ResolvePlugin: importPluginBytes,
+				// The answers file is a path typed here, handed on as typed: the
+				// operation resolves it against the folder the command runs in.
+				Answers: opts.answers,
+				// A question is put only where a person can answer it: standard
+				// input and standard output are both a terminal. Anywhere else the
+				// asking is left unset, and the import reports what is owed rather
+				// than waiting on an answer nobody can give.
+				Ask:  importAsker(cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()),
+				Pull: importPull(rw, cmd.ErrOrStderr()),
 				// The import's commentary — how the source was read, then what the
 				// importer reported about it, then how it mapped each node, then
 				// what drifted — goes to the error stream, and it goes there once
@@ -378,10 +440,21 @@ source the write would refuse is refused here too.`,
 				for _, name := range res.Removed {
 					fmt.Fprintf(cmd.OutOrStdout(), "removed %s\n", name)
 				}
+				if res.AnswersWritten {
+					fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", res.AnswersPath())
+				}
 			}
 
+			// A pull that failed leaves the drafts written, so what reached disk is
+			// reported above before the refusal is.
 			if halt := res.Refusal(); halt != nil {
 				return halt
+			}
+			if owed := res.OwedRefusal(); owed != nil {
+				return owed
+			}
+			if pull := res.PullRefusal(); pull != nil {
+				return pull
 			}
 			// Under --sync --dry-run the exit status says whether the drafts drifted,
 			// so a check can fail on drift without reading the lines above. The
@@ -398,8 +471,67 @@ source the write would refuse is refused here too.`,
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Do everything except write: hand back the drafted files as content, naming the file each is for, and create or modify nothing. Every other behaviour is the write's, the importer run included. Without it the drafts are written to disk.")
 	c.Flags().StringVar(&opts.outputDir, "output-dir", "", "Directory the drafted files are written under. A relative path resolves against the directory you run the command in, and a drive named bare on Windows, such as D:, is the current directory on that drive. Without it the drafts are written beneath the root of the workspace the run resolved.")
 	c.Flags().BoolVar(&opts.sync, "sync", false, "Bring what an earlier import drafted up to date with the source, changing only what the import wrote, as the record beside the drafts lists it, and naming each part that drifted. With --dry-run, exit 0 when in step, 2 when drifted, 1 on an error or a refusal.")
+	c.Flags().StringVar(&opts.answers, "answers", "", "The answers file the values the drafts leave empty that no source can hold are read from and written to: under each drafted file's path, the key path inside it and its answer. A relative path resolves against the directory you run the command in. Without it, the answers file the record beside the drafts names, or else import-answers.yaml beside the source file, or inside the source directory. A secret's answer is the name of where the secret comes from, never the secret itself.")
 	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Re-read the published catalog from current registry state: fetch the newest catalog snapshot the workspace's default registry publishes, verify it, and import against it, holding it as the snapshot this workspace reads from then on in place of the one it holds or the one the record beside the drafts names. It has an effect only where the workspace names no catalog folder, and is refused under --offline")
 	return c
+}
+
+// importAsker returns how this command puts a value the drafts owe to a person,
+// or nil where nobody can answer: standard input or standard output is not a
+// terminal. The terminal is asked through the command line's one pair of
+// detectors — the input's (isTerminal) and an output stream's (fileTerminal) —
+// so this surface and every other prompt the command line makes agree about
+// whether a person is there.
+//
+// Each question goes to errOut, so standard output keeps carrying only the
+// result, and each answer is one line read from in, through one reader so a
+// line typed ahead is not lost between questions. End of input stops the asking.
+func importAsker(in io.Reader, out, errOut io.Writer) importops.Ask {
+	if !isTerminal() || !fileTerminal(out) {
+		return nil
+	}
+	lines := bufio.NewReader(in)
+	opened := false
+	return func(o importops.Owed, refused string) (string, error) {
+		if !opened {
+			opened = true
+			fmt.Fprintln(errOut, "The drafts leave values empty that the source cannot hold. Answer each one, or press "+
+				"Enter to leave it for later in the answers file:")
+		}
+		if refused != "" {
+			fmt.Fprintf(errOut, "  refused: %s\n", refused)
+		} else {
+			fmt.Fprintf(errOut, "\n%s %s\n  %s\n", o.File, o.Key(), o.Question())
+			if o.Sensitive {
+				fmt.Fprintln(errOut, "  This is a secret: answer with where it comes from — a variable name, ${NAME}, "+
+					"or the name of a Kubernetes Secret — never the secret itself.")
+			}
+		}
+		fmt.Fprint(errOut, "> ")
+		line, err := lines.ReadString('\n')
+		if err != nil && line == "" {
+			fmt.Fprintln(errOut)
+			return "", err
+		}
+		return strings.TrimSpace(line), nil
+	}
+}
+
+// importPull returns how this command pulls the dependencies of the Release an
+// import drafted: the pull command's own path, run over the workspace the import
+// resolved, as a build's automatic fill runs it, with its account written to
+// errOut so standard output keeps carrying only the import's result. Its account
+// is shown there as it is written, so it hands the import no line of it to carry.
+func importPull(rw *workspaceconfig.ResolvedWorkspace, errOut io.Writer) func(context.Context, string) ([]string, error) {
+	return func(ctx context.Context, release string) ([]string, error) {
+		return nil, pullRun(ctx, pullConfig{
+			ReleasePath: release,
+			ws:          rw,
+			DiagOut:     errOut,
+			Out:         errOut,
+			diag:        buildDiagOptions{quiet: true, noColor: globalDisplay.colorOff, plain: globalDisplay.plain},
+		})
+	}
 }
 
 // importDriftExitStatus is the exit status of `import --sync --dry-run` when the

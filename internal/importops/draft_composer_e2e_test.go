@@ -171,8 +171,13 @@ func TestNoTargetDraftsExactlyTheImportersFiles(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("an import with no target drafted %+v\nwant exactly the importer's files %+v", got, want)
 	}
-	if len(res.Diagnostics) != 0 {
-		t.Errorf("an import with no target reported %+v; want nothing", res.Diagnostics)
+	// The one thing the import adds is the value the drafts still owe: the Release
+	// names no Manifest, and its kind requires one.
+	if len(res.Owed) != 1 || !slices.Equal(res.Owed[0].Keys, []string{"spec", "manifest"}) {
+		t.Fatalf("an import with no target owes %+v; want exactly the Release's spec.manifest", res.Owed)
+	}
+	if want := []abi.Diagnostic{owedDiagnostic(res.Owed[0])}; !slices.Equal(res.Diagnostics, want) {
+		t.Errorf("an import with no target reported %+v; want only the owed manifest %+v", res.Diagnostics, want)
 	}
 }
 

@@ -23,15 +23,19 @@ import (
 
 // placeholder is one value a document's kind requires that the document leaves
 // as an empty string: the dotted key path, in the spelling the envelope gate
-// reports its findings under, the key node the value sits under and the
-// position read off it, its column counted in characters, and what the value
-// takes.
+// reports its findings under, and the keys it joins, the key node the value sits
+// under and the position read off it, its column counted in characters, what the
+// value takes, the whole description the property's schema gives it, and whether
+// that schema or one its references lead to declares the value sensitive.
 type placeholder struct {
-	path   string
-	key    *yaml.Node
-	line   int
-	column int
-	takes  string
+	path        string
+	keys        []string
+	key         *yaml.Node
+	line        int
+	column      int
+	takes       string
+	description string
+	sensitive   bool
 }
 
 // placeholderError reports every placeholder a document carries, at once, each
@@ -143,6 +147,20 @@ type Placeholder struct {
 	KeyPath string
 	Takes   string
 
+	// Keys are the keys KeyPath joins, from the top of the walk to the empty
+	// value, so a key holding the separator is read back as the one key it is.
+	Keys []string
+
+	// Description is the whole description the value's own schema gives it — one
+	// written beside a reference before the referenced schema's — its whitespace
+	// folded to single spaces, and empty where that schema gives none. Takes opens
+	// with the description's first sentence where there is one.
+	Description string
+
+	// Sensitive reports whether the value's own schema, or a schema its
+	// references lead to, declares it sensitive.
+	Sensitive bool
+
 	// Key is the mapping key the empty value sits under, from the reading's own
 	// parse of the same bytes, so its coordinates are the document's. It is the
 	// key itself even where the key's own name contains a dot — a label key such
@@ -199,11 +217,54 @@ func ReadPlaceholders(kind envelope.Kind, data []byte, path string, schemaErr er
 	if !errors.As(placeholderRefusal(kind, data, path, schemaErr), &refusal) {
 		return Placeholders{}, false
 	}
-	entries := make([]Placeholder, 0, len(refusal.placeholders))
-	for _, p := range refusal.placeholders {
-		entries = append(entries, Placeholder{KeyPath: p.path, Takes: p.takes, Key: p.key})
+	return Placeholders{Entries: exported(refusal.placeholders), Refusal: refusal, found: refusal.placeholders}, true
+}
+
+// PlaceholdersOf reads the values a document of an entity kind leaves empty
+// where its kind's own schema requires one, by the reading ValidateEntity
+// reports them under, whatever else the envelope gate would say of the
+// document. Any kind whose schema the binary carries is read — an Aggregate, a
+// Release and a Manifest among them, which the single-entity scope does not
+// validate — and a kind with none, or a document the reading cannot parse, is
+// refused.
+//
+// It is the reading a surface takes over a document it composed itself — a
+// drafted one — to say which values are still owed before anything validates it.
+func PlaceholdersOf(kind envelope.Kind, data []byte, path string) ([]Placeholder, error) {
+	found, err := readPlaceholders(kind, data, path)
+	if err != nil {
+		return nil, err
 	}
-	return Placeholders{Entries: entries, Refusal: refusal, found: refusal.placeholders}, true
+	return exported(found), nil
+}
+
+// PlaceholdersUnder reads node — a mapping inside the document data, whose keys
+// lead to it from the top of the document along prefix — against schema, a JSON
+// Schema document whose own references resolve inside it, such as one pillar of a
+// catalog Component's or Feature's compiled contract. It returns every value node
+// leaves as an empty string under a key schema declares a property for, required
+// or not, at any depth of the mappings it declares, in document order, each path
+// opening with prefix.
+//
+// It is the same reading [PlaceholdersOf] takes, made over every declared key
+// rather than over the required ones: a value a draft leaves empty under a key a
+// catalog entity's schema declares is a value nothing supplied, whether or not
+// that schema could require it.
+func PlaceholdersUnder(schema map[string]any, node *yaml.Node, data []byte, prefix []string) []Placeholder {
+	if schema == nil || node == nil {
+		return nil
+	}
+	return exported(readPlaceholdersUnder(schema, schema, node, data, prefix, true))
+}
+
+// exported projects found placeholders onto the exported shape.
+func exported(found []placeholder) []Placeholder {
+	out := make([]Placeholder, 0, len(found))
+	for _, p := range found {
+		out = append(out, Placeholder{KeyPath: p.path, Takes: p.takes, Keys: p.keys, Description: p.description,
+			Sensitive: p.sensitive, Key: p.key})
+	}
+	return out
 }
 
 // findingsAwayFrom returns the findings whose field path is not a placeholder's.
@@ -230,9 +291,11 @@ func findingsAwayFrom(findings []jsonvalidator.Finding, found []placeholder) []j
 // Which values are required is read from the schema, never from a list kept
 // here. The walk follows a property's `required` list from the document root
 // through the properties those lists name, and through a `$ref` or an `allOf`
-// member on the way, because each of those applies unconditionally. It does not
-// descend a branch that applies only sometimes — `anyOf`, `oneOf`, `if`,
-// `then`, `else` — nor into the items of a list or the entries of a map: a
+// member on the way, because each of those applies unconditionally — and
+// through the branch of an `if` asking only which keys are present, decided by
+// the document's own keys (see requiredOf). It does not descend a branch that
+// applies only sometimes — `anyOf`, `oneOf`, a conditional on anything else —
+// nor into the items of a list or the entries of a map: a
 // property required only once its optional container exists is not a value
 // every document of the kind owes.
 //
@@ -261,22 +324,36 @@ func readPlaceholders(kind envelope.Kind, data []byte, path string) ([]placehold
 		}
 		top = top.Content[0]
 	}
+	return readPlaceholdersUnder(root, root, top, data, nil, false), nil
+}
+
+// readPlaceholdersUnder is the one walk both readings take: it reads node against
+// schema, a schema inside the document root its references resolve against, and
+// returns the values node leaves as an empty string, ordered by where each sits,
+// each path opening with prefix. With declared false it follows the `required`
+// lists as [readPlaceholders] describes; with declared true it reads every key
+// node writes that schema declares a property for, required or not, and descends
+// every such mapping — the reading of a drafted value no source supplied, under a
+// key a catalog entity's schema declares.
+func readPlaceholdersUnder(root, schema map[string]any, node *yaml.Node, data []byte, prefix []string,
+	declared bool) []placeholder {
 	r := placeholderReader{
 		root: root,
 		// The refusal prints each position for a reader of the document, so its
 		// column counts characters, the unit yaml.v3 records a node's column in:
 		// an index counting bytes would print a later column on a line where a
 		// multi-byte character precedes the key.
-		idx: yamlpos.BuildLineIndexWithEncoding(data, yamlpos.PositionEncodingUTF32),
+		idx:      yamlpos.BuildLineIndexWithEncoding(data, yamlpos.PositionEncodingUTF32),
+		declared: declared,
 	}
-	r.walk(root, top, nil, 0)
+	r.walk(schema, node, prefix, 0)
 	sort.SliceStable(r.found, func(i, j int) bool {
 		if r.found[i].line != r.found[j].line {
 			return r.found[i].line < r.found[j].line
 		}
 		return r.found[i].column < r.found[j].column
 	})
-	return r.found, nil
+	return r.found
 }
 
 // maxSchemaDepth bounds the walk and every reference it follows, so a schema
@@ -284,20 +361,40 @@ func readPlaceholders(kind envelope.Kind, data []byte, path string) ([]placehold
 const maxSchemaDepth = 64
 
 // placeholderReader carries one walk: the schema document references resolve
-// against, the index positions are converted through, and what was found.
+// against, the index positions are converted through, whether every declared key
+// is read rather than only the required ones, and what was found.
 type placeholderReader struct {
-	root  map[string]any
-	idx   yamlpos.LineIndex
-	found []placeholder
+	root     map[string]any
+	idx      yamlpos.LineIndex
+	declared bool
+	found    []placeholder
+}
+
+// namesOf returns the keys a mapping of the document is read under: the names the
+// schema requires, or, where every declared key is read, each key the mapping
+// writes that the schema declares a property for, in the order it writes them.
+func (r *placeholderReader) namesOf(schema map[string]any, node *yaml.Node) []string {
+	if !r.declared {
+		return r.requiredOf(schema, node, 0)
+	}
+	var names []string
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		name := node.Content[i].Value
+		if r.propertyOf(schema, name, 0) != nil {
+			names = append(names, name)
+		}
+	}
+	return dedupe(names)
 }
 
 // walk reads one mapping of the document against the schema that governs it.
 func (r *placeholderReader) walk(schema map[string]any, node *yaml.Node, keyPath []string, depth int) {
 	node = dealias(node)
+	schema = r.resolve(schema, 0)
 	if schema == nil || node == nil || node.Kind != yaml.MappingNode || depth > maxSchemaDepth {
 		return
 	}
-	for _, name := range r.requiredOf(schema, 0) {
+	for _, name := range r.namesOf(schema, node) {
 		key, value := mappingEntry(node, name)
 		if key == nil {
 			continue
@@ -306,7 +403,8 @@ func (r *placeholderReader) walk(schema map[string]any, node *yaml.Node, keyPath
 		if value == nil {
 			continue
 		}
-		prop := r.resolve(r.propertyOf(schema, name, 0), 0)
+		written := r.propertyOf(schema, name, 0)
+		prop := r.resolve(written, 0)
 		path := append(append([]string(nil), keyPath...), name)
 		switch {
 		case value.Kind == yaml.ScalarNode && value.ShortTag() == "!!str" && value.Value == "":
@@ -314,12 +412,16 @@ func (r *placeholderReader) walk(schema map[string]any, node *yaml.Node, keyPath
 				continue
 			}
 			pos := r.idx.NodeToPosition(key)
+			description, sensitive := r.declaredAlong(written)
 			r.found = append(r.found, placeholder{
-				path:   strings.Join(path, "."),
-				key:    key,
-				line:   pos.Line + 1,
-				column: pos.Character + 1,
-				takes:  takes(prop),
+				path:        strings.Join(path, "."),
+				keys:        path,
+				key:         key,
+				line:        pos.Line + 1,
+				column:      pos.Character + 1,
+				takes:       takes(prop, description),
+				description: strings.Join(strings.Fields(description), " "),
+				sensitive:   sensitive,
 			})
 		case value.Kind == yaml.MappingNode:
 			r.walk(prop, value, path, depth+1)
@@ -327,9 +429,20 @@ func (r *placeholderReader) walk(schema map[string]any, node *yaml.Node, keyPath
 	}
 }
 
-// requiredOf returns the property names a schema requires, in the order it
-// lists them, with the names its `allOf` members require after them.
-func (r *placeholderReader) requiredOf(schema map[string]any, depth int) []string {
+// requiredOf returns the property names a schema requires of node, in the order
+// it lists them, with the names its `allOf` members require after them, and then
+// the names the branch of a conditional decided by node's own keys requires.
+//
+// A conditional is followed only where its `if` asks nothing but which keys are
+// present — a `required` list and no other keyword — so the branch that applies
+// is read off the mapping itself, and for this document that branch applies
+// unconditionally: the Release's `spec`, say, requires `manifest` in the branch
+// taken when it does not extend another Release. A condition on anything else is
+// not decided here, and neither branch is followed. A name the taken branch
+// requires is read under the property the schema itself or its `allOf` members
+// declare (propertyOf); a property declared only inside the branch is not read,
+// so a key it names is passed over rather than read without its schema.
+func (r *placeholderReader) requiredOf(schema map[string]any, node *yaml.Node, depth int) []string {
 	schema = r.resolve(schema, depth)
 	if schema == nil || depth > maxSchemaDepth {
 		return nil
@@ -342,10 +455,40 @@ func (r *placeholderReader) requiredOf(schema map[string]any, depth int) []strin
 	}
 	for _, member := range asSlice(schema["allOf"]) {
 		if m, ok := member.(map[string]any); ok {
-			out = append(out, r.requiredOf(m, depth+1)...)
+			out = append(out, r.requiredOf(m, node, depth+1)...)
 		}
 	}
+	if branch, decided := r.branchTaken(schema, node); decided {
+		out = append(out, r.requiredOf(branch, node, depth+1)...)
+	}
 	return dedupe(out)
+}
+
+// branchTaken returns the `then` or `else` schema a conditional applies to node,
+// reporting false where the schema has no conditional, or one whose `if` asks
+// anything but which keys node writes.
+func (r *placeholderReader) branchTaken(schema map[string]any, node *yaml.Node) (map[string]any, bool) {
+	cond, ok := schema["if"].(map[string]any)
+	if !ok || len(cond) != 1 {
+		return nil, false
+	}
+	names, ok := cond["required"].([]any)
+	if !ok {
+		return nil, false
+	}
+	taken := "then"
+	for _, v := range names {
+		name, ok := v.(string)
+		if !ok {
+			return nil, false
+		}
+		if key, _ := mappingEntry(node, name); key == nil {
+			taken = "else"
+			break
+		}
+	}
+	branch, ok := schema[taken].(map[string]any)
+	return branch, ok
 }
 
 // propertyOf returns the schema a property is declared with, looked up on the
@@ -375,25 +518,58 @@ func (r *placeholderReader) propertyOf(schema map[string]any, name string, depth
 // stands.
 func (r *placeholderReader) resolve(schema map[string]any, depth int) map[string]any {
 	for hops := depth; schema != nil && hops <= maxSchemaDepth; hops++ {
-		ref, ok := schema["$ref"].(string)
-		if !ok || !strings.HasPrefix(ref, "#/") {
+		next, referred := r.follow(schema)
+		if !referred {
 			return schema
-		}
-		target := any(r.root)
-		for _, part := range strings.Split(strings.TrimPrefix(ref, "#/"), "/") {
-			m, ok := target.(map[string]any)
-			if !ok {
-				return nil
-			}
-			target = m[strings.ReplaceAll(strings.ReplaceAll(part, "~1", "/"), "~0", "~")]
-		}
-		next, ok := target.(map[string]any)
-		if !ok {
-			return nil
 		}
 		schema = next
 	}
 	return schema
+}
+
+// follow takes one step along a schema's local `$ref`: the schema it names and
+// true, nil and true where it names nothing in the document, or the schema
+// itself and false where it carries no local reference.
+func (r *placeholderReader) follow(schema map[string]any) (map[string]any, bool) {
+	ref, ok := schema["$ref"].(string)
+	if !ok || !strings.HasPrefix(ref, "#/") {
+		return schema, false
+	}
+	target := any(r.root)
+	for _, part := range strings.Split(strings.TrimPrefix(ref, "#/"), "/") {
+		m, ok := target.(map[string]any)
+		if !ok {
+			return nil, true
+		}
+		target = m[strings.ReplaceAll(strings.ReplaceAll(part, "~1", "/"), "~0", "~")]
+	}
+	next, _ := target.(map[string]any)
+	return next, true
+}
+
+// declaredAlong reads what a property declares about its value, from the schema
+// it is written with and from each schema its references lead to: the
+// description written nearest the property, and whether any of them declares
+// the value sensitive.
+//
+// 🔴 Every schema along the way is read, not only the one the references end
+// at: a declaration written beside a reference is part of the property's own
+// schema, and following the reference alone would drop it — a secret written
+// that way would then not be asked for as one.
+func (r *placeholderReader) declaredAlong(schema map[string]any) (string, bool) {
+	description, sensitive := "", false
+	for hops := 0; schema != nil && hops <= maxSchemaDepth; hops++ {
+		if description == "" {
+			description, _ = schema["description"].(string)
+		}
+		sensitive = sensitive || jsonvalidator.DeclaresSensitive(schema)
+		next, referred := r.follow(schema)
+		if !referred {
+			break
+		}
+		schema = next
+	}
+	return description, sensitive
 }
 
 // declaresEmpty reports whether a schema names the empty string among the
@@ -437,9 +613,9 @@ const semanticVersionExample = "1.0.0"
 // takes says what a placeholder's value takes, read from the property's own
 // schema: its enumeration, or its constant; for a pattern that behaves as the
 // semantic-version grammar, a semantic version; otherwise the first sentence of
-// the property's own description, then its pattern; and a value that is not
-// empty where the schema says nothing more.
-func takes(schema map[string]any) string {
+// description — the one the property is given — then its pattern; and a value
+// that is not empty where the schema says nothing more.
+func takes(schema map[string]any, description string) string {
 	if values := asSlice(schema["enum"]); len(values) > 1 {
 		parts := make([]string, 0, len(values))
 		for _, v := range values {
@@ -456,10 +632,8 @@ func takes(schema map[string]any) string {
 	if pattern != "" && isSemanticVersionPattern(pattern) {
 		return "a semantic version, such as " + semanticVersionExample
 	}
-	if d, ok := schema["description"].(string); ok {
-		if s := firstSentence(d); s != "" {
-			return "what its schema describes: " + s
-		}
+	if s := firstSentence(description); s != "" {
+		return "what its schema describes: " + s
 	}
 	if pattern != "" {
 		return fmt.Sprintf("a value matching the pattern %q", pattern)

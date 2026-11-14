@@ -84,6 +84,12 @@ type importArgs struct {
 	// is one: where the workspace names no catalog folder, it asks for the newest
 	// published catalog snapshot to be fetched and read, and held from then on.
 	Upgrade bool `json:"upgrade"`
+
+	// Answers is the command line's --answers: the answers file the values the
+	// drafts owe are read from and written to. It is a pointer for the reason
+	// OutputDir is one — absent hands the import none, so it reads the one its
+	// own default names, and a value sent blank is refused.
+	Answers *string `json:"answers"`
 }
 
 // importDrift is one part a sync brought up to date, or under `dry_run` would:
@@ -329,9 +335,26 @@ var importToolSpec = toolSpec{
 		"part and why, and nothing is written; so is a sync over an Aggregate no record lists, and one whose " +
 		"importer could not finish writes nothing. What the importer could not translate comes back as " +
 		"diagnostics, one per construct, and an import it could not finish still drafts what it could — read " +
-		"`halted` for that outcome and the diagnostics beside it for what stopped it. The drafts are a " +
-		"starting point an author owns and goes on editing; whether what they say is admissible is what " +
-		"validate answers, not this.",
+		"`halted` for that outcome and the diagnostics beside it for what stopped it. Values no source can hold " +
+		"— an application's image, an owner's email, a model the source does not name, the name of a " +
+		"Kubernetes Secret — are drafted as empty strings, and the import lists every value still empty where " +
+		"the drafted document's own schema, or the catalog schema of a Component, Feature or connection it " +
+		"declares, says one is supplied. They are answered from the answers file — the one `answers` names, " +
+		"relative to the workspace root or absolute as every path here is named, or without it the one the " +
+		"record beside the drafts names, or else `import-answers.yaml` beside the source file or inside the " +
+		"source directory — which holds, under each drafted file's path, the key path inside it and its answer, " +
+		"and the answers are written into the drafts; an answer for a key these drafts do not leave empty is kept " +
+		"in the file and not applied, so one answers file serves every target. A secret's answer is the name of where it comes from — a " +
+		"variable name, ${NAME}, or a Kubernetes Secret's name — and anything else is refused with nothing " +
+		"written. Nothing is ever asked here: every value still owed comes back as a warning diagnostic naming " +
+		"the file, the key and what it is, the answers file is written with each owed key present and empty, and " +
+		"the call fails with one sentence naming how many values are owed and where; write them there and call " +
+		"again. Under `dry_run` nothing is written, the answers file included, and the owed values come back " +
+		"among the diagnostics without failing the call. Where the drafts include a Release, owe nothing and the importer finished, the import then pulls " +
+		"that Release's dependencies as the pull tool does, writing its lockfile, so validate and build work on " +
+		"the drafts at once; offline it pulls nothing and a diagnostic names the pull to run, and a pull that " +
+		"fails fails the call with the drafts written. The drafts are a starting point an author owns and goes " +
+		"on editing; whether what they say is admissible is what validate answers, not this.",
 	listenerNote: "You did not start this server, so you are not told where its workspace sits on its host: " +
 		"the answer's workspace root is absent and marked as withheld, and so is `output_dir`, marked " +
 		"`output_dir_withheld`, where the drafts went to that root. A directory you named in `output_dir` is " +
@@ -370,6 +393,11 @@ var importToolSpec = toolSpec{
     "upgrade": {
       "type": "boolean",
       "description": "Where the workspace names no catalog folder, fetch the newest catalog snapshot its default registry publishes, verify it and import against it, holding it from then on in place of the one the workspace holds or the one the record beside the drafts names. It changes nothing where the workspace names a catalog folder, and is refused offline."
+    },
+    "answers": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The answers file the values the drafts leave empty that no source can hold are read from and written to, relative to the workspace root or absolute: under each drafted file's path, the key path inside it and its answer. Leave it out and the one the record beside the drafts names is used, or else import-answers.yaml beside the source file or inside the source directory. A secret's answer names where the secret comes from, never the secret itself."
     },
     "workspace_root": {
       "type": "string",
@@ -424,6 +452,15 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 				"neither, so nothing was read and nothing was written.")
 		}
 	}
+	// An answers file sent blank is refused for the reason a blank destination is.
+	answers := ""
+	if a.Answers != nil {
+		if answers = strings.TrimSpace(*a.Answers); answers == "" {
+			return errorResult(importToolName + " was sent a blank 'answers'. Name the answers file the values the " +
+				"drafts owe are read from and written to, or leave 'answers' out altogether and the default one is " +
+				"used; a blank value is neither, so nothing was read and nothing was written.")
+		}
+	}
 	if err := ctx.Err(); err != nil {
 		return errorResult(explainToolError("Could not draft anything from the source.", err, ""))
 	}
@@ -466,6 +503,16 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		}
 	}
 
+	// The answers file, where one was sent, is resolved by the same helper, so it
+	// reaches only what this transport lets the call name. Where none was sent,
+	// none is handed, and the layer reads the one its own default names.
+	answersFile := ""
+	if answers != "" {
+		if answersFile, refusal = tw.workspacePath(importToolName, "answers", answers); refusal != "" {
+			return errorResult(refusal)
+		}
+	}
+
 	delivery := authoredcontent.DeliveryFor(a.DryRun)
 	// The format the caller named, or none, is handed on as it is: the layer
 	// settles it, recognising an unnamed one from the signatures of the importers
@@ -482,6 +529,17 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		Upgrade:       a.Upgrade,
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
+		Answers:       answersFile,
+		// Nobody is watching a protocol stream, so nothing is asked: a value the
+		// drafts owe is reported among the diagnostics and fails the call.
+		//
+		// The drafted Release's dependencies are pulled by the one resolution
+		// the pull tool performs, so an import here pins exactly what that tool
+		// would.
+		Pull: func(ctx context.Context, release string) ([]string, error) {
+			pulled, _, err := runDependencyResolution(ctx, s, tw, release, pullArgs{}, nil)
+			return pulled.Diagnostics, err
+		},
 	})
 	if readErr := (*importops.SourceReadError)(nil); errors.As(err, &readErr) {
 		// The location read is named rather than the value as sent: a relative
@@ -503,6 +561,9 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	}
 	if record := (*importops.ImportRecordError)(nil); errors.As(err, &record) {
 		return tw.answer(errorResult(importRecordRefusal(tw, record)))
+	}
+	if secret := (*importops.SecretAnswerError)(nil); errors.As(err, &secret) {
+		return tw.answer(errorResult(tw.reportedText(secret.Error())))
 	}
 	if err != nil {
 		return errorResult(explainDiagnostic(importRefusal(source, err), ""))
@@ -534,6 +595,23 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	if halt := res.Refusal(); halt != nil {
 		return tw.answer(structuredErrorResult(explainDiagnostic(
 			importHaltedText(payload, res, delivery, a.Sync, halt), ""), payload))
+	}
+	// Drafts that still owe values, and a pull that failed once the drafts were
+	// written, fail the call the way the command fails, each opening with its own
+	// one sentence, and the answer carries the whole import beside it — the owed
+	// values and the pull's own account among the diagnostics.
+	//
+	// projection-omits internal/importops.Result.Answers: the answers file is named
+	// by the sentence the call fails with wherever the drafts still owe a value, and
+	// one whose every value is answered is the file the record names.
+	//
+	// projection-omits internal/importops.Result.AnswersWritten: whether it was
+	// written follows from the delivery this call chose, which the caller holds.
+	for _, refusal := range []error{res.OwedRefusal(), res.PullRefusal()} {
+		if refusal != nil {
+			return tw.answer(structuredErrorResult(tw.reportedText(refusal.Error())+"\n\n"+
+				renderImportText(payload, res, delivery, a.Sync), payload))
+		}
 	}
 	return tw.answer(textResult(renderImportText(payload, res, delivery, a.Sync), payload))
 }

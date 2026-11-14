@@ -217,8 +217,8 @@ type nodeAttachmentProjection struct {
 	// to, held on the reading the node's own field states.
 	AttachmentArtifactImportedPath types.OrderedMap[string]
 
-	// AttachmentInjectMappingMechanisms pairs each mechanism the host component's
-	// own injection block declares with whether this attachment's rendered
+	// AttachmentInjectMappingMechanisms pairs each custom mechanism the host
+	// component's own injection block declares with whether this attachment's rendered
 	// injectMapping output named it, in the order the component declared them.
 	//
 	// It is recorded where that mapping is evaluated rather than beside the

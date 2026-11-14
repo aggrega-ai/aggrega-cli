@@ -171,6 +171,85 @@ func TestRenderAll_FlatInjectMappingRenders(t *testing.T) {
 	}
 }
 
+// TestRenderAll_AStandardMechanismTheComponentDeliversItselfIsNotOwedByTheMapping
+// pins what the refusal is about: a mechanism beyond the standard ones. A
+// component whose own injection block delivers a file, beside a custom mechanism
+// or alone, and an attachment whose mapping names only the mechanisms it writes,
+// renders — the mapping's output is merged over the component's own deliveries,
+// so the file the component delivers reaches it whether or not the mapping names
+// file. The custom row beside it still refuses, so the narrowing is to the
+// standard mechanisms alone.
+func TestRenderAll_AStandardMechanismTheComponentDeliversItselfIsNotOwedByTheMapping(t *testing.T) {
+	t.Parallel()
+	// entry is one delivery of a component's own injection block, in the
+	// authored {in, value} shape.
+	entry := func(in, value string) []any { return []any{map[string]any{"in": in, "value": value}} }
+	cases := []struct {
+		name    string
+		block   func() *types.InjectBlock
+		mapping string
+		refused bool
+	}{
+		{
+			name: "a file of its own and an env-only mapping",
+			block: func() *types.InjectBlock {
+				return &types.InjectBlock{File: entry("/run/config.yaml", "config")}
+			},
+			mapping: `{"env": {"OTHER_VAR": "value"}}`,
+		},
+		{
+			name: "env, file and arg of its own and an env-only mapping",
+			block: func() *types.InjectBlock {
+				return &types.InjectBlock{Env: entry("A", "a"), File: entry("/run/f", "f"), Arg: entry("--x", "x")}
+			},
+			mapping: `{"env": {"OTHER_VAR": "value"}}`,
+		},
+		{
+			name: "a file and a custom mechanism, the mapping naming the custom one",
+			block: func() *types.InjectBlock {
+				b := &types.InjectBlock{File: entry("/run/config.yaml", "config")}
+				b.Additional.Set("ssm_param", map[string]any{"DB_PASSWORD": "root_password"})
+				return b
+			},
+			mapping: `{"ssm_param": {"DB_PASSWORD": "/db/password"}}`,
+		},
+		{
+			name: "a file and a custom mechanism, the mapping naming only env",
+			block: func() *types.InjectBlock {
+				b := &types.InjectBlock{File: entry("/run/config.yaml", "config")}
+				b.Additional.Set("ssm_param", map[string]any{"DB_PASSWORD": "root_password"})
+				return b
+			},
+			mapping: `{"env": {"OTHER_VAR": "value"}}`,
+			refused: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			input, lookup := injectMappingInput([]string{"db-creds"}, map[string]string{"db-creds": tc.mapping})
+			node, _ := input.Graph.Spec.Nodes.Get("api")
+			node.SelfInject = tc.block()
+			input.Graph.Spec.Nodes.Set("api", node)
+			factory := func(string) (renderer.Provider, error) { return &captureComposerEngine{}, nil }
+
+			_, err := renderer.RenderAll(context.Background(), input, lookup, factory)
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("RenderAll must render; got %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, renderer.ErrUnmappedCustomMechanism()) {
+				t.Fatalf("RenderAll error = %v; want ErrUnmappedCustomMechanism for the custom mechanism", err)
+			}
+			if text := renderedHaltText(err); strings.Contains(text, `"file"`) {
+				t.Errorf("the halt must name only the custom mechanism, never file; got %s", text)
+			}
+		})
+	}
+}
+
 // TestRenderAll_EveryAttachmentLeavingItUnmappedIsReported is the row that pins
 // what gathering the reading after the phase buys: two attachments each leave the
 // declared mechanism unmapped and BOTH are reported, where a reading inside the

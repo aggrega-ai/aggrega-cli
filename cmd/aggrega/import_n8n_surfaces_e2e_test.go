@@ -56,9 +56,7 @@ func TestAnN8nWorkflowIsDraftedAlikeAtEverySurface(t *testing.T) {
 			t.Fatalf("seed the served workspace: %v", err)
 		}
 		answer := callAssistantTool(t, root, "import", map[string]any{"source": name})
-		if answer.isError {
-			t.Fatalf("the import was refused: %s", answer.text)
-		}
+		assertImportToolDrafted(t, answer)
 		var payload struct {
 			Format  string   `json:"format"`
 			Written []string `json:"written"`

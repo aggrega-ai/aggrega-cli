@@ -98,9 +98,7 @@ func assertMCPConfigurationDraftedAlikeAtEverySurface(t *testing.T, fixture, nam
 		root, _ := catalogFolderWorkspace(t, true)
 		importopstest.WriteSource(t, filepath.Join(root, filepath.FromSlash(name)), string(body))
 		answer := callAssistantTool(t, root, "import", map[string]any{"source": name})
-		if answer.isError {
-			t.Fatalf("the import was refused: %s", answer.text)
-		}
+		assertImportToolDrafted(t, answer)
 		var payload struct {
 			Format  string   `json:"format"`
 			Written []string `json:"written"`

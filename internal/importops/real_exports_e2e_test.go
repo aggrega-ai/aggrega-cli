@@ -189,6 +189,11 @@ func readRealExport(t *testing.T, rel string) []byte {
 // The plugin bytes come from the cascade built from the directories the seam
 // hands over and nothing else, as in the catalog-folder cases beside this file.
 // What the importer is handed is what rw's own importer attachments hand it.
+//
+// The export is read where it is committed, so the answers file is named inside
+// the workspace rw, which the test owns: a writing import never writes beside a
+// fixture. It is one path for every import over rw, so two imports of one export
+// are handed the same input and their records name the same answers file.
 func importRealExport(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, rel string,
 	delivery authoredcontent.Delivery, outputDir string) Result {
 	t.Helper()
@@ -197,6 +202,7 @@ func importRealExport(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, rel s
 		SourceName:    filepath.Base(rel),
 		OutputDir:     outputDir,
 		Delivery:      delivery,
+		Answers:       filepath.Join(rw.Root(), "answers", AnswersFileName),
 		ResolvePlugin: (&recordingCascade{}).resolve,
 	})
 	if err != nil {
@@ -228,8 +234,9 @@ func TestImportDraftsRealLangflowAndFlowiseExports(t *testing.T) {
 			if first.Format != ex.format {
 				t.Errorf("the export was read as the %q format, want %q", first.Format, ex.format)
 			}
-			if len(first.Diagnostics) != 0 {
-				t.Errorf("the importer reported %+v; this export reads with no diagnostic", first.Diagnostics)
+			if got := diagnosticsBesideTheOwed(first); len(got) != 0 {
+				t.Errorf("the importer reported %+v; this export reads with no diagnostic but the values its "+
+					"drafts owe", got)
 			}
 			if got := draftPaths(first); !slices.Equal(got, ex.drafts) {
 				t.Errorf("the importer drafted\n  %v\nwant\n  %v", got, ex.drafts)

@@ -151,17 +151,17 @@ func TestInjectMappingMechanismRule(t *testing.T) {
 		}
 	})
 
-	t.Run("REFUSAL: a core mechanism the mapping does not name", func(t *testing.T) {
+	t.Run("REFUSAL: one of two custom mechanisms the mapping does not name", func(t *testing.T) {
 		t.Parallel()
 		halt := injectMappingHalt(t, "api", []string{"db-creds"},
 			map[string][]constraint.InjectMappingMechanism{
-				"db-creds": {mapped("env", "partial-resolver"), unmapped("file", "partial-resolver")},
+				"db-creds": {mapped("ssm_param", "partial-resolver"), unmapped("vault_path", "partial-resolver")},
 			})
 		findings := injectDeliveryFindings(t, halt)
 		if len(findings) != 1 {
-			t.Fatalf("expected one finding for the unmapped core mechanism; got %d: %v", len(findings), findings)
+			t.Fatalf("expected one finding for the unmapped custom mechanism; got %d: %v", len(findings), findings)
 		}
-		if !strings.Contains(findings[0], `"file"`) {
+		if !strings.Contains(findings[0], `"vault_path"`) {
 			t.Errorf("the finding must name the unmapped mechanism; got %q", findings[0])
 		}
 	})

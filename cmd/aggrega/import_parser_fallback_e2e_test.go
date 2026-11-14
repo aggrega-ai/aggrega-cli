@@ -114,9 +114,7 @@ func TestEveryImportSurfaceReadsThroughTheBinarysParserWhereTheWorkspaceServesNo
 		root, _ := parserlessFolderWorkspace(t)
 		seedSource(t, root, "flow.json", body)
 		answer := callAssistantTool(t, root, "import", map[string]any{"source": "flow.json"})
-		if answer.isError {
-			t.Fatalf("the import was refused: %s", answer.text)
-		}
+		assertImportToolDrafted(t, answer)
 		var payload struct {
 			Format  string   `json:"format"`
 			Written []string `json:"written"`
