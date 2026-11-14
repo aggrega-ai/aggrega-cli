@@ -90,6 +90,37 @@ type importArgs struct {
 	// OutputDir is one — absent hands the import none, so it reads the one its
 	// own default names, and a value sent blank is refused.
 	Answers *string `json:"answers"`
+
+	// Answered carries answers for values an earlier call's owed listed. They are
+	// handed to the import through the seam a person at a terminal is asked
+	// through ([importops.GivenAnswers]), so the import judges each, keeps the
+	// accepted ones in the answers file and writes them into the drafts, exactly as
+	// the command does with an answer typed there and the editor's session does
+	// with one it is sent.
+	Answered []importAnswered `json:"answered"`
+}
+
+// importAnswered is one answer a call sends for an owed value: the drafted file
+// and the keys as the owed entry named them, and the answer.
+type importAnswered struct {
+	File   string   `json:"file"`
+	Key    []string `json:"key"`
+	Answer string   `json:"answer"`
+}
+
+// importOwed is one value the drafts still owe, as this protocol carries it: the
+// drafted file, the keys leading to it, what it is, whether it is a secret's, and
+// — on a secret's — what its answer must be, or why the answer sent for it was
+// refused.
+//
+// The keys are a list rather than one joined string, as a drift entry's are, so
+// a key holding a full stop is read back, and sent back, as the one key it is.
+type importOwed struct {
+	File         string   `json:"file"`
+	Key          []string `json:"key"`
+	Question     string   `json:"question"`
+	Sensitive    bool     `json:"sensitive"`
+	SecretAdvice string   `json:"secret_advice,omitempty"`
 }
 
 // importDrift is one part a sync brought up to date, or under `dry_run` would:
@@ -235,6 +266,12 @@ type importDecisionChoice struct {
 // gives through its exit status, carried here as data because this surface has
 // none. It is always an array, empty for a call that is not a sync and for a sync
 // in step.
+//
+// Owed is every value the drafts still leave empty that no source supplied and no
+// answer did, in the order the drafts are written: the values the warning
+// diagnostics name, carried as data so a caller answers them by sending each back
+// under `answered` without reading the sentences. It is always an array, empty
+// where the drafts owe nothing.
 type importPayload struct {
 	WorkspaceRoot         *string `json:"workspace_root"`
 	WorkspaceRootWithheld bool    `json:"workspace_root_withheld,omitempty"`
@@ -248,6 +285,7 @@ type importPayload struct {
 	Drift       []importDrift      `json:"drift"`
 	Diagnostics []importDiagnostic `json:"diagnostics"`
 	Decisions   []importDecision   `json:"decisions"`
+	Owed        []importOwed       `json:"owed"`
 	Halted      bool               `json:"halted"`
 }
 
@@ -346,11 +384,18 @@ var importToolSpec = toolSpec{
 		"and the answers are written into the drafts; an answer for a key these drafts do not leave empty is kept " +
 		"in the file and not applied, so one answers file serves every target. A secret's answer is the name of where it comes from — a " +
 		"variable name, ${NAME}, or a Kubernetes Secret's name — and anything else is refused with nothing " +
-		"written. Nothing is ever asked here: every value still owed comes back as a warning diagnostic naming " +
-		"the file, the key and what it is, the answers file is written with each owed key present and empty, and " +
-		"the call fails with one sentence naming how many values are owed and where; write them there and call " +
-		"again. Under `dry_run` nothing is written, the answers file included, and the owed values come back " +
-		"among the diagnostics without failing the call. Where the drafts include a Release, owe nothing and the importer finished, the import then pulls " +
+		"written. Nothing is ever asked here: every value still owed comes back in the answer's `owed` — the " +
+		"file, the `key` leading to it as a list, the `question` saying what it is, whether it is `sensitive`, " +
+		"and on a secret's value its `secret_advice` — and as a warning diagnostic naming the file, the key and " +
+		"what it is, the answers file is written with each owed key present and empty, and the call fails with " +
+		"one sentence naming how many values are owed and where; write them there, or send each back in " +
+		"`answered` with its `file`, its `key` and its `answer`, and call again with `sync`. A sent answer is " +
+		"judged, kept in the answers file and written into the drafts as one typed at the command's prompt is: a " +
+		"secret's answer that is not a name is neither kept nor written, its value staying owed with the reason " +
+		"as its `secret_advice`; a value the answers file already answers is answered from the file, and an " +
+		"empty answer, or one naming a value the drafts do not owe, is not applied. Under `dry_run` nothing is " +
+		"written, the answers file included, no sent answer is applied, and the owed values come back in `owed` " +
+		"and among the diagnostics without failing the call. Where the drafts include a Release, owe nothing and the importer finished, the import then pulls " +
 		"that Release's dependencies as the pull tool does, writing its lockfile, so validate and build work on " +
 		"the drafts at once; offline it pulls nothing and a diagnostic names the pull to run, and a pull that " +
 		"fails fails the call with the drafts written. The drafts are a starting point an author owns and goes " +
@@ -398,6 +443,19 @@ var importToolSpec = toolSpec{
       "type": "string",
       "minLength": 1,
       "description": "The answers file the values the drafts leave empty that no source can hold are read from and written to, relative to the workspace root or absolute: under each drafted file's path, the key path inside it and its answer. Leave it out and the one the record beside the drafts names is used, or else import-answers.yaml beside the source file or inside the source directory. A secret's answer names where the secret comes from, never the secret itself."
+    },
+    "answered": {
+      "type": "array",
+      "description": "Answers for values an earlier call's owed listed, each naming the drafted file and the keys as owed named them. Each is judged, kept in the answers file and written into the drafts as an answer typed at the command's prompt is; a secret's answer that is not a name is neither kept nor written, and its value stays owed with the reason as its secret_advice. Send it with sync once the drafts are written. Under dry_run no answer sent is applied.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "The drafted file the value is in, as owed names it." },
+          "key": { "type": "array", "items": { "type": "string" }, "description": "The keys leading to the value, as owed names them." },
+          "answer": { "type": "string", "description": "The answer. An empty one leaves the value owed." }
+        },
+        "required": ["file", "key", "answer"]
+      }
     },
     "workspace_root": {
       "type": "string",
@@ -513,6 +571,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		}
 	}
 
+	given := importops.NewGivenAnswers(importGivenFor(a.Answered))
 	delivery := authoredcontent.DeliveryFor(a.DryRun)
 	// The format the caller named, or none, is handed on as it is: the layer
 	// settles it, recognising an unnamed one from the signatures of the importers
@@ -530,8 +589,11 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
 		Answers:       answersFile,
-		// Nobody is watching a protocol stream, so nothing is asked: a value the
-		// drafts owe is reported among the diagnostics and fails the call.
+		// Nobody is watching a protocol stream, so nothing is asked: the answers
+		// the call sent are put to the import's own seam, and a value the drafts
+		// still owe is reported in owed and among the diagnostics and fails the
+		// call.
+		Ask: given.Ask(),
 		//
 		// The drafted Release's dependencies are pulled by the one resolution
 		// the pull tool performs, so an import here pins exactly what that tool
@@ -576,6 +638,7 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 		Drift:       importDriftFor(res.Drift),
 		Diagnostics: importDiagnosticsFor(tw, res.Diagnostics),
 		Decisions:   importDecisionsFor(tw, res.Decisions),
+		Owed:        importOwedFor(tw, res.Owed, given),
 		Halted:      res.Halted(),
 	}
 	payload.WorkspaceRoot, payload.WorkspaceRootWithheld = tw.reportedLocationField(tw.root)
@@ -930,6 +993,33 @@ func importDriftFor(drift []importops.Drift) []importDrift {
 	out := make([]importDrift, 0, len(drift))
 	for _, d := range drift {
 		out = append(out, importDrift{Change: d.Change, File: d.File, Key: append([]string{}, d.Key...)})
+	}
+	return out
+}
+
+// importGivenFor hands the answers a call sent to the import's own seam in the
+// order sent.
+func importGivenFor(answered []importAnswered) []importops.Given {
+	out := make([]importops.Given, 0, len(answered))
+	for _, a := range answered {
+		out = append(out, importops.Given{File: a.File, Keys: a.Key, Answer: a.Answer})
+	}
+	return out
+}
+
+// importOwedFor projects the values still owed onto this surface's shape, in the
+// operation's order, always as an array — and each value's keys as an array too
+// — so an import owing nothing arrives as an empty list rather than a missing
+// field. What a value is, and what a secret's entry advises, is prose the import
+// composed, told as a diagnostic's message is; the advice is the import's own
+// sentence, or its own reason the answer sent for it was refused
+// ([importops.GivenAnswers.Advice]).
+func importOwedFor(tw *toolWorkspace, owed []importops.Owed, given *importops.GivenAnswers) []importOwed {
+	out := make([]importOwed, 0, len(owed))
+	for _, o := range owed {
+		out = append(out, importOwed{File: o.File, Key: append([]string{}, o.Keys...),
+			Question: tw.reportedText(o.Question()), Sensitive: o.Sensitive,
+			SecretAdvice: tw.reportedText(given.Advice(o))})
 	}
 	return out
 }

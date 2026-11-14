@@ -159,6 +159,72 @@ func (e *PullError) Unwrap() error { return e.Err }
 // not yet answered stays owed.
 type Ask func(o Owed, refused string) (string, error)
 
+// Given is one answer a caller sent with its request for a value the drafts owe,
+// rather than one a person typed: the drafted file the value is in and the keys
+// leading to it, as [Owed.File] and [Owed.Keys] name them, and the answer.
+type Given struct {
+	File   string
+	Keys   []string
+	Answer string
+}
+
+// GivenAnswers answers the values the drafts owe from the answers a caller sent
+// with its request, through the one seam a person at a terminal is asked through
+// ([Options.Ask]). So a sent answer is judged, kept in the answers file and
+// written into the drafts exactly as a typed one is, and a secret's answer that
+// is not a name ([AnswerIsAName]) is refused and never kept.
+//
+// Each sent answer is put to the value it names once. Where it is refused the
+// value stays owed and [GivenAnswers.Advice] says why, rather than a second
+// answer being waited for: a caller that sent its answers with the request has
+// no further one to give within it. A value no sent answer names stays owed, as
+// does one sent an empty answer; an answer naming a value the drafts do not owe
+// is not applied; and a value the answers file already answers is answered from
+// the file, which is read first, so nothing is put to the seam for it.
+type GivenAnswers struct {
+	given   []Given
+	refused map[string]string
+}
+
+// NewGivenAnswers holds the answers a caller sent, in the order sent; where two
+// name one value, the first is the one put to it.
+func NewGivenAnswers(given []Given) *GivenAnswers {
+	return &GivenAnswers{given: slices.Clone(given), refused: map[string]string{}}
+}
+
+// Ask is the seam [Options.Ask] takes, or nil where no answer was sent, so an
+// import sent none is performed exactly as one handed no seam at all.
+func (g *GivenAnswers) Ask() Ask {
+	if g == nil || len(g.given) == 0 {
+		return nil
+	}
+	return func(o Owed, refused string) (string, error) {
+		if refused != "" {
+			g.refused[owedID(o.File, o.Keys)] = refused
+			return "", nil
+		}
+		for _, a := range g.given {
+			if a.File == o.File && slices.Equal(a.Keys, o.Keys) {
+				return a.Answer, nil
+			}
+		}
+		return "", nil
+	}
+}
+
+// Advice is what the caller is told about answering the owed value o: why the
+// answer sent for it was refused, where one was, and otherwise
+// [Owed.SecretAdvice]. Only a secret's answer is refused, so it is empty for any
+// other value. A nil GivenAnswers advises as [Owed.SecretAdvice] does.
+func (g *GivenAnswers) Advice(o Owed) string {
+	if g != nil {
+		if refused := g.refused[owedID(o.File, o.Keys)]; refused != "" {
+			return refused
+		}
+	}
+	return o.SecretAdvice()
+}
+
 // answerVariableName, answerVariableReference and answerKubernetesName are the
 // three names a secret's answer may be.
 var (

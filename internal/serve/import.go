@@ -92,15 +92,46 @@ import (
 // the values the drafts owe are read from and written to. It is written to, so it
 // is resolved inside the workspace this session opened, as outputDir is; absent
 // hands the import none, and the import reads the one its own default names.
+//
+// answered carries answers for values an earlier answer's owed listed. They are
+// handed to the import through the seam a person at a terminal is asked through
+// ([importops.GivenAnswers]), so the import judges each — a secret's answer that
+// is not a name is refused, and the value stays owed saying why — keeps the
+// accepted ones in the answers file and writes them into the drafts, exactly as
+// it does with an answer typed at the terminal. Nothing here judges or keeps an
+// answer of its own.
 type importParams struct {
-	Source    string `json:"source"`
-	OutputDir string `json:"outputDir"`
-	Format    string `json:"format"`
-	Target    string `json:"target"`
-	DryRun    bool   `json:"dryRun"`
-	Sync      bool   `json:"sync"`
-	Upgrade   bool   `json:"upgrade"`
-	Answers   string `json:"answers"`
+	Source    string           `json:"source"`
+	OutputDir string           `json:"outputDir"`
+	Format    string           `json:"format"`
+	Target    string           `json:"target"`
+	DryRun    bool             `json:"dryRun"`
+	Sync      bool             `json:"sync"`
+	Upgrade   bool             `json:"upgrade"`
+	Answers   string           `json:"answers"`
+	Answered  []importAnswered `json:"answered"`
+}
+
+// importAnswered is one answer a request sends for an owed value: the drafted
+// file and the keys as the owed entry named them, and the answer.
+type importAnswered struct {
+	File   string   `json:"file"`
+	Key    []string `json:"key"`
+	Answer string   `json:"answer"`
+}
+
+// importOwed is one value the drafts still owe on the wire: the drafted file, the
+// keys leading to it, what it is, whether it is a secret's, and — on a secret's —
+// what its answer must be, or why the answer sent for it was refused.
+//
+// The keys are a list rather than one joined string, as a drift entry's are, so
+// a key holding a full stop is read back, and sent back, as the one key it is.
+type importOwed struct {
+	File         string   `json:"file"`
+	Key          []string `json:"key"`
+	Question     string   `json:"question"`
+	Sensitive    bool     `json:"sensitive"`
+	SecretAdvice string   `json:"secretAdvice,omitempty"`
 }
 
 // importedFile is one drafted file on the wire: the path it is for, relative to
@@ -187,9 +218,14 @@ type importDrift struct {
 // choice, a rationale or a swap hint the importer did not write is absent from
 // its entry, as it is on the importer's own answer.
 //
-// files, written, drift, diagnostics and decisions are always arrays, empty
-// rather than absent, so a client reads an import that produced nothing as an
-// empty answer rather than as a missing field.
+// owed is every value the drafts still leave empty that no source supplied and no
+// answer did, in the order the drafts are written: the values the warning
+// diagnostics name, carried as data so a client asks for them without reading
+// the sentences, and answers them by sending each back under answered.
+//
+// files, written, drift, diagnostics, decisions and owed are always arrays,
+// empty rather than absent, so a client reads an import that produced nothing as
+// an empty answer rather than as a missing field.
 type importResult struct {
 	Format      string               `json:"format"`
 	OutputDir   string               `json:"outputDir"`
@@ -198,6 +234,7 @@ type importResult struct {
 	Drift       []importDrift        `json:"drift"`
 	Diagnostics []importDiagnostic   `json:"diagnostics"`
 	Decisions   []abi.ImportDecision `json:"decisions"`
+	Owed        []importOwed         `json:"owed"`
 	Halted      bool                 `json:"halted"`
 }
 
@@ -236,7 +273,8 @@ type importResult struct {
 // except a parser for a syntax the catalog serves none for, which is the one the
 // binary carries. The acquisition and the parser resolution are the import
 // operation's own, so this method acquires and parses exactly as the command and
-// the assistant's tool do. Nothing is prompted for.
+// the assistant's tool do. Nothing is prompted for: a value the drafts owe is
+// answered by an answer the request sent, or stays owed.
 func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error {
 	var params importParams
 	if len(req.Params) > 0 {
@@ -286,9 +324,11 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 	// it resolves among. The source is handed on as the path resolved, a
 	// file or a directory, and the import reads it.
 	//
-	// Nothing is asked, and a value the drafts owe is reported among the
+	// Nobody is asked: the answers the request sent are put to the import's own
+	// seam, and a value the drafts still owe is reported in owed and among the
 	// diagnostics. The drafted Release's dependencies are pulled by the one
 	// resolution a build's fill performs here.
+	given := importops.NewGivenAnswers(importGiven(params.Answered))
 	delivery := authoredcontent.DeliveryFor(params.DryRun)
 	res, err := importops.Import(ctx, s.resolvedWorkspace, importops.Options{
 		SourcePath:    sourcePath,
@@ -301,6 +341,7 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		Delivery:      delivery,
 		ResolvePlugin: s.resolveImportPlugin,
 		Answers:       answers,
+		Ask:           given.Ask(),
 		Pull: func(ctx context.Context, release string) ([]string, error) {
 			var notices bytes.Buffer
 			_, err := pullops.Run(ctx, s.dependencyResolution(release, pipeline.Options{}, &notices))
@@ -364,12 +405,12 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 	// names the file a write would delete. A second list would be a second home for
 	// that one fact.
 	//
-	// Each value still owed reaches this answer among the diagnostics, as a warning
-	// naming the file, the key and what it is, and the sentence the command line
-	// refuses with — how many values are owed and where they are written — closes
-	// the diagnostics, so a client reads the outcome where it reads every other
-	// finding. A pull that failed once the drafts were written closes them the same
-	// way, beside the files written and the pull's own account.
+	// Each value still owed reaches this answer as data, in owed, and among the
+	// diagnostics, as a warning naming the file, the key and what it is; the
+	// sentence the command line refuses with — how many values are owed and where
+	// they are written — closes the diagnostics, so a client reads the outcome where
+	// it reads every other finding. A pull that failed once the drafts were written
+	// closes them the same way, beside the files written and the pull's own account.
 	//
 	// projection-omits internal/importops.Result.Answers: the answers file is named
 	// by the sentence closing the diagnostics wherever the drafts still owe a value,
@@ -391,8 +432,33 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 		Drift:       importDrifts(res.Drift),
 		Diagnostics: diagnostics,
 		Decisions:   importDecisions(res.Decisions),
+		Owed:        importOwedValues(res.Owed, given),
 		Halted:      res.Halted(),
 	})
+}
+
+// importGiven hands the answers a request sent to the import's own seam in the
+// order sent.
+func importGiven(answered []importAnswered) []importops.Given {
+	out := make([]importops.Given, 0, len(answered))
+	for _, a := range answered {
+		out = append(out, importops.Given{File: a.File, Keys: a.Key, Answer: a.Answer})
+	}
+	return out
+}
+
+// importOwedValues projects the values still owed onto the wire shape, in the
+// operation's order, always as an array — and each value's keys as an array too
+// — so an import owing nothing answers an empty list rather than a missing field.
+// What a secret's entry advises is the import's own sentence, or the import's own
+// reason the answer sent for it was refused ([importops.GivenAnswers.Advice]).
+func importOwedValues(owed []importops.Owed, given *importops.GivenAnswers) []importOwed {
+	out := make([]importOwed, 0, len(owed))
+	for _, o := range owed {
+		out = append(out, importOwed{File: o.File, Key: append([]string{}, o.Keys...), Question: o.Question(),
+			Sensitive: o.Sensitive, SecretAdvice: given.Advice(o)})
+	}
+	return out
 }
 
 // sessionExistingAggregate words the refusal of a request whose drafts would be

@@ -43,6 +43,12 @@ type Owed struct {
 	line int
 }
 
+// owedID is one owed value's identity as a map key: its drafted file and the
+// keys leading to it, which no two owed values share.
+func owedID(file string, keys []string) string {
+	return file + "\x00" + joinKey(keys)
+}
+
 // Key is the owed value's key path as the answers file writes it: the keys
 // joined by full stops, a key holding one written quoted ([RenderKey]).
 func (o Owed) Key() string { return RenderKey(o.Keys) }
@@ -58,6 +64,22 @@ func (o Owed) Question() string {
 		return o.Comment
 	}
 	return o.Takes
+}
+
+// secretAdvice is what a person answering a secret's value is told before they
+// answer it.
+const secretAdvice = "This is a secret: answer with where it comes from — a variable name, ${NAME}, or the name " +
+	"of a Kubernetes Secret — never the secret itself."
+
+// SecretAdvice is what anyone answering the owed value is told its answer must
+// be, where it is a secret's, and empty otherwise. It is the one sentence every
+// surface shows: the terminal under the question it asks, and a protocol answer
+// on the value's entry.
+func (o Owed) SecretAdvice() string {
+	if !o.Sensitive {
+		return ""
+	}
+	return secretAdvice
 }
 
 // keyComment is the comment written directly above a key, its markers and line
@@ -107,7 +129,7 @@ func readOwed(files []abi.ScaffoldFile, recipes RecipeIndex) []Owed {
 	seen := map[string]bool{}
 	add := func(file string, found []validateops.Placeholder) {
 		for _, p := range found {
-			id := file + "\x00" + joinKey(p.Keys)
+			id := owedID(file, p.Keys)
 			if seen[id] {
 				continue
 			}

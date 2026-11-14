@@ -502,9 +502,8 @@ func importAsker(in io.Reader, out, errOut io.Writer) importops.Ask {
 			fmt.Fprintf(errOut, "  refused: %s\n", refused)
 		} else {
 			fmt.Fprintf(errOut, "\n%s %s\n  %s\n", o.File, o.Key(), o.Question())
-			if o.Sensitive {
-				fmt.Fprintln(errOut, "  This is a secret: answer with where it comes from — a variable name, ${NAME}, "+
-					"or the name of a Kubernetes Secret — never the secret itself.")
+			if advice := o.SecretAdvice(); advice != "" {
+				fmt.Fprintln(errOut, "  "+advice)
 			}
 		}
 		fmt.Fprint(errOut, "> ")
