@@ -79,17 +79,66 @@ func wholeHubWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 }
 
 // exampleSource copies the source/ directory of the documentation example
-// import-<format> into a directory named source of its own, and returns it. The
+// import-<format> into a directory named source of its own, leaving out the
+// answers file the example ships, and returns the copy and the shipped answers
+// file's path inside the copy, where an import of the copy looks for it. The
 // import reads the copy and never the example, so nothing an import writes beside
 // its source can reach the documentation; the directory keeps the name source,
 // since an import of a directory names its draft after the directory.
-func exampleSource(t *testing.T, format string) string {
+//
+// The shipped answers file is left out so the first import of a case meets the
+// source alone, as a user's first import does, and reports everything the source
+// leaves owed; the example's own answers are read from the example
+// ([exampleAnswers]). The test fails where the example ships no answers file, or
+// more than one.
+func exampleSource(t *testing.T, format string) (string, string) {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "source")
 	if err := os.CopyFS(dir, os.DirFS(filepath.Join(importExamplesDir, "import-"+format, "source"))); err != nil {
 		t.Fatalf("copy the import-%s example's source: %v", format, err)
 	}
-	return dir
+	var shipped []string
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() != AnswersFileName {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		shipped = append(shipped, rel)
+		return os.Remove(path)
+	})
+	if err != nil {
+		t.Fatalf("leave the import-%s example's answers file out of the copy: %v", format, err)
+	}
+	if len(shipped) != 1 {
+		t.Fatalf("the import-%s example ships %d answers files %q, want one", format, len(shipped), shipped)
+	}
+	return dir, shipped[0]
+}
+
+// exampleAnswers reads the answers file the documentation example import-<format>
+// ships at rel inside its source/ directory, and returns each answer it gives by
+// its place, keyed as draftedScalars keys a place: the drafted file, a colon, and
+// the key path.
+func exampleAnswers(t *testing.T, format, rel string) map[string]string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(importExamplesDir, "import-"+format, "source", rel))
+	if err != nil {
+		t.Fatalf("read the import-%s example's answers file: %v", format, err)
+	}
+	var byFile map[string]map[string]string
+	if err := yaml.Unmarshal(body, &byFile); err != nil {
+		t.Fatalf("the import-%s example's answers file does not read as drafted files of key paths: %v", format, err)
+	}
+	answers := map[string]string{}
+	for file, keys := range byFile {
+		for key, answer := range keys {
+			answers[file+":"+key] = answer
+		}
+	}
+	return answers
 }
 
 // importAsTheExample imports the source argument names inside sourceDir for

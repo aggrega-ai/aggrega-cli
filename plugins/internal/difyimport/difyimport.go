@@ -37,13 +37,19 @@
 // installation's application secret, which core/dify takes in its secret_key
 // parameter with no default, is the Release's to supply: the drafted
 // Aggregate declares a required secret_key parameter of its own and passes it
-// down to the entry, for the Release to fulfill: the drafted Release declares
-// it empty under its spec.parameters. The owner account the application is
-// imported under is the Release's to name too: the drafted Release's entry for
-// the module writes its email empty, and attaches its password as a secret named
-// by reference, core/referenced-secret, as core/dify attaches every secret of its
-// own, its name written empty; for the helm target the draft maps that type to
-// the realization reading the name as a Secret already in the namespace.
+// down to the entry, for the Release to fulfill. The owner account the
+// application is imported under is the Release's to name too: the drafted
+// Release's entry for the module writes its email empty, and attaches its
+// password as core/referenced-secret, as core/dify attaches every secret of its
+// own. Both secrets are written as the kit writes a secret for the import's
+// target, and never as a value: on helm, the drafted Release's secret_key and
+// the password's origin are written empty, for the Release to name the
+// Kubernetes Secret holding each, and the draft maps core/referenced-secret to
+// the realization reading the name as a Secret already in the namespace; on
+// every other target, and with none, they are written as the variable references
+// ${DIFY_SECRET_KEY} and ${DIFY_OWNER_PASSWORD}, which the Compose realization
+// of core/referenced-secret delivers as written, so Docker Compose reads each
+// from the environment of whoever starts the stack.
 //
 // # Credential values
 //
@@ -93,6 +99,16 @@ const (
 	DefinitionParameter = "app_definition"
 	SecretKeyParameter  = "secret_key"
 	Server              = "core/ai-agent/dify"
+)
+
+// The variables the draft reads the installation's two Release-supplied secrets
+// from, on every target but helm: the names core/dify's Compose realization
+// gives them in its own text, the application secret's and the owner account's
+// password. A test holds each to that text, so the draft and the catalog name one
+// variable.
+const (
+	SecretKeyVariable     = "DIFY_SECRET_KEY"
+	OwnerPasswordVariable = "DIFY_OWNER_PASSWORD"
 )
 
 // secretKeyDescription describes the secret_key parameter a draft declares. It
@@ -150,7 +166,7 @@ var platform = importer.Platform{
 		Aggregate: Module,
 		Parameter: DefinitionParameter,
 		PassedDown: []importer.PassedDownParameter{
-			{Name: SecretKeyParameter, Description: secretKeyDescription},
+			{Name: SecretKeyParameter, Description: secretKeyDescription, Variable: SecretKeyVariable},
 		},
 	},
 	Credentials:   credentialsOf,
@@ -160,7 +176,7 @@ var platform = importer.Platform{
 		{Path: "components.api.infra.owner_email", Text: "the email of the installation's owner account the " +
 			"application is imported under, on the api component of " + Module},
 	},
-	Secrets: []importer.Secret{{Path: "components.api.features.owner_password", Variable: "DIFY_OWNER_PASSWORD",
+	Secrets: []importer.Secret{{Path: "components.api.features.owner_password", Variable: OwnerPasswordVariable,
 		Text: "the owner account's password", Referenced: true}},
 }
 

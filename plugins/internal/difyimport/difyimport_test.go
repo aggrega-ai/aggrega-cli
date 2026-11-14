@@ -135,10 +135,10 @@ func codesAndRefs(out aggrega.ImportOutput) []string {
 // alone, composing core/dify with the application carried byte for byte in its
 // app_definition — Dify's {{#…#}} references and the double quotes included —
 // secret_key passed down to it, and the comment saying the import does not check
-// the catalog for core/dify; the Release declares the secret_key parameter
-// empty and routes the installation's entry under its boundary, writing the owner
-// account's email empty and attaching its password by reference, its name left
-// empty. No Component is drafted and nothing
+// the catalog for core/dify; the Release declares the secret_key parameter and
+// routes the installation's entry under its boundary, writing the owner
+// account's email empty and attaching its password by reference, each secret, the
+// import naming no target, as a variable reference. No Component is drafted and nothing
 // is wired. The secret variable and the HTTP request node's key, each holding a
 // value, are carried as written and named in a credential-carried warning, as
 // are the request's headers; the secret written empty raises nothing. The tool,
@@ -157,32 +157,9 @@ func TestAWorkflowApplicationIsDraftedAsTheInstallationCarryingIt(t *testing.T) 
 		t.Fatalf("the import wrote %+v, want aggregate.yaml and release.yaml alone", out.Files)
 	}
 	// The Release places the installation's entry, a module of the drafted
-	// Aggregate, under the boundary it routes it into.
-	// The secret_key parameter is declared empty under the Release's own
-	// parameters, the owner's email written empty and the owner's password attached
-	// by reference — core/referenced-secret, as core/dify attaches every secret of
-	// its own, its Secret's name written empty — each beneath its comment.
-	const left = "Left for the Release, since the source cannot supply it: "
-	if release := out.Files[1].Content; !strings.HasSuffix(release,
-		"  parameters:\n"+
-			"    # "+left+"secret_key, which the drafted Aggregate declares and passes down to core/dify; that "+
-			"parameter's description there says what the value is\n"+
-			"    secret_key: \"\"\n"+
-			"  boundaries:\n    platform:\n      aggregates:\n"+
-			"        dify:\n"+
-			"          components:\n"+
-			"            api:\n"+
-			"              infra:\n"+
-			"                # "+left+"components.api.infra.owner_email, the email of the installation's owner "+
-			"account the application is imported under, on the api component of core/dify\n"+
-			"                owner_email: \"\"\n"+
-			"              features:\n"+
-			"                owner_password:\n"+
-			"                  type: core/referenced-secret\n"+
-			"                  infra:\n"+
-			"                    # "+left+"the name of the secret resource holding the owner account's password, as "+
-			"the Manifest's realization of core/referenced-secret reads it.\n"+
-			"                    origin: \"\"\n") ||
+	// Aggregate, under the boundary it routes it into, its secrets written as
+	// variable references, since the import names no target.
+	if release := out.Files[1].Content; !strings.HasSuffix(release, releaseTail("")) ||
 		!strings.Contains(release, "\n  environment: development\n") {
 		t.Errorf("the Release does not route the installation under its boundary:\n%s", release)
 	}
@@ -254,6 +231,129 @@ func TestAWorkflowApplicationIsDraftedAsTheInstallationCarryingIt(t *testing.T) 
 	if want := []string{"Aggregate reference core/dify", "Aggregate draft imported/support-answers",
 		"Release draft imported/support-answers"}; !reflect.DeepEqual(entities, want) {
 		t.Errorf("the import emitted %v, want %v", entities, want)
+	}
+}
+
+// leftHeading opens the comment above each value a drafted Release leaves empty
+// for the Release to supply.
+const leftHeading = "Left for the Release, since the source cannot supply it: "
+
+// releaseTail is what the drafted Release of one Dify application writes from its
+// spec.parameters on, for target: the secret_key parameter, the boundary routing
+// the installation's entry, the owner's email written empty, and the owner's
+// password attached as core/referenced-secret, as core/dify attaches every secret
+// of its own, each beneath its comment. On helm the parameter and the password's
+// origin are written empty, each a Kubernetes Secret's name still owed; for every
+// other target, and for none, each is the variable reference core/dify's Compose
+// realization names, so nothing about either is owed.
+func releaseTail(target string) string {
+	const reads = ", which a target substituting variable references, as Docker Compose does when the stack " +
+		"starts, reads from the environment, so no file carries the value."
+	parameter := "    # Passed by reference, never as a value: secret_key, which the drafted Aggregate declares and " +
+		"passes down to core/dify; that parameter's description there says what the value is; it is read from the " +
+		"variable " + SecretKeyVariable + reads + "\n" +
+		"    secret_key: \"${" + SecretKeyVariable + "}\"\n"
+	origin := "                    # Attached by reference, never as a value: the owner account's password, read " +
+		"from the variable " + OwnerPasswordVariable + reads + "\n" +
+		"                    origin: \"${" + OwnerPasswordVariable + "}\"\n"
+	if target == "helm" {
+		parameter = "    # " + leftHeading + "secret_key, which the drafted Aggregate declares and passes down to " +
+			"core/dify; that parameter's description there says what the value is\n" +
+			"    secret_key: \"\"\n"
+		origin = "                    # " + leftHeading + "the name of a Kubernetes Secret already in the namespace " +
+			"holding, under the data key value, the owner account's password.\n" +
+			"                    origin: \"\"\n"
+	}
+	return "  parameters:\n" + parameter +
+		"  boundaries:\n    platform:\n      aggregates:\n" +
+		"        dify:\n" +
+		"          components:\n" +
+		"            api:\n" +
+		"              infra:\n" +
+		"                # " + leftHeading + "components.api.infra.owner_email, the email of the installation's " +
+		"owner account the application is imported under, on the api component of core/dify\n" +
+		"                owner_email: \"\"\n" +
+		"              features:\n" +
+		"                owner_password:\n" +
+		"                  type: core/referenced-secret\n" +
+		"                  infra:\n" + origin
+}
+
+// TestTheInstallationsSecretsAreWrittenForTheTarget imports the authored chat
+// application for each target a request can carry, and for none, and reads the
+// drafted Release and Manifest: for compose, and for none, secret_key and the
+// owner's password are written as the variable references ${DIFY_SECRET_KEY}
+// and ${DIFY_OWNER_PASSWORD} and no Manifest is drafted, the host mapping
+// core/referenced-secret to the one Compose realization the catalog offers; for
+// helm each is written empty, the Secret's name owed, and the drafted Manifest
+// maps core/referenced-secret to helm/k8s-existing-secret. No row writes a value.
+//
+// 🔴 PLANTED DEFECT: in Secret.Form (aggrega-pdk/go/pkg/importer/secret.go),
+// move the Referenced case above the helm case: the helm row fails, its secrets
+// written as variable references and no Manifest drafted. Drop Variable from
+// the platform's PassedDown in difyimport.go: the compose and no-target rows
+// fail, secret_key written empty.
+func TestTheInstallationsSecretsAreWrittenForTheTarget(t *testing.T) {
+	t.Parallel()
+	manifest := "apiVersion: aggrega.ai/v1beta1\n" +
+		"kind: Manifest\n" +
+		"metadata:\n" +
+		"  name: imported/policy-assistant\n" +
+		"  version: 0.1.0\n" +
+		"spec:\n" +
+		"  mappings:\n" +
+		"    features:\n" +
+		"      type:\n" +
+		"        core/referenced-secret: helm/k8s-existing-secret\n"
+	for _, row := range []struct {
+		target       string
+		wantManifest string
+	}{
+		{"compose", ""},
+		{"", ""},
+		{"helm", manifest},
+	} {
+		t.Run("target "+row.target, func(t *testing.T) {
+			t.Parallel()
+			out := Import(aggrega.ImportInput{Format: Format, Bytes: fixture(t, "authored/chat.yml"), Catalog: catalog,
+				Target: row.target}, hostParse)
+			files := map[string]string{}
+			for _, f := range out.Files {
+				files[f.Path] = f.Content
+			}
+			if release := files["release.yaml"]; !strings.HasSuffix(release, releaseTail(row.target)) {
+				t.Errorf("the Release does not write the installation's secrets for the target:\n%s\nwant it to end\n%s",
+					release, releaseTail(row.target))
+			}
+			if got := files["manifest.yaml"]; got != row.wantManifest {
+				t.Errorf("the drafted Manifest is\n%s\nwant\n%s", got, row.wantManifest)
+			}
+		})
+	}
+}
+
+// hubDifyComposeRecipe is the hub's compose/dify, the Compose realization of
+// core/ai-agent/dify, in the aggrega-hub repository checked out beside this one,
+// relative to this package.
+var hubDifyComposeRecipe = filepath.Join("..", "..", "..", "..", "aggrega-hub", "aggrega-catalog", "recipe", "compose",
+	"dify", "1.0.0", "recipe.yaml")
+
+// TestTheSecretsVariablesAreTheCatalogs holds SecretKeyVariable and
+// OwnerPasswordVariable to the hub's compose/dify, whose text names the variable
+// reference an author writes for each of the two secrets, so the catalog
+// renaming one fails here rather than leaving drafts reading a variable no
+// catalog text names. Without the aggrega-hub checkout beside this repository it
+// fails rather than skipping.
+func TestTheSecretsVariablesAreTheCatalogs(t *testing.T) {
+	t.Parallel()
+	body, err := os.ReadFile(hubDifyComposeRecipe)
+	if err != nil {
+		t.Fatalf("read the hub's compose/dify: %v", err)
+	}
+	for _, variable := range []string{SecretKeyVariable, OwnerPasswordVariable} {
+		if !bytes.Contains(body, []byte("${"+variable+"}")) {
+			t.Errorf("the hub's compose/dify names no variable reference ${%s}", variable)
+		}
 	}
 }
 

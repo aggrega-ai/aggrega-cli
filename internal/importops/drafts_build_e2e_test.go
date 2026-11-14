@@ -96,8 +96,10 @@ var asDraftedCases = []asDraftedCase{
 		asDraftedRelease + "components.n8n.uses.model.openai-chat-model.features.credential.infra.origin": answerSecret,
 	}},
 
-	{format: "dify", argument: "support-assistant.yml", target: "compose", owed: difyOwed},
-	{format: "dify", argument: "support-assistant.yml", target: "helm", owed: difyOwed},
+	{format: "dify", argument: "support-assistant.yml", target: "compose", owed: map[string]string{
+		asDraftedRelease + "boundaries.platform.aggregates.dify.components.api.infra.owner_email": answerOwner,
+	}},
+	{format: "dify", argument: "support-assistant.yml", target: "helm", owed: difyOwedOnHelm},
 
 	{format: "agent-framework", argument: "support-agent.yaml", target: "compose", owed: map[string]string{
 		asDraftedRelease + "components.supportagent.infra.image": answerImage,
@@ -144,10 +146,12 @@ var asDraftedCases = []asDraftedCase{
 	}},
 }
 
-// difyOwed are the values a Dify draft leaves for the user on either target: the
-// name the installation reads its signing key from, passed down as the Release's
-// parameter, and the owner account's address and password.
-var difyOwed = map[string]string{
+// difyOwedOnHelm are the values a Dify draft leaves for the user on helm: the
+// name of the Secret the installation reads its signing key from, passed down as
+// the Release's parameter, and the owner account's address and the name of the
+// Secret holding its password. On compose the draft reads both secrets from
+// variables, so only the owner's address is owed there.
+var difyOwedOnHelm = map[string]string{
 	asDraftedRelease + "parameters.secret_key":                                                                   answerSecretKey,
 	asDraftedRelease + "boundaries.platform.aggregates.dify.components.api.infra.owner_email":                    answerOwner,
 	asDraftedRelease + "boundaries.platform.aggregates.dify.components.api.features.owner_password.infra.origin": answerSecret,
@@ -159,8 +163,13 @@ var difyOwed = map[string]string{
 //
 //   - the source read as the example's format, the import not halted, and
 //     exactly an Aggregate, a Manifest and a Release drafted;
-//   - the import reporting as still owed exactly the values the case expects,
-//     and its drafts leaving exactly those empty, read apart from the import;
+//   - the example's source imported with the answers file it ships left out, as
+//     a first import meets it: the import reporting as still owed exactly the
+//     values the case expects, and its drafts leaving exactly those empty, read
+//     apart from the import;
+//   - the answers file the example ships sitting where an import of its source
+//     looks for one, answering every value this target owes, and answering
+//     exactly the values the example owes on one target or the other;
 //   - where any is owed, the answers file the import wrote beside the source
 //     listing exactly those, each unanswered; once each is answered there, a
 //     second import of the same source into a fresh directory, naming that file,
@@ -186,6 +195,9 @@ var difyOwed = map[string]string{
 //     case fails before any build;
 //   - in the answers file's reader, drop the answers to one drafted file: the
 //     second import still owes those values and the case fails;
+//   - delete a key from an example's shipped answers file, or have an importer
+//     start owing a value the file does not answer: every row of that example
+//     fails, naming the key as expected and absent;
 //   - in the Compose importer, stop translating an environment variable naming a
 //     service into an edge (the measured wrong stack: the API with no DATABASE_* or
 //     CACHE_HOST): the compose row fails on the API's missing variables;
@@ -202,7 +214,12 @@ func TestEveryImportExampleBuildsAsTheImportDraftsIt(t *testing.T) {
 		t.Run(tc.format+"/"+tc.target, func(t *testing.T) {
 			t.Parallel()
 			rw := wholeHubWorkspace(t)
-			source := exampleSource(t, tc.format)
+			source, shipped := exampleSource(t, tc.format)
+			besideRel, err := filepath.Rel(source, DefaultAnswersPath(filepath.Join(source, filepath.FromSlash(tc.argument))))
+			if err != nil || besideRel != shipped {
+				t.Fatalf("the example ships its answers file at %s, where an import of %s does not look for it (%s, %v)",
+					shipped, tc.argument, besideRel, err)
+			}
 			res, dir := importAsTheExample(t, rw, source, tc.argument, tc.target, "drafts", "")
 			if res.Format != tc.format {
 				t.Fatalf("the source was read as the %q format, want %s", res.Format, tc.format)
@@ -215,6 +232,18 @@ func TestEveryImportExampleBuildsAsTheImportDraftsIt(t *testing.T) {
 			}
 			holdPlaces(t, "the import reports as still owed", owedPlaces(res), tc.owed)
 			holdPlaces(t, "the drafts leave empty", emptyPlaceholders(t, dir), tc.owed)
+
+			// The example's own answers file serves both targets: it answers every
+			// value either target owes, and nothing neither owes, so a value the
+			// import stops or starts owing on either target fails here too.
+			shippedAnswers := exampleAnswers(t, tc.format, shipped)
+			holdPlaces(t, "the example's own answers file answers", placesOf(shippedAnswers), owedOnEveryTarget(tc.format))
+			for place := range tc.owed {
+				if shippedAnswers[place] == "" {
+					t.Errorf("the example's own answers file leaves %s unanswered, which the %s target owes", place,
+						tc.target)
+				}
+			}
 
 			if len(tc.owed) > 0 {
 				beside, err := filepath.Abs(DefaultAnswersPath(filepath.Join(source, filepath.FromSlash(tc.argument))))
@@ -259,6 +288,31 @@ func TestEveryImportExampleBuildsAsTheImportDraftsIt(t *testing.T) {
 			}
 		})
 	}
+}
+
+// owedOnEveryTarget returns every value the cases of format expect owed on any
+// target, each with the answer its case gives it: what the example's own answers
+// file answers.
+func owedOnEveryTarget(format string) map[string]string {
+	owed := map[string]string{}
+	for _, tc := range asDraftedCases {
+		if tc.format == format {
+			for place, answer := range tc.owed {
+				owed[place] = answer
+			}
+		}
+	}
+	return owed
+}
+
+// placesOf returns the places answers names, sorted.
+func placesOf(answers map[string]string) []string {
+	places := make([]string, 0, len(answers))
+	for place := range answers {
+		places = append(places, place)
+	}
+	slices.Sort(places)
+	return places
 }
 
 // distinctAnswers returns the answers of owed, each once, sorted.
