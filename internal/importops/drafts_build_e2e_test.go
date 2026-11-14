@@ -103,8 +103,9 @@ var asDraftedCases = []asDraftedCase{
 
 	{format: "dify", argument: "support-assistant.yml", target: "compose", owed: map[string]string{
 		asDraftedRelease + "boundaries.platform.aggregates.dify.components.api.infra.owner_email": answerOwner,
-	}, published: []string{"127.0.0.1:5001:5001", "127.0.0.1:3001:3000"}},
-	{format: "dify", argument: "support-assistant.yml", target: "helm", owed: difyOwedOnHelm},
+	}, check: assertDifyOnCompose, published: []string{"127.0.0.1:5001:5001", "127.0.0.1:3001:3000"}},
+	{format: "dify", argument: "support-assistant.yml", target: "helm", owed: difyOwedOnHelm,
+		check: assertDifyReachesTheMarketplace},
 
 	{format: "agent-framework", argument: "support-agent.yaml", target: "compose", owed: map[string]string{
 		asDraftedRelease + "components.supportagent.infra.image": answerImage,
@@ -187,6 +188,9 @@ var difyOwedOnHelm = map[string]string{
 //     database's and the cache's addresses, the database's user, name and password
 //     reference, PostgreSQL 16 with the source's user and database and that
 //     password, and Redis 7;
+//   - for the Dify example, on either target, no rendered file turning Dify's
+//     plugin marketplace off, the draft switching it on; on compose, the API
+//     server told the address the console is published at;
 //   - on compose, the rendered stack publishing exactly the case's published
 //     ports, each on the host's loopback address, as the drafted Release sets them.
 //
@@ -215,7 +219,11 @@ var difyOwedOnHelm = map[string]string{
 //     than an empty value: the agent rows fail, the place expected and neither
 //     reported nor left empty;
 //   - in the kit's Release writer, write no published port for compose: every
-//     compose row expecting a published port fails, its stack publishing nothing.
+//     compose row expecting a published port fails, its stack publishing nothing;
+//   - in the Dify importer, drop the platform's Values: both dify rows fail, the
+//     API server, the worker and the scheduler each given MARKETPLACE_ENABLED;
+//   - in the Dify importer, drop the console port's AddressAt: the dify compose
+//     row fails, the API server given no console address.
 func TestEveryImportExampleBuildsAsTheImportDraftsIt(t *testing.T) {
 	t.Parallel()
 	drafted := []string{"aggregate.yaml", ManifestFileName, "release.yaml"}
@@ -380,6 +388,47 @@ func distinctAnswers(owed map[string]string) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// assertDifyReachesTheMarketplace holds what the Dify example renders on either
+// target to the marketplace switch its draft sets on the API server, the worker
+// and the scheduler: the Recipes of the three write MARKETPLACE_ENABLED only
+// while the switch is off, so no rendered file names it. That the Recipes'
+// settings for Dify's vendor rendered at all is read off DISABLE_TELEMETRY,
+// which they write while the telemetry switch, left off, is off.
+func assertDifyReachesTheMarketplace(t *testing.T, artifacts map[string][]byte) {
+	t.Helper()
+	telemetryOff := false
+	for path, body := range artifacts {
+		if bytes.Contains(body, []byte("MARKETPLACE_ENABLED")) {
+			t.Errorf("%s turns the plugin marketplace off, which the drafted Release switches on", path)
+		}
+		telemetryOff = telemetryOff || bytes.Contains(body, []byte("DISABLE_TELEMETRY"))
+	}
+	if !telemetryOff {
+		t.Error("nothing rendered writes DISABLE_TELEMETRY; the case is not reading the Dify services it checks")
+	}
+}
+
+// assertDifyOnCompose holds the Docker Compose file the Dify example renders to
+// what its draft sets on compose: the marketplace switched on, as
+// assertDifyReachesTheMarketplace reads it, and the API server, dify-zdapi, told
+// the address the console is published at, http://127.0.0.1:3001, as the origin
+// it admits the console's browser requests from and the console address it
+// composes links with.
+func assertDifyOnCompose(t *testing.T, artifacts map[string][]byte) {
+	t.Helper()
+	assertDifyReachesTheMarketplace(t, artifacts)
+	api, ok := renderedComposeStack(t, artifacts).Services["dify-zdapi"]
+	if !ok {
+		t.Fatal("the rendered stack has no service dify-zdapi")
+	}
+	for _, name := range []string{"CONSOLE_WEB_URL", "CONSOLE_CORS_ALLOW_ORIGINS"} {
+		if got := api.Environment[name]; got != "http://127.0.0.1:3001" {
+			t.Errorf("the API server is given %s=%q, want the console's published address http://127.0.0.1:3001", name,
+				got)
+		}
+	}
 }
 
 // The values the Compose example's source states for the notes service.

@@ -240,7 +240,8 @@ const leftHeading = "Left for the Release, since the source cannot supply it: "
 
 // releaseTail is what the drafted Release of one Dify application writes from its
 // spec.parameters on, for target: the secret_key parameter, the boundary routing
-// the installation's entry, the owner's email written empty, and the owner's
+// the installation's entry, the marketplace switch set true on the API server,
+// the worker and the scheduler, the owner's email written empty, and the owner's
 // password attached as core/referenced-secret, as core/dify attaches every secret
 // of its own, each beneath its comment. On helm the parameter and the password's
 // origin are written empty, each a Kubernetes Secret's name still owed; for every
@@ -274,22 +275,31 @@ func releaseTail(target string) string {
 	}
 	apiPort, console := "", ""
 	if target == "compose" {
-		apiPort = published("5001")
+		// The API server is told the console's address, beneath its own port.
+		apiPort = published("5001") + "                " + ConsoleAddressKey + ": \"http://127.0.0.1:3001\"\n"
 		console = "            console:\n              infra:\n" + published("3001")
 	}
+	// On every target the marketplace switch, set true on the API server, the
+	// worker and the scheduler, each beneath its comment, written out here for the
+	// same reason as the port comment.
+	marketplace := "                # Lets the installation reach Dify's plugin marketplace, which the plugin serving " +
+		"the application's model, such as OpenAI's, is installed from.\n" +
+		"                marketplace_enabled: true\n"
 	return "  parameters:\n" + parameter +
 		"  boundaries:\n    platform:\n      aggregates:\n" +
 		"        dify:\n" +
 		"          components:\n" +
 		"            api:\n" +
-		"              infra:\n" +
+		"              infra:\n" + marketplace +
 		"                # " + leftHeading + "components.api.infra.owner_email, the email of the installation's " +
 		"owner account the application is imported under, on the api component of core/dify\n" +
 		"                owner_email: \"\"\n" + apiPort +
 		"              features:\n" +
 		"                owner_password:\n" +
 		"                  type: core/referenced-secret\n" +
-		"                  infra:\n" + origin + console
+		"                  infra:\n" + origin +
+		"            worker:\n              infra:\n" + marketplace +
+		"            scheduler:\n              infra:\n" + marketplace + console
 }
 
 // TestTheInstallationsSecretsAreWrittenForTheTarget imports the authored chat
@@ -301,13 +311,17 @@ func releaseTail(target string) string {
 // helm each is written empty, the Secret's name owed, and the drafted Manifest
 // maps core/referenced-secret to helm/k8s-existing-secret. No row writes a value.
 // For compose alone the API server, api, publishes 5001 and the front end,
-// console, 3001, each beneath the comment the kit writes for a published port.
+// console, 3001, each beneath the comment the kit writes for a published port,
+// and the API server is told the console's address, http://127.0.0.1:3001.
+// Every row sets the marketplace switch on the API server, the worker and the
+// scheduler.
 //
 // 🔴 PLANTED DEFECT: in Secret.Form (aggrega-pdk/go/pkg/importer/secret.go),
 // move the Referenced case above the helm case: the helm row fails, its secrets
 // written as variable references and no Manifest drafted. Drop Variable from
 // the platform's PassedDown in difyimport.go: the compose and no-target rows
-// fail, secret_key written empty.
+// fail, secret_key written empty. Drop Values from the platform: every row
+// fails, no switch written.
 func TestTheInstallationsSecretsAreWrittenForTheTarget(t *testing.T) {
 	t.Parallel()
 	manifest := "apiVersion: aggrega.ai/v1beta1\n" +
@@ -369,6 +383,118 @@ func TestTheSecretsVariablesAreTheCatalogs(t *testing.T) {
 		if !bytes.Contains(body, []byte("${"+variable+"}")) {
 			t.Errorf("the hub's compose/dify names no variable reference ${%s}", variable)
 		}
+	}
+}
+
+// hubCatalog is the hub's catalog, in the aggrega-hub repository checked out
+// beside this one, relative to this package.
+var hubCatalog = filepath.Join("..", "..", "..", "..", "aggrega-hub", "aggrega-catalog")
+
+// newestVersionDir returns the directory of the newest version of the entity
+// whose versions are the directories inside dir, each named major.minor.patch.
+func newestVersionDir(t *testing.T, dir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read the versions of %s: %v", dir, err)
+	}
+	newest, name := [3]int{-1, -1, -1}, ""
+	for _, e := range entries {
+		if v, ok := versionOf(e.Name()); ok && e.IsDir() && newerThan(v, newest) {
+			newest, name = v, e.Name()
+		}
+	}
+	if name == "" {
+		t.Fatalf("%s holds no version directory", dir)
+	}
+	return filepath.Join(dir, name)
+}
+
+// TestTheMarketplaceSwitchIsTheCatalogs holds MarketplaceSwitch and
+// MarketplaceComponents to the hub's newest core/dify: each key names a
+// component of the module whose Component, at its newest version, declares the
+// switch under its infra schema as a boolean defaulting to false, so a draft
+// sets it only where the catalog takes it, and a catalog renaming the switch or
+// the key fails here. Without the aggrega-hub checkout beside this repository it
+// fails rather than skipping.
+//
+// 🔴 PLANTED DEFECT: add "console" to MarketplaceComponents: the case fails,
+// core/ai-agent/dify-web declaring no such switch.
+func TestTheMarketplaceSwitchIsTheCatalogs(t *testing.T) {
+	t.Parallel()
+	body, err := os.ReadFile(filepath.Join(newestVersionDir(t, filepath.Join(hubCatalog, "aggregate", "core", "dify")),
+		"aggregate.yaml"))
+	if err != nil {
+		t.Fatalf("read the hub's core/dify: %v", err)
+	}
+	var module struct {
+		Spec struct {
+			Components map[string]struct {
+				Type string `yaml:"type"`
+			} `yaml:"components"`
+		} `yaml:"spec"`
+	}
+	if err := yaml.Unmarshal(body, &module); err != nil {
+		t.Fatalf("the hub's core/dify does not read as YAML: %v", err)
+	}
+	for _, key := range MarketplaceComponents {
+		typ := module.Spec.Components[key].Type
+		if typ == "" {
+			t.Errorf("core/dify composes no component keyed %s", key)
+			continue
+		}
+		got, ok := hubInfra(t, typ)[MarketplaceSwitch]
+		if !ok || got.Type != "boolean" || got.Default != false {
+			t.Errorf("%s (core/dify's %s) declares infra.%s as %+v, want a boolean defaulting to false", typ, key,
+				MarketplaceSwitch, got)
+		}
+	}
+}
+
+// infraKey is what the cases read of one key a Component declares under its
+// infra schema. Default is read as any value, since infra keys default to
+// booleans, strings and numbers alike.
+type infraKey struct {
+	Type    string `yaml:"type"`
+	Default any    `yaml:"default"`
+}
+
+// hubInfra returns the infra schema the hub's newest version of the Component
+// named typ declares, by key.
+func hubInfra(t *testing.T, typ string) map[string]infraKey {
+	t.Helper()
+	path := filepath.Join(newestVersionDir(t, filepath.Join(append([]string{hubCatalog, "component"},
+		strings.Split(typ, "/")...)...)), "component.yaml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", typ, err)
+	}
+	var component struct {
+		Spec struct {
+			Schema struct {
+				Infra map[string]infraKey `yaml:"infra"`
+			} `yaml:"schema"`
+		} `yaml:"spec"`
+	}
+	if err := yaml.Unmarshal(raw, &component); err != nil {
+		t.Fatalf("%s does not read as YAML: %v", path, err)
+	}
+	return component.Spec.Schema.Infra
+}
+
+// TestTheConsoleAddressKeyIsTheCatalogs holds ConsoleAddressKey to the hub's
+// newest core/ai-agent/dify, the module's api the draft writes it on: a string
+// with no default, so a draft writing it sets what the catalog takes, and a
+// catalog renaming it fails here. Without the aggrega-hub checkout beside this
+// repository it fails rather than skipping.
+//
+// 🔴 PLANTED DEFECT: set ConsoleAddressKey to "console_web_url": the case
+// fails, no such key declared.
+func TestTheConsoleAddressKeyIsTheCatalogs(t *testing.T) {
+	t.Parallel()
+	if got, ok := hubInfra(t, Server)[ConsoleAddressKey]; !ok || got.Type != "string" || got.Default != nil {
+		t.Errorf("%s declares infra.%s as %+v (declared %v), want a string with no default", Server,
+			ConsoleAddressKey, got, ok)
 	}
 }
 

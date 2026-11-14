@@ -49,7 +49,15 @@
 // every other target, and with none, they are written as the variable references
 // ${DIFY_SECRET_KEY} and ${DIFY_OWNER_PASSWORD}, which the Compose realization
 // of core/referenced-secret delivers as written, so Docker Compose reads each
-// from the environment of whoever starts the stack.
+// from the environment of whoever starts the stack. On every target the drafted
+// Release's entry sets marketplace_enabled true on the module's API server, task
+// worker and scheduler: core/dify's components leave Dify's plugin marketplace
+// unreached by default, and Dify serves an application's model through a
+// provider plugin, which it installs from that marketplace unless the plugin is
+// uploaded as a package. On compose the entry publishes the API server and the
+// console on this machine's loopback address, and sets the API server's
+// console_url to the address the console is published at, from which alone the
+// server admits the console's requests from a browser.
 //
 // # Credential values
 //
@@ -181,8 +189,45 @@ var platform = importer.Platform{
 		Text: "the owner account's password", Referenced: true}},
 	Published: []importer.PublishedPort{
 		{At: "components.api", Port: APIPort},
-		{At: "components.console", Port: ConsolePort},
+		{At: "components.console", Port: ConsolePort,
+			AddressAt: []string{"components.api.infra." + ConsoleAddressKey}},
 	},
+	Values: marketplaceValues(),
+}
+
+// ConsoleAddressKey is the infra key of core/ai-agent/dify, the module's api,
+// taking the address a browser opens the console at: the server admits the
+// console's browser requests from that address alone. On compose a draft writes
+// it as the address the console is published at on this machine, following the
+// console's port where a second instance moves it.
+const ConsoleAddressKey = "console_url"
+
+// MarketplaceSwitch is the infra key that lets a component of the installation
+// reach Dify's plugin marketplace, and MarketplaceComponents the keys core/dify
+// gives the components declaring it: the API server, the task worker and the
+// scheduler, each a process reading its own settings. The switch defaults to
+// false, and Dify serves a model through a provider plugin, installed from that
+// marketplace unless uploaded as a package, so a draft sets it true on each, on
+// every target. A test holds both to the catalog.
+const MarketplaceSwitch = "marketplace_enabled"
+
+// MarketplaceComponents are the components of core/dify a draft sets
+// MarketplaceSwitch on, by their keys in the module.
+var MarketplaceComponents = []string{"api", "worker", "scheduler"}
+
+// marketplaceComment is the comment above each MarketplaceSwitch a draft sets.
+const marketplaceComment = "Lets the installation reach Dify's plugin marketplace, which the plugin serving the " +
+	"application's model, such as OpenAI's, is installed from."
+
+// marketplaceValues are the values a draft sets MarketplaceSwitch true with, one
+// per component of MarketplaceComponents, in its order.
+func marketplaceValues() []importer.ReleaseValue {
+	values := make([]importer.ReleaseValue, 0, len(MarketplaceComponents))
+	for _, key := range MarketplaceComponents {
+		values = append(values, importer.ReleaseValue{Path: "components." + key + ".infra." + MarketplaceSwitch,
+			Value: "true", Comment: marketplaceComment})
+	}
+	return values
 }
 
 // The ports a draft publishes the installation's API server, the module's api,
