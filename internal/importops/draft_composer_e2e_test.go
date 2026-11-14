@@ -522,9 +522,10 @@ func TestTheCompositionAroundEachShapeOfDraft(t *testing.T) {
 	// app.yaml, and writtenComposed the same with its empty spec.manifest and the
 	// comment line above it replaced by the Manifest's name, every other byte kept.
 	in := aggrega.ImportInput{Format: "compose", Name: "app.yaml"}
-	written := importer.DraftRelease(in, importer.ReleaseDraft{Entries: []importer.ReleaseEntry{{Key: "a",
-		Left: []importer.LeftItem{{Path: "infra.image", Text: "the image running it"}}}}}).Body
 	writtenName := importer.DraftName(in)
+	written := importer.DraftRelease(in, aggrega.EmittedEntity{Kind: "Aggregate", Name: writtenName, Mode: "draft"},
+		importer.ReleaseDraft{Entries: []importer.ReleaseEntry{{Key: "a",
+			Left: []importer.LeftItem{importer.LeftImage("the image running it")}}}})[0].Body
 	before, rest, commented := strings.Cut(written, "  # manifest:")
 	_, after, emptied := strings.Cut(rest, "\n  manifest: \"\"\n")
 	if !commented || !emptied {

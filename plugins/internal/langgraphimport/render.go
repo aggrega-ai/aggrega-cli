@@ -206,8 +206,8 @@ func langgraphRelease(read []*application, parts []*datastorePart) importer.Rele
 			if g.entrypoint == "" {
 				continue
 			}
-			entry := importer.ReleaseEntry{Key: g.key, Left: []importer.LeftItem{{Path: "infra.image",
-				Text: "the container image running the application"}}}
+			entry := importer.ReleaseEntry{Key: g.key, Left: []importer.LeftItem{
+				importer.LeftImage("the container image running the application")}}
 			if contract {
 				entry.Comments = append(entry.Comments, imageContract...)
 				contract = false

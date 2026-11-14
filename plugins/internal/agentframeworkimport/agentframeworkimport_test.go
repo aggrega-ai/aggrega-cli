@@ -686,7 +686,8 @@ func TestAnAnonymousConnectionIsWrittenUnauthenticated(t *testing.T) {
 	if edge.Target != "llama3" || edge.Values["unauthenticated"] != true {
 		t.Errorf("the anonymous connection is %+v, want it targeting llama3 with unauthenticated true:\n%s", edge, text)
 	}
-	if strings.Contains(release, "features.credential") || strings.Contains(release, "the credential probe presents") {
+	if strings.Contains(release, "credential:") || strings.Contains(release, "features.credential") ||
+		strings.Contains(release, "the credential probe presents") {
 		t.Errorf("the Release asks for a credential an anonymous connection does not present:\n%s", release)
 	}
 	if got := r.Spec.Components["llama3"].Infra["endpoint"]; got != "http://ollama:11434/v1" {

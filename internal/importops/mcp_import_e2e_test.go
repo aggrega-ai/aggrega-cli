@@ -243,7 +243,8 @@ func TestTheEmptyCredentialsSettingDecidesWhatAnMCPImportCarries(t *testing.T) {
 				parts = []string{"    #   - user part, its value left out, as the empty_credentials setting asks\n",
 					"    #   - query, its value left out, as the empty_credentials setting asks\n",
 					"    #   - fragment, its value left out, as the empty_credentials setting asks\n",
-					"    remote-search: {}\n"}
+					"    remote-search:\n      infra:\n        # Left for the Release, since the source cannot supply it: " +
+						"infra.endpoint\n        endpoint: \"\"\n"}
 				partReport = func(part string) string { return "url of node remote-search is written with its " + part }
 				assertNoneReaches(t, append([]string{plantedMCPHeaderKey, plantedMCPClientID, plantedMCPClientCode},
 					address...), cursor, res, dir)

@@ -717,12 +717,13 @@ func (t flowTemplate) member(key string) json.RawMessage {
 
 // flowNodes are the elements of a Langflow flow's node list that read as nodes,
 // in the order the list holds them, and, by id, the first of them carrying each
-// id; and the flow's own top-level id and name, undecoded.
+// id; and the flow's own top-level id, name and last_tested_version, undecoded.
 type flowNodes struct {
-	list  []flowNode
-	first map[string]int
-	id    json.RawMessage
-	name  json.RawMessage
+	list    []flowNode
+	first   map[string]int
+	id      json.RawMessage
+	name    json.RawMessage
+	version json.RawMessage
 }
 
 // nodesMemo holds the nodes last read off a flow's tree.
@@ -738,22 +739,23 @@ func nodesOf(tree json.RawMessage) flowNodes {
 // element that decodes as a node, with its type and the template its data.node
 // carries, its members read once. A type that is not a string reads as none
 // and leaves the node read. A tree whose node list does not decode holds none.
-// It reads the flow's top-level id and name in the same decoding, as decoding
-// either alone would: a member whose value does not fit the node list leaves
-// them read.
+// It reads the flow's top-level id, name and last_tested_version in the same
+// decoding, as decoding each alone would: a member whose value does not fit the
+// node list leaves them read.
 func readNodes(tree json.RawMessage) flowNodes {
 	nodes := flowNodes{first: map[string]int{}}
 	var top struct {
-		ID   json.RawMessage `json:"id"`
-		Name json.RawMessage `json:"name"`
-		Data struct {
+		ID      json.RawMessage `json:"id"`
+		Name    json.RawMessage `json:"name"`
+		Version json.RawMessage `json:"last_tested_version"`
+		Data    struct {
 			Nodes []json.RawMessage `json:"nodes"`
 		} `json:"data"`
 	}
 	err := json.Unmarshal(tree, &top)
 	var mismatch *json.UnmarshalTypeError
 	if err == nil || errors.As(err, &mismatch) {
-		nodes.id, nodes.name = top.ID, top.Name
+		nodes.id, nodes.name, nodes.version = top.ID, top.Name, top.Version
 	}
 	if err != nil {
 		return nodes

@@ -120,6 +120,18 @@ func flowName(tree json.RawMessage) string {
 	return name
 }
 
+// lastTestedVersion returns the version of Langflow a Langflow export says its
+// flow was last tested with: the string at its top-level last_tested_version,
+// empty where it carries none. It is read with the flow's node list (wire.go),
+// in the one decoding of the tree they share.
+func lastTestedVersion(tree json.RawMessage) string {
+	var version string
+	if err := json.Unmarshal(nodesOf(tree).version, &version); err != nil {
+		return ""
+	}
+	return version
+}
+
 // credentialsOf locates every value a Langflow flow holds that can carry a
 // credential, each of its class, every class every time:
 //

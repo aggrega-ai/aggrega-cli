@@ -228,10 +228,9 @@ func serviceEntry(s *service, typ string) importer.ReleaseEntry {
 		case s.image != "":
 			infra = append(infra, "  image: "+yamlString(s.image))
 		case s.build:
-			entry.Left = append(entry.Left, importer.LeftItem{Path: "infra.image",
-				Text: "since the service builds its image rather than naming one"})
+			entry.Left = append(entry.Left, importer.LeftImage("since the service builds its image rather than naming one"))
 		default:
-			entry.Left = append(entry.Left, importer.LeftItem{Path: "infra.image", Text: "since the service names no image"})
+			entry.Left = append(entry.Left, importer.LeftImage("since the service names no image"))
 		}
 		if first, ok := firstPort(s); ok {
 			if n, err := strconv.Atoi(first); err == nil {

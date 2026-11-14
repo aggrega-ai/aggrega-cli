@@ -195,7 +195,7 @@ func TestAClassicProjectIsDraftedAsOneAgentPerDeclaration(t *testing.T) {
 	if !strings.Contains(text, "takes no value for it: max_iter.\n") {
 		t.Errorf("the Aggregate does not name max_iter as not carried:\n%s", text)
 	}
-	if !strings.Contains(files(out)["release.yaml"], "    brief-writer: {}\n") {
+	if !strings.Contains(files(out)["release.yaml"], "    brief-writer:\n      infra:\n") {
 		t.Errorf("the Release holds no entry for the brief writer:\n%s", files(out)["release.yaml"])
 	}
 

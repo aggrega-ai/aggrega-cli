@@ -264,18 +264,19 @@ func mappingRefusesRequest(
 //
 // It is the rule's own judgement handed to a reader outside the build, so that
 // reader cannot come to drop a mapping the build accepts, or keep one it refuses.
-// Where ancestry cannot be walked the rule leaves the mapping unjudged, and so
-// does this: it accepts.
+// ancestry is the catalog's own walk of a component type's extends chain, as the
+// catalog hands it to the build. Where it returns an error the chain cannot be
+// walked, and the rule leaves the mapping unjudged, and so does this: it accepts.
 func ManifestMappingAccepts(implements, request string, featureTier bool,
-	ancestry func(componentType string) ([]string, bool)) bool {
+	ancestry func(componentType string) ([]string, error)) bool {
 	tier := constraint.MappingTierComponents
 	if featureTier {
 		tier = constraint.MappingTierFeatures
 	}
-	if ancestry == nil {
-		ancestry = func(string) ([]string, bool) { return nil, true }
-	}
-	return !mappingRefusesRequest(implements, request, tier, ancestry)
+	return !mappingRefusesRequest(implements, request, tier, func(componentType string) ([]string, bool) {
+		bases, err := ancestry(componentType)
+		return bases, err == nil
+	})
 }
 
 // mappedRecipeImplements resolves a Manifest mapping value against the catalog

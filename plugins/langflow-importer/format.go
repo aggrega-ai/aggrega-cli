@@ -30,10 +30,13 @@ var langflow = importer.Format{
 // and no other node reaches a tools connection (wire.go), the model socket
 // draws a single connection, which no model node naming a provider other than
 // OpenAI takes (wire.go), a referenced model is given the model its node
-// selects (model.go), the inputs the Component requires that a flow cannot
-// supply are left for the Release, and the lines the compose Recipe needs for
-// the administrator's password are declared by an import for compose and shown,
-// commented out, by an import naming no target.
+// selects (model.go), the image is drafted at the version below, with the
+// version the flow was last tested with named where it differs, the
+// administrator's password and the model connection's credential are attached
+// by reference, read from LANGFLOW_ADMIN_PASSWORD and OPENAI_API_KEY — the
+// variable the Language Model node's own key field names — and, for the compose
+// target, the administrator's password is declared with the key the compose
+// Recipe reads it under where an Aggregate names one, LANGFLOW_SUPERUSER_PASSWORD.
 var platform = importer.Platform{
 	Component:       "core/ai-agent/langflow",
 	DefinitionValue: "flow_definition",
@@ -48,30 +51,19 @@ var platform = importer.Platform{
 	Single:          singleSockets,
 	Standing:        standingOf,
 	Model:           modelOf,
-	LeftForRelease: []importer.LeftItem{
-		{Path: "infra.image", Text: "the container image running Langflow"},
-		{Path: "features.admin_password", Text: "the administrator's password, while values.require_authentication stays " +
-			"true"},
-	},
-	TargetAttachments: []importer.TargetAttachment{composeAdminPassword},
+	Image:           image,
+	SourceVersion:   lastTestedVersion,
+	Secrets: []importer.Secret{{Path: "features.admin_password", Variable: "LANGFLOW_ADMIN_PASSWORD",
+		Key:  "LANGFLOW_SUPERUSER_PASSWORD",
+		Text: "the administrator's password, read while values.require_authentication stays true"}},
+	CredentialVariables: map[string]string{"model": "OPENAI_API_KEY"},
 }
 
-// composeAdminPassword declares the administrator's password with the key the
-// compose Recipe reads it under where an Aggregate names one. On compose the
-// Recipe reads every secret the Release alone attaches under the key value, so
-// the administrator's password and a model connection's credential, both
-// attached by the Release, would arrive under one key and halt the build; the
-// Kubernetes Recipe references each secret where the Release keeps it and needs
-// no such line.
-var composeAdminPassword = importer.TargetAttachment{
-	Target: "compose",
-	Slot:   "admin_password",
-	Type:   "core/secret-value",
-	Key:    "LANGFLOW_SUPERUSER_PASSWORD",
-	Why: "the compose Recipe reads every secret the Release alone attaches under the key value, so the " +
-		"administrator's password and a connection's credential would both arrive under it and halt the build; the " +
-		"Release still attaches admin_password, naming this type or none",
-}
+// image is the Langflow image a draft runs the platform from: the version the
+// standard library's Langflow Recipes are known to run, which loads a flow
+// directory at startup as those Recipes deliver it; an image at Langflow 1.5.1
+// or older does not.
+const image = "langflowai/langflow:1.6.0"
 
 // detect is how a Langflow flow is recognised when an import names no format,
 // declared in describe() and recorded on the importer's Plugin entity. A

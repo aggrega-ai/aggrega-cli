@@ -261,9 +261,9 @@ func TestEveryGoogleADKApplicationIsRecognisedAndDraftedAsOneAgentPerTree(t *tes
 				t.Errorf("the Aggregate holds %v and the Release %v, want %v and %v", aggregateKeys, releaseKeys,
 					a.aggregateKeys, a.releaseKeys)
 			}
-			if !strings.Contains(release, "#   - infra.image, the container image running the application built on "+
-				"ADK, holding its configurations\n") {
-				t.Errorf("the Release does not leave the image for the Release:\n%s", release)
+			if !strings.Contains(release, "infra.image, the container image running the application built on "+
+				"ADK, holding its configurations\n        image: \"\"\n") {
+				t.Errorf("the Release does not leave the image empty for the Release:\n%s", release)
 			}
 
 			draft, text := readCrewDraft(t, dir)

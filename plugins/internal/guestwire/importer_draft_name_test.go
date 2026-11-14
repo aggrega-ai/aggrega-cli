@@ -244,9 +244,9 @@ func releaseDraftingOf(t *testing.T, at string, src []byte) releaseDrafting {
 // plugins/internal/<name>import core — and holds every Release it drafts to the
 // plugin kit's one writer, DraftRelease: no string literal writes a Release's
 // kind line and no EmittedEntity literal is a drafted Release, each refused
-// naming the file and the line. The writer names the Release as DraftName names
-// the Aggregate it deploys, so a Release written through it is named the kit's
-// way by construction.
+// naming the file and the line. The writer names the Release after the drafted
+// Aggregate it is handed, so a Release written through it is named as that
+// Aggregate is.
 //
 // The cores drafting their own Aggregate are the ones listed in wantDrafting,
 // and each is required to call the writer, so a scan that read nothing, or a
@@ -259,7 +259,7 @@ func releaseDraftingOf(t *testing.T, at string, src []byte) releaseDrafting {
 //
 // 🔴 PLANTED DEFECT: in Import (plugins/internal/composeimport/composeimport.go),
 // replace the call of importer.DraftRelease with
-// aggrega.EmittedEntity{Kind: "Release", Name: name, Mode: "draft", Body: "kind: Release\n"}:
+// []aggrega.EmittedEntity{{Kind: "Release", Name: name, Mode: "draft", Body: "kind: Release\n"}}:
 // this test reddens naming composeimport.go twice — the literal and the kind
 // line — and names composeimport as drafting no Release through the kit.
 func TestEveryImporterDraftsItsReleaseThroughTheKit(t *testing.T) {
@@ -278,8 +278,9 @@ func (p *planted) elided(in aggrega.ImportInput) []EmittedEntity {
 	return []EmittedEntity{{Kind: "Release", Name: importer.DraftName(in), Mode: "draft"}}
 }
 
-func (p *planted) written(in aggrega.ImportInput) aggrega.EmittedEntity {
-	return importer.DraftRelease(in, importer.ReleaseDraft{})
+func (p *planted) written(in aggrega.ImportInput) []aggrega.EmittedEntity {
+	return importer.DraftRelease(in, aggrega.EmittedEntity{Kind: "Aggregate", Name: importer.DraftName(in)},
+		importer.ReleaseDraft{})
 }
 `
 	control := releaseDraftingOf(t, "planted.go", []byte(planted))

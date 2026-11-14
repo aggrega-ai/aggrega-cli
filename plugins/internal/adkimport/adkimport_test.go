@@ -286,16 +286,19 @@ func TestEachCommittedApplicationIsDraftedAsOneInstancePerTree(t *testing.T) {
 			if models != 1 {
 				t.Errorf("the import reports %d model decisions, want the tree's model's alone", models)
 			}
-			if !strings.Contains(files(out)["release.yaml"], "#   - infra.image, the container image running the "+
-				"application built on ADK, holding its configurations\n") {
-				t.Errorf("the Release does not leave the image for the Release:\n%s", files(out)["release.yaml"])
+			if !strings.Contains(files(out)["release.yaml"], "infra.image, the container image running the "+
+				"application built on ADK, holding its configurations\n        image: \"\"\n") {
+				t.Errorf("the Release does not leave the image empty for the Release:\n%s", files(out)["release.yaml"])
 			}
-			// The credential the tree presents on its wired model connection is left for
-			// the Release above the tree's entry: the positive control of the case for
-			// an unwired model, whose Release names none.
-			if credential := importer.ConnectionCredential(tc.key, modelSocket, tc.part, tc.part); !strings.Contains(
-				files(out)["release.yaml"], "#   - "+credential.Path+", "+credential.Text+"\n") {
-				t.Errorf("the Release does not leave the credential %s for the Release:\n%s", credential.Path,
+			// The credential the tree presents on its wired model connection is attached by
+			// reference on that connection: the positive control of the case for an
+			// unwired model, whose Release attaches none.
+			credential := importer.ConnectionCredential(tc.key, modelSocket, tc.part, tc.part, "")
+			if want := "      uses:\n        " + modelSocket + ":\n          " + tc.part + ":\n            features:\n" +
+				"              credential:\n                type: core/secret-value\n"; !strings.Contains(
+				files(out)["release.yaml"], want) || !strings.Contains(files(out)["release.yaml"],
+				"origin: \"${"+credential.Variable+"}\"\n") {
+				t.Errorf("the Release does not attach the credential %s by reference:\n%s", credential.Path,
 					files(out)["release.yaml"])
 			}
 		})
@@ -597,7 +600,7 @@ func TestHowATreesModelIsWired(t *testing.T) {
 				}
 			}
 			if release := files(out)["release.yaml"]; strings.Contains(release, row.token) ||
-				strings.Contains(release, "features.credential") ||
+				strings.Contains(release, "features.credential") || strings.Contains(release, "credential:") ||
 				strings.Contains(release, "the credential routed presents") {
 				t.Errorf("the Release names an entry or a credential for the unwired model:\n%s", release)
 			}

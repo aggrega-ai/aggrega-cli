@@ -26,10 +26,13 @@ var flowise = importer.Format{
 // Component's flow_definition and named by its chatflow_id, each part wired to
 // it is reached as the platform delivers its connection (wire.go), the model
 // socket draws a single connection, a referenced model is given the model its
-// node selects (model.go), the inputs the Component requires that a chatflow
-// cannot supply are left for the Release, and the lines the compose Recipe
-// needs for the owner's password are declared by an import for compose and
-// shown, commented out, by an import naming no target.
+// node selects (model.go), the image is drafted at the version below, the
+// owner's email, which no chatflow holds, is left for the Release, the owner's
+// password and the model connection's credential are attached by reference,
+// read from FLOWISE_OWNER_PASSWORD and OPENAI_API_KEY, the variable the platform
+// delivers the key as, and, for the compose target, the owner's password is
+// declared with the key the compose Recipe reads it under where an Aggregate
+// names one, OWNER_PASSWORD.
 var platform = importer.Platform{
 	Component:       "core/ai-agent/flowise",
 	DefinitionValue: "flow_definition",
@@ -42,30 +45,20 @@ var platform = importer.Platform{
 	Single:          singleSockets,
 	Standing:        standingOf,
 	Model:           modelOf,
+	Image:           image,
 	LeftForRelease: []importer.LeftItem{
-		{Path: "infra.image", Text: "the container image running Flowise"},
 		{Path: "infra.owner_email", Text: "the email address of the platform's owner account, required while " +
 			"values.flow_definition is set"},
-		{Path: "features.owner_password", Text: "that account's password, required while values.flow_definition is set"},
 	},
-	TargetAttachments: []importer.TargetAttachment{composeOwnerPassword},
+	Secrets: []importer.Secret{{Path: "features.owner_password", Variable: "FLOWISE_OWNER_PASSWORD",
+		Key: "OWNER_PASSWORD", Text: "the owner account's password, required while values.flow_definition is set"}},
+	CredentialVariables: map[string]string{"model": "OPENAI_API_KEY"},
 }
 
-// composeOwnerPassword declares the owner's password with the key the compose
-// Recipe reads it under where an Aggregate names one. On compose the Recipe
-// reads every secret the Release alone attaches under the key value, so the
-// owner's password and a model connection's credential, both attached by the
-// Release, would arrive under one key and halt the build; the Kubernetes Recipe
-// references each secret where the Release keeps it and needs no such line.
-var composeOwnerPassword = importer.TargetAttachment{
-	Target: "compose",
-	Slot:   "owner_password",
-	Type:   "core/secret-value",
-	Key:    "OWNER_PASSWORD",
-	Why: "the compose Recipe reads every secret the Release alone attaches under the key value, so the owner's " +
-		"password and a connection's credential would both arrive under it and halt the build; the Release still " +
-		"attaches owner_password, naming this type or none",
-}
+// image is the Flowise image a draft runs the platform from: the version the
+// standard library's Flowise Recipes are known to run. A chatflow states no
+// version of Flowise, so no other is named.
+const image = "flowiseai/flowise:3.1.3"
 
 // detect is how a Flowise flow is recognised when an import names no format,
 // declared in describe() and recorded on the importer's Plugin entity. A Flowise

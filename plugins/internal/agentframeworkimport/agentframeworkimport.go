@@ -82,8 +82,9 @@
 //
 // The Release, release.yaml beside aggregate.yaml, names the Aggregate and
 // leaves for the Release what no declarative agent states: each instance's image,
-// which runs the application and holds its declarative agents, and the
-// credential each presents to its model. Each model has an entry of its own, so
+// which runs the application and holds its declarative agents; it attaches the
+// credential each presents to its model by reference, as importer.Secret
+// describes, never a value. Each model has an entry of its own, so
 // the Release places it with the instances. The Release is written by the plugin
 // kit's Release writer, importer.DraftRelease, whose documentation states what every drafted Release
 // declares beside its entries.
@@ -275,10 +276,10 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		titles = append(titles, a.name)
 	}
 	name := importer.DraftName(in, titles...)
-	aggregate := renderAggregate(name, agents, parts)
-	out.Entities = append(entities,
-		aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft", Body: aggregate},
-		importer.DraftRelease(in, agentFrameworkRelease(agents, parts), titles...))
+	aggregate := aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft",
+		Body: renderAggregate(name, agents, parts)}
+	out.Entities = append(append(entities, aggregate),
+		importer.DraftRelease(in, aggregate, agentFrameworkRelease(agents, parts))...)
 	out.Files = importer.Render(in.Settings, out.Entities, out.Decisions)
 	return out
 }

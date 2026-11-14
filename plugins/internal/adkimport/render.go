@@ -195,18 +195,20 @@ func aggregateText(text string) string {
 
 // adkRelease is the drafted Release, as the plugin kit's Release writer writes
 // it: for each tree, under its instance's key, leaving for the Release the image
-// running the application and the credential the instance presents to its model,
-// with a comment naming the values the tree's configurations hand their tools and
+// running the application and attaching, by reference, the credential the
+// instance presents to its model, with a comment naming the values the tree's
+// configurations hand their tools and
 // their model requests, written as stated or, where the credential decision wrote
 // one empty, with no value; then an entry for each model part, since a build
 // places only the instances a Release names.
 func adkRelease(apps []*application, parts []*modelPart) importer.ReleaseDraft {
 	draft := importer.ReleaseDraft{}
 	for _, app := range apps {
-		entry := importer.ReleaseEntry{Key: app.key, Left: []importer.LeftItem{{Path: "infra.image",
-			Text: "the container image running the application built on ADK, holding its configurations"}}}
+		entry := importer.ReleaseEntry{Key: app.key, Left: []importer.LeftItem{importer.LeftImage(
+			"the container image running the application built on ADK, holding its configurations")}}
 		if app.part != nil {
-			entry.Left = append(entry.Left, importer.ConnectionCredential(app.key, modelSocket, app.part.key, app.part.key))
+			entry.Secrets = append(entry.Secrets,
+				importer.ConnectionCredential(app.key, modelSocket, app.part.key, app.part.key, ""))
 		}
 		if len(app.stated) > 0 {
 			entry.Comments = append(entry.Comments, "The configurations also hand these values to their tools and their "+

@@ -419,11 +419,13 @@ func TestAnMCPServerAFlowNamesIsWiredByNameItsAddressWrittenEmptyAsWiring(t *tes
 			}
 			release := readDraftedRelease(t, outputDir)
 			for _, line := range []string{
-				"    #   - infra.endpoint, the address of the MCP server the flow names remix\n    remix: {}\n",
-				"    #   - infra.endpoint, the address of the MCP server the flow names docs-server\n    docs-server: {}\n",
+				"    remix:\n      infra:\n        # Left for the Release, since the source cannot supply it: " +
+					"infra.endpoint, the address of the MCP server the flow names remix\n        endpoint: \"\"\n",
+				"    docs-server:\n      infra:\n        # Left for the Release, since the source cannot supply it: " +
+					"infra.endpoint, the address of the MCP server the flow names docs-server\n        endpoint: \"\"\n",
 			} {
 				if !strings.Contains(release, line) {
-					t.Errorf("the drafted Release does not leave for the Release\n%s", line)
+					t.Errorf("the drafted Release does not leave empty for the Release\n%s\nit reads\n%s", line, release)
 				}
 			}
 

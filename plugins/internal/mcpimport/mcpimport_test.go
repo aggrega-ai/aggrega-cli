@@ -798,13 +798,14 @@ func TestTheAddressCarriesItsLeftOutPartsInTheComment(t *testing.T) {
 				t.Errorf("the Release does not open the comment with %q:\n%s", lead, release)
 			}
 			// The entry's key follows the comment directly; it holds infra.endpoint, or,
-			// where the address is left for the Release, nothing.
+			// where the address is left for the Release, infra.endpoint written empty.
 			if !strings.Contains(release, "    #   - query, its value read from ${env:BETA_QUERY}\n    beta-api:") {
 				t.Errorf("the Release does not write the reference the second server's query reads from:\n%s", release)
 			}
 			endpoint := "    alpha-api:\n      infra:\n        endpoint: \"https://api.example.com/mcp\"\n"
 			if emptied {
-				endpoint = "    alpha-api: {}\n"
+				endpoint = "    alpha-api:\n      infra:\n        # Left for the Release, since the source cannot supply " +
+					"it: infra.endpoint\n        endpoint: \"\"\n"
 			}
 			if !strings.Contains(release, endpoint) {
 				t.Errorf("the Release does not write %q:\n%s", endpoint, release)

@@ -271,16 +271,16 @@ func TestAnApplicationIsDraftedAsOneAgentPerGraphWiredToItsDatastore(t *testing.
 	if got, want := componentKeys(t, release), []string{"triage", "support", "postgres"}; !slices.Equal(got, want) {
 		t.Errorf("the Release holds %v, want %v:\n%s", got, want, release)
 	}
-	if got := strings.Count(release, "    #   - infra.image, the container image running the application\n"); got != 2 {
-		t.Errorf("the Release leaves the image for the Release above %d graphs, want both:\n%s", got, release)
+	if got := strings.Count(release, "infra.image, the container image running the application\n"+
+		"        image: \"\"\n"); got != 2 {
+		t.Errorf("the Release leaves the image empty for the Release in %d graphs, want both:\n%s", got, release)
 	}
 	// The image contract is written once, among the comments above the first
-	// graph's entry, after what that entry leaves for the Release: the
-	// application's own image, and the variables the Recipes hand it, one comment
-	// line each.
+	// graph's entry: the application's own image, and the variables the Recipes
+	// hand it, one comment line each.
 	contract := "    # " + strings.Join(imageContract, "\n    # ") + "\n"
 	entries := strings.SplitN(release, "  components:\n", 2)[1]
-	first := strings.Index(entries, "    triage: {}\n")
+	first := strings.Index(entries, "    triage:\n")
 	if got := strings.Count(release, contract); got != 1 || first < 0 || !strings.Contains(entries[:first], contract) {
 		t.Errorf("the Release states the image contract %d times, want once, above the first graph:\n%s", got, release)
 	}

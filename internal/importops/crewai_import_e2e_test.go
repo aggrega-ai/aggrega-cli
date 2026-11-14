@@ -237,8 +237,9 @@ func TestEveryCrewAIProjectIsRecognisedAndDraftedAsAgentsWiredToTheirModels(t *t
 				t.Errorf("the Aggregate holds %v and the Release %v, want %v and %v", aggregateKeys, releaseKeys,
 					p.aggregateKeys, p.releaseKeys)
 			}
-			if !strings.Contains(release, "#   - infra.image, the container image running the crew's program\n") {
-				t.Errorf("the Release does not leave the agents' image for the Release:\n%s", release)
+			if !strings.Contains(release, "infra.image, the container image running the crew's program\n"+
+				"        image: \"\"\n") {
+				t.Errorf("the Release does not leave the agents' image empty for the Release:\n%s", release)
 			}
 
 			draft, text := readCrewDraft(t, dir)

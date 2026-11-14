@@ -37,9 +37,13 @@
 // installation's application secret, which core/dify takes in its secret_key
 // parameter with no default, is the Release's to supply: the drafted
 // Aggregate declares a required secret_key parameter of its own and passes it
-// down to the entry, for the Release to fulfill. The owner account the
-// application is imported under is the Release's to name too, and a comment
-// above the entry says what the Release supplies.
+// down to the entry, for the Release to fulfill: the drafted Release declares
+// it empty under its spec.parameters. The owner account the application is
+// imported under is the Release's to name too: the drafted Release's entry for
+// the module writes its email empty, and attaches its password as a secret named
+// by reference, core/referenced-secret, as core/dify attaches every secret of its
+// own, its name written empty; for the helm target the draft maps that type to
+// the realization reading the name as a Secret already in the namespace.
 //
 // # Credential values
 //
@@ -155,9 +159,9 @@ var platform = importer.Platform{
 	LeftForRelease: []importer.LeftItem{
 		{Path: "components.api.infra.owner_email", Text: "the email of the installation's owner account the " +
 			"application is imported under, on the api component of " + Module},
-		{Path: "components.api.features.owner_password", Text: "the owner account's password, attached with type " +
-			"core/referenced-secret"},
 	},
+	Secrets: []importer.Secret{{Path: "components.api.features.owner_password", Variable: "DIFY_OWNER_PASSWORD",
+		Text: "the owner account's password", Referenced: true}},
 }
 
 // Import turns one import request into the drafts: each source — the request's

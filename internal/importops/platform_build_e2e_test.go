@@ -763,8 +763,8 @@ func asSeeded(carried string) string {
 //   - in partModel (aggrega-pdk/go/pkg/importer/platform.go), replace
 //     `return true, name, ""` with `return true, "", noModelField`: every row
 //     fails, the build halting on the model part's missing values.model;
-//   - in writeTargetAttachment (aggrega-pdk/go/pkg/importer/platform.go), replace
-//     `"      key: " + a.Key,` with `"      key: value",`: both compose rows fail,
+//   - in Secret.Declaration (aggrega-pdk/go/pkg/importer/secret.go), replace
+//     `"    key: " + s.key()` with `"    key: value"`: both compose rows fail,
 //     the uncommented lines differing from the platform's secret's own key;
 //   - in modelFields (plugins/langflow-importer/model.go), replace
 //     `"LanguageModelComponent": {"model_name", "model"},` with

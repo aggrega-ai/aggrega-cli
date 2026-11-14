@@ -201,8 +201,9 @@ func TestEveryLangGraphApplicationIsRecognisedAndDraftedAsAgentsWiredToTheirData
 				t.Errorf("the Aggregate holds %v and the Release %v, want %v and %v", aggregateKeys, releaseKeys,
 					a.aggregateKeys, a.releaseKeys)
 			}
-			if !strings.Contains(release, "#   - infra.image, the container image running the application\n") {
-				t.Errorf("the Release does not leave the graphs' image for the Release:\n%s", release)
+			if !strings.Contains(release, "infra.image, the container image running the application\n"+
+				"        image: \"\"\n") {
+				t.Errorf("the Release does not leave the graphs' image empty for the Release:\n%s", release)
 			}
 			if !strings.Contains(release, "# Each graph's image is the application's own, not the server image "+
 				"langgraph build builds: its code, with LangGraph installed.\n") {

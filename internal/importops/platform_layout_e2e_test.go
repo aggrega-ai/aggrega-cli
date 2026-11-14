@@ -36,6 +36,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // flowFixture is one committed Langflow or Flowise source and what the default
@@ -362,16 +363,22 @@ func TestAPartIsWiredToTheSocketItsComponentSatisfies(t *testing.T) {
 		"httpRequest": map[string]any{"component": "acme/ai-tool/web-fetch", "category": "ai-tool"},
 		"pinecone":    map[string]any{"component": "acme/datastore/vectors", "category": "datastore"},
 	}}}
+	// The model connection's credential, for an import naming no target, is shown
+	// with its own key for the compose target, commented out; no other connection
+	// carries one.
+	model := "      uses:\n        model:\n          chatopenai-0:\n            target: chatopenai-0\n" +
+		"            # For the compose target only, uncomment the lines below, which declare credential on " +
+		"chatopenai-0: " + importer.DeclarationWhy + ".\n" +
+		"            # features:\n            #   credential:\n            #     type: core/secret-value\n" +
+		"            #     values:\n            #       key: OPENAI_API_KEY\n"
 	for _, tc := range []struct {
 		name, source, uses string
 		reported           []string
 	}{
 		{name: "a tool reached over HTTP", source: "../compiler/importersocket/testdata/flowise-flow.json",
-			uses: "      uses:\n        model:\n          chatopenai-0:\n            target: chatopenai-0\n" +
-				"        tools:\n          httprequest-0:\n            target: httprequest-0\n"},
+			uses: model + "        tools:\n          httprequest-0:\n            target: httprequest-0\n"},
 		{name: "a vector store", source: realExportPath(flowiseChatflow),
-			uses: "      uses:\n        model:\n          chatopenai-0:\n            target: chatopenai-0\n" +
-				"        vector_store:\n          pinecone-0:\n            target: pinecone-0\n" +
+			uses: model + "        vector_store:\n          pinecone-0:\n            target: pinecone-0\n" +
 				"          pinecone-1:\n            target: pinecone-1\n",
 			reported: []string{"openAIEmbeddings_0", "openAIEmbeddings_1", "retrieverTool_2", "retrieverTool_1"}},
 	} {

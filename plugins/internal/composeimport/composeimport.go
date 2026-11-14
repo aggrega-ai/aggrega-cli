@@ -255,10 +255,10 @@ func Import(in aggrega.ImportInput, parse func(syntax string, source []byte) (js
 		titles = append(titles, p.name)
 	}
 	name := importer.DraftName(in, titles...)
-	aggregate := renderAggregate(name, read, types)
-	out.Entities = append(components,
-		aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft", Body: aggregate},
-		importer.DraftRelease(in, composeRelease(read, types), titles...))
+	aggregate := aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft",
+		Body: renderAggregate(name, read, types)}
+	out.Entities = append(append(components, aggregate),
+		importer.DraftRelease(in, aggregate, composeRelease(read, types))...)
 	out.Files = importer.Render(in.Settings, out.Entities, out.Decisions)
 	return out
 }

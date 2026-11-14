@@ -28,10 +28,15 @@ import (
 )
 
 // targetAttachmentHubEntities are platformImportEntities with the compose and
-// helm Recipes of the model the Langflow platform's model socket draws.
+// helm Recipes of the model the Langflow platform's model socket draws, and the
+// two secret Features with the realization of each the drafts map them to.
 var targetAttachmentHubEntities = append(slices.Clone(platformImportEntities),
 	"recipe/compose/openai/1.0.0/recipe.yaml",
 	"recipe/helm/openai/1.0.0/recipe.yaml",
+	"feature/core/secret-value/1.0.0/feature.yaml",
+	"feature/core/referenced-secret/1.0.0/feature.yaml",
+	"feature-recipe/compose/dotenv-secret/1.0.0/recipe.yaml",
+	"feature-recipe/helm/k8s-existing-secret/1.0.0/recipe.yaml",
 )
 
 // TestTheImportsTargetDecidesTheLinesOnlyOneTargetNeeds imports Langflow 1.6.0's
@@ -48,13 +53,23 @@ var targetAttachmentHubEntities = append(slices.Clone(platformImportEntities),
 //   - naming no target it shows them commented out, as the draft has for every
 //     target the import does not name.
 //
+// The model connection's credential follows the same split, declared on the
+// connection with its own key, OPENAI_API_KEY, for compose alone. The drafted
+// Release runs the platform from the image the importer drafts, explicitly, and
+// attaches the administrator's password and the model connection's credential
+// as references, never values: for compose and for no target as the variables
+// LANGFLOW_ADMIN_PASSWORD and OPENAI_API_KEY, for helm as Kubernetes Secrets
+// whose names are left empty, with the drafted Manifest mapping
+// core/referenced-secret to helm/k8s-existing-secret.
+//
 // Every draft reads as an Aggregate, and the drafted Release names the drafted
 // default environment. The target reaches the importer on the payload the host
 // hands it: nothing else tells the importer which target the import drafts for.
 //
 // 🔴 PLANTED DEFECT: in Import (internal/importops/import.go), hand
 // importersocket.ImportArtifact "" in place of target: the compose row fails, its
-// lines commented out, and the helm row fails, its lines shown.
+// lines commented out, and the helm row fails, its lines shown and its secrets
+// written as variable references.
 func TestTheImportsTargetDecidesTheLinesOnlyOneTargetNeeds(t *testing.T) {
 	t.Parallel()
 	const (
@@ -66,14 +81,25 @@ func TestTheImportsTargetDecidesTheLinesOnlyOneTargetNeeds(t *testing.T) {
 			"            key: LANGFLOW_SUPERUSER_PASSWORD\n"
 		commented = "      # For the compose target only, uncomment the lines below, which declare admin_password on " +
 			"langflow: "
+		credentialKey = "            features:\n              credential:\n                type: core/secret-value\n" +
+			"                values:\n                  key: OPENAI_API_KEY\n"
+		image      = "        image: \"langflowai/langflow:1.6.0\"\n"
+		byVariable = "origin: \"${LANGFLOW_ADMIN_PASSWORD}\"\n"
+		byKey      = "origin: \"${OPENAI_API_KEY}\"\n"
+		bySecret   = "type: core/referenced-secret\n"
+		mapped     = "        core/referenced-secret: helm/k8s-existing-secret\n"
 	)
 	for _, row := range []struct {
 		target                      string
 		declared, commented, absent bool
+		release, notInRelease       []string
+		secretMapped                bool
 	}{
-		{target: "compose", declared: true},
-		{target: "helm", absent: true},
-		{target: "", commented: true},
+		{target: "compose", declared: true, release: []string{image, byVariable, byKey},
+			notInRelease: []string{bySecret}},
+		{target: "helm", absent: true, release: []string{image, bySecret, "origin: \"\"\n"},
+			notInRelease: []string{"${"}, secretMapped: true},
+		{target: "", commented: true, release: []string{image, byVariable, byKey}, notInRelease: []string{bySecret}},
 	} {
 		t.Run("target "+row.target, func(t *testing.T) {
 			t.Parallel()
@@ -92,8 +118,12 @@ func TestTheImportsTargetDecidesTheLinesOnlyOneTargetNeeds(t *testing.T) {
 				t.Errorf("the instance shows the compose lines commented out: %t, want %t:\n%s", got, row.commented,
 					text)
 			}
-			if row.absent && strings.Contains(text, "LANGFLOW_SUPERUSER_PASSWORD") {
-				t.Errorf("the draft for %s writes a line of the compose attachment:\n%s", row.target, text)
+			if row.absent && (strings.Contains(text, "LANGFLOW_SUPERUSER_PASSWORD") || strings.Contains(text,
+				"OPENAI_API_KEY\n")) {
+				t.Errorf("the draft for %s writes a line of the compose attachments:\n%s", row.target, text)
+			}
+			if got := strings.Contains(text, credentialKey); got != row.declared {
+				t.Errorf("the model connection declares its credential's key: %t, want %t:\n%s", got, row.declared, text)
 			}
 			if agg := readAsTheCompilerDoes(t, text); agg.Spec.Components["langflow"].Type != "core/ai-agent/langflow" {
 				t.Errorf("the draft holds no Langflow instance keyed langflow:\n%s", text)
@@ -104,6 +134,24 @@ func TestTheImportsTargetDecidesTheLinesOnlyOneTargetNeeds(t *testing.T) {
 			}
 			if !strings.Contains(string(release), "\n  environment: development\n") {
 				t.Errorf("the drafted Release names no environment:\n%s", release)
+			}
+			for _, want := range row.release {
+				if !strings.Contains(string(release), want) {
+					t.Errorf("the drafted Release does not hold %q:\n%s", want, release)
+				}
+			}
+			for _, absent := range row.notInRelease {
+				if strings.Contains(string(release), absent) {
+					t.Errorf("the drafted Release holds %q:\n%s", absent, release)
+				}
+			}
+			manifest, err := os.ReadFile(filepath.Join(dir, "manifest.yaml"))
+			if row.target != "" && err != nil {
+				t.Fatalf("read the drafted Manifest: %v", err)
+			}
+			if got := strings.Contains(string(manifest), mapped); got != row.secretMapped {
+				t.Errorf("the drafted Manifest maps core/referenced-secret to helm/k8s-existing-secret: %t, want %t:\n%s",
+					got, row.secretMapped, manifest)
 			}
 		})
 	}

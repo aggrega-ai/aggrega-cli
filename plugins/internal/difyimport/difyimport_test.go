@@ -135,9 +135,10 @@ func codesAndRefs(out aggrega.ImportOutput) []string {
 // alone, composing core/dify with the application carried byte for byte in its
 // app_definition — Dify's {{#…#}} references and the double quotes included —
 // secret_key passed down to it, and the comment saying the import does not check
-// the catalog for core/dify; the Release routes the installation's entry under
-// its boundary, naming above it the secret_key parameter and the owner account
-// the Release supplies. No Component is drafted and nothing
+// the catalog for core/dify; the Release declares the secret_key parameter
+// empty and routes the installation's entry under its boundary, writing the owner
+// account's email empty and attaching its password by reference, its name left
+// empty. No Component is drafted and nothing
 // is wired. The secret variable and the HTTP request node's key, each holding a
 // value, are carried as written and named in a credential-carried warning, as
 // are the request's headers; the secret written empty raises nothing. The tool,
@@ -157,16 +158,31 @@ func TestAWorkflowApplicationIsDraftedAsTheInstallationCarryingIt(t *testing.T) 
 	}
 	// The Release places the installation's entry, a module of the drafted
 	// Aggregate, under the boundary it routes it into.
+	// The secret_key parameter is declared empty under the Release's own
+	// parameters, the owner's email written empty and the owner's password attached
+	// by reference — core/referenced-secret, as core/dify attaches every secret of
+	// its own, its Secret's name written empty — each beneath its comment.
+	const left = "Left for the Release, since the source cannot supply it: "
 	if release := out.Files[1].Content; !strings.HasSuffix(release,
-		"  boundaries:\n    platform:\n      aggregates:\n"+
-			"        # Left for the Release, since the source cannot supply it:\n"+
-			"        #   - the secret_key parameter, under the Release's spec.parameters, which the drafted Aggregate "+
-			"declares and passes down to core/dify\n"+
-			"        #   - components.api.infra.owner_email, the email of the installation's owner account the "+
-			"application is imported under, on the api component of core/dify\n"+
-			"        #   - components.api.features.owner_password, the owner account's password, attached with type "+
-			"core/referenced-secret\n"+
-			"        dify: {}\n") ||
+		"  parameters:\n"+
+			"    # "+left+"secret_key, which the drafted Aggregate declares and passes down to core/dify; that "+
+			"parameter's description there says what the value is\n"+
+			"    secret_key: \"\"\n"+
+			"  boundaries:\n    platform:\n      aggregates:\n"+
+			"        dify:\n"+
+			"          components:\n"+
+			"            api:\n"+
+			"              infra:\n"+
+			"                # "+left+"components.api.infra.owner_email, the email of the installation's owner "+
+			"account the application is imported under, on the api component of core/dify\n"+
+			"                owner_email: \"\"\n"+
+			"              features:\n"+
+			"                owner_password:\n"+
+			"                  type: core/referenced-secret\n"+
+			"                  infra:\n"+
+			"                    # "+left+"the name of the secret resource holding the owner account's password, as "+
+			"the Manifest's realization of core/referenced-secret reads it.\n"+
+			"                    origin: \"\"\n") ||
 		!strings.Contains(release, "\n  environment: development\n") {
 		t.Errorf("the Release does not route the installation under its boundary:\n%s", release)
 	}

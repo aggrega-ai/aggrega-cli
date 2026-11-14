@@ -27,23 +27,29 @@ var n8n = importer.Format{
 // Component runs it: the workflow is carried as the Component's flow_definition
 // and named by its workflow_id, each part wired to it is reached as the workflow
 // writes it (wire.go), the model socket draws a single connection, a referenced
-// model is given the model its node selects (model.go), and the input the
-// Component requires that a workflow cannot supply is left for the Release.
+// model is given the model its node selects (model.go), the image is drafted at
+// the version below, and the model connection's credential is attached by
+// reference, read from OPENAI_API_KEY, the variable the platform delivers the key
+// as.
 var platform = importer.Platform{
-	Component:       "core/ai-agent/n8n",
-	DefinitionValue: "flow_definition",
-	IdentifierValue: "workflow_id",
-	Identifier:      workflowID,
-	Credentials:     credentialsOf,
-	Match:           selectormatch.Match,
-	Wire:            wireOf,
-	Single:          singleSockets,
-	Standing:        standingOf,
-	Model:           modelOf,
-	LeftForRelease: []importer.LeftItem{
-		{Path: "infra.image", Text: "the container image running n8n"},
-	},
+	Component:           "core/ai-agent/n8n",
+	DefinitionValue:     "flow_definition",
+	IdentifierValue:     "workflow_id",
+	Identifier:          workflowID,
+	Credentials:         credentialsOf,
+	Match:               selectormatch.Match,
+	Wire:                wireOf,
+	Single:              singleSockets,
+	Standing:            standingOf,
+	Model:               modelOf,
+	Image:               image,
+	CredentialVariables: map[string]string{"model": "OPENAI_API_KEY"},
 }
+
+// image is the n8n image a draft runs the platform from: the version the
+// standard library's n8n Recipes are known to run. An exported workflow states
+// no version of n8n, so no other is named.
+const image = "n8nio/n8n:1.110.1"
 
 // detect is how an n8n workflow is recognised when an import names no format,
 // declared in describe() and recorded on the importer's Plugin entity. An

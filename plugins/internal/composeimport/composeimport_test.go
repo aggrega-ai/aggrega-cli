@@ -402,8 +402,9 @@ func TestModelsAreDraftedAsModelComponentsAndConnected(t *testing.T) {
 		}
 	}
 	release := fileContent(t, out, "release.yaml")
-	if !strings.Contains(release, "#   - infra.image, since the service builds its image rather than naming one\n") {
-		t.Errorf("the Release does not leave a built service's image for the Release:\n%s", release)
+	if !strings.Contains(release, "        # Left for the Release, since the source cannot supply it: infra.image, since the "+
+		"service builds its image rather than naming one\n        image: \"\"\n") {
+		t.Errorf("the Release does not leave a built service's image empty for the Release:\n%s", release)
 	}
 	if !strings.Contains(release, "    mcp-gateway:\n      infra:\n        image: \"docker/mcp-gateway:latest\"\n") {
 		t.Errorf("the Release does not run the gateway's image:\n%s", release)

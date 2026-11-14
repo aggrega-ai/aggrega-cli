@@ -211,8 +211,9 @@ func aggregateText(text string) string {
 
 // agentFrameworkRelease is the drafted Release, as the plugin kit's Release
 // writer writes it: for each agent, under its instance's key, leaving for the
-// Release the image running the application and the credential it presents to
-// its model, with a comment naming the values its declarative agent states for
+// Release the image running the application and attaching, by reference, the
+// credential it presents to its model, with a comment naming the values its
+// declarative agent states for
 // its model and its MCP servers, each server's url among them, written as stated
 // or, where the credential decision wrote one empty, with no value; then for each
 // model part, an entry, with the endpoint its connection states where it states
@@ -230,10 +231,10 @@ func agentFrameworkRelease(agents []*agent, parts []*modelPart) importer.Release
 
 // agentEntry is one agent's entry of the Release.
 func agentEntry(a *agent) importer.ReleaseEntry {
-	entry := importer.ReleaseEntry{Key: a.key, Left: []importer.LeftItem{{Path: "infra.image",
-		Text: "the container image running the application built on Agent Framework, holding its declarative agent"}}}
+	entry := importer.ReleaseEntry{Key: a.key, Left: []importer.LeftItem{importer.LeftImage(
+		"the container image running the application built on Agent Framework, holding its declarative agent")}}
 	if p := a.part; p != nil && a.model.connection.kind != "anonymous" {
-		entry.Left = append(entry.Left, importer.ConnectionCredential(a.key, modelSocket, p.key, p.key))
+		entry.Secrets = append(entry.Secrets, importer.ConnectionCredential(a.key, modelSocket, p.key, p.key, ""))
 	}
 	if len(a.stated) > 0 {
 		entry.Comments = append(entry.Comments, "The declarative agent also states these values for its model and its MCP "+
@@ -284,8 +285,11 @@ func partEntry(p *modelPart) importer.ReleaseEntry {
 		entry.Comments = append(entry.Comments, "infra.endpoint is left at the Component's default, while the declarative "+
 			"agent computes its model's address with an expression the import does not evaluate.")
 	case e.literal():
-		entry.Left = append(entry.Left, importer.LeftItem{Path: "infra.endpoint",
-			Text: emptiedNote + "; until it is set, the Component's default address is used"})
+		// The Component's default address applies until the Release sets one, so the
+		// item names the key in its text rather than drafting it empty: an empty
+		// value would take the default's place.
+		entry.Left = append(entry.Left, importer.LeftItem{
+			Text: "infra.endpoint, " + emptiedNote + "; until it is set, the Component's default address is used"})
 	}
 	if p.endpoint == nil {
 		return entry

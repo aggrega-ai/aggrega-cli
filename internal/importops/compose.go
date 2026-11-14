@@ -361,10 +361,7 @@ func readCatalog[R any](kind *realizationKind, target string, featureTier bool, 
 		return types.BareCapability(capability), implements, true
 	}
 	kind.accepts = func(implements, typ string) bool {
-		return resolver.ManifestMappingAccepts(implements, typ, featureTier, func(t string) ([]string, bool) {
-			bases, err := ancestry(t)
-			return bases, err == nil
-		})
+		return resolver.ManifestMappingAccepts(implements, typ, featureTier, ancestry)
 	}
 }
 

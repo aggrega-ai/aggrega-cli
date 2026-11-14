@@ -47,6 +47,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // agentFrameworkFixtureDir holds the committed declarative agents, relative to
@@ -147,9 +148,9 @@ func TestEveryAgentFrameworkDeclarativeAgentIsRecognisedAndDrafted(t *testing.T)
 				t.Errorf("the Aggregate holds %v and the Release %v, want %v and %v", aggregateKeys, releaseKeys,
 					a.aggregateKeys, a.releaseKeys)
 			}
-			if !strings.Contains(release, "#   - infra.image, the container image running the application built on "+
-				"Agent Framework, holding its declarative agent\n") {
-				t.Errorf("the Release does not leave the image for the Release:\n%s", release)
+			if !strings.Contains(release, "infra.image, the container image running the application built on "+
+				"Agent Framework, holding its declarative agent\n        image: \"\"\n") {
+				t.Errorf("the Release does not leave the image empty for the Release:\n%s", release)
 			}
 			draft, text := readCrewDraft(t, dir)
 			agent := draft.Spec.Components[a.key]
@@ -452,13 +453,13 @@ func writeAgentFrameworkRelease(t *testing.T, dir, key, part string) string {
 		}
 	}
 	release = head + "      components:\n" + b.String()
-	credential := func(name string) string {
-		return "                features:\n                  credential:\n" +
-			"                    type: core/referenced-secret\n                    infra:\n" +
-			"                      origin: " + name + "\n"
-	}
-	replace("        "+key+": {}\n", "        "+key+":\n          infra:\n            image: "+
-		agentFrameworkImage+"\n          uses:\n            model:\n              "+part+":\n"+credential("model-key"))
+	// The agent's entry leaves its image empty and attaches its model credential by
+	// reference, as an import naming no target writes it; the Release answers the
+	// image, and, for helm, names the Secret holding the credential.
+	replace("            image: \"\"\n", "            image: "+agentFrameworkImage+"\n")
+	replace("                    type: core/secret-value\n", "                    type: core/referenced-secret\n")
+	variable := importer.ConnectionCredential(key, "model", part, part, "").Variable
+	replace("origin: \"${"+variable+"}\"\n", "origin: model-key\n")
 	for file, body := range map[string]string{"manifest.yaml": manifest, "release.yaml": release} {
 		if err := os.WriteFile(filepath.Join(dir, file), []byte(body), 0o644); err != nil {
 			t.Fatalf("write the %s: %v", file, err)

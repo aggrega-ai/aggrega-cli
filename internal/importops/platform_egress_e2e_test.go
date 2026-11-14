@@ -296,14 +296,18 @@ func TestAnImportAskingForTheOutboundOnlyFeatureAttachesItToThePlatform(t *testi
 			}
 			release := readDraftedRelease(t, dir)
 			for _, line := range []string{
-				"    #   - features.egress-allowlist.infra.control_plane_present, the affirmation that the " +
-					"cluster's network plugin enforces network policy, without which the build halts\n",
-				"    #   - features.egress-allowlist.infra.admitted_destinations, an address range for each " +
+				"        egress-allowlist:\n          infra:\n" +
+					"            # Left for the Release, since the source cannot supply it: " +
+					"features.egress-allowlist.infra.control_plane_present, the affirmation that the " +
+					"cluster's network plugin enforces network policy, without which the build halts\n" +
+					"            control_plane_present: \"\"\n",
+				"            # Left for the Release, since the source cannot supply it: " +
+					"features.egress-allowlist.infra.admitted_destinations, an address range for each " +
 					"connection whose target the cluster does not run, such as a hosted model, without which the " +
-					"build halts naming that connection\n",
+					"build halts naming that connection\n            admitted_destinations: \"\"\n",
 				"    #   - aggrega.ai/namespace on the boundary holding langflow, where the target emits its " +
 					"workloads into no namespace: the attachment's network policy is placed in its workload's " +
-					"namespace, and the build halts without one\n    langflow: {}\n",
+					"namespace, and the build halts without one\n    langflow:\n",
 			} {
 				if !strings.Contains(release, line) {
 					t.Errorf("the drafted Release does not leave for the Release\n%s\nit reads\n%s", line, release)
