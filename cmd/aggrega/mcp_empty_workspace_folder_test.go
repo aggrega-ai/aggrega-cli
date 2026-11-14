@@ -24,7 +24,8 @@ import (
 // the sentence a desktop user reads is what the tests below hold.
 const emptyWorkspaceFolderRefusal = "the desktop application launched this server with its Workspace folder " +
 	"setting empty, so AGGREGA_WORKSPACE_ROOT names no workspace root: set Workspace folder to the folder that " +
-	"holds your workspace's .aggrega-config.yaml"
+	"holds your workspace's .aggrega-config.yaml, and a folder set after this server started takes effect once " +
+	"the extension is turned off and on again or the application is restarted"
 
 // noWorkspaceFoundNote is the part of the warning a command writes when it uses
 // the folder it was started in as the workspace root (noWorkspaceNotice) that

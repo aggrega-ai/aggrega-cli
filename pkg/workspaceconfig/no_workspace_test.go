@@ -213,8 +213,10 @@ func TestANamedRootThatIsNotAnExistingFolderIsRefusedByTheResolution(t *testing.
 // holds the sentence a desktop launch with an empty Workspace folder setting is
 // refused in to the approved wording, written out rather than composed, so the
 // sentence a desktop user reads is what this test holds: it names the setting,
-// the variable that carries it, and the folder to choose. It is matched by its
-// type, and naming a root's source leaves it as it is, since it names no root.
+// the variable that carries it, the folder to choose, and that a folder chosen
+// after the server started takes effect once the server is started again. It is
+// matched by its type, and naming a root's source leaves it as it is, since it
+// names no root.
 //
 // 🔴 PLANTED DEFECT: change DesktopWorkspaceFolderSetting, and this test fails on
 // the wording while the manifest conformance test fails on the title.
@@ -222,7 +224,8 @@ func TestTheEmptyWorkspaceFolderRefusalNamesTheSettingTheVariableAndTheFolderToC
 	t.Parallel()
 	const want = "the desktop application launched this server with its Workspace folder setting empty, so " +
 		"AGGREGA_WORKSPACE_ROOT names no workspace root: set Workspace folder to the folder that holds your " +
-		"workspace's .aggrega-config.yaml"
+		"workspace's .aggrega-config.yaml, and a folder set after this server started takes effect once the " +
+		"extension is turned off and on again or the application is restarted"
 	var err error = &workspaceconfig.EmptyWorkspaceFolderError{}
 	if err.Error() != want {
 		t.Errorf("the refusal reads\n%q\nwant\n%q", err, want)

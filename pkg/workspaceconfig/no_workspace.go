@@ -183,6 +183,9 @@ func NameRootSource(err error, source string) error {
 // is no workspace, so on that launch an empty setting is a mistake to name rather
 // than a folder to search from: the refusal names the setting, the one thing the
 // person reading it in the application can change, and the folder to choose.
+// The application hands the setting to the server only when it starts it, so the
+// refusal also says that a folder chosen while this server runs reaches a server
+// started again — the extension turned off and on, or the application restarted.
 // Which launch that is, is decided where a server is launched; this type holds
 // the sentence alone, composed from the names the desktop bundle's manifest is
 // held to, so every surface answering the refusal reads one sentence. Match it
@@ -191,6 +194,7 @@ type EmptyWorkspaceFolderError struct{}
 
 func (*EmptyWorkspaceFolderError) Error() string {
 	return fmt.Sprintf("the desktop application launched this server with its %s setting empty, so %s names no "+
-		"workspace root: set %s to the folder that holds your workspace's %s",
+		"workspace root: set %s to the folder that holds your workspace's %s, and a folder set after this server "+
+		"started takes effect once the extension is turned off and on again or the application is restarted",
 		DesktopWorkspaceFolderSetting, EnvWorkspaceRoot, DesktopWorkspaceFolderSetting, ConfigFilename)
 }
