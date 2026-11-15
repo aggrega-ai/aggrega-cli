@@ -124,29 +124,34 @@ param([switch]$Yes)
     }
 
     # Test-Drafts reports whether an aggrega reporting $Version has the draft
-    # command: an unreleased build, "(devel)" or a build made some commits after
-    # a release (0.9.1-2-g4ca5e9e), or version 0.9.2 and later, a pre-release of
-    # 0.9.2 included.
+    # command, the rule the editor follows: an unreleased build, "(devel)", or a
+    # version that cannot be read, has it; otherwise the first
+    # MAJOR[.MINOR[.PATCH]] number run in the string decides, a missing part
+    # counting as 0 and a pre-release or build suffix ignored, and 0.9.2 and
+    # later have it.
     function Test-Drafts([string]$Version) {
-        if ($Version -eq '(devel)') { return $true }
-        if ($Version -match '-\d+-g[0-9a-f]+') { return $true }
-        if ($Version -notmatch '^v?(\d+)\.(\d+)\.(\d+)') { return $false }
-        $parts = @([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
-        if ($parts[0] -gt 0) { return $true }
-        if ($parts[1] -gt 9) { return $true }
-        return ($parts[1] -eq 9 -and $parts[2] -ge 2)
+        if (-not $Version -or $Version -eq '(devel)') { return $true }
+        if ($Version -notmatch '(?<!\d)(\d+)(?:\.(\d+))?(?:\.(\d+))?') { return $true }
+        $major = [int]$Matches[1]
+        $minor = if ($Matches[2]) { [int]$Matches[2] } else { 0 }
+        $patch = if ($Matches[3]) { [int]$Matches[3] } else { 0 }
+        if ($major -gt 0) { return $true }
+        if ($minor -gt 9) { return $true }
+        return ($minor -eq 9 -and $patch -ge 2)
     }
 
     # Get-DraftingVerb returns the command that writes an example for the
     # aggrega found: draft where it has it, else scaffold, which every aggrega
-    # has had since the first release. A version it cannot read gives scaffold.
+    # has had since the first release.
     function Get-DraftingVerb([string]$Aggrega) {
-        $reported = ''
-        try {
-            $json = (& $Aggrega version -o json 2>$null | Out-String) | ConvertFrom-Json
-            $reported = [string]$json.version
-        } catch {
-            $reported = ''
+        $reported = & {
+            $ErrorActionPreference = 'Continue'
+            try {
+                $json = (& $Aggrega version -o json 2>$null | Out-String) | ConvertFrom-Json
+                [string]$json.version
+            } catch {
+                ''
+            }
         }
         if (Test-Drafts $reported) { return 'draft' }
         return 'scaffold'

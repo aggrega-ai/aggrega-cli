@@ -181,34 +181,26 @@ find_aggrega() {
 }
 
 # version_drafts <version> succeeds when an aggrega reporting <version> has the
-# draft command: an unreleased build, "(devel)" or a build made some commits
-# after a release (0.9.1-2-g4ca5e9e), or version 0.9.2 and later, a pre-release
-# of 0.9.2 included.
+# draft command, the rule the editor follows: an unreleased build, "(devel)", or
+# a version that cannot be read, has it; otherwise the first MAJOR[.MINOR[.PATCH]]
+# number run in the string decides, a missing part counting as 0 and a
+# pre-release or build suffix ignored, and 0.9.2 and later have it.
 version_drafts() {
+  [ -z "$1" ] && return 0
   [ "$1" = "(devel)" ] && return 0
-  case "$1" in
-    *-[0-9]*-g[0-9a-f]*) return 0 ;;
-  esac
-  v="${1#v}"
-  v="${v%%[-+]*}"
-  old_ifs=$IFS
-  IFS=.
-  set -- $v
-  IFS=$old_ifs
-  for part in "${1:-}" "${2:-}" "${3:-}"; do
-    case "$part" in
-      '' | *[!0-9]*) return 1 ;;
-    esac
-  done
+  nums="$(printf '%s\n' "$1" |
+    sed -n 's/^[^0-9]*\([0-9][0-9]*\)\(\.\([0-9][0-9]*\)\)\{0,1\}\(\.\([0-9][0-9]*\)\)\{0,1\}.*/\1 \3 \5/p')"
+  [ -z "$nums" ] && return 0
+  # shellcheck disable=SC2086
+  set -- $nums
   [ "$1" -gt 0 ] && return 0
-  [ "$2" -gt 9 ] && return 0
-  [ "$2" -eq 9 ] && [ "$3" -ge 2 ]
+  [ "${2:-0}" -gt 9 ] && return 0
+  [ "${2:-0}" -eq 9 ] && [ "${3:-0}" -ge 2 ]
 }
 
 # choose_drafting_verb sets drafting_verb to the command that writes an example
 # for the aggrega found: draft where it has it, else scaffold, which every
-# aggrega has had since the first release. A version it cannot read gives
-# scaffold.
+# aggrega has had since the first release.
 choose_drafting_verb() {
   reported="$("$aggrega" version -o json 2>/dev/null |
     sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
