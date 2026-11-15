@@ -44,7 +44,7 @@ func runIsolated(t *testing.T, bin, dir string, args ...string) (string, error) 
 // draftWith drafts a document through the drafting command and returns it.
 func draftWith(t *testing.T, bin, dir, kind, name string) string {
 	t.Helper()
-	cmd := exec.Command(bin, "scaffold", kind, name)
+	cmd := exec.Command(bin, "draft", kind, name)
 	cmd.Dir = dir
 	cmd.Env = builtBinaryEnv(t)
 	var out, stderr strings.Builder

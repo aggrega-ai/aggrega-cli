@@ -156,9 +156,9 @@ func TestScaffoldExampleSurfacesWriteTheSameFilesAndReportTheSameNextCommands(t 
 	// The command line writes relative to where it runs, so it runs in its own
 	// workspace and names the directory as the other two do: by the example's name.
 	t.Chdir(f.ws)
-	cliOut, notes, err := f.run(t, ctx, "scaffold", "--example", "demo")
+	cliOut, notes, err := f.run(t, ctx, "draft", "--example", "demo")
 	if err != nil {
-		t.Fatalf("aggrega scaffold --example demo: %v\nnotes: %s", err, notes)
+		t.Fatalf("aggrega draft --example demo: %v\nnotes: %s", err, notes)
 	}
 	daemon := exampleViaDaemon(t, ctx, fromDaemonWS, "demo")
 	toolText, tool := exampleViaToolProtocol(t, ctx, fromToolWS, "demo")

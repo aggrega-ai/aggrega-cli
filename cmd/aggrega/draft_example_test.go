@@ -3,7 +3,7 @@
 
 package main
 
-// The scaffold command's example form, driven through the real command tree
+// The draft command's example form, driven through the real command tree
 // against an in-process registry serving a signed documentation bundle: an
 // example written out and the examples listed, and every refusal — an unsigned
 // bundle, one signed by a key the workspace does not trust, a member leaving the
@@ -129,9 +129,9 @@ func TestScaffoldExampleWritesTheExampleAndPrintsItsNextCommands(t *testing.T) {
 	ctx := f.online()
 	dest := filepath.Join(t.TempDir(), "my-demo")
 
-	out, notes, err := f.run(t, ctx, "scaffold", "--example", "demo", dest)
+	out, notes, err := f.run(t, ctx, "draft", "--example", "demo", dest)
 	if err != nil {
-		t.Fatalf("aggrega scaffold --example demo: %v\nnotes: %s", err, notes)
+		t.Fatalf("aggrega draft --example demo: %v\nnotes: %s", err, notes)
 	}
 	for name, body := range map[string]string{
 		"README.md":            exampleDemoReadme,
@@ -157,8 +157,8 @@ func TestScaffoldExampleWritesTheExampleAndPrintsItsNextCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, notes, err := f.run(t, ctx, "scaffold", "--example", "other"); err != nil {
-		t.Fatalf("aggrega scaffold --example other: %v\nnotes: %s", err, notes)
+	if _, notes, err := f.run(t, ctx, "draft", "--example", "other"); err != nil {
+		t.Fatalf("aggrega draft --example other: %v\nnotes: %s", err, notes)
 	}
 	if got, err := os.ReadFile(filepath.Join(cwd, "other", "README.md")); err != nil || !strings.Contains(string(got), "# Other") {
 		t.Errorf("the second example was not written into ./other (%q, %v)", got, err)
@@ -179,9 +179,9 @@ func TestScaffoldExampleListPrintsEachExampleOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, notes, err := f.run(t, f.online(), "scaffold", "--example", "--list")
+	out, notes, err := f.run(t, f.online(), "draft", "--example", "--list")
 	if err != nil {
-		t.Fatalf("aggrega scaffold --example --list: %v\nnotes: %s", err, notes)
+		t.Fatalf("aggrega draft --example --list: %v\nnotes: %s", err, notes)
 	}
 	var rows []string
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
@@ -206,7 +206,7 @@ func TestScaffoldExampleRefusesAnUnsignedBundle(t *testing.T) {
 	f := newExampleFixture(t, exampleMembers(), nil, docsbundletest.NewSigner(t))
 	parent := t.TempDir()
 
-	_, _, err := f.run(t, f.online(), "scaffold", "--example", "demo", filepath.Join(parent, "demo"))
+	_, _, err := f.run(t, f.online(), "draft", "--example", "demo", filepath.Join(parent, "demo"))
 	if !errors.Is(err, signing.ErrNoSignatureFound()) {
 		t.Fatalf("an unsigned bundle answered %v, want the missing-signature refusal", err)
 	}
@@ -224,7 +224,7 @@ func TestScaffoldExampleRefusesABundleSignedByAKeyTheWorkspaceDoesNotTrust(t *te
 	f := newExampleFixture(t, exampleMembers(), docsbundletest.NewSigner(t), docsbundletest.NewSigner(t))
 	parent := t.TempDir()
 
-	_, _, err := f.run(t, f.online(), "scaffold", "--example", "demo", filepath.Join(parent, "demo"))
+	_, _, err := f.run(t, f.online(), "draft", "--example", "demo", filepath.Join(parent, "demo"))
 	if !errors.Is(err, signing.ErrSignatureVerificationFailed()) {
 		t.Fatalf("a bundle signed by an untrusted key answered %v, want the verification refusal", err)
 	}
@@ -246,7 +246,7 @@ func TestScaffoldExampleRefusesAMemberLeavingTheDirectory(t *testing.T) {
 	parent := t.TempDir()
 	dest := filepath.Join(parent, "a", "b", "c", "demo")
 
-	_, _, err := f.run(t, f.online(), "scaffold", "--example", "demo", dest)
+	_, _, err := f.run(t, f.online(), "draft", "--example", "demo", dest)
 	if !errors.Is(err, oci.ErrFetchIntegrity()) {
 		t.Fatalf("a member leaving the example answered %v, want the integrity refusal", err)
 	}
@@ -264,7 +264,7 @@ func TestScaffoldExampleRefusesADirectoryHoldingAnything(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, err := f.run(t, f.online(), "scaffold", "--example", "demo", dest)
+	_, _, err := f.run(t, f.online(), "draft", "--example", "demo", dest)
 	if err == nil || !strings.Contains(err.Error(), "not empty") {
 		t.Fatalf("a directory holding a file answered %v, want it refused as not empty", err)
 	}
@@ -286,11 +286,11 @@ func TestScaffoldExampleOfflineReadsOnlyWhatIsCached(t *testing.T) {
 	signer := docsbundletest.NewSigner(t)
 	f := newExampleFixture(t, exampleMembers(), signer, signer)
 
-	if _, notes, err := f.run(t, f.online(), "scaffold", "--example", "--list"); err != nil {
+	if _, notes, err := f.run(t, f.online(), "draft", "--example", "--list"); err != nil {
 		t.Fatalf("filling the cache: %v\nnotes: %s", err, notes)
 	}
 	dest := filepath.Join(t.TempDir(), "demo")
-	if _, notes, err := f.run(t, f.production(), "scaffold", "--example", "demo", dest, "--offline"); err != nil {
+	if _, notes, err := f.run(t, f.production(), "draft", "--example", "demo", dest, "--offline"); err != nil {
 		t.Fatalf("offline with the bundle cached: %v\nnotes: %s", err, notes)
 	}
 	if _, err := os.Stat(filepath.Join(dest, "aggregate.yaml")); err != nil {
@@ -299,7 +299,7 @@ func TestScaffoldExampleOfflineReadsOnlyWhatIsCached(t *testing.T) {
 
 	empty := newExampleFixture(t, exampleMembers(), signer, signer)
 	parent := t.TempDir()
-	_, _, err := empty.run(t, empty.production(), "scaffold", "--example", "demo", filepath.Join(parent, "demo"), "--offline")
+	_, _, err := empty.run(t, empty.production(), "draft", "--example", "demo", filepath.Join(parent, "demo"), "--offline")
 	if !errors.Is(err, egress.ErrOfflineEgress()) {
 		t.Fatalf("offline with nothing cached answered %v, want the offline refusal", err)
 	}
@@ -314,11 +314,11 @@ func TestScaffoldExampleOfflineReadsOnlyWhatIsCached(t *testing.T) {
 // anything is read.
 func TestScaffoldExampleKeepsTheDraftingForm(t *testing.T) {
 	isolateCLIEnvironment(t)
-	out, _, err := runExplainCommandWith(t, context.Background(), "scaffold", "component", "my-service")
+	out, _, err := runExplainCommandWith(t, context.Background(), "draft", "component", "my-service")
 	if err != nil || !strings.Contains(out, "kind: Component") || !strings.Contains(out, "my-service") {
-		t.Fatalf("aggrega scaffold component my-service answered (%v):\n%s", err, out)
+		t.Fatalf("aggrega draft component my-service answered (%v):\n%s", err, out)
 	}
-	if _, _, err := runExplainCommandWith(t, context.Background(), "scaffold", "--list"); err == nil ||
+	if _, _, err := runExplainCommandWith(t, context.Background(), "draft", "--list"); err == nil ||
 		!strings.Contains(err.Error(), "--example") {
 		t.Errorf("--list without --example answered %v, want it refused naming --example", err)
 	}

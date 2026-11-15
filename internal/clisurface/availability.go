@@ -144,7 +144,7 @@ var operationAvailability = map[string]opsurface.OperationAvailability{
 	"registry-list":      opsurface.Exposed("aggrega registry list"),
 	"registry-remove":    opsurface.Exposed("aggrega registry remove"),
 	"registry-update":    opsurface.Exposed("aggrega registry update"),
-	"scaffold-entity":    opsurface.Exposed("aggrega scaffold"),
+	"scaffold-entity":    opsurface.Exposed("aggrega draft", "aggrega scaffold"),
 	"search":             opsurface.Exposed("aggrega search"),
 	"serve":              opsurface.Exposed("aggrega serve"),
 	"sign":               opsurface.Exposed("aggrega sign"),
@@ -210,7 +210,7 @@ var commandReach = map[string]opsurface.Reach{
 	// dependency resolution declares.
 	"build": opsurface.ReachWorkspace,
 
-	// The scaffold command only prints a starter document, which is the drafting
+	// The draft command only prints a starter document, which is the drafting
 	// operation's answer; with --example it writes one of the documentation's
 	// runnable examples into the new directory the caller names, as the stated
 	// effect of that flag.

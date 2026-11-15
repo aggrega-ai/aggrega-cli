@@ -41,27 +41,27 @@ var scaffoldParityKinds = []string{
 // covers the seeding path and not only the placeholder one.
 const scaffoldParityName = "parity-drafted"
 
-// draftViaCommandLine runs the drafting command once per kind against an empty
-// workspace and returns what it printed, keyed by kind.
+// draftViaCommandLine runs the drafting command, spelled verb, once per kind
+// against an empty workspace and returns what it printed, keyed by kind.
 //
 // It reads standard output alone. That stream is the whole of what this surface
 // hands a caller — a redirect is how the document reaches a file — so a surface
 // that decorated its answer with a banner or a trailing status line would fail
 // the comparison below rather than pass it with the decoration attached.
-func draftViaCommandLine(t *testing.T, bin string, kinds []string) map[string]string {
+func draftViaCommandLine(t *testing.T, bin, verb string, kinds []string) map[string]string {
 	t.Helper()
 
 	ws := t.TempDir()
 	out := map[string]string{}
 	for _, kind := range kinds {
-		cmd := exec.Command(bin, "scaffold", kind, scaffoldParityName)
+		cmd := exec.Command(bin, verb, kind, scaffoldParityName)
 		cmd.Dir = ws
 		cmd.Env = builtBinaryEnv(t)
 		var stdout, stderr strings.Builder
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 		if err := cmd.Run(); err != nil {
-			t.Fatalf("the command refused %q: %v (%s)", kind, err, stderr.String())
+			t.Fatalf("aggrega %s refused %q: %v (%s)", verb, kind, err, stderr.String())
 		}
 		out[kind] = stdout.String()
 	}
@@ -266,12 +266,17 @@ func TestDraftingIsByteIdenticalAcrossTheSurfacesThatCarryIt(t *testing.T) {
 	t.Parallel()
 	bin := buildServeBinary(t)
 
-	fromCommandLine := draftViaCommandLine(t, bin, scaffoldParityKinds)
+	fromCommandLine := draftViaCommandLine(t, bin, "draft", scaffoldParityKinds)
+	fromDeprecatedSpelling := draftViaCommandLine(t, bin, "scaffold", scaffoldParityKinds)
 	fromDaemon := draftViaDaemon(t, bin, scaffoldParityKinds)
 	fromToolProtocol := draftViaToolProtocol(t, bin, scaffoldParityKinds)
 
 	for _, kind := range scaffoldParityKinds {
 		command, daemon, tool := fromCommandLine[kind], fromDaemon[kind], fromToolProtocol[kind]
+		if deprecated := fromDeprecatedSpelling[kind]; deprecated != command {
+			t.Errorf("aggrega scaffold and aggrega draft write %q differently on standard output.\n"+
+				"scaffold:\n%s\ndraft:\n%s", kind, deprecated, command)
+		}
 		switch {
 		case strings.TrimSpace(daemon) == "":
 			t.Errorf("the daemon drafted nothing for %q, so the comparison for it asserts nothing", kind)
@@ -302,7 +307,7 @@ func TestTheSurfacesRefuseAnUnknownKindInTheSameWords(t *testing.T) {
 	bin := buildServeBinary(t)
 	const typo = "compoent"
 
-	cmd := exec.Command(bin, "scaffold", typo)
+	cmd := exec.Command(bin, "draft", typo)
 	cmd.Dir = t.TempDir()
 	cmd.Env = builtBinaryEnv(t)
 	var stdout, stderr strings.Builder

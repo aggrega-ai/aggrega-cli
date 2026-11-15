@@ -116,10 +116,13 @@ var runtimeErrorCommands = []struct {
 	// get-schema reaches its RunE with a well-formed single argument, then
 	// fails in its own work: no schema matches the unknown kind.
 	{path: "aggrega get-schema", args: []string{"get-schema", "bogus"}},
-	// scaffold is the same shape: a well-formed single argument reaches its
+	// draft is the same shape: a well-formed single argument reaches its
 	// RunE, and the failure is the shared drafting layer's own refusal of a kind
 	// token no schema answers to. Nothing is read from disk and nothing is
 	// written, so the case needs no arrangement.
+	{path: "aggrega draft", args: []string{"draft", "bogus"}},
+	// The hidden scaffold spelling runs the draft body behind its notice, so the
+	// same refusal must reach the reader without a Usage block.
 	{path: "aggrega scaffold", args: []string{"scaffold", "bogus"}},
 	// explain is the same shape again: a well-formed single argument reaches its
 	// RunE, and the failure is the refusal of a number that named a condition once

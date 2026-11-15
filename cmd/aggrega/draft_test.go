@@ -60,7 +60,7 @@ func TestTheCommandDraftsWithoutTouchingTheWorkspace(t *testing.T) {
 	}
 
 	for _, kind := range scaffoldParityKinds {
-		cmd := exec.Command(bin, "scaffold", kind, scaffoldParityName)
+		cmd := exec.Command(bin, "draft", kind, scaffoldParityName)
 		cmd.Dir = ws
 		cmd.Env = builtBinaryEnv(t)
 		var stdout, stderr strings.Builder
@@ -92,7 +92,7 @@ func TestADraftedDocumentIsRefusedOnlyForItsPlaceholders(t *testing.T) {
 	bin := buildServeBinary(t)
 	ws := t.TempDir()
 
-	cmd := exec.Command(bin, "scaffold", "component", "my-service")
+	cmd := exec.Command(bin, "draft", "component", "my-service")
 	cmd.Dir = ws
 	cmd.Env = builtBinaryEnv(t)
 	var drafted, stderr strings.Builder

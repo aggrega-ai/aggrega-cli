@@ -16,10 +16,21 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/docscache"
 )
 
-// newScaffoldCmd builds the scaffold command, which prints a starter document
-// for an entity kind derived from that kind's embedded JSON Schema, or — with
+// scaffoldNotice is the line the hidden scaffold spelling of the draft command
+// writes to standard error before anything else.
+const scaffoldNotice = "`aggrega scaffold` is deprecated and will be removed in 0.10.0; use `aggrega draft`"
+
+// newDraftCmd builds the draft command, which prints a starter document for an
+// entity kind derived from that kind's embedded JSON Schema, or — with
 // --example — writes one of the documentation's runnable examples into a new
 // directory, or lists them.
+//
+// name is the command's spelling. With deprecated set the command is the hidden
+// scaffold spelling: it carries the same body and flags, is left out of help and
+// of the tools generated from the command tree, and writes scaffoldNotice to
+// standard error once per invocation, before any other output — ahead of a
+// refused flag, a refused argument list and the help text alike — so standard
+// output is byte for byte what the draft spelling writes.
 //
 // The command decodes its arguments and writes the result; the document itself
 // comes from the shared drafting layer every front end drives, so the bytes a
@@ -32,10 +43,19 @@ import (
 // by a shell the caller drove themselves. Writing an example writes the new
 // directory it names and nothing else, and never into a directory that holds
 // anything.
-func newScaffoldCmd() *cobra.Command {
-	var example, list bool
+func newDraftCmd(name string, deprecated bool) *cobra.Command {
+	var example, list, notified bool
+	// notify writes the notice for the deprecated spelling, once however many
+	// of the hooks below an invocation passes through.
+	notify := func(cmd *cobra.Command) {
+		if !deprecated || notified {
+			return
+		}
+		notified = true
+		fmt.Fprintln(cmd.ErrOrStderr(), scaffoldNotice)
+	}
 	cmd := &cobra.Command{
-		Use:   "scaffold <kind> [name] | --example <name> [dir] | --example --list",
+		Use:   name + " <kind> [name] | --example <name> [dir] | --example --list",
 		Short: "Draft a starter document for an entity kind, or write a runnable example into a new directory",
 		Long: "Draft a starter document for an entity kind from its schema, or write one of the " +
 			"documentation's runnable examples into a new directory.\n\n" +
@@ -55,8 +75,8 @@ func newScaffoldCmd() *cobra.Command {
 			"other required value is left as a placeholder to fill in.\n\n" +
 			"Nothing is written to disk. The document goes to standard output, so a redirect " +
 			"decides where it lands:\n\n" +
-			"  aggrega scaffold component my-service > my-service.yaml\n\n" +
-			"The same starter document is served to an assistant by the scaffold tool that " +
+			"  aggrega draft component my-service > my-service.yaml\n\n" +
+			"The same starter document is served to an assistant by the draft tool that " +
 			"aggrega mcp exposes, which returns these bytes alongside a machine-readable " +
 			"payload; this command is the terminal route to the same drafting.\n\n" +
 			"Writing a runnable example\n\n" +
@@ -65,11 +85,11 @@ func newScaffoldCmd() *cobra.Command {
 			"directory — the second argument, or a directory named after the example in the " +
 			"current directory when there is none — then prints the commands the example's own " +
 			"page gives for building it:\n\n" +
-			"  aggrega scaffold --example redis-cache\n\n" +
+			"  aggrega draft --example redis-cache\n\n" +
 			"The directory must not exist yet, or must be empty; a directory holding anything " +
 			"is refused and left as it is. With --list, the command prints every example there " +
 			"is, each with its level and the first sentence of its page, and writes nothing:\n\n" +
-			"  aggrega scaffold --example --list\n\n" +
+			"  aggrega draft --example --list\n\n" +
 			"The examples are read from the documentation bundle published for this version of " +
 			"aggrega on the default registry — or, where none is published for it, the newest " +
 			"one published for an earlier version. It is kept in the cache every project on this " +
@@ -80,15 +100,16 @@ func newScaffoldCmd() *cobra.Command {
 			"An example's files are written only as files and directories inside the directory " +
 			"named: a bundle carrying an entry that would land outside it, or a link, is refused " +
 			"whole and nothing is written.\n\n" +
-			"The scaffold tool that aggrega mcp exposes, and the editor's language server that " +
+			"The draft tool that aggrega mcp exposes, and the editor's language server that " +
 			"aggrega serve runs, write and list the examples on the same terms, with the directory " +
 			"named relative to the workspace root, and answer with the files written and these same " +
 			"commands.",
 		Args: func(cmd *cobra.Command, args []string) error {
+			notify(cmd)
 			switch {
 			case list && !example:
 				return errors.New("--list prints the documentation's runnable examples and is given together " +
-					"with --example: aggrega scaffold --example --list")
+					"with --example: aggrega draft --example --list")
 			case example && list:
 				if len(args) != 0 {
 					return fmt.Errorf("--example --list takes no argument, and received %d", len(args))
@@ -97,7 +118,7 @@ func newScaffoldCmd() *cobra.Command {
 			case example:
 				if len(args) < 1 || len(args) > 2 {
 					return fmt.Errorf("--example takes the example's name and, optionally, the directory to "+
-						"write it into, and received %d arguments; aggrega scaffold --example --list prints "+
+						"write it into, and received %d arguments; aggrega draft --example --list prints "+
 						"the names", len(args))
 				}
 				return nil
@@ -116,12 +137,26 @@ func newScaffoldCmd() *cobra.Command {
 				}
 				return writeExample(ctx, out, notes, provenanceCompilerVersion(), args[0], dir)
 			}
-			var name string
+			var seed string
 			if len(args) > 1 {
-				name = args[1]
+				seed = args[1]
 			}
-			return emitSkeleton(cmd.OutOrStdout(), args[0], name)
+			return emitSkeleton(cmd.OutOrStdout(), args[0], seed)
 		},
+	}
+	if deprecated {
+		cmd.Hidden = true
+		// The flag-error and help hooks run before argument validation; each
+		// writes the notice and then hands over to what the parent would have
+		// done, read when the hook runs so the tree's own choice is kept.
+		cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+			notify(c)
+			return c.Parent().FlagErrorFunc()(c, err)
+		})
+		cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
+			notify(c)
+			c.Parent().HelpFunc()(c, args)
+		})
 	}
 	cmd.Flags().BoolVar(&example, "example", false,
 		"write the runnable example the argument names into a new directory, read from the signed documentation bundle")
@@ -191,7 +226,7 @@ func writeExample(ctx context.Context, out, notes io.Writer, version, name, dir 
 	written, err := examples.Write(name, dir)
 	if err != nil {
 		if errors.Is(err, docscache.ErrPageNotFound()) {
-			return fmt.Errorf("%w\n\naggrega scaffold --example --list prints the examples there are", err)
+			return fmt.Errorf("%w\n\naggrega draft --example --list prints the examples there are", err)
 		}
 		return err
 	}
