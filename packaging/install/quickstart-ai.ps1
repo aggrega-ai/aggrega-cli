@@ -12,7 +12,7 @@
 # the console; where nobody can answer - its input redirected, or a host that
 # reads none - it refuses. It checks that aggrega can be found, on PATH or in
 # the folder the Aggrega installer puts it in, and, for a step that runs, that Docker answers and has Compose. It writes the example
-# into .\quickstart-ai with `aggrega scaffold --example quickstart-ai`, or uses
+# into .\quickstart-ai with `aggrega draft --example quickstart-ai`, or uses
 # that folder as it is when it already exists, goes into the step's folder,
 # quickstart-ai\<step>, and runs the commands the example's page gives for that
 # step, then returns to the folder it started in. Steps 1 to 3 build and start
@@ -123,6 +123,35 @@ param([switch]$Yes)
         throw "${example}: $Message"
     }
 
+    # Test-Drafts reports whether an aggrega reporting $Version has the draft
+    # command: an unreleased build, "(devel)" or a build made some commits after
+    # a release (0.9.1-2-g4ca5e9e), or version 0.9.2 and later, a pre-release of
+    # 0.9.2 included.
+    function Test-Drafts([string]$Version) {
+        if ($Version -eq '(devel)') { return $true }
+        if ($Version -match '-\d+-g[0-9a-f]+') { return $true }
+        if ($Version -notmatch '^v?(\d+)\.(\d+)\.(\d+)') { return $false }
+        $parts = @([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
+        if ($parts[0] -gt 0) { return $true }
+        if ($parts[1] -gt 9) { return $true }
+        return ($parts[1] -eq 9 -and $parts[2] -ge 2)
+    }
+
+    # Get-DraftingVerb returns the command that writes an example for the
+    # aggrega found: draft where it has it, else scaffold, which every aggrega
+    # has had since the first release. A version it cannot read gives scaffold.
+    function Get-DraftingVerb([string]$Aggrega) {
+        $reported = ''
+        try {
+            $json = (& $Aggrega version -o json 2>$null | Out-String) | ConvertFrom-Json
+            $reported = [string]$json.version
+        } catch {
+            $reported = ''
+        }
+        if (Test-Drafts $reported) { return 'draft' }
+        return 'scaffold'
+    }
+
     function Stop-Usage([string]$Message) {
         Write-Host "usage: irm https://aggrega.ai/$example.ps1 | iex"
         Write-Host "       another step: `$env:QUICKSTART_STEP=2; irm https://aggrega.ai/$example.ps1 | iex"
@@ -218,9 +247,9 @@ param([switch]$Yes)
     }
 
     if (step_runs $step) {
-        Write-Host 'This script will scaffold the example, build it and run it with Docker Compose.'
+        Write-Host 'This script will draft the example, build it and run it with Docker Compose.'
     } else {
-        Write-Host 'This script will scaffold the example and build it; it will not run it.'
+        Write-Host 'This script will draft the example and build it; it will not run it.'
     }
     if (-not $GoAhead) {
         $answer = $null
@@ -281,10 +310,11 @@ param([switch]$Yes)
         Stop-Quickstart "$example exists and is not a folder; move it away and run the script again."
     } else {
         Write-Say "writing the example into the folder $example."
+        $draftingVerb = Get-DraftingVerb $aggrega
         $written = & {
             $ErrorActionPreference = 'Continue'
             try {
-                $out = & $aggrega scaffold --example $example $example 2>&1 | Out-String
+                $out = & $aggrega $draftingVerb --example $example $example 2>&1 | Out-String
                 [pscustomobject]@{ Ok = ($LASTEXITCODE -eq 0); Text = $out }
             } catch {
                 [pscustomobject]@{ Ok = $false; Text = $_.Exception.Message }
@@ -292,7 +322,7 @@ param([switch]$Yes)
         }
         if (-not $written.Ok) {
             Write-Host $written.Text
-            Stop-Quickstart "'aggrega scaffold --example $example' failed, as it says above."
+            Stop-Quickstart "'aggrega $draftingVerb --example $example' failed, as it says above."
         }
     }
     $stepFolder = Join-Path $example $step

@@ -165,7 +165,7 @@ var sharedBuildSectionCases = []sharedBuildSectionCase{
 	},
 	{
 		name: "normal",
-		page: "# A page with its sections in order\n\n## Scaffold the example\n\n```sh\naggrega scaffold --example demo\n```\n\n```sh\ncd demo\n```\n\n## Build\n\nBuild each Release:\n\n```yaml\nnot: commands\n```\n\n```sh\n\n# Compose\naggrega build --release release-compose.yaml --auto-pull\n\naggrega build --release release-helm.yaml --auto-pull\n\n```\n\n```sh\nnot the first block\n```\n\n## Next\n\n```sh\nnot this section\n```\n",
+		page: "# A page with its sections in order\n\n## Draft the example\n\n```sh\naggrega draft --example demo\n```\n\n```sh\ncd demo\n```\n\n## Build\n\nBuild each Release:\n\n```yaml\nnot: commands\n```\n\n```sh\n\n# Compose\naggrega build --release release-compose.yaml --auto-pull\n\naggrega build --release release-helm.yaml --auto-pull\n\n```\n\n```sh\nnot the first block\n```\n\n## Next\n\n```sh\nnot this section\n```\n",
 		want: []string{"# Compose", "aggrega build --release release-compose.yaml --auto-pull", "", "aggrega build --release release-helm.yaml --auto-pull"},
 	},
 	{

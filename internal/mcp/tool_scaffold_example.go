@@ -24,7 +24,7 @@ import (
 // different directory, a workspace that trusts the documentation's signer, a
 // connection or a cached copy — is taught there rather than on any entity kind's
 // page.
-const docScaffoldReference = docIndex + "/cli/aggrega-scaffold.md"
+const docScaffoldReference = docIndex + "/cli/aggrega-draft.md"
 
 // scaffoldReach reports how far a call to the draft tool would reach: nothing,
 // which is what drafting declares, or the workspace where the call writes an

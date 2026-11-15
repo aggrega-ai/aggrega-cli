@@ -13,7 +13,7 @@
 # `sh -s --` too, goes ahead without asking, and with no terminal and no --yes
 # it refuses. It checks that aggrega can be found, on PATH or in the folder the
 # Aggrega installer puts it in, and, for a step that runs, that Docker answers and has Compose. It writes
-# the example into ./quickstart-ai with `aggrega scaffold --example
+# the example into ./quickstart-ai with `aggrega draft --example
 # quickstart-ai`, or uses that folder as it is when it already exists, changes
 # into the step's folder, quickstart-ai/<step>, and runs the commands the
 # example's page gives for that step. Steps 1 to 3 build and start the example
@@ -142,9 +142,9 @@ parse_args() {
 
 confirm() {
   if step_runs "$step"; then
-    printf '%s\n' "This script will scaffold the example, build it and run it with Docker Compose."
+    printf '%s\n' "This script will draft the example, build it and run it with Docker Compose."
   else
-    printf '%s\n' "This script will scaffold the example and build it; it will not run it."
+    printf '%s\n' "This script will draft the example and build it; it will not run it."
   fi
   [ -z "$yes" ] || return 0
   # Piped into sh, the script's standard input is the script itself, so the
@@ -176,6 +176,45 @@ find_aggrega() {
     # reads every path ending in .sh this script names as a repository script.
     installer=install.sh
     fail "aggrega is not on PATH or in ${AGGREGA_INSTALL_DIR:-~/.local/bin}; install it with: curl -fsSL https://aggrega.ai/$installer | sh"
+  fi
+}
+
+# version_drafts <version> succeeds when an aggrega reporting <version> has the
+# draft command: an unreleased build, "(devel)" or a build made some commits
+# after a release (0.9.1-2-g4ca5e9e), or version 0.9.2 and later, a pre-release
+# of 0.9.2 included.
+version_drafts() {
+  [ "$1" = "(devel)" ] && return 0
+  case "$1" in
+    *-[0-9]*-g[0-9a-f]*) return 0 ;;
+  esac
+  v="${1#v}"
+  v="${v%%[-+]*}"
+  old_ifs=$IFS
+  IFS=.
+  set -- $v
+  IFS=$old_ifs
+  for part in "${1:-}" "${2:-}" "${3:-}"; do
+    case "$part" in
+      '' | *[!0-9]*) return 1 ;;
+    esac
+  done
+  [ "$1" -gt 0 ] && return 0
+  [ "$2" -gt 9 ] && return 0
+  [ "$2" -eq 9 ] && [ "$3" -ge 2 ]
+}
+
+# choose_drafting_verb sets drafting_verb to the command that writes an example
+# for the aggrega found: draft where it has it, else scaffold, which every
+# aggrega has had since the first release. A version it cannot read gives
+# scaffold.
+choose_drafting_verb() {
+  reported="$("$aggrega" version -o json 2>/dev/null |
+    sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  if version_drafts "$reported"; then
+    drafting_verb=draft
+  else
+    drafting_verb=scaffold
   fi
 }
 
@@ -222,9 +261,10 @@ use_folder() {
     fail "$example exists and is not a folder; move it away and run the script again."
   else
     say "writing the example into the folder $example."
-    if ! out="$("$aggrega" scaffold --example "$example" "$example" 2>&1)"; then
+    choose_drafting_verb
+    if ! out="$("$aggrega" "$drafting_verb" --example "$example" "$example" 2>&1)"; then
       printf '%s\n' "$out" >&2
-      fail "'aggrega scaffold --example $example' failed, as it says above."
+      fail "'aggrega $drafting_verb --example $example' failed, as it says above."
     fi
   fi
   [ -d "$example/$step" ] ||
