@@ -116,6 +116,7 @@ var publishedByteReaders = map[string]string{
 
 	// --- matched by name only: not a registry read at all ---
 	"internal/buildops.ensureLockfile": "calls the configured PULL RUN, not a registry fetch; it holds no artifact bytes. Matched because this guard reads call NAMES and cannot tell the two apart",
+	"internal/importops.finishImport":  "calls the configured PULL RUN for the drafted Release (Options.Pull), not a registry fetch; it holds only the run's notices and its error, no artifact bytes. Matched because this guard reads call NAMES and cannot tell the two apart",
 }
 
 func TestEveryReaderOfPublishedBytesIsAccountedFor(t *testing.T) {
