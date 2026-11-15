@@ -296,8 +296,8 @@ var importToolSpec = toolSpec{
 		"file or the directory to convert. The importer plugin that advertises the " +
 		"source's format does the translation: it reads the source, drafts entities from it, and this writes what " +
 		"it produced, creating parent directories as needed. A directory — a chart or a project, say — is handed to " +
-		"the importer as exactly the files of it the importer's declared file patterns select, each named by its " +
-		"path inside the directory: an importer declaring no file patterns refuses a directory, and a link among " +
+		"the importer as exactly the files of it the importer's declared file patterns select, the workspace's " +
+		"build output folder dist/ left out, each named by its path inside the directory: an importer declaring no file patterns refuses a directory, and a link among " +
 		"the files it would read, or to a directory, that leads out of it is refused before anything is read. " +
 		"Send `output_dir` to name the directory the drafts go in, relative to the workspace root or absolute, " +
 		"as every path here is named; leave it out and they go beneath the workspace root, where the command " +
@@ -335,7 +335,7 @@ var importToolSpec = toolSpec{
 		"source is read in, the file names it applies to and the paths its parsed tree carries — parsing through " +
 		"the parsers the importer reads the source with, the one this workspace's catalog holds for a syntax or " +
 		"the compiler's own for a syntax it holds none for, reading the file named, or of a directory only the files a " +
-		"signature's file patterns select, and no network: a source no signature matches is refused asking for " +
+		"signature's file patterns select, the workspace's build output folder left out, and no network: a source no signature matches is refused asking for " +
 		"`format` and naming the formats the importers advertise — or, for a directory, asking for one of its " +
 		"files sent on its own as `source` or a `format` whose importer declares file patterns, naming only " +
 		"those — and a source " +
@@ -410,7 +410,7 @@ var importToolSpec = toolSpec{
     "source": {
       "type": "string",
       "minLength": 1,
-      "description": "The file or directory to convert, relative to the workspace root or absolute. A directory is read into the files of it the importer's declared file patterns select, and no link inside it is followed out of it. Over HTTP it must lie inside the workspace this server serves."
+      "description": "The file or directory to convert, relative to the workspace root or absolute. A directory is read into the files of it the importer's declared file patterns select, the workspace's build output folder dist/ left out, and no link inside it is followed out of it. Over HTTP it must lie inside the workspace this server serves."
     },
     "format": {
       "type": "string",

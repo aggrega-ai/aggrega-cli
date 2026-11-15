@@ -29,7 +29,8 @@ import (
 // — a description exported by another tool, which sits wherever they saved it — so
 // an absolute path naming one outside the workspace is accepted and read. A
 // directory is read into the named sources its importer's file patterns select,
-// held to itself wherever it lies, so no link inside it is followed out of it.
+// the workspace's build output folder left out, and held to itself wherever it
+// lies, so no link inside it is followed out of it.
 // outputDir is WRITTEN to and is resolved inside the workspace this session
 // opened, so the drafts land in a tree the session was opened over and no request
 // can name a destination outside it.

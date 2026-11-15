@@ -23,11 +23,12 @@ var probeSignature = types.PluginDetectSignature{
 	Match: []types.PluginPathMatch{{Path: "kind", Is: types.IsString, Equals: importopstest.FilesProbeKind}},
 }
 
-// readDirectorySource reads the directory at dir as an import would, failing the
-// test where it cannot.
-func readDirectorySource(t *testing.T, dir string) *Source {
+// readDirectorySource reads the directory at dir as an import of the workspace
+// whose build writes to buildOutput would, failing the test where it cannot. An
+// empty buildOutput leaves nothing out of the listing.
+func readDirectorySource(t *testing.T, dir, buildOutput string) *Source {
 	t.Helper()
-	src, err := readSource(dir, "flows")
+	src, err := readSource(dir, "flows", buildOutput)
 	if err != nil {
 		t.Fatalf("read the directory source: %v", err)
 	}
@@ -57,7 +58,7 @@ func TestADirectoryIsListedByNameInByteOrder(t *testing.T) {
 	for _, name := range []string{"z/y/x.json", "a/b.probe.json", "a.probe.json", "m.txt"} {
 		importopstest.WriteSource(t, filepath.Join(dir, filepath.FromSlash(name)), "{}")
 	}
-	src := readDirectorySource(t, dir)
+	src := readDirectorySource(t, dir, "")
 	if want := []string{"a.probe.json", "a/b.probe.json", "m.txt", "z/y/x.json"}; !slices.Equal(entryNames(src), want) {
 		t.Fatalf("the directory is listed as %v; want %v", entryNames(src), want)
 	}
@@ -92,7 +93,7 @@ func TestASelectionReadsWhatItsPatternsNameAndJudgesOnlyTheLinksItWouldReadThrou
 	mustSymlink(t, filepath.Join(dir, "nowhere.probe.json"), filepath.Join(dir, "gone.probe.json"))
 	mustSymlink(t, outside, filepath.Join(dir, "notes.txt"))
 
-	src := readDirectorySource(t, dir)
+	src := readDirectorySource(t, dir, "")
 	if slices.Contains(entryNames(src), "gone.probe.json") {
 		t.Errorf("a link leading nowhere was listed: %v", entryNames(src))
 	}
@@ -137,7 +138,7 @@ func TestASignatureNamingNoFileOpensNothingInADirectory(t *testing.T) {
 	seam, counting := detectionSeamOver(t, importerDeclaring("anyname", []string{"anyname"},
 		types.PluginDetectSignature{Syntax: "json", Match: []types.PluginPathMatch{{Path: "kind", Is: types.IsPresent}}}))
 
-	src := readDirectorySource(t, dir)
+	src := readDirectorySource(t, dir, "")
 	_, err := detectFormat(context.Background(), src, seam)
 	var undetected *UndetectedFormatError
 	if !errors.As(err, &undetected) {
@@ -167,7 +168,7 @@ func TestADirectoryFileIsParsedOncePerSyntax(t *testing.T) {
 		importerDeclaring("other", []string{"other"}, other),
 		importerDeclaring("probe", []string{"probe"}, probeSignature))
 
-	got, err := detectFormat(context.Background(), readDirectorySource(t, dir), seam)
+	got, err := detectFormat(context.Background(), readDirectorySource(t, dir, ""), seam)
 	if err != nil || got != "probe" {
 		t.Fatalf("the directory was recognised as %q (err %v); want probe", got, err)
 	}
@@ -182,7 +183,7 @@ func TestADirectoryFileIsParsedOncePerSyntax(t *testing.T) {
 func TestASourceThatCannotBeReadIsRefusedNamingThePlaceRead(t *testing.T) {
 	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "flow.json")
-	_, err := readSource(missing, "flow.json")
+	_, err := readSource(missing, "flow.json", "")
 	var readErr *SourceReadError
 	if !errors.As(err, &readErr) {
 		t.Fatalf("a path naming nothing was not refused as a source that cannot be read: %T: %v", err, err)

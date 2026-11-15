@@ -212,6 +212,12 @@ func SelectFormat(ctx context.Context, explicit string, src *Source, seam Seam) 
 // that a pattern of any importer selects, and every link to a directory, is held
 // to the directory, so a link leading out refuses with nothing read.
 //
+// The files a directory holds are its listing, which leaves out the workspace's
+// build output folder wherever it lies beneath the directory (see [Source]). So
+// what a build of the workspace wrote there — a rendered Docker Compose file, say
+// — is never tried against a signature, and a directory that has been built is
+// recognised as the project it held before the build.
+//
 // It is deterministic. The importers are read in the order the catalog view
 // lists them, their signatures in declared order and a directory's files in name
 // order, a file is read at most once and parsed at most once per syntax however

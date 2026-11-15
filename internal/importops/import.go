@@ -12,6 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/artifactout"
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
@@ -343,7 +344,11 @@ func (r Result) Halted() bool {
 // none — or returns them for the caller to place, according to Options.Delivery.
 //
 // A file source is handed to the importer whole, as the primary bytes, exactly as
-// it is read. A directory source is handed as named sources with the primary
+// it is read. A directory source is read without the workspace's build output
+// folder — the folder a build of rw writes its rendered files to — wherever that
+// folder lies beneath it: neither the recognition nor the importer reads a file
+// inside it, so a directory that has been built is read as the project it holds
+// (see [Source]). A directory source is handed as named sources with the primary
 // bytes empty: exactly the files the resolved importer's declared file patterns
 // select — no other file of the directory is opened — each named by its
 // slash-separated path inside the directory, in name order, together with the
@@ -482,8 +487,10 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 
 	// The source is found before the catalog is loaded, so a source that cannot be
 	// read is refused as that, whatever the catalog holds. A directory is listed
-	// here and none of its files is opened yet.
-	src, err := readSource(opts.SourcePath, opts.SourceName)
+	// here and none of its files is opened yet; the folder a build of this
+	// workspace writes to is composed where the build composes it, so the folder
+	// the listing leaves out is the one the build wrote.
+	src, err := readSource(opts.SourcePath, opts.SourceName, artifactout.DefaultOutputDirIn(rw.Root()))
 	if err != nil {
 		return Result{}, err
 	}

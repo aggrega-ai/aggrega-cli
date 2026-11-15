@@ -200,7 +200,7 @@ func TestADirectoryWhoseImportersDeclareNoFilePatternIsOfferedItsFilesAlone(t *t
 	importopstest.WriteSource(t, filepath.Join(dir, "a.probe.json"), importopstest.FilesProbeBody("a"))
 	seam, _ := detectionSeamOver(t, importerDeclaring("anyname", []string{"anyname"}))
 
-	_, err := detectFormat(context.Background(), readDirectorySource(t, dir), seam)
+	_, err := detectFormat(context.Background(), readDirectorySource(t, dir, ""), seam)
 	var undetected *UndetectedFormatError
 	if !errors.As(err, &undetected) {
 		t.Fatalf("the directory was not refused as unrecognised: %v", err)

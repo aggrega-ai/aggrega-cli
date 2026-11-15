@@ -82,6 +82,19 @@ func (e *DirectoryLinkError) Unwrap() error { return e.err }
 // directory is listed so it can be judged, and is never entered. A link leading
 // nowhere or round a loop has nothing behind it and is passed over, as are pipes,
 // sockets and devices, which are never opened.
+//
+// A listing leaves out the build output folder of the workspace the import runs
+// in — the folder a build of that workspace writes its rendered files to — where
+// that folder lies beneath the directory: nothing inside it is listed, and neither
+// is a link leading to it. What a build wrote there is the build's output, not the
+// project's source, so neither recognition nor the importer's selection ever reads
+// it. The folder is compared as a place on disk rather than as a spelling, so it is
+// left out however the directory was named — `.`, a relative path, a trailing
+// separator, a path through a link. A directory that is the build output folder, or
+// lies inside it, is listed as named, since the folder is not beneath it; a
+// directory that does not hold the folder — one outside the workspace, say — is
+// listed whole, a folder of its own of the same name included; and a workspace
+// whose build has not written the folder leaves nothing out.
 type Source struct {
 	// name is the source as the caller received it, for a refusal to name.
 	name string
@@ -123,13 +136,15 @@ func (f *sourceFile) bytes() ([]byte, error) {
 }
 
 // readSource finds the source at path, which the caller received as name: a
-// directory is listed, and anything else is read whole exactly as a file is read,
+// directory is listed, leaving out buildOutput where it lies beneath it as
+// [Source] describes, and anything else is read whole exactly as a file is read,
 // so a single file's bytes are the bytes os.ReadFile returns and a path naming
 // nothing is refused with the error that read gives. A path that is a link is
-// used where it leads, as every place a person names is.
-func readSource(path, name string) (*Source, error) {
+// used where it leads, as every place a person names is. An empty buildOutput
+// leaves nothing out.
+func readSource(path, name, buildOutput string) (*Source, error) {
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
-		entries, err := listDirectory(path)
+		entries, err := listDirectory(path, buildOutput)
 		if err != nil {
 			return nil, &SourceReadError{Path: path, Err: err}
 		}
@@ -145,14 +160,27 @@ func readSource(path, name string) (*Source, error) {
 }
 
 // listDirectory lists what a directory source holds, as [Source] describes, sorted
-// by name. A directory beneath it that cannot be listed fails the listing.
-func listDirectory(dir string) ([]*sourceFile, error) {
+// by name, leaving out buildOutput wherever the walk meets it beneath dir. A
+// directory beneath it that cannot be listed fails the listing; the build output
+// folder is passed over before it is opened, so it fails nothing.
+//
+// The directory itself is never compared with buildOutput: only a place met
+// beneath it can be left out, which is what keeps a directory that is the build
+// output folder, or lies inside it, listed as named.
+func listDirectory(dir, buildOutput string) ([]*sourceFile, error) {
 	var entries []*sourceFile
+	isBuildOutput := func(p string) bool { return buildOutput != "" && pathscope.SamePlace(p, buildOutput) }
 	err := pathscope.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if p == dir || d.IsDir() {
+		if p == dir {
+			return nil
+		}
+		if d.IsDir() {
+			if isBuildOutput(p) {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		rel, err := filepath.Rel(dir, p)
@@ -171,6 +199,9 @@ func listDirectory(dir string) ([]*sourceFile, error) {
 			case target.Mode().IsRegular():
 				entry.link = true
 			case target.IsDir():
+				if isBuildOutput(p) {
+					return nil
+				}
 				entry.link, entry.dir = true, true
 			default:
 				return nil

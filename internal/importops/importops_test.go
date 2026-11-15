@@ -173,7 +173,7 @@ func writtenSource(t *testing.T, body string) string {
 // read the way an import reads it.
 func fileSource(t *testing.T, name string, content []byte) *Source {
 	t.Helper()
-	src, err := readSource(importopstest.WriteSource(t, filepath.Join(t.TempDir(), "source"), string(content)), name)
+	src, err := readSource(importopstest.WriteSource(t, filepath.Join(t.TempDir(), "source"), string(content)), name, "")
 	if err != nil {
 		t.Fatalf("read the source written for %q: %v", name, err)
 	}
