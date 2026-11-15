@@ -96,7 +96,7 @@ func invokeScaffold(t *testing.T, s *server, args map[string]any) *callToolResul
 	if err != nil {
 		t.Fatalf("marshal arguments: %v", err)
 	}
-	res, rpcErr := scaffoldToolSpec.invoke(s, context.Background(), raw)
+	res, rpcErr := draftToolSpec.invoke(s, context.Background(), raw)
 	if rpcErr != nil {
 		t.Fatalf("the scaffold tool returned a protocol error envelope: %+v", rpcErr)
 	}

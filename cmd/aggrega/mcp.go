@@ -680,6 +680,16 @@ func commandSurface(root *cobra.Command) []mcp.CommandSurface {
 	return out
 }
 
+// hiddenInTree reports whether cmd or any command above it is hidden.
+func hiddenInTree(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Hidden {
+			return true
+		}
+	}
+	return false
+}
+
 // helpRenderMu serialises help rendering over one command tree.
 //
 // None of the steps below is a read, which is the whole reason it is here.
@@ -706,6 +716,11 @@ var helpRenderMu sync.Mutex
 // resolution leaves whatever it could not match, so anything left over means the
 // path named something the tree does not have.
 //
+// A command the tree hides, or one beneath a hidden command, is reported as no
+// command too: the top-level help lists none of them, so the family serves the
+// commands that help offers, and nothing of a hidden command runs — its help may
+// write to the diagnostic stream, which is this server's.
+//
 // Two calls are what make the rendered text the text the command prints. Running
 // a command installs its help and version flags on it immediately before the
 // run, so the flag list a reader sees includes them; rendering without those
@@ -719,7 +734,7 @@ func commandHelp(root *cobra.Command) mcp.HelpRenderer {
 		defer helpRenderMu.Unlock()
 
 		target, leftover, _ := root.Find(path)
-		if target == nil || len(leftover) > 0 {
+		if target == nil || len(leftover) > 0 || hiddenInTree(target) {
 			return "", false
 		}
 		target.InitDefaultHelpFlag()

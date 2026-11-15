@@ -41,7 +41,7 @@ var getSchemaToolSpec = toolSpec{
 		"kind before authoring or validating one. Pass the lowercase-hyphenated kind token as `kind` — for example " +
 		"component, aggregate, release, manifest, recipe, ir, or wasm-provider. Pass `list: true` (with no kind) to " +
 		"enumerate every addressable kind first. An unknown kind returns the full valid set so you can correct a typo " +
-		"without a second call. This is the authoritative shape source; scaffold derives its starter skeletons from it.",
+		"without a second call. This is the authoritative shape source; draft derives its starter skeletons from it.",
 	inputSchema: `{
   "type": "object",
   "properties": {
@@ -83,7 +83,7 @@ var getSchemaToolSpec = toolSpec{
 	},
 }
 
-// scaffoldArgs is the scaffold tool's argument shape: kind and name for drafting
+// scaffoldArgs is the draft tool's argument shape: kind and name for drafting
 // a starter document, example and dir for writing a runnable example, list for
 // listing the examples, and the workspace the example form writes into.
 type scaffoldArgs struct {
@@ -95,7 +95,7 @@ type scaffoldArgs struct {
 	WorkspaceRoot string `json:"workspace_root,omitempty"`
 }
 
-// scaffoldExample is one runnable example in the list the scaffold tool answers
+// scaffoldExample is one runnable example in the list the draft tool answers
 // with: its name, its level and the first sentence of its page.
 type scaffoldExample struct {
 	Name    string `json:"name"`
@@ -103,7 +103,7 @@ type scaffoldExample struct {
 	Summary string `json:"summary"`
 }
 
-// scaffoldResult is the scaffold tool's structured payload, one shape for the
+// scaffoldResult is the draft tool's structured payload, one shape for the
 // tool's three forms, each carrying its own fields and leaving the others out:
 // the kind a skeleton was built for and the rendered YAML skeleton; the list of
 // examples; or the example written, the directory it went into as the call named
@@ -130,7 +130,7 @@ type scaffoldResult struct {
 	Version           string            `json:"version,omitempty"`
 }
 
-var scaffoldToolSpec = toolSpec{
+var draftToolSpec = toolSpec{
 	summary: "Drafts a starter document for an entity kind, or writes a runnable example into a new directory.",
 	description: "Generate a minimal starter skeleton for an Aggrega entity kind and return it as YAML, writing " +
 		"nothing. The skeleton is derived directly from that kind's JSON Schema so it always tracks the real " +
@@ -139,7 +139,7 @@ var scaffoldToolSpec = toolSpec{
 		"`kind` (component, aggregate, release, recipe, manifest, feature, and so on) and, optionally, a `name` to seed " +
 		"metadata.name. Use it to start a new entity from a correct shape rather than from memory, then flesh out the " +
 		"placeholders and validate. Drafting needs no workspace. The same drafting is on the command line as " +
-		"`aggrega scaffold <kind> [name]`, which prints these exact bytes to standard output. " +
+		"`aggrega draft <kind> [name]`, which prints these exact bytes to standard output. " +
 		"Send `example` instead of `kind` to WRITE one of the documentation's runnable examples into a new " +
 		"directory of the workspace — `dir`, relative to the workspace root, or a directory named after the " +
 		"example there when `dir` is left out — and be answered with the directory's location (`output_dir`, " +
@@ -155,14 +155,14 @@ var scaffoldToolSpec = toolSpec{
 		"a bundle that does not verify is refused, never used, offline only a cached copy is read, and a " +
 		"bundle carrying a link, or an entry that would land outside the directory, is refused with nothing " +
 		"written. Fields of two forms sent together are refused. The same is on the command line as " +
-		"`aggrega scaffold --example <name> [dir]` and `aggrega scaffold --example --list`.",
+		"`aggrega draft --example <name> [dir]` and `aggrega draft --example --list`.",
 	inputSchema: `{
   "type": "object",
   "properties": {
     "kind": {
       "type": "string",
       "minLength": 1,
-      "description": "The entity kind to scaffold, as a lowercase-hyphenated schema token, e.g. component, aggregate, release, recipe, feature, manifest."
+      "description": "The entity kind to draft, as a lowercase-hyphenated schema token, e.g. component, aggregate, release, recipe, feature, manifest."
     },
     "name": {
       "type": "string",
@@ -198,7 +198,7 @@ var scaffoldToolSpec = toolSpec{
 		var a scaffoldArgs
 		if len(args) > 0 {
 			if err := json.Unmarshal(args, &a); err != nil {
-				return invalidToolArguments("scaffold", err)
+				return invalidToolArguments("draft", err)
 			}
 		}
 		form, err := exampleops.RequestForm(a.Kind, a.Name, a.Example, a.Dir, a.List)
@@ -210,7 +210,7 @@ var scaffoldToolSpec = toolSpec{
 		}
 		kind := strings.TrimSpace(a.Kind)
 		if kind == "" {
-			return errorResult("scaffold requires a 'kind' argument")
+			return errorResult("draft requires a 'kind' argument")
 		}
 		skeleton, err := scaffoldops.Skeleton(kind, a.Name)
 		if err != nil {

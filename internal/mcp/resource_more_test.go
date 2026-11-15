@@ -172,7 +172,7 @@ func TestPromptsRenderReferenceResources(t *testing.T) {
 
 	dev := getPrompt(t, "developer-authoring", map[string]string{"kind": "component"})
 	body := dev.Messages[0].Content.Text
-	for _, want := range []string{"schema://component", "langref://entities/component", "authoring://getting-started", "scaffold", "validate"} {
+	for _, want := range []string{"schema://component", "langref://entities/component", "authoring://getting-started", "draft", "validate"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("developer-authoring body missing pointer %q", want)
 		}

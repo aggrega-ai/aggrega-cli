@@ -1107,6 +1107,11 @@ func hostLocationEveryTool() []hostLocationTool {
 		}
 		return out
 	}
+	drafting := []hostLocationCall{
+		{scenario: "a kind", args: map[string]any{"kind": "component", "name": "fixture/misc/scaffolded-q7x3"}},
+		{scenario: "an unknown kind is refused", args: map[string]any{"kind": "bogus-q7x3"}},
+		{scenario: "a kind beside an example is refused", args: map[string]any{"kind": "component", "example": "demo-q7x3"}},
+	}
 	const byCredential = "a signing call spends the caller's own credential over a listener and the workspace's " +
 		"configured key at the keyboard, so the two answers differ by which credential was read"
 	const byDefinition = "the answer carries each tool's advertised definition, which the two transports advertise " +
@@ -1269,11 +1274,9 @@ func hostLocationEveryTool() []hostLocationTool {
 			{scenario: "a message about a kind", args: map[string]any{"message": "unknown field 'bogus' in spec", "kind": "release"}},
 			{scenario: "no message is refused", args: map[string]any{}},
 		}},
-		{tool: "scaffold", calls: []hostLocationCall{
-			{scenario: "a kind", args: map[string]any{"kind": "component", "name": "fixture/misc/scaffolded-q7x3"}},
-			{scenario: "an unknown kind is refused", args: map[string]any{"kind": "bogus-q7x3"}},
-			{scenario: "a kind beside an example is refused", args: map[string]any{"kind": "component", "example": "demo-q7x3"}},
-		}},
+		{tool: "draft", calls: drafting},
+		// The deprecated spelling of the same tool, asked the same things.
+		{tool: "scaffold", calls: drafting},
 		{tool: "describe-capabilities", calls: []hostLocationCall{
 			{scenario: "the index", args: map[string]any{}, bytesOnly: byDefinition},
 			{scenario: "a kind", args: map[string]any{"kind": "release"}, bytesOnly: byDefinition},

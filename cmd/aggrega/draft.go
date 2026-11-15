@@ -18,7 +18,8 @@ import (
 
 // scaffoldNotice is the line the hidden scaffold spelling of the draft command
 // writes to standard error before anything else.
-const scaffoldNotice = "`aggrega scaffold` is deprecated and will be removed in 0.10.0; use `aggrega draft`"
+const scaffoldNotice = "`aggrega scaffold` is deprecated and will be removed in " +
+	scaffoldops.ScaffoldSpellingRemovedIn + "; use `aggrega draft`"
 
 // newDraftCmd builds the draft command, which prints a starter document for an
 // entity kind derived from that kind's embedded JSON Schema, or — with

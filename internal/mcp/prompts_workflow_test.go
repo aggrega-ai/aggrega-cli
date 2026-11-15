@@ -34,7 +34,7 @@ type workflowPromptExpectation struct {
 var workflowPromptExpectations = []workflowPromptExpectation{
 	{
 		name:  constructAggregatePromptName,
-		tools: []string{"describe", "get-schema", "scaffold", "validate", "build", "explain-error"},
+		tools: []string{"describe", "get-schema", "draft", "validate", "build", "explain-error"},
 		steps: 9,
 	},
 	{

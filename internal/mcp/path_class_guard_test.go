@@ -76,7 +76,7 @@ var workspacePathArguments = map[string]string{
 	// is written into, which the write refuses unless it is new or empty. It is
 	// resolved by the same helper as every other path here, so its reach is the
 	// transport's and not a rule of its own.
-	"scaffold: dir": "the new directory a runnable example is WRITTEN into",
+	"draft: dir": "the new directory a runnable example is WRITTEN into",
 	// Read rather than written, and spelled out because the tool taking it writes
 	// beside it: the entity.lock lands in the directory the named document sits in,
 	// so this one path decides both what is read and where that write lands.

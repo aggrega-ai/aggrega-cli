@@ -228,7 +228,7 @@ func TestTheGuidanceSaysWhereLocalEntitiesAreRead(t *testing.T) {
 // text no longer mentions.
 var toolsNamedInInstructions = []string{
 	"get-schema",
-	"scaffold",
+	"draft",
 	"describe",
 	"validate",
 	"build",

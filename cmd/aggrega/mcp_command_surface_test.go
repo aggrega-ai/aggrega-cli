@@ -542,7 +542,9 @@ func TestTwiceExposedCapabilitiesDiscloseEachOtherOverTheWire(t *testing.T) {
 		var p pair
 		for _, name := range availability.Names {
 			switch {
-			case static[name]:
+			case static[name] && p.curated == "":
+				// The first static name is the tool's own; a later one is an
+				// earlier spelling of it, served under the same description.
 				p.curated = name
 			case generated[name]:
 				p.generated = name

@@ -37,10 +37,11 @@ const cliHelpParityCeiling = 5 * time.Minute
 // way an invocation initialises it, so the commands cobra contributes at run
 // time — help, completion and the shells beneath it — are in the list too.
 //
-// One command is deliberately outside it. The hidden completion-protocol command
-// is added by an unexported initialiser this test cannot call, and its name
-// begins with an underscore, which the resource URI's own token rule rejects — so
-// it is unreachable as a cli:// resource and there is nothing to compare.
+// A command the tree hides is outside it, because the resource serves none of
+// them (TestTheHelpResourceServesNoHiddenCommand). The hidden completion-protocol
+// command is outside it on its own grounds as well: it is added by an unexported
+// initialiser this test cannot call, and its name begins with an underscore,
+// which the resource URI's own token rule rejects.
 //
 // The spawns are sequential, since nothing here needs them to overlap. The
 // in-process tree is built from the registration source as the package leaves
@@ -149,6 +150,9 @@ func cliHelpParityPaths(t *testing.T) [][]string {
 	root := executingRootCmd()
 	var paths [][]string
 	for _, cmd := range reachableCommands(root) {
+		if hiddenInTree(cmd) {
+			continue
+		}
 		segments := strings.Fields(cmd.CommandPath())
 		if len(segments) == 0 {
 			t.Fatalf("a command in the tree reports an empty path")
@@ -416,4 +420,27 @@ func window(s string, at int) string {
 		out += "…"
 	}
 	return out
+}
+
+// TestTheHelpResourceServesNoHiddenCommand pins that a command the tree hides
+// from its own help is absent from the cli:// family too, and that asking for one
+// runs nothing of it: the deprecated scaffold spelling, whose help would
+// otherwise write its deprecation notice onto the server's diagnostic stream.
+// The draft spelling beside it is the positive control.
+func TestTheHelpResourceServesNoHiddenCommand(t *testing.T) {
+	t.Parallel()
+	root := executingRootCmd()
+	var diagnostics bytes.Buffer
+	root.SetErr(&diagnostics)
+	render := commandHelp(root)
+
+	if text, ok := render([]string{"draft"}); !ok || text == "" {
+		t.Fatal("the renderer served nothing for the draft command, so the refusal below proves nothing")
+	}
+	if text, ok := render([]string{"scaffold"}); ok {
+		t.Errorf("the renderer served help for the hidden scaffold command:\n%s", text)
+	}
+	if diagnostics.Len() != 0 {
+		t.Errorf("asking for the hidden command's help wrote to the diagnostic stream: %q", diagnostics.String())
+	}
 }

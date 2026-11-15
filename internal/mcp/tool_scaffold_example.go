@@ -19,14 +19,14 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// docScaffoldReference is the page teaching the scaffold capability, both of its
+// docScaffoldReference is the page teaching the drafting capability, both of its
 // forms. A failure to write or list an example points here, because the fix — a
 // different directory, a workspace that trusts the documentation's signer, a
 // connection or a cached copy — is taught there rather than on any entity kind's
 // page.
 const docScaffoldReference = docIndex + "/cli/aggrega-scaffold.md"
 
-// scaffoldReach reports how far a call to the scaffold tool would reach: nothing,
+// scaffoldReach reports how far a call to the draft tool would reach: nothing,
 // which is what drafting declares, or the workspace where the call writes an
 // example into it.
 //
@@ -47,7 +47,7 @@ func scaffoldReach(_ *server, args json.RawMessage) opsurface.Reach {
 	return opsurface.ReachWorkspace
 }
 
-// scaffoldExample answers the scaffold tool's example form: the list of the
+// scaffoldExample answers the draft tool's example form: the list of the
 // documentation's runnable examples, or one of them written into a new directory.
 //
 // The directory is resolved by the one helper every path a call names is resolved
@@ -74,7 +74,7 @@ func (s *server) scaffoldExample(ctx context.Context, form exampleops.Form, a sc
 	if form == exampleops.FormWrite {
 		name = strings.TrimSpace(a.Example)
 		if err := exampleops.CheckName(name); err != nil {
-			return errorResult(explainToolErrorAt("The scaffold tool's 'example' names no example.", err,
+			return errorResult(explainToolErrorAt("The draft tool's 'example' names no example.", err,
 				docScaffoldReference))
 		}
 		named = strings.TrimSpace(a.Dir)
@@ -82,7 +82,7 @@ func (s *server) scaffoldExample(ctx context.Context, form exampleops.Form, a sc
 			named = name
 		}
 		var refusal string
-		if dest, refusal = tw.workspacePath("scaffold", "dir", named); refusal != "" {
+		if dest, refusal = tw.workspacePath("draft", "dir", named); refusal != "" {
 			return errorResult(refusal)
 		}
 	}
@@ -104,7 +104,7 @@ func (s *server) scaffoldExample(ctx context.Context, form exampleops.Form, a sc
 	// an earlier version is about the answer, and opens its text.
 	warn := func(notice string) {
 		if s.logw != nil {
-			fmt.Fprintf(s.logw, "mcp: scaffold: %s\n", notice)
+			fmt.Fprintf(s.logw, "mcp: draft: %s\n", notice)
 		}
 	}
 	examples, err := exampleops.Open(docsCtx, tw.cfg, version, warn)

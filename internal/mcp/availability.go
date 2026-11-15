@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/clisurface"
@@ -86,6 +87,10 @@ func OperationAvailability() map[string]opsurface.OperationAvailability {
 // Several names for one operation are admissible and one is used: an operation
 // backed by a command is reachable both as the generated command tool and, where
 // a curated tool answers it too, under that tool's goal-shaped name.
+//
+// An entry lists the tool's name first. A name after it is an earlier spelling
+// still served, as the same tool under a description that opens by naming the
+// replacement and the release that removes it (deprecatedSpelling).
 var curatedToolNames = map[string][]string{
 	"validate": {"validate"},
 	"build":    {"build"},
@@ -104,7 +109,7 @@ var curatedToolNames = map[string][]string{
 	"plugin-gen-catalog":     {"gen-catalog"},
 	"lint":                   {"lint"},
 	"explain-error":          {"explain-error"},
-	"scaffold-entity":        {"scaffold"},
+	"scaffold-entity":        {"draft", "scaffold"},
 	"describe-capabilities":  {describeCapabilitiesName},
 	"workspace-entity-index": {"list-entities"},
 	"release-candidates":     {"list-releases"},
@@ -198,10 +203,9 @@ var curatedToolNames = map[string][]string{
 // It sets the name from the table rather than reading one off the spec, so the
 // name has a single home: a spec that carried its own name would be a second
 // place to spell it, and the two would drift the moment one was renamed. It
-// refuses an operation the table says nothing about, and one the table gives
-// more than one curated name for — a spec is one tool, so which of several names
-// it should take is a question the caller has to answer rather than one this
-// function may pick.
+// refuses an operation the table says nothing about. The name it sets is the
+// first the table gives; a later name is an earlier spelling, which only
+// deprecatedSpelling serves.
 //
 // It refuses a spec that declares no one-line summary, which is the field the
 // tool index is projected from. The refusal sits here because this is the one
@@ -253,10 +257,9 @@ func curated(id string, spec toolSpec) toolSpec {
 			"for it has nothing to be advertised as: add the name to the curated table, or reach the "+
 			"operation through the tool generated from its command", id))
 	}
-	if len(names) != 1 {
-		panic(fmt.Sprintf("mcp: the tool protocol gives the %q operation %d curated names (%v), and a tool "+
-			"spec takes one: name the tool at the registry, or reduce the table to the name this spec "+
-			"should carry", id, len(names), names))
+	if len(names) == 0 {
+		panic(fmt.Sprintf("mcp: the tool protocol gives the %q operation an empty list of curated names, so "+
+			"a tool for it has nothing to be advertised as: write the tool's name in the curated table", id))
 	}
 	if strings.TrimSpace(spec.summary) == "" {
 		panic(fmt.Sprintf("mcp: the tool for the %q operation declares no summary, so the tool index would "+
@@ -268,6 +271,31 @@ func curated(id string, spec toolSpec) toolSpec {
 	spec.operation = id
 	spec.reach = op.Reach
 	return spec
+}
+
+// deprecatedSpelling returns the tool current is also served as under name, an
+// earlier spelling of its name: the same arguments, the same handler and the
+// same answers, under a description and summary that open by naming current's
+// name and the release removedIn that removes this one.
+//
+// It derives the spelling from the registered spec rather than declaring a
+// second one, so the two names cannot come to take different arguments or
+// answer differently. The name must be one the curated table lists after
+// current's own for the operation current answers; any other is a programming
+// error, and it panics for the reason curated does.
+func deprecatedSpelling(current toolSpec, name, removedIn string) toolSpec {
+	names := curatedToolNames[current.operation]
+	if len(names) < 2 || names[0] != current.name || !slices.Contains(names[1:], name) {
+		panic(fmt.Sprintf("mcp: %q is not an earlier spelling the curated table lists for the %q operation "+
+			"after %q (%v): list it there after the tool's name, or register it as a tool of its own",
+			name, current.operation, current.name, names))
+	}
+	notice := "Deprecated: use `" + current.name + "`; this name is removed in " + removedIn + ". "
+	spelling := current
+	spelling.name = name
+	spelling.summary = notice + current.summary
+	spelling.description = notice + current.description
+	return spelling
 }
 
 // The reasons on which no tool carries an operation.

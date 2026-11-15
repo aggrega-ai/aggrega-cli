@@ -31,9 +31,10 @@ import (
 // the tree's end still runs.
 //
 // Grouping commands are excluded: a command that only holds subcommands
-// executes nothing and is therefore no capability. Hidden commands are excluded
-// for the same reason the generated tool surface skips them — they are not part
-// of the documented surface. Commands contributed by a configured plugin are
+// executes nothing and is therefore no capability. Hidden commands are members:
+// a hidden command still runs, and the operation set names the paths it is
+// carried at, the hidden deprecated spelling of a command among them. Commands
+// contributed by a configured plugin are
 // excluded by construction: this test registers none, and a plugin's command is
 // the plugin's capability rather than the compiler's.
 func TestEveryCommandBelongsToAnOperation(t *testing.T) {
@@ -41,15 +42,13 @@ func TestEveryCommandBelongsToAnOperation(t *testing.T) {
 
 	root := newRootCmd()
 	runnable := map[string]bool{}
-	hidden := map[string]bool{}
 	for _, c := range reachableCommands(root) {
 		runnable[c.CommandPath()] = c.Runnable()
-		hidden[c.CommandPath()] = c.Hidden
 	}
 
 	var members []string
 	for _, d := range clisurface.Catalog(root) {
-		if !runnable[d.Path] || hidden[d.Path] {
+		if !runnable[d.Path] {
 			continue
 		}
 		members = append(members, d.Path)
@@ -160,6 +159,35 @@ func TestEveryGeneratedToolTracksItsCommand(t *testing.T) {
 			if !found {
 				t.Errorf("the %q operation is a command at %q, but none of the tool names it claims (%v) "+
 					"is a tool the derivation produces from that path", id, path, mcpTable[id].Names)
+			}
+		}
+	}
+}
+
+// TestEveryClaimedToolNameIsServed pins the converse of the derivation: every
+// tool name the tool protocol's availability record claims for an operation is
+// a tool some listing serves — a curated or deferred tool every session lists,
+// or a tool the derivation produces from the live command tree. A name claimed
+// and served by nothing tells a reader of the record a capability is reachable
+// under a name no client is ever offered.
+func TestEveryClaimedToolNameIsServed(t *testing.T) {
+	withCLIRegistrations(t, nil)
+
+	served := map[string]bool{}
+	for _, name := range mcp.StaticToolNames() {
+		served[name] = true
+	}
+	for _, name := range mcp.GeneratedToolNames(commandSurface(newRootCmd())) {
+		served[name] = true
+	}
+
+	for id, availability := range mcp.OperationAvailability() {
+		if !availability.IsExposed() {
+			continue
+		}
+		for _, name := range availability.Names {
+			if !served[name] {
+				t.Errorf("the %q operation claims the tool %q, which no listing serves", id, name)
 			}
 		}
 	}

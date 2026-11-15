@@ -14,6 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
+	"github.com/aggrega-ai/aggrega-cli/internal/scaffoldops"
 )
 
 // toolSpec is one tool the server can run: its name, the rich natural-language
@@ -31,7 +32,7 @@ import (
 //
 // kinds records the entity kinds a tool serves, so the capability tool can
 // narrow its index to the kind an author is working on. An empty kinds is
-// kind-agnostic: the tool serves every entity kind (schema, scaffold, and
+// kind-agnostic: the tool serves every entity kind (schema, drafting, and
 // diagnostic helpers are the natural agnostic tools). The field is exposure
 // metadata only; it never changes what a tool does or returns.
 //
@@ -184,6 +185,7 @@ func (spec toolSpec) writes() bool {
 var toolRegistry []toolSpec
 
 func init() {
+	draft := curated("scaffold-entity", draftToolSpec)
 	toolRegistry = []toolSpec{
 		curated("workspace-entity-index", listEntitiesToolSpec),
 		curated("release-candidates", listReleasesToolSpec),
@@ -193,8 +195,9 @@ func init() {
 		curated("inspect", describeToolSpec),
 		curated("get-schema", getSchemaToolSpec),
 		curated("explain-error", explainErrorToolSpec),
-		curated("scaffold-entity", scaffoldToolSpec),
-		// Beside the scaffold, because the two are the capabilities that PRODUCE
+		draft,
+		deprecatedSpelling(draft, "scaffold", scaffoldops.ScaffoldSpellingRemovedIn),
+		// Beside drafting, because the two are the capabilities that PRODUCE
 		// authoring files and a caller arriving cold can reach either without
 		// having named anything first: one starts a document from a kind's
 		// schema, the other converts something that already exists in a foreign

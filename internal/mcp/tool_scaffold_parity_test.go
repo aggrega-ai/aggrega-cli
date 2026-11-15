@@ -33,7 +33,7 @@ func callScaffoldTool(t *testing.T, args map[string]any) *callToolResult {
 	if err != nil {
 		t.Fatalf("marshal arguments: %v", err)
 	}
-	res, rpcErr := scaffoldToolSpec.invoke(nil, context.Background(), raw)
+	res, rpcErr := draftToolSpec.invoke(nil, context.Background(), raw)
 	if rpcErr != nil {
 		t.Fatalf("the scaffold tool returned a protocol error envelope: %+v", rpcErr)
 	}
@@ -133,5 +133,74 @@ func TestGetSchemaRefusesWithTheSharedGuidance(t *testing.T) {
 	}
 	if got, want := res.Content[0].Text, scaffoldops.UnknownKindGuidance("compoent"); got != want {
 		t.Fatalf("the two capabilities phrase the same rejection differently.\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// TestDraftAndScaffoldToolsAnswerAlike pins that the deprecated spelling is the
+// drafting tool under a second name and nothing else: for the same arguments
+// both names answer with the same text, the same structured payload and the
+// same failure flag, refusals included.
+func TestDraftAndScaffoldToolsAnswerAlike(t *testing.T) {
+	s := newTestServer(t)
+	for _, tc := range []struct {
+		scenario string
+		args     map[string]any
+	}{
+		{"a kind", map[string]any{"kind": "component"}},
+		{"a kind and a seed name", map[string]any{"kind": "release", "name": "drafted-name"}},
+		{"a kind no schema answers to", map[string]any{"kind": "compoent"}},
+		{"no kind", map[string]any{}},
+		{"fields of two forms", map[string]any{"kind": "component", "example": "redis-cache"}},
+	} {
+		t.Run(tc.scenario, func(t *testing.T) {
+			draft := callTool(t, s, "draft", tc.args)
+			alias := callTool(t, s, "scaffold", tc.args)
+			if draft.IsError != alias.IsError {
+				t.Errorf("draft reports failure %v and scaffold %v", draft.IsError, alias.IsError)
+			}
+			if draft.Content[0].Text != alias.Content[0].Text {
+				t.Errorf("the text blocks differ.\n draft:\n%s\nscaffold:\n%s", draft.Content[0].Text, alias.Content[0].Text)
+			}
+			if string(draft.StructuredContent) != string(alias.StructuredContent) {
+				t.Errorf("the structured payloads differ.\n draft: %s\nscaffold: %s", draft.StructuredContent, alias.StructuredContent)
+			}
+		})
+	}
+}
+
+// TestScaffoldToolDescribedDeprecated pins what a client reads about the two
+// names: each listed once, the deprecated one opening with the replacement and
+// the release that removes it, followed by the drafting tool's own description,
+// and both taking the same arguments.
+func TestScaffoldToolDescribedDeprecated(t *testing.T) {
+	s := newTestServer(t)
+	res, rpcErr := s.handleToolsList(context.Background())
+	if rpcErr != nil {
+		t.Fatalf("tools/list returned a protocol error: %+v", rpcErr)
+	}
+	listed := map[string][]tool{}
+	for _, tl := range res.(listToolsResult).Tools {
+		listed[tl.Name] = append(listed[tl.Name], tl)
+	}
+	for _, name := range []string{"draft", "scaffold"} {
+		if got := len(listed[name]); got != 1 {
+			t.Fatalf("tools/list carries %q %d times, want once", name, got)
+		}
+	}
+	draft, alias := listed["draft"][0], listed["scaffold"][0]
+
+	const prefix = "Deprecated: use `draft`; this name is removed in 0.10.0. "
+	if !strings.HasPrefix(alias.Description, prefix) {
+		t.Errorf("the scaffold tool's description does not open with the deprecation:\n%s", alias.Description)
+	}
+	if strings.HasPrefix(draft.Description, "Deprecated") {
+		t.Errorf("the draft tool is described as deprecated:\n%s", draft.Description)
+	}
+	if got := strings.TrimPrefix(alias.Description, prefix); got != draft.Description {
+		t.Errorf("after the deprecation, the scaffold tool's description is not the draft tool's.\n got:\n%s\nwant:\n%s",
+			got, draft.Description)
+	}
+	if string(alias.InputSchema) != string(draft.InputSchema) {
+		t.Errorf("the two names take different arguments.\n draft: %s\nscaffold: %s", draft.InputSchema, alias.InputSchema)
 	}
 }

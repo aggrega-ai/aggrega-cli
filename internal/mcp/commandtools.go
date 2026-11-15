@@ -107,6 +107,13 @@ func CommandExemptions() []CommandExemption {
 // entities to generate, the entity file to bring into step — and the module is
 // an input read to derive it, the same shape a signing key has. Of the three,
 // only the command above has the module itself as its subject.
+//
+// `scaffold` is here because its capability already has a generated tool: it is
+// the hidden, deprecated spelling of `draft`, and the derivation skips it for
+// being hidden. It is listed as well because the availability record derives a
+// tool name from every path the command line declares and has no command tree
+// to read hiddenness from; without the entry that record would claim a tool no
+// listing serves.
 var commandExemptions = []CommandExemption{
 	{
 		Path:   "aggrega serve",
@@ -135,6 +142,10 @@ var commandExemptions = []CommandExemption{
 	{
 		Path:   "aggrega completion",
 		Reason: "writes a shell completion script, and a caller reaching this surface over a protocol has no shell to install one into",
+	},
+	{
+		Path:   "aggrega scaffold",
+		Reason: "the deprecated spelling of `aggrega draft`, hidden from help: the tool generated from `aggrega draft` runs the same command",
 	},
 	{
 		Path:   "aggrega help",
