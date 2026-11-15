@@ -223,9 +223,9 @@ func aggregateText(text string) string {
 }
 
 // crewaiRelease is the drafted Release, as the plugin kit's Release writer
-// writes it: for each agent, under its key, leaving for the Release the image
-// running the crew's program and attaching, by reference, the credential the
-// agent presents to its model;
+// writes it: for each agent, under its key, the port it publishes on Docker
+// Compose, leaving for the Release the image running the crew's program and
+// attaching, by reference, the credential the agent presents to its model;
 // and for each model part an entry under its key, since a build places only the
 // instances a Release names, with the members of an llm object it is declared
 // with in a comment above it.
@@ -237,7 +237,8 @@ func crewaiRelease(read []*crew, parts []*modelPart) importer.ReleaseDraft {
 				continue
 			}
 			entry := importer.ReleaseEntry{Key: a.key, Left: []importer.LeftItem{
-				importer.LeftImage("the container image running the crew's program")}}
+				importer.LeftImage("the container image running the crew's program")},
+				Published: []importer.PublishedPort{{Port: Port}}}
 			if a.part != nil {
 				entry.Secrets = append(entry.Secrets, credentialOf(a))
 			}

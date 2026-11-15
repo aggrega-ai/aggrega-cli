@@ -643,3 +643,64 @@ func evaluatedAggregate(t *testing.T, text string) string {
 	}
 	return evaluated.String()
 }
+
+// TestEachAgentIsPublishedOnLoopbackForComposeAlone imports the classic project
+// for compose, for helm and for no target, and reads the drafted Release: for
+// compose each agent publishes a port on the host's loopback address beneath the
+// comment the kit writes for one — researcher, the first, on Port, and the second
+// on the next port, since two ports of one Release never take one number — and
+// the model publishes none; for helm, whose Recipes refuse infra.published_port,
+// and for no target, nothing is published. The comment is written out rather than
+// read from the kit, so the case pins the text the draft writes (a deliberate
+// second copy).
+//
+// 🔴 PLANTED DEFECT: in crewaiRelease (render.go), drop the entry's Published:
+// the compose row finds no port and fails.
+func TestEachAgentIsPublishedOnLoopbackForComposeAlone(t *testing.T) {
+	t.Parallel()
+	const published = "        # Published on this machine's loopback address, 127.0.0.1: reachable from this machine " +
+		"only, by any process running on it. Delete this line to keep the service internal.\n" +
+		"        published_port: "
+	for _, target := range []string{"compose", "helm", ""} {
+		out := Import(aggrega.ImportInput{Format: Format, Sources: classic(t), Catalog: catalog, Target: target}, hostParse)
+		release := files(out)["release.yaml"]
+		var r struct {
+			Spec struct {
+				Components map[string]struct {
+					Infra map[string]any `yaml:"infra"`
+				} `yaml:"components"`
+			} `yaml:"spec"`
+		}
+		if err := yaml.Unmarshal([]byte(release), &r); err != nil {
+			t.Fatalf("%q: the drafted Release does not read as YAML: %v\n%s", target, err, release)
+		}
+		d, _ := drafted(t, out)
+		var ports []int
+		for key, c := range r.Spec.Components {
+			port, set := c.Infra["published_port"]
+			agent := d.Spec.Components[key].Type == Component
+			switch {
+			case target != "compose" && set:
+				t.Errorf("%q: %s publishes %v, want nothing published:\n%s", target, key, port, release)
+			case target == "compose" && agent && !set:
+				t.Errorf("compose: the agent %s publishes no port:\n%s", key, release)
+			case target == "compose" && !agent && set:
+				t.Errorf("compose: %s, no agent, publishes %v:\n%s", key, port, release)
+			case set:
+				n, _ := port.(int)
+				ports = append(ports, n)
+			}
+		}
+		if target != "compose" {
+			continue
+		}
+		slices.Sort(ports)
+		if !slices.Equal(ports, []int{Port, Port + 1}) || r.Spec.Components["researcher"].Infra["published_port"] != Port {
+			t.Errorf("compose: the agents publish %v, want researcher on %d and the second on %d:\n%s", ports, Port,
+				Port+1, release)
+		}
+		if got := strings.Count(release, published); got != 2 {
+			t.Errorf("compose: %d ports sit beneath the kit's comment, want two:\n%s", got, release)
+		}
+	}
+}

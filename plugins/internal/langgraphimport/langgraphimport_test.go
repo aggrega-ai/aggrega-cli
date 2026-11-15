@@ -737,6 +737,69 @@ func TestTheGraphCallsADraftedModelAndPresentsTheStoresPassword(t *testing.T) {
 	}
 }
 
+// TestEachGraphIsPublishedOnLoopbackForComposeAlone imports a configuration
+// naming two graphs for compose, for helm and for no target, and reads the drafted
+// Release: for compose each graph publishes a port on the host's loopback address
+// beneath the comment the kit writes for one — one on Port and the other on the
+// next port, since two ports of one Release never take one number — and no other
+// instance publishes one; for helm, whose Recipes refuse infra.published_port,
+// and for no target, nothing is published. The comment is written out rather than
+// read from the kit, so the case pins the text the draft writes (a deliberate
+// second copy).
+//
+// 🔴 PLANTED DEFECT: in langgraphRelease (render.go), drop the entry's
+// Published: the compose row finds no port and fails.
+func TestEachGraphIsPublishedOnLoopbackForComposeAlone(t *testing.T) {
+	t.Parallel()
+	const published = "        # Published on this machine's loopback address, 127.0.0.1: reachable from this machine " +
+		"only, by any process running on it. Delete this line to keep the service internal.\n" +
+		"        published_port: "
+	config := []byte(`{"graphs":{"agent":"./agent.py:graph","review":"./review.py:graph"}}`)
+	for _, target := range []string{"compose", "helm", ""} {
+		out := Import(aggrega.ImportInput{Format: Format, Catalog: catalog, Target: target,
+			Sources: []aggrega.ImportSource{{Name: "langgraph.json", Bytes: config}}}, hostParse(t))
+		d, _ := drafted(t, out)
+		release := files(out)["release.yaml"]
+		var r struct {
+			Spec struct {
+				Components map[string]struct {
+					Infra map[string]any `yaml:"infra"`
+				} `yaml:"components"`
+			} `yaml:"spec"`
+		}
+		if err := yaml.Unmarshal([]byte(release), &r); err != nil {
+			t.Fatalf("%q: the drafted Release does not read as YAML: %v\n%s", target, err, release)
+		}
+		var ports []int
+		graphs := 0
+		for key, c := range r.Spec.Components {
+			port, set := c.Infra["published_port"]
+			graph := d.Spec.Components[key].Type == Component
+			if graph {
+				graphs++
+			}
+			switch {
+			case (target != "compose" || !graph) && set:
+				t.Errorf("%q: %s publishes %v, want nothing published:\n%s", target, key, port, release)
+			case target == "compose" && graph && !set:
+				t.Errorf("compose: the graph %s publishes no port:\n%s", key, release)
+			case set:
+				n, _ := port.(int)
+				ports = append(ports, n)
+			}
+		}
+		slices.Sort(ports)
+		want := []int(nil)
+		if target == "compose" {
+			want = []int{Port, Port + 1}
+		}
+		if graphs != 2 || !slices.Equal(ports, want) || strings.Count(release, published) != len(want) {
+			t.Errorf("%q: the Release places %d graphs publishing %v, want two publishing %v, each beneath the kit's "+
+				"comment:\n%s", target, graphs, ports, want, release)
+		}
+	}
+}
+
 // TestTwoImportsAreByteIdentical imports each committed application twice and
 // requires the two to return the same output, byte for byte.
 func TestTwoImportsAreByteIdentical(t *testing.T) {

@@ -256,8 +256,9 @@ func aggregateText(text string) string {
 }
 
 // langgraphRelease is the drafted Release, as the plugin kit's Release writer
-// writes it: for each graph, under its key, leaving for the Release the image
-// running the application and attaching the credentials it presents to its
+// writes it: for each graph, under its key, the port it publishes on Docker
+// Compose, leaving for the Release the image running the application and
+// attaching the credentials it presents to its
 // datastore and to model, with a comment above the first graph naming what each
 // graph's image holds and the variables it is handed, and above each
 // application's first graph the environment its configuration states; then an
@@ -274,7 +275,8 @@ func langgraphRelease(read []*application, parts []*datastorePart, model *modelP
 				continue
 			}
 			entry := importer.ReleaseEntry{Key: g.key, Left: []importer.LeftItem{
-				importer.LeftImage("the container image running the application")}}
+				importer.LeftImage("the container image running the application")},
+				Published: []importer.PublishedPort{{Port: Port}}}
 			if a.part != nil && !a.part.drafted {
 				entry.Secrets = append(entry.Secrets, checkpointerCredential(g, a.part))
 			}

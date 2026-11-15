@@ -922,3 +922,47 @@ func TestTheModelCredentialIsReadFromTheVariableTheConnectionNames(t *testing.T)
 		}
 	}
 }
+
+// TestTheAgentIsPublishedOnLoopbackForComposeAlone imports a declarative agent
+// for compose, for helm and for no target, and reads the drafted Release: for
+// compose the agent publishes Port on the host's loopback address beneath the
+// comment the kit writes for one, and its model publishes nothing; for helm, whose
+// Recipes refuse infra.published_port, and for no target, nothing is published.
+// The comment is written out rather than read from the kit, so the case pins the
+// text the draft writes (a deliberate second copy).
+//
+// 🔴 PLANTED DEFECT: in agentEntry (render.go), drop the entry's Published: the
+// compose row finds no port and fails.
+func TestTheAgentIsPublishedOnLoopbackForComposeAlone(t *testing.T) {
+	t.Parallel()
+	const published = "        # Published on this machine's loopback address, 127.0.0.1: reachable from this machine " +
+		"only, by any process running on it. Delete this line to keep the service internal.\n" +
+		"        published_port: "
+	body := []byte("kind: Prompt\nname: SupportAgent\nmodel:\n  id: gpt-4o\n  provider: OpenAI\n")
+	for _, target := range []string{"compose", "helm", ""} {
+		out := Import(aggrega.ImportInput{Format: Format, Bytes: body, Catalog: catalog, Target: target}, hostParse)
+		d, _, r, release := drafted(t, out)
+		agents := 0
+		for key, c := range r.Spec.Components {
+			port, set := c.Infra["published_port"]
+			agent := d.Spec.Components[key].Type == Component
+			if agent {
+				agents++
+			}
+			switch {
+			case target == "compose" && agent && port != Port:
+				t.Errorf("compose: the agent %s publishes %v, want %d:\n%s", key, port, Port, release)
+			case (target != "compose" || !agent) && set:
+				t.Errorf("%q: %s publishes %v, want nothing published:\n%s", target, key, port, release)
+			}
+		}
+		want := 0
+		if target == "compose" {
+			want = 1
+		}
+		if agents != 1 || strings.Count(release, published) != want {
+			t.Errorf("%q: the Release places %d agents and writes %d ports beneath the kit's comment, want one and %d:\n%s",
+				target, agents, strings.Count(release, published), want, release)
+		}
+	}
+}

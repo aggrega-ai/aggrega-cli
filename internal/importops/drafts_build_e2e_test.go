@@ -25,6 +25,7 @@ package importops
 
 import (
 	"bytes"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -109,7 +110,7 @@ var asDraftedCases = []asDraftedCase{
 
 	{format: "agent-framework", argument: "support-agent.yaml", target: "compose", owed: map[string]string{
 		asDraftedRelease + "components.supportagent.infra.image": answerImage,
-	}},
+	}, published: []string{"127.0.0.1:8000:8000"}},
 	{format: "agent-framework", argument: "support-agent.yaml", target: "helm", owed: map[string]string{
 		asDraftedRelease + "components.supportagent.infra.image":                                              answerImage,
 		asDraftedRelease + "components.supportagent.uses.model.gpt-4-1-mini.features.credential.infra.origin": answerSecret,
@@ -118,7 +119,7 @@ var asDraftedCases = []asDraftedCase{
 	{format: "crewai", argument: "src/support_brief", target: "compose", owed: map[string]string{
 		asDraftedRelease + "components.researcher.infra.image": answerImage,
 		asDraftedRelease + "components.writer.infra.image":     answerImage,
-	}},
+	}, published: []string{"127.0.0.1:8000:8000", "127.0.0.1:8001:8000"}},
 	{format: "crewai", argument: "src/support_brief", target: "helm", owed: map[string]string{
 		asDraftedRelease + "components.researcher.infra.image":                                             answerImage,
 		asDraftedRelease + "components.researcher.uses.model.gpt-4o-mini.features.credential.infra.origin": answerSecret,
@@ -137,7 +138,7 @@ var asDraftedCases = []asDraftedCase{
 	{format: "langgraph", argument: ".", target: "compose", owed: map[string]string{
 		"aggregate.yaml:spec.components.model.values.model": answerModel,
 		asDraftedRelease + "components.support.infra.image": answerImage,
-	}},
+	}, published: []string{"127.0.0.1:8000:8000"}},
 	{format: "langgraph", argument: ".", target: "helm", owed: map[string]string{
 		"aggregate.yaml:spec.components.model.values.model":                                                    answerModel,
 		asDraftedRelease + "components.support.infra.image":                                                    answerImage,
@@ -318,38 +319,76 @@ func TestEveryImportExampleBuildsAsTheImportDraftsIt(t *testing.T) {
 	}
 }
 
+// listenPortShared is the one host port several documentation examples publish
+// on compose, and the examples publishing it. The Google ADK, CrewAI, LangGraph
+// and Agent Framework imports each publish an agent on the port its Component
+// names as the application's listening port by default, 8000, so the address a
+// reader sends a request to is the application's own port whichever framework
+// built it. Two of those examples run on one machine at once therefore need one
+// published_port moved by hand. No other port is shared.
+var listenPortShared = struct {
+	port     string
+	examples []string
+}{port: "8000", examples: []string{"google-adk", "crewai", "langgraph", "agent-framework"}}
+
 // TestNoTwoImportExamplesPublishOnePortOnCompose holds the ports the
 // documentation examples publish on compose, as asDraftedCases states what each
-// build renders, to one rule: no host port is published by two of them, so a
-// reader runs several examples on one machine at once. Each case's own row in
-// TestEveryImportExampleBuildsAsTheImportDraftsIt proves its ports are the ones
-// its build renders.
+// build renders, to two rules:
 //
-// 🔴 PLANTED DEFECT: in the Dify importer (plugins/internal/difyimport), set
-// ConsolePort to 3000, and the dify compose row's published port to
-// 127.0.0.1:3000:3000: this test fails, Flowise and the Dify front end both
-// publishing 3000.
+//   - within one example, no host port is published twice, as the kit's Release
+//     writer moves a second port it chooses to the next one free;
+//   - across examples, no host port is published by two of them, so a reader runs
+//     several examples on one machine at once — except listenPortShared, the
+//     agents' own listening port, which only the examples it names may share.
+//
+// Each case's own row in TestEveryImportExampleBuildsAsTheImportDraftsIt proves
+// its ports are the ones its build renders.
+//
+// 🔴 PLANTED DEFECTS, each one the test is written to catch:
+//
+//   - in the Dify importer (plugins/internal/difyimport), set ConsolePort to
+//     3000, and the dify compose row's published port to 127.0.0.1:3000:3000:
+//     Flowise and the Dify front end both publish 3000, which no example may
+//     share;
+//   - set the langflow compose row's published port to 127.0.0.1:8000:7860:
+//     Langflow is not among the examples listenPortShared names;
+//   - set the crewai compose row's second port to 127.0.0.1:8000:8000: the
+//     example publishes 8000 twice.
 func TestNoTwoImportExamplesPublishOnePortOnCompose(t *testing.T) {
 	t.Parallel()
-	by := map[string]string{}
+	by := map[string][]string{}
 	for _, tc := range asDraftedCases {
 		if tc.target != "compose" {
 			continue
 		}
+		own := map[string]bool{}
 		for _, p := range tc.published {
 			parts := strings.Split(p, ":")
 			if len(parts) != 3 || parts[0] != "127.0.0.1" {
 				t.Errorf("the %s example publishes %q, not a port on the host's loopback address", tc.format, p)
 				continue
 			}
-			if other, ok := by[parts[1]]; ok {
-				t.Errorf("the %s and %s examples both publish host port %s", other, tc.format, parts[1])
+			if own[parts[1]] {
+				t.Errorf("the %s example publishes host port %s twice", tc.format, parts[1])
 			}
-			by[parts[1]] = tc.format
+			own[parts[1]] = true
+			by[parts[1]] = append(by[parts[1]], tc.format)
 		}
 	}
 	if len(by) == 0 {
 		t.Fatal("no example publishes a port; the case is not reading what it checks")
+	}
+	for _, port := range slices.Sorted(maps.Keys(by)) {
+		formats := by[port]
+		if len(formats) < 2 {
+			continue
+		}
+		if port == listenPortShared.port && !slices.ContainsFunc(formats, func(f string) bool {
+			return !slices.Contains(listenPortShared.examples, f)
+		}) {
+			continue
+		}
+		t.Errorf("the %s examples all publish host port %s", strings.Join(formats, ", "), port)
 	}
 }
 

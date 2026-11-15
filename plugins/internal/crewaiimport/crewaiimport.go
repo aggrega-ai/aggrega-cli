@@ -130,6 +130,12 @@ const (
 // Component is the catalog Component each agent is drafted as an instance of.
 const Component = "core/ai-agent/crewai"
 
+// Port is the port a draft publishes each agent on, on Docker Compose: the one
+// Component's infra.port names as the port the crew's program listens on by
+// default, since a crew's declarations state none. A second agent of one import
+// is published on the next port an earlier one does not take.
+const Port = 8000
+
 // modelSocket is the socket of Component an agent's model is wired to.
 const modelSocket = "model"
 

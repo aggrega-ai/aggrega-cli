@@ -225,8 +225,9 @@ func aggregateText(text string) string {
 }
 
 // agentFrameworkRelease is the drafted Release, as the plugin kit's Release
-// writer writes it: for each agent, under its instance's key, leaving for the
-// Release the image running the application and attaching, by reference, the
+// writer writes it: for each agent, under its instance's key, the port it
+// publishes on Docker Compose, leaving for the Release the image running the
+// application and attaching, by reference, the
 // credential it presents to its model, with a comment naming the values its
 // declarative agent states for
 // its model and its MCP servers, each server's url among them, written as stated
@@ -247,7 +248,8 @@ func agentFrameworkRelease(agents []*agent, parts []*modelPart) importer.Release
 // agentEntry is one agent's entry of the Release.
 func agentEntry(a *agent) importer.ReleaseEntry {
 	entry := importer.ReleaseEntry{Key: a.key, Left: []importer.LeftItem{importer.LeftImage(
-		"the container image running the application built on Agent Framework, holding its declarative agent")}}
+		"the container image running the application built on Agent Framework, holding its declarative agent")},
+		Published: []importer.PublishedPort{{Port: Port}}}
 	if a.part != nil && a.model.connection.kind != "anonymous" {
 		entry.Secrets = append(entry.Secrets, credentialOf(a))
 	}

@@ -133,6 +133,12 @@ const Syntax = "yaml"
 // instance of.
 const Component = "core/ai-agent/agent-framework"
 
+// Port is the port a draft publishes each agent on, on Docker Compose: the one
+// Component's infra.port names as the port the application listens on by
+// default, since a declarative agent states none. A second agent of one import
+// is published on the next port an earlier one does not take.
+const Port = 8000
+
 // Kind is the kind a declarative agent states, as the importer's signature
 // recognises it.
 const Kind = "Prompt"

@@ -151,6 +151,12 @@ const EnvFiles = "*.env"
 // Component is the catalog Component each graph is drafted as an instance of.
 const Component = "core/ai-agent/langgraph"
 
+// Port is the port a draft publishes each graph on, on Docker Compose: the one
+// Component's infra.port names as the port the application listens on by
+// default, since a configuration states none. A second graph of one import is
+// published on the next port an earlier one does not take.
+const Port = 8000
+
 // The sockets of Component the draft names: the datastore a graph's checkpointer
 // keeps its state in, and the model, which the configuration never names.
 const (
