@@ -29,6 +29,16 @@ type Fragment struct {
 	// metadata by the name written, functions by "namespace.member". A section the
 	// fragment does not write is absent.
 	Sections map[string]map[string]any
+	// Functions records where each entry of Sections["functions"] was written,
+	// keyed as that section is.
+	Functions map[string]FunctionSource
+}
+
+// FunctionSource is where a user-defined function was written in a fragment: its
+// namespace and member name, kept apart because the key "namespace.member" does
+// not say where one ends, and the JSON pointer of the member in the fragment.
+type FunctionSource struct {
+	Namespace, Member, Pointer string
 }
 
 // refuse wraps a halt with the condition that classifies it.
@@ -57,7 +67,7 @@ func ReadFragment(content []byte) (Fragment, []renderctx.Diagnostic, error) {
 	}
 	body := om.TemplateAlphabeticalMapDeep()
 
-	frag := Fragment{Scope: ScopeResourceGroup, Sections: map[string]map[string]any{}}
+	frag := Fragment{Scope: ScopeResourceGroup, Sections: map[string]map[string]any{}, Functions: map[string]FunctionSource{}}
 	var diags []renderctx.Diagnostic
 	for _, key := range om.Keys() {
 		value := body[key]
@@ -93,6 +103,9 @@ func ReadFragment(content []byte) (Fragment, []renderctx.Diagnostic, error) {
 				return Fragment{}, nil, err
 			}
 			frag.Sections[key] = entries
+			if disp == dispositionCarriedByMember {
+				frag.Functions = functionSources(value)
+			}
 		}
 	}
 	return frag, diags, nil
@@ -164,6 +177,23 @@ func readSection(key string, disp disposition, value any) (map[string]any, error
 			fmt.Sprintf("%s is not an object; write its entries as an object keyed by name", key))
 	}
 	return clone(m), nil
+}
+
+// functionSources returns where each function of a functions list that
+// readFunctions admitted was written, keyed "namespace.member".
+func functionSources(value any) map[string]FunctionSource {
+	out := map[string]FunctionSource{}
+	list, _ := value.([]any)
+	for i, item := range list {
+		ns, _ := item.(map[string]any)
+		name, _ := ns["namespace"].(string)
+		members, _ := ns["members"].(map[string]any)
+		for _, member := range sortedKeys(members) {
+			out[name+"."+member] = FunctionSource{Namespace: name, Member: member,
+				Pointer: fmt.Sprintf("/%s/%d/members/%s", sectionFunctions, i, escapePointer(member))}
+		}
+	}
+	return out
 }
 
 // readFunctions reads the functions list into entries keyed "namespace.member".

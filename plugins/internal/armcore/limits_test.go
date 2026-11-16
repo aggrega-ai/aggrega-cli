@@ -64,3 +64,12 @@ func TestCheckLimitsAdmitsTheLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCheckLimitsMeasuresAResourceAsItIsWritten(t *testing.T) {
+	t.Parallel()
+	// Escaped, each character takes six bytes; written as the file is, one.
+	level := map[string]any{"resources": map[string]any{"R": map[string]any{"p": strings.Repeat("<", 300000)}}}
+	if err := CheckLimits(level, nil); err != nil {
+		t.Fatal(err)
+	}
+}

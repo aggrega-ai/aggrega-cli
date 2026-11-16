@@ -280,3 +280,47 @@ func TestAssembleRunsLimitsAfterComposition(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestAssembleKeepsNamespaceAndMemberApart(t *testing.T) {
+	t.Parallel()
+	frag := "functions:\n  - namespace: my.ns\n    members:\n      f: {output: {type: string, value: x}}\n"
+	m, _ := assembled(t, contributes("n", 0, frag))
+	got := m["functions"].([]any)[0].(map[string]any)
+	if got["namespace"] != "my.ns" {
+		t.Errorf("namespace = %v", got["namespace"])
+	}
+	if _, ok := got["members"].(map[string]any)["f"]; !ok {
+		t.Errorf("members = %v", got["members"])
+	}
+}
+
+func TestAssembleFunctionCollisionNamesTheFunctionPointer(t *testing.T) {
+	t.Parallel()
+	fn := func(v string) string {
+		return "functions:\n  - namespace: other\n    members:\n      g: {output: {type: string, value: x}}\n  - namespace: ns\n    members:\n      f: {output: {type: string, value: " + v + "}}\n"
+	}
+	_, err := Assemble([]Contribution{contributes("a", 0, fn("one")), contributes("b", 0, fn("two"))})
+	if !errors.Is(err, plugincondition.ErrPluginOutputNameCollision()) {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(err.Error(), "/functions/1/members/f") {
+		t.Errorf("message %q does not carry the function's pointer", err)
+	}
+}
+
+func TestAssembleRefusesADependsOnWavesCannotExtend(t *testing.T) {
+	t.Parallel()
+	late := "resources:\n  Late:\n    type: T\n    name: late\n    dependsOn: 7\n"
+	_, err := Assemble([]Contribution{contributes("early", 0, storage("Db")), contributes("late", 1, late)})
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
+		t.Fatalf("err = %v, want cannot express input", err)
+	}
+	for _, want := range []string{"arm-provider:", "/resources/Late/dependsOn", `"late"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q does not contain %q", err, want)
+		}
+	}
+	if _, err := Assemble([]Contribution{contributes("early", 0, storage("Db")), contributes("late", 0, late)}); err != nil {
+		t.Errorf("one wave writes nothing and so refuses nothing: %v", err)
+	}
+}

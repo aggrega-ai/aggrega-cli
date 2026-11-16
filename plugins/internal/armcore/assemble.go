@@ -103,6 +103,7 @@ func Assemble(contribs []Contribution) (rendercore.AssembleBoundaryOutput, error
 	l := newLevel()
 	folded := map[string]map[string]string{}
 	waves := map[string]int{}
+	functions := map[string]FunctionSource{}
 	for _, r := range reads {
 		for _, section := range sortedKeys(r.frag.Sections) {
 			entries := r.frag.Sections[section]
@@ -111,7 +112,15 @@ func Assemble(contribs []Contribution) (rendercore.AssembleBoundaryOutput, error
 				if section == sectionOutputs {
 					key = OutputName(r.identity, name)
 				}
+				if section == sectionFunctions {
+					pointer = r.frag.Functions[name].Pointer
+				}
 				entry := &levelEntry{body: entries[name], contributor: r.identity, pointer: pointer}
+				if section == sectionFunctions {
+					if _, seen := functions[key]; !seen {
+						functions[key] = r.frag.Functions[name]
+					}
+				}
 				if err := insert(l, folded, section, key, entry); err != nil {
 					return rendercore.AssembleBoundaryOutput{}, err
 				}
@@ -132,9 +141,11 @@ func Assemble(contribs []Contribution) (rendercore.AssembleBoundaryOutput, error
 	if err := l.checkReferences(); err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
 	}
-	applyWaveOrdering(l.sections[sectionResources], waves)
+	if err := applyWaveOrdering(l.sections[sectionResources], waves); err != nil {
+		return rendercore.AssembleBoundaryOutput{}, err
+	}
 
-	template := l.template()
+	template := l.template(functions)
 	content, err := encodeTemplate(template)
 	if err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
@@ -181,7 +192,7 @@ func nameCollision(section, what string, e, other *levelEntry) error {
 }
 
 // template returns the level as the value tree the template is written from.
-func (l *level) template() map[string]any {
+func (l *level) template(functions map[string]FunctionSource) map[string]any {
 	t := map[string]any{
 		sectionSchema:          SchemaResourceGroup,
 		sectionLanguageVersion: LanguageVersion,
@@ -194,7 +205,7 @@ func (l *level) template() map[string]any {
 		}
 	}
 	if len(l.sections[sectionFunctions]) > 0 {
-		t[sectionFunctions] = l.functionList()
+		t[sectionFunctions] = l.functionList(functions)
 	}
 	return t
 }
@@ -209,17 +220,16 @@ func (l *level) object(section string) map[string]any {
 }
 
 // functionList returns the functions as a list of namespaces sorted by name,
-// each holding its members. An entry is keyed "namespace.member"; a member name
-// holds no dot, so the namespace is everything before the last one.
-func (l *level) functionList() []any {
+// each holding its members. functions says where each entry was written, so the
+// namespace and the member are the ones the author wrote.
+func (l *level) functionList(functions map[string]FunctionSource) []any {
 	byNamespace := map[string]map[string]any{}
 	for _, full := range sortedKeys(l.sections[sectionFunctions]) {
-		i := strings.LastIndexByte(full, '.')
-		namespace, member := full[:i], full[i+1:]
-		if byNamespace[namespace] == nil {
-			byNamespace[namespace] = map[string]any{}
+		src := functions[full]
+		if byNamespace[src.Namespace] == nil {
+			byNamespace[src.Namespace] = map[string]any{}
 		}
-		byNamespace[namespace][member] = l.sections[sectionFunctions][full].body
+		byNamespace[src.Namespace][src.Member] = l.sections[sectionFunctions][full].body
 	}
 	out := make([]any, 0, len(byNamespace))
 	for _, namespace := range sortedKeys(byNamespace) {
@@ -228,9 +238,9 @@ func (l *level) functionList() []any {
 	return out
 }
 
-// encodeTemplate writes a template as JSON: sorted keys, two-space indent, no
+// encodeTemplate writes a template, or any value of one, as JSON: sorted keys, two-space indent, no
 // HTML escaping and one trailing newline.
-func encodeTemplate(template map[string]any) ([]byte, error) {
+func encodeTemplate(template any) ([]byte, error) {
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
 	enc.SetEscapeHTML(false)
@@ -245,8 +255,9 @@ func encodeTemplate(template map[string]any) ([]byte, error) {
 // preceding populated wave, sorted by symbolic name, after the dependsOn the
 // author wrote. waves maps a symbolic name to the wave of the contributor that
 // wrote it. A resource declared existing: true is neither a dependent nor a
-// target. With one populated wave nothing is written.
-func applyWaveOrdering(resources map[string]*levelEntry, waves map[string]int) {
+// target. With one populated wave nothing is written. A dependsOn that is neither
+// a list nor text halts wrapping ErrPluginCannotExpressInput.
+func applyWaveOrdering(resources map[string]*levelEntry, waves map[string]int) error {
 	var symbols []string
 	for _, symbol := range sortedKeys(resources) {
 		if !isExisting(resources[symbol].body) {
@@ -268,10 +279,15 @@ func applyWaveOrdering(resources map[string]*levelEntry, waves map[string]int) {
 		}
 		var depends []any
 		switch authored := body["dependsOn"].(type) {
+		case nil:
 		case []any:
 			depends = slices.Clone(authored)
 		case string:
 			depends = []any{authored}
+		default:
+			return refuse(plugincondition.ErrPluginCannotExpressInput,
+				fmt.Sprintf("the dependsOn at JSON pointer %s/dependsOn in the fragment of %q is neither a list nor a symbolic name, so the order its wave declares cannot be added to it; write dependsOn as a list of symbolic names",
+					resources[symbol].pointer, resources[symbol].contributor))
 		}
 		for _, j := range predecessors[i] {
 			if !slices.Contains(depends, any(symbols[j])) {
@@ -282,6 +298,7 @@ func applyWaveOrdering(resources map[string]*levelEntry, waves map[string]int) {
 		out["dependsOn"] = depends
 		resources[symbol].body = out
 	}
+	return nil
 }
 
 // isExisting reports whether a resource body declares existing: true.

@@ -4,7 +4,6 @@
 package armcore
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"unicode/utf8"
@@ -50,9 +49,9 @@ func CheckLimits(level map[string]any, encoded []byte) error {
 	}
 	resources, _ := level[sectionResources].(map[string]any)
 	for _, symbol := range sortedKeys(resources) {
-		body, err := json.Marshal(resources[symbol])
+		body, err := encodeTemplate(resources[symbol])
 		if err != nil {
-			return fmt.Errorf("arm-provider: measure resource: %w", err)
+			return err
 		}
 		if len(body) > maxResourceBytes {
 			return exceeded(fmt.Sprintf("holds the resource at JSON pointer /%s/%s of %d bytes", sectionResources, escapePointer(symbol), len(body)),
