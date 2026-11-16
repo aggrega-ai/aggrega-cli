@@ -11,6 +11,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // TestAPinnedSocketEntityTheBinaryCarriesResolvesFromTheBinaryOverItsCachedCopy holds
@@ -103,13 +105,15 @@ func TestAPinnedSocketEntityTheBinaryCarriesResolvesFromTheBinaryOverItsCachedCo
 
 // embeddedGovernanceEntity returns the identity, the version and the document of one
 // governance plugin entity this binary carries, read out of the binary itself, so the
-// version moves with every build rather than being written down. A binary built
-// without its core plugins carries none, and the test skips there rather than
-// asserting over an empty set. It deliberately repeats the selection of
+// version moves with every build rather than being written down. Where the core
+// plugins' entities were never generated because aggrega-hub is not checked out
+// beside this repository the test skips; a binary carrying none otherwise fails
+// it. It deliberately repeats the selection of
 // embeddedOutputShapingIdentity, which lives in the external test package this one
 // cannot import, and returns the document as well.
 func embeddedGovernanceEntity(t *testing.T) (identity, version string, raw []byte) {
 	t.Helper()
+	wasmtest.RequireEmbeddedEntities(t)
 	embeds, _ := embeddedPluginEntities()
 	for _, p := range embeds {
 		if plugintype.Type(p.Metadata.PluginType) != plugintype.Governance || p.Metadata.Version == "" {
@@ -119,6 +123,6 @@ func embeddedGovernanceEntity(t *testing.T) (identity, version string, raw []byt
 			return p.Coordinate(), p.Metadata.Version, doc
 		}
 	}
-	t.Skip("this binary carries no core governance entities")
+	t.Fatal("this binary carries no core governance entities, though they were generated")
 	return "", "", nil
 }

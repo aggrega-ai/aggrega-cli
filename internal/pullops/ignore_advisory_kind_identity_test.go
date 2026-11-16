@@ -14,6 +14,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // TestTheIgnoreAdvisoryReadsEachEntityAsTheKindItWasCollectedAs drives the pull's
@@ -54,12 +56,13 @@ func TestTheIgnoreAdvisoryReadsEachEntityAsTheKindItWasCollectedAs(t *testing.T)
 	}
 	// The view is built over the catalog as written: it enumerates its directories
 	// once, on its first read.
+	wasmtest.RequireEmbeddedEntities(t)
 	view := catalog.NewLazyLookup(ws, "", []string{cat}, nil)
 	if _, ok, err := view.ServingProvider("helm", nil); err != nil || !ok {
 		if err != nil {
 			t.Fatalf("ServingProvider: %v", err)
 		}
-		t.Skip("this binary carries no provider serving helm, so there is no plugin to compare with")
+		t.Fatal("this binary carries no provider serving helm, though its entities were generated")
 	}
 
 	entities := []closure.ResolvedRef{

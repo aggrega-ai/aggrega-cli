@@ -17,6 +17,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // The subjects of the provenance table. Each is an entity a closure walk resolves
@@ -427,10 +429,12 @@ func writeCachedPluginArtifact(t *testing.T, ws, cacheDir, artifactURI string, w
 
 // provenanceEmbeddedProvider returns the bare identity and version of one core
 // provider this binary carries, read out of the binary so the version is never
-// written down. A binary built without its core plugins carries none, and the
-// test skips there rather than asserting over an empty set.
+// written down. Where the core plugins' entities were never generated because
+// aggrega-hub is not checked out beside this repository the test skips; a binary
+// carrying none otherwise fails it.
 func provenanceEmbeddedProvider(t *testing.T) (identity, version string) {
 	t.Helper()
+	wasmtest.RequireEmbeddedEntities(t)
 	for _, uri := range embedded.EntityURIs() {
 		raw, ok := embedded.LookupEntity(uri)
 		if !ok {
@@ -445,7 +449,7 @@ func provenanceEmbeddedProvider(t *testing.T) (identity, version string) {
 		}
 		return p.Coordinate(), p.Metadata.Version
 	}
-	t.Skip("this binary carries no core provider entities")
+	t.Fatal("this binary carries no core provider entities, though they were generated")
 	return "", ""
 }
 

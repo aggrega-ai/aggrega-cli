@@ -12,6 +12,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // TestTheIgnoreAdvisoryNamesBothPluginsWhereTheirRulesDiffer drives the pull's
@@ -42,13 +44,14 @@ func TestTheIgnoreAdvisoryNamesBothPluginsWhereTheirRulesDiffer(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	wasmtest.RequireEmbeddedEntities(t)
 	view := catalog.NewLazyLookup(ws, "", []string{cat}, nil)
 	served, ok, err := view.ServingProvider("helm", nil)
 	if err != nil {
 		t.Fatalf("ServingProvider: %v", err)
 	}
 	if !ok {
-		t.Skip("this binary carries no provider serving helm, so there is no plugin to compare with")
+		t.Fatal("this binary carries no provider serving helm, though its entities were generated")
 	}
 	own := types.IgnorePlugin{Name: served.Name}
 	if served.Ignore != nil {
@@ -114,13 +117,14 @@ func TestTheIgnoreAdvisoryNamesTheRecordedPluginByItsName(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	wasmtest.RequireEmbeddedEntities(t)
 	view := catalog.NewLazyLookup(ws, "", []string{cat}, nil)
 	served, ok, err := view.ServingProvider("terraform", nil)
 	if err != nil {
 		t.Fatalf("ServingProvider: %v", err)
 	}
 	if !ok {
-		t.Skip("this binary carries no provider serving terraform, so there is no plugin to compare with")
+		t.Fatal("this binary carries no provider serving terraform, though its entities were generated")
 	}
 	if served.Name != "provider/terraform" || served.Ignore == nil || len(served.Ignore.Patterns) < 2 {
 		t.Fatalf("the serving plugin is %q declaring %+v; want provider/terraform declaring at least two patterns",

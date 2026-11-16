@@ -16,6 +16,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // countingMissPuller records every fetch attempt and always reports a miss. It is
@@ -33,10 +35,12 @@ func (p *countingMissPuller) RegistryPrefix() string { return "hub.aggrega.ai" }
 // embeddedProviderIdentity returns the bare identity and metadata.version of one
 // core provider this binary carries, read out of the binary itself. The version is
 // DERIVED rather than written down: it moves with every compiler build, so a literal
-// would be stale on the next one. A binary built without its core plugins carries
-// none, and the test skips there rather than asserting over an empty set.
+// would be stale on the next one. Where the core plugins' entities were never
+// generated because aggrega-hub is not checked out beside this repository the test
+// skips; a binary carrying none otherwise fails it.
 func embeddedProviderIdentity(t *testing.T) (identity, version string) {
 	t.Helper()
+	wasmtest.RequireEmbeddedEntities(t)
 	for _, uri := range embedded.EntityURIs() {
 		raw, ok := embedded.LookupEntity(uri)
 		if !ok {
@@ -51,18 +55,18 @@ func embeddedProviderIdentity(t *testing.T) (identity, version string) {
 		}
 		return p.Coordinate(), p.Metadata.Version
 	}
-	t.Skip("this binary carries no core provider entities")
+	t.Fatal("this binary carries no core provider entities, though they were generated")
 	return "", ""
 }
 
 // embeddedOutputShapingIdentity returns the bare identity and metadata.version of one
 // core OUTPUT-SHAPING plugin this binary carries — a governance guest, whose plugin
 // rewrites the topology graph and therefore the rendered bytes. Like the provider
-// helper the version is DERIVED, not written down. A binary built without its core
-// plugins carries none, and the test skips there rather than asserting over an empty
-// set.
+// helper the version is DERIVED, not written down. It skips and fails as the
+// provider helper does.
 func embeddedOutputShapingIdentity(t *testing.T) (identity, version string) {
 	t.Helper()
+	wasmtest.RequireEmbeddedEntities(t)
 	for _, uri := range embedded.EntityURIs() {
 		raw, ok := embedded.LookupEntity(uri)
 		if !ok {
@@ -77,7 +81,7 @@ func embeddedOutputShapingIdentity(t *testing.T) (identity, version string) {
 		}
 		return p.Coordinate(), p.Metadata.Version
 	}
-	t.Skip("this binary carries no core governance entities")
+	t.Fatal("this binary carries no core governance entities, though they were generated")
 	return "", ""
 }
 
