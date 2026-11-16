@@ -22,11 +22,11 @@ path = "src/lib.rs"
 # The shared severity vocabulary and the diagnostic type every socket reports
 # from. Depending on the plugin development kit rather than restating the
 # vocabulary is what keeps one definition of a severity.
-aggrega-pdk-rust = { path = "../../../aggrega-pdk/rust" }
+aggrega-pdk-rust = "0.9.0"
 # The per-role payload types. The render-facet input types are defined in the ABI
 # codec crate and are not re-exported by the plugin development kit, so the codec
 # crate is depended on directly for those.
-aggrega-abi = { path = "../../../aggrega-abi/rust" }
+aggrega-abi = "0.9.0"
 serde = { version = "1", features = ["derive"] }
 # raw_value matches the ABI crate: the settings and artifact-tree fields are
 # carried verbatim as raw JSON.
