@@ -228,7 +228,7 @@ func checkStrings(v any, pointer string) error {
 		reason, offset := err.Error(), 0
 		if se, ok := err.(*armexpr.SyntaxError); ok {
 			reason, offset = se.Reason, se.Offset
-			if offset < len(x) && x[offset] == '[' {
+			if offset < len(x) && x[offset] == '[' && opensExpression(x, offset) {
 				return refuse(plugincondition.ErrPluginValueNotRepresentable,
 					fmt.Sprintf("the text at JSON pointer %s writes a value inside an expression, at offset %d, where ARM reads brackets as an expression and not as text; compose the value in literal text instead, writing the delivered value whole inside the text around it, or write [[ to keep the text literal", pointer, offset))
 			}
@@ -274,4 +274,12 @@ func clone(m map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+// opensExpression reports whether the bracket at text[open] begins a complete
+// expression of its own, as a delivered value written inside another expression
+// does, and not bracketed text a parse fault merely landed on.
+func opensExpression(text string, open int) bool {
+	_, _, ok := armexpr.ParseSpan(text, open)
+	return ok
 }

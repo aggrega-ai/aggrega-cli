@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/parse"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
+	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
 func TestReadFragmentScopeFromSchema(t *testing.T) {
@@ -165,5 +167,119 @@ func TestReadFragmentRefusesAnAliasCycle(t *testing.T) {
 		if !strings.Contains(err.Error(), s) {
 			t.Errorf("error lacks %q: %v", s, err)
 		}
+	}
+}
+
+func TestReadFragmentReadsLanguageVersion2(t *testing.T) {
+	t.Parallel()
+	for name, content := range map[string]string{
+		"json string":         `{"languageVersion": "2.0"}`,
+		"yaml quoted":         "languageVersion: \"2.0\"\n",
+		"yaml unquoted float": "languageVersion: 2.0\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			frag, diags, err := ReadFragment([]byte(content))
+			if err != nil || len(diags) != 0 {
+				t.Fatalf("err %v diags %v", err, diags)
+			}
+			if _, carried := frag.Sections["languageVersion"]; carried {
+				t.Error("languageVersion was carried")
+			}
+		})
+	}
+}
+
+func TestReadFragmentTakesTheFloatSpelling(t *testing.T) {
+	t.Parallel()
+	var om types.OrderedMap[any]
+	if err := parse.TemplateOutput([]byte("languageVersion: 2.0\n"), &om); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := om.Get("languageVersion")
+	if _, isFloat := v.(float64); !isFloat {
+		t.Fatalf("an unquoted 2.0 decodes to %T, not float64", v)
+	}
+	if !isLanguageVersion(v) {
+		t.Error("the decoded unquoted 2.0 is not read as the stamped version")
+	}
+	if isLanguageVersion(2.1) || !isLanguageVersion(float64(2)) {
+		t.Error("only 2.0 is the stamped version")
+	}
+}
+
+func TestReadFragmentKeepsBracketedLiteralsUnchanged(t *testing.T) {
+	t.Parallel()
+	literals := []string{
+		"pattern is [a-z] only",
+		"[test] value",
+		"run [ -f x ] first",
+		"element array[0] of it",
+		"x [a-z]+ then [0-9]",
+	}
+	for _, lit := range literals {
+		t.Run(lit, func(t *testing.T) {
+			t.Parallel()
+			content := "variables:\n  v:\n    text: " + `"` + lit + `"` + "\n"
+			frag, _, err := ReadFragment([]byte(content))
+			if err != nil {
+				t.Fatalf("ReadFragment: %v", err)
+			}
+			got := frag.Sections["variables"]["v"].(map[string]any)["text"]
+			if got != lit {
+				t.Errorf("literal changed: got %q want %q", got, lit)
+			}
+		})
+	}
+}
+
+func TestReadFragmentRefusesWhatItCannotRead(t *testing.T) {
+	t.Parallel()
+	cannot := plugincondition.ErrPluginCannotExpressInput()
+	cases := []struct {
+		name, content string
+		sentence      []string
+	}{
+		{"non-string schema", "$schema: 3\n", []string{"arm-provider:", "$schema is not text"}},
+		{"unrecognised schema file name", `{"$schema": "https://example.invalid/schemas/other.json#"}`, []string{"arm-provider:", "$schema does not name a template schema"}},
+		{"parameters a list", "parameters:\n  - a\n", []string{"arm-provider:", "parameters is not an object"}},
+		{"functions an object", "functions:\n  a: b\n", []string{"arm-provider:", "functions is not a list"}},
+		{"functions entry without members", "functions:\n  - namespace: contoso\n", []string{"arm-provider:", "/functions/0"}},
+		{"functions entry without namespace", "functions:\n  - members: {}\n", []string{"arm-provider:", "/functions/0"}},
+		{"function declared twice", "functions:\n  - namespace: contoso\n    members:\n      one: {}\n  - namespace: contoso\n    members:\n      one: {}\n", []string{"arm-provider:", "/functions/1/members/one", "more than once"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, err := ReadFragment([]byte(c.content))
+			if !errors.Is(err, cannot) {
+				t.Fatalf("want E0288, got %v", err)
+			}
+			for _, s := range c.sentence {
+				if !strings.Contains(err.Error(), s) {
+					t.Errorf("sentence lacks %q: %v", s, err)
+				}
+			}
+		})
+	}
+}
+
+// A parse fault that lands on a bracket which does not open an expression (a
+// bad index) is an ordinary parse failure, not a value written inside an
+// expression.
+func TestReadFragmentBadIndexIsAnOrdinaryParseFault(t *testing.T) {
+	t.Parallel()
+	_, _, err := ReadFragment([]byte("variables:\n  v: \"[parameters('p')[[1]]]\"\n"))
+	if !errors.Is(err, plugincondition.ErrPluginValueNotRepresentable()) {
+		t.Fatalf("want E0291, got %v", err)
+	}
+	msg := err.Error()
+	for _, s := range []string{"/variables/v", "does not parse", "[["} {
+		if !strings.Contains(msg, s) {
+			t.Errorf("sentence lacks %q: %v", s, msg)
+		}
+	}
+	if strings.Contains(msg, "inside an expression") {
+		t.Errorf("a bad index is reported as a value inside an expression: %v", msg)
 	}
 }
