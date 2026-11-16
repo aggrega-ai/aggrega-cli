@@ -12,6 +12,18 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 )
 
+// ProvenanceMetadataKey is the key a resource's Metadata attribute carries the
+// build provenance under.
+//
+// It is one key rather than the provenance entries written flat, because the
+// Metadata attribute is a shared space: the template language reserves its own
+// names there (the AWS:: family) and other tools write their own, so a block
+// under one reserved-prefix key collides with none of them and a merge into an
+// author's own Metadata touches exactly one name. The `aggrega.ai/` prefix is the
+// reserved platform-injection keyspace, which is what makes the key unavailable
+// to an author and therefore safe to claim.
+const ProvenanceMetadataKey = "aggrega.ai/provenance"
+
 // ProvenanceComponentID returns the Kubernetes-safe component identity for a
 // node — what a resource this node emits BELONGS to. That is the value
 // provenance records and the value a selector queries, and it is the single

@@ -3,7 +3,7 @@
 
 package terraformcore
 
-import "sort"
+import "github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 
 // dependsOnMetaArgument is the Terraform meta-argument that fixes the order the
 // engine performs actions in. It is accepted on a `module` block and takes a
@@ -31,51 +31,42 @@ const dependsOnMetaArgument = "depends_on"
 // orders every component in that root and nothing outside it. Components composed
 // into a different root are unreachable from here and are not approximated.
 //
-// Fan-out. Components are grouped by their contributing node's wave. Each names
-// every component of the immediately-preceding populated wave, never every
-// earlier wave: Terraform resolves the rest transitively through the middle wave,
-// so a three-wave boundary chains rather than fanning out to the whole boundary
-// and the emitted lists stay proportional to one wave. Waves need be neither
-// contiguous nor non-negative — the populated waves are sorted and each is
-// chained to the one before it, so -5, 0 and 7 chain exactly as 0, 1 and 2 do.
-// The lowest wave names nothing, because nothing precedes it.
+// Fan-out. Components are grouped by their contributing node's wave, and
+// [rendercore.WavePredecessors] chains each to the immediately-preceding populated
+// wave, never every earlier wave: Terraform resolves the rest transitively through
+// the middle wave, so a three-wave boundary chains rather than fanning out to the
+// whole boundary. Waves need be neither contiguous nor non-negative, so -5, 0 and 7
+// chain exactly as 0, 1 and 2 do. The lowest wave names nothing.
 //
 // Order. Within a wave the names are emitted in contributor order, which is the
 // order the module blocks themselves appear in, so a list reads in the same order
 // as the file above it. That order is the caller's and is fixed deterministically,
-// which is what makes the emitted list a function of the input alone; no map is
-// iterated for output — the wave keys are collected and sorted before anything is
-// recorded.
+// which is what makes the emitted list a function of the input alone.
 //
 // A boundary with fewer than two populated waves yields nothing at all, so a
 // boundary where no wave was declared — every component carrying the field's
 // default — emits the root configuration it would emit if the wave expressed no
 // ordering.
 func waveDependencies(components []RootComponent, moduleNames []string) [][]string {
-	indexesByWave := map[int][]int{}
+	waves := make([]int, len(components))
 	for i, c := range components {
-		indexesByWave[c.SyncWave] = append(indexesByWave[c.SyncWave], i)
+		waves[i] = c.SyncWave
 	}
-	if len(indexesByWave) < 2 {
+	predecessors := rendercore.WavePredecessors(waves)
+	if predecessors == nil {
 		return nil
 	}
 
-	waves := make([]int, 0, len(indexesByWave))
-	for w := range indexesByWave {
-		waves = append(waves, w)
-	}
-	sort.Ints(waves)
-
 	deps := make([][]string, len(components))
-	for i := 1; i < len(waves); i++ {
-		predecessors := indexesByWave[waves[i-1]]
-		names := make([]string, 0, len(predecessors))
-		for _, j := range predecessors {
+	for i, before := range predecessors {
+		if len(before) == 0 {
+			continue
+		}
+		names := make([]string, 0, len(before))
+		for _, j := range before {
 			names = append(names, moduleNames[j])
 		}
-		for _, k := range indexesByWave[waves[i]] {
-			deps[k] = names
-		}
+		deps[i] = names
 	}
 	return deps
 }

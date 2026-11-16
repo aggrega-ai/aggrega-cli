@@ -134,9 +134,9 @@ func TestStampResourceProvenance_StampsEveryResourceAndPreservesAuthoredMetadata
 		if !ok {
 			t.Fatalf("resource %q carries no Metadata\n%s", id, body)
 		}
-		block, ok := metadata[ProvenanceMetadataKey].(map[string]any)
+		block, ok := metadata[rendercore.ProvenanceMetadataKey].(map[string]any)
 		if !ok {
-			t.Fatalf("resource %q carries no provenance block under %q\n%s", id, ProvenanceMetadataKey, body)
+			t.Fatalf("resource %q carries no provenance block under %q\n%s", id, rendercore.ProvenanceMetadataKey, body)
 		}
 		if len(block) != len(provenance) {
 			t.Errorf("resource %q provenance block has %d keys, want %d: %#v", id, len(block), len(provenance), block)
@@ -220,7 +220,7 @@ func TestStampResourceProvenance_UnreachableShapeIsNamedNotRewritten(t *testing.
 	if got := resources["ScalarMetadata"].(map[string]any)["Metadata"]; got != "not a mapping" {
 		t.Errorf("an unreachable Metadata attribute must be emitted as authored; got %#v", got)
 	}
-	if _, ok := resources["Fine"].(map[string]any)["Metadata"].(map[string]any)[ProvenanceMetadataKey]; !ok {
+	if _, ok := resources["Fine"].(map[string]any)["Metadata"].(map[string]any)[rendercore.ProvenanceMetadataKey]; !ok {
 		t.Errorf("a well-formed sibling must still stamp\n%s", body)
 	}
 }
@@ -289,7 +289,7 @@ func TestStampSourcedProvenance_SkipsTheNonTemplateContentTheNormalizerVendors(t
 	if out[0].Path != "README.md" || string(out[0].Content) != string(files[0].Content) {
 		t.Errorf("non-template content must be vendored untouched; got %q = %q", out[0].Path, out[0].Content)
 	}
-	if !strings.Contains(string(out[1].Content), ProvenanceMetadataKey) {
+	if !strings.Contains(string(out[1].Content), rendercore.ProvenanceMetadataKey) {
 		t.Errorf("the template's resource must carry provenance; got\n%s", out[1].Content)
 	}
 	// params.json is a template file by extension and declares no resource, so it

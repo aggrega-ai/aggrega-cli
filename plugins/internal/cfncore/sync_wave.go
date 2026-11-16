@@ -3,7 +3,11 @@
 
 package cfncore
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
+)
 
 // dependsOnAttribute is the CloudFormation resource attribute that fixes the
 // order resources are operated on in. It takes a single logical id or a list of
@@ -28,14 +32,12 @@ const dependsOnAttribute = "DependsOn"
 // assembled stack and nothing outside it. Contributors that assemble into a
 // different stack are unreachable from here and are not approximated.
 //
-// Fan-out. Resources are grouped by their contributing node's wave. Each resource
-// names every resource of the immediately-preceding populated wave, never every
-// earlier wave: CloudFormation resolves the rest transitively through the middle
-// wave, so a three-wave group chains rather than fanning out to the whole group and
-// the emitted lists stay proportional to one wave. Waves need not be contiguous or
-// non-negative — the populated waves are sorted and each is chained to the one
-// before it, so -1, 0 and 5 chain exactly as 0, 1 and 2 do. The lowest wave names
-// nothing, because nothing precedes it.
+// Fan-out. Resources are grouped by their contributing node's wave, and
+// [rendercore.WavePredecessors] chains each to the immediately-preceding populated
+// wave, never every earlier wave: CloudFormation resolves the rest transitively
+// through the middle wave, so a three-wave group chains rather than fanning out to
+// the whole group. Waves need not be contiguous or non-negative, so -1, 0 and 5
+// chain exactly as 0, 1 and 2 do. The lowest wave names nothing.
 //
 // Order. Targets are sorted by logical id before they are recorded: a set of
 // same-wave resources carries no author order, so alphabetical is what makes the
@@ -47,40 +49,42 @@ const dependsOnAttribute = "DependsOn"
 // A group whose resources all carry one wave records nothing at all, so a dispatch
 // group where no boundary declared a wave assembles byte-identical bytes.
 func applyWaveOrdering(resources map[string]any, waveByResource map[string]int) {
-	idsByWave := map[int][]string{}
-	for id, wave := range waveByResource {
+	// Units are the carried resources by logical id: same-wave resources carry no
+	// author order, so the sorted id is what fixes each wave's list.
+	ids := make([]string, 0, len(waveByResource))
+	for id := range waveByResource {
 		// A resource the merge did not carry is not addressable in the assembled
 		// stack, so naming it would emit a dependency on nothing.
-		if _, carried := resources[id]; !carried {
-			continue
+		if _, carried := resources[id]; carried {
+			ids = append(ids, id)
 		}
-		idsByWave[wave] = append(idsByWave[wave], id)
 	}
-	if len(idsByWave) < 2 {
+	sort.Strings(ids)
+	waves := make([]int, len(ids))
+	for i, id := range ids {
+		waves[i] = waveByResource[id]
+	}
+
+	predecessors := rendercore.WavePredecessors(waves)
+	if predecessors == nil {
 		return
 	}
-
-	waves := make([]int, 0, len(idsByWave))
-	for w := range idsByWave {
-		waves = append(waves, w)
-	}
-	sort.Ints(waves)
-	for _, w := range waves {
-		sort.Strings(idsByWave[w])
-	}
-
-	for i := 1; i < len(waves); i++ {
-		predecessors := idsByWave[waves[i-1]]
-		for _, id := range idsByWave[waves[i]] {
-			body, ok := resources[id].(map[string]any)
-			if !ok {
-				// A resource body that is not a mapping carries no attribute to
-				// set. The fragment is emitted as it was authored rather than
-				// rewritten into a shape it did not have.
-				continue
-			}
-			resources[id] = withDependsOn(body, predecessors)
+	for i, id := range ids {
+		if len(predecessors[i]) == 0 {
+			continue
 		}
+		body, ok := resources[id].(map[string]any)
+		if !ok {
+			// A resource body that is not a mapping carries no attribute to
+			// set. The fragment is emitted as it was authored rather than
+			// rewritten into a shape it did not have.
+			continue
+		}
+		targets := make([]string, 0, len(predecessors[i]))
+		for _, j := range predecessors[i] {
+			targets = append(targets, ids[j])
+		}
+		resources[id] = withDependsOn(body, targets)
 	}
 }
 

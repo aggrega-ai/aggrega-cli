@@ -10,18 +10,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 )
 
-// ProvenanceMetadataKey is the key a resource's Metadata attribute carries the
-// build provenance under.
-//
-// It is one key rather than the provenance entries written flat, because the
-// Metadata attribute is a shared space: the template language reserves its own
-// names there (the AWS:: family) and other tools write their own, so a block
-// under one reserved-prefix key collides with none of them and a merge into an
-// author's own Metadata touches exactly one name. The `aggrega.ai/` prefix is the
-// reserved platform-injection keyspace, which is what makes the key unavailable
-// to an author and therefore safe to claim.
-const ProvenanceMetadataKey = "aggrega.ai/provenance"
-
 // ProvenanceSet folds the two host-computed provenance halves a projection entry
 // carries into the single set a CloudFormation resource carries.
 //
@@ -55,7 +43,7 @@ func ProvenanceSetFromNodeContext(nodeCtx rendercore.NodeRenderContext) map[stri
 // together with an advisory naming the template when it holds no site to stamp.
 //
 // Placement is each resource's own Metadata attribute, under
-// [ProvenanceMetadataKey]. The template language grants that attribute to every
+// [rendercore.ProvenanceMetadataKey]. The template language grants that attribute to every
 // resource whatever its type — it is a resource attribute, alongside DependsOn and
 // Condition, rather than a property a resource type declares — so one placement
 // rule reaches every resource and no type is skipped. Resource tags are the other
@@ -73,7 +61,7 @@ func ProvenanceSetFromNodeContext(nodeCtx rendercore.NodeRenderContext) map[stri
 //
 // The stamp merges into whatever Metadata the author wrote rather than replacing
 // it: an author's own Metadata names survive alongside the provenance block, and
-// only [ProvenanceMetadataKey] itself is written. A resource whose Metadata is
+// only [rendercore.ProvenanceMetadataKey] itself is written. A resource whose Metadata is
 // present but is not a mapping is left alone and named in the advisory, because
 // rewriting authored content into a shape this placer finds convenient is not
 // this core's to do.
@@ -122,7 +110,7 @@ func StampResourceProvenance(name string, template []byte, provenance map[string
 		}
 		metadata, present := resource[sectionMetadata]
 		if !present {
-			resource[sectionMetadata] = map[string]any{ProvenanceMetadataKey: provenanceBlock(provenance)}
+			resource[sectionMetadata] = map[string]any{rendercore.ProvenanceMetadataKey: provenanceBlock(provenance)}
 			continue
 		}
 		authored, ok := metadata.(map[string]any)
@@ -130,7 +118,7 @@ func StampResourceProvenance(name string, template []byte, provenance map[string
 			unstampable = append(unstampable, id)
 			continue
 		}
-		authored[ProvenanceMetadataKey] = provenanceBlock(provenance)
+		authored[rendercore.ProvenanceMetadataKey] = provenanceBlock(provenance)
 	}
 
 	out, err := json.Marshal(doc)

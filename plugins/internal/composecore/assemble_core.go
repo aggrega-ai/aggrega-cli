@@ -447,24 +447,22 @@ func AssembleBoundaryCore(
 // correctly on every document that happens to carry one, and would stop ordering
 // silently on the first one that does not.
 func applyWaveOrdering(merged *ComposeFile, waveByService map[string]int) []renderctx.Diagnostic {
-	servicesByWave := map[int][]string{}
+	// Units are the contributing services by name: same-wave services carry no
+	// author order, so the sorted name is what fixes each wave's list.
+	names := make([]string, 0, len(waveByService))
 	for svcName := range waveByService {
-		if _, contributes := merged.Services[svcName]; !contributes {
-			continue
+		if _, contributes := merged.Services[svcName]; contributes {
+			names = append(names, svcName)
 		}
-		servicesByWave[waveByService[svcName]] = append(servicesByWave[waveByService[svcName]], svcName)
 	}
-	if len(servicesByWave) < 2 {
+	sort.Strings(names)
+	waves := make([]int, len(names))
+	for i, svcName := range names {
+		waves[i] = waveByService[svcName]
+	}
+	predecessors := rendercore.WavePredecessors(waves)
+	if predecessors == nil {
 		return nil
-	}
-
-	waves := make([]int, 0, len(servicesByWave))
-	for w := range servicesByWave {
-		waves = append(waves, w)
-	}
-	sort.Ints(waves)
-	for _, w := range waves {
-		sort.Strings(servicesByWave[w])
 	}
 
 	// Targets whose ordering degraded to start-only, collected in the order the
@@ -474,22 +472,29 @@ func applyWaveOrdering(merged *ComposeFile, waveByService map[string]int) []rend
 	var startOnly []string
 	seenStartOnly := map[string]struct{}{}
 
-	for i := 1; i < len(waves); i++ {
-		predecessors := servicesByWave[waves[i-1]]
-		for _, svcName := range servicesByWave[waves[i]] {
-			svc := merged.Services[svcName]
-			for _, target := range predecessors {
-				condition := conditionStarted
-				if merged.Services[target].Healthcheck != nil {
-					condition = conditionHealthy
-				} else if _, seen := seenStartOnly[target]; !seen {
-					seenStartOnly[target] = struct{}{}
-					startOnly = append(startOnly, target)
-				}
-				svc.DependsOn.Require(target, condition)
+	// Dependents are walked wave by wave, then by name, so the advisory list
+	// reads in the same order whatever the service names are.
+	order := make([]int, len(names))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(a, b int) bool { return waves[order[a]] < waves[order[b]] })
+
+	for _, i := range order {
+		svcName := names[i]
+		svc := merged.Services[svcName]
+		for _, j := range predecessors[i] {
+			target := names[j]
+			condition := conditionStarted
+			if merged.Services[target].Healthcheck != nil {
+				condition = conditionHealthy
+			} else if _, seen := seenStartOnly[target]; !seen {
+				seenStartOnly[target] = struct{}{}
+				startOnly = append(startOnly, target)
 			}
-			merged.Services[svcName] = svc
+			svc.DependsOn.Require(target, condition)
 		}
+		merged.Services[svcName] = svc
 	}
 
 	if len(startOnly) == 0 {
