@@ -38,22 +38,11 @@ func StampProvenance(fragment map[string]any, set map[string]string) (advisory s
 			unstamped = append(unstamped, fmt.Sprintf("%s (at JSON pointer %s, not an object)", symbol, pointer))
 			continue
 		}
-		metadata := map[string]any{}
-		if authored, present := body[sectionMetadata]; present && authored != nil {
-			m, isObject := authored.(map[string]any)
-			if !isObject {
-				unstamped = append(unstamped, fmt.Sprintf("%s (at JSON pointer %s/%s, not an object)", symbol, pointer, sectionMetadata))
-				continue
-			}
-			metadata = clone(m)
+		out, ok := withProvenance(body, set)
+		if !ok {
+			unstamped = append(unstamped, fmt.Sprintf("%s (at JSON pointer %s/%s, not an object)", symbol, pointer, sectionMetadata))
+			continue
 		}
-		block := make(map[string]any, len(set))
-		for _, k := range sortedKeys(set) {
-			block[k] = set[k]
-		}
-		metadata[ProvenanceMetadataKey] = block
-		out := clone(body)
-		out[sectionMetadata] = metadata
 		resources[symbol] = out
 		stamped = append(stamped, symbol)
 	}
@@ -64,4 +53,27 @@ func StampProvenance(fragment map[string]any, set map[string]string) (advisory s
 		return "skipped provenance injection: the fragment declares no resource the template deploys, so the provenance has no resource to describe; the resources this component contributes elsewhere carry the full set"
 	}
 	return ""
+}
+
+// withProvenance returns a copy of one resource body whose metadata object
+// carries set under ProvenanceMetadataKey, keeping every key the author wrote in
+// it. It reports false, and returns no body, when the resource's metadata is
+// present and not an object.
+func withProvenance(body map[string]any, set map[string]string) (map[string]any, bool) {
+	metadata := map[string]any{}
+	if authored, present := body[sectionMetadata]; present && authored != nil {
+		m, isObject := authored.(map[string]any)
+		if !isObject {
+			return nil, false
+		}
+		metadata = clone(m)
+	}
+	block := make(map[string]any, len(set))
+	for _, k := range sortedKeys(set) {
+		block[k] = set[k]
+	}
+	metadata[ProvenanceMetadataKey] = block
+	out := clone(body)
+	out[sectionMetadata] = metadata
+	return out, true
 }
