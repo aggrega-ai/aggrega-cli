@@ -206,14 +206,15 @@ func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outN
 
 	sourceDir := filepath.Join(siblingsDir, "aggrega-pdk", lang, "examples", socket)
 
-	// Freshness watches the example's own source, its manifest included,
-	// AND the per-language kit source tree the example builds against by
-	// path. A change to the kit moves the artifact stale even though the
-	// example's own source is untouched. The example takes the ABI codec as
-	// a released package its manifest pins, so a change to the ABI reaches
-	// the example only through that manifest.
-	pdkSrc := pdkSourceDir(siblingsDir, lang)
-	if wasmfixture.IsFresh(artifactPath, sourceDir, pdkSrc) {
+	// Freshness watches what the example's build reads from local
+	// directories, as pdkExampleInputs lists them: the example's own source
+	// and manifest, the kit it builds against by path, and the manifests and
+	// lockfiles that pin the ABI codec and every other released dependency of
+	// the build. Inputs that cannot be listed leave the artifact stale, so the
+	// build runs and says why.
+	inputs, inputsErr := pdkExampleInputs(siblingsDir, lang, sourceDir)
+	fresh := func() bool { return inputsErr == nil && wasmfixture.IsFresh(artifactPath, inputs...) }
+	if fresh() {
 		return artifactPath, nil
 	}
 
@@ -243,7 +244,7 @@ func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outN
 	// behind another builder finds that builder's finished artifact here and
 	// skips the build, so contention costs it a wait rather than a rebuild and
 	// only the first arrival pays the build cost.
-	if wasmfixture.IsFresh(artifactPath, sourceDir, pdkSrc) {
+	if fresh() {
 		return artifactPath, nil
 	}
 
@@ -315,17 +316,41 @@ func pdkToolchainAbsent(output string) bool {
 	return false
 }
 
-// pdkSourceDir returns the kit source directory a plugin kit example builds
-// against, for the given language, inside the aggrega-pdk checkout under
-// siblingsDir. The source-holding subdirectory differs per language: rust and
-// typescript keep sources under src/, go under pkg/. lang is one of the
-// recognised kit languages (rust, go, typescript) as classified by
-// parsePDKFixtureName.
-func pdkSourceDir(siblingsDir, lang string) string {
-	if lang == "go" {
-		return filepath.Join(siblingsDir, "aggrega-pdk", "go", "pkg")
+// pdkExampleInputs lists what the build of the plugin kit example at sourceDir
+// reads from local directories, for lang, one of the recognised kit languages
+// (rust, go, typescript) as classified by parsePDKFixtureName:
+//
+//   - rust: every package cargo reads from a local directory and the workspace
+//     lockfile, as cargoLocalPackageDirs lists them — the example, the kit crate
+//     it depends on by path, and the lockfile of the kit's workspace, which pins
+//     the ABI codec;
+//   - go: the example, whose go.mod and go.sum pin the ABI module, and the kit's
+//     go.mod, go.sum and pkg/ tree, which its replace directive reads;
+//   - typescript: the example and the kit's package.json, package-lock.json and
+//     src/ tree.
+func pdkExampleInputs(siblingsDir, lang, sourceDir string) ([]string, error) {
+	kit := filepath.Join(siblingsDir, "aggrega-pdk", lang)
+	switch lang {
+	case "rust":
+		return cargoLocalPackageDirs(filepath.Join(sourceDir, "Cargo.toml"))
+	case "go":
+		return existing(sourceDir, filepath.Join(kit, "go.mod"), filepath.Join(kit, "go.sum"), filepath.Join(kit, "pkg")), nil
+	default:
+		return existing(sourceDir, filepath.Join(kit, "package.json"), filepath.Join(kit, "package-lock.json"),
+			filepath.Join(kit, "src")), nil
 	}
-	return filepath.Join(siblingsDir, "aggrega-pdk", lang, "src")
+}
+
+// existing returns the paths among paths that exist, so a manifest a layout
+// does not carry is not read as a changed input.
+func existing(paths ...string) []string {
+	var out []string
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // buildPluginArtifact handles the production-plugin layout at
@@ -713,13 +738,16 @@ func pluginSourceDir(moduleRoot, name string) string {
 // kitCheckoutDir returns the directory holding the aggrega-pdk checkout beside
 // this repository, which the plugin kit example for socket in lang is built
 // from. When the checkout is absent it returns the skip reason naming it; when
-// the checkout is present and lacks the example it fails t, since a test naming
-// an example the kit does not hold is a defect, not a partial checkout.
+// its path is there and cannot be read, or the checkout lacks the example, it
+// fails t, since neither is a partial checkout.
 func kitCheckoutDir(t *testing.T, moduleRoot, lang, socket string) (string, error) {
 	t.Helper()
 	kit, err := siblingRepoDir(moduleRoot, "aggrega-pdk")
-	if err != nil {
+	if isSiblingAbsent(err) {
 		return "", fmt.Errorf("%s", siblingSkipMessage("aggrega-pdk", filepath.Join(lang, "examples", socket), err))
+	}
+	if err != nil {
+		t.Fatalf("aggrega-pdk is beside this repository at %s but cannot be read as a checkout: %v", kit, err)
 	}
 	example := filepath.Join(kit, lang, "examples", socket)
 	if _, err := os.Stat(example); err != nil {
@@ -731,7 +759,8 @@ func kitCheckoutDir(t *testing.T, moduleRoot, lang, socket string) (string, erro
 // cargoLocalPackageDirs lists the directory of every package the crate whose
 // manifest is manifestPath builds from a local directory — the crate itself and
 // each crate reached by a path dependency or a local patch — as cargo metadata
-// reports them for the versions the crate's lockfile pins.
+// reports them for the versions the crate's lockfile pins, and that lockfile,
+// which sits at the root of the crate's workspace.
 func cargoLocalPackageDirs(manifestPath string) ([]string, error) {
 	cmd := exec.Command("cargo", "metadata", "--format-version", "1", "--locked", "--manifest-path", manifestPath)
 	cmd.Dir = filepath.Dir(manifestPath)
@@ -744,6 +773,7 @@ func cargoLocalPackageDirs(manifestPath string) ([]string, error) {
 			Source       *string `json:"source"`
 			ManifestPath string  `json:"manifest_path"`
 		} `json:"packages"`
+		WorkspaceRoot string `json:"workspace_root"`
 	}
 	if err := json.Unmarshal(out, &meta); err != nil {
 		return nil, err
@@ -757,7 +787,11 @@ func cargoLocalPackageDirs(manifestPath string) ([]string, error) {
 	if len(dirs) == 0 {
 		return nil, fmt.Errorf("cargo metadata for %s lists no local package", manifestPath)
 	}
-	return dirs, nil
+	lock := filepath.Join(meta.WorkspaceRoot, "Cargo.lock")
+	if _, err := os.Stat(lock); err != nil {
+		return nil, fmt.Errorf("the lockfile of %s's workspace: %w", manifestPath, err)
+	}
+	return append(dirs, lock), nil
 }
 
 // publishArtifactCopy publishes a copy of src, for a source that has to stay

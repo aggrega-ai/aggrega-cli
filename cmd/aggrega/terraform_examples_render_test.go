@@ -32,17 +32,15 @@ import (
 // siblingCatalogRootForExamples returns the standard catalog, in the aggrega-hub
 // repository checked out beside this one, skipping when that checkout is absent.
 //
-// It also skips while the sibling catalog's Plugin entities still declare a
-// standalone plugin-artifact field: the entity schema now derives a plugin's
-// .wasm location from its identity, so an entity carrying that legacy field is
-// schema-rejected on load and its provider never resolves. The catalog is
-// regenerated to the identity-derived shape out of band; the skip lifts
-// automatically once that regeneration lands, so no re-coupling edit is needed.
+// It also skips when the sibling catalog's Plugin entities declare a standalone
+// plugin-artifact field: the entity schema derives a plugin's .wasm location
+// from its identity and rejects an entity carrying that field on load, so its
+// provider never resolves and the examples cannot render against that catalog.
 func siblingCatalogRootForExamples(t *testing.T) string {
 	t.Helper()
 	dir := wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
 	if hubPluginEntitiesCarryLegacyArtifactField(dir) {
-		t.Skipf("sibling catalog Plugin entities under %s still declare a standalone plugin-artifact field; skipping until the catalog is regenerated to the identity-derived shape", dir)
+		t.Skipf("sibling catalog Plugin entities under %s declare a standalone plugin-artifact field, which the entity schema rejects; the examples render only against a catalog whose Plugin entities derive the location from their identity", dir)
 	}
 	return dir
 }
@@ -62,8 +60,8 @@ func exampleCatalogStack(t *testing.T, catalogRoot, providerURI string) []string
 }
 
 // hubPluginEntitiesCarryLegacyArtifactField reports whether any Plugin entity in
-// the sibling catalog still declares a top-level spec plugin-artifact field —
-// the legacy shape the entity schema no longer accepts. It is a best-effort
+// the sibling catalog declares a top-level spec plugin-artifact field, a shape
+// the entity schema rejects. It is a best-effort
 // scan: an unreadable tree reports false so the caller proceeds and any real
 // breakage surfaces rather than being masked.
 func hubPluginEntitiesCarryLegacyArtifactField(catalogRoot string) bool {

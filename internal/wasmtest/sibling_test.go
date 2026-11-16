@@ -4,9 +4,13 @@
 package wasmtest
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -74,6 +78,9 @@ func TestSiblingRepoDirTellsAPresentCheckoutFromAMissingOne(t *testing.T) {
 			t.Errorf("siblingRepoDir(%s) found a checkout; want it missing", repo)
 			continue
 		}
+		if !isSiblingAbsent(err) {
+			t.Errorf("siblingRepoDir(%s) = %v; want an absent checkout", repo, err)
+		}
 		msg := siblingSkipMessage(repo, filepath.Join("catalog", "x.yaml"), err)
 		for _, want := range []string{repo + " is not checked out beside this repository",
 			filepath.Join(parent, repo), "this test reads " + repo + "/catalog/x.yaml"} {
@@ -81,5 +88,64 @@ func TestSiblingRepoDirTellsAPresentCheckoutFromAMissingOne(t *testing.T) {
 				t.Errorf("skip message for %s does not say %q: %s", repo, want, msg)
 			}
 		}
+	}
+}
+
+// recordingTB is a testing.TB recording whether a helper skipped or failed it,
+// and ending the goroutine it runs on as testing.T does.
+type recordingTB struct {
+	testing.TB
+	skipped, failed string
+}
+
+func (r *recordingTB) Helper() {}
+
+func (r *recordingTB) Skipf(format string, args ...any) {
+	r.skipped = fmt.Sprintf(format, args...)
+	runtime.Goexit()
+}
+
+func (r *recordingTB) Fatalf(format string, args ...any) {
+	r.failed = fmt.Sprintf(format, args...)
+	runtime.Goexit()
+}
+
+// TestASiblingPathThatIsAFileFailsRatherThanSkips lays a regular file where a
+// companion repository's checkout would be and checks that siblingRepoDir does
+// not read it as an absent checkout, and that requireSiblingRepo fails the test
+// naming the path rather than skipping it.
+//
+// 🔴 PLANTED DEFECT: in siblingRepoDir (sibling.go), return every listing error as
+// a *siblingAbsentError: the file reads as an absent checkout, the helper skips, and
+// the case fails on it.
+func TestASiblingPathThatIsAFileFailsRatherThanSkips(t *testing.T) {
+	t.Parallel()
+	parent := t.TempDir()
+	moduleRoot := filepath.Join(parent, "cli")
+	if err := os.MkdirAll(moduleRoot, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", moduleRoot, err)
+	}
+	file := filepath.Join(parent, "hub")
+	if err := os.WriteFile(file, []byte("not a checkout"), 0o644); err != nil {
+		t.Fatalf("write %s: %v", file, err)
+	}
+
+	_, err := siblingRepoDir(moduleRoot, "hub")
+	if !errors.Is(err, syscall.ENOTDIR) || isSiblingAbsent(err) {
+		t.Fatalf("siblingRepoDir over a file = %v; want a not-a-directory error that is not an absent checkout", err)
+	}
+
+	rec := &recordingTB{TB: t}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		requireSiblingRepo(rec, moduleRoot, "hub", "catalog")
+	}()
+	<-done
+	if rec.skipped != "" {
+		t.Errorf("a file at the sibling path skipped the test: %s", rec.skipped)
+	}
+	if !strings.Contains(rec.failed, "hub is beside this repository at "+file+" but cannot be read as a checkout") {
+		t.Errorf("a file at the sibling path failed with %q; want it named as a checkout that cannot be read", rec.failed)
 	}
 }

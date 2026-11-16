@@ -4,7 +4,9 @@
 package wasmtest
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,15 +20,14 @@ import (
 // repository is a companion this repository's own clone does not carry, so its
 // absence is a partial checkout, not a defect.
 //
-// Only the repository's absence skips. A repository that is present but lacks
-// elem, or holds it in a shape the test cannot read, fails the test where the
-// test reads it, so a broken companion checkout never reads as a pass.
+// Only the repository's absence skips. A path there that cannot be read as a
+// directory — a file in its place, a directory the test may not list — fails t.
+// A repository that is present but lacks elem, or holds it in a shape the test
+// cannot read, fails the test where the test reads it, so a broken companion
+// checkout never reads as a pass.
 func SiblingPath(t testing.TB, repo string, elem ...string) string {
 	t.Helper()
-	dir, err := siblingRepoDir(ModuleRoot(t), repo)
-	if err != nil {
-		t.Skipf("%s", siblingSkipMessage(repo, filepath.Join(elem...), err))
-	}
+	dir := requireSiblingRepo(t, ModuleRoot(t), repo, filepath.Join(elem...))
 	return filepath.Join(append([]string{dir}, elem...)...)
 }
 
@@ -47,9 +48,7 @@ func SkipWithoutSiblings(t testing.TB, paths ...string) {
 		if !ok {
 			continue
 		}
-		if _, err := siblingRepoDir(moduleRoot, repo); err != nil {
-			t.Skipf("%s", siblingSkipMessage(repo, elem, err))
-		}
+		requireSiblingRepo(t, moduleRoot, repo, elem)
 	}
 }
 
@@ -71,19 +70,52 @@ func siblingOf(moduleRoot, p string) (repo, elem string, ok bool) {
 	return repo, elem, true
 }
 
-// siblingRepoDir returns the directory of the repository repo beside moduleRoot,
-// or an error when it is not checked out there: no such directory, or an empty
-// one, which is what a declared but uninitialised checkout leaves behind.
+// siblingAbsentError is the error siblingRepoDir returns when the repository is
+// not checked out beside this one, the one case a test skips on. Its text is the
+// reason alone.
+type siblingAbsentError struct{ reason string }
+
+func (e *siblingAbsentError) Error() string { return e.reason }
+
+// isSiblingAbsent reports whether err says the repository is not checked out.
+func isSiblingAbsent(err error) bool {
+	var absent *siblingAbsentError
+	return errors.As(err, &absent)
+}
+
+// siblingRepoDir returns the directory of the repository repo beside moduleRoot.
+// When it is not checked out there — no such directory, or an empty one, which
+// is what a declared but uninitialised checkout leaves behind — the error is a
+// *siblingAbsentError. Any other failure to list the directory is returned as it
+// is: the path is there and cannot be read, which is not an absent checkout.
 func siblingRepoDir(moduleRoot, repo string) (string, error) {
 	dir := filepath.Join(filepath.Dir(moduleRoot), repo)
 	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return dir, &siblingAbsentError{reason: err.Error()}
+	}
 	if err != nil {
 		return dir, err
 	}
 	if len(entries) == 0 {
-		return dir, fmt.Errorf("%s is empty", dir)
+		return dir, &siblingAbsentError{reason: dir + " is empty"}
 	}
 	return dir, nil
+}
+
+// requireSiblingRepo returns the directory of the repository repo beside
+// moduleRoot for a test reading elem from it. It skips t when the repository is
+// not checked out and fails t when its path is there and cannot be read.
+func requireSiblingRepo(t testing.TB, moduleRoot, repo, elem string) string {
+	t.Helper()
+	dir, err := siblingRepoDir(moduleRoot, repo)
+	switch {
+	case isSiblingAbsent(err):
+		t.Skipf("%s", siblingSkipMessage(repo, elem, err))
+	case err != nil:
+		t.Fatalf("%s is beside this repository at %s but cannot be read as a checkout: %v", repo, dir, err)
+	}
+	return dir
 }
 
 // siblingSkipMessage is the skip message for a test reading elem from the

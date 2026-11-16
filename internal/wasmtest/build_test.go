@@ -20,8 +20,8 @@ import (
 // not, lists the guest's inputs as a fixture build does, and judges an artifact
 // built after every file of the module:
 //
-//   - fresh as built, and fresh by the guest's own directory, which is all a
-//     fixture's freshness watched before it watched the guest's packages;
+//   - fresh as built, and fresh by the guest's own directory alone, which a
+//     change in a package beside it leaves untouched;
 //   - still fresh once only the package the guest does not import, or a test
 //     file of the one it does, is newer;
 //   - stale once a file of the package the guest imports is newer — the case a
@@ -322,5 +322,79 @@ func TestARustCrateIsStaleOnceACrateItReachesByPathChanges(t *testing.T) {
 	}
 	if wasmfixture.IsFresh(artifact, dirs...) {
 		t.Errorf("an artifact older than a file of the crate reached by path reads as fresh (listed %q)", dirs)
+	}
+}
+
+// TestAKitExampleIsStaleOnceItsWorkspaceLockfileChanges lays a virtual Cargo
+// workspace holding a kit crate and an example depending on it by path, the
+// shape of the plugin kit's Rust examples, whose lockfile sits at the workspace
+// root outside every package directory, and checks that a change to that
+// lockfile — what pins the ABI codec and every other registry dependency — moves
+// an artifact built from the example stale. It skips without cargo.
+//
+// 🔴 PLANTED DEFECT: in cargoLocalPackageDirs (build.go), drop the workspace
+// lockfile from what it returns: the lockfile lies in no listed directory, the
+// artifact reads as fresh, and the case fails on it.
+func TestAKitExampleIsStaleOnceItsWorkspaceLockfileChanges(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("cargo"); err != nil {
+		t.Skipf("cargo is not on PATH: %v", err)
+	}
+	root := t.TempDir()
+	write := func(rel, content string) string {
+		t.Helper()
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+		return path
+	}
+	write("Cargo.toml", "[workspace]\nmembers = [\"kit\", \"examples/mutator\"]\nresolver = \"2\"\n")
+	write("kit/Cargo.toml", "[package]\nname = \"kit\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")
+	write("kit/src/lib.rs", "pub fn f() {}\n")
+	manifest := write("examples/mutator/Cargo.toml", "[package]\nname = \"mutator\"\nversion = \"0.1.0\"\n"+
+		"edition = \"2021\"\n\n[dependencies]\nkit = { path = \"../../kit\" }\n")
+	write("examples/mutator/src/lib.rs", "pub fn g() { kit::f() }\n")
+	lock := exec.Command("cargo", "generate-lockfile", "--offline", "--manifest-path", filepath.Join(root, "Cargo.toml"))
+	if out, err := lock.CombinedOutput(); err != nil {
+		t.Fatalf("generate the workspace's lockfile: %v\n%s", err, out)
+	}
+	lockfile := filepath.Join(root, "Cargo.lock")
+
+	inputs, err := pdkExampleInputs(t.TempDir(), "rust", filepath.Dir(manifest))
+	if err != nil {
+		t.Fatalf("list the example's inputs: %v", err)
+	}
+	past, built := time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)
+	if err := filepath.WalkDir(root, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Chtimes(path, past, past)
+	}); err != nil {
+		t.Fatalf("set the workspace's times: %v", err)
+	}
+	artifact := filepath.Join(t.TempDir(), "mutator-rust.wasm")
+	if err := os.WriteFile(artifact, []byte("built"), 0o644); err != nil {
+		t.Fatalf("write the artifact: %v", err)
+	}
+	if err := os.Chtimes(artifact, built, built); err != nil {
+		t.Fatalf("set the artifact's time: %v", err)
+	}
+	if !wasmfixture.IsFresh(artifact, inputs...) {
+		t.Fatalf("an artifact built after every file of the workspace reads as stale (listed %q)", inputs)
+	}
+	now := time.Now()
+	if err := os.Chtimes(lockfile, now, now); err != nil {
+		t.Fatalf("touch %s: %v", lockfile, err)
+	}
+	if !wasmfixture.IsFresh(artifact, filepath.Join(root, "kit"), filepath.Dir(manifest)) {
+		t.Fatalf("precondition: the package directories are untouched, so they alone must read as fresh")
+	}
+	if wasmfixture.IsFresh(artifact, inputs...) {
+		t.Errorf("an artifact older than the workspace lockfile reads as fresh (listed %q)", inputs)
 	}
 }
