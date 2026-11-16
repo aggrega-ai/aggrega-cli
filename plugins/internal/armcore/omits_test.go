@@ -144,7 +144,7 @@ func TestOmitsNamespaceEntryHalts(t *testing.T) {
 			if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 				t.Fatalf("want E0288, got %v", err)
 			}
-			if !strings.HasPrefix(err.Error(), "arm-provider:") && !strings.Contains(err.Error(), "arm-provider:") {
+			if !strings.Contains(err.Error(), "arm-provider:") {
 				t.Errorf("message lacks the provider prefix: %v", err)
 			}
 			if len(tpl["resources"].(map[string]any)) != 1 {
@@ -308,4 +308,74 @@ func TestRenderSourcedHaltsWhereARemainingResourceNamesAnOmittedOne(t *testing.T
 	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
 		t.Fatalf("want E0289, got %v", err)
 	}
+}
+
+func TestOmitsMalformedResourceMembersNeitherPanicNorMatch(t *testing.T) {
+	t.Parallel()
+	for name, text := range map[string]string{
+		"1.0": template10(`1,"x",null,`+`{"type":5,"name":"lock"},{"type":"`+typeLock+`","name":"lock"}`, ""),
+		"2.0": template20(`"a":"x","b":{"type":5},`+lock20, ""),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			tpl := parsedTemplate(t, text)
+			counts, err := applyOmits(tpl, []rendercore.ResolvedOmit{omit(typeLock, "lock")})
+			if err != nil || !slices.Equal(counts, []int{1}) {
+				t.Fatalf("counts = %v, err = %v", counts, err)
+			}
+		})
+	}
+}
+
+func TestOmitsResourceIdWithNoArgumentsIsIgnored(t *testing.T) {
+	t.Parallel()
+	tpl := parsedTemplate(t, template10(`{"type":"`+typeLock+`","name":"l1"}`, `"outputs":{"o":{"type":"string","value":"[resourceId()]"}}`))
+	if _, err := applyOmits(tpl, []rendercore.ResolvedOmit{omit(typeLock, "l1")}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOmitsChildInSlashFormIsMatchedByItsFullNameOnly(t *testing.T) {
+	t.Parallel()
+	child := `{"type":"Microsoft.Web/sites/config","name":"site/web"}`
+	segments := `{"type":"x/y","name":"w","properties":{"p":"[resourceId('Microsoft.Web/sites/config', 'site', 'web')]"}}`
+	if _, err := applyOmits(parsedTemplate(t, template10(child+","+segments, "")), []rendercore.ResolvedOmit{omit("Microsoft.Web/sites/config", "site/web")}); err != nil {
+		t.Fatalf("segments matched a slash-form name: %v", err)
+	}
+	full := `{"type":"x/y","name":"w","properties":{"p":"[resourceId('Microsoft.Web/sites/config', 'site/web')]"}}`
+	_, err := applyOmits(parsedTemplate(t, template10(child+","+full, "")), []rendercore.ResolvedOmit{omit("Microsoft.Web/sites/config", "site/web")})
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
+		t.Fatalf("want E0289, got %v", err)
+	}
+}
+
+func TestOmitsNestedTemplateScope(t *testing.T) {
+	t.Parallel()
+	nested := func(scope string) string {
+		return `{"type":"Microsoft.Resources/deployments","name":"d","properties":{` + scope +
+			`"template":{"resources":[{"type":"x/y","name":"n","dependsOn":["l1"],"properties":{"p":"[reference('l1')]"}}]},"parameters":{"q":{"value":"[reference('l1')]"}}}}`
+	}
+	lock := `{"type":"` + typeLock + `","name":"l1"}`
+	entry := []rendercore.ResolvedOmit{omit(typeLock, "l1")}
+	t.Run("1.0 inner skips the template and scans parameters", func(t *testing.T) {
+		t.Parallel()
+		_, err := applyOmits(parsedTemplate(t, template10(lock+","+nested(`"expressionEvaluationOptions":{"scope":"inner"},`), "")), entry)
+		if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) || !strings.Contains(err.Error(), "/resources/1/properties/parameters/q/value") {
+			t.Fatalf("want E0289 at the parameters, got %v", err)
+		}
+	})
+	t.Run("1.0 outer scans the template", func(t *testing.T) {
+		t.Parallel()
+		_, err := applyOmits(parsedTemplate(t, template10(lock+","+nested(""), "")), entry)
+		if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) || !strings.Contains(err.Error(), "/resources/1/properties/parameters/") && !strings.Contains(err.Error(), "/template/") {
+			t.Fatalf("got %v", err)
+		}
+	})
+	t.Run("2.0 skips the template", func(t *testing.T) {
+		t.Parallel()
+		body := `"d":{"type":"Microsoft.Resources/deployments","name":"d","properties":{"template":{"resources":[{"type":"x/y","name":"n","properties":{"p":"[reference('lock')]"}}]}}}`
+		if _, err := applyOmits(parsedTemplate(t, template20(lock20+","+body, "")), []rendercore.ResolvedOmit{omit(typeLock, "lock")}); err != nil {
+			t.Fatalf("nested template was scanned: %v", err)
+		}
+	})
 }

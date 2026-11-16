@@ -42,7 +42,8 @@ func (r removedResource) text() string {
 // reference, references, resourceInfo or a list function; without a language
 // version a dependsOn name, the name given to reference or a list function, and a
 // resourceId call whose type is the resource's type and whose last name is its
-// name. A string that is an expression the reader cannot parse, in a template an
+// name. A child written in slash form (a name of parent/child) is matched by its
+// full name only, never by the segments of a resourceId call. A string that is an expression the reader cannot parse, in a template an
 // entry matched, halts wrapping ErrPluginValueNotRepresentable rather than let a
 // reference through unproven; a template no entry matched is never read for
 // expressions. The template is changed only by the removal.
@@ -81,7 +82,8 @@ func leaveOut(subject string, template map[string]any, entries []rendercore.Reso
 	case []any:
 		kept := make([]any, 0, len(resources))
 		for i, body := range resources {
-			name, _ := body.(map[string]any)["name"].(string)
+			m, _ := body.(map[string]any)
+			name, _ := m["name"].(string)
 			r, matched := matchOmits(body, name, entries, counts)
 			if matched {
 				removed = append(removed, r...)
@@ -125,7 +127,8 @@ func refuseOmitScope(e rendercore.ResolvedOmit) error {
 // that names it, the resource as that entry removes it. A body that is not an
 // object, or has no type, matches nothing.
 func matchOmits(body any, name string, entries []rendercore.ResolvedOmit, counts []int) ([]removedResource, bool) {
-	typ, _ := body.(map[string]any)["type"].(string)
+	m, _ := body.(map[string]any)
+	typ, _ := m["type"].(string)
 	if typ == "" {
 		return nil, false
 	}
@@ -237,7 +240,7 @@ func (s *omitScan) checkCall(c armexpr.Call, path []string) error {
 			}
 		}
 	}
-	if s.v2 || !strings.EqualFold(c.Name, "resourceId") {
+	if s.v2 || !strings.EqualFold(c.Name, "resourceId") || len(c.Args) == 0 {
 		return nil
 	}
 	last, literal := c.Args[len(c.Args)-1].(armexpr.String)
