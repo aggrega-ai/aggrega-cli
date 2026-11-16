@@ -56,10 +56,11 @@
 // name spells rather than for any one character in it: a file name may not end
 // in a character it accepts anywhere else, and a handful of names made entirely
 // of accepted characters are reserved. Both are properties of the target, so
-// both are the caller's to state, as options to [NewEncoding]: [AdmitsLast]
-// narrows the alphabet for a segment's last character, and [Reserved] names the
-// segments the target refuses whole. Each is met by writing one more character as
-// an escape — the last one, or the first — so neither costs the encoding its
+// both are the caller's to state, as options to [NewEncoding]: [AdmitsFirst]
+// narrows the alphabet for a segment's first character, [AdmitsLast] narrows it
+// for the last, and [Reserved] names the segments the target refuses whole. Each
+// is met by writing one more character as an escape — the first one, the last
+// one, or the first one of a reserved segment — so none costs the encoding its
 // injectivity: an escape always reads back as the character it stands for,
 // whichever position it was written at.
 //
@@ -115,18 +116,33 @@ const hexDigits = "0123456789abcdef"
 // the only way to obtain a usable one, which is what keeps an unsound alphabet
 // from reaching [Encoding.Segment].
 type Encoding struct {
-	admits     func(rune) bool
-	admitsLast func(rune) bool
-	reserved   func(string) bool
-	opener     rune
-	separator  string
-	absent     string
+	admits      func(rune) bool
+	admitsFirst func(rune) bool
+	admitsLast  func(rune) bool
+	reserved    func(string) bool
+	opener      rune
+	separator   string
+	absent      string
 }
 
 // An Option states a property of the target an encoding writes for beyond the
 // characters it admits. Pass options to [NewEncoding]; an encoding built without
 // any writes exactly what one over the same alphabet and opener always has.
 type Option func(*Encoding)
+
+// AdmitsFirst narrows the admitted alphabet for the first character of a segment.
+// A character the alphabet admits and first does not is written as an escape
+// where it opens a segment, and carried as authored everywhere else; a character
+// the alphabet does not admit is escaped wherever it sits, whatever first reports.
+//
+// It is for a target that refuses a name opening with a character it accepts
+// anywhere else, such as a resource name that must open with a letter. The escape
+// opens with the encoding's opener, so the segment it writes opens with the opener
+// rather than with the character first refused. first has to be a pure function of
+// its argument.
+func AdmitsFirst(first func(rune) bool) Option {
+	return func(e *Encoding) { e.admitsFirst = first }
+}
 
 // AdmitsLast narrows the admitted alphabet for the last character of a segment.
 // A character the alphabet admits and last does not is written as an escape
@@ -290,9 +306,10 @@ func (e *Encoding) SegmentSeparator() string { return e.separator }
 //
 // Where the encoding was built with [AdmitsLast], a character ending the segment
 // is carried only where that alphabet admits it too; where it was built with
-// [Reserved], a segment the predicate holds for has its first character written
-// as an escape. Both leave the properties above intact, because an escape reads
-// back as the character it stands for wherever it was written.
+// [AdmitsFirst] or [Reserved], a segment whose first character the first-character
+// alphabet refuses, or a segment the predicate holds for, has its first character
+// written as an escape. Both leave the properties above intact, because an escape
+// reads back as the character it stands for wherever it was written.
 func (e *Encoding) Segment(s string) string {
 	if s == "" {
 		return e.absent
@@ -324,7 +341,7 @@ func (e *Encoding) Segment(s string) string {
 		i += size
 	}
 	encoded := b.String()
-	if firstAsAuthored && e.reserved != nil && e.reserved(encoded) {
+	if firstAsAuthored && e.escapesFirst(s, encoded) {
 		// The first character was carried as authored, so it occupies the same
 		// bytes at the front of the encoded segment as it does in the input.
 		r, size := utf8.DecodeRuneInString(s)
@@ -333,6 +350,20 @@ func (e *Encoding) Segment(s string) string {
 		encoded = escaped.String() + encoded[size:]
 	}
 	return encoded
+}
+
+// escapesFirst reports whether the first character of segment s, carried as
+// authored into encoded, is written as an escape instead. It is so where the
+// first-character alphabet refuses that character, or where the reserved-name
+// predicate holds for the encoded segment. Both reasons reach the one rewrite in
+// [Encoding.Segment], so a first character is escaped in exactly one way.
+func (e *Encoding) escapesFirst(s, encoded string) bool {
+	if e.admitsFirst != nil {
+		if r, _ := utf8.DecodeRuneInString(s); !e.admitsFirst(r) {
+			return true
+		}
+	}
+	return e.reserved != nil && e.reserved(encoded)
 }
 
 // ReadSegment returns the segment s is the encoding of, and whether s is exactly

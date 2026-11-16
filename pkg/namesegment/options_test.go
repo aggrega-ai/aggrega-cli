@@ -22,6 +22,28 @@ func lowercaseNameRune(r rune) bool {
 // notFullStop is the last-character alphabet the assertions narrow with.
 func notFullStop(r rune) bool { return r != '.' }
 
+// lowercaseOrDigitRune is the alphabet the first-character assertions are made
+// over: the lowercase ASCII letters and the digits, and nothing else. It does not
+// admit the underscore, so the underscore is the opener those assertions use.
+func lowercaseOrDigitRune(r rune) bool { return r >= 'a' && r <= 'z' || r >= '0' && r <= '9' }
+
+// notDigit is the first-character alphabet the assertions narrow with.
+func notDigit(r rune) bool { return r < '0' || r > '9' }
+
+// assertWithinAlphabet asserts every encoded segment carries only the opener and
+// characters the alphabet admits, which the shared property harness does not
+// check against an alphabet narrower than its own.
+func assertWithinAlphabet(t *testing.T, enc *namesegment.Encoding, opener rune, admits func(rune) bool, corpus []string) {
+	t.Helper()
+	for _, s := range corpus {
+		for _, r := range enc.Segment(s) {
+			if r != opener && !admits(r) {
+				t.Fatalf("segment %q encoded to %q, which carries %q outside the alphabet", s, enc.Segment(s), r)
+			}
+		}
+	}
+}
+
 // reservedForTest names the segments the reserved-name assertions refuse whole:
 // two all-letter names and one carrying a full stop, so the rewrite is asserted
 // on a segment the alphabet carries whole as well as on a short one.
@@ -116,18 +138,101 @@ func TestReservedEscapesTheFirstCharacterOfAReservedSegment(t *testing.T) {
 	}
 }
 
-// TestBothOptionsTogetherKeepTheEncodingSound asserts the two options compose: a
+// TestBothOptionsTogetherKeepTheEncodingSound asserts the options compose: a
 // segment that is reserved and ends in a full stop, and a single reserved
 // character, are both written so the predicate does not hold and nothing ends in
-// a full stop, and the properties hold over the corpus.
+// a full stop, and the properties hold over the corpus. The same holds with the
+// first-character option added, where a segment opening with a digit is also
+// written so it no longer opens with one.
 func TestBothOptionsTogetherKeepTheEncodingSound(t *testing.T) {
+	for _, enc := range []*namesegment.Encoding{
+		namesegment.NewEncoding('+', lowercaseNameRune,
+			namesegment.AdmitsLast(notFullStop), namesegment.Reserved(reservedForTest)),
+		namesegment.NewEncoding('+', lowercaseNameRune,
+			namesegment.AdmitsFirst(notDigit), namesegment.AdmitsLast(notFullStop),
+			namesegment.Reserved(reservedForTest)),
+	} {
+		assertEncodingProperties(t, enc, '+', optionCorpus())
+		for _, s := range optionCorpus() {
+			encoded := enc.Segment(s)
+			if reservedForTest(encoded) || strings.HasSuffix(encoded, ".") {
+				t.Errorf("segment %q encoded to %q, which the options should have kept it from", s, encoded)
+			}
+		}
+	}
 	enc := namesegment.NewEncoding('+', lowercaseNameRune,
-		namesegment.AdmitsLast(notFullStop), namesegment.Reserved(reservedForTest))
-	assertEncodingProperties(t, enc, '+', optionCorpus())
+		namesegment.AdmitsFirst(notDigit), namesegment.AdmitsLast(notFullStop),
+		namesegment.Reserved(reservedForTest))
 	for _, s := range optionCorpus() {
+		if encoded := enc.Segment(s); encoded != "" && !notDigit(rune(encoded[0])) {
+			t.Errorf("segment %q encoded to %q, which opens with a character the first option refuses", s, encoded)
+		}
+	}
+}
+
+// TestAdmitsFirstEscapesOnlyTheCharacterOpeningASegment asserts the first-character
+// alphabet narrows the first position and no other: a digit opening a segment is
+// escaped, the same digit inside one is carried as authored, the escape reads back
+// to the segment it came from, and the encoding stays injective, join-safe and
+// recoverable over the corpus.
+func TestAdmitsFirstEscapesOnlyTheCharacterOpeningASegment(t *testing.T) {
+	enc := namesegment.NewEncoding('_', lowercaseOrDigitRune, namesegment.AdmitsFirst(notDigit))
+	for _, tc := range []struct{ in, want string }{
+		{"1db", "_zx000031db"},
+		{"db1", "db1"},
+		{"1", "_zx000031"},
+		{"a1", "a1"},
+		{"11", "_zx0000311"},
+	} {
+		if got := enc.Segment(tc.in); got != tc.want {
+			t.Errorf("Segment(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+	if got, ok := enc.ReadSegment(enc.Segment("1db")); !ok || got != "1db" {
+		t.Errorf("ReadSegment(Segment(%q)) = (%q, %v), want (%q, true)", "1db", got, ok, "1db")
+	}
+	corpus := namesegmenttest.Corpus('_')
+	assertEncodingProperties(t, enc, '_', corpus)
+	assertWithinAlphabet(t, enc, '_', lowercaseOrDigitRune, corpus)
+	for _, s := range corpus {
+		if encoded := enc.Segment(s); encoded != "" && !notDigit(rune(encoded[0])) {
+			t.Errorf("segment %q encoded to %q, which opens with a digit", s, encoded)
+		}
+	}
+}
+
+// TestAdmitsFirstKeepsTheEncodingInjective asserts the segments that differ only
+// in where a digit or the opener sits encode distinctly, and that every name built
+// from them reads back to the segments it was built from.
+func TestAdmitsFirstKeepsTheEncodingInjective(t *testing.T) {
+	enc := namesegment.NewEncoding('_', lowercaseOrDigitRune, namesegment.AdmitsFirst(notDigit))
+	segments := []string{"1", "_1", "1_", "x1", "", "11"}
+	seen := make(map[string]string, len(segments))
+	for _, s := range segments {
 		encoded := enc.Segment(s)
-		if reservedForTest(encoded) || strings.HasSuffix(encoded, ".") {
-			t.Errorf("segment %q encoded to %q, which the options should have kept it from", s, encoded)
+		if prior, clash := seen[encoded]; clash {
+			t.Fatalf("segments %q and %q both encode to %q", prior, s, encoded)
+		}
+		seen[encoded] = s
+	}
+	corpus := namesegmenttest.Corpus('_')
+	present := make(map[string]bool, len(corpus))
+	for _, s := range corpus {
+		present[s] = true
+	}
+	for _, s := range segments {
+		if !present[s] {
+			present[s] = true
+			corpus = append(corpus, s)
+		}
+	}
+	assertEncodingProperties(t, enc, '_', corpus)
+	for _, a := range segments {
+		for _, b := range segments {
+			got := namesegmenttest.ReadName(t, '_', enc.Name(a, b))
+			if len(got) != 2 || got[0] != a || got[1] != b {
+				t.Fatalf("ReadName(Name(%q, %q)) = %q, want [%q %q]", a, b, got, a, b)
+			}
 		}
 	}
 }
