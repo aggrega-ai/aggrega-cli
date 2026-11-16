@@ -122,6 +122,11 @@ under its repository name, which is load-bearing:
   aggrega-abi/     # the shared wire vectors and the generated guest codecs
 ```
 
+Check out `aggrega-pdk` and `aggrega-abi` at the release tag of the version
+`go.mod` requires of their Go modules (`github.com/aggrega-ai/aggrega-pdk/go`
+and `github.com/aggrega-ai/aggrega-abi/go`), so the examples and vectors the
+tests read match the code this module builds against.
+
 A test that needs a sibling skips when it is absent, and its skip message names
 the repository and what the test reads from it. A sibling that is present but
 lacks what the test reads fails the test. Full coverage needs all four present.
