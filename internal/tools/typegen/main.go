@@ -3664,9 +3664,10 @@ func main() {
 }
 
 // checkOutputDir reports an error naming the missing directory when the
-// directory outPath is written into does not exist. A codec target outside this
-// module is written into the aggrega-abi repository, which has to be checked out
-// beside this one; the error says so rather than leaving a bare write failure.
+// directory outPath is written into does not exist, worded by where that
+// directory lies: inside this module (the module root holding go.mod, found
+// upward from the working directory), or outside it, where a codec target is
+// written into the aggrega-abi repository checked out beside this one.
 func checkOutputDir(outPath string) error {
 	dir := filepath.Dir(outPath)
 	info, err := os.Stat(dir)
@@ -3676,8 +3677,40 @@ func checkOutputDir(outPath string) error {
 	if err == nil {
 		err = fmt.Errorf("not a directory")
 	}
-	return fmt.Errorf("typegen: cannot write %s: its directory %s is not there (%v); a target in aggrega-abi is "+
-		"written into the aggrega-abi repository, so check out aggrega-abi beside this repository first", outPath, dir, err)
+	if insideModule(dir) {
+		return fmt.Errorf("cannot write %s: its directory %s is not there (%v); it lies inside this module, "+
+			"so create it or correct the path the generate directive names", outPath, dir, err)
+	}
+	return fmt.Errorf("cannot write %s: its directory %s is not there (%v); it lies outside this module, in the "+
+		"aggrega-abi repository the codec targets are written into, so check out aggrega-abi beside this "+
+		"repository first", outPath, dir, err)
+}
+
+// insideModule reports whether dir lies inside the module the working directory
+// belongs to: under the nearest directory upward from the working directory that
+// holds a go.mod. With no such directory nothing is inside a module.
+func insideModule(dir string) bool {
+	wd, err := os.Getwd()
+	if err != nil {
+		return false
+	}
+	root := wd
+	for {
+		if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			return false
+		}
+		root = parent
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(root, abs)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // generateFor dispatches an output basename to its emission path: a registered
