@@ -1,5 +1,7 @@
 # Aggrega
 
+[![Claude Code, connected to the Aggrega MCP server, takes one typed request to turn a LangGraph agent into an Aggrega workspace for Docker Compose and Kubernetes, then imports, validates and builds it with Aggrega's tools](docs/assets/aggrega-demo-ai.gif)](https://aggrega.ai/#demo)
+
 Aggrega is an open-source compiler for AI-era architecture. Describe the
 components of an application and how they connect; Aggrega turns them,
 deterministically, into the deployment files that run it.
