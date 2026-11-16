@@ -97,7 +97,7 @@ func bindParameters(n SourcedNode, template map[string]any) (map[string]any, err
 				where, quoted(unknown), declares(sortedKeys(declared))))
 	}
 
-	bound := map[string]any{}
+	bindings := map[string]any{}
 	var sensitiveLiterals, unbound []string
 	for _, name := range sortedKeys(declared) {
 		decl, _ := declared[name].(map[string]any)
@@ -115,7 +115,7 @@ func bindParameters(n SourcedNode, template map[string]any) (map[string]any, err
 		if literal && n.SensitiveValues {
 			sensitiveLiterals = append(sensitiveLiterals, name)
 		}
-		bound[name] = entry
+		bindings[name] = entry
 	}
 	if len(sensitiveLiterals) > 0 {
 		return nil, refuse(plugincondition.ErrPluginValueNotRepresentable,
@@ -127,21 +127,28 @@ func bindParameters(n SourcedNode, template map[string]any) (map[string]any, err
 			fmt.Sprintf("%s has no value mapped to %s, which declares no default and does not admit null; a nested deployment's parameters cannot be supplied when it runs, so map each one, writing %s to read a top-level parameter the Recipe's artifacts fragment declares",
 				where, parameterList(unbound), parameterReads(unbound)))
 	}
-	return bound, nil
+	return bindings, nil
 }
 
 // suppliedValues returns the values mapping as a tree of plain JSON values:
-// objects, lists, strings, booleans and numbers kept as written.
+// objects, lists, strings, booleans and numbers kept as written. A value that
+// cannot be written as JSON, such as a number that is not one, is refused naming
+// its key.
 func suppliedValues(n SourcedNode) (map[string]any, error) {
-	raw, err := json.Marshal(n.Values.TemplateAlphabeticalMapDeep())
-	if err != nil {
-		return nil, valueNotRepresentable(fmt.Sprintf("arm-provider: the values mapping of the template sourced for instance %q cannot be written as JSON: %v", n.Identity, err))
-	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	var out map[string]any
-	if err := dec.Decode(&out); err != nil {
-		return nil, valueNotRepresentable(fmt.Sprintf("arm-provider: the values mapping of the template sourced for instance %q cannot be read back as JSON: %v", n.Identity, err))
+	deep := n.Values.TemplateAlphabeticalMapDeep()
+	out := make(map[string]any, len(deep))
+	for _, key := range sortedKeys(deep) {
+		raw, err := json.Marshal(deep[key])
+		if err != nil {
+			return nil, valueNotRepresentable(fmt.Sprintf("arm-provider: the value mapped to %q in the values mapping of the template sourced for instance %q cannot be written as JSON; map a value JSON can hold", key, n.Identity))
+		}
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.UseNumber()
+		var v any
+		if err := dec.Decode(&v); err != nil {
+			return nil, valueNotRepresentable(fmt.Sprintf("arm-provider: the value mapped to %q in the values mapping of the template sourced for instance %q cannot be read back as JSON; map a value JSON can hold", key, n.Identity))
+		}
+		out[key] = v
 	}
 	return out, nil
 }
@@ -156,13 +163,16 @@ func bindOne(where, name string, decl, definitions map[string]any, value any) (e
 	typ, byRef := parameterType(decl, definitions)
 	secure := typ == typeSecureString || typ == typeSecureObject
 
+	if value == nil {
+		if decl[paramNullable] != true {
+			return nil, true, notRepresentable("is null, and the parameter does not declare nullable; map a value, or declare the parameter nullable")
+		}
+		return map[string]any{"value": nil}, true, nil
+	}
+	pointer := "/" + escapePointer(name) + "/value"
 	if text, ok := value.(string); ok && armexpr.IsExpression(text) {
-		if _, err := armexpr.Parse(text); err != nil {
-			reason, offset := err.Error(), 0
-			if se, ok := err.(*armexpr.SyntaxError); ok {
-				reason, offset = se.Reason, se.Offset
-			}
-			return nil, false, notRepresentable("is read by ARM as an expression but does not parse (offset %d: %s); correct the expression, or write [[ at its start to keep it literal text", offset, reason)
+		if err := checkStrings(text, pointer); err != nil {
+			return nil, false, withParameter(notRepresentable, err)
 		}
 		return map[string]any{"value": text}, false, nil
 	}
@@ -175,8 +185,8 @@ func bindOne(where, name string, decl, definitions map[string]any, value any) (e
 	if secure {
 		return nil, true, notRepresentable("is a literal for a %s parameter, which would write the secret into the template as text; map a Key Vault reference or an expression", typeName(decl, definitions))
 	}
-	if err := checkNestedExpressions(value, "", notRepresentable); err != nil {
-		return nil, true, err
+	if err := checkStrings(value, pointer); err != nil {
+		return nil, true, withParameter(notRepresentable, err)
 	}
 	if byRef || typ == "" {
 		return map[string]any{"value": value}, true, nil
@@ -284,12 +294,12 @@ func convertLiteral(typ string, v any) (any, bool) {
 	case typeInt:
 		switch x := v.(type) {
 		case json.Number:
-			if _, err := strconv.ParseInt(x.String(), 10, 64); err == nil {
-				return x, true
+			if i, err := strconv.ParseInt(x.String(), 10, 64); err == nil {
+				return json.Number(strconv.FormatInt(i, 10)), true
 			}
 		case string:
-			if _, err := strconv.ParseInt(x, 10, 64); err == nil {
-				return json.Number(x), true
+			if i, err := strconv.ParseInt(x, 10, 64); err == nil {
+				return json.Number(strconv.FormatInt(i, 10)), true
 			}
 		}
 	case typeBool:
@@ -382,38 +392,10 @@ func canonical(v any) string {
 	return string(b)
 }
 
-// checkNestedExpressions walks a literal's lists and objects in sorted key
-// order and refuses the first string inside one that ARM reads as an expression
-// and that does not parse. Every string of a bound value is ARM text at any
-// depth: an expression is kept as written and evaluated in the parent scope, a
-// string opening with a doubled bracket and plain text are kept as written.
-func checkNestedExpressions(v any, pointer string, notRepresentable func(string, ...any) error) error {
-	switch x := v.(type) {
-	case string:
-		if pointer == "" || !armexpr.IsExpression(x) {
-			return nil
-		}
-		if _, err := armexpr.Parse(x); err != nil {
-			reason, offset := err.Error(), 0
-			if se, ok := err.(*armexpr.SyntaxError); ok {
-				reason, offset = se.Reason, se.Offset
-			}
-			return notRepresentable("holds, at JSON pointer %s inside the value, text ARM reads as an expression that does not parse (offset %d: %s); correct the expression, or write [[ at its start to keep it literal text", pointer, offset, reason)
-		}
-	case []any:
-		for i, e := range x {
-			if err := checkNestedExpressions(e, fmt.Sprintf("%s/%d", pointer, i), notRepresentable); err != nil {
-				return err
-			}
-		}
-	case map[string]any:
-		for _, k := range sortedKeys(x) {
-			if err := checkNestedExpressions(x[k], pointer+"/"+escapePointer(k), notRepresentable); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+// withParameter restates a refusal the fragment reader raised for a string of a
+// bound value as a refusal naming the parameter, keeping its sentence.
+func withParameter(notRepresentable func(string, ...any) error, err error) error {
+	return notRepresentable("is refused: %s", strings.TrimPrefix(messageOf(err), "arm-provider: "))
 }
 
 // article returns a type name with the article a sentence needs.

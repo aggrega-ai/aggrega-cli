@@ -221,6 +221,8 @@ func RenderSourced(n SourcedNode) (fragment []byte, symbol string, omitted []int
 		"properties": properties,
 	}
 	if len(n.Provenance) > 0 {
+		// The wrapper is built here with no metadata of its own, so withProvenance
+		// has no non-object metadata to refuse and always reports true.
 		resource, _ = withProvenance(resource, n.Provenance)
 	}
 	fragment, err = encodeTemplate(map[string]any{sectionResources: map[string]any{symbol: resource}})
