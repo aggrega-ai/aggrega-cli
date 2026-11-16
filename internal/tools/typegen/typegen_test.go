@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	schemas "github.com/aggrega-ai/aggrega-schemas"
 )
 
@@ -64,6 +65,7 @@ func TestRegenClean_Enums(t *testing.T) {
 				t.Fatalf("no committed path registered for enum target %q", outFile)
 			}
 			path := filepath.Join(append(append([]string{}, dir...), outFile)...)
+			wasmtest.SkipWithoutSiblings(t, path)
 			want, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatalf("read committed %s: %v", path, err)
@@ -228,6 +230,7 @@ func TestRegenClean_Codec(t *testing.T) {
 				t.Fatalf("no committed path registered for codec target %q", outFile)
 			}
 			path := filepath.Join(append(append([]string{}, dir...), outFile)...)
+			wasmtest.SkipWithoutSiblings(t, path)
 			want, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatalf("read committed %s: %v", path, err)

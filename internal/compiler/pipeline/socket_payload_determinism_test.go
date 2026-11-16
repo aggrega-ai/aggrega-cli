@@ -16,16 +16,12 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 )
 
-// The documentation examples these proofs compile, and the standard-library
-// catalog the examples' own workspace configuration builds them against.
 const (
-	payloadExamplesDir = "../../../../aggrega-docs/language-reference/examples"
-	payloadHubCatalog  = "../../../../aggrega-hub/aggrega-catalog"
-
 	// payloadImportExport is a real Langflow export, the source an importer is
 	// handed beside the catalog projection.
 	payloadImportExport = "../importersocket/testdata/real-exports/langflow/Research Translation Loop.json"
@@ -131,7 +127,7 @@ func assembleBuildPayloads(t *testing.T, dir, release, manifest string) []encode
 		aggregatePath: aggregatePath,
 		releasePath:   filepath.Join(dir, release),
 		manifestPath:  filepath.Join(dir, manifest),
-		catalogPath:   payloadHubCatalog,
+		catalogPath:   payloadHubCatalog(t),
 	}, bytesOf(t, aggregatePath))
 	if len(out.Analysis.Errors) > 0 {
 		t.Fatalf("the example does not compile cleanly, so its payloads are not the ones a build hands a guest: %v", out.Analysis.Errors[0])
@@ -209,7 +205,7 @@ func TestSocketPayloadsAreByteIdenticalAcrossBuilds(t *testing.T) {
 	for _, ex := range payloadExamples {
 		t.Run(ex.name, func(t *testing.T) {
 			t.Parallel()
-			dir := filepath.Join(payloadExamplesDir, ex.name)
+			dir := filepath.Join(payloadExamplesDir(t), ex.name)
 			first := assembleBuildPayloads(t, dir, ex.release, ex.manifest)
 			for build := 2; build <= buildsPerExample; build++ {
 				again := assembleBuildPayloads(t, dir, ex.release, ex.manifest)
@@ -236,7 +232,7 @@ func TestImporterInputIsByteIdenticalAcrossCatalogLoads(t *testing.T) {
 	}
 	assemble := func() encodedPayload {
 		t.Helper()
-		cat, err := catalog.LoadAll("", payloadHubCatalog)
+		cat, err := catalog.LoadAll("", payloadHubCatalog(t))
 		if err != nil {
 			t.Fatalf("catalog load: %v", err)
 		}
@@ -253,4 +249,21 @@ func TestImporterInputIsByteIdenticalAcrossCatalogLoads(t *testing.T) {
 			t.Errorf("load %d: %s differs from the first load's: %s", load, again.name, describeDifference(first.bytes, again.bytes))
 		}
 	}
+}
+
+// payloadExamplesDir holds the documentation examples these proofs compile, in
+// the aggrega-docs repository checked out beside this one. It skips t, naming
+// the repository, when that checkout is absent.
+func payloadExamplesDir(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-docs", "language-reference", "examples")
+}
+
+// payloadHubCatalog is the standard-library catalog the examples' own workspace
+// configuration builds them against, in the aggrega-hub repository checked out
+// beside this one. It skips t, naming the repository, when that checkout is
+// absent.
+func payloadHubCatalog(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
 }

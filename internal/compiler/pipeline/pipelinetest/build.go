@@ -34,6 +34,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -87,6 +88,7 @@ type Input struct {
 // the key, the condition.
 func Build(t *testing.T, in Input) *pipeline.Result {
 	t.Helper()
+	skipWithoutSiblings(t, in)
 	result, err := compile(in)
 	if err != nil {
 		t.Fatalf("pipelinetest.Build: %s", cerrors.CauseChain(err))
@@ -103,6 +105,7 @@ func Build(t *testing.T, in Input) *pipeline.Result {
 // same error surfaces in the same place a real build would surface it.
 func BuildE(t *testing.T, in Input) (*pipeline.Result, error) {
 	t.Helper()
+	skipWithoutSiblings(t, in)
 	return compile(in)
 }
 
@@ -118,6 +121,7 @@ func BuildE(t *testing.T, in Input) (*pipeline.Result, error) {
 // cannot differ because the harness fed them different documents.
 func Tier4E(t *testing.T, in Input) (*pipeline.Tier4Result, error) {
 	t.Helper()
+	skipWithoutSiblings(t, in)
 	loaded, err := loadInputs(in)
 	if err != nil {
 		return nil, err
@@ -129,6 +133,14 @@ func Tier4E(t *testing.T, in Input) (*pipeline.Tier4Result, error) {
 		loaded.recipeLookup,
 		loaded.subAggregateLoader,
 	)
+}
+
+// skipWithoutSiblings skips t when the Release or a catalog path of in lies in a
+// repository checked out beside this one — the standard catalog or the worked
+// examples — that is not checked out, as [wasmtest.SkipWithoutSiblings] does.
+func skipWithoutSiblings(t *testing.T, in Input) {
+	t.Helper()
+	wasmtest.SkipWithoutSiblings(t, append([]string{in.ReleasePath}, in.CatalogPaths...)...)
 }
 
 // loadedWorkspace bundles what both entry points need from one workspace load.

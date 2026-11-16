@@ -11,35 +11,18 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
-// publisherScript is where the catalog publisher's script sits in the catalog's
-// repository, which this module's checkout keeps beside it.
-var publisherScript = filepath.Join("aggrega-hub", "scripts", "publish-catalog-snapshot.sh")
-
 // PublisherScript returns the path of the script the catalog's own publication
-// runs to build, push and sign the catalog snapshot, in the catalog's repository
-// checked out beside this module — found by walking up from the directory the test
-// runs in. Where no directory above holds it the test fails naming it: the case
-// exists to run that script, and a case that skipped it would certify nothing.
+// runs to build, push and sign the catalog snapshot, in the aggrega-hub
+// repository checked out beside this module. It skips the test, naming that
+// repository, when the checkout is absent; a checkout that lacks the script
+// fails the test where it runs it.
 func PublisherScript(t testing.TB) string {
 	t.Helper()
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("read the test's working directory: %v", err)
-	}
-	for {
-		candidate := filepath.Join(dir, publisherScript)
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatalf("no %s above the test's working directory: the catalog's repository is checked out beside "+
-				"this module, and this case runs its snapshot publisher", publisherScript)
-		}
-		dir = parent
-	}
+	return wasmtest.SiblingPath(t, "aggrega-hub", "scripts", "publish-catalog-snapshot.sh")
 }
 
 // PublisherMarker is the publish marker a repository PublisherRepository lays is

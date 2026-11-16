@@ -16,6 +16,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/plugins/parsercore"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
@@ -362,20 +363,21 @@ func TestTheInstallationsSecretsAreWrittenForTheTarget(t *testing.T) {
 }
 
 // hubDifyComposeRecipe is the hub's compose/dify, the Compose realization of
-// core/ai-agent/dify, in the aggrega-hub repository checked out beside this one,
-// relative to this package.
-var hubDifyComposeRecipe = filepath.Join("..", "..", "..", "..", "aggrega-hub", "aggrega-catalog", "recipe", "compose",
-	"dify", "1.0.0", "recipe.yaml")
+// core/ai-agent/dify, in the aggrega-hub repository checked out beside this one.
+// It skips t, naming the repository, when that checkout is absent.
+func hubDifyComposeRecipe(t testing.TB) string {
+	t.Helper()
+	return filepath.Join(hubCatalog(t), "recipe", "compose", "dify", "1.0.0", "recipe.yaml")
+}
 
 // TestTheSecretsVariablesAreTheCatalogs holds SecretKeyVariable and
 // OwnerPasswordVariable to the hub's compose/dify, whose text names the variable
 // reference an author writes for each of the two secrets, so the catalog
 // renaming one fails here rather than leaving drafts reading a variable no
-// catalog text names. Without the aggrega-hub checkout beside this repository it
-// fails rather than skipping.
+// catalog text names. Without the aggrega-hub checkout beside this repository it skips, naming it.
 func TestTheSecretsVariablesAreTheCatalogs(t *testing.T) {
 	t.Parallel()
-	body, err := os.ReadFile(hubDifyComposeRecipe)
+	body, err := os.ReadFile(hubDifyComposeRecipe(t))
 	if err != nil {
 		t.Fatalf("read the hub's compose/dify: %v", err)
 	}
@@ -387,8 +389,12 @@ func TestTheSecretsVariablesAreTheCatalogs(t *testing.T) {
 }
 
 // hubCatalog is the hub's catalog, in the aggrega-hub repository checked out
-// beside this one, relative to this package.
-var hubCatalog = filepath.Join("..", "..", "..", "..", "aggrega-hub", "aggrega-catalog")
+// beside this one. It skips t, naming the repository, when that checkout is
+// absent.
+func hubCatalog(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
+}
 
 // newestVersionDir returns the directory of the newest version of the entity
 // whose versions are the directories inside dir, each named major.minor.patch.
@@ -415,14 +421,13 @@ func newestVersionDir(t *testing.T, dir string) string {
 // component of the module whose Component, at its newest version, declares the
 // switch under its infra schema as a boolean defaulting to false, so a draft
 // sets it only where the catalog takes it, and a catalog renaming the switch or
-// the key fails here. Without the aggrega-hub checkout beside this repository it
-// fails rather than skipping.
+// the key fails here. Without the aggrega-hub checkout beside this repository it skips, naming it.
 //
 // 🔴 PLANTED DEFECT: add "console" to MarketplaceComponents: the case fails,
 // core/ai-agent/dify-web declaring no such switch.
 func TestTheMarketplaceSwitchIsTheCatalogs(t *testing.T) {
 	t.Parallel()
-	body, err := os.ReadFile(filepath.Join(newestVersionDir(t, filepath.Join(hubCatalog, "aggregate", "core", "dify")),
+	body, err := os.ReadFile(filepath.Join(newestVersionDir(t, filepath.Join(hubCatalog(t), "aggregate", "core", "dify")),
 		"aggregate.yaml"))
 	if err != nil {
 		t.Fatalf("read the hub's core/dify: %v", err)
@@ -463,7 +468,7 @@ type infraKey struct {
 // named typ declares, by key.
 func hubInfra(t *testing.T, typ string) map[string]infraKey {
 	t.Helper()
-	path := filepath.Join(newestVersionDir(t, filepath.Join(append([]string{hubCatalog, "component"},
+	path := filepath.Join(newestVersionDir(t, filepath.Join(append([]string{hubCatalog(t), "component"},
 		strings.Split(typ, "/")...)...)), "component.yaml")
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -485,8 +490,7 @@ func hubInfra(t *testing.T, typ string) map[string]infraKey {
 // TestTheConsoleAddressKeyIsTheCatalogs holds ConsoleAddressKey to the hub's
 // newest core/ai-agent/dify, the module's api the draft writes it on: a string
 // with no default, so a draft writing it sets what the catalog takes, and a
-// catalog renaming it fails here. Without the aggrega-hub checkout beside this
-// repository it fails rather than skipping.
+// catalog renaming it fails here. Without the aggrega-hub checkout beside this repository it skips, naming it.
 //
 // 🔴 PLANTED DEFECT: set ConsoleAddressKey to "console_web_url": the case
 // fails, no such key declared.
@@ -952,19 +956,20 @@ func TestAPassedDownDescriptionReadsBackThroughAYAMLReader(t *testing.T) {
 
 // hubDifyModule is the hub's core/dify, in the aggrega-hub repository checked out
 // beside this one, relative to this package.
-var hubDifyModule = filepath.Join("..", "..", "..", "..", "aggrega-hub", "aggrega-catalog", "aggregate", "core", "dify",
-	"1.0.0", "aggregate.yaml")
+func hubDifyModule(t testing.TB) string {
+	t.Helper()
+	return filepath.Join(hubCatalog(t), "aggregate", "core", "dify", "1.0.0", "aggregate.yaml")
+}
 
 // TestTheSecretKeyIsTheModulesOwnWithNoDefault holds SecretKeyParameter, the
 // parameter a draft passes down, to the hub's core/dify: the module declares it,
 // required and with no default, so a Release must fulfill what the draft passes
 // down, and the module renaming it or giving it a default fails here rather than
 // leaving drafts passing down a parameter the module does not read, or one it no
-// longer needs. Without the aggrega-hub checkout beside this repository it fails
-// rather than skipping. A failure names what the module declares, never a value.
+// longer needs. Without the aggrega-hub checkout beside this repository it skips, naming it. A failure names what the module declares, never a value.
 func TestTheSecretKeyIsTheModulesOwnWithNoDefault(t *testing.T) {
 	t.Parallel()
-	body, err := os.ReadFile(hubDifyModule)
+	body, err := os.ReadFile(hubDifyModule(t))
 	if err != nil {
 		t.Fatalf("read the hub's core/dify: %v", err)
 	}
@@ -1000,18 +1005,19 @@ func TestTheSecretKeyIsTheModulesOwnWithNoDefault(t *testing.T) {
 
 // hubDifyComponent is the hub's core/ai-agent/dify, in the aggrega-hub
 // repository checked out beside this one, relative to this package.
-var hubDifyComponent = filepath.Join("..", "..", "..", "..", "aggrega-hub", "aggrega-catalog", "component", "core",
-	"ai-agent", "dify", "1.0.0", "component.yaml")
+func hubDifyComponent(t testing.TB) string {
+	t.Helper()
+	return filepath.Join(hubCatalog(t), "component", "core", "ai-agent", "dify", "1.0.0", "component.yaml")
+}
 
 // TestTheEnginePinIsTheCatalogs holds EngineVersion, the engine the importer
 // compares a DSL's version against, to the default of infra.engine_version the
 // hub's core/ai-agent/dify declares, so the catalog moving its default fails here
 // rather than leaving the importer comparing against an engine no Release runs by
-// default. Without the aggrega-hub checkout beside this repository it fails
-// rather than skipping.
+// default. Without the aggrega-hub checkout beside this repository it skips, naming it.
 func TestTheEnginePinIsTheCatalogs(t *testing.T) {
 	t.Parallel()
-	body, err := os.ReadFile(hubDifyComponent)
+	body, err := os.ReadFile(hubDifyComponent(t))
 	if err != nil {
 		t.Fatalf("read the hub's core/ai-agent/dify: %v", err)
 	}

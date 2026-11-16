@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 )
 
@@ -28,8 +29,8 @@ import (
 // They need no OCI registry or other integration-only dependency, so they run
 // in the default suite rather than under -tags=integration.
 
-// siblingCatalogRootForExamples returns repo-root/aggrega-hub/aggrega-catalog
-// from cmd/aggrega, skipping when the sibling checkout is absent.
+// siblingCatalogRootForExamples returns the standard catalog, in the aggrega-hub
+// repository checked out beside this one, skipping when that checkout is absent.
 //
 // It also skips while the sibling catalog's Plugin entities still declare a
 // standalone plugin-artifact field: the entity schema now derives a plugin's
@@ -39,14 +40,7 @@ import (
 // automatically once that regeneration lands, so no re-coupling edit is needed.
 func siblingCatalogRootForExamples(t *testing.T) string {
 	t.Helper()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	dir := filepath.Clean(filepath.Join(wd, "..", "..", "..", "aggrega-hub", "aggrega-catalog"))
-	if _, err := os.Stat(dir); err != nil {
-		t.Skipf("sibling catalog not present at %s: %v", dir, err)
-	}
+	dir := wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
 	if hubPluginEntitiesCarryLegacyArtifactField(dir) {
 		t.Skipf("sibling catalog Plugin entities under %s still declare a standalone plugin-artifact field; skipping until the catalog is regenerated to the identity-derived shape", dir)
 	}
@@ -91,19 +85,12 @@ func hubPluginEntitiesCarryLegacyArtifactField(catalogRoot string) bool {
 	return false
 }
 
-// workedExampleDir returns the worked-example directory for name, skipping
-// when the sibling docs checkout is absent.
+// workedExampleDir returns the worked-example directory for name, in the
+// aggrega-docs repository checked out beside this one, skipping when that
+// checkout is absent.
 func workedExampleDir(t *testing.T, name string) string {
 	t.Helper()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	dir := filepath.Clean(filepath.Join(wd, "..", "..", "..", "aggrega-docs", "language-reference", "examples", name))
-	if _, err := os.Stat(dir); err != nil {
-		t.Skipf("example %q not present at %s: %v", name, dir, err)
-	}
-	return dir
+	return wasmtest.SiblingPath(t, "aggrega-docs", "language-reference", "examples", name)
 }
 
 // copyExampleInputs copies an example's committed inputs into dst, skipping the

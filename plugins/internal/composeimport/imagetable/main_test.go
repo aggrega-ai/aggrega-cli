@@ -11,17 +11,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/composeimport"
 )
 
-// hub is the aggrega-hub repository checked out beside this one, and hubRecipes
-// its Compose Recipes. The checks below read them, and without that checkout they
-// fail rather than skipping, so check out aggrega-hub beside this repository
-// first.
-var (
-	hub        = filepath.Join("..", "..", "..", "..", "..", "aggrega-hub")
-	hubRecipes = filepath.Join(hub, "aggrega-catalog", "recipe", "compose")
-)
+// hub is the aggrega-hub repository checked out beside this one. The checks
+// below read it, and skip, naming the repository, when that checkout is absent.
+func hub(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-hub")
+}
+
+// hubRecipes is the Compose Recipes of [hub].
+func hubRecipes(t testing.TB) string {
+	t.Helper()
+	return filepath.Join(hub(t), "aggrega-catalog", "recipe", "compose")
+}
 
 // committedTable is the generated table the importer embeds.
 const committedTable = "../imagetable_gen.go"
@@ -52,9 +57,9 @@ func renderOrFail(t *testing.T, rows []row, revision string) []byte {
 // the regeneration.
 func TestTheImageTableIsWhatTheHubsComposeRecipesName(t *testing.T) {
 	t.Parallel()
-	rows, _, err := generateFromHub(hub)
+	rows, _, err := generateFromHub(hub(t))
 	if err != nil {
-		t.Fatalf("generate the table from %s: %v", hub, err)
+		t.Fatalf("generate the table from %s: %v", hub(t), err)
 	}
 	want := renderOrFail(t, rows, composeimport.TableRevision)
 	got, err := os.ReadFile(committedTable)
@@ -173,7 +178,7 @@ func TestTheMainContainersImageIsReadLiterally(t *testing.T) {
 func TestTheTableMovesWithARecipesImage(t *testing.T) {
 	t.Parallel()
 	read := func(name string) string {
-		body, err := os.ReadFile(filepath.Join(hubRecipes, name, "1.0.0", "recipe.yaml"))
+		body, err := os.ReadFile(filepath.Join(hubRecipes(t), name, "1.0.0", "recipe.yaml"))
 		if err != nil {
 			t.Fatalf("read the hub's %s Recipe: %v", name, err)
 		}
@@ -213,7 +218,7 @@ func TestTheTableMovesWithARecipesImage(t *testing.T) {
 // beneath root, passing its content through edit.
 func copyHubFile(t *testing.T, root, rel string, edit func(string) string) {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(hub, filepath.FromSlash(rel)))
+	body, err := os.ReadFile(filepath.Join(hub(t), filepath.FromSlash(rel)))
 	if err != nil {
 		t.Fatalf("read the hub's %s: %v", rel, err)
 	}

@@ -68,7 +68,7 @@ func difyWorkspace(t *testing.T, settings map[string]any) *workspaceconfig.Resol
 	t.Helper()
 	rw, folder := catalogFolderImportWorkspaceAttaching(t, settings)
 	for _, rel := range difyHubEntities {
-		body, err := os.ReadFile(filepath.Join(platformHub, filepath.FromSlash(rel)))
+		body, err := os.ReadFile(filepath.Join(platformHub(t), filepath.FromSlash(rel)))
 		if err != nil {
 			t.Fatalf("read the hub's %s: %v", rel, err)
 		}
@@ -298,7 +298,7 @@ func assertNoneReachesTheRecord(t *testing.T, planted []string, source []byte, r
 // against: core/dify, its ten Components and the Helm Recipe of each, the schema
 // library, the referenced-secret Feature and its existing-Secret realization, and
 // the provider Plugin entities the compiler's flow-definition proofs build with.
-func difyBuildPaths() []string {
+func difyBuildPaths(t testing.TB) []string {
 	paths := []string{"../compiler/testdata/flow-definition-escape/catalog"}
 	for _, rel := range []string{
 		"aggregate/core/dify/1.0.0/aggregate.yaml",
@@ -306,11 +306,11 @@ func difyBuildPaths() []string {
 		"feature/core/referenced-secret/1.0.0/feature.yaml",
 		"feature-recipe/helm/k8s-existing-secret/1.0.0/recipe.yaml",
 	} {
-		paths = append(paths, platformHub+"/"+rel)
+		paths = append(paths, platformHub(t)+"/"+rel)
 	}
 	for _, c := range difyBuildComponents {
-		paths = append(paths, platformHub+"/component/"+c.component+"/1.0.0/component.yaml",
-			platformHub+"/recipe/helm/"+c.recipe+"/1.0.0/recipe.yaml")
+		paths = append(paths, platformHub(t)+"/component/"+c.component+"/1.0.0/component.yaml",
+			platformHub(t)+"/recipe/helm/"+c.recipe+"/1.0.0/recipe.yaml")
 	}
 	return paths
 }
@@ -429,7 +429,7 @@ func TestADifyDraftBuildsOnlyWithTheReleaseFulfillingItsSecretKey(t *testing.T) 
 			}
 			result, err := pipelinetest.BuildE(t, pipelinetest.Input{
 				ReleasePath:  writeDifyBuild(t, dir, tc.parameters),
-				CatalogPaths: difyBuildPaths(),
+				CatalogPaths: difyBuildPaths(t),
 			})
 			if tc.halts != nil {
 				if err == nil {

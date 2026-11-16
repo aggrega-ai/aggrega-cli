@@ -4,8 +4,8 @@
 // Per-Recipe integration tests for the in-repo mariadb Recipe set.
 //
 // These tests read catalog entities from the aggrega-hub repository checked out
-// beside this one (the paths leave this repository for aggrega-hub), so check
-// out aggrega-hub beside this repository first.
+// beside this one (the paths leave this repository for aggrega-hub), and skip,
+// naming it, without that checkout.
 
 package compiler_test
 
@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -90,11 +92,12 @@ func composeServiceKeyCount(t *testing.T, compose, service, key string) int {
 // triggering any of the seven Recipe load-time validation rules.
 func TestMariaDBRecipes_LoadCleanly(t *testing.T) {
 	t.Parallel()
+	hub := wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
 
 	for _, p := range []string{
-		"../../../aggrega-hub/aggrega-catalog/recipe/compose/mariadb/1.0.0/recipe.yaml",
-		"../../../aggrega-hub/aggrega-catalog/recipe/terraform/mariadb-rds/1.0.0/recipe.yaml",
-		"../../../aggrega-hub/aggrega-catalog/recipe/cloudformation/mariadb-rds/1.0.0/recipe.yaml",
+		filepath.Join(hub, "recipe/compose/mariadb/1.0.0/recipe.yaml"),
+		filepath.Join(hub, "recipe/terraform/mariadb-rds/1.0.0/recipe.yaml"),
+		filepath.Join(hub, "recipe/cloudformation/mariadb-rds/1.0.0/recipe.yaml"),
 	} {
 		if _, err := catalog.LoadAll("", p); err != nil {
 			t.Errorf("Recipe %q failed to load: %v", p, err)
@@ -116,11 +119,12 @@ func TestMariaDBRecipes_LoadCleanly(t *testing.T) {
 // proof matrix, not here.
 func TestMariaDBComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	t.Parallel()
+	hub := wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
 
 	cat, err := catalog.LoadAll("",
-		"../../../aggrega-hub/aggrega-catalog/component/core/datastore",
-		"../../../aggrega-hub/aggrega-catalog/recipe/compose/mariadb",
-		"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components/1.0.0/library.yaml",
+		filepath.Join(hub, "component/core/datastore"),
+		filepath.Join(hub, "recipe/compose/mariadb"),
+		filepath.Join(hub, "schemalibrary/base-components/1.0.0/library.yaml"),
 	)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)

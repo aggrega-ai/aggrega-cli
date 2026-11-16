@@ -26,6 +26,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer/wasmengine"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -38,18 +39,14 @@ import (
 // variable names while also declaring a third, ordinary variable. So one build
 // produces both a rendered key whose identity is recoverable from a declaration
 // and a rendered key whose identity is not, which is what makes presence and
-// absence observable in the same payload rather than in two runs.
-const (
-	multikeyExampleCatalog = "../../../../aggrega-docs/language-reference/examples/multikey-secret-synth/catalog"
-	multikeyHubCatalog     = "../../../../aggrega-hub/aggrega-catalog"
-
-	// The shared vector corpus is one tree read by the Go, Rust and TypeScript
-	// harnesses. The vector this test writes is a captured render payload rather
-	// than an authored fixture, which is what makes it evidence: it is the
-	// projection the host built for a real node of a real example.
-	sharedVectorDir  = "../../../../aggrega-abi/testdata"
-	sharedVectorName = "IRNodeProjectionSensitiveRenderedKeys"
-)
+// absence observable in the same payload rather than in two runs. Its catalog
+// is multikeyExampleCatalog, resolved against multikeyHubCatalog.
+//
+// The shared vector corpus is one tree read by the Go, Rust and TypeScript
+// harnesses. The vector this test writes is a captured render payload rather
+// than an authored fixture, which is what makes it evidence: it is the
+// projection the host built for a real node of a real example.
+const sharedVectorName = "IRNodeProjectionSensitiveRenderedKeys"
 
 // recordingSynthesizer wraps a real provider engine and records the two inputs
 // the host hands the workload dispatch, then delegates so the real guest renders
@@ -98,7 +95,7 @@ func (r *recordingSynthesizer) SynthesizeWorkload(
 func multikeyRenderInputs(t *testing.T, mutateComponent func(*types.Component)) (renderer.RendererInput, renderer.RecipeLookup) {
 	t.Helper()
 
-	cat, err := catalog.LoadAll("", multikeyHubCatalog, multikeyExampleCatalog)
+	cat, err := catalog.LoadAll("", multikeyHubCatalog(t), multikeyExampleCatalog(t))
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
@@ -370,7 +367,7 @@ func TestSensitiveRenderedKeys_SharedWireVector(t *testing.T) {
 		t.Fatalf("the marking did not survive re-encoding through the shared codec:\n%s", got)
 	}
 
-	path := filepath.Join(sharedVectorDir, sharedVectorName+".golden.json")
+	path := filepath.Join(sharedVectorDir(t), sharedVectorName+".golden.json")
 	if os.Getenv("AGGREGA_UPDATE_GOLDEN") == "1" {
 		if err := os.WriteFile(path, encoded, 0o644); err != nil {
 			t.Fatalf("write %s: %v", path, err)
@@ -384,4 +381,28 @@ func TestSensitiveRenderedKeys_SharedWireVector(t *testing.T) {
 	if string(want) != got {
 		t.Errorf("the captured projection is not byte-identical to the committed vector\n golden: %s\n    got: %s", want, got)
 	}
+}
+
+// multikeyExampleCatalog is the multi-key credential synthesis example's
+// catalog, in the aggrega-docs repository checked out beside this one. It skips
+// t, naming the repository, when that checkout is absent.
+func multikeyExampleCatalog(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-docs", "language-reference", "examples", "multikey-secret-synth", "catalog")
+}
+
+// multikeyHubCatalog is the standard catalog, in the aggrega-hub repository
+// checked out beside this one. It skips t, naming the repository, when that
+// checkout is absent.
+func multikeyHubCatalog(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
+}
+
+// sharedVectorDir is the shared vector corpus, in the aggrega-abi repository
+// checked out beside this one. It skips t, naming the repository, when that
+// checkout is absent.
+func sharedVectorDir(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-abi", "testdata")
 }

@@ -537,7 +537,7 @@ func TestALangGraphConfigurationTheParserRefusesHaltsTheImport(t *testing.T) {
 // secret Features a connection's credential is attached as with their
 // realizations, the provider Plugin entities, and local, a directory the case
 // lays nothing in.
-func langgraphBuildPaths(local string) []string {
+func langgraphBuildPaths(t testing.TB, local string) []string {
 	paths := []string{"../compiler/testdata/flow-definition-escape/catalog", local}
 	for _, rel := range []string{
 		"component/core/ai-agent/langgraph/1.0.0/component.yaml",
@@ -561,7 +561,7 @@ func langgraphBuildPaths(local string) []string {
 		"feature-recipe/helm/k8s-existing-secret/1.0.0/recipe.yaml",
 		"feature-recipe/compose/dotenv-secret/1.0.0/recipe.yaml",
 	} {
-		paths = append(paths, platformHub+"/"+rel)
+		paths = append(paths, platformHub(t)+"/"+rel)
 	}
 	return paths
 }
@@ -732,7 +732,7 @@ func TestEachLangGraphDraftBuildsReachingTheDatastoreItsCheckpointerNames(t *tes
 				result := pipelinetest.Build(t, pipelinetest.Input{
 					ReleasePath: writeGraphRelease(t, dir, target, graphs, a.datastore, a.component, a.backing,
 						a.backingComponent),
-					CatalogPaths: langgraphBuildPaths(local),
+					CatalogPaths: langgraphBuildPaths(t, local),
 				})
 				for _, g := range graphs {
 					rendered := helmVariableNames

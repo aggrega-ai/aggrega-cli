@@ -27,6 +27,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/lintops"
 	"github.com/aggrega-ai/aggrega-cli/internal/verdicttest"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginstrust"
@@ -38,11 +39,7 @@ import (
 // matrix over a real pull's record, for the two surfaces that load a verdict plugin
 // outside a build.
 func TestIntegration_LintAndValidateHoldAVerdictPluginToItsRecordedSignature(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	policyGuest := filepath.Join(wd, "..", "..", "internal", "wasm", "testdata", "policy-allow-go.wasm")
+	policyGuest := wasmtest.EnsureFixtureBuilt(t, "policy-allow-go.wasm")
 	linterGuest := buildVersionedLinterWasm(t, "1.0.0")
 
 	privPEM, pubPEM, err := signing.GenerateKeyedPEM()

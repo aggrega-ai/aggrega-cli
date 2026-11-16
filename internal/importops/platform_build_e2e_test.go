@@ -19,9 +19,7 @@ package importops
 // proofs build with, whose guests resolve from the binary's embedded set.
 //
 // These tests read catalog entities from the aggrega-hub repository checked out
-// beside this one (the paths leave this repository for aggrega-hub). Without that
-// checkout they fail with a catalog-load error rather than skipping, so check out
-// aggrega-hub beside this repository first.
+// beside this one (the paths leave this repository for aggrega-hub). Without that checkout they skip, naming it.
 //
 // The Langflow draft built as drafted is Langflow 1.6.0's Basic Prompting, a
 // committed real export whose Language Model node selects a model. The other flows
@@ -49,12 +47,16 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // platformHub is the catalog of the aggrega-hub repository checked out beside
-// this one.
-const platformHub = "../../../aggrega-hub/aggrega-catalog"
+// this one. It skips t, naming the repository, when that checkout is absent.
+func platformHub(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
+}
 
 // platformImportEntities are the hub's entities the import's catalog view
 // holds, by their path beneath platformHub: the two flow platforms, the model and
@@ -76,7 +78,7 @@ var platformImportEntities = []string{
 // compose Recipe of each, the bundles the platforms' Recipes import to seed a
 // flow, the schema library, the two secret Features and their realizations, and
 // the provider Plugin entities.
-func platformBuildPaths() []string {
+func platformBuildPaths(t testing.TB) []string {
 	paths := []string{"../compiler/testdata/flow-definition-escape/catalog"}
 	for _, rel := range []string{
 		"component/core/ai-agent/langflow/1.0.0/component.yaml",
@@ -99,7 +101,7 @@ func platformBuildPaths() []string {
 		"feature-recipe/helm/k8s-existing-secret/1.0.0/recipe.yaml",
 		"feature-recipe/compose/dotenv-secret/1.0.0/recipe.yaml",
 	} {
-		paths = append(paths, platformHub+"/"+rel)
+		paths = append(paths, platformHub(t)+"/"+rel)
 	}
 	return paths
 }
@@ -119,7 +121,7 @@ func hubPlatformWorkspace(t *testing.T, settings map[string]any) *workspaceconfi
 func layHubEntities(t *testing.T, dir string, rels []string) {
 	t.Helper()
 	for _, rel := range rels {
-		body, err := os.ReadFile(filepath.Join(platformHub, filepath.FromSlash(rel)))
+		body, err := os.ReadFile(filepath.Join(platformHub(t), filepath.FromSlash(rel)))
 		if err != nil {
 			t.Fatalf("read the hub's %s: %v", rel, err)
 		}
@@ -479,7 +481,7 @@ func buildDraftOn(t *testing.T, dir string, r platformRelease) map[string][]byte
 	}
 	result := pipelinetest.Build(t, pipelinetest.Input{
 		ReleasePath:  writePlatformRelease(t, dir, r),
-		CatalogPaths: platformBuildPaths(),
+		CatalogPaths: platformBuildPaths(t),
 	})
 	return result.Artifacts
 }

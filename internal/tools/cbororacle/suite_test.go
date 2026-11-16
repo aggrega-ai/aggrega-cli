@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // The shared vector suite lives beside the codec in the aggrega-abi module, one
@@ -25,8 +26,8 @@ import (
 // harnesses assert their own encoders match the same hex, so a three-way hex
 // match is a cross-language byte-identity proof anchored on the fxamacker oracle.
 //
-// Regenerate the hex goldens with AGGREGA_UPDATE_GOLDEN=1.
-const testdataDir = "../../../../aggrega-abi/testdata"
+// Regenerate the hex goldens with AGGREGA_UPDATE_GOLDEN=1. The suite is read
+// from testdataDir.
 
 // cborRT is the generated per-type CBOR codec surface over a value type T.
 type cborRT[T any] interface {
@@ -40,7 +41,7 @@ type cborRT[T any] interface {
 // committed hex, and asserts a decode round-trip is byte-stable.
 func runVec[T any, PT cborRT[T]](t *testing.T, file string, skipRef bool) {
 	t.Helper()
-	jsonBytes, err := os.ReadFile(filepath.Join(testdataDir, file+".golden.json"))
+	jsonBytes, err := os.ReadFile(filepath.Join(testdataDir(t), file+".golden.json"))
 	if err != nil {
 		t.Fatalf("read %s.golden.json: %v", file, err)
 	}
@@ -150,9 +151,9 @@ func assertCorpusFullyRegistered(t *testing.T) {
 	t.Helper()
 
 	const ext = ".cbor.hex"
-	entries, err := os.ReadDir(testdataDir)
+	entries, err := os.ReadDir(testdataDir(t))
 	if err != nil {
-		t.Fatalf("read the vector directory %s: %v", testdataDir, err)
+		t.Fatalf("read the vector directory %s: %v", testdataDir(t), err)
 	}
 	onDisk := 0
 	var unregistered []string
@@ -167,7 +168,7 @@ func assertCorpusFullyRegistered(t *testing.T) {
 	}
 	if onDisk == 0 {
 		t.Fatalf("found no %s vectors under %s, so this check certifies nothing: an empty "+
-			"discovery is a broken instrument, not a covered corpus", ext, testdataDir)
+			"discovery is a broken instrument, not a covered corpus", ext, testdataDir(t))
 	}
 	if len(unregistered) > 0 {
 		t.Errorf("%d of %d vectors in the shared suite are registered by no assertion here: %s.\n"+
@@ -182,7 +183,7 @@ func assertCorpusFullyRegistered(t *testing.T) {
 // asserts the committed hex matches.
 func checkOrUpdateHex(t *testing.T, file string, cborBytes []byte) {
 	t.Helper()
-	p := filepath.Join(testdataDir, file+".cbor.hex")
+	p := filepath.Join(testdataDir(t), file+".cbor.hex")
 	got := hex.EncodeToString(cborBytes)
 	if os.Getenv("AGGREGA_UPDATE_GOLDEN") == "1" {
 		if err := os.WriteFile(p, []byte(got+"\n"), 0o644); err != nil {
@@ -500,7 +501,7 @@ var floatBitsTable = []struct {
 // same f64 from the bits and assert their encoders reproduce the same hex, so the
 // non-JSON-representable float cases (NaN, ±Inf, −0.0) are proven cross-language.
 func TestSuite_FloatVectors(t *testing.T) {
-	p := filepath.Join(testdataDir, "float_vectors.json")
+	p := filepath.Join(testdataDir(t), "float_vectors.json")
 	if os.Getenv("AGGREGA_UPDATE_GOLDEN") == "1" {
 		var vecs []floatVector
 		for _, e := range floatBitsTable {
@@ -580,4 +581,12 @@ func be64(b []byte) uint64 {
 		v = v<<8 | uint64(x)
 	}
 	return v
+}
+
+// testdataDir is the shared vector suite, in the aggrega-abi repository checked
+// out beside this one. It skips t, naming the repository, when that checkout is
+// absent.
+func testdataDir(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-abi", "testdata")
 }

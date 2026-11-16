@@ -13,6 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/docsplice"
 	"github.com/aggrega-ai/aggrega-cli/internal/haltref"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -29,8 +30,6 @@ import (
 // attempted and measured: it flagged 17 of 45 entries, including entries whose
 // producer was verified against the running binary, so its precision is unusable
 // and it is deliberately not shipped. Reviewer judgement covers the residue.
-
-const publishedErrorPagesDir = "../../../aggrega-docs/language-reference/errors"
 
 // screamingPrefix matches a leading-capitals token used as a message prefix,
 // which is how both the category tags and the phantom class the gate exists for
@@ -192,23 +191,23 @@ func moduleRootForParity(t *testing.T) string {
 
 func publishedErrorPages(t *testing.T) map[string]string {
 	t.Helper()
-	entries, err := os.ReadDir(publishedErrorPagesDir)
+	entries, err := os.ReadDir(publishedErrorPagesDir(t))
 	if err != nil {
-		t.Skipf("published error pages not present at %s (standalone checkout): %v", publishedErrorPagesDir, err)
+		t.Fatalf("read the published error pages at %s: %v", publishedErrorPagesDir(t), err)
 	}
 	out := map[string]string{}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 			continue
 		}
-		data, rerr := os.ReadFile(filepath.Join(publishedErrorPagesDir, e.Name()))
+		data, rerr := os.ReadFile(filepath.Join(publishedErrorPagesDir(t), e.Name()))
 		if rerr != nil {
 			t.Fatalf("read %s: %v", e.Name(), rerr)
 		}
 		out[e.Name()] = string(data)
 	}
 	if len(out) == 0 {
-		t.Fatalf("no published error pages found under %s", publishedErrorPagesDir)
+		t.Fatalf("no published error pages found under %s", publishedErrorPagesDir(t))
 	}
 	return out
 }
@@ -460,4 +459,12 @@ func TestPublishedErrorPages_EveryNamedSentinelIsDeclared(t *testing.T) {
 	if seen == 0 {
 		t.Fatal("no named sentinel examined; the extraction is broken, not the pages")
 	}
+}
+
+// publishedErrorPagesDir is the published error reference, in the aggrega-docs
+// repository checked out beside this one. It skips t, naming the repository,
+// when that checkout is absent.
+func publishedErrorPagesDir(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-docs", "language-reference", "errors")
 }

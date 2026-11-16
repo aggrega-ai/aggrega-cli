@@ -63,7 +63,7 @@ func n8nWorkspace(t *testing.T, settings map[string]any) *workspaceconfig.Resolv
 	t.Helper()
 	rw, folder := catalogFolderImportWorkspaceAttaching(t, settings)
 	for _, rel := range n8nImportEntities {
-		body, err := os.ReadFile(filepath.Join(platformHub, filepath.FromSlash(rel)))
+		body, err := os.ReadFile(filepath.Join(platformHub(t), filepath.FromSlash(rel)))
 		if err != nil {
 			t.Fatalf("read the hub's %s: %v", rel, err)
 		}
@@ -350,7 +350,7 @@ func TestTwoImportsOfAnN8nWorkflowAreByteIdentical(t *testing.T) {
 // the provider Plugin entities, the platform and its parts' Components, the
 // Kubernetes and compose Recipe of each, the schema library, and the two secret
 // Features and their realizations.
-func n8nBuildPaths() []string {
+func n8nBuildPaths(t testing.TB) []string {
 	paths := []string{"../compiler/testdata/flow-definition-escape/catalog"}
 	for _, rel := range []string{
 		"component/core/ai-agent/n8n/1.0.0/component.yaml",
@@ -371,7 +371,7 @@ func n8nBuildPaths() []string {
 		"feature-recipe/helm/k8s-existing-secret/1.0.0/recipe.yaml",
 		"feature-recipe/compose/dotenv-secret/1.0.0/recipe.yaml",
 	} {
-		paths = append(paths, platformHub+"/"+rel)
+		paths = append(paths, platformHub(t)+"/"+rel)
 	}
 	return paths
 }
@@ -470,7 +470,7 @@ func TestAnN8nDraftBuildsAndSeedsTheWorkflowAsExported(t *testing.T) {
 			}
 			result := pipelinetest.Build(t, pipelinetest.Input{
 				ReleasePath:  writeN8nRelease(t, dir, target),
-				CatalogPaths: n8nBuildPaths(),
+				CatalogPaths: n8nBuildPaths(t),
 			})
 			seeded := n8nSeededWorkflow(t, result.Artifacts, target)
 			if want := asSeeded(agentWorkflowAsCarried(t)); seeded != want {

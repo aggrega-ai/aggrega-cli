@@ -21,8 +21,7 @@ package importops
 //     drafted exactly as with no setting at all.
 //
 // These tests read catalog entities from the aggrega-hub repository checked out
-// beside this one. Without that checkout they fail with a catalog-load error
-// rather than skipping.
+// beside this one. Without that checkout they skip, naming it.
 
 import (
 	"encoding/json"
@@ -52,10 +51,10 @@ func egressAttachSettings(settings map[string]any) map[string]any {
 // egressBuildPaths are the catalog paths a drafted platform carrying the
 // attachment is built against: paths, the Feature and its Kubernetes
 // realization.
-func egressBuildPaths(paths []string) []string {
+func egressBuildPaths(t testing.TB, paths []string) []string {
 	return append(append([]string{}, paths...),
-		platformHub+"/feature/core/egress-allowlist/1.0.0/feature.yaml",
-		platformHub+"/feature-recipe/helm/egress-allowlist/1.0.0/recipe.yaml")
+		platformHub(t)+"/feature/core/egress-allowlist/1.0.0/feature.yaml",
+		platformHub(t)+"/feature-recipe/helm/egress-allowlist/1.0.0/recipe.yaml")
 }
 
 // egressNamespace is the namespace the Releases below give the boundary holding
@@ -386,7 +385,7 @@ func TestADraftAttachingTheOutboundOnlyFeatureBuildsOnHelmOnceTheReleaseSetsIt(t
 			release := withEgress(t, dir, writePlatformRelease(t, dir, platformRelease{platform: "langflow", target: "helm",
 				parts: []string{part}, model: part}), "langflow", tc.release)
 			result, err := pipelinetest.BuildE(t, pipelinetest.Input{ReleasePath: release,
-				CatalogPaths: egressBuildPaths(platformBuildPaths())})
+				CatalogPaths: egressBuildPaths(t, platformBuildPaths(t))})
 			if tc.halts != "" {
 				if err == nil {
 					t.Fatalf("the build succeeded; want it halted naming %q", tc.halts)
@@ -437,7 +436,7 @@ func TestTheOutboundOnlyPolicyAdmitsExactlyTheDraftedConnectionsTargets(t *testi
 	release := withEgress(t, dir, writeN8nRelease(t, dir, "helm"), "n8n",
 		egressRelease{affirm: true, namespace: true, ranges: ranges})
 	result := pipelinetest.Build(t, pipelinetest.Input{ReleasePath: release,
-		CatalogPaths: egressBuildPaths(n8nBuildPaths())})
+		CatalogPaths: egressBuildPaths(t, n8nBuildPaths(t))})
 
 	got := admittedBy(t, renderedPolicy(t, result.Artifacts, "n8n"))
 	if !got.dns || !slices.Equal(got.ranges, []string{"198.51.100.7/32", egressModelRange}) {

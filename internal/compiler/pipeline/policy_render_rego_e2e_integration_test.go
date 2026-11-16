@@ -32,12 +32,6 @@ import (
 // approved-registry prefix rejects the render, while a policy requiring only
 // that a service declares an image accepts it.
 const (
-	// catalogOnlyDir is the standard-library compose example; hubCatalogPath is
-	// the standard-library catalog it resolves against, exactly as the example's
-	// documented build command (`aggrega build --catalog <hub>`) loads it.
-	catalogOnlyDir = "../../../../aggrega-docs/language-reference/examples/catalog-only"
-	hubCatalogPath = "../../../../aggrega-hub/aggrega-catalog"
-
 	// regorusRenderRegistryPolicy denies any Compose service whose image lacks a
 	// registry prefix (a '/'). Both rendered services carry bare images, so this
 	// fires over the real compose render and halts the build.
@@ -107,20 +101,20 @@ deny contains msg if {
 // example keeps exercising the real standard-library entities it names.
 func loadComposeExampleForSockets(t *testing.T) (pipeline.Inputs, resolver.CatalogLookup, renderer.RecipeLookup, topology.SubAggregateLoader) {
 	t.Helper()
-	rel, err := resolver.LoadRelease(filepath.Join(catalogOnlyDir, "release.yaml"))
+	rel, err := resolver.LoadRelease(filepath.Join(catalogOnlyDir(t), "release.yaml"))
 	if err != nil {
 		t.Fatalf("load release: %v", err)
 	}
-	manifest, err := resolver.LoadManifest(filepath.Join(catalogOnlyDir, "manifest.yaml"))
+	manifest, err := resolver.LoadManifest(filepath.Join(catalogOnlyDir(t), "manifest.yaml"))
 	if err != nil {
 		t.Fatalf("load manifest: %v", err)
 	}
-	aggPath := filepath.Join(catalogOnlyDir, "aggregate.yaml")
+	aggPath := filepath.Join(catalogOnlyDir(t), "aggregate.yaml")
 	aggBytes, err := os.ReadFile(aggPath)
 	if err != nil {
 		t.Fatalf("read aggregate: %v", err)
 	}
-	cat, err := catalog.LoadAll("", hubCatalogPath)
+	cat, err := catalog.LoadAll("", hubCatalogPath(t))
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)
 	}
@@ -256,4 +250,21 @@ func artifactPaths(files map[string][]byte) []string {
 		paths = append(paths, p)
 	}
 	return paths
+}
+
+// catalogOnlyDir is the standard-library compose example, in the aggrega-docs
+// repository checked out beside this one. It skips t, naming the repository,
+// when that checkout is absent.
+func catalogOnlyDir(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-docs", "language-reference", "examples", "catalog-only")
+}
+
+// hubCatalogPath is the standard-library catalog the compose example resolves
+// against, exactly as the example's documented build command (`aggrega build
+// --catalog <hub>`) loads it, in the aggrega-hub repository checked out beside
+// this one. It skips t, naming the repository, when that checkout is absent.
+func hubCatalogPath(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
 }

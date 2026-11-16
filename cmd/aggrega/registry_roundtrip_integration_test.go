@@ -94,28 +94,20 @@ func offlineReferenceCompose(t *testing.T, std, exampleDir string) string {
 // hardcodes a divergent literal.
 const pipelineStepPluginType = "pipeline-step"
 
+// standardCatalogDir is the standard catalog, in the aggrega-hub repository
+// checked out beside this one. It skips t, naming the repository, when that
+// checkout is absent.
 func standardCatalogDir(t *testing.T) string {
 	t.Helper()
-	// repo-root/aggrega-hub/aggrega-catalog, from cmd/aggrega.
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	dir := filepath.Clean(filepath.Join(wd, "..", "..", "..", "aggrega-hub", "aggrega-catalog"))
-	if _, err := os.Stat(dir); err != nil {
-		t.Skipf("standard catalog not present at %s: %v", dir, err)
-	}
-	return dir
+	return wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
 }
 
+// catalogOnlyExampleDir is the catalog-only example, in the aggrega-docs
+// repository checked out beside this one. It skips t, naming the repository,
+// when that checkout is absent.
 func catalogOnlyExampleDir(t *testing.T) string {
 	t.Helper()
-	wd, _ := os.Getwd()
-	dir := filepath.Clean(filepath.Join(wd, "..", "..", "..", "aggrega-docs", "language-reference", "examples", "catalog-only"))
-	if _, err := os.Stat(dir); err != nil {
-		t.Skipf("catalog-only example not present at %s: %v", dir, err)
-	}
-	return dir
+	return wasmtest.SiblingPath(t, "aggrega-docs", "language-reference", "examples", "catalog-only")
 }
 
 // startRegistry stands up an in-process real OCI registry and returns its
@@ -1492,17 +1484,13 @@ func TestIntegration_RegistryAuthRefuse(t *testing.T) {
 	}
 }
 
-// localExamplesRoot returns repo-root/aggrega-docs/language-reference/examples
-// from cmd/aggrega, skipping when the sibling repo is absent (same
-// sibling-checkout discipline as standardCatalogDir). Computed from the supplied
-// working directory so callers can resolve it before chdir-ing into a workspace.
-func localExamplesRoot(t *testing.T, wd string) string {
+// localExamplesRoot is the documentation's example set, in the aggrega-docs
+// repository checked out beside this one, skipping t, naming the repository,
+// when that checkout is absent. It reads the working directory, so a caller
+// resolves it before changing directory into a workspace.
+func localExamplesRoot(t *testing.T) string {
 	t.Helper()
-	dir := filepath.Clean(filepath.Join(wd, "..", "..", "..", "aggrega-docs", "language-reference", "examples"))
-	if _, err := os.Stat(dir); err != nil {
-		t.Skipf("example set not present at %s: %v", dir, err)
-	}
-	return dir
+	return wasmtest.SiblingPath(t, "aggrega-docs", "language-reference", "examples")
 }
 
 // canonicalPins loads a written lockfile and returns its pins as canonical YAML
@@ -1552,7 +1540,7 @@ func TestIntegration_LocalPathPinInvariance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
 	}
-	examplesRoot := localExamplesRoot(t, wd)
+	examplesRoot := localExamplesRoot(t)
 	std := standardCatalogDir(t)
 	goldenBase := filepath.Join(wd, "testdata", "local_pin_invariance")
 

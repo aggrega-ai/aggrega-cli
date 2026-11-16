@@ -24,14 +24,19 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // importExamplesDir holds the documentation's import examples, each a directory
 // import-<format> whose source/ directory is what its walkthrough imports. The
 // path leaves this repository for the aggrega-docs repository checked out beside
-// it, as platformHub leaves it for aggrega-hub.
-const importExamplesDir = "../../../aggrega-docs/language-reference/examples"
+// it, as platformHub leaves it for aggrega-hub, and skips t, naming the
+// repository, when that checkout is absent.
+func importExamplesDir(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-docs", "language-reference", "examples")
+}
 
 // providerPlugins are the provider Plugin entities the build proofs of this
 // package build with, whose guests resolve from the binary's embedded set.
@@ -45,7 +50,7 @@ const providerPlugins = "../compiler/testdata/flow-definition-escape/catalog"
 // importer or provider of the same format.
 func hubCatalogKinds(t *testing.T) []string {
 	t.Helper()
-	entries, err := os.ReadDir(platformHub)
+	entries, err := os.ReadDir(platformHub(t))
 	if err != nil {
 		t.Fatalf("read the hub's catalog: %v", err)
 	}
@@ -71,7 +76,7 @@ func wholeHubWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
 	rw, folder := catalogFolderImportWorkspaceAttaching(t, nil)
 	for _, kind := range hubCatalogKinds(t) {
-		if err := os.CopyFS(filepath.Join(folder.Dir, kind), os.DirFS(filepath.Join(platformHub, kind))); err != nil {
+		if err := os.CopyFS(filepath.Join(folder.Dir, kind), os.DirFS(filepath.Join(platformHub(t), kind))); err != nil {
 			t.Fatalf("copy the hub's %s entities into the catalog folder: %v", kind, err)
 		}
 	}
@@ -94,7 +99,7 @@ func wholeHubWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 func exampleSource(t *testing.T, format string) (string, string) {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "source")
-	if err := os.CopyFS(dir, os.DirFS(filepath.Join(importExamplesDir, "import-"+format, "source"))); err != nil {
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join(importExamplesDir(t), "import-"+format, "source"))); err != nil {
 		t.Fatalf("copy the import-%s example's source: %v", format, err)
 	}
 	var shipped []string
@@ -124,7 +129,7 @@ func exampleSource(t *testing.T, format string) (string, string) {
 // the key path.
 func exampleAnswers(t *testing.T, format, rel string) map[string]string {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(importExamplesDir, "import-"+format, "source", rel))
+	body, err := os.ReadFile(filepath.Join(importExamplesDir(t), "import-"+format, "source", rel))
 	if err != nil {
 		t.Fatalf("read the import-%s example's answers file: %v", format, err)
 	}
@@ -368,7 +373,7 @@ func buildAsDrafted(t *testing.T, dir string) map[string][]byte {
 	t.Helper()
 	catalogs := []string{providerPlugins}
 	for _, kind := range hubCatalogKinds(t) {
-		catalogs = append(catalogs, filepath.Join(platformHub, kind))
+		catalogs = append(catalogs, filepath.Join(platformHub(t), kind))
 	}
 	artifacts := pipelinetest.Build(t, pipelinetest.Input{
 		ReleasePath:  filepath.Join(dir, "release.yaml"),

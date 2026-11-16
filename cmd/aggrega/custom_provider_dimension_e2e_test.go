@@ -37,6 +37,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -61,6 +62,9 @@ const renderedNodePrefix = "rendered-node:"
 // (workload-bearing) recipe, and to report the capabilities the caller's entity
 // lists; then builds it with the go toolchain (GOOS=wasip1).
 //
+// The example is read from the aggrega-pdk repository checked out beside this
+// one, and the test skips, naming that repository, when the checkout is absent:
+// the example is a module of its own, not part of the released Go plugin kit.
 // Paths resolve relative to the ORIGINAL cwd, so a caller invokes it BEFORE any
 // t.Chdir into a temp workspace. A build-tool-absent failure fails loudly (the
 // go toolchain runs the surrounding test, so it is present).
@@ -69,16 +73,8 @@ func ensureRenderProviderWasm(t *testing.T, capabilities ...string) string {
 	if len(capabilities) == 0 {
 		t.Fatal("ensureRenderProviderWasm: name the capabilities the guest reports; publish admits an entity listing only those")
 	}
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	// cmd/aggrega → up 3 to the directory holding this repository beside its
-	// aggrega-pdk and aggrega-abi sibling checkouts.
-	siblingsDir := filepath.Clean(filepath.Join(wd, "..", "..", ".."))
-	exampleDir := filepath.Join(siblingsDir, "aggrega-pdk", "go", "examples", "render")
-	pdkDir := filepath.Join(siblingsDir, "aggrega-pdk", "go")
-	abiDir := filepath.Join(siblingsDir, "aggrega-abi", "go")
+	exampleDir := wasmtest.SiblingPath(t, "aggrega-pdk", "go", "examples", "render")
+	pdkDir := wasmtest.SiblingPath(t, "aggrega-pdk", "go")
 	if _, err := os.Stat(filepath.Join(exampleDir, "main.go")); err != nil {
 		t.Fatalf("provider render fixture source absent at %s: %v", exampleDir, err)
 	}
@@ -92,10 +88,10 @@ func ensureRenderProviderWasm(t *testing.T, capabilities ...string) string {
 		out := string(data)
 		switch name {
 		case "go.mod":
-			// The example's replace directives are relative to its own location;
-			// rewrite them to absolute paths that resolve from the scratch module.
+			// The example's replace directive for the plugin kit is relative to its
+			// own location; rewrite it to an absolute path that resolves from the
+			// scratch module. The ABI is taken at the version its go.mod requires.
 			out = strings.Replace(out, "=> ../../\n", "=> "+pdkDir+"\n", 1)
-			out = strings.Replace(out, "=> ../../../../aggrega-abi/go\n", "=> "+abiDir+"\n", 1)
 		case "main.go":
 			// Declare a ProviderContract so the guest advertises support for the
 			// synthesized (workload-bearing) recipe the fixture catalog authors.

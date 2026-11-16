@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // TestScaffoldExampleListReadsEachExampleOnceInPageOrder pins the reading of the
@@ -204,14 +206,6 @@ func TestScaffoldExampleNextCommandsReadsTheSharedBuildSectionCases(t *testing.T
 	}
 }
 
-// buildSectionCasesDir and buildSectionCasesExpected are the documentation's
-// case pages and their expected reading, relative to this package's directory in
-// a checkout holding the documentation beside this module.
-const (
-	buildSectionCasesDir      = "../../../aggrega-docs/scripts/testdata/build-commands"
-	buildSectionCasesExpected = "../../../aggrega-docs/scripts/testdata/build-commands.expected"
-)
-
 // TestScaffoldExampleNextCommandsReadsTheDocumentationsBuildSectionCases reads
 // the documentation's case pages and expected reading, where the checkout holds
 // them, and holds NextCommands and sharedBuildSectionCases to both: every page
@@ -221,30 +215,30 @@ const (
 // A checkout without the documentation skips it; the table test above still runs.
 func TestScaffoldExampleNextCommandsReadsTheDocumentationsBuildSectionCases(t *testing.T) {
 	t.Parallel()
-	entries, err := os.ReadDir(buildSectionCasesDir)
+	entries, err := os.ReadDir(buildSectionCasesDir(t))
 	if err != nil {
-		t.Skipf("the documentation's build-section cases are not present at %s (standalone checkout): %v", buildSectionCasesDir, err)
+		t.Fatalf("read the documentation's build-section cases at %s: %v", buildSectionCasesDir(t), err)
 	}
-	expected := readBuildSectionExpected(t, buildSectionCasesExpected)
+	expected := readBuildSectionExpected(t, buildSectionCasesExpected(t))
 	pages := map[string]string{}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 			continue
 		}
-		data, rerr := os.ReadFile(filepath.Join(buildSectionCasesDir, e.Name()))
+		data, rerr := os.ReadFile(filepath.Join(buildSectionCasesDir(t), e.Name()))
 		if rerr != nil {
 			t.Fatalf("read %s: %v", e.Name(), rerr)
 		}
 		pages[strings.TrimSuffix(e.Name(), ".md")] = string(data)
 	}
 	if len(pages) == 0 {
-		t.Fatalf("no case page under %s", buildSectionCasesDir)
+		t.Fatalf("no case page under %s", buildSectionCasesDir(t))
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(pages)) {
 		want, ok := expected[name]
 		if !ok {
-			t.Errorf("case %s: the page has no entry in %s", name, buildSectionCasesExpected)
+			t.Errorf("case %s: the page has no entry in %s", name, buildSectionCasesExpected(t))
 			continue
 		}
 		if got := NextCommands([]byte(pages[name])); !slices.Equal(got, want) {
@@ -253,7 +247,7 @@ func TestScaffoldExampleNextCommandsReadsTheDocumentationsBuildSectionCases(t *t
 	}
 	for _, name := range slices.Sorted(maps.Keys(expected)) {
 		if _, ok := pages[name]; !ok {
-			t.Errorf("case %s: the expected file has an entry and %s has no page", name, buildSectionCasesDir)
+			t.Errorf("case %s: the expected file has an entry and %s has no page", name, buildSectionCasesDir(t))
 		}
 	}
 
@@ -267,7 +261,7 @@ func TestScaffoldExampleNextCommandsReadsTheDocumentationsBuildSectionCases(t *t
 		case !ok:
 			t.Errorf("case %s: the documentation has the page and sharedBuildSectionCases has no row", name)
 		case tc.page != pages[name]:
-			t.Errorf("case %s: the row's page differs from %s/%s.md", name, buildSectionCasesDir, name)
+			t.Errorf("case %s: the row's page differs from %s/%s.md", name, buildSectionCasesDir(t), name)
 		}
 		if want, eok := expected[name]; ok && eok && !slices.Equal(tc.want, want) {
 			t.Errorf("case %s: the row wants %q, the expected file says %q", name, tc.want, want)
@@ -275,7 +269,7 @@ func TestScaffoldExampleNextCommandsReadsTheDocumentationsBuildSectionCases(t *t
 	}
 	for _, name := range slices.Sorted(maps.Keys(table)) {
 		if _, ok := pages[name]; !ok {
-			t.Errorf("case %s: sharedBuildSectionCases has the row and %s has no page", name, buildSectionCasesDir)
+			t.Errorf("case %s: sharedBuildSectionCases has the row and %s has no page", name, buildSectionCasesDir(t))
 		}
 	}
 }
@@ -306,4 +300,20 @@ func readBuildSectionExpected(t *testing.T, path string) map[string][]string {
 		}
 	}
 	return out
+}
+
+// buildSectionCasesDir holds the documentation's build-section case pages, in the
+// aggrega-docs repository checked out beside this one. It skips t, naming the
+// repository, when that checkout is absent.
+func buildSectionCasesDir(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-docs", "scripts", "testdata", "build-commands")
+}
+
+// buildSectionCasesExpected is the expected reading of the documentation's
+// build-section case pages, in the aggrega-docs repository checked out beside
+// this one. It skips t, naming the repository, when that checkout is absent.
+func buildSectionCasesExpected(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-docs", "scripts", "testdata", "build-commands.expected")
 }

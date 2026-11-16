@@ -8,13 +8,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"testing"
 
 	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
 	frp "github.com/aggrega-ai/aggrega-cli/internal/compiler/featurerecipe_pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -30,12 +30,12 @@ import (
 // by its own counterpart proves only that the two agree, including where they
 // agree on a mistake.
 
-// sharedVector reads one document from the shared vector corpus. The corpus
-// lives above this module, reached by relative path for the same reason its own
-// harness reaches it that way.
+// sharedVector reads one document from the shared vector corpus, in the
+// aggrega-abi repository checked out beside this one, skipping t when that
+// checkout is absent.
 func sharedVector(t *testing.T, name string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "aggrega-abi", "testdata", name))
+	b, err := os.ReadFile(wasmtest.SiblingPath(t, "aggrega-abi", "testdata", name))
 	if err != nil {
 		t.Fatalf("read vector %s: %v", name, err)
 	}

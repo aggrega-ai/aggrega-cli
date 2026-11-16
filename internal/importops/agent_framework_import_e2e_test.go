@@ -388,7 +388,7 @@ func TestADeclarativeAgentTheParserRefusesHaltsTheImport(t *testing.T) {
 // so a draft holding an instance of it would render one — the schema library,
 // the secret Feature a connection's credential is attached as with its
 // realization, and the provider Plugin entities.
-func agentFrameworkBuildPaths() []string {
+func agentFrameworkBuildPaths(t testing.TB) []string {
 	paths := []string{"../compiler/testdata/flow-definition-escape/catalog"}
 	for _, rel := range []string{
 		"component/core/ai-agent/agent-framework/1.0.0/component.yaml",
@@ -401,7 +401,7 @@ func agentFrameworkBuildPaths() []string {
 		"feature/core/referenced-secret/1.0.0/feature.yaml",
 		"feature-recipe/helm/k8s-existing-secret/1.0.0/recipe.yaml",
 	} {
-		paths = append(paths, platformHub+"/"+rel)
+		paths = append(paths, platformHub(t)+"/"+rel)
 	}
 	return paths
 }
@@ -498,7 +498,7 @@ func TestTheLearnAgentsDraftBuildsReachingItsModelAndNoMCPServer(t *testing.T) {
 		readAgentFrameworkFixture(t, "learn-agent.yaml"))
 	result := pipelinetest.Build(t, pipelinetest.Input{
 		ReleasePath:  writeAgentFrameworkRelease(t, dir, "learnagent", "gpt-4-1-mini"),
-		CatalogPaths: agentFrameworkBuildPaths(),
+		CatalogPaths: agentFrameworkBuildPaths(t),
 	})
 	for name, want := range map[string]string{
 		"OPENAI_BASE_URL": "https://llm-gateway.example.com/v1",

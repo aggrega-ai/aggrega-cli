@@ -44,7 +44,7 @@ import (
 func layExampleFiles(t *testing.T, format, dir string, names ...string) {
 	t.Helper()
 	for _, name := range names {
-		body, err := os.ReadFile(filepath.Join(importExamplesDir, "import-"+format, "source", filepath.FromSlash(name)))
+		body, err := os.ReadFile(filepath.Join(importExamplesDir(t), "import-"+format, "source", filepath.FromSlash(name)))
 		if err != nil {
 			t.Fatalf("read the import-%s example's %s: %v", format, name, err)
 		}

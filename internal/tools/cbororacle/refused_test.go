@@ -97,7 +97,7 @@ var refusedVectors = []refusedVector{
 // readRefusedVector reads a refused vector, holding it to the hex golden shape.
 func readRefusedVector(t *testing.T, name string) []byte {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(testdataDir, name+refusedSuffix))
+	raw, err := os.ReadFile(filepath.Join(testdataDir(t), name+refusedSuffix))
 	if err != nil {
 		t.Fatalf("read refused vector %s: %v", name, err)
 	}
@@ -176,9 +176,9 @@ func TestSuite_RefusedVectors(t *testing.T) {
 
 	// The refused vectors on disk are exactly the ones registered above, read from
 	// the directory rather than listed, for the reason the pair guard gives.
-	entries, err := os.ReadDir(testdataDir)
+	entries, err := os.ReadDir(testdataDir(t))
 	if err != nil {
-		t.Fatalf("read the vector directory %s: %v", testdataDir, err)
+		t.Fatalf("read the vector directory %s: %v", testdataDir(t), err)
 	}
 	onDisk := 0
 	for _, e := range entries {
@@ -192,6 +192,6 @@ func TestSuite_RefusedVectors(t *testing.T) {
 		}
 	}
 	if onDisk == 0 {
-		t.Fatalf("found no %s vectors under %s, so this check certifies nothing", refusedSuffix, testdataDir)
+		t.Fatalf("found no %s vectors under %s, so this check certifies nothing", refusedSuffix, testdataDir(t))
 	}
 }

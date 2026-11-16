@@ -17,9 +17,7 @@
 // harness, and compare what reaches the platform with the export byte for byte.
 //
 // These tests read catalog entities from the aggrega-hub repository checked out
-// beside this one (the paths leave this repository for aggrega-hub). Without
-// that checkout they fail with a catalog-load error rather than skipping, so
-// check out aggrega-hub beside this repository first.
+// beside this one (the paths leave this repository for aggrega-hub). Without that checkout they skip, naming it.
 
 package compiler_test
 

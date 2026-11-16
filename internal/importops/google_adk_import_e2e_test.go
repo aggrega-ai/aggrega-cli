@@ -90,7 +90,7 @@ func googleADKWorkspaceHanding(t *testing.T, settings map[string]any, dir string
 func copyHubEntities(t *testing.T, dir string, rels []string) {
 	t.Helper()
 	for _, rel := range rels {
-		body, err := os.ReadFile(filepath.Join(platformHub, filepath.FromSlash(rel)))
+		body, err := os.ReadFile(filepath.Join(platformHub(t), filepath.FromSlash(rel)))
 		if err != nil {
 			t.Fatalf("read the hub's %s: %v", rel, err)
 		}
@@ -555,7 +555,7 @@ func TestAGoogleADKConfigurationTheParserRefusesHaltsTheImport(t *testing.T) {
 // against: the ADK agent and the Gemini model with their Kubernetes Recipes, the
 // schema library, the secret Feature a connection's credential is attached as
 // with its realization, and the provider Plugin entities.
-func googleADKBuildPaths() []string {
+func googleADKBuildPaths(t testing.TB) []string {
 	paths := []string{"../compiler/testdata/flow-definition-escape/catalog"}
 	for _, rel := range []string{
 		"component/core/ai-agent/google-adk/1.0.0/component.yaml",
@@ -566,7 +566,7 @@ func googleADKBuildPaths() []string {
 		"feature/core/referenced-secret/1.0.0/feature.yaml",
 		"feature-recipe/helm/k8s-existing-secret/1.0.0/recipe.yaml",
 	} {
-		paths = append(paths, platformHub+"/"+rel)
+		paths = append(paths, platformHub(t)+"/"+rel)
 	}
 	return paths
 }
@@ -626,7 +626,7 @@ func TestEachGoogleADKDraftBuildsReachingTheGeminiModel(t *testing.T) {
 			_, dir := handedGoogleADKImport(t, a.app, nil)
 			result := pipelinetest.Build(t, pipelinetest.Input{
 				ReleasePath:  writeGoogleADKRelease(t, dir, a.key, a.part),
-				CatalogPaths: googleADKBuildPaths(),
+				CatalogPaths: googleADKBuildPaths(t),
 			})
 			rendered := string(renderedEnding(t, result.Artifacts, "/helm/"+a.key+"-deployment.yaml"))
 			if !strings.Contains(rendered, "name: GOOGLE_API_KEY") || !strings.Contains(rendered, "secretKeyRef") {
@@ -701,7 +701,7 @@ func TestAGoogleADKDraftNamingALiteLLMModelHaltsNamingItsModelSocket(t *testing.
 		}
 	}
 	_, err := pipelinetest.BuildE(t, pipelinetest.Input{ReleasePath: filepath.Join(dir, "release.yaml"),
-		CatalogPaths: googleADKBuildPaths()})
+		CatalogPaths: googleADKBuildPaths(t)})
 	if !errors.Is(err, resolver.ErrMissingRequiredSocket()) {
 		t.Fatalf("the build of a draft leaving its model socket unwired did not halt under the required-socket rule: "+
 			"%v", err)

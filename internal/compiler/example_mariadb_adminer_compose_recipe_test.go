@@ -12,7 +12,7 @@
 //
 // This test reads its catalog from the aggrega-docs repository checked out
 // beside this one (the catalog path leaves this repository for aggrega-docs),
-// so check out aggrega-docs beside this repository first.
+// and skips, naming it, without that checkout.
 //
 // composeWasmFactory is shared with the mariadb and mysql Recipe tests in this
 // same package rather than duplicated here, so every compose Recipe proof
@@ -28,6 +28,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -48,7 +49,8 @@ import (
 func TestExampleMariaDBAdminerComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	t.Parallel()
 
-	const exampleCatalog = "../../../aggrega-docs/language-reference/examples/mariadb-adminer/catalog-compose"
+	exampleCatalog := wasmtest.SiblingPath(t, "aggrega-docs", "language-reference", "examples", "mariadb-adminer",
+		"catalog-compose")
 
 	cat, err := catalog.LoadAll("",
 		exampleCatalog+"/component/mariadb.yaml",

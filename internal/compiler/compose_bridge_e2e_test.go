@@ -5,9 +5,7 @@
 // core/compose-bridge Feature + FeatureRecipe.
 //
 // This test reads catalog entities from the aggrega-hub repository checked out
-// beside this one. Without that checkout it fails with a missing-catalog-entry
-// error rather than skipping, so check out aggrega-hub beside this repository
-// first.
+// beside this one. Without that checkout it skips, naming it.
 
 package compiler_test
 

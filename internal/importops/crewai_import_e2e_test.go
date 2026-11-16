@@ -66,7 +66,7 @@ func crewaiWorkspace(t *testing.T, settings map[string]any) *workspaceconfig.Res
 	t.Helper()
 	rw, folder := catalogFolderImportWorkspaceAttaching(t, settings)
 	for _, rel := range crewaiHubEntities {
-		body, err := os.ReadFile(filepath.Join(platformHub, filepath.FromSlash(rel)))
+		body, err := os.ReadFile(filepath.Join(platformHub(t), filepath.FromSlash(rel)))
 		if err != nil {
 			t.Fatalf("read the hub's %s: %v", rel, err)
 		}
@@ -534,7 +534,7 @@ func TestACrewAIDeclarationTheParserRefusesHaltsTheImport(t *testing.T) {
 // CrewAI agent and the OpenAI model with their Kubernetes Recipes, the schema
 // library, the secret Feature a connection's credential is attached as with its
 // realization, and the provider Plugin entities.
-func crewaiBuildPaths() []string {
+func crewaiBuildPaths(t testing.TB) []string {
 	paths := []string{"../compiler/testdata/flow-definition-escape/catalog"}
 	for _, rel := range []string{
 		"component/core/ai-agent/crewai/1.0.0/component.yaml",
@@ -545,7 +545,7 @@ func crewaiBuildPaths() []string {
 		"feature/core/referenced-secret/1.0.0/feature.yaml",
 		"feature-recipe/helm/k8s-existing-secret/1.0.0/recipe.yaml",
 	} {
-		paths = append(paths, platformHub+"/"+rel)
+		paths = append(paths, platformHub(t)+"/"+rel)
 	}
 	return paths
 }
@@ -611,7 +611,7 @@ func TestEachCrewAIDraftBuildsReachingTheModelItsDeclarationsName(t *testing.T) 
 			slices.Sort(models)
 			result := pipelinetest.Build(t, pipelinetest.Input{
 				ReleasePath:  writeCrewRelease(t, dir, p.agents, models),
-				CatalogPaths: crewaiBuildPaths(),
+				CatalogPaths: crewaiBuildPaths(t),
 			})
 			for _, a := range p.agents {
 				raw, ok := result.IRGraph.Spec.ValuesMapping.Get(a.key)

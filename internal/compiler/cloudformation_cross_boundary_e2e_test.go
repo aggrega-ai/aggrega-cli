@@ -29,7 +29,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -38,6 +37,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -96,9 +96,7 @@ func cfnCatalogPathsReplacing(t *testing.T, replaced, replacement string) []stri
 
 func skipIfNoSiblingCatalog(t *testing.T) {
 	t.Helper()
-	if _, err := os.Stat(cfnHubCatalog); err != nil {
-		t.Skipf("sibling catalog not present at %s: %v", cfnHubCatalog, err)
-	}
+	wasmtest.SkipWithoutSiblings(t, cfnHubCatalog)
 }
 
 func cfnSingleStackInput(t *testing.T) pipelinetest.Input {

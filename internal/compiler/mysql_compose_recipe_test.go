@@ -4,8 +4,8 @@
 // Per-Recipe integration test for the in-repo mysql compose Recipe.
 //
 // This test reads catalog entities from the aggrega-hub repository checked out
-// beside this one (the paths leave this repository for aggrega-hub), so check
-// out aggrega-hub beside this repository first.
+// beside this one (the paths leave this repository for aggrega-hub), and skip,
+// naming it, without that checkout.
 //
 // composeWasmFactory and composeServiceKeyCount are shared with the mariadb
 // Recipe test in this same package rather than duplicated here, so both Recipes
@@ -17,11 +17,13 @@ package compiler_test
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
@@ -39,11 +41,12 @@ import (
 // end-to-end proof matrix, not here.
 func TestMySQLComposeRecipe_WorkloadSynthesis(t *testing.T) {
 	t.Parallel()
+	hub := wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
 
 	cat, err := catalog.LoadAll("",
-		"../../../aggrega-hub/aggrega-catalog/component/core/datastore",
-		"../../../aggrega-hub/aggrega-catalog/recipe/compose/mysql",
-		"../../../aggrega-hub/aggrega-catalog/schemalibrary/base-components/1.0.0/library.yaml",
+		filepath.Join(hub, "component/core/datastore"),
+		filepath.Join(hub, "recipe/compose/mysql"),
+		filepath.Join(hub, "schemalibrary/base-components/1.0.0/library.yaml"),
 	)
 	if err != nil {
 		t.Fatalf("catalog load: %v", err)

@@ -21,11 +21,7 @@ import (
 // a schema-broken entity OUTSIDE the Release's closure does not fail
 // `lint --release` (it is never reached) while whole-catalog lint does catch it.
 func TestIntegration_LintRelease_ClosureScoped(t *testing.T) {
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	examplesRoot := localExamplesRoot(t, wd)
+	examplesRoot := localExamplesRoot(t)
 
 	ws := t.TempDir()
 	copyTree(t, filepath.Join(examplesRoot, "mariadb-adminer"), ws)

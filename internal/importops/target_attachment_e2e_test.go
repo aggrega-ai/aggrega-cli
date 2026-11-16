@@ -14,8 +14,7 @@ package importops
 // one, so a Recipe of each target binds and neither target is refused.
 //
 // These tests read catalog entities from the aggrega-hub repository checked out
-// beside this one. Without that checkout they fail with a catalog-load error
-// rather than skipping, so check out aggrega-hub beside this repository first.
+// beside this one. Without that checkout they skip, naming it.
 
 import (
 	"os"

@@ -15,8 +15,7 @@ package importops
 // those Recipes declares the version it implements; the drafts name none.
 //
 // These tests read catalog entities from the aggrega-hub repository checked out
-// beside this one. Without that checkout they fail with a catalog-load error
-// rather than skipping, so check out aggrega-hub beside this repository first.
+// beside this one. Without that checkout they skip, naming it.
 
 import (
 	"context"
@@ -178,8 +177,8 @@ func TestATargetMapsATypeDraftedWithNoVersion(t *testing.T) {
 		ReleasePath: release,
 		CatalogPaths: []string{
 			"../compiler/testdata/flow-definition-escape/catalog",
-			platformHub + "/component/core/datastore/postgres/1.0.0/component.yaml",
-			platformHub + "/recipe/compose/postgres/1.0.0/recipe.yaml",
+			platformHub(t) + "/component/core/datastore/postgres/1.0.0/component.yaml",
+			platformHub(t) + "/recipe/compose/postgres/1.0.0/recipe.yaml",
 		},
 	}).Artifacts
 	var files []string
@@ -232,9 +231,9 @@ func TestTheBuildOffersAnUnmappedInstanceOfATypeWithNoVersionItsRecipes(t *testi
 		ReleasePath: release,
 		CatalogPaths: []string{
 			"../compiler/testdata/flow-definition-escape/catalog",
-			platformHub + "/component/core/datastore/postgres/1.0.0/component.yaml",
-			platformHub + "/recipe/compose/postgres/1.0.0/recipe.yaml",
-			platformHub + "/recipe/helm/postgres/1.0.0/recipe.yaml",
+			platformHub(t) + "/component/core/datastore/postgres/1.0.0/component.yaml",
+			platformHub(t) + "/recipe/compose/postgres/1.0.0/recipe.yaml",
+			platformHub(t) + "/recipe/helm/postgres/1.0.0/recipe.yaml",
 		},
 	})
 	if !errors.Is(err, catalog.ErrNoRecipeResolved()) {
@@ -267,7 +266,7 @@ func TestTheBuildOffersAnUnmappedInstanceOfATypeWithNoVersionItsRecipes(t *testi
 // type under a name other than postgres.
 func renamedComposePostgres(t *testing.T, dir string, names ...string) {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(platformHub, "recipe", "compose", "postgres", "1.0.0", "recipe.yaml"))
+	body, err := os.ReadFile(filepath.Join(platformHub(t), "recipe", "compose", "postgres", "1.0.0", "recipe.yaml"))
 	if err != nil {
 		t.Fatalf("read the hub's compose Recipe of PostgreSQL: %v", err)
 	}

@@ -15,6 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/plugins/parsercore"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
@@ -909,14 +910,17 @@ func evaluatedAggregate(t *testing.T, text string) string {
 }
 
 // hubCatalog is the catalog of the aggrega-hub repository checked out beside
-// this one. The check below reads it, and without that checkout fails rather
-// than skipping, so check out aggrega-hub beside this repository first.
-var hubCatalog = filepath.Join("..", "..", "..", "..", "aggrega-hub", "aggrega-catalog")
+// this one. The check below reads it, and skips, naming the repository, when
+// that checkout is absent.
+func hubCatalog(t testing.TB) string {
+	t.Helper()
+	return wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog")
+}
 
 // hubFile reads one file of the hub's catalog, by its path beneath it.
 func hubFile(t *testing.T, rel string) string {
 	t.Helper()
-	body, err := os.ReadFile(filepath.Join(hubCatalog, filepath.FromSlash(rel)))
+	body, err := os.ReadFile(filepath.Join(hubCatalog(t), filepath.FromSlash(rel)))
 	if err != nil {
 		t.Fatalf("read the hub's %s: %v", rel, err)
 	}
