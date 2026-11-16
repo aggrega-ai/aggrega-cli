@@ -201,6 +201,10 @@ func RenderSourced(n SourcedNode) (fragment []byte, symbol string, omitted []int
 		return nil, "", nil, valueNotRepresentable(fmt.Sprintf("arm-provider: %s %s", templateSubject(n.Path), problem))
 	}
 	template := doc.(map[string]any)
+	omitted, err = leaveOut(templateSubject(n.Path), template, n.Omits)
+	if err != nil {
+		return nil, "", nil, err
+	}
 
 	properties := map[string]any{
 		"mode":                        "Incremental",
@@ -229,5 +233,5 @@ func RenderSourced(n SourcedNode) (fragment []byte, symbol string, omitted []int
 	if err != nil {
 		return nil, "", nil, err
 	}
-	return fragment, symbol, nil, nil
+	return fragment, symbol, omitted, nil
 }

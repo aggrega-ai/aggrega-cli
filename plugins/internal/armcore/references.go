@@ -330,7 +330,7 @@ func (r declarations) check(s site, c armexpr.Call) error {
 		return nil
 	}
 	switch {
-	case readsState || name == "references" || name == "resourceinfo":
+	case isSymbolReferenceCall(name):
 		if !strings.HasPrefix(arg, "/") && !r.symbols[arg] {
 			return danglingSymbol(s, c.Name, arg)
 		}
@@ -344,6 +344,13 @@ func (r declarations) check(s site, c armexpr.Call) error {
 		}
 	}
 	return nil
+}
+
+// isSymbolReferenceCall reports whether a call, named in lower case, takes a
+// resource's symbolic name or resource ID as its first argument: reference,
+// references, resourceInfo and the list functions.
+func isSymbolReferenceCall(lowerName string) bool {
+	return lowerName == "reference" || lowerName == "references" || lowerName == "resourceinfo" || armexpr.IsListFunction(lowerName)
 }
 
 // danglingSymbol is the halt for a symbolic name no resource of the level
