@@ -110,3 +110,22 @@ func repeat(s string, n int) string {
 	}
 	return string(out)
 }
+
+func TestParseAccessorChainsAreBounded(t *testing.T) {
+	for name, chain := range map[string]string{
+		"members": repeat(".a", 100000),
+		"indexes": repeat("[0]", 100000),
+	} {
+		_, err := Parse("[f()" + chain + "]")
+		var se *SyntaxError
+		if !errors.As(err, &se) {
+			t.Errorf("%s: Parse(long chain) error = %v, want *SyntaxError", name, err)
+		}
+	}
+	n, err := Parse("[f()" + repeat(".a", 50) + "]")
+	if err != nil {
+		t.Fatal(err)
+	}
+	Walk(n, func(Node) bool { return true })
+	_ = Print(n)
+}

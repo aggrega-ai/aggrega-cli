@@ -97,8 +97,11 @@ func (p *parser) advance() *SyntaxError {
 
 // expr parses a primary followed by any number of accessors.
 func (p *parser) expr() (Node, *SyntaxError) {
+	// Each accessor deepens the tree as a nested call does, so a long chain is
+	// bounded by the same cap as nesting.
+	levels := 1
 	p.depth++
-	defer func() { p.depth-- }()
+	defer func() { p.depth -= levels }()
 	if p.depth > maxDepth {
 		return nil, &SyntaxError{Offset: p.tok.at, Reason: "expression is nested too deeply"}
 	}
@@ -109,6 +112,11 @@ func (p *parser) expr() (Node, *SyntaxError) {
 	for {
 		switch p.tok.kind {
 		case tokDot:
+			levels++
+			p.depth++
+			if p.depth > maxDepth {
+				return nil, &SyntaxError{Offset: p.tok.at, Reason: "expression is nested too deeply"}
+			}
 			at := p.tok.at
 			if err := p.advance(); err != nil {
 				return nil, err
@@ -121,6 +129,11 @@ func (p *parser) expr() (Node, *SyntaxError) {
 				return nil, err
 			}
 		case tokLBracket:
+			levels++
+			p.depth++
+			if p.depth > maxDepth {
+				return nil, &SyntaxError{Offset: p.tok.at, Reason: "expression is nested too deeply"}
+			}
 			at := p.tok.at
 			if err := p.advance(); err != nil {
 				return nil, err

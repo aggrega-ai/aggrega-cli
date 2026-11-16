@@ -5,7 +5,7 @@ package armexpr
 
 import "strings"
 
-// Print renders n canonically: single-quoted strings with ” escapes, ", "
+// Print renders n canonically: single-quoted strings with `”` escapes, ", "
 // between arguments, and no whitespace elsewhere.
 func Print(n Node) string {
 	var b strings.Builder

@@ -24,8 +24,9 @@ func lowerSorted(names []string) []string {
 // date, template-value, lambda, logical, numeric, object, resource, scope and string
 // functions); keeping it separate means a mistake in either copy shows up as a
 // difference rather than agreeing with itself. The list* family is matched by
-// prefix and is not enumerated. fail and the lambda helpers are the names the
-// pinned module calls that the reference pages do not list by name.
+// prefix and is not enumerated. lambda and lambdaVariables appear only in the
+// reference pages' examples and fail is not documented there; all three are
+// listed because the pinned module calls them.
 func TestTemplateFunctionSetIsTheDocumentedList(t *testing.T) {
 	documented := []string{
 		// array
@@ -57,7 +58,7 @@ func TestTemplateFunctionSetIsTheDocumentedList(t *testing.T) {
 		"base64", "base64ToJson", "base64ToString", "dataUri", "dataUriToString", "endsWith", "format", "guid",
 		"join", "like", "newGuid", "padLeft", "replace", "split", "startsWith", "string", "substring",
 		"toLower", "toUpper", "trim", "uniqueString", "uri", "uriComponent", "uriComponentToString",
-		// called by the pinned module, absent from the reference pages
+		// called by the pinned module, not documented as functions of their own
 		"fail", "lambda", "lambdaVariables",
 	}
 	want := dedupe(lowerSorted(documented))
@@ -96,8 +97,8 @@ func dedupe(s []string) []string {
 // the compiled template of avm/res/db-for-postgre-sql/flexible-server at
 // release tag avm/res/db-for-postgre-sql/flexible-server/0.15.1 in
 // Azure/bicep-registry-modules, transcribed by reading every bracketed string
-// of main.json. listOutputsWithSecureValues is added because the reader treats
-// it as a secret-bearing call even though that release does not use it.
+// of main.json. listOutputsWithSecureValues is included to pin the list{Value}
+// family; that release does not call it.
 func TestTemplateFunctionsCoverAVMFlexibleServer(t *testing.T) {
 	called := []string{
 		"and", "coalesce", "contains", "copyIndex", "createArray", "createObject", "deployment", "empty", "equals",

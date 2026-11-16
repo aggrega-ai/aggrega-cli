@@ -19,7 +19,8 @@ type Call struct {
 	At              int
 }
 
-// String is a string literal with its quotes removed and ” collapsed to '.
+// String is a string literal with its quotes removed and each pair of single
+// quotes (`”`) collapsed to one.
 type String struct {
 	Value string
 	At    int

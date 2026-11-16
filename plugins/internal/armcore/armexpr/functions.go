@@ -6,8 +6,11 @@ package armexpr
 import "strings"
 
 // templateFunctions is the closed set of function names the template function
-// reference documents, plus fail, which the Azure Verified Modules call. The
-// list* family is matched by prefix in IsTemplateFunction.
+// reference documents, plus fail, lambda and lambdaVariables. The reference
+// pages use lambda and lambdaVariables in their examples without a page of their
+// own, and document no fail; they are included because the pinned Azure Verified
+// Module template calls them. The open list{Value} family is matched by prefix in
+// IsTemplateFunction.
 var templateFunctions = []string{
 	"add", "and", "array", "base64", "base64ToJson", "base64ToString", "bool",
 	"cidrHost", "cidrSubnet", "coalesce", "concat", "contains", "copyIndex",
@@ -26,7 +29,7 @@ var templateFunctions = []string{
 	"take", "tenant", "tenantResourceId", "toLower", "toObject", "toUpper",
 	"trim", "true", "tryGet", "tryIndexFromEnd", "union", "uniqueString", "uri",
 	"uriComponent", "uriComponentToString", "utcNow", "variables",
-	// The lambda helpers that pair with the lambda-taking functions.
+	// Used in the lambda examples of the reference pages.
 	"lambda", "lambdaVariables",
 }
 
@@ -38,10 +41,12 @@ var templateFunctionIndex = func() map[string]struct{} {
 	return m
 }()
 
-// IsTemplateFunction reports whether name is a documented template function.
-// Matching ignores case, as ARM does. Every name beginning with "list" (listKeys,
-// listSecrets, listAccountSas, listOutputsWithSecureValues, ...) belongs to the
-// documented list* family.
+// IsTemplateFunction reports whether name is a template function: a member of
+// the documented closed list (with fail, lambda and lambdaVariables, which the
+// pinned Azure Verified Module template calls), or a name of the open
+// list{Value} family the reference documents, which is any name beginning with
+// "list" (listKeys, listSecrets, listAccountSas, listOutputsWithSecureValues,
+// ...). Matching ignores case, as ARM does.
 func IsTemplateFunction(name string) bool {
 	l := strings.ToLower(name)
 	if len(l) > len("list") && strings.HasPrefix(l, "list") {
