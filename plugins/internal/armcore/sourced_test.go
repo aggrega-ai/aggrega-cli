@@ -225,9 +225,15 @@ func mustJSON(t *testing.T, v any) string {
 	return string(b)
 }
 
-func TestRenderSourcedWrapsA20Template(t *testing.T) { t.Parallel(); checkWrapper(t, "module-2.0.json") }
+func TestRenderSourcedWrapsA20Template(t *testing.T) {
+	t.Parallel()
+	checkWrapper(t, "module-2.0.json")
+}
 
-func TestRenderSourcedWrapsA10Template(t *testing.T) { t.Parallel(); checkWrapper(t, "module-1.0.json") }
+func TestRenderSourcedWrapsA10Template(t *testing.T) {
+	t.Parallel()
+	checkWrapper(t, "module-1.0.json")
+}
 
 func TestRenderSourcedDropsByteOrderMark(t *testing.T) {
 	t.Parallel()

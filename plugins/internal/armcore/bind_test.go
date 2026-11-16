@@ -143,8 +143,8 @@ func TestBindLiteralConversion(t *testing.T) {
 		"s", "text",
 		"n", json.Number("7"),
 		"b", true,
-		"a", []any{"x", json.Number("2"), "[x]"},
-		"o", map[string]any{"k": "[x]", "n": []any{"[y]"}},
+		"a", []any{"x", json.Number("2"), "[[x]"},
+		"o", map[string]any{"k": "[[x]", "n": []any{"plain [y] text"}},
 		"r", "anything-at-all",
 	), false)
 	if err != nil {
@@ -155,7 +155,7 @@ func TestBindLiteralConversion(t *testing.T) {
 		"n": `{"value":7}`,
 		"b": `{"value":true}`,
 		"a": `{"value":["x",2,"[[x]"]}`,
-		"o": `{"value":{"k":"[[x]","n":["[[y]"]}}`,
+		"o": `{"value":{"k":"[[x]","n":["plain [y] text"]}}`,
 		"r": `{"value":"anything-at-all"}`,
 	}
 	for k, w := range want {
@@ -296,6 +296,61 @@ func TestBindMatchesParameterNamesCaseInsensitively(t *testing.T) {
 	for _, want := range []string{`"location"`, `"Location"`} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("message %q lacks %s", err, want)
+		}
+	}
+}
+
+func TestBindNestedStringsAreArmText(t *testing.T) {
+	t.Parallel()
+	params := `{"a": {"type": "array"}, "o": {"type": "object"}, "r": {"$ref": "#/definitions/any"}}`
+	defs := `{"any": {"type": "array"}}`
+	expr := "[reference('PaymentsDb').outputs.fqdn.value]"
+	p, err := bound(t, template2(params, defs), mapping(
+		"a", []any{map[string]any{"name": "HOST", "value": expr}},
+		"o", map[string]any{"k": []any{expr}, "t": "[[x]"},
+		"r", []any{expr},
+	), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, w := range map[string]string{
+		"a": `{"value":[{"name":"HOST","value":"` + expr + `"}]}`,
+		"o": `{"value":{"k":["` + expr + `"],"t":"[[x]"}}`,
+		"r": `{"value":["` + expr + `"]}`,
+	} {
+		if got := mustJSON(t, p[k]); got != w {
+			t.Errorf("%s = %s, want %s", k, got, w)
+		}
+	}
+
+	for name, c := range map[string]struct {
+		param string
+		value any
+		at    string
+	}{
+		"array element": {`{"type": "array"}`, []any{"ok", "[prod]"}, "/1"},
+		"object member": {`{"type": "object"}`, map[string]any{"a/b": []any{"[prod]"}}, "/a~1b/0"},
+	} {
+		_, err := bound(t, template2(`{"p": `+c.param+`}`, ""), mapping("p", c.value), false)
+		wantCondition(t, err, plugincondition.ErrPluginValueNotRepresentable(), "prod")
+		for _, want := range []string{`"p"`, c.at, "[["} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: message %q lacks %s", name, err, want)
+			}
+		}
+	}
+
+	// A literal holding an expression is still a literal under a sensitive mapping.
+	_, err = bound(t, template2(`{"a": {"type": "array"}}`, ""), mapping("a", []any{expr}), true)
+	wantCondition(t, err, plugincondition.ErrPluginValueNotRepresentable(), "PaymentsDb")
+}
+
+func TestConvertLiteralWritesConvertedTextAsText(t *testing.T) {
+	t.Parallel()
+	for _, v := range []any{json.Number("12"), true} {
+		got, ok := convertLiteral(typeString, v)
+		if !ok || strings.HasPrefix(got.(string), "[") {
+			t.Errorf("convertLiteral(%v) = %v, %v", v, got, ok)
 		}
 	}
 }

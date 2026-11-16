@@ -51,9 +51,11 @@ const (
 // securestring or secureObject parameter only. Any other value is a literal: it
 // is converted to the parameter's declared type and checked against its
 // allowedValues, length and value limits, except that a parameter typed by a
-// $ref into definitions takes it as written for ARM to check. A string inside a
-// list or object literal is text, so one that ARM would read as an expression is
-// written with an extra opening bracket. A literal is refused for a secure
+// $ref into definitions takes it as written for ARM to check. Every string of a
+// value is ARM text at any depth: one inside a list or object that ARM reads as
+// an expression must parse and is kept as written, and text the binding itself
+// produces by converting a number or boolean to a string is written with
+// ArmLiteral. A literal is refused for a secure
 // parameter, and for every parameter when the mapping read a sensitive value. A
 // parameter with no default that admits no null and has no key is refused,
 // because a nested deployment's parameters cannot be supplied when it runs.
@@ -173,8 +175,11 @@ func bindOne(where, name string, decl, definitions map[string]any, value any) (e
 	if secure {
 		return nil, true, notRepresentable("is a literal for a %s parameter, which would write the secret into the template as text; map a Key Vault reference or an expression", typeName(decl, definitions))
 	}
+	if err := checkNestedExpressions(value, "", notRepresentable); err != nil {
+		return nil, true, err
+	}
 	if byRef || typ == "" {
-		return map[string]any{"value": literalText(value, false)}, true, nil
+		return map[string]any{"value": value}, true, nil
 	}
 
 	converted, ok := convertLiteral(typ, value)
@@ -184,7 +189,7 @@ func bindOne(where, name string, decl, definitions map[string]any, value any) (e
 	if constraint := violatedConstraint(decl, converted); constraint != "" {
 		return nil, true, notRepresentable("does not satisfy the %s of the parameter, which ARM would refuse when the deployment runs; map a value the parameter admits", constraint)
 	}
-	return map[string]any{"value": literalText(converted, false)}, true, nil
+	return map[string]any{"value": converted}, true, nil
 }
 
 // parameterType returns the lower-cased type a parameter declares and whether it
@@ -272,9 +277,9 @@ func convertLiteral(typ string, v any) (any, bool) {
 		case string:
 			return x, true
 		case json.Number:
-			return x.String(), true
+			return ArmLiteral(x.String()), true
 		case bool:
-			return strconv.FormatBool(x), true
+			return ArmLiteral(strconv.FormatBool(x)), true
 		}
 	case typeInt:
 		switch x := v.(type) {
@@ -377,31 +382,38 @@ func canonical(v any) string {
 	return string(b)
 }
 
-// literalText copies a literal for writing into the template. Inside a list or
-// object every string is text, so one that ARM would read as an expression is
-// written with the extra opening bracket ArmLiteral adds; a string at the top is
-// already known not to be an expression and is kept as written.
-func literalText(v any, nested bool) any {
+// checkNestedExpressions walks a literal's lists and objects in sorted key
+// order and refuses the first string inside one that ARM reads as an expression
+// and that does not parse. Every string of a bound value is ARM text at any
+// depth: an expression is kept as written and evaluated in the parent scope, a
+// string opening with a doubled bracket and plain text are kept as written.
+func checkNestedExpressions(v any, pointer string, notRepresentable func(string, ...any) error) error {
 	switch x := v.(type) {
 	case string:
-		if nested {
-			return ArmLiteral(x)
+		if pointer == "" || !armexpr.IsExpression(x) {
+			return nil
 		}
-		return x
+		if _, err := armexpr.Parse(x); err != nil {
+			reason, offset := err.Error(), 0
+			if se, ok := err.(*armexpr.SyntaxError); ok {
+				reason, offset = se.Reason, se.Offset
+			}
+			return notRepresentable("holds, at JSON pointer %s inside the value, text ARM reads as an expression that does not parse (offset %d: %s); correct the expression, or write [[ at its start to keep it literal text", pointer, offset, reason)
+		}
 	case []any:
-		out := make([]any, len(x))
 		for i, e := range x {
-			out[i] = literalText(e, true)
+			if err := checkNestedExpressions(e, fmt.Sprintf("%s/%d", pointer, i), notRepresentable); err != nil {
+				return err
+			}
 		}
-		return out
 	case map[string]any:
-		out := make(map[string]any, len(x))
 		for _, k := range sortedKeys(x) {
-			out[k] = literalText(x[k], true)
+			if err := checkNestedExpressions(x[k], pointer+"/"+escapePointer(k), notRepresentable); err != nil {
+				return err
+			}
 		}
-		return out
 	}
-	return v
+	return nil
 }
 
 // article returns a type name with the article a sentence needs.
