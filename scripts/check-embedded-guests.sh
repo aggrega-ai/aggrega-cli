@@ -187,8 +187,9 @@ check_carried_digest() {
 # Walk the core-plugin list — the one declarative source of the core plugins,
 # where each guest's source lives and whether the binary embeds it — and check
 # every entry against its artifact, in its row's directory. A go guest is checked
-# against its compiled Go sources; a rust guest against its crate directory plus
-# any extra source roots (its local SDK crate). A row the binary does not embed
+# against its compiled Go sources; a rust guest against its crate directory, whose
+# lockfile pins the kit crates it takes from the registry, plus any extra source
+# roots (the crates in this module it depends on by path). A row the binary does not embed
 # whose guest is fresh is then checked against the digest the binary carries for
 # it. Reading the list here keeps this guard in lockstep with the build script
 # and the registry table.

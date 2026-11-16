@@ -14,8 +14,9 @@
 #   name        plugin name — second URI path segment and artifact basename
 #   sourcePath  guest source directory, relative to the aggrega-cli module root
 #   toolchain   guest toolchain: go or rust
-#   extraRoots  comma-separated extra source roots for the freshness check
-#               (e.g. a local SDK crate); empty for go guests
+#   extraRoots  comma-separated extra source roots for the freshness check:
+#               crates in this module a rust guest depends on by path;
+#               empty otherwise
 #   embed       empty or absent: the binary embeds the plugin; `no`: it is
 #               built, stamped, generated and published, and never embedded.
 #               No other value is accepted. Written only where it is `no`.
@@ -29,7 +30,7 @@ provider	compose	./plugins/compose-provider	go
 provider	helm-chart	./plugins/helmchart-provider	go
 provider	terraform	./plugins/terraform-provider	go
 provider	cloudformation	./plugins/cloudformation-provider	go
-linter	publishing	plugins/publishing-linter	rust	../aggrega-pdk/rust,../aggrega-abi/rust
+linter	publishing	plugins/publishing-linter	rust
 parser	hcl	./plugins/hcl-parser	go
 parser	toml	./plugins/toml-parser	go
 parser	yaml	./plugins/yaml-parser	go
@@ -37,8 +38,8 @@ parser	json	./plugins/json-parser	go
 parser	jsonc	./plugins/jsonc-parser	go
 governance	label-injector	./plugins/label-injector-mutator	go
 governance	selector-tagger	./plugins/selector-tagger-mutator	go
-governance	rego	plugins/rego-governance	rust	../aggrega-pdk/rust,../aggrega-abi/rust,plugins/governancecore
-governance	cel	plugins/cel-governance	rust	../aggrega-pdk/rust,../aggrega-abi/rust,plugins/governancecore
+governance	rego	plugins/rego-governance	rust	plugins/governancecore
+governance	cel	plugins/cel-governance	rust	plugins/governancecore
 importer	langflow	./plugins/langflow-importer	go		no
 importer	flowise	./plugins/flowise-importer	go		no
 importer	n8n	./plugins/n8n-importer	go		no
