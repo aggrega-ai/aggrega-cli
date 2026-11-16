@@ -93,11 +93,13 @@ func (s site) under(section, first string) bool {
 }
 
 // readsRuntimeState reports whether ARM evaluates reference and the list
-// functions at the site: inside a resource's properties or an output's value.
-// Those are the places the template function reference documents for them; a
-// resource's name, location, tags and other top-level fields are not among them.
+// functions at the site: inside a resource's properties, or an output's value or
+// the input of its copy loop. Those are the places the template function
+// reference documents for them; a resource's name, location, tags and other
+// top-level fields are not among them, nor is the count of a copy loop.
 func (s site) readsRuntimeState() bool {
-	return s.under(sectionResources, "properties") || s.under(sectionOutputs, "value")
+	return s.under(sectionResources, "properties") || s.under(sectionOutputs, "value") ||
+		s.under(sectionOutputs, "copy") && len(s.path) > 1 && s.path[1] == "input"
 }
 
 // isDependsOnEntry reports whether the site is one entry of a resource's
@@ -267,13 +269,15 @@ func (l *level) declared() declarations {
 // parameters or variables must name a declaration of the level, compared without
 // regard to case. A dangling reference halts wrapping
 // ErrPluginRequiredInputUnresolved. A call to reference or a list function
-// outside a resource's properties or an output's value halts wrapping
+// outside a resource's properties, an output's value or its copy loop's input,
+// or inside a user-defined function, halts wrapping
 // ErrPluginValueNotRepresentable. Each halt names the contributor, the JSON
 // pointer and, for a dangling reference, the name.
 //
 // The template body of a nested deployment is a level of its own and is not
 // read. A user-defined function's body reads its own parameters and no variable,
-// so only the placement of its calls is checked.
+// and ARM allows no reference or list function inside it, so only that is
+// checked there.
 func (l *level) checkReferences() error {
 	declared := l.declared()
 	return l.eachString(func(s site, text string) (string, error) {
@@ -307,10 +311,15 @@ func (l *level) checkReferences() error {
 // check checks one call to a template function at site s.
 func (r declarations) check(s site, c armexpr.Call) error {
 	name := strings.ToLower(c.Name)
-	readsState := name == "reference" || isListFunction(name)
+	readsState := name == "reference" || armexpr.IsListFunction(name)
+	if readsState && s.section == sectionFunctions {
+		return refuse(plugincondition.ErrPluginValueNotRepresentable,
+			fmt.Sprintf("%s, a user-defined function calls %s, which ARM does not allow inside a user-defined function; call it where the function is used, inside a resource's properties or an output's value, and pass its result to the function as an argument",
+				s.named(), c.Name))
+	}
 	if readsState && !s.readsRuntimeState() {
 		return refuse(plugincondition.ErrPluginValueNotRepresentable,
-			fmt.Sprintf("%s, the expression calls %s, which ARM evaluates only inside a resource's properties or an output's value; move the call into a resource's properties or an output's value",
+			fmt.Sprintf("%s, the expression calls %s, which ARM evaluates only inside a resource's properties, an output's value or the input of an output's copy loop; move the call into one of those",
 				s.named(), c.Name))
 	}
 	if s.section == sectionFunctions {
@@ -362,16 +371,10 @@ func firstTextArgument(c armexpr.Call) (string, bool) {
 	return str.Value, ok
 }
 
-// isListFunction reports whether name is a function of the list family: list
-// itself or any name beginning with list, as the template function reference
-// documents it, matched without regard to case.
-func isListFunction(name string) bool {
-	return len(name) >= len("list") && strings.EqualFold(name[:len("list")], "list")
-}
-
 // IsSecretExpression reports whether evaluating n can yield a secret: n calls a
-// list function (listKeys, listSecrets, listOutputsWithSecureValues and every
-// other name beginning with list), or reads through parameters a parameter that
+// function of the list family (armexpr.IsListFunction: list, listKeys,
+// listSecrets, listOutputsWithSecureValues and the rest), or reads through
+// parameters a parameter that
 // secureParameters marks true, the producer template's securestring and
 // secureObject parameters. Parameter names match without regard to case, as ARM
 // reads them.
@@ -386,7 +389,7 @@ func IsSecretExpression(n armexpr.Node, secureParameters map[string]bool) bool {
 			return true
 		}
 		switch {
-		case isListFunction(c.Name):
+		case armexpr.IsListFunction(c.Name):
 			secret = true
 		case strings.EqualFold(c.Name, "parameters"):
 			if p, literal := firstTextArgument(c); literal && isSecureParameter(p, secureParameters) {

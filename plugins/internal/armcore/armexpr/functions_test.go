@@ -23,10 +23,11 @@ func lowerSorted(names []string) []string {
 // by hand from the template function reference pages (array, CIDR, comparison,
 // date, template-value, lambda, logical, numeric, object, resource, scope and string
 // functions); keeping it separate means a mistake in either copy shows up as a
-// difference rather than agreeing with itself. The list* family is matched by
-// prefix and is not enumerated. lambda and lambdaVariables appear only in the
-// reference pages' examples and fail is not documented there; all three are
-// listed because the pinned module calls them.
+// difference rather than agreeing with itself. The list* family (list itself and
+// every name beginning with list) is matched by prefix and is not enumerated;
+// TestTemplateFunctionListFamily states it. lambda and lambdaVariables appear
+// only in the reference pages' examples and fail is not documented there; all
+// three are listed because the pinned module calls them.
 func TestTemplateFunctionSetIsTheDocumentedList(t *testing.T) {
 	documented := []string{
 		// array
@@ -71,14 +72,31 @@ func TestTemplateFunctionSetIsTheDocumentedList(t *testing.T) {
 			t.Errorf("IsTemplateFunction(%q) = false, want true in any case", n)
 		}
 	}
-	for _, n := range []string{"listOutputsWithSecureValues", "LISTKEYS", "listFoo"} {
+	for _, n := range []string{"list", "listOutputsWithSecureValues", "LISTKEYS", "listFoo"} {
 		if !IsTemplateFunction(n) {
 			t.Errorf("IsTemplateFunction(%q) = false, want true (list* family)", n)
 		}
 	}
-	for _, n := range []string{"", "list", "prod", "concatenate", "my"} {
+	for _, n := range []string{"", "lis", "prod", "concatenate", "my"} {
 		if IsTemplateFunction(n) {
 			t.Errorf("IsTemplateFunction(%q) = true, want false", n)
+		}
+	}
+}
+
+// TestTemplateFunctionListFamily states the list{Value} family as the resource
+// function reference documents it: the operation name starts with list and might
+// have a suffix, with list, listKeys, listKeyValue and listSecrets as common
+// usages. Matching ignores case.
+func TestTemplateFunctionListFamily(t *testing.T) {
+	for _, n := range []string{"list", "LIST", "listKeys", "listKeyValue", "listSecrets", "ListAccountSas", "listOutputsWithSecureValues"} {
+		if !IsListFunction(n) {
+			t.Errorf("IsListFunction(%q) = false, want true", n)
+		}
+	}
+	for _, n := range []string{"", "l", "lis", "reference", "concat", "alist", "parameters"} {
+		if IsListFunction(n) {
+			t.Errorf("IsListFunction(%q) = true, want false", n)
 		}
 	}
 }

@@ -9,8 +9,8 @@ import "strings"
 // reference documents, plus fail, lambda and lambdaVariables. The reference
 // pages use lambda and lambdaVariables in their examples without a page of their
 // own, and document no fail; they are included because the pinned Azure Verified
-// Module template calls them. The open list{Value} family is matched by prefix in
-// IsTemplateFunction.
+// Module template calls them. The open list{Value} family is matched by
+// IsListFunction.
 var templateFunctions = []string{
 	"add", "and", "array", "base64", "base64ToJson", "base64ToString", "bool",
 	"cidrHost", "cidrSubnet", "coalesce", "concat", "contains", "copyIndex",
@@ -44,14 +44,20 @@ var templateFunctionIndex = func() map[string]struct{} {
 // IsTemplateFunction reports whether name is a template function: a member of
 // the documented closed list (with fail, lambda and lambdaVariables, which the
 // pinned Azure Verified Module template calls), or a name of the open
-// list{Value} family the reference documents, which is any name beginning with
-// "list" (listKeys, listSecrets, listAccountSas, listOutputsWithSecureValues,
-// ...). Matching ignores case, as ARM does.
+// list{Value} family (IsListFunction). Matching ignores case, as ARM does.
 func IsTemplateFunction(name string) bool {
-	l := strings.ToLower(name)
-	if len(l) > len("list") && strings.HasPrefix(l, "list") {
+	if IsListFunction(name) {
 		return true
 	}
-	_, ok := templateFunctionIndex[l]
+	_, ok := templateFunctionIndex[strings.ToLower(name)]
 	return ok
+}
+
+// IsListFunction reports whether name belongs to the list{Value} family the
+// resource function reference documents: the operation name starts with list
+// and might have a suffix, so list itself and listKeys, listSecrets,
+// listAccountSas, listOutputsWithSecureValues and every other name beginning
+// with list. Matching ignores case, as ARM does.
+func IsListFunction(name string) bool {
+	return len(name) >= len("list") && strings.EqualFold(name[:len("list")], "list")
 }

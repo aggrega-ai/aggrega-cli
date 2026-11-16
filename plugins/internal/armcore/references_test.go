@@ -109,6 +109,10 @@ func TestDanglingReferenceHalts(t *testing.T) {
 		{"reference", appProperty("[reference('Nope').outputs.a.value]"), "/resources/App/properties/x", "Nope"},
 		{"dependsOn", appResource("    name: app\n    dependsOn: [Nope]\n"), "/resources/App/dependsOn/0", "Nope"},
 		{"listKeys", appProperty("[listKeys('Nope', '2023-01-01').keys[0].value]"), "/resources/App/properties/x", "Nope"},
+		{"LISTKEYS in upper case", appProperty("[LISTKEYS('Nope', '2023-01-01').keys[0].value]"), "/resources/App/properties/x", "Nope"},
+		{"list", appProperty("[list('Nope', '2023-01-01').properties]"), "/resources/App/properties/x", "Nope"},
+		{"references", appProperty("[references('Nope')]"), "/resources/App/properties/x", "Nope"},
+		{"resourceInfo", appProperty("[resourceInfo('Nope').id]"), "/resources/App/properties/x", "Nope"},
 		{"parameters", appProperty("[parameters('missing')]"), "/resources/App/properties/x", "missing"},
 		{"variables", appProperty("[variables('v')]"), "/resources/App/properties/x", "v"},
 		{"symbolic name in another case", appProperty("[reference('db').outputs.a.value]"), "/resources/App/properties/x", "db"},
@@ -206,18 +210,31 @@ func TestReferenceOutsidePropertiesHalts(t *testing.T) {
 	t.Parallel()
 	notRep := plugincondition.ErrPluginValueNotRepresentable()
 	const ref = "\"[reference('Db').outputs.a.value]\""
+	// Each halt names where the call may go instead.
+	moveIt := []string{"properties", "output"}
 	cases := []struct {
 		name, content, pointer string
 		cond                   error
+		sentence               []string
 	}{
-		{"tags", appResource("    name: app\n    tags:\n      team: " + ref + "\n"), "/resources/App/tags/team", notRep},
-		{"name", appResource("    name: " + ref + "\n"), "/resources/App/name", notRep},
-		{"location", appResource("    name: app\n    location: " + ref + "\n"), "/resources/App/location", notRep},
-		{"variable", "variables:\n  v: " + ref + "\n", "/variables/v", notRep},
-		{"list function in tags", appResource("    name: app\n    tags:\n      team: \"[listKeys('Db', '2023-01-01').keys[0].value]\"\n"), "/resources/App/tags/team", notRep},
-		{"rewritten literal in tags", appResource("    name: app\n    tags:\n      team: \"team-[reference('Db').outputs.a.value]\"\n"), "/resources/App/tags/team", notRep},
-		{"resource properties", appProperty("[reference('Db').outputs.a.value]"), "", nil},
-		{"output value", "outputs:\n  host: {type: string, value: " + ref + "}\n", "", nil},
+		{"tags", appResource("    name: app\n    tags:\n      team: " + ref + "\n"), "/resources/App/tags/team", notRep, moveIt},
+		{"name", appResource("    name: " + ref + "\n"), "/resources/App/name", notRep, moveIt},
+		{"location", appResource("    name: app\n    location: " + ref + "\n"), "/resources/App/location", notRep, moveIt},
+		{"variable", "variables:\n  v: " + ref + "\n", "/variables/v", notRep, moveIt},
+		{"list function in tags", appResource("    name: app\n    tags:\n      team: \"[listKeys('Db', '2023-01-01').keys[0].value]\"\n"), "/resources/App/tags/team", notRep, moveIt},
+		{"rewritten literal in tags", appResource("    name: app\n    tags:\n      team: \"team-[reference('Db').outputs.a.value]\"\n"), "/resources/App/tags/team", notRep, moveIt},
+		{"output loop count", "outputs:\n  hosts: {type: array, copy: {count: \"[length(reference('Db').outputs.a.value)]\", input: x}}\n", "/outputs/hosts/copy/count", notRep, moveIt},
+		{"user-defined function", `
+functions:
+  - namespace: my
+    members:
+      fn:
+        parameters: []
+        output: {type: string, value: "[reference('Db').outputs.a.value]"}
+`, "/functions/my.fn/output/value", notRep, []string{"user-defined function", "argument"}},
+		{"resource properties", appProperty("[reference('Db').outputs.a.value]"), "", nil, nil},
+		{"output value", "outputs:\n  host: {type: string, value: " + ref + "}\n", "", nil, nil},
+		{"output loop input", "outputs:\n  hosts: {type: array, copy: {count: 2, input: " + ref + "}}\n", "", nil, nil},
 		{"nested deployment parameters", `
 resources:
   Nested:
@@ -229,7 +246,7 @@ resources:
       parameters:
         p: {value: "[reference('Db').outputs.a.value]"}
       template: {}
-`, "", nil},
+`, "", nil, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -245,7 +262,7 @@ resources:
 			if !errors.Is(err, c.cond) {
 				t.Fatalf("want E0291, got %v", err)
 			}
-			for _, s := range []string{"arm-provider:", `"orders-api"`, c.pointer, "properties", "output"} {
+			for _, s := range append([]string{"arm-provider:", `"orders-api"`, c.pointer}, c.sentence...) {
 				if !strings.Contains(err.Error(), s) {
 					t.Errorf("sentence lacks %s: %v", s, err)
 				}

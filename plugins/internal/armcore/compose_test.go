@@ -173,6 +173,26 @@ variables:
 	}
 }
 
+// list is itself a function of the list family, so a call to it inside literal
+// text is a value written there.
+func TestComposeRecognisesTheBareListFunction(t *testing.T) {
+	t.Parallel()
+	l := levelOf(t,
+		contribution{"payments-db", dbFragment},
+		contribution{"orders-api", appEnv("x-[list('Db', '2023-01-01').properties]")})
+	diags, err := l.composeLiterals()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "[format('x-{0}', list('Db', '2023-01-01').properties)]"
+	if got := at(t, l, "/resources/App/properties/env/0/value"); got != want {
+		t.Errorf("got %v\nwant %s", got, want)
+	}
+	if len(diags) != 1 {
+		t.Errorf("want one diagnostic, got %v", diags)
+	}
+}
+
 func TestComposeRefusesAPlaceholderInsideAnExpression(t *testing.T) {
 	t.Parallel()
 	placeholder := rendercore.CrossBoundaryLinkSentinel("orders-api", "payments-db", "db", "fqdn")
