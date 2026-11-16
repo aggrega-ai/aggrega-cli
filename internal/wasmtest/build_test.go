@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -194,5 +195,132 @@ func TestPublishArtifactCopyKeepsTheSourceAndPublishesByRename(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Errorf("staging area holds %d leftover entries after publish, want none", len(entries))
+	}
+}
+
+// TestAGoGuestIsStaleOnceALocallyReplacedModuleChanges lays a module holding a
+// Go guest that imports a package of a second module, which the first module's
+// go.mod replaces with a directory beside it, and checks that the package's file
+// is among the guest's inputs, so an artifact older than it reads as stale: the
+// guest is built against that directory, not a released version.
+//
+// 🔴 PLANTED DEFECT: in guestPackagesTemplate (build.go), keep only the main
+// module's packages: the replaced module's file is not among the inputs, and the
+// case fails on it.
+func TestAGoGuestIsStaleOnceALocallyReplacedModuleChanges(t *testing.T) {
+	t.Parallel()
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve the layout's directory: %v", err)
+	}
+	write := func(rel, content string) string {
+		t.Helper()
+		path := filepath.Join(parent, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+		return path
+	}
+	write("kit/go.mod", "module example.test/kit\n\ngo 1.21\n")
+	kitFile := write("kit/pkg/pkg.go", "package pkg\n")
+	write("cli/go.mod", "module example.test/cli\n\ngo 1.21\n\nrequire example.test/kit v0.0.0\n\n"+
+		"replace example.test/kit => ../kit\n")
+	write("cli/plugins/guest/main.go", "package main\n\nimport _ \"example.test/kit/pkg\"\n\nfunc main() {}\n")
+
+	inputs, err := listGuestModuleInputs(filepath.Join(parent, "cli"), "guest")
+	if err != nil {
+		t.Fatalf("list the guest's inputs: %v", err)
+	}
+	listed := false
+	for _, p := range inputs {
+		listed = listed || p == kitFile
+	}
+	if !listed {
+		t.Fatalf("the guest's inputs do not hold %s, a file of the locally replaced module it imports: %q", kitFile, inputs)
+	}
+
+	artifact := filepath.Join(t.TempDir(), "guest.wasm")
+	if err := os.WriteFile(artifact, []byte("built"), 0o644); err != nil {
+		t.Fatalf("write the artifact: %v", err)
+	}
+	built := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(artifact, built, built); err != nil {
+		t.Fatalf("set the artifact's time: %v", err)
+	}
+	if isFreshAgainst(artifact, inputs) {
+		t.Errorf("an artifact older than a file of the locally replaced module the guest imports reads as fresh")
+	}
+}
+
+// TestARustCrateIsStaleOnceACrateItReachesByPathChanges lays a crate that
+// depends by path on a crate beside it and checks that cargoLocalPackageDirs
+// lists both directories, so a change in the path dependency moves an artifact
+// stale while the crate's own directory is untouched. It skips without cargo.
+//
+// 🔴 PLANTED DEFECT: in cargoLocalPackageDirs (build.go), keep only the first
+// local package: the path dependency's directory is not listed, the artifact
+// reads as fresh, and the case fails on it.
+func TestARustCrateIsStaleOnceACrateItReachesByPathChanges(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("cargo"); err != nil {
+		t.Skipf("cargo is not on PATH: %v", err)
+	}
+	parent := t.TempDir()
+	write := func(rel, content string) string {
+		t.Helper()
+		path := filepath.Join(parent, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+		return path
+	}
+	write("core/Cargo.toml", "[package]\nname = \"core-dep\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\n")
+	coreFile := write("core/src/lib.rs", "pub fn f() {}\n")
+	manifest := write("guest/Cargo.toml", "[package]\nname = \"guest\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n"+
+		"[workspace]\n\n[dependencies]\ncore-dep = { path = \"../core\" }\n")
+	write("guest/src/lib.rs", "pub fn g() { core_dep::f() }\n")
+	lock := exec.Command("cargo", "generate-lockfile", "--offline", "--manifest-path", manifest)
+	if out, err := lock.CombinedOutput(); err != nil {
+		t.Fatalf("generate the crate's lockfile: %v\n%s", err, out)
+	}
+
+	dirs, err := cargoLocalPackageDirs(manifest)
+	if err != nil {
+		t.Fatalf("list the crate's local packages: %v", err)
+	}
+	past, built := time.Now().Add(-2*time.Hour), time.Now().Add(-time.Hour)
+	if err := filepath.WalkDir(parent, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return os.Chtimes(path, past, past)
+	}); err != nil {
+		t.Fatalf("set the layout's times: %v", err)
+	}
+	artifact := filepath.Join(t.TempDir(), "guest.wasm")
+	if err := os.WriteFile(artifact, []byte("built"), 0o644); err != nil {
+		t.Fatalf("write the artifact: %v", err)
+	}
+	if err := os.Chtimes(artifact, built, built); err != nil {
+		t.Fatalf("set the artifact's time: %v", err)
+	}
+	if !wasmfixture.IsFresh(artifact, dirs...) {
+		t.Fatalf("an artifact built after every file of both crates reads as stale (listed %q)", dirs)
+	}
+	now := time.Now()
+	if err := os.Chtimes(coreFile, now, now); err != nil {
+		t.Fatalf("touch %s: %v", coreFile, err)
+	}
+	if !wasmfixture.IsFresh(artifact, filepath.Join(parent, "guest")) {
+		t.Fatalf("precondition: the crate's own directory is untouched, so it alone must read as fresh")
+	}
+	if wasmfixture.IsFresh(artifact, dirs...) {
+		t.Errorf("an artifact older than a file of the crate reached by path reads as fresh (listed %q)", dirs)
 	}
 }

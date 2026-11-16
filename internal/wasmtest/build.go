@@ -21,9 +21,12 @@
 // EnsureFixtureBuilt detects the layout from the artifact-name shape
 // and dispatches accordingly. The cache + freshness semantics are
 // identical across both layouts: artifact mtime ≥ newest source
-// mtime under the source directory and the trees it builds against —
-// for a Go guest, also every file of each package of this module it
-// imports. Both layouts hand back a path under
+// mtime under the source directory and every local tree it builds
+// against — for a Rust crate, each crate it reaches by path; for a Go
+// guest, every file of each package it imports from this module or
+// from a local directory a replace directive names. A dependency taken
+// at a released version is fixed by the lockfile or go.sum that pins
+// it. Both layouts hand back a path under
 // `aggrega-cli/internal/wasm/testdata/`, written only by rename, so a test
 // never reads an artifact another test process is in the middle of
 // writing.
@@ -32,8 +35,10 @@
 // build memo, the cross-process build lock, the staging directory,
 // publishing by rename and the freshness walk are the wasmfixture
 // package's, which also builds a guest whose source lives inside this
-// module ([wasmfixture.EnsureLocalGuestBuilt]). What is here is what reads
-// the sibling checkouts.
+// module ([wasmfixture.EnsureLocalGuestBuilt]). What is here builds the
+// production plugins and the plugin kit examples, and locates the
+// repositories checked out beside this one ([SiblingPath],
+// [SkipWithoutSiblings]): only a plugin kit example is read from one.
 //
 // Concurrency is guarded at two scopes, because they answer different
 // questions. Publishing by rename keeps a reader from seeing a half-written
@@ -45,6 +50,7 @@
 package wasmtest
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -55,17 +61,17 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
-	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
 )
 
 // EnsureFixtureBuilt resolves a .wasm artifact from its source.
 // Returns the artifact's absolute path after ensuring it exists and
-// is no older than every file in the source directory. Skips the
-// calling test with a clear diagnostic when the aggrega-pdk and
-// aggrega-abi checkouts the build reads are not found beside this
-// repository, when a plugin kit example's source is not present, or
-// when a build tool or target the build needs is not installed. A
-// build that fails with its toolchain present fails the test.
+// is no older than every file it is built from. Skips the calling test
+// with a clear diagnostic when a plugin kit example is asked for and the
+// aggrega-pdk checkout it is built from is not beside this repository,
+// or when a build tool or target the build needs is not installed; a
+// checkout that lacks the example fails the test. A production plugin reads
+// nothing beside this repository. A build that fails with its toolchain
+// present fails the test.
 //
 // Two artifact-name shapes are recognised:
 //
@@ -87,17 +93,17 @@ func EnsureFixtureBuilt(t *testing.T, artifactName string) string {
 		t.Helper()
 
 		moduleRoot := ModuleRoot(t)
-		siblingsDir, err := siblingCheckoutsDir()
-		if err != nil {
-			return "", err
-		}
 
 		if socket, lang, ok := parsePDKFixtureName(artifactName); ok {
+			siblingsDir, err := kitCheckoutDir(t, moduleRoot, lang, socket)
+			if err != nil {
+				return "", err
+			}
 			return buildPDKFixture(t, moduleRoot, siblingsDir, artifactName, socket, lang)
 		}
 
 		if name, ok := parsePluginArtifactName(artifactName); ok {
-			return buildPluginArtifact(t, moduleRoot, siblingsDir, artifactName, name)
+			return buildPluginArtifact(t, moduleRoot, artifactName, name)
 		}
 
 		t.Fatalf("malformed artifact name %q (want <socket>-<lang>.wasm OR <name>.wasm)", artifactName)
@@ -152,18 +158,18 @@ func EnsureStampedFixtureBuilt(t *testing.T, artifactName, version string) strin
 	path, skip := wasmfixture.BuildFixtureOnce(stamped, func() (string, error) {
 		t.Helper()
 		moduleRoot := ModuleRoot(t)
-		siblingsDir, err := siblingCheckoutsDir()
-		if err != nil {
-			return "", err
-		}
 		if isPDK {
+			siblingsDir, err := kitCheckoutDir(t, moduleRoot, lang, socket)
+			if err != nil {
+				return "", err
+			}
 			return buildPDKFixtureAs(t, moduleRoot, siblingsDir, artifactName, stamped, socket, lang, version)
 		}
 		pluginDir := pluginSourceDir(moduleRoot, plugin)
 		if !isGoGuest(pluginDir) {
 			t.Fatalf("stamped fixture %q names no Go guest at %s; only a Go guest of the production-plugin layout takes a stamp", artifactName, pluginDir)
 		}
-		return buildGoPluginArtifact(t, moduleRoot, siblingsDir, artifactName, stamped, plugin, version)
+		return buildGoPluginArtifact(t, moduleRoot, artifactName, stamped, plugin, version)
 	})
 	if skip != nil {
 		t.Skipf("%v", skip)
@@ -199,18 +205,15 @@ func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outN
 	artifactPath := filepath.Join(testdataDir, outName)
 
 	sourceDir := filepath.Join(siblingsDir, "aggrega-pdk", lang, "examples", socket)
-	if _, err := os.Stat(sourceDir); err != nil {
-		return "", fmt.Errorf("fixture source %s not present (the %s PDK may not have shipped yet): %v",
-			sourceDir, lang, err)
-	}
 
-	// Freshness watches the example's own source AND the per-language
-	// PDK and ABI source trees the example builds against. A change to
-	// a dependency moves the artifact stale even though the example's
-	// own source is untouched, so a regenerated PDK or ABI forces a
-	// rebuild rather than reusing a now-incompatible prebuilt fixture.
-	pdkSrc, abiSrc := pdkDependencySources(siblingsDir, lang)
-	if wasmfixture.IsFresh(artifactPath, sourceDir, pdkSrc, abiSrc) {
+	// Freshness watches the example's own source, its manifest included,
+	// AND the per-language kit source tree the example builds against by
+	// path. A change to the kit moves the artifact stale even though the
+	// example's own source is untouched. The example takes the ABI codec as
+	// a released package its manifest pins, so a change to the ABI reaches
+	// the example only through that manifest.
+	pdkSrc := pdkSourceDir(siblingsDir, lang)
+	if wasmfixture.IsFresh(artifactPath, sourceDir, pdkSrc) {
 		return artifactPath, nil
 	}
 
@@ -240,7 +243,7 @@ func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outN
 	// behind another builder finds that builder's finished artifact here and
 	// skips the build, so contention costs it a wait rather than a rebuild and
 	// only the first arrival pays the build cost.
-	if wasmfixture.IsFresh(artifactPath, sourceDir, pdkSrc, abiSrc) {
+	if wasmfixture.IsFresh(artifactPath, sourceDir, pdkSrc) {
 		return artifactPath, nil
 	}
 
@@ -312,22 +315,17 @@ func pdkToolchainAbsent(output string) bool {
 	return false
 }
 
-// pdkDependencySources returns the PDK and ABI source directories a
-// PDK example builds against, for the given language, inside the sibling
-// checkouts under siblingsDir. The source-holding subdirectory differs per
-// language: rust and typescript keep sources under src/, go under pkg/. lang
-// is one of the recognised PDK languages (rust, go, typescript) as classified
-// by parsePDKFixtureName.
-func pdkDependencySources(siblingsDir, lang string) (pdkSrc, abiSrc string) {
-	switch lang {
-	case "go":
-		pdkSrc = filepath.Join(siblingsDir, "aggrega-pdk", "go", "pkg")
-		abiSrc = filepath.Join(siblingsDir, "aggrega-abi", "go", "pkg")
-	case "rust", "typescript":
-		pdkSrc = filepath.Join(siblingsDir, "aggrega-pdk", lang, "src")
-		abiSrc = filepath.Join(siblingsDir, "aggrega-abi", lang, "src")
+// pdkSourceDir returns the kit source directory a plugin kit example builds
+// against, for the given language, inside the aggrega-pdk checkout under
+// siblingsDir. The source-holding subdirectory differs per language: rust and
+// typescript keep sources under src/, go under pkg/. lang is one of the
+// recognised kit languages (rust, go, typescript) as classified by
+// parsePDKFixtureName.
+func pdkSourceDir(siblingsDir, lang string) string {
+	if lang == "go" {
+		return filepath.Join(siblingsDir, "aggrega-pdk", "go", "pkg")
 	}
-	return pdkSrc, abiSrc
+	return filepath.Join(siblingsDir, "aggrega-pdk", lang, "src")
 }
 
 // buildPluginArtifact handles the production-plugin layout at
@@ -342,12 +340,12 @@ func pdkDependencySources(siblingsDir, lang string) (pdkSrc, abiSrc string) {
 // directory, not cargo's own release artifact: cargo owns that path and
 // rewrites it in place on every build, so a test that read it directly
 // could catch it mid-write while another test process rebuilt the crate.
-func buildPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, name string) (string, error) {
+func buildPluginArtifact(t *testing.T, moduleRoot, artifactName, name string) (string, error) {
 	pluginDir := pluginSourceDir(moduleRoot, name)
 	manifestPath := filepath.Join(pluginDir, "Cargo.toml")
 	if _, err := os.Stat(manifestPath); err != nil {
 		if isGoGuest(pluginDir) {
-			return buildGoPluginArtifact(t, moduleRoot, siblingsDir, artifactName, artifactName, name, coreGuestDefaultVersion)
+			return buildGoPluginArtifact(t, moduleRoot, artifactName, artifactName, name, coreGuestDefaultVersion)
 		}
 		t.Fatalf("plugin source missing at %s: %v, and no main.go beside it (a production plugin is a Cargo crate or a Go guest; absence is a regression)", manifestPath, err)
 	}
@@ -355,18 +353,15 @@ func buildPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, na
 	testdataDir := wasmfixture.FixtureDir(moduleRoot)
 	artifactPath := filepath.Join(testdataDir, artifactName)
 
-	// Freshness watches the plugin's own src/ AND the path-dependency
-	// source trees the plugin builds against (the Rust PDK and the
-	// generated ABI). A change to a dependency moves the artifact stale
-	// even though the plugin's own src/ is untouched, so a regenerated
-	// ABI forces a rebuild rather than reusing a now-incompatible
-	// prebuilt artifact. buildPluginArtifact knows the plugin's deps;
+	// Freshness watches every package of the crate's build that cargo reads
+	// from a local directory, as cargoLocalPackageDirs lists them: the crate
+	// itself, its manifest and lockfile included, and each crate it depends on
+	// by path. A registry dependency, the plugin kit and the ABI codec among
+	// them, is immutable at the version the lockfile pins, so a change to it
+	// reaches the build only through the lockfile. A crate whose packages
+	// cannot be listed is built, and the build says why it cannot be.
 	// wasmfixture.IsFresh stays a generic newest-mtime walk over the dirs it is given.
-	srcDir := filepath.Join(pluginDir, "src")
-	pdkSrc := filepath.Join(siblingsDir, "aggrega-pdk", "rust", "src")
-	abiSrc := filepath.Join(siblingsDir, "aggrega-abi", "rust", "src")
-
-	if wasmfixture.IsFresh(artifactPath, srcDir, pdkSrc, abiSrc) {
+	if dirs, err := cargoLocalPackageDirs(manifestPath); err == nil && wasmfixture.IsFresh(artifactPath, dirs...) {
 		return artifactPath, nil
 	}
 
@@ -409,7 +404,7 @@ type guestInputsListing struct {
 var guestInputs sync.Map
 
 // guestModuleInputs returns what the build of the Go guest at
-// aggrega-cli/plugins/<name>/ reads from this module, as
+// aggrega-cli/plugins/<name>/ reads from local directories, as
 // listGuestModuleInputs lists it, listed once per test process.
 func guestModuleInputs(moduleRoot, name string) ([]string, error) {
 	actual, _ := guestInputs.LoadOrStore(moduleRoot+"\x00"+name, &guestInputsListing{})
@@ -419,22 +414,27 @@ func guestModuleInputs(moduleRoot, name string) ([]string, error) {
 }
 
 // guestPackagesTemplate is the go list template writing, for each package of a
-// guest's build that is not the standard library's, one line: its directory,
-// then each Go file it compiles and each file it embeds, relative to that
-// directory, tab-separated.
-const guestPackagesTemplate = `{{if not .Standard}}{{.Dir}}{{range .GoFiles}}{{"\t"}}{{.}}{{end}}` +
-	`{{range .CgoFiles}}{{"\t"}}{{.}}{{end}}{{range .EmbedFiles}}{{"\t"}}{{.}}{{end}}{{end}}`
+// guest's build that belongs to the main module or to a module a replace
+// directive points at a local directory, one line: its directory, then each Go
+// file it compiles and each file it embeds, relative to that directory,
+// tab-separated. A package of a module taken at a version, from the module
+// cache, writes nothing: its content is fixed by the checksum go.sum records.
+const guestPackagesTemplate = `{{with .Module}}{{if or .Main (and .Replace (not .Replace.Version))}}` +
+	`{{$.Dir}}{{range $.GoFiles}}{{"\t"}}{{.}}{{end}}{{range $.CgoFiles}}{{"\t"}}{{.}}{{end}}` +
+	`{{range $.EmbedFiles}}{{"\t"}}{{.}}{{end}}{{end}}{{end}}`
 
 // listGuestModuleInputs lists what the build of the Go guest at
-// aggrega-cli/plugins/<name>/ reads from the module at moduleRoot: the module's
-// go.mod and go.sum, where each exists, and for every package of the module the
-// guest imports, its own included, the package's directory — whose time moves
-// when a file is added to it or removed from it — and each file the package
-// compiles and embeds. The packages are those `go list -deps` reports for the
-// guest under the environment its build runs in (GOWORK=off, GOOS=wasip1,
-// GOARCH=wasm), kept to the ones whose directory pathscope.ResolvesInside
-// judges inside moduleRoot; a package the guest does not import, a test file and
-// a file another platform's build compiles are not among them.
+// aggrega-cli/plugins/<name>/ reads from local directories: the go.mod and go.sum
+// of the module at moduleRoot, where each exists, and for every package the
+// guest imports from that module or from a module a replace directive points at
+// a local directory, its own package included, the package's directory — whose
+// time moves when a file is added to it or removed from it — and each file the
+// package compiles and embeds. The packages are those `go list -deps` reports
+// for the guest under the environment its build runs in (GOWORK=off,
+// GOOS=wasip1, GOARCH=wasm), as guestPackagesTemplate selects them; a package
+// the guest does not import, a test file and a file another platform's build
+// compiles are not among them. A module taken at a version is covered by
+// go.sum, which records its checksum.
 func listGuestModuleInputs(moduleRoot, name string) ([]string, error) {
 	cmd := exec.Command("go", "list", "-deps", "-f", guestPackagesTemplate, "./plugins/"+name)
 	cmd.Dir = moduleRoot
@@ -455,9 +455,6 @@ func listGuestModuleInputs(moduleRoot, name string) ([]string, error) {
 		fields := strings.Split(line, "\t")
 		dir := fields[0]
 		if dir == "" {
-			continue
-		}
-		if _, inside := pathscope.ResolvesInside(moduleRoot, dir); !inside {
 			continue
 		}
 		inputs = append(inputs, dir)
@@ -493,24 +490,25 @@ func isFreshAgainst(artifactPath string, paths []string) bool {
 // The guest is a package of this module rather than a module of its own, so it is
 // built from the module root against the module's own go.mod — GOWORK=off, as the
 // core-plugin build runs it — with that build's reproducibility flags (-trimpath,
-// -buildvcs=false, an empty build id). Freshness watches the guest's own directory,
-// the Go plugin kit and ABI source trees it builds against, and every package of
-// this module the guest imports, as guestModuleInputs lists them: a guest keeps
-// most of what it does in packages beside it under plugins/internal/, so a change
-// there rebuilds every guest importing the changed package and no other.
+// -buildvcs=false, an empty build id). Freshness watches the guest's own directory
+// and every package it imports from a local directory, as guestModuleInputs lists
+// them: a guest keeps most of what it does in packages beside it under
+// plugins/internal/, so a change there rebuilds every guest importing the changed
+// package and no other. The Go plugin kit and ABI are read wherever go.mod
+// resolves them: at a released version through go.sum, or from a local directory
+// a replace directive names, whose packages are then listed like this module's.
 //
 // There is no toolchain-absent skip, for the reason [wasmfixture.EnsureLocalGuestBuilt] gives:
 // the standard Go toolchain targeting wasip1 is present whenever a test runs at
 // all, so any build failure is a hard test failure.
-func buildGoPluginArtifact(t *testing.T, moduleRoot, siblingsDir, artifactName, outName, name, version string) (string, error) {
+func buildGoPluginArtifact(t *testing.T, moduleRoot, artifactName, outName, name, version string) (string, error) {
 	t.Helper()
 	pluginDir := pluginSourceDir(moduleRoot, name)
 	testdataDir := wasmfixture.FixtureDir(moduleRoot)
 	artifactPath := filepath.Join(testdataDir, outName)
 
-	pdkSrc, abiSrc := pdkDependencySources(siblingsDir, "go")
 	fresh := func() bool {
-		if !wasmfixture.IsFresh(artifactPath, pluginDir, pdkSrc, abiSrc) {
+		if !wasmfixture.IsFresh(artifactPath, pluginDir) {
 			return false
 		}
 		inputs, err := guestModuleInputs(moduleRoot, name)
@@ -712,29 +710,54 @@ func pluginSourceDir(moduleRoot, name string) string {
 	return filepath.Join(moduleRoot, "plugins", name)
 }
 
-// siblingCheckoutsDir returns the directory holding this repository's sibling
-// checkouts — the plugin kit at aggrega-pdk/ and the ABI at aggrega-abi/, which
-// the plugin kit examples and the kit and ABI source trees a fixture's freshness
-// watches are read from. It walks up from the test's working directory to the
-// first directory holding a .gitmodules file, and returns an error naming both
-// siblings when there is none.
-func siblingCheckoutsDir() (string, error) {
-	cwd, err := os.Getwd()
+// kitCheckoutDir returns the directory holding the aggrega-pdk checkout beside
+// this repository, which the plugin kit example for socket in lang is built
+// from. When the checkout is absent it returns the skip reason naming it; when
+// the checkout is present and lacks the example it fails t, since a test naming
+// an example the kit does not hold is a defect, not a partial checkout.
+func kitCheckoutDir(t *testing.T, moduleRoot, lang, socket string) (string, error) {
+	t.Helper()
+	kit, err := siblingRepoDir(moduleRoot, "aggrega-pdk")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%s", siblingSkipMessage("aggrega-pdk", filepath.Join(lang, "examples", socket), err))
 	}
-	dir := cwd
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".gitmodules")); err == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("the aggrega-pdk and aggrega-abi checkouts beside this repository were not found: "+
-				"no directory above %s holds the .gitmodules file that marks where they are checked out", cwd)
-		}
-		dir = parent
+	example := filepath.Join(kit, lang, "examples", socket)
+	if _, err := os.Stat(example); err != nil {
+		t.Fatalf("plugin kit example %s is not in the aggrega-pdk checkout: %v", example, err)
 	}
+	return filepath.Dir(kit), nil
+}
+
+// cargoLocalPackageDirs lists the directory of every package the crate whose
+// manifest is manifestPath builds from a local directory — the crate itself and
+// each crate reached by a path dependency or a local patch — as cargo metadata
+// reports them for the versions the crate's lockfile pins.
+func cargoLocalPackageDirs(manifestPath string) ([]string, error) {
+	cmd := exec.Command("cargo", "metadata", "--format-version", "1", "--locked", "--manifest-path", manifestPath)
+	cmd.Dir = filepath.Dir(manifestPath)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var meta struct {
+		Packages []struct {
+			Source       *string `json:"source"`
+			ManifestPath string  `json:"manifest_path"`
+		} `json:"packages"`
+	}
+	if err := json.Unmarshal(out, &meta); err != nil {
+		return nil, err
+	}
+	var dirs []string
+	for _, p := range meta.Packages {
+		if p.Source == nil {
+			dirs = append(dirs, filepath.Dir(p.ManifestPath))
+		}
+	}
+	if len(dirs) == 0 {
+		return nil, fmt.Errorf("cargo metadata for %s lists no local package", manifestPath)
+	}
+	return dirs, nil
 }
 
 // publishArtifactCopy publishes a copy of src, for a source that has to stay
