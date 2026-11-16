@@ -42,7 +42,7 @@
 # beside the guest is stale too.
 #
 # The overlays live in the sibling aggrega-hub. When that sibling is absent (a
-# schemas/pdk/abi-only checkout that cannot generate entities anyway), the
+# clone of this repository alone, which cannot generate entities anyway), the
 # overlay half of the freshness check is skipped with a note and only presence +
 # descriptor currency is asserted.
 #
@@ -139,7 +139,7 @@ while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir;
 done <<< "$rows"
 
 if [ "$have_overlays" = 0 ]; then
-  echo "note: aggrega-hub sibling absent — overlay-currency half of the entity check skipped"
+  echo "note: aggrega-hub sibling absent (no overlays at $OVERLAY_DIR) — overlay-currency half of the entity check skipped"
 fi
 
 if [ "${#stale[@]}" -gt 0 ]; then

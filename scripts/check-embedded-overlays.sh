@@ -93,7 +93,7 @@ done
 rows="$(core_plugin_rows)" || exit 1
 OVERLAY_DIR="$HUB/plugin-overlays"
 CATALOG_DIR="$HUB/aggrega-catalog/plugin"
-[ -d "$HUB" ] || { echo "check-embedded-overlays: aggrega-hub not found at $HUB" >&2; exit 1; }
+[ -d "$HUB" ] || { echo "check-embedded-overlays: aggrega-hub not found at $HUB (this check reads the overlays and catalog entities of the aggrega-hub repository checked out beside this one; check it out there first)" >&2; exit 1; }
 
 # BUILD_VER is the version check (c) EXPECTS to find as a committed version
 # directory. Nothing here stamps anything: it is HEAD's own `git describe`, with

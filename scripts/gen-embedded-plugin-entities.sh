@@ -51,7 +51,7 @@ OVERLAY_DIR="$HUB/plugin-overlays"
 # and the generation of the rows the binary does not embed.
 . scripts/lib/core-plugins.sh
 rows="$(core_plugin_rows)" || exit 1
-[ -d "$OVERLAY_DIR" ] || { echo "gen-embedded-plugin-entities: overlay dir not found: $OVERLAY_DIR (the sibling aggrega-hub is required to generate embedded entities)" >&2; exit 1; }
+[ -d "$OVERLAY_DIR" ] || { echo "gen-embedded-plugin-entities: overlay dir not found: $OVERLAY_DIR (the overlays are read from the aggrega-hub repository checked out beside this one at $HUB; check it out there first)" >&2; exit 1; }
 
 echo "=== build aggrega (provenance version stamp) ==="
 . scripts/lib/build-version.sh

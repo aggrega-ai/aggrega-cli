@@ -31,6 +31,12 @@ func main() {
 	out := flag.String("out", "../aggrega-docs", "path to the aggrega-docs documentation tree")
 	flag.Parse()
 
+	if info, err := os.Stat(*out); err != nil || !info.IsDir() {
+		fmt.Fprintf(os.Stderr, "generate cli docs: the documentation tree %s is not there; check out aggrega-docs "+
+			"there, or name the tree to refresh with -out\n", *out)
+		os.Exit(1)
+	}
+
 	res, err := clidocs.Generate(newRootCmd(), *out)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "generate cli docs:", err)

@@ -88,7 +88,7 @@ embedded guest that is older than its source.
 
 ## Testing
 
-The fast unit suite needs nothing beyond this repository:
+Run the fast suite with:
 
 ```bash
 go test ./...
@@ -96,27 +96,38 @@ go test ./...
 
 The integration suite is build-tagged `integration` and is excluded from the
 fast run (its in-process OCI registry harness pulls in test-only dependencies
-that never enter the production binary). It exercises real catalog resolution and
-the worked examples end to end, so it expects two companion repositories checked
-out **as sibling directories** next to this one. The sibling directory names are
-load-bearing — they must be exactly `aggrega-hub` and `aggrega-docs`:
+that never enter the production binary):
+
+```bash
+go test -tags=integration ./...
+```
+
+Some tests in both suites also read a companion repository: the standard
+catalog, the worked examples, the plugin kit's examples or the shared ABI wire
+vectors. They expect it checked out **as a sibling directory** next to this one,
+under its repository name, which is load-bearing:
 
 ```text
 <parent>/
   <this-repo>/     # the compiler and CLI (this module)
   aggrega-hub/     # the standard catalog (under aggrega-catalog/)
   aggrega-docs/    # the language-reference worked examples
+  aggrega-pdk/     # the plugin kit examples some fixtures are built from
+  aggrega-abi/     # the shared wire vectors and the generated guest codecs
 ```
 
-With the siblings in place:
+A test that needs a sibling skips when it is absent, and its skip message names
+the repository and what the test reads from it. A sibling that is present but
+lacks what the test reads fails the test. Full coverage needs all four present.
 
-```bash
-go test -tags=integration ./cmd/aggrega/
-```
+### Regenerating the guest codecs
 
-Tests that need a sibling skip automatically when it is absent, so the
-integration suite degrades gracefully on a partial checkout — but full coverage
-requires both `aggrega-hub` and `aggrega-docs` present.
+The guest-side ABI codecs committed in `aggrega-abi` are generated from the
+canonical schemas by this repository's type generator,
+`go generate ./internal/tools/typegen`. That step writes
+into `aggrega-abi`, so it needs both checkouts: check out `aggrega-abi` beside
+this repository first. Without it the generator stops with an error naming the
+directory it expected.
 
 ## License
 

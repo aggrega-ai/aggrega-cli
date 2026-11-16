@@ -3643,6 +3643,10 @@ func main() {
 	}
 	outPath := os.Args[1]
 	base := filepath.Base(outPath)
+	if err := checkOutputDir(outPath); err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
 
 	out, err := generateFor(base)
 	if err != nil {
@@ -3657,6 +3661,23 @@ func main() {
 		fmt.Fprintf(os.Stderr, "write %s: %v\n", outPath, err)
 		os.Exit(1)
 	}
+}
+
+// checkOutputDir reports an error naming the missing directory when the
+// directory outPath is written into does not exist. A codec target outside this
+// module is written into the aggrega-abi repository, which has to be checked out
+// beside this one; the error says so rather than leaving a bare write failure.
+func checkOutputDir(outPath string) error {
+	dir := filepath.Dir(outPath)
+	info, err := os.Stat(dir)
+	if err == nil && info.IsDir() {
+		return nil
+	}
+	if err == nil {
+		err = fmt.Errorf("not a directory")
+	}
+	return fmt.Errorf("typegen: cannot write %s: its directory %s is not there (%v); a target in aggrega-abi is "+
+		"written into the aggrega-abi repository, so check out aggrega-abi beside this repository first", outPath, dir, err)
 }
 
 // generateFor dispatches an output basename to its emission path: a registered

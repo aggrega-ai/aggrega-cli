@@ -14,6 +14,7 @@
 #     each provider guest declares.
 DOCS_DIR ?= ../aggrega-docs
 docs:
+	@test -d "$(DOCS_DIR)" || { echo "make docs: the documentation tree $(DOCS_DIR) is not there; check out aggrega-docs beside this repository, or name the tree to refresh with DOCS_DIR=<path>" >&2; exit 1; }
 	go run -tags clidocs ./cmd/aggrega -out $(DOCS_DIR)
 	go run ./internal/tools/errindex -out $(DOCS_DIR)
 	go run ./internal/tools/providermatrix -out $(DOCS_DIR)

@@ -92,6 +92,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "imagetable: -hub names no checkout")
 		os.Exit(2)
 	}
+	if info, err := os.Stat(*hub); err != nil || !info.IsDir() {
+		fmt.Fprintf(os.Stderr, "imagetable: no aggrega-hub checkout at %s; check out aggrega-hub there, or name the "+
+			"checkout with -hub\n", *hub)
+		os.Exit(1)
+	}
 	if err := run(*hub, *out, *revision, *report); err != nil {
 		fmt.Fprintln(os.Stderr, "imagetable: "+err.Error())
 		os.Exit(1)

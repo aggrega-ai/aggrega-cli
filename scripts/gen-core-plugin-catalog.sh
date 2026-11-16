@@ -34,7 +34,7 @@ HUB="$SIBLINGS_DIR/aggrega-hub"
 OVERLAY_DIR="$HUB/plugin-overlays"
 OUTPUT_DIR="$HUB/aggrega-catalog/plugin"
 
-[ -d "$OVERLAY_DIR" ] || { echo "gen-core-plugin-catalog: overlay dir not found: $OVERLAY_DIR" >&2; exit 1; }
+[ -d "$OVERLAY_DIR" ] || { echo "gen-core-plugin-catalog: overlay dir not found: $OVERLAY_DIR (this script reads the overlays from, and writes the entities into, the aggrega-hub repository checked out beside this one at $HUB; check it out there first)" >&2; exit 1; }
 
 # The core-plugin list's one reader: core_plugin_rows and the generation of the
 # rows the binary does not embed.
