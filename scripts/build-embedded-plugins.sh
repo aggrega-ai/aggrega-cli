@@ -32,8 +32,8 @@
 #   guests use --remap-path-prefix, -C strip=symbols and CARGO_INCREMENTAL=0 for
 #   the analogous effect, and both use gzip -n. The rust remap (rust_guest_flags
 #   below) covers every directory a rust guest would otherwise name: the
-#   directory holding this module and the kits beside it, the cargo home, and the
-#   toolchain's standard-library sources, so a guest carries no path of the
+#   directory holding this module, the cargo home, and the toolchain's
+#   standard-library sources, so a guest carries no path of the
 #   machine that built it.
 #
 #   The identity cargo gives a path dependency, which reaches a rust guest's
@@ -206,15 +206,15 @@ rust_guest_flags() {
 
 # rust_guest_stage WORKSPACE MODULE CRATE STAGE — lay out under STAGE the view the
 # rust guest at MODULE/CRATE is compiled from: WORKSPACE, the directory holding
-# this module and the kits beside it, with STAGE as the root of a generated
+# this module, with STAGE as the root of a generated
 # workspace whose one member is the guest.
 #
 # cargo identifies a path dependency by its path relative to the workspace root
 # when it lies under the root, and by its absolute location otherwise, and that
 # identity reaches the guest's bytes: it decides the order of the guest's
 # functions in the module. A guest crate is a workspace root of its own, and every
-# crate it depends on by path — the kits beside this module, the shared
-# governance core beside the guest — lies outside it, so built in place the same
+# crate it depends on by path — the shared governance core beside the guest —
+# lies outside it, so built in place the same
 # commit yields different bytes in each directory it is checked out in. Under
 # STAGE each of those crates lies beneath the root, at the same relative position
 # wherever the checkout is.

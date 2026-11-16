@@ -29,11 +29,11 @@ governancecore = { path = "../governancecore" }
 # The plugin ABI surface: the descriptor encoder, the shared severity vocabulary,
 # and the generated wire types. Reusing the generated types single-sources the
 # wire shape with every other guest instead of restating it locally.
-aggrega-pdk-rust = { path = "../../../aggrega-pdk/rust" }
+aggrega-pdk-rust = "0.9.0"
 # The render-facet input types are defined in the ABI codec crate and are not
 # re-exported by the plugin development kit, so the codec crate is depended on
 # directly for those.
-aggrega-abi = { path = "../../../aggrega-abi/rust" }
+aggrega-abi = "0.9.0"
 extism-pdk = "1.4"
 serde = { version = "1", features = ["derive"] }
 # raw_value matches the ABI crate: the settings and artifact-tree fields are
