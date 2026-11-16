@@ -11,6 +11,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // The test in this file drives one producer publishing a short-form intrinsic as
@@ -266,6 +268,7 @@ func findDBHost(v any) (any, bool) {
 // path quoted and bare, and holds the two to one value: the producer's intrinsic
 // itself in the same stack, its export's import across stacks.
 func TestCloudFormation_AShortFormSplicedQuotedOrBareReadsAsOneIntrinsic(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	getAtt := map[string]any{"Fn::GetAtt": []any{"PaymentsDb", "Endpoint.Address"}}
 	for _, path := range []struct {

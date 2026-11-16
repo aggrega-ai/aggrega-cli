@@ -28,6 +28,8 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // The values the variable-reference sources plant: a key an argument carries, a
@@ -151,6 +153,7 @@ func importedTwice(t *testing.T, name string, body []byte, settings map[string]a
 // `if mcpconfig.Reference(m.Value) {` with `if false {`: the Flowise rows fail the
 // same way.
 func TestAValueThatIsWhollyAVariableReferenceIsLeftAsWrittenInEveryFormat(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	flow := decoded(t, readRealExport(t, langflowPromptingProject))
 	data := asObject(flow["data"])
@@ -364,6 +367,7 @@ func assertTextNotReported(t *testing.T, source []byte, res Result, outputDir, t
 // hyphen: every row fails, each operator's argument carried as written under
 // every setting and named in no warning.
 func TestAReferenceCarryingAValueAfterAnOperatorIsLocatedInEveryFormat(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	flow := decoded(t, readRealExport(t, langflowPromptingProject))
 	data := asObject(flow["data"])

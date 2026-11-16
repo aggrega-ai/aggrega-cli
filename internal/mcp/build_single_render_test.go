@@ -35,6 +35,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // captureServerLog points s's log stream at a buffer for the duration of fn and
@@ -233,6 +235,7 @@ spec:
 // other left, and each drives one build call through the dispatch rather than
 // calling the invoke — the count is about what a caller gets.
 func TestBuildAutoPullRendersTheReleaseOnce(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	// The surface under assertion is each server's own log, which this test points
 	// at a buffer for the duration of one call.
 	marker := unsupportedFieldMarker(t, "compose", "replicas")

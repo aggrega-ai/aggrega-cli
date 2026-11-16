@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // composeApplication is the committed compose-for-agents LangGraph application the
@@ -72,6 +74,7 @@ func assertTheLongFormModelsEntryIsReported(t *testing.T, shared importops.Resul
 // so the shared operation is refused asking for the format and the case fails
 // before any surface is compared.
 func TestAComposeApplicationIsDraftedAlikeAtEverySurface(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)

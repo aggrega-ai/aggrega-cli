@@ -66,8 +66,8 @@ declare -a stale=()
 # list_go_sources PKG — prints the locally-editable Go source files compiled
 # into the wasip1 guest built from PKG, one per line, excluding the immutable
 # module cache and the standard library. GOWORK=off mirrors the build-embedded
-# recipe: the go.mod replace directives then resolve the sibling modules from
-# their local working copies, offline.
+# recipe: every module, the plugin kit among them, resolves at the version go.mod
+# requires, from the module cache, so only this module's own sources are listed.
 list_go_sources() {
   local pkg="$1"
   GOWORK=off GOOS=wasip1 GOARCH=wasm go list -deps \

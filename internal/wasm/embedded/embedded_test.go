@@ -22,6 +22,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // TestContentDigestsMatchGuestDerivation asserts the embedded-identity accessor
@@ -168,6 +170,7 @@ func TestTheBinaryEmbedsNoImporter(t *testing.T) {
 // one the scripts write into, so neither side's spelling of a place can drift
 // from the other's.
 func TestEveryCorePluginTheBinaryDoesNotEmbedCarriesItsEntityAndGuestDigest(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	lib := coreListLibrary(t)
 	moduleRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	if err != nil {

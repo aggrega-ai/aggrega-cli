@@ -13,6 +13,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // oneNameRegistryRef is the reference a Release's Aggregate names its Component by
@@ -63,6 +65,7 @@ spec:
 // accepts what the pull recorded. With one entry addressed by reference and version
 // alone, the second of the two to resolve would read the first one's bytes.
 func TestAComponentAndARecipeOfOneNameServedByARegistryEachPinTheirOwnDocument(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "catalog"), 0o755); err != nil {

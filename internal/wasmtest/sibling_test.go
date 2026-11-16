@@ -149,3 +149,53 @@ func TestASiblingPathThatIsAFileFailsRatherThanSkips(t *testing.T) {
 		t.Errorf("a file at the sibling path failed with %q; want it named as a checkout that cannot be read", rec.failed)
 	}
 }
+
+// TestEmbeddedEntitiesSkipOnlyWithoutAggregaHub lays out a module holding no
+// generated embedded plugin entity and checks requireEmbeddedEntities in each
+// state of the aggrega-hub checkout beside it: absent skips naming aggrega-hub,
+// present fails naming the generator, and a generated entity lets the test run.
+//
+// 🔴 PLANTED DEFECT: in requireEmbeddedEntities (sibling.go), skip whenever no
+// entity is generated: the present-checkout case skips instead of failing, and
+// this test fails on it.
+func TestEmbeddedEntitiesSkipOnlyWithoutAggregaHub(t *testing.T) {
+	t.Parallel()
+	run := func(moduleRoot string) *recordingTB {
+		rec := &recordingTB{TB: t}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			requireEmbeddedEntities(rec, moduleRoot)
+		}()
+		<-done
+		return rec
+	}
+	parent := t.TempDir()
+	moduleRoot := filepath.Join(parent, "cli")
+	entityDir := filepath.Join(moduleRoot, filepath.FromSlash(embeddedEntityDir))
+	if err := os.MkdirAll(entityDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", entityDir, err)
+	}
+
+	rec := run(moduleRoot)
+	if !strings.Contains(rec.skipped, "aggrega-hub, whose plugin overlays they are generated from, is not checked out") || rec.failed != "" {
+		t.Errorf("no entity and no aggrega-hub: skipped %q, failed %q; want a skip naming aggrega-hub", rec.skipped, rec.failed)
+	}
+
+	hub := filepath.Join(parent, "aggrega-hub")
+	if err := os.MkdirAll(filepath.Join(hub, "plugin-overlays"), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", hub, err)
+	}
+	rec = run(moduleRoot)
+	if rec.skipped != "" || !strings.Contains(rec.failed, "generate them with scripts/gen-embedded-plugin-entities.sh") {
+		t.Errorf("no entity, aggrega-hub present: skipped %q, failed %q; want a failure naming the generator", rec.skipped, rec.failed)
+	}
+
+	if err := os.WriteFile(filepath.Join(entityDir, "helm.plugin.yaml"), []byte("kind: Plugin\n"), 0o644); err != nil {
+		t.Fatalf("write entity: %v", err)
+	}
+	rec = run(moduleRoot)
+	if rec.skipped != "" || rec.failed != "" {
+		t.Errorf("a generated entity: skipped %q, failed %q; want the test to run", rec.skipped, rec.failed)
+	}
+}

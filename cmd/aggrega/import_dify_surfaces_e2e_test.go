@@ -16,6 +16,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // difyApplication is the committed authored workflow application the surfaces
@@ -34,6 +36,7 @@ const difyApplication = "../../internal/importops/testdata/dify/authored/workflo
 // so the shared operation is refused asking for the format and the case fails
 // before any surface is compared.
 func TestADifyApplicationIsDraftedAlikeAtEverySurface(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)

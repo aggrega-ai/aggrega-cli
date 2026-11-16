@@ -10,6 +10,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // TestNoImporterReadsTheAnswersFileOfADirectorySource holds every importer the
@@ -24,6 +26,7 @@ import (
 // The needle: an importer declaring a pattern that matches every YAML file is
 // held to selecting it, so the check fires where a pattern would.
 func TestNoImporterReadsTheAnswersFileOfADirectorySource(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	names := []string{AnswersFileName, "src/support_brief/" + AnswersFileName, "support_agent/" + AnswersFileName}
 

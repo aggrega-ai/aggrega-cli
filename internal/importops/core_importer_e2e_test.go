@@ -38,6 +38,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // coreImporterOf is the identity of the core importer serving each format.
@@ -50,10 +52,13 @@ var coreImporterOf = map[string]string{
 // importer of every format coreImporterOf names, with a non-blank digest, and
 // returns what it carries of each by identity.
 //
-// It fails rather than skips: a build that carries none is a build these cases
-// cannot speak for, and a skip would read as a pass over a set nobody looked at.
+// It skips only where the entities were never generated because aggrega-hub is
+// not checked out beside this repository; otherwise it fails rather than skips: a
+// build that carries none is a build these cases cannot speak for, and a skip
+// would read as a pass over a set nobody looked at.
 func requireCarriedCoreImporters(t *testing.T) map[string]embedded.PublishedPlugin {
 	t.Helper()
+	wasmtest.RequireEmbeddedEntities(t)
 	carried := map[string]embedded.PublishedPlugin{}
 	for _, p := range embedded.PublishedPlugins() {
 		carried[p.URI] = p
@@ -153,6 +158,7 @@ func importersResolved(cascade *recordingCascade) []cascadeResolution {
 // (internal/importops/seam.go) and every row fails — the named rows with the
 // no-importer condition, the recognised rows as a source no importer recognises.
 func TestAWorkspaceHoldingNoImporterResolvesTheBinarysCoreImporter(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	carried := requireCarriedCoreImporters(t)
 
@@ -223,6 +229,7 @@ func TestAWorkspaceHoldingNoImporterResolvesTheBinarysCoreImporter(t *testing.T)
 // neither; with one naming it, the workspace's importer runs, read from beside
 // its entity, and drafts the source.
 func TestABinaryCoreImporterCompetesWithAWorkspaceImporterOfAnotherName(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	requireCarriedCoreImporters(t)
 	src := catalogFolderSources[0]

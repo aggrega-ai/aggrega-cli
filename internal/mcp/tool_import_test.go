@@ -472,6 +472,7 @@ func TestTheImportToolRefusesASourceWhoseShapeItDoesNotRecognise(t *testing.T) {
 // holds that this surface reaches the directory's wording at all. The workspace's
 // catalog folder holds nothing, so the importers are the core importers alone.
 func TestTheImportToolOffersADirectoryNoImporterRecognisesWhatCanHelpIt(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	root, _ := importSourceWorkspace(t, "notes.txt", []byte("notes\n"))
 	layEmptyCatalogFolder(t, root)
 	dir := filepath.Join(root, "flows")

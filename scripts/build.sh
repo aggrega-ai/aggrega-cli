@@ -19,12 +19,11 @@
 # Builds the version-stamped aggrega binary with its provider/linter guests
 # embedded (default) — written twice, as ./aggrega without its debug information
 # and as ./aggrega-debug with it — or the no-embed aggrega-light binary (--light).
-# Runs from a sibling checkout — aggrega-cli/ beside its sibling repositories
-# (aggrega-schemas, aggrega-pdk, aggrega-abi, and, for the overlay check,
-# aggrega-hub) — with no workspace file and no committed go.work: the go.mod
-# replace directives (../aggrega-schemas, ../aggrega-pdk/go, ../aggrega-abi/go)
-# resolve the siblings from their local working copies, offline, under
-# GOWORK=off.
+# Runs from this checkout alone: every module, the schemas, the Go plugin kit and
+# the Go ABI among them, resolves at the version go.mod requires. aggrega-hub
+# checked out beside this repository adds the overlay check. A workspace is used
+# only when GOWORK names one; otherwise the run sets GOWORK=off, so a go.work in
+# a parent directory redirects nothing.
 #
 # Default (embedded) build:
 #   1. guest-freshness gate — a fast mtime check; regeneration is skipped when
@@ -110,11 +109,11 @@ set -euo pipefail
 CLI_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$CLI_ROOT"
 
-# The sibling modules resolve through the go.mod parent-relative replace
-# directives with workspace mode off; a stray go.work in a parent directory
-# must not shadow them, so pin GOWORK=off for the whole run. This also mirrors
-# the guest builder, which forces GOWORK=off internally.
-export GOWORK=off
+# Every module resolves at the version go.mod requires: a go.work in a parent
+# directory must not redirect one, so workspace mode is off for the whole run
+# unless GOWORK names a workspace file. The embedded guests are built with
+# GOWORK=off whatever this is: the guest builder forces it.
+export GOWORK="${GOWORK:-off}"
 
 # The build-provenance version (_ver) and short commit (_sha) come from the one
 # shared recipe, so this binary, the embedded guests' describe(), and the

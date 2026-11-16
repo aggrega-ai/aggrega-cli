@@ -31,6 +31,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // catalogFolderSources are the two committed agent-flow fixtures and what the
@@ -232,6 +234,7 @@ func withRecord(drafts []string) []string {
 // closure) and every row fails: the cascade has nowhere to read the importer from
 // and the import is refused naming a plugin no source holds.
 func TestImportRunsAnImporterFromTheCatalogFolderItsEntitySitsIn(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 
 	for _, src := range catalogFolderSources {
@@ -300,6 +303,7 @@ func TestImportRunsAnImporterFromTheCatalogFolderItsEntitySitsIn(t *testing.T) {
 // directory holds nothing else. The importer is handed the node-by-node layout, so
 // the drafts are several files, some of them in a directory of their own.
 func TestImportWritesTheDraftsAnImporterFromTheCatalogFolderProduced(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	rw, _ := catalogFolderImportWorkspaceAttaching(t, importopstest.NodesLayout())
 	src := catalogFolderSources[0]
@@ -369,6 +373,7 @@ func TestImportWritesTheDraftsAnImporterFromTheCatalogFolderProduced(t *testing.
 // components through the link into the directory outside the workspace and
 // aggregate.yaml beside the link.
 func TestImportRefusesADraftWhosePathALinkLeadsOutOfTheWorkspace(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 
 	for _, tc := range []struct {

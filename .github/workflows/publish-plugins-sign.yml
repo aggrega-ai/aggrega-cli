@@ -30,13 +30,12 @@ name: Publish and sign core plugins
 #                        repository's own scripts and nothing else but, first,
 #                        the refusal of a run with no self-hosted runner named
 #                        for the local jobs.
-#   sources              Checks out the sibling repositories the CLI builds
-#                        against, at the refs the CLI's go.mod pins once the CLI
-#                        tree is on the release tag, with a read token minted
-#                        from the organization App's secrets, and hands the four
-#                        checkouts, without a token, to the build job in the
-#                        hand-over folder described below, with a SHA-256 list
-#                        of them. It runs nothing but GitHub's own checkout and
+#   sources              Moves the CLI tree onto the release tag, checks out
+#                        aggrega-hub, whose overlays the build reads, with a
+#                        read token minted from the organization App's secrets,
+#                        and hands the checkout, without a token, to the build
+#                        job in the hand-over folder described below, with a
+#                        SHA-256 list of it. It runs nothing but GitHub's own checkout and
 #                        token actions, git and the shell's own utilities, so
 #                        the App's secrets share a job with no third-party code,
 #                        and the build job, which runs such code, names no
@@ -44,8 +43,8 @@ name: Publish and sign core plugins
 #   build                Compiles, packs and stages everything the release
 #                        carries, naming no secret and holding no permission to
 #                        mint an OIDC token: it builds the commit the sources job
-#                        pinned, against the sibling checkouts that job handed
-#                        over, once they match its list; it checks that
+#                        pinned, with the aggrega-hub checkout that job handed
+#                        over, once it matches its list; it checks that
 #                        every build script stamping a version takes it from
 #                        the one shared recipe, builds the binary and every
 #                        core guest (plus the light no-embed binary),
@@ -336,8 +335,8 @@ name: Publish and sign core plugins
 # aggrega-release-handover/<run id>-<attempt>
 # beside the runner's temporary directory, which the runner empties at the start
 # and end of every job. The sources job makes it, readable by the runner's user
-# alone, and writes into it the sibling checkouts and a SHA-256 list of them,
-# which the build job holds them to before it takes them out and removes the
+# alone, and writes into it the aggrega-hub checkout and a SHA-256 list of it,
+# which the build job holds it to before it takes it out and removes the
 # list. The build job then writes into it what the jobs after it read, and a
 # list of that last, after every third-party step of that job has run; each job
 # that reads the folder holds it to the list it finds there first. Both lists
@@ -597,7 +596,7 @@ name: Publish and sign core plugins
 #                                        (registry-credential and
 #                                        sign-and-publish only)
 #              SUBMODULE_APP_CLIENT_ID   the organization App that reads the
-#              SUBMODULE_APP_PRIVATE_KEY private sibling repositories (sources
+#              SUBMODULE_APP_PRIVATE_KEY private aggrega-hub repository (sources
 #                                        only, handed to the action that mints
 #                                        the read token and to nothing else)
 #              HUB_PUBLISHED_APP_CLIENT_ID   the App installed on aggrega-hub
@@ -723,8 +722,8 @@ on:
 # with the App token it mints, and open-winget-pull-request, which writes the
 # organization's fork of microsoft/winget-pkgs and opens the pull request with
 # the personal access token it is given.
-# sources keeps contents:read too: it reads the sibling repositories with the
-# App token it mints.
+# sources keeps contents:read too: it reads aggrega-hub with the App token it
+# mints.
 permissions:
   contents: read
 
@@ -889,38 +888,35 @@ jobs:
 
   sources:
     needs: registry-credential
-    # The sibling repositories the CLI builds against are private, and are read
+    # aggrega-hub, whose overlays the build reads, is private, and is read
     # with an installation token of the organization's GitHub App, minted from
     # the App's two secrets. A job holds every secret it names for its whole run,
     # within reach of each of its later steps, so the token is minted here, in a
     # job that runs nothing but GitHub's own checkout and token actions, git and
     # the shell's own utilities, and not in the build job, whose third-party build
     # code would otherwise run beside the App's private key. This job moves the
-    # CLI tree onto the release tag, reads the sibling refs from that tree's
-    # go.mod, checks the four siblings out at them, and hands the checkouts,
-    # which keep no token, to the build job in this run's hand-over folder, with
-    # a SHA-256 list of every file in them. It makes the folder.
+    # CLI tree onto the release tag, checks aggrega-hub out at HUB_REF, and
+    # hands the checkout, which keeps no token, to the build job in this run's
+    # hand-over folder, with a SHA-256 list of every file in it. It makes the
+    # folder.
     #
     # The self-hosted runner AGGREGA_RUNNER names, with no hosted fallback: the
-    # build job takes the checkouts from that machine's disk.
+    # build job takes the checkout from that machine's disk.
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     permissions:
       contents: read
 
     # The commit the build job checks out and builds: the release tag's on a tag
     # push or a dispatch naming a tag, otherwise the commit the run was launched
-    # at. Its go.mod is the one the sibling refs are read from.
+    # at.
     outputs:
       commit: ${{ steps.pinned.outputs.commit }}
 
     env:
       # aggrega-hub carries no CLI-side version pin, so it is always checked out at
-      # HUB_REF (operator-overridable via a repository variable). The schemas, abi,
-      # and pdk siblings are NOT configured here: the CLI's own go.mod is the single
-      # source for their versions, and the resolve step below reads those require
-      # lines and checks each sibling out at exactly its pinned tag. An unpinned
-      # sibling (still on the local-replace placeholder) fails the resolve loudly —
-      # the release must pin every sibling before publishing.
+      # HUB_REF (operator-overridable via a repository variable). The schemas, abi
+      # and pdk modules are NOT configured here: the CLI's own go.mod is the single
+      # source for their versions, and the build resolves them from it.
       HUB_REF: ${{ vars.CLI_PUBLISH_HUB_REF || 'main' }}
       # Event data surfaced as env so run scripts read it from the environment
       # rather than interpolating expressions into shell.
@@ -955,8 +951,8 @@ jobs:
           exit 2
 
       - name: Check out the CLI with full history and tags
-        # For the release tag's go.mod, which decides the sibling refs, and for
-        # the smoke library's SHA-256 list writer. Full history and every tag are
+        # For the release tag's tree, which the build job builds, and for the
+        # smoke library's SHA-256 list writer. Full history and every tag are
         # fetched here, so the pin step below needs no fetch of its own.
         uses: actions/checkout@v5
         with:
@@ -966,9 +962,9 @@ jobs:
           persist-credentials: false
 
       - name: Pin the CLI tree to the release tag
-        # Move the CLI tree onto the release tag so the sibling pins are read
-        # from the tag's go.mod, and so the commit recorded below, which the build
-        # job checks out and stamps the released version from, is the tag's. On a
+        # Move the CLI tree onto the release tag so the commit recorded below,
+        # which the build job checks out and stamps the released version from, is
+        # the tag's. On a
         # manual dispatch that supplies a tag input the run targets a past
         # release. The effective tag is the pushed tag (push) or the tag input
         # (dispatch). A manual dry run with no tag input skips this and builds the
@@ -985,9 +981,9 @@ jobs:
           git -C aggrega-cli checkout --force "refs/tags/${TAG}"
 
       - name: Record the commit this run builds
-        # The build job checks out exactly this commit, whose go.mod the sibling
-        # refs below are read from, and sign-and-publish runs its publishing
-        # scripts from it.
+        # The build job checks out exactly this commit, whose go.mod names the
+        # sibling module versions the build resolves, and sign-and-publish runs
+        # its publishing scripts from it.
         id: pinned
         run: |
           set -euo pipefail
@@ -995,50 +991,13 @@ jobs:
           printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
           echo "this run builds aggrega-cli at $commit"
 
-      - name: Resolve sibling checkout refs from the CLI's go.mod
-        # The CLI's own manifests decide the sibling versions: read the schemas,
-        # abi, and pdk pins from the (now tag-pinned) go.mod require lines so the
-        # siblings are checked out at exactly what this CLI build expects. Reading
-        # at runtime keeps the refs correct as the pins move, rather than
-        # hardcoding them here. A require still on the local-replace placeholder
-        # (empty or v0.0.0) has no published tag: the resolve fails loudly rather
-        # than guessing a branch, because a floating branch is exactly the drift a
-        # pinned release must not ship. Pin every sibling before publishing.
-        # aggrega-hub carries no CLI-side pin, so it always uses HUB_REF.
-        id: pins
-        run: |
-          set -euo pipefail
-          gomod=aggrega-cli/go.mod
-          read_req() { grep -E "^[[:space:]]+$1 v" "$gomod" | awk '{print $2}' | head -1; }
-          require_pin() {
-            local module="$1" ref
-            ref="$(read_req "$module")"
-            case "$ref" in
-              ''|v0.0.0)
-                echo "resolve: $module is unpinned in go.mod (found '${ref:-<none>}'); pin it to a released tag before publishing" >&2
-                exit 1 ;;
-            esac
-            printf '%s' "$ref"
-          }
-          # Every sibling tags v-prefixed, so each go.mod require matches its git
-          # tag directly — no rewriting needed.
-          schemas_ref="$(require_pin github.com/aggrega-ai/aggrega-schemas)"
-          abi_ref="$(require_pin github.com/aggrega-ai/aggrega-abi/go)"
-          pdk_ref="$(require_pin github.com/aggrega-ai/aggrega-pdk/go)"
-          {
-            echo "schemas_ref=$schemas_ref"
-            echo "abi_ref=$abi_ref"
-            echo "pdk_ref=$pdk_ref"
-          } >> "$GITHUB_OUTPUT"
-          echo "resolved sibling refs: schemas=$schemas_ref abi=$abi_ref pdk=$pdk_ref hub=$HUB_REF"
-
       - name: Mint org app token for private-sibling access
-        # The sibling repositories are private; a GitHub App installation token
-        # scoped to the org grants the checkouts read access to all of them. The
-        # App's secrets are handed to this action and to no step, and its token
-        # to the checkouts below, none of which keeps it; like everything a job
+        # aggrega-hub is private; a GitHub App installation token scoped to the
+        # org grants the checkout below read access to it. The App's secrets are
+        # handed to this action and to no step, and its token to that checkout,
+        # which does not keep it; like everything a job
         # holds, both stay within reach of the job's later steps, which is why
-        # this job runs nothing but those checkouts, git and the shell's own
+        # this job runs nothing but that checkout, git and the shell's own
         # utilities after it.
         id: app-token
         uses: actions/create-github-app-token@v3
@@ -1047,41 +1006,14 @@ jobs:
           private-key: ${{ secrets.SUBMODULE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - name: Check out the schemas sibling
-        # Satisfies the CLI go.mod replace ../aggrega-schemas.
-        uses: actions/checkout@v5
-        with:
-          repository: aggrega-ai/aggrega-schemas
-          path: aggrega-schemas
-          ref: ${{ steps.pins.outputs.schemas_ref }}
-          token: ${{ steps.app-token.outputs.token }}
-          persist-credentials: false
-
-      - name: Check out the abi sibling
-        # Satisfies the CLI go.mod replace ../aggrega-abi/go (repo root holds go/).
-        uses: actions/checkout@v5
-        with:
-          repository: aggrega-ai/aggrega-abi
-          path: aggrega-abi
-          ref: ${{ steps.pins.outputs.abi_ref }}
-          token: ${{ steps.app-token.outputs.token }}
-          persist-credentials: false
-
-      - name: Check out the pdk sibling
-        # Satisfies the CLI go.mod replace ../aggrega-pdk/go (repo root holds go/).
-        uses: actions/checkout@v5
-        with:
-          repository: aggrega-ai/aggrega-pdk
-          path: aggrega-pdk
-          ref: ${{ steps.pins.outputs.pdk_ref }}
-          token: ${{ steps.app-token.outputs.token }}
-          persist-credentials: false
-
       - name: Check out the hub sibling
         # Supplies the authored plugin overlays (OVERLAY_DIR) that catalog
-        # generation consumes and that the embedded-overlay consistency check
-        # reads. aggrega-hub has no CLI-side version pin, so it is checked out at
-        # HUB_REF.
+        # generation consumes, that the embedded plugin entities are generated
+        # from, and that the embedded-overlay consistency check reads. The CLI's
+        # other sibling modules — the schemas, the Go plugin kit and the Go ABI —
+        # are resolved by the build at the versions its go.mod requires, so no
+        # checkout of them is needed. aggrega-hub has no CLI-side version pin,
+        # so it is checked out at HUB_REF.
         uses: actions/checkout@v5
         with:
           repository: aggrega-ai/aggrega-hub
@@ -1116,16 +1048,16 @@ jobs:
           printf 'HANDOVER=%s\n' "$handover" >> "$GITHUB_ENV"
           echo "hand-over folder: $handover"
 
-      - name: Hand the sibling checkouts to the build job
-        # Moves the four checkouts into the hand-over folder's sources/, each
+      - name: Hand the aggrega-hub checkout to the build job
+        # Moves the aggrega-hub checkout into the hand-over folder's sources/,
         # refused if its git configuration still carries an authorization header,
-        # so no token reaches the build job with them; then writes the folder's
+        # so no token reaches the build job with it; then writes the folder's
         # SHA-256 list, through the smoke library's one writer of it, which the
-        # build job holds the checkouts to before it takes them.
+        # build job holds the checkout to before it takes it.
         run: |
           set -euo pipefail
           mkdir "$HANDOVER/sources"
-          for repo in aggrega-schemas aggrega-abi aggrega-pdk aggrega-hub; do
+          for repo in aggrega-hub; do
             config="$GITHUB_WORKSPACE/$repo/.git/config"
             if [ ! -f "$config" ]; then
               echo "publish-plugins: $GITHUB_WORKSPACE/$repo holds no checkout to hand over" >&2
@@ -1150,8 +1082,8 @@ jobs:
   build:
     needs: sources
     # The self-hosted runner AGGREGA_RUNNER names, with no hosted fallback:
-    # building the embedded guests is heavy, the sibling checkouts this job
-    # builds against are the ones the sources job left on that machine's disk,
+    # building the embedded guests is heavy, the aggrega-hub checkout this job
+    # builds with is the one the sources job left on that machine's disk,
     # and sign-windows, windows-installer and sign-and-publish read what this
     # job builds from that disk, in the hand-over folder. Every later step that needs this build's
     # outputs reads them in this job, from the hand-over folder, or, on a
@@ -1160,8 +1092,7 @@ jobs:
     permissions:
       contents: read
 
-    # The commit this job built — the one the sources job recorded, whose go.mod
-    # chose the sibling checkouts — which sign-windows, windows-installer,
+    # The commit this job built — the one the sources job recorded — which sign-windows, windows-installer,
     # sign-windows-installer and sign-and-publish check out for their
     # scripts, and the commits the Windows, the macOS and the ARM Linux smoke
     # inputs were staged from, which the windows-smoke, macos-smoke and
@@ -1179,10 +1110,10 @@ jobs:
       version: ${{ steps.installer-parts.outputs.version }}
       macos_unsigned_sums: ${{ steps.macos-unsigned.outputs.sums }}
 
-    # No secret appears anywhere in this job, the App's that reads the sibling
-    # repositories included: it runs third-party build code, so it holds no
-    # registry, signing or repository credential beyond the run's own read
-    # token, and builds against the checkouts the sources job handed over.
+    # No secret appears anywhere in this job, the App's that reads aggrega-hub
+    # included: it runs third-party build code, so it holds no registry,
+    # signing or repository credential beyond the run's own read token, and
+    # builds with the checkout the sources job handed over.
     env:
       # Destination registry host, a variable rather than a secret: the tooling
       # image is built under its references, and the archives carry them to the
@@ -1241,12 +1172,12 @@ jobs:
         # This workflow runs in the CLI repository; check it out into aggrega-cli/
         # so its build driver and manifests sit under that path, at exactly the
         # commit the sources job recorded — the release tag's, whenever one is in
-        # play — whose go.mod chose the sibling checkouts that job handed over.
+        # play.
         # Full history and every tag are fetched here, so the build stamps the
-        # release version from the tag. The CLI cannot build alone: its module
-        # resolves the sibling modules through parent-relative replace directives
-        # (../aggrega-schemas, ../aggrega-pdk/go, ../aggrega-abi/go), so the next
-        # step places the handed-over checkouts beside it.
+        # release version from the tag. The build resolves the sibling modules at
+        # the versions its go.mod requires; the next step places the handed-over
+        # aggrega-hub checkout beside it, for the embedded plugin entities and
+        # the catalog generation.
         uses: actions/checkout@v5
         with:
           path: aggrega-cli
@@ -1255,14 +1186,14 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      - name: Take the sibling checkouts from the hand-over folder
-        # The four checkouts the sources job left in this run's hand-over folder,
+      - name: Take the aggrega-hub checkout from the hand-over folder
+        # The aggrega-hub checkout the sources job left in this run's hand-over folder,
         # on this machine, are used only once every file there is one the
         # folder's list names, each once, with the SHA-256 it gives, and the list
         # names nothing else — so a file changed, added or removed since the
         # sources job wrote the list is refused before anything is built from it.
         # The list is read through the smoke library from this job's own
-        # checkout. Each checkout is then moved beside the CLI, in place of
+        # checkout. The checkout is then moved beside the CLI, in place of
         # whatever an earlier run left at that path on the persistent runner,
         # the list is removed, since it described a hand-over now taken, and the
         # folder must then be empty, for the build to write into. A folder that
@@ -1279,7 +1210,7 @@ jobs:
           . aggrega-cli/scripts/lib/platform-smoke-common.sh
           smoke_require_bash
           smoke_check_tree_sums "$handover"
-          for repo in aggrega-schemas aggrega-abi aggrega-pdk aggrega-hub; do
+          for repo in aggrega-hub; do
             if [ -e "$GITHUB_WORKSPACE/$repo" ]; then
               chmod -R u+w -- "$GITHUB_WORKSPACE/$repo" 2>/dev/null || true
               rm -rf -- "${GITHUB_WORKSPACE:?}/$repo"
@@ -1289,12 +1220,12 @@ jobs:
           rmdir -- "$handover/sources"
           rm -f -- "$handover/SHA256SUMS"
           if [ -n "$(find "$handover" -mindepth 1 -print -quit)" ]; then
-            echo "build: the hand-over folder $handover holds more than the sources job's checkouts:" >&2
+            echo "build: the hand-over folder $handover holds more than the sources job's checkout:" >&2
             find "$handover" -mindepth 1 -printf '  %P\n' >&2
             exit 1
           fi
           printf 'HANDOVER=%s\n' "$handover" >> "$GITHUB_ENV"
-          echo "build: took aggrega-schemas, aggrega-abi, aggrega-pdk and aggrega-hub from $handover, each file as the sources job listed it"
+          echo "build: took aggrega-hub from $handover, each file as the sources job listed it"
 
       - name: Check that the version recipe has one home
         # The binary, the embedded guests' self-reported version, the plugin
@@ -1681,7 +1612,7 @@ jobs:
         # read — the unsigned Windows binaries and the release inputs — goes into
         # this run's hand-over folder, beside that directory, since the runner
         # empties it when this job ends. The sources job made the folder, and the
-        # step that took the sibling checkouts from it left it empty; its two
+        # step that took the aggrega-hub checkout from it left it empty; its two
         # directories are made here. clean-up removes the folder when the run
         # ends. The steps below read every directory from the environment.
         run: |

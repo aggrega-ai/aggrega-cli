@@ -25,6 +25,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // langflowFlow is the committed Langflow fixture the cases import: an OpenAI model
@@ -155,6 +157,7 @@ func importDecisionRecord(t *testing.T, rw *workspaceconfig.ResolvedWorkspace) [
 // catalog holds no Component, so the projection returns before the loop and the row
 // passes either way.
 func TestImportScoresTheWorkspaceCatalogsOwnComponents(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 
 	const autoApply = "auto-apply-above-threshold"

@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // The tests in this file drive what an author and an operator meet when a
@@ -103,6 +105,7 @@ spec:
 // pair takes and one per type it means nothing on, each refused row carrying one
 // fault and each paired with a control the same workspace builds.
 func TestAParameterOutsideItsMinOrMaxHaltsTheBuild(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	const (
 		hostList = "      type: array\n      items: { type: string, format: hostname }\n      min: 1\n      max: 2"

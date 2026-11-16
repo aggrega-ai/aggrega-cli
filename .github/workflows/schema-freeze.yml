@@ -45,6 +45,8 @@ jobs:
           owner: ${{ github.repository_owner }}
 
       - name: Check out the schemas sibling, which carries the check
+        # Read by the two steps below, which build cmd/schemagate from it and
+        # run it; nothing here builds this repository.
         uses: actions/checkout@v5
         with:
           repository: ${{ github.repository_owner }}/aggrega-schemas

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // Provider-plugin seeding for build and render fixtures.
@@ -37,11 +38,14 @@ import (
 // means the seed cannot disagree with the resolution.
 
 // embeddedPluginEntityYAML returns the generated Plugin entity the binary embeds
-// for uri (a bare plugin identity such as "provider/helm"). It fails the test
-// when the binary carries no entity for that identity, which is the case for a
-// binary built with the embedded artifacts gated out.
+// for uri (a bare plugin identity such as "provider/helm"). It skips the test
+// when the entities were never generated because aggrega-hub is not checked out
+// beside this repository, and otherwise fails it when the binary carries no
+// entity for that identity, which is the case for a binary built with the
+// embedded artifacts gated out.
 func embeddedPluginEntityYAML(t *testing.T, uri string) []byte {
 	t.Helper()
+	wasmtest.RequireEmbeddedEntities(t)
 	raw, ok := embedded.LookupEntity(uri)
 	if !ok {
 		t.Fatalf("the binary embeds no plugin entity for %q; available: %v", uri, embedded.EntityURIs())

@@ -34,6 +34,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator/envelope"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // acceptanceFixture is one document of an authorable kind, and the name an
@@ -495,6 +497,7 @@ func acceptanceMismatches(declared []entityKindDescriptor, observed map[string]e
 // kind, and it accepts exactly where the answer says it does and refuses, with
 // its own refusal, where the answer says it does not.
 func TestEveryDeclaredAcceptanceIsWhatTheOperationDoes(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 
 	entries, h := acceptanceWorkspace(t)
@@ -519,6 +522,7 @@ func TestEveryDeclaredAcceptanceIsWhatTheOperationDoes(t *testing.T) {
 // to do, so neither direction goes unexercised because the product happens to
 // have no example of it.
 func TestAcceptanceComparisonNamesEachPlantedDisagreement(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 
 	entries, h := acceptanceWorkspace(t)

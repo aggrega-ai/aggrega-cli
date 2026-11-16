@@ -32,6 +32,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // The importer entities the cases lay down, by name.
@@ -291,6 +293,7 @@ func TestAnImporterNoAttachmentNamesIsHandedNothing(t *testing.T) {
 // fails rather than passing on two names where the build carries no Langflow
 // importer.
 func TestAnAttachmentChoosesAmongImportersAdvertisingOneFormat(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	two := []importopstest.Importer{{Name: importerAlpha, Format: "langflow"}, {Name: importerBeta, Format: "langflow"}}
 	three := []importopstest.Importer{

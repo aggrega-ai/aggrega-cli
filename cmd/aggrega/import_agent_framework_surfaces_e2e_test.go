@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // agentFrameworkFixture is the committed declarative agent the surfaces import,
@@ -42,6 +44,7 @@ const (
 // operation is refused asking for the format and the case fails before any
 // surface is compared.
 func TestAnAgentFrameworkDeclarativeAgentIsDraftedAlikeAtEverySurface(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)

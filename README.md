@@ -73,11 +73,15 @@ The module root is this directory. Build the CLI with the Go toolchain:
 go build ./cmd/aggrega
 ```
 
+Every module this one depends on, the schemas, the Go plugin kit and the Go ABI
+among them, resolves at the version `go.mod` requires, so a clone of this
+repository builds on its own.
+
 The CLI embeds the provider rendering guests. These are reproducible build
 outputs generated from guest source, not tracked files, so a plain `go build`
-embeds whatever guest artifacts already sit on disk from an earlier build. After
-changing a guest or the shared render core it reuses, regenerate before
-building:
+embeds whatever guest artifacts already sit on disk from an earlier build, and
+nothing in a fresh clone. In a fresh clone, and after changing a guest or the
+shared render core it reuses, regenerate before building:
 
 ```bash
 go generate ./internal/wasm/embedded/... && go build ./cmd/aggrega
@@ -119,6 +123,12 @@ under its repository name, which is load-bearing:
 A test that needs a sibling skips when it is absent, and its skip message names
 the repository and what the test reads from it. A sibling that is present but
 lacks what the test reads fails the test. Full coverage needs all four present.
+
+The Plugin entities of the core plugins the binary embeds are generated from the
+plugin overlays in `aggrega-hub`, by `scripts/gen-embedded-plugin-entities.sh`,
+and are not tracked files. Without `aggrega-hub` the binary embeds the core
+plugins' guests but none of their entities, and the tests that read what the
+binary resolves through them skip, saying so.
 
 ### Regenerating the guest codecs
 

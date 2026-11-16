@@ -37,6 +37,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // egressAttachSettings returns settings with attach_egress_allowlist true added.
@@ -469,6 +471,7 @@ func TestTheOutboundOnlyPolicyAdmitsExactlyTheDraftedConnectionsTargets(t *testi
 // parseSettings (aggrega-pdk/go/pkg/importer/settings.go), add
 // `s.AttachEgressAllowlist = true` before `return s`: every row fails.
 func TestEveryCommittedSourceDraftsAsBeforeWhereTheAttachSettingIsNotTrue(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	sources := []string{n8nAgentWorkflow, n8nHTTPWorkflow, "../compiler/importersocket/testdata/langflow-flow.json",
 		"../compiler/importersocket/testdata/langflow-flow-b.json",

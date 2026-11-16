@@ -13,6 +13,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // writeAssertionCatalog writes component and recipe into a fresh catalog
@@ -61,6 +63,7 @@ func withAssertion(entity, name, body string) string {
 // showing that the assertion, and nothing else in the fixture, is what the first
 // rows report.
 func TestValidateReportsAFailedAssertionAsAWarning(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	const (
 		rendersImage = "{{ .infra.image }}:{{ .infra.tag }}"
 		noteSupplied = `{{ if not (optional .infra "note" "") }}{{ fail "set infra.note in the Release" }}{{ end }}`

@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/topology"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // The test in this file drives what an author meets whose Aggregate, or whose
@@ -141,6 +143,7 @@ spec:
 // per authoring surface and per kind of unexported name, each against a control
 // that wires the same connection through the module's exported alias.
 func TestAConnectionToAModuleComponentItDoesNotExportHaltsTheBuild(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	aggregateWiring := func(target string) (string, string) {
 		return "      uses:\n        databases:\n          - " + target + "\n", ""

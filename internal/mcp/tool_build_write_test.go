@@ -26,6 +26,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/opsurface"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // writeFixture is a workspace a build renders: the single-node compose workspace,
@@ -166,6 +168,7 @@ func structuredKeys(t *testing.T, res *callToolResult) map[string]bool {
 // Not parallel: the third row moves the process working directory, which is the
 // condition under test.
 func TestABuildSentWriteWritesTheRenderBeneathTheWorkspaceRoot(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	for _, row := range []struct {
 		name string
 		// call sends the build for fx from a server this row composes, after
@@ -258,6 +261,7 @@ func TestABuildSentWriteWritesTheRenderBeneathTheWorkspaceRoot(t *testing.T) {
 // payload.OutputDir to &outDir instead of through reportedLocationField. The
 // workspace-write row reddens on output_dir naming the host path.
 func TestABuildSentWriteOverAListenerWritesOnlyUnderTheWorkspaceWriteScope(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	fx := newWriteFixture(t)
 	f := listenerOverWorkspace(t, fx.root)
 	dist := filepath.Join(fx.root, "dist")
@@ -368,6 +372,7 @@ func renderedOverTheListener(t *testing.T, f *scopeGridFixture, credential, rele
 // call not sent write is answered, which is what shows the refusal is the write's
 // rather than an outage.
 func TestAServerWithdrawingWorkspaceReachRefusesABuildSentWrite(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	fx := newWriteFixture(t)
 	f := scopeGridListenerOver(t, fx.root, []string{string(opsurface.ReachWorkspace)}, nil)
 	credential := f.grantOf(t, everyPublishedScope...)
@@ -403,6 +408,7 @@ func TestAServerWithdrawingWorkspaceReachRefusesABuildSentWrite(t *testing.T) {
 // 🔴 PLANTED DEFECT: make buildArgs.writesArtifacts return true. Both rows redden:
 // each finds a dist and an output_dir.
 func TestABuildNotSentWriteWritesNothingAndSaysSo(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	for _, row := range []struct {
 		name string
 		args map[string]any
@@ -450,6 +456,7 @@ func TestABuildNotSentWriteWritesNothingAndSaysSo(t *testing.T) {
 // the link leads to rather than to the workspace, clears the sentinel there and
 // lands there.
 func TestABuildSentWriteIsHeldWhereTheCommandLineIsHeld(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Run("an output directory leading out of the workspace is refused with nothing removed", func(t *testing.T) {
 		fx := newWriteFixture(t)
 		elsewhere := t.TempDir()

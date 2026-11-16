@@ -30,6 +30,8 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // parserlessFolderWorkspace declares an isolated workspace whose conventional
@@ -93,6 +95,7 @@ func sharedParserlessImport(t *testing.T, source []byte, name string) importops.
 // operation is refused naming the json syntax no parser serves — and so is every
 // surface.
 func TestEveryImportSurfaceReadsThroughTheBinarysParserWhereTheWorkspaceServesNone(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)
@@ -167,6 +170,7 @@ func TestEveryImportSurfaceReadsThroughTheBinarysParserWhereTheWorkspaceServesNo
 // (internal/compiler/parsersocket/fallback.go), ask the binary before the catalog, and every
 // surface reads the source as Langflow.
 func TestEveryImportSurfaceReadsThroughTheWorkspacesOwnParser(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)

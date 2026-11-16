@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // The test in this file drives what an author meets whose Manifest writes a
@@ -49,6 +51,7 @@ spec:
 // TestANameMappingKeyThatNamesNothingHaltsTheBuild drives one row per section of
 // the mapping, each against a control keyed correctly in the same workspace.
 func TestANameMappingKeyThatNamesNothingHaltsTheBuild(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	for _, tc := range []struct {
 		name         string

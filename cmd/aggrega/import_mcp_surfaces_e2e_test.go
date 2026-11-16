@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // mcpFixtureDir holds the committed MCP fixtures.
@@ -56,6 +58,7 @@ var mcpSurfaceConfigurations = []struct {
 // the .vscode/mcp.json signature as mcpimport.Syntax instead, and the commented
 // configuration fails the same way.
 func TestAnMCPConfigurationIsDraftedAlikeAtEverySurface(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)

@@ -30,6 +30,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // everyAgentFlowFixture is every Langflow, Flowise and n8n export committed in
@@ -183,6 +185,7 @@ func commentaryFormat(commentary string) string {
 // what recognises each source is the signature each module declares and nothing
 // the host spells.
 func TestEveryAgentFlowFixtureIsRecognisedByItsImportersDeclaration(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)
@@ -259,6 +262,7 @@ func TestAYAMLSourceIsRecognisedByAnImportersDeclarationWithNoHostChange(t *test
 // arm, and every surface reddens — the source is read as langflow, the first
 // format the catalog lists, rather than refused.
 func TestASourceTwoFormatsRecogniseIsRefusedNamingBoth(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	withCLIRegistrations(t, nil)
 	isolateMachineConfiguration(t)
 	root, folder := catalogFolderWorkspace(t, true)
@@ -307,6 +311,7 @@ func TestASourceTwoFormatsRecogniseIsRefusedNamingBoth(t *testing.T) {
 // formats the catalog's importers advertise — read off the catalog, in the order
 // it lists them — as the ones to name.
 func TestASourceNoImporterRecognisesIsRefusedNamingTheAdvertisedFormats(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	withCLIRegistrations(t, nil)
 	isolateMachineConfiguration(t)
 	root, _ := catalogFolderWorkspace(t, true)

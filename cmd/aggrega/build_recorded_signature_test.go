@@ -15,6 +15,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // The build's check of the signature facts a lockfile records, driven through the
@@ -181,6 +183,7 @@ func TestTheSettingsThatAdmitTheRowAtAPullAdmitItAtTheBuild(t *testing.T) {
 // signing requirement, because no registry signature exists for bytes that did not
 // come from one — and the top-level policy here requires one for every kind.
 func TestACatalogDirectoryRowBuildsUnsignedUnderARequirement(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	f := writeRefusalFixture(t)
 	writeWorkspaceConfig(t, f.root, "offline: true\nsigning:\n  required: true\n")

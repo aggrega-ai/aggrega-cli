@@ -15,6 +15,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci/ocitest"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // The fixtures and the test in this file drive what a user meets who writes a
@@ -389,6 +391,7 @@ var renderStoppedMarkers = []string{"could not finish rendering", "not fully dis
 // nothing and rewrites nothing, because it finds every entity where the first
 // pull cached it.
 func TestAReferenceWrittenWithoutItsVersionPullsAndBuildsFromARegistry(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	for _, row := range registryReferenceRows {
 		t.Run(row.name, func(t *testing.T) {

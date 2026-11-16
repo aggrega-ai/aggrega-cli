@@ -40,6 +40,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // mcpFixtureDir holds the committed MCP fixtures, relative to this package.
@@ -129,6 +131,7 @@ func yamlMember(node *yaml.Node, key string) *yaml.Node {
 // `{Path: "mcpServers", Is: "array"}` in the .mcp.json signature: the Claude Code
 // row is refused asking for the format, and the case fails on it.
 func TestEveryMCPFileIsRecognisedAndDraftedAsAnAggregateAndARelease(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	for _, f := range mcpFixtures {
 		t.Run(f.fixture, func(t *testing.T) {
@@ -198,6 +201,7 @@ const (
 // every value the class importer.CredentialUnmarked: the marked rows fail, the
 // key and the password carried as written.
 func TestTheEmptyCredentialsSettingDecidesWhatAnMCPImportCarries(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	desktop := readMCPFixture(t, "claude_desktop_config.json")
 	cursor := readMCPFixture(t, "cursor.mcp.json")
@@ -317,6 +321,7 @@ func assertCarriedOnlyInTheRelease(t *testing.T, planted []string, source []byte
 // and one Aggregate and one Release compose every server of the three, in the
 // order of the files' names and of each file's servers as its draft writes them.
 func TestAProjectDirectoryOfClientFilesImportsAsOneAggregate(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	rw, _ := catalogFolderImportWorkspace(t)
 	dir := filepath.Join(t.TempDir(), "project")
@@ -365,6 +370,7 @@ func TestAProjectDirectoryOfClientFilesImportsAsOneAggregate(t *testing.T) {
 // .vscode/mcp.json signature as mcpimport.Syntax: the commented file naming no
 // format is refused as unrecognised, and the case fails on it.
 func TestACommentedVSCodeConfigurationIsRecognisedAndDraftedAsItsCopyWithout(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	commented := readMCPFixture(t, "vscode-commented.mcp.json")
 	for _, needle := range []string{"//", "/*", ",\n    },"} {
@@ -426,6 +432,7 @@ func TestACommentedVSCodeConfigurationIsRecognisedAndDraftedAsItsCopyWithout(t *
 // twice, each into a workspace of its own, and requires the two to draft the same
 // files, byte for byte.
 func TestTwoImportsOfAnMCPConfigurationAreByteIdentical(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	body := readMCPFixture(t, "cursor.mcp.json")
 	first, _ := writtenImport(t, mcpWorkspace(t, nil), ".cursor/mcp.json", body)
@@ -450,6 +457,7 @@ func TestTwoImportsOfAnMCPConfigurationAreByteIdentical(t *testing.T) {
 // check in the parse callback: each importer walks a null tree and warns
 // no-nodes, and every row fails.
 func TestASourceTheParserRefusesHaltsTheImportWithTheParsersReason(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 	for _, format := range []string{"langflow", "flowise", "n8n", "mcp"} {
 		t.Run(format, func(t *testing.T) {

@@ -18,6 +18,8 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // renderOutcome is what the single-entity check made of a Recipe's isolated
@@ -113,6 +115,7 @@ spec:
 // none, and the reads the census reports. The report's Reads line is checked as
 // the presentation of those same reads.
 func TestValidateRecipeDeclinesWhatABuildOfOneCannotSupply(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	const (
 		inject     = "{{ .infra.image }}:{{ .context.inject.env.TAG }}"
 		misspelled = "{{ .infra.imge.repo }}:{{ .infra.tag }}"
@@ -382,6 +385,7 @@ func TestBuildOfOneReadsAreThoseUnderWhatTheBuildLacks(t *testing.T) {
 // declared pair the census holds the read, and read with the usual pair it cannot
 // be taken at all. The last row asks the embedded chart provider for its own pair.
 func TestBuildOfOneReadsUseTheProvidersArtifactDelimiters(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	var artifacts types.OrderedMap[types.ArtifactEntry]
 	artifacts.Set("netpol.yaml", types.ArtifactEntry{
 		Inline: "name: [[ .context.inject.env.HOST ]]\nlabels: {{ include \"chart.labels\" . }}\n",

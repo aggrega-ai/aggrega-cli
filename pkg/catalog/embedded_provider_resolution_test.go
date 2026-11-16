@@ -21,6 +21,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // testCorePluginVersion is a single synthetic, release-independent version used
@@ -326,6 +328,7 @@ func embeddedProviders(t *testing.T) []embeddedProvider {
 // projection lands here and in the publish in one edit, so this cannot keep
 // passing while it has quietly stopped describing what a publish stamps.
 func TestEmbeddedProviderLocalManifestDigestEqualsPushedDigest(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	ctx := context.Background()
 	providers := embeddedProviders(t)
 
@@ -438,6 +441,7 @@ func TestEmbeddedProviderLocalManifestDigestEqualsPushedDigest(t *testing.T) {
 // equality claim is shown to be a property of the two computations across inputs
 // rather than a coincidence at the one input the binary happens to ship.
 func TestEmbeddedProviderManifestDigestDetectsMutatedInput(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	ctx := context.Background()
 	providers := embeddedProviders(t)
 	if len(providers) == 0 {

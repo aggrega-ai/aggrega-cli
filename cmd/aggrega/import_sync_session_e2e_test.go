@@ -19,6 +19,8 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // sessionSyncAnswer is the part of the session's import answer these cases
@@ -114,6 +116,7 @@ func draftEditedBySync(t *testing.T) (root, first, changed string) {
 //     refused in the operation's own words, which name --sync, and the conflict
 //     step reddens.
 func TestTheSessionSyncsAsTheCommandDoes(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)

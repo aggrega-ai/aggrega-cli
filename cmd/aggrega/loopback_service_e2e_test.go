@@ -17,6 +17,8 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // The test in this file drives what an author who declares a Loopback service
@@ -179,6 +181,7 @@ func composePublishedPorts(t *testing.T, root string) []string {
 // controls: they render exactly what a workload declaring no Loopback entry
 // always rendered, so the rows beside them read a difference the value made.
 func TestLoopbackServiceEntryThroughTheBuild(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	t.Parallel()
 
 	t.Run("compose without a Loopback entry publishes every port on every interface", func(t *testing.T) {

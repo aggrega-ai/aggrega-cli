@@ -25,6 +25,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // carriedKey is the key-shaped value planted in the committed Langflow fixture's
@@ -49,6 +51,7 @@ const carriedKeyField = `"api_key": { "type": "str", "value": "", "password": tr
 // shared expectation carries no warning and this test fails before any surface is
 // driven.
 func TestEveryImportSurfaceReportsACarriedCredentialValueAlike(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)

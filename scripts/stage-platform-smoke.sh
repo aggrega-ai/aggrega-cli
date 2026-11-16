@@ -62,9 +62,8 @@
 # guests), and a Go toolchain with the modules go.mod requires. The smoke run
 # holds every binary to the version ./aggrega reports, so all of them must come
 # from one build of this tree, as the
-# release build's --expect-version already holds them. Like scripts/build.sh it
-# builds with GOWORK=off, the go.mod replace directives resolving the sibling
-# repositories beside this one.
+# release build's --expect-version already holds them. It builds with
+# GOWORK=off, every module resolving at the version go.mod requires.
 #
 # Usage:
 #   scripts/stage-platform-smoke.sh --target <goos>/<goarch> --output-dir <dir>
