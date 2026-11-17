@@ -317,3 +317,100 @@ spec:
 		})
 	}
 }
+
+// TestValidateReleaseOverlaysAStaleLibraryRecord: a lockfile that no longer matches
+// the catalog does not make a library the catalog holds read as missing. The
+// lockfile's rows overlay the default selection, so a library the record lacks, or
+// records at a version the catalog no longer holds, is read at the version a bare
+// reference selects and the drift gate, not the schema reference, reports the
+// stale record.
+func TestValidateReleaseOverlaysAStaleLibraryRecord(t *testing.T) {
+	const component = `apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: demo/app
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema:
+    infra:
+      settings:
+        $ref: "%s"
+`
+	library := func(version, entry string) string {
+		return fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
+kind: SchemaLibrary
+metadata:
+  name: %s
+  version: "%s"
+spec:
+  schemas:
+    %s:
+      level: { type: string }
+`, "%s", version, entry)
+	}
+	for _, tc := range []struct {
+		name   string
+		files  map[string]string
+		record *lockfile.Lockfile
+	}{
+		{
+			name: "a held library the record lacks",
+			files: map[string]string{
+				"catalog/component/demo/app/1.0.0/component.yaml": fmt.Sprintf(component, "Lib2#/schemas/Extra"),
+				"catalog/libraries/lib2.yaml":                     fmt.Sprintf(library("1.0.0", "Extra"), "Lib2"),
+				"catalog/libraries/lib.yaml":                      fmt.Sprintf(library("1.0.0", "Settings"), "Lib"),
+			},
+			record: &lockfile.Lockfile{SchemaLibraries: []lockfile.SchemaLibrary{{URI: "Lib", ResolvedVersion: "1.0.0"}}},
+		},
+		{
+			name: "a recorded version the catalog no longer holds",
+			files: map[string]string{
+				"catalog/component/demo/app/1.0.0/component.yaml": fmt.Sprintf(component, "Lib#/schemas/Settings"),
+				"catalog/libraries/lib.yaml":                      fmt.Sprintf(library("1.1.0", "Settings"), "Lib"),
+			},
+			record: &lockfile.Lockfile{SchemaLibraries: []lockfile.SchemaLibrary{{URI: "Lib", ResolvedVersion: "1.0.0"}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws, releasePath := libraryVersionsWorkspace(t)
+			for name, body := range tc.files {
+				path := filepath.Join(ws, name)
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			wsCfg := workspaceconfig.Default()
+			view := catalog.NewLazyLookup(ws, wsCfg.ResolvedArtifactCacheDir(), []string{filepath.Join(ws, "catalog")}, nil).ForRequest(nil)
+			resolved, cerr := ResolveValidationClosure(context.Background(), ValidationClosureInputs{
+				View: view, ReleasePath: releasePath, WorkspaceRoot: ws, WorkspaceConfig: wsCfg,
+			})
+			if cerr != nil {
+				t.Fatalf("ResolveValidationClosure: stage=%d %v", cerr.Stage, cerr)
+			}
+			vr := Validate(context.Background(), ValidateInputs{
+				View:                     view,
+				Closure:                  resolved.Closure,
+				ClosureLibrariesResolved: resolved.LibrariesResolved,
+				LibraryRecord:            tc.record,
+				Release:                  resolved.Release,
+				ReleasePath:              releasePath,
+				Manifest:                 resolved.Manifest,
+				AggBytes:                 resolved.AggBytes,
+				AggregatePath:            resolved.AggregatePath,
+				WorkspaceConfig:          wsCfg,
+				CompilerVersion:          "test",
+			})
+			if errors.Is(vr.PillarError, compactform.ErrUnresolvedSchemaLibraryRef()) {
+				t.Errorf("a library the catalog holds was reported unresolved under a stale record: %v", vr.PillarError)
+			}
+			if vr.PillarError != nil {
+				t.Errorf("pillar error under a stale record: %v", vr.PillarError)
+			}
+		})
+	}
+}

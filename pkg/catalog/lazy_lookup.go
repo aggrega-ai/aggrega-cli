@@ -385,10 +385,10 @@ func (l *LazyLookup) AsCatalogLookupContext(ctx context.Context) resolver.Catalo
 }
 
 // AsCatalogLookupWithSchemas is AsCatalogLookupContext with its SchemaLibraries
-// field holding schemas, the set the caller chose (ClosureLibraries for a closure
-// that resolved its libraries, DefaultLibraries for one that did not), rather than
-// the version a bare reference to each name selects. A compilation of a Release
-// is handed the set its closure's libraries select.
+// field holding schemas, the set the caller chose (the closure's own versions
+// from ClosureLibraries, the version a bare reference selects from
+// DefaultLibraries, or the second overlaid by the first), rather than always the
+// version a bare reference to each name selects.
 func (l *LazyLookup) AsCatalogLookupWithSchemas(ctx context.Context, schemas map[string]types.SchemaLibrary) resolver.CatalogLookup {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -3512,9 +3512,9 @@ func (l *LazyLookup) SkippedEntities() []SkippedEntity {
 
 // ValidateClosureScopedPillars runs closure-scoped pillar validation over the
 // LAZY backing: it resolves each closure Component/Feature through the cascade
-// and validates its schema pillars against the SchemaLibrary set the caller hands in (see schemas below) —
-// the daemon's early-warning gate, and narrower than a whole-catalog pillar
-// validation. A broken out-of-closure entity is never resolved here, so it is
+// and validates its schema pillars against the SchemaLibrary set the caller
+// hands in (schemas) — the daemon's early-warning gate, and narrower than a
+// whole-catalog pillar validation. A broken out-of-closure entity is never resolved here, so it is
 // never validated; an in-closure pillar error (a schema-invalid
 // Component/Feature, or a $ref to a skipped/missing library) is surfaced.
 // Each resolved entity is validated once per identity, and named and sourced by

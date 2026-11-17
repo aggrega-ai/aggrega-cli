@@ -19,6 +19,7 @@ package compilerops
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -135,28 +136,46 @@ func (r *ResolvedClosure) Libraries(view *catalog.LazyLookup) catalog.LibrarySet
 }
 
 // releaseLibraries is the one choice of the library versions a Release's surfaces
-// read. A closure resolved with its library axes (librariesResolved) names each
-// library at the version it resolved. One resolved without them names none, so
-// where a lockfile is in hand each library is read at exactly the version that
-// lockfile's row records, the version a build of the same Release reads, and
-// where none is the version a bare reference selects. A recorded version the view
-// does not hold is absent from the set, never replaced by another version.
+// read.
+//
+// A closure resolved with its library axes (librariesResolved) names each library
+// at the version it resolved, and is read strictly: a resolved version the view
+// does not hold is absent, never replaced by another, so the reader reports the
+// library missing. That reading belongs to the surfaces that build, pull or
+// preview, whose drift gate refuses a lockfile that no longer matches the
+// workspace.
+//
+// A closure resolved without them names no library. Where a lockfile is in hand
+// its rows overlay the default selection: a library the lockfile records at a
+// version the view holds is read at exactly that version, the version a build
+// reads, and every other library (one the lockfile lacks, or records at a version
+// the view does not hold) is read at the version a bare reference selects. The
+// surfaces that read this way either run the drift check before validating or keep
+// a quiet load that runs none, so a stale lockfile is reported by the drift gate
+// and never as a library the catalog holds being missing. With no lockfile every
+// library is read at the version a bare reference selects.
 func releaseLibraries(view *catalog.LazyLookup, cl closure.Closure, librariesResolved bool, record *lockfile.Lockfile) catalog.LibrarySet {
-	switch {
-	case librariesResolved:
-		return view.ClosureLibraries(cl)
-	case record != nil:
-		for _, axis := range closure.LibraryAxes() {
-			rows, _ := lockfile.LibraryPins(record, axis)
-			libs := make([]closure.ResolvedLibrary, 0, len(rows))
-			for _, row := range rows {
-				libs = append(libs, closure.ResolvedLibrary{URI: row.URI, ResolvedVersion: row.ResolvedVersion, Digest: row.Digest})
-			}
-			axis.SetLibraries(&cl, libs)
-		}
+	if librariesResolved {
 		return view.ClosureLibraries(cl)
 	}
-	return view.DefaultLibraries()
+	libraries := view.DefaultLibraries()
+	if record == nil {
+		return libraries
+	}
+	for _, axis := range closure.LibraryAxes() {
+		rows, _ := lockfile.LibraryPins(record, axis)
+		libs := make([]closure.ResolvedLibrary, 0, len(rows))
+		for _, row := range rows {
+			libs = append(libs, closure.ResolvedLibrary{URI: row.URI, ResolvedVersion: row.ResolvedVersion, Digest: row.Digest})
+		}
+		axis.SetLibraries(&cl, libs)
+	}
+	recorded := view.ClosureLibraries(cl)
+	maps.Copy(libraries.Schemas, recorded.Schemas)
+	maps.Copy(libraries.Mappings, recorded.Mappings)
+	maps.Copy(libraries.Workloads, recorded.Workloads)
+	maps.Copy(libraries.Artifacts, recorded.Artifacts)
+	return libraries
 }
 
 // ClosureStage names the point in ResolveClosure at which resolution failed, so

@@ -125,7 +125,9 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// (TestServeValidateVerifiesCacheAgainstPinBeforeTier4).
 	//
 	// The loaded lockfile is retained past the pin extraction because the
-	// deprecation report below reads its recorded markers. Retaining it does NOT
+	// deprecation report below reads its recorded markers and the validation core
+	// reads its library rows (a recorded library is read at its recorded version,
+	// every other at the version a bare reference selects). Retaining it does NOT
 	// change what is passed to the closure resolution: that still receives nil, so
 	// the quiet-load posture described above is untouched.
 	//
