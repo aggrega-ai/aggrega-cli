@@ -90,13 +90,23 @@ func mcpSourceBody(t *testing.T) string {
 // composeSettings, and naming no default registry.
 func recordFormatsWorkspace(t *testing.T, composeSettings map[string]any) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
+	return recordFormatsWorkspaceSetting(t, map[string]map[string]any{"compose": composeSettings})
+}
+
+// recordFormatsWorkspaceSetting is recordFormatsWorkspace whose attachment of
+// each format's importer hands it the settings given for that format, and none
+// where none are given.
+func recordFormatsWorkspaceSetting(t *testing.T, settings map[string]map[string]any) *workspaceconfig.ResolvedWorkspace {
+	t.Helper()
 	wsDir := aWorkspaceDir(t)
 	folder := importopstest.LayCatalogFolder(t, wsDir, filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir), true)
 	attachments := folder.Attachments(nil)
-	compose := folder.ImporterFor(t, "compose").Identity
-	for i := range attachments {
-		if attachments[i].URI == compose {
-			attachments[i].Settings = composeSettings
+	for _, format := range []string{"compose", "mcp"} {
+		identity := folder.ImporterFor(t, format).Identity
+		for i := range attachments {
+			if attachments[i].URI == identity {
+				attachments[i].Settings = settings[format]
+			}
 		}
 	}
 	importopstest.WriteConfiguration(t, wsDir, attachments...)
@@ -603,5 +613,116 @@ func TestRecordFormatsUnreadableRecord(t *testing.T) {
 	rec, _ := recordBeside(t, dir)
 	if got := recordFormats(rec); !slices.Equal(got, []string{"compose"}) {
 		t.Errorf("the record written anew holds the entries %q, want compose alone", got)
+	}
+}
+
+// TestRecordFormatsOlderRecordLendsAPlainImportOnlyItsPin writes beside the
+// drafts a record an older version wrote of another import — naming a target and
+// an answers file holding an answer the owing drafts ask for — and imports the
+// owing drafts, not as a sync. The import reads none of that entry but the
+// catalog snapshot it pins: it answers from the answers file beside its source,
+// the older answers file stays byte for byte and its answer reaches no draft, its
+// own entry names no target and no answers file, and the older entry is kept as
+// written.
+//
+// 🔴 PLANTED DEFECT: hand answerDrafts (internal/importops/import.go) the entry
+// read whatever it is: the import answers from, and writes into, the older
+// answers file, and the case reddens.
+func TestRecordFormatsOlderRecordLendsAPlainImportOnlyItsPin(t *testing.T) {
+	t.Parallel()
+	rw, source := owingWorkspace(t, false)
+	dir := draftsDir(rw)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const olderAnswers = "older-answers.yaml"
+	answersBody := "aggregate.yaml:\n  spec.components.api.values.model: older-model\n"
+	if err := os.WriteFile(filepath.Join(dir, olderAnswers), []byte(answersBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	older := recordEntry{Target: "compose", Answers: olderAnswers,
+		Files: []recordFile{{Path: "older/notes.txt", Digest: digestOf("older notes\n")}}}
+	data, err := json.MarshalIndent(older, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, RecordFileName), append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := owingImport(t, rw, source, dir, Options{})
+	beside, err := filepath.Abs(DefaultAnswersPath(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Answers != beside {
+		t.Errorf("the import answered from %s; want the answers file beside its source, %s", res.Answers, beside)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, olderAnswers)); string(got) != answersBody {
+		t.Errorf("the older import's answers file changed:\n%s", got)
+	}
+	if aggregate, _ := os.ReadFile(filepath.Join(dir, "aggregate.yaml")); strings.Contains(string(aggregate),
+		"older-model") {
+		t.Errorf("the older import's answer reached the drafts:\n%s", aggregate)
+	}
+	rec, _ := recordBeside(t, dir)
+	if got := recordFormats(rec); !slices.Equal(got, []string{"", importopstest.DraftSetFormat}) {
+		t.Fatalf("the record holds the entries %q, want the older one and %s", got, importopstest.DraftSetFormat)
+	}
+	if own := entryIn(t, rec, importopstest.DraftSetFormat); own.Target != "" || own.Answers != "" {
+		t.Errorf("the import's entry names the target %q and the answers file %q; want neither inherited",
+			own.Target, own.Answers)
+	}
+	if got := entryIn(t, rec, ""); !reflect.DeepEqual(got, older) {
+		t.Errorf("the older entry changed:\n%+v\nwant\n%+v", got, older)
+	}
+}
+
+// TestRecordFormatsSharedOrdinaryPathConflictsOnSync has two imports whose
+// importers both draft their decisions alone, as import-decisions.json — a file
+// of no guarded kind, so the second import, not a sync, writes over the first's
+// and both entries list it. The first import's source then changes: its sync is
+// refused naming the file as one edited since the import wrote it, and the
+// second import's file is neither written over nor removed.
+//
+// 🔴 PLANTED DEFECT: have judgeFile (internal/importops/sync.go) write a file
+// owned whole anew whatever is on disk: the sync writes over the second
+// import's file, and the case reddens.
+func TestRecordFormatsSharedOrdinaryPathConflictsOnSync(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
+	t.Parallel()
+	rw := recordFormatsWorkspaceSetting(t, map[string]map[string]any{"compose": decisionsOnly, "mcp": decisionsOnly})
+	dir := draftsDir(rw)
+	compose := writeFormatSource(t, "compose.yaml", composeSourceBody(t))
+	mustImport(t, rw, compose, Options{})
+	mustImport(t, rw, writeFormatSource(t, ".mcp.json", mcpSourceBody(t)), Options{})
+	rec, before := recordBeside(t, dir)
+	for _, format := range []string{"compose", "mcp"} {
+		if got := entryPaths(entryIn(t, rec, format)); !slices.Equal(got, []string{"import-decisions.json"}) {
+			t.Fatalf("the %s entry lists %v, want import-decisions.json", format, got)
+		}
+	}
+	place := filepath.Join(dir, "import-decisions.json")
+	written, err := os.ReadFile(place)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	compose.rewrite(t, strings.Replace(composeSourceBody(t), "\nvolumes:\n",
+		"\n  worker:\n    image: ghcr.io/example/shop-worker:2.0.0\nvolumes:\n", 1))
+	_, err = importInto(rw, compose, Options{Sync: true})
+	var conflicts *SyncConflictError
+	if !errors.As(err, &conflicts) {
+		t.Fatalf("the Compose sync returned %v; want a SyncConflictError", err)
+	}
+	want := []SyncConflict{{File: "import-decisions.json", Reason: conflictEditedChanged}}
+	if !reflect.DeepEqual(conflicts.Conflicts, want) {
+		t.Errorf("the sync conflicts on %+v; want %+v", conflicts.Conflicts, want)
+	}
+	if got, err := os.ReadFile(place); err != nil || string(got) != string(written) {
+		t.Errorf("the refused sync wrote over or removed the MCP import's file (%v):\n%s", err, got)
+	}
+	if _, after := recordBeside(t, dir); after != before {
+		t.Errorf("the refused sync changed the record:\n%s", after)
 	}
 }

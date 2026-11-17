@@ -506,8 +506,11 @@ func (r Result) Halted() bool {
 // by the importers of the workspace's catalog folders and the ones the binary
 // carries, refused naming the record's formats where none recognises it
 // (formatBeforeEntry); otherwise it is recognised over the whole view, the
-// record's only entry pinning the snapshot. An import reads its format's entry,
-// or, where the record holds none, the entry naming no format.
+// record's only entry pinning the snapshot. An import reads its format's entry.
+// Where the record holds none, a sync reads the entry naming no format as its
+// own, taking it over where it lists a path the sync drafts, and an import that
+// is not a sync reads of it only the catalog snapshot it pins: its target and
+// its answers file may be another import's.
 //
 // Without Options.Sync, an entity already at a drafted path refuses the import
 // whatever the delivery, before anything is asked, written or reported, so a dry
@@ -705,7 +708,14 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	if opts.Delivery.Reports() || (opts.Sync && (Result{Diagnostics: diagnostics}).Halted()) {
 		ask = nil
 	}
-	owing, err := answerDrafts(rw.Root(), outputDir, rec, opts, ask, seam.Recipes, draft)
+	// An entry naming no format is this import's only once a sync takes it over:
+	// an import that is not a sync reads of it the catalog snapshot it pins alone,
+	// never the answers file it points at, which may be another import's.
+	prior := rec
+	if !opts.Sync && rec != nil && rec.Format == "" {
+		prior = nil
+	}
+	owing, err := answerDrafts(rw.Root(), outputDir, prior, opts, ask, seam.Recipes, draft)
 	if err != nil {
 		return Result{}, err
 	}

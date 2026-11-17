@@ -211,9 +211,11 @@ func (r importRecord) formats() []string {
 
 // readBy returns the entry an import of format reads: its format's own, or,
 // where the record holds none, the entry naming no format — the one an older
-// version's record reads as, which may be this import's. For an import whose
-// format is not known yet, it is the record's only entry. It is nil where there
-// is none of these.
+// version's record reads as, which may be this import's: a sync takes it over
+// where it lists a path the sync drafts, and an import that is not a sync reads
+// of it only the catalog snapshot it pins. For an import whose format is not
+// known yet, it is the record's only entry. It is nil where there is none of
+// these.
 func (r importRecord) readBy(format string) *recordEntry {
 	if format == "" {
 		if only, ok := r.only(); ok {

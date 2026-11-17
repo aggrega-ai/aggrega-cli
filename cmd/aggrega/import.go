@@ -194,7 +194,9 @@ entry, or adds it, and writes every other entry back as it found it, so imports
 of different formats into one directory each keep their own entry and each can
 be synced. A record an older version wrote, holding one import's fields and no
 format, is read as one entry naming no format, and an import without --sync
-keeps it as it is beside its own. A record that cannot be read stops --sync;
+keeps it as it is beside its own, reading of it only the catalog snapshot it
+names: its target and its answers file may be another import's. A record that
+cannot be read stops --sync;
 an import without --sync writes it anew, holding its own entry alone, and a
 warning says that the entries it held for other formats' imports are lost. The
 record is JSON, so nothing that reads the workspace's YAML documents reads it;
