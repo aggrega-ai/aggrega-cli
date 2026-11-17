@@ -156,7 +156,7 @@ func lift(ref schemadraft.TypeRef) (*schemadraft.Type, []aggrega.Diagnostic) {
 	l := &lifter{definitionsRaw: top[keyDefinitions], flags: map[string]*pointerFlags{}}
 	t := &schemadraft.Type{Name: ref.Name, Source: ref.Source}
 	if description, ok := text(top[keyDescription]); ok {
-		t.Description = firstParagraph(description)
+		t.Description = schemadraft.FirstParagraph(description)
 	}
 	for _, pointerList := range []struct {
 		key string
@@ -377,7 +377,7 @@ func (l *lifter) node(raw json.RawMessage, path []string) node {
 			n.kinds = l.kinds(e.Value, path)
 		case keyDescription:
 			if description, ok := text(e.Value); ok {
-				n.description = firstParagraph(description)
+				n.description = schemadraft.FirstParagraph(description)
 			}
 		case "$ref":
 			l.decode(e.Value, &n.ref, path, "$ref")
@@ -606,15 +606,6 @@ func text(raw json.RawMessage) (string, bool) {
 func isObject(raw json.RawMessage) bool {
 	trimmed := bytes.TrimSpace(raw)
 	return len(trimmed) > 0 && trimmed[0] == '{' && json.Valid(trimmed)
-}
-
-// firstParagraph is text up to its first blank line.
-func firstParagraph(text string) string {
-	text = strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n"))
-	if i := strings.Index(text, "\n\n"); i >= 0 {
-		text = text[:i]
-	}
-	return strings.TrimSpace(text)
 }
 
 // appended is path followed by name, sharing no storage with path.

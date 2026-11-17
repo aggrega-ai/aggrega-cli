@@ -32,6 +32,12 @@ const (
 	// CodeResourceTypeRefused halts on a requested type the format's provider
 	// cannot realize, naming why.
 	CodeResourceTypeRefused = "resource-type-refused"
+	// CodeResourceTypeAmbiguous halts on a requested type name more than one
+	// source of the format's input carries and the format cannot choose between.
+	CodeResourceTypeAmbiguous = "resource-type-ambiguous"
+	// CodeBetaProviderPassedOver reports that a type carried by a provider and
+	// by its beta sibling was drafted from the provider.
+	CodeBetaProviderPassedOver = "beta-provider-passed-over"
 )
 
 // resourceTypesUnreadable halts on a resource_types value, or an entry of it,
@@ -85,5 +91,27 @@ func resourceTypeVersionNotFound(requested, version string, held []string, sourc
 		Message: fmt.Sprintf("the resource type %q has no apiVersion %q in the sources: %s; request that version or "+
 			"write the type without one", requested, version, have),
 		SourceRef: source,
+	}
+}
+
+// ResourceTypeAmbiguous halts on the type name carried by each of providers,
+// none of which the import can prefer: fix says how to export it from one alone.
+func ResourceTypeAmbiguous(name string, providers []string, fix string) aggrega.Diagnostic {
+	return aggrega.Diagnostic{
+		Severity: "halt",
+		Code:     CodeResourceTypeAmbiguous,
+		Message: fmt.Sprintf("the resource type %q is carried by %s, and the import cannot tell which to draft: %s",
+			name, strings.Join(providers, ", "), fix),
+	}
+}
+
+// BetaProviderPassedOver reports that the type name, carried by both chosen and
+// its beta sibling passed, is drafted from chosen.
+func BetaProviderPassedOver(name, chosen, passed string) aggrega.Diagnostic {
+	return aggrega.Diagnostic{
+		Severity: "info",
+		Code:     CodeBetaProviderPassedOver,
+		Message: fmt.Sprintf("the resource type %q is carried by %s and by its beta sibling %s: drafted from %s",
+			name, chosen, passed, chosen),
 	}
 }

@@ -179,3 +179,13 @@ func respell(b *strings.Builder, p *Property, expr string, n *int) string {
 	}
 	return expr
 }
+
+// FirstParagraph is text up to its first blank line, trimmed: the part of a
+// vendor description a draft carries.
+func FirstParagraph(text string) string {
+	text = strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n"))
+	if i := strings.Index(text, "\n\n"); i >= 0 {
+		text = text[:i]
+	}
+	return strings.TrimSpace(text)
+}

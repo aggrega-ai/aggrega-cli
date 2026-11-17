@@ -1,0 +1,117 @@
+{
+  "format_version": "1.0",
+  "provider_schemas": {
+    "registry.terraform.io/example/ledgers": {
+      "provider": {
+        "version": 0,
+        "block": {
+          "attributes": {
+            "endpoint": {"type": "string", "optional": true, "description": "Where the provider connects."}
+          }
+        }
+      },
+      "resource_schemas": {
+        "ex_ledger": {
+          "version": 1,
+          "block": {
+            "description": "A ledger that records entries.\n\nIts second paragraph is not carried.",
+            "description_kind": "plain",
+            "attributes": {
+              "name": {"type": "string", "required": true, "description": "The ledger's name."},
+              "identifier": {"type": "string", "optional": true, "computed": true, "description": "The ledger's identifier."},
+              "ledger": {"type": "string", "optional": true, "description": "The ledger's own label."},
+              "capacity": {"type": "number", "optional": true, "description": "How many entries fit."},
+              "enabled": {"type": "bool", "optional": true, "description": "Whether the ledger accepts entries."},
+              "tags": {"type": ["map", "string"], "optional": true, "description": "Labels on the ledger."},
+              "zones": {"type": ["set", "string"], "optional": true, "description": "Where the ledger is kept."},
+              "limits": {"type": ["object", {"burst": "number", "rate": "number"}], "optional": true, "description": "Rate limits."},
+              "pair": {"type": ["tuple", ["string", "number"]], "optional": true, "description": "A fixed pair."},
+              "payload": {"type": "dynamic", "optional": true, "description": "Any value."},
+              "rows": {"type": ["list", ["list", "string"]], "optional": true, "description": "Rows of cells."},
+              "password": {"type": "string", "optional": true, "sensitive": true, "description": "The ledger's password."},
+              "token": {"type": "string", "computed": true, "sensitive": true, "description": "A token read back."},
+              "arn": {"type": "string", "computed": true, "description": "The ledger's address."},
+              "legacy_mode": {"type": "bool", "optional": true, "deprecated": true, "description": "Retired switch."},
+              "one_time": {"type": "string", "optional": true, "write_only": true, "description": "Used once."},
+              "settings": {
+                "nested_type": {
+                  "nesting_mode": "list",
+                  "max_items": 2,
+                  "attributes": {
+                    "level": {"type": "string", "optional": true, "description": "A level."}
+                  }
+                },
+                "optional": true,
+                "description": "Nested settings."
+              }
+            },
+            "block_types": {
+              "retention": {
+                "nesting_mode": "list",
+                "min_items": 1,
+                "max_items": 3,
+                "block": {
+                  "description": "How long entries stay.",
+                  "attributes": {
+                    "days": {"type": "number", "required": true, "description": "Days kept."}
+                  },
+                  "block_types": {
+                    "archive": {
+                      "nesting_mode": "single",
+                      "block": {
+                        "attributes": {
+                          "target": {"type": "string", "optional": true, "description": "Where entries go."}
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "alert": {
+                "nesting_mode": "set",
+                "block": {
+                  "attributes": {
+                    "channel": {"type": "string", "required": true, "description": "Where alerts go."}
+                  }
+                }
+              },
+              "label": {
+                "nesting_mode": "map",
+                "block": {
+                  "attributes": {
+                    "value": {"type": "string", "optional": true, "description": "A label value."}
+                  }
+                }
+              },
+              "window": {
+                "nesting_mode": "single",
+                "block": {
+                  "attributes": {
+                    "start": {"type": "string", "optional": true, "description": "When the window opens."}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "ex_journal": {
+          "version": 0,
+          "block": {
+            "attributes": {
+              "title": {"type": "string", "required": true, "description": "The journal's title."}
+            }
+          }
+        }
+      },
+      "data_source_schemas": {
+        "ex_ledger_lookup": {"version": 0, "block": {"attributes": {"name": {"type": "string", "required": true}}}}
+      },
+      "ephemeral_resource_schemas": {
+        "ex_ledger_session": {"version": 0, "block": {"attributes": {"name": {"type": "string", "required": true}}}}
+      },
+      "functions": {
+        "ex_checksum": {"description": "A function.", "return_type": "string"}
+      }
+    }
+  }
+}
