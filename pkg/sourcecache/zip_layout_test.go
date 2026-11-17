@@ -220,3 +220,43 @@ func TestCheckZipLayoutRefusesAFileAndDirectorySharingAPlace(t *testing.T) {
 		t.Errorf("error %q does not name the conflicting path", err)
 	}
 }
+
+// zipWithWrongChecksum is a zip package whose one entry is stored with a checksum
+// its body does not have.
+func zipWithWrongChecksum(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	body := []byte("resource {}\n")
+	w, err := zw.CreateRaw(&zip.FileHeader{
+		Name: "main.tf", Method: zip.Store, CRC32: 0xdeadbeef,
+		CompressedSize64: uint64(len(body)), UncompressedSize64: uint64(len(body)),
+	})
+	if err != nil {
+		t.Fatalf("zip header: %v", err)
+	}
+	if _, err := w.Write(body); err != nil {
+		t.Fatalf("zip body: %v", err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestCheckZipLayoutRefusesAnEntryWhoseChecksumFails(t *testing.T) {
+	t.Parallel()
+	err := sourcecache.CheckZipLayout(zipWithWrongChecksum(t), "")
+	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
+		t.Fatalf("CheckZipLayout = %v; want ErrFetchIntegrity", err)
+	}
+}
+
+func TestRegenerateExtractedZipRefusesAnEntryWhoseChecksumFails(t *testing.T) {
+	t.Parallel()
+	root, slot := zipSlot(t)
+	_, err := sourcecache.RegenerateExtractedZip(root, ".aggrega/cache", slot, zipWithWrongChecksum(t))
+	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
+		t.Fatalf("RegenerateExtractedZip = %v; want ErrFetchIntegrity", err)
+	}
+}

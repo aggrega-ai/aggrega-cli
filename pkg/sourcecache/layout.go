@@ -113,11 +113,14 @@ func RegenerateExtractedZip(workspaceRoot, cacheDir, slot string, archive []byte
 // CheckZipLayout reports whether archive is a zip package that lays out: it opens,
 // every entry places beneath a tree ([entryPlace]), and a non-empty moduleSubdir is a
 // directory of the tree the package lays out, named by an entry or implied by the
-// path of one. A package that does not open or has an entry that may not be laid out
-// is refused with a wrapped ErrFetchIntegrity, and a moduleSubdir the package lacks
-// with a wrapped ErrFetchNotFound naming the value as written. It writes nothing.
+// path of one. A package that does not open, has an entry that may not be laid out
+// or has an entry whose body cannot be read is refused with a wrapped
+// ErrFetchIntegrity, and a moduleSubdir the package lacks with a wrapped
+// ErrFetchNotFound naming the value as written. It writes nothing.
 func CheckZipLayout(archive []byte, moduleSubdir string) error {
-	plan, err := planTree("tree", zipEntries(archive))
+	// Reading each regular entry's body to its end settles its checksum, so a
+	// package whose entry cannot be read back is refused at the pull.
+	plan, err := planTree("tree", readingBodies(zipEntries(archive)))
 	if err != nil {
 		return err
 	}
@@ -126,6 +129,22 @@ func CheckZipLayout(archive []byte, moduleSubdir string) error {
 		return absentSubdir(moduleSubdir)
 	}
 	return nil
+}
+
+// readingBodies is entries with each regular entry's body read to its end before
+// the entry is handed on; a body that cannot be read is a failure of the artifact's
+// integrity.
+func readingBodies(entries entrySource) entrySource {
+	return func(visit func(*tar.Header, io.Reader) error) error {
+		return entries(func(hdr *tar.Header, body io.Reader) error {
+			if hdr.Typeflag == tar.TypeReg {
+				if _, err := io.Copy(io.Discard, integrityReader{body}); err != nil {
+					return fmt.Errorf("zip entry %q: %w", hdr.Name, err)
+				}
+			}
+			return visit(hdr, body)
+		})
+	}
 }
 
 // moduleSubdirPlace returns the slash-separated place in a laid-out tree that
@@ -526,6 +545,18 @@ func sameStream(a, b io.Reader) bool {
 	}
 }
 
+// integrityReader marks an error reading an entry's body, a failed checksum or a
+// damaged stream, as a failure of the artifact's integrity.
+type integrityReader struct{ r io.Reader }
+
+func (i integrityReader) Read(p []byte) (int, error) {
+	n, err := i.r.Read(p)
+	if err != nil && err != io.EOF {
+		return n, fmt.Errorf("read an entry: %w: %w", err, ErrFetchIntegrity())
+	}
+	return n, err
+}
+
 // replaceFile writes body to a temporary file in staging and renames it over target,
 // so a reader of target sees the file it held or the new one and never a missing or
 // partly written one.
@@ -536,7 +567,7 @@ func replaceFile(staging, target string, body io.Reader) error {
 	}
 	tmpName := tmp.Name()
 	discard := func() { _ = os.Remove(tmpName) }
-	if _, err := io.Copy(tmp, body); err != nil {
+	if _, err := io.Copy(tmp, integrityReader{body}); err != nil {
 		_ = tmp.Close()
 		discard()
 		return fmt.Errorf("copy %q: %w", target, err)
