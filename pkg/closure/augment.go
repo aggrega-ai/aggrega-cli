@@ -40,8 +40,11 @@ type LibrarySource interface {
 	// version. A library read from a catalog directory is held already; one the
 	// resolution served from the content cache or a registry may be held by
 	// nothing else yet, or only at a version a later requirement raised it from,
-	// and its body is what the discovery descends next.
-	HoldResolvedLibrary(axis LibraryAxis, lib ResolvedLibrary)
+	// and its body is what the discovery descends next. Where the source still
+	// holds no copy at that version, it returns the refusal it met holding one —
+	// a copy whose bytes are not the pinned ones, a document that does not parse —
+	// and nil where it can name none.
+	HoldResolvedLibrary(axis LibraryAxis, lib ResolvedLibrary) error
 }
 
 // AugmentClosure resolves what the entity walk does not descend and every
@@ -270,17 +273,27 @@ func entitySchemaConsumers(kind, uri string, schema *yaml.Node, sockets types.Or
 // the resolved version's own references are descended.
 //
 // read reports the version of the copy it read. A resolved library the source
-// cannot read at its resolved version even then — none held, or only other
-// versions — halts the discovery with the unresolvable-reference condition naming
-// the library at that version, because the references its body makes would
-// otherwise be missing from the closure without a word.
+// cannot read at its resolved version even then halts the discovery with the
+// unresolvable-reference condition naming the library at that version, because
+// the references its body makes would otherwise be missing from the closure
+// without a word. The halt says what disagrees with the resolution: the version
+// the copy held declares, where the reference reads a copy at another version, or
+// that no copy at that version could be held, with the refusal the source met
+// holding one where it names one.
 func heldLibraryBodies[B any](src LibrarySource, axis LibraryAxis, read func(ref string) (version string, bodies []B, ok bool)) func(ResolvedLibrary) ([]B, bool, error) {
 	return func(lib ResolvedLibrary) ([]B, bool, error) {
-		src.HoldResolvedLibrary(axis, lib)
+		refusal := src.HoldResolvedLibrary(axis, lib)
 		version, bodies, ok := read(lib.Reference())
-		if !ok || (lib.ResolvedVersion != "" && version != lib.ResolvedVersion) {
-			return nil, false, fmt.Errorf("%w: library %q resolved at that version, and no copy of it held at that version can be read for the references it makes",
+		switch {
+		case !ok && refusal != nil:
+			return nil, false, fmt.Errorf("%w: library %q: no copy at that version could be held: %s",
+				ErrUnresolvableURI(), lib.Reference(), refusal)
+		case !ok:
+			return nil, false, fmt.Errorf("%w: library %q: no copy at that version could be held",
 				ErrUnresolvableURI(), lib.Reference())
+		case lib.ResolvedVersion != "" && version != lib.ResolvedVersion:
+			return nil, false, fmt.Errorf("%w: library %q: the copy held declares version %s",
+				ErrUnresolvableURI(), lib.Reference(), version)
 		}
 		return bodies, true, nil
 	}

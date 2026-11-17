@@ -580,6 +580,8 @@ func TestAugmentFollowsRaisedLibraryVersion(t *testing.T) {
 // at 1.1.0 to bytes its cache slot no longer holds, so the view folds no copy of
 // Lib, while the cache tier answers the reference from that slot; Lib 1.1.0's body
 // imports Other, which would otherwise be missing from the closure unannounced.
+// The halt says no copy at that version could be held, and why: the slot's refusal
+// names the digest the lockfile pins.
 func TestAugmentHaltsOnAResolvedLibraryItCannotRead(t *testing.T) {
 	t.Parallel()
 	ws := t.TempDir()
@@ -598,8 +600,11 @@ func TestAugmentHaltsOnAResolvedLibraryItCannotRead(t *testing.T) {
 	if !errors.Is(err, closure.ErrUnresolvableURI()) {
 		t.Fatalf("AugmentClosure: %v; want the unresolvable-reference condition (closure %q)", err, mappingRows(cl))
 	}
-	if !strings.Contains(err.Error(), `library "Lib:1.1.0"`) {
-		t.Errorf("the halt %q does not name Lib:1.1.0", err.Error())
+	if want := `library "Lib:1.1.0": no copy at that version could be held: `; !strings.Contains(err.Error(), want) {
+		t.Errorf("the halt %q does not say %q", err.Error(), want)
+	}
+	if !strings.Contains(err.Error(), pin.Digest) {
+		t.Errorf("the halt %q does not carry the slot's refusal naming the pinned digest %s", err.Error(), pin.Digest)
 	}
 }
 

@@ -3361,16 +3361,6 @@ func (l *LazyLookup) artifactLibraryLocked(uri string) (types.ArtifactLibrary, b
 	return lib, ok
 }
 
-// LibraryName returns the declared name of the library a reference selects on the
-// given axis (the per-kind reads above), so a caller that treats the axes alike can
-// resolve one without naming which axis it is holding.
-func (l *LazyLookup) LibraryName(axis closure.LibraryAxis, uri string) (string, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	name, _, ok := l.libraryLocked(axis, uri)
-	return name, ok
-}
-
 // libraryLocked reads, on axis, the library the reference uri selects, reporting
 // its declared name and version, for a caller already holding the lock.
 //
@@ -3408,33 +3398,39 @@ func (l *LazyLookup) libraryLocked(axis closure.LibraryAxis, uri string) (name, 
 //
 // It does nothing where the view already holds the library at the version the
 // resolution recorded, and nothing where a pin already names the library at that
-// version, or at no version: a lockfile's pin is what a build holds the library to, and a resolution
-// at the pinned version never replaces it — held to other bytes, the library stays
-// unreadable. The view holding the library at another version does not stop the
-// hold, and neither does a pin naming another version: a pin a lockfile recorded
-// before a requirement raised the library, or one an earlier round of this
-// discovery recorded, gives way to the resolution of the raised version, which is
-// what a pull then records, as it re-resolves a raised floor. Otherwise the view's
-// pin for the library becomes the resolution's — the projection the closure's pins
-// use for it (libraryPin) — and the one pinned slot is folded through the same
-// reading as every other pin (foldPinnedSlot), verified against that pin. A version
-// folded under an earlier pin stays held beside it, as several versions of one
-// library from one source are. A slot that does not verify is not folded, and the
-// library stays unreadable, as it would under a lockfile's pin; a slot of a name a
-// catalog directory owns is recorded as the pinned duplicate it is, and is not
-// folded either.
+// version, or at no version: a lockfile's pin is what a build holds the library
+// to, and a resolution at the pinned version never replaces it — held to other
+// bytes, the library stays unreadable. The view holding the library at another
+// version does not stop the hold, and neither does a pin naming another version,
+// lower or higher: a pin a lockfile recorded before a requirement moved the
+// library, or one an earlier round of this discovery recorded, gives way to the
+// resolution at another version, which is what a pull then records as it
+// re-resolves the library. Otherwise the view's pin for the library becomes the
+// resolution's — the projection the closure's pins use for it (libraryPin) — and
+// the one pinned slot is folded through the same reading as every other pin
+// (foldPinnedSlot), verified against that pin. A version folded under an earlier
+// pin stays held beside it, as several versions of one library from one source
+// are. A slot that does not verify is not folded, and the library stays
+// unreadable, as it would under a lockfile's pin; a slot of a name a catalog
+// directory owns is recorded as the pinned duplicate it is, and is not folded
+// either.
+//
+// It returns nil where the view holds the library at the resolved version. Where
+// it does not, it returns the refusal that keeps the pinned slot out of the view
+// (pinnedSlotRefusal), so the caller can say why the library it resolved cannot
+// be read.
 //
 // The pin set is replaced rather than written into, because SetPins keeps the
 // caller's map and that map may be shared beyond this view.
-func (l *LazyLookup) HoldResolvedLibrary(axis closure.LibraryAxis, lib closure.ResolvedLibrary) {
+func (l *LazyLookup) HoldResolvedLibrary(axis closure.LibraryAxis, lib closure.ResolvedLibrary) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if _, version, held := l.libraryLocked(axis, lib.Reference()); held && (lib.ResolvedVersion == "" || version == lib.ResolvedVersion) {
-		return
+	if l.holdsResolvedLibraryLocked(axis, lib) {
+		return nil
 	}
 	key := PinKey{Kind: axis.Kind, URI: lib.URI}
 	if pinned, ok := l.pins[key]; ok && (lib.ResolvedVersion == "" || pinned.ResolvedVersion == "" || pinned.ResolvedVersion == lib.ResolvedVersion) {
-		return
+		return l.pinnedSlotRefusal(key, pinned)
 	}
 	pin := libraryPin(lib)
 	pins := make(Pins, len(l.pins)+1)
@@ -3442,6 +3438,32 @@ func (l *LazyLookup) HoldResolvedLibrary(axis closure.LibraryAxis, lib closure.R
 	pins[key] = pin
 	l.pins = pins
 	l.foldPinnedSlot(key, pin, map[string]bool{axis.Kind: true})
+	if l.holdsResolvedLibraryLocked(axis, lib) {
+		return nil
+	}
+	return l.pinnedSlotRefusal(key, pin)
+}
+
+// holdsResolvedLibraryLocked reports whether the view holds lib, on axis, at the
+// version its resolution recorded, or at any version where it recorded none, for
+// a caller already holding the lock.
+func (l *LazyLookup) holdsResolvedLibraryLocked(axis closure.LibraryAxis, lib closure.ResolvedLibrary) bool {
+	_, version, held := l.libraryLocked(axis, lib.Reference())
+	return held && (lib.ResolvedVersion == "" || version == lib.ResolvedVersion)
+}
+
+// pinnedSlotRefusal is the refusal that keeps the cache slot pin names for key out
+// of this view: the verified read's own (a slot that is absent, or whose manifest
+// or bytes are not the pinned ones), and otherwise the refusal folding the slot
+// recorded under its label (pinnedSlotLabel), such as a document that does not
+// parse or a name a catalog directory owns. It is nil where the slot reads and no
+// refusal is recorded against it. The caller holds the lock.
+func (l *LazyLookup) pinnedSlotRefusal(key PinKey, pin Pin) error {
+	slotURI := versionedSlotURI(key.URI, pin.ResolvedVersion)
+	if _, _, err := tier2ReadVerifiedWithManifest(l.workspaceRoot, l.cacheDir, key.Kind, slotURI, pin.Digest, pin.ManifestDigest); err != nil {
+		return err
+	}
+	return l.recipeSkips[pinnedSlotLabel(key)]
 }
 
 // Skips returns the tolerant-enumeration skip reasons keyed by file path — every

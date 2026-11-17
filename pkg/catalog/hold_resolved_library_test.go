@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -46,10 +47,20 @@ spec:
 // axis and on a template axis alike. A resolution whose digest the slot does not
 // hold is not folded, as it would not be under a lockfile's pin. A pin the view
 // already holds for the library governs and is not replaced by the resolution's:
-// held to other bytes, the library stays unreadable.
+// held to other bytes, the library stays unreadable. Where the library stays
+// unreadable, the hold returns the refusal the slot's verified read gave: its
+// bytes are not the pinned ones.
 func TestHoldResolvedLibraryReadsTheLibraryAtItsResolution(t *testing.T) {
 	t.Parallel()
 	otherBytes := "sha256:" + strings.Repeat("0", 64)
+	readSchema := func(l *LazyLookup, ref string) (string, bool) {
+		lib, ok := l.SchemaLibrary(ref)
+		return lib.Metadata.Name, ok
+	}
+	readMapping := func(l *LazyLookup, ref string) (string, bool) {
+		lib, ok := l.MappingLibrary(ref)
+		return lib.Metadata.Name, ok
+	}
 	rows := []struct {
 		name      string
 		axis      string
@@ -57,6 +68,8 @@ func TestHoldResolvedLibraryReadsTheLibraryAtItsResolution(t *testing.T) {
 		slotURI   string
 		mediaType string
 		body      string
+		// read is the per-kind read of the row's axis, reporting the name it read.
+		read func(l *LazyLookup, ref string) (string, bool)
 		// digest replaces the resolution's digest where set.
 		digest string
 		// pinned is a pin the view already holds for the library, held to other bytes.
@@ -64,13 +77,13 @@ func TestHoldResolvedLibraryReadsTheLibraryAtItsResolution(t *testing.T) {
 		want   bool
 	}{
 		{name: "a schema library at the digest its slot holds", axis: "SchemaLibraries", uri: "Held", slotURI: "Held:1.0.0",
-			mediaType: oci.MediaTypeSchemaLibrary, body: heldSchemaLibraryYAML, want: true},
+			mediaType: oci.MediaTypeSchemaLibrary, body: heldSchemaLibraryYAML, read: readSchema, want: true},
 		{name: "a mapping library at the digest its slot holds", axis: "MappingLibraries", uri: "HeldMappings", slotURI: "HeldMappings:1.0.0",
-			mediaType: oci.MediaTypeMappingLibrary, body: heldMappingLibraryYAML, want: true},
+			mediaType: oci.MediaTypeMappingLibrary, body: heldMappingLibraryYAML, read: readMapping, want: true},
 		{name: "a schema library resolved at a digest its slot does not hold", axis: "SchemaLibraries", uri: "Held", slotURI: "Held:1.0.0",
-			mediaType: oci.MediaTypeSchemaLibrary, body: heldSchemaLibraryYAML, digest: otherBytes, want: false},
+			mediaType: oci.MediaTypeSchemaLibrary, body: heldSchemaLibraryYAML, read: readSchema, digest: otherBytes, want: false},
 		{name: "a schema library a pin already names at other bytes", axis: "SchemaLibraries", uri: "Held", slotURI: "Held:1.0.0",
-			mediaType: oci.MediaTypeSchemaLibrary, body: heldSchemaLibraryYAML, pinned: true, want: false},
+			mediaType: oci.MediaTypeSchemaLibrary, body: heldSchemaLibraryYAML, read: readSchema, pinned: true, want: false},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -93,13 +106,19 @@ func TestHoldResolvedLibraryReadsTheLibraryAtItsResolution(t *testing.T) {
 			if row.pinned {
 				subject.SetPins(Pins{{Kind: kindOfMediaType(t, row.mediaType), URI: row.uri}: {ResolvedVersion: pin.ResolvedVersion, Digest: otherBytes}})
 			}
-			if _, held := subject.LibraryName(axis, row.uri); held {
+			if _, held := row.read(subject, row.uri); held {
 				t.Fatalf("the view holds %s before the hold, so the row proves nothing about the hold", row.uri)
 			}
-			subject.HoldResolvedLibrary(axis, resolved)
-			name, held := subject.LibraryName(axis, row.uri)
+			refusal := subject.HoldResolvedLibrary(axis, resolved)
+			name, held := row.read(subject, row.uri)
 			if held != row.want {
 				t.Fatalf("after the hold the view holds %s: %v; want %v", row.uri, held, row.want)
+			}
+			if row.want && refusal != nil {
+				t.Errorf("the hold of a library it made readable returned %v; want none", refusal)
+			}
+			if !row.want && !errors.Is(refusal, oci.ErrFetchIntegrity()) {
+				t.Errorf("the hold of a library it left unreadable returned %v; want the fetch-integrity refusal of the slot's bytes", refusal)
 			}
 			if held && name != row.uri {
 				t.Errorf("the view holds the library as %q; want %q", name, row.uri)
@@ -121,9 +140,11 @@ func TestHoldResolvedLibraryLeavesTheCallersPinsAsTheyWere(t *testing.T) {
 	subject := NewLazyLookup(ws, cacheUnderCatalogDir, nil, nil)
 	subject.SetPins(callers)
 	axis := closure.LibraryAxisNamed("SchemaLibraries")
-	subject.HoldResolvedLibrary(axis, closure.ResolvedLibrary{URI: "Held", ResolvedVersion: pin.ResolvedVersion, Digest: pin.Digest})
+	if err := subject.HoldResolvedLibrary(axis, closure.ResolvedLibrary{URI: "Held", ResolvedVersion: pin.ResolvedVersion, Digest: pin.Digest}); err != nil {
+		t.Fatalf("the hold returned %v; want none", err)
+	}
 
-	if _, held := subject.LibraryName(axis, "Held"); !held {
+	if _, held := subject.SchemaLibrary("Held"); !held {
 		t.Fatal("the hold did not make the library readable, so the row proves nothing about the caller's map")
 	}
 	if _, written := callers[PinKey{Kind: axis.Kind, URI: "Held"}]; written || len(callers) != 1 {

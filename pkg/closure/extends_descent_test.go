@@ -334,4 +334,6 @@ func (augmentExtendsSource) WorkloadLibrary(string) (types.WorkloadLibrary, bool
 func (augmentExtendsSource) ArtifactLibrary(string) (types.ArtifactLibrary, bool) {
 	return types.ArtifactLibrary{}, false
 }
-func (augmentExtendsSource) HoldResolvedLibrary(closure.LibraryAxis, closure.ResolvedLibrary) {}
+func (augmentExtendsSource) HoldResolvedLibrary(closure.LibraryAxis, closure.ResolvedLibrary) error {
+	return nil
+}
