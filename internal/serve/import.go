@@ -466,9 +466,16 @@ func importOwedValues(owed []importops.Owed, given *importops.GivenAnswers) []im
 
 // sessionExistingEntity words the refusal of a request whose drafts would be
 // written over an entity already on disk, naming it by its kind and where it
-// sits and the fields a caller here can send instead.
+// sits and the fields a caller here can send instead — for an entity another
+// format's import drafted, that import, and another outputDir alone, since a
+// sync of this format would not bring that import's entity up to date.
 func sessionExistingEntity(e *importops.ExistingEntityError) string {
 	place := filepath.Join(e.OutputDir, filepath.FromSlash(e.Path))
+	if e.Format != "" {
+		return "import: the draft " + e.Path + " would be written over the " + string(e.Kind) + " at " + place +
+			", which the " + e.Format + " import into that directory drafted and the record of what imports wrote " +
+			"there lists for it, so nothing was written; name another outputDir to draft beneath"
+	}
 	return "import: the draft " + e.Path + " would be written over the " + string(e.Kind) + " at " + place + ", which an author " +
 		"may have edited since it was drafted, so nothing was written; send sync to bring it up to date with the " +
 		"source, or name another outputDir to draft beneath"
@@ -491,23 +498,37 @@ func sessionSyncConflict(e *importops.SyncConflictError) string {
 }
 
 // sessionImportRecord words the refusal of a sync the record beside the drafts
-// cannot answer for — no record lists the entity it would bring up to date,
-// or the record cannot be read — naming the field the caller sent rather than
-// the command line's flag, and the record and the entity where they sit.
+// cannot answer for — the entry the sync reads does not list the entity it
+// would bring up to date, another format's entry lists it, the entry naming no
+// format lists none of the files the sync drafts, or the record cannot be read
+// — naming the field the caller sent rather than the command line's flag, and
+// the record and the entity where they sit.
 func sessionImportRecord(e *importops.ImportRecordError) string {
 	record := filepath.Join(e.OutputDir, filepath.FromSlash(e.Record))
-	if e.Err != nil {
+	switch {
+	case e.Err != nil:
 		return "import: sync was sent, and the record of what an import wrote, " + record + ", cannot be read: " +
 			e.Err.Error() + "; nothing was written"
+	case e.Unclaimed:
+		return "import: sync was sent, and the record of what imports wrote, " + record + ", holds no entry of " +
+			"this import's format, and its entry that names no format, as a record an older version wrote does, " +
+			"lists none of the files this import drafts, so it may be another import's; nothing was written; send " +
+			"the request without sync to draft beside its files, keeping that entry"
 	}
 	place := filepath.Join(e.OutputDir, filepath.FromSlash(e.Path))
+	if e.Format != "" {
+		return "import: sync was sent, and the record of what imports wrote, " + record + ", lists the " +
+			string(e.Kind) + " at " + place + " for the " + e.Format + " import, not this one; nothing was written"
+	}
 	return "import: sync was sent, and no record of what an import wrote lists the " + string(e.Kind) + " at " + place + " (" +
 		record + ", which every import writes beside its drafts), so its parts cannot be told from parts an author " +
 		"wrote; nothing was written"
 }
 
 // sessionUndetectedFormat words the refusal of a source whose format no
-// importer's signatures recognise, naming the field a request can send.
+// importer's signatures recognise, naming the field a request can send. A
+// source tried before the entry of a record of several formats was chosen is
+// offered the record's formats alone.
 //
 // A directory is offered a different remedy from a file, because a directory is
 // read only through the file patterns its importer declares: naming a format
@@ -516,6 +537,13 @@ func sessionImportRecord(e *importops.ImportRecordError) string {
 // directory — the formats the refusal itself carries, read off the importers'
 // declarations.
 func sessionUndetectedFormat(e *importops.UndetectedFormatError) string {
+	if recorded := e.RecordedFormats(); len(recorded) > 0 {
+		return "import: the source format of " + e.Path() + " was not recognised by the signatures the importers " +
+			"of the workspace's catalog folders and the compiler's own declare, and the record of what imports " +
+			"wrote beside the drafts holds an entry for each of several formats, the entry an import reads naming " +
+			"the published catalog it reads; send format naming the import it is (" +
+			sessionFormatExamples(recorded) + ")"
+	}
 	head := "import: the source format of " + e.Path() + " was not recognised from its shape by the signatures " +
 		"the importers declare"
 	if !e.IsDirectory() {

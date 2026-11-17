@@ -127,3 +127,12 @@ func TestRecordEntriesBytesStable(t *testing.T) {
 		t.Errorf("writing the record reordered the caller's entries")
 	}
 }
+
+// sole is the record's first entry, for a case whose record holds the entry of
+// one import, and a zero entry where it holds none.
+func (r importRecord) sole() recordEntry {
+	if len(r.Imports) == 0 {
+		return recordEntry{}
+	}
+	return r.Imports[0]
+}

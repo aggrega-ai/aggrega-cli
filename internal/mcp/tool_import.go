@@ -701,7 +701,9 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 // A directory is read only through the file patterns its importer declares, so
 // naming a format whose importer declares none would refuse the same directory
 // again: the caller is offered sending one of its files on its own, or a format
-// whose importer reads a directory — only those, as the refusal carries them.
+// whose importer reads a directory — only those, as the refusal carries them. A
+// source tried before the entry of a record of several formats was chosen,
+// file or directory, is offered the record's formats alone.
 func importFormatRefusal(err error) (string, bool) {
 	var undetected *importops.UndetectedFormatError
 	if errors.As(err, &undetected) {
@@ -709,6 +711,14 @@ func importFormatRefusal(err error) (string, bool) {
 		if short, ok := cerrors.ShortCodeOf(err); ok {
 			b.WriteString(short)
 			b.WriteString(": ")
+		}
+		if recorded := undetected.RecordedFormats(); len(recorded) > 0 {
+			fmt.Fprintf(&b, "%s did not recognise the source format of %s from the signatures the importers of the "+
+				"workspace's catalog folders and the compiler's own declare, and the record of what imports wrote "+
+				"beside the drafts holds an entry for each of several formats, the entry an import reads naming the "+
+				"published catalog it reads: send 'format' naming the import it is (%s) and call again. Nothing was "+
+				"written.", importToolName, undetected.Path(), formatChoices(recorded))
+			return b.String(), true
 		}
 		if !undetected.IsDirectory() {
 			fmt.Fprintf(&b, "%s did not recognise the source format of %s from the signatures the importers "+
@@ -808,8 +818,16 @@ func (tw *toolWorkspace) importOutputDirWords(outputDir string) string {
 // line's flags.
 //
 // The entity is named by its kind and its drafted path and the directory that path is
-// relative to, told as every location in an answer here is told.
+// relative to, told as every location in an answer here is told. An entity
+// another format's import drafted names that import, and offers another
+// 'output_dir' alone: a sync of this format would not bring it up to date.
 func importExistingEntityRefusal(tw *toolWorkspace, e *importops.ExistingEntityError) string {
+	if e.Format != "" {
+		return fmt.Sprintf("%s would write the draft %s over the %s already at that path beneath %s, which the %s "+
+			"import into that directory drafted and the record of what imports wrote there lists for it. Nothing was "+
+			"written. Name another 'output_dir' to draft beneath.", importToolName, strconv.Quote(e.Path), e.Kind,
+			tw.importOutputDirWords(e.OutputDir), e.Format)
+	}
 	return fmt.Sprintf("%s would write the draft %s over the %s already at that path beneath %s, which "+
 		"an author may have edited since it was drafted, so nothing was written. Send 'sync' to ask for it to be "+
 		"brought up to date with the source, or name another 'output_dir' to draft beneath.", importToolName,
@@ -836,14 +854,26 @@ func importConflictRefusal(tw *toolWorkspace, e *importops.SyncConflictError) st
 }
 
 // importRecordRefusal composes this surface's sentence for a sync the record
-// beside the drafts cannot answer for: no record lists the entity it would
-// bring up to date, or the record cannot be read. Why it cannot be read is
-// prose the operation composed, so it is told the way every such sentence here
-// is, keeping back a place on this host from a caller who is not told one.
+// beside the drafts cannot answer for: the entry the sync reads does not list
+// the entity it would bring up to date, another format's entry lists it, the
+// entry naming no format lists none of the files the sync drafts, or the record
+// cannot be read. Why it cannot be read is prose the operation composed, so it is
+// told the way every such sentence here is, keeping back a place on this host
+// from a caller who is not told one.
 func importRecordRefusal(tw *toolWorkspace, e *importops.ImportRecordError) string {
-	if e.Err != nil {
+	switch {
+	case e.Err != nil:
 		return fmt.Sprintf("%s was sent 'sync', and the record of what an import wrote, %s, cannot be read: %s. "+
 			"Nothing was written.", importToolName, strconv.Quote(e.Record), tw.reportedText(e.Err.Error()))
+	case e.Unclaimed:
+		return fmt.Sprintf("%s was sent 'sync', and the record of what imports wrote, %s, holds no entry of this "+
+			"import's format, and its entry that names no format, as a record an older version wrote does, lists "+
+			"none of the files this import drafts, so it may be another import's. Nothing was written. Call again "+
+			"without 'sync' to draft beside its files, keeping that entry.", importToolName, strconv.Quote(e.Record))
+	case e.Format != "":
+		return fmt.Sprintf("%s was sent 'sync', and the record of what imports wrote, %s, lists the %s at %s beneath "+
+			"%s for the %s import, not this one. Nothing was written.", importToolName, strconv.Quote(e.Record), e.Kind,
+			strconv.Quote(e.Path), tw.importOutputDirWords(e.OutputDir), e.Format)
 	}
 	return fmt.Sprintf("%s was sent 'sync', and no record of what an import wrote lists the %s at %s beneath "+
 		"%s (%s, which every import writes beside its drafts), so its parts cannot be told from parts an author "+

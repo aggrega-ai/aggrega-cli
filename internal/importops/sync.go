@@ -110,35 +110,59 @@ func (e *SyncConflictError) Error() string {
 	return b.String()
 }
 
-// ImportRecordError reports a sync refused because the record an import writes
-// beside its drafts cannot answer which parts an import wrote: it is not there,
-// it does not list the entity the sync would bring up to date, or it cannot be
-// read. Nothing is written.
+// ImportRecordError reports a sync refused because the record imports write
+// beside their drafts cannot answer which parts this import wrote: it is not
+// there, its entry for this import does not list the entity the sync would bring
+// up to date, another format's entry lists it, the entry it holds naming no
+// format may be another import's, or it cannot be read. Nothing is written.
 //
 // Path and Kind are set where an entity the sync would bring up to date — an
-// Aggregate, Component, Feature, Recipe or FeatureRecipe — is on disk and no
-// record lists it; Err is set where the record is there and cannot be
-// read. Its message names the command line's flag; a protocol surface recognises
-// the refusal by its type and words it for its own caller.
+// Aggregate, Component, Feature, Recipe or FeatureRecipe — is on disk and the
+// entry the sync reads does not list it, and Format too where another format's
+// entry lists it; Unclaimed is set where the record holds no entry of the sync's
+// format and its entry naming no format lists none of the files the sync drafts;
+// Err is set where the record is there and cannot be read. Its message names the
+// command line's flag; a protocol surface recognises the refusal by its type and
+// words it for its own caller.
 type ImportRecordError struct {
 	// Record is the record's path, relative to OutputDir.
 	Record string
 	// OutputDir is the directory the drafted paths are relative to.
 	OutputDir string
-	// Path is the drafted path of the entity no record lists, relative to
-	// OutputDir.
+	// Path is the drafted path of the entity the sync's entry does not list,
+	// relative to OutputDir.
 	Path string
 	// Kind is the kind the file at Path declares.
 	Kind entitykind.Kind
+	// Format is the format of another import whose entry in the record lists
+	// Path, and is empty where none does.
+	Format string
+	// Unclaimed is set where the record holds no entry of the sync's format and
+	// its entry naming no format — the shape a record an older version wrote is
+	// read as — lists none of the files the sync drafts, so it may be another
+	// import's record, whose files the sync would otherwise remove as dropped by
+	// the source.
+	Unclaimed bool
 	// Err is why the record could not be read.
 	Err error
 }
 
 // Error names the record and what is wrong with it.
 func (e *ImportRecordError) Error() string {
-	if e.Err != nil {
+	switch {
+	case e.Err != nil:
 		return fmt.Sprintf("--sync cannot read the record of what an import wrote beneath %q, %q: %v; no files were "+
 			"written", e.OutputDir, e.Record, e.Err)
+	case e.Unclaimed:
+		return fmt.Sprintf("--sync cannot tell whether the record of what imports wrote beneath %q, %q, is this "+
+			"import's: it holds no entry of this import's format, and its entry that names no format, as a record an "+
+			"older version wrote does, lists none of the files this import drafts, so it may be another import's; "+
+			"no files were written; run the import without --sync to draft beside its files, keeping that entry",
+			e.OutputDir, e.Record)
+	case e.Format != "":
+		return fmt.Sprintf("--sync cannot bring the %s %q beneath %q up to date with the source: the record of what "+
+			"imports wrote there (%q) lists it for the %s import, not this one; no files were written", e.Kind, e.Path,
+			e.OutputDir, e.Record, e.Format)
 	}
 	return fmt.Sprintf("--sync cannot bring the %s %q beneath %q up to date with the source: no record of what "+
 		"an import wrote there lists it (%q, which every import writes beside its drafts), so its parts cannot be "+
@@ -157,16 +181,17 @@ type syncPlan struct {
 	conflicts []SyncConflict
 }
 
-// readRecord reads the record beside the drafts beneath outputDir, held to the
-// root the output directory picks; a record that is not there reads as nil.
+// readRecord reads the record beside the drafts beneath outputDir, every entry
+// of it, held to the root the output directory picks; a record that is not there
+// reads as nil.
 //
 // It also returns the record's bytes as they are on disk, so a sync rewrites the
 // record only where what it would write differs from them.
 //
-// Every path the record lists is placed and held as a drafted path is, before
+// Every path any entry lists is placed and held as a drafted path is, before
 // anything is read through it or removed: the record is a file on disk anyone
 // can edit, so a path in it is no more trusted than one an importer returns.
-func readRecord(root, outputDir string) (*recordEntry, string, error) {
+func readRecord(root, outputDir string) (*importRecord, string, error) {
 	place, err := draftPlace(outputDir, RecordFileName)
 	if err != nil {
 		return nil, "", err
@@ -181,26 +206,25 @@ func readRecord(root, outputDir string) (*recordEntry, string, error) {
 	if err != nil {
 		return nil, "", &ImportRecordError{Record: RecordFileName, OutputDir: outputDir, Err: err}
 	}
-	parsed, err := parseRecord(data)
+	rec, err := parseRecord(data)
 	if err != nil {
 		return nil, "", &ImportRecordError{Record: RecordFileName, OutputDir: outputDir, Err: err}
 	}
-	// A directory holds one format's record until imports pick their own entry:
-	// the record's only entry stands for it.
-	rec := parsed.sole()
 	recordPlace := place
-	for _, f := range rec.Files {
-		place, err := draftPlace(outputDir, f.Path)
-		if err == nil {
-			err = writescope.CheckWrite(root, place)
-		}
-		if err != nil {
-			return nil, "", &ImportRecordError{Record: RecordFileName, OutputDir: outputDir,
-				Err: fmt.Errorf("it lists %q, which a sync may not read or remove: %w", f.Path, err)}
-		}
-		if place == recordPlace {
-			return nil, "", &ImportRecordError{Record: RecordFileName, OutputDir: outputDir,
-				Err: fmt.Errorf("it lists itself")}
+	for _, e := range rec.Imports {
+		for _, f := range e.Files {
+			place, err := draftPlace(outputDir, f.Path)
+			if err == nil {
+				err = writescope.CheckWrite(root, place)
+			}
+			if err != nil {
+				return nil, "", &ImportRecordError{Record: RecordFileName, OutputDir: outputDir,
+					Err: fmt.Errorf("it lists %q, which a sync may not read or remove: %w", f.Path, err)}
+			}
+			if place == recordPlace {
+				return nil, "", &ImportRecordError{Record: RecordFileName, OutputDir: outputDir,
+					Err: fmt.Errorf("it lists itself")}
+			}
 		}
 	}
 	return &rec, string(data), nil
@@ -210,24 +234,26 @@ func readRecord(root, outputDir string) (*recordEntry, string, error) {
 // fresh draft composed for target, as [Import] does under Options.Sync, and fills
 // res with what it writes, what it removes and every part that drifted.
 //
-// rec and onDisk are the record beside the drafts and its bytes as [readRecord]
-// read them — rec nil where there is none — read by [Import] before the draft was
-// composed, because a sync given no target takes the one the record names. The
-// record the sync writes names target, the one the draft was composed for, and
-// catalogSnapshot, the published catalog snapshot it was composed against — or,
-// where it read the workspace's catalog folders alone because the snapshot the
-// record pins could not be read, that pin — empty where it read none and keeps
-// none, and answers, the answers file the draft's owed values were answered
-// from, empty where the draft owes none.
+// rec is the entry of the record beside the drafts the sync reads — nil where
+// there is none — and onDisk the record's bytes as [readRecord] read them, read
+// by [Import] before the draft was composed, because a sync given no target
+// takes the one its entry names. record is the record the sync writes, as
+// [Import] composed it: every other format's entry as it was read, and the
+// sync's own naming the target the draft was composed for, the published
+// catalog snapshot it was composed against — or, where it read the workspace's
+// catalog folders alone because the snapshot the entry pins could not be read,
+// that pin — and the answers file the draft's owed values were answered from. It
+// is written only where its bytes differ from onDisk.
 //
-// An Aggregate on disk at a drafted path that rec does not list was refused by
+// An entity on disk at a drafted path that rec does not list, and an entry
+// naming no format that lists none of the drafted paths, were refused by
 // [checkDraftPlaces] before the draft's owed values were answered.
 //
 // Nothing is written or removed until every part is judged, and a sync with any
 // conflict writes no draft; a sync whose importer reported a halt writes nothing
 // either, because a draft the importer could not finish would read as the
 // source having dropped the parts it did not reach.
-func syncImport(workspaceRoot, outputDir, target, catalogSnapshot, answers string, opts Options, res Result,
+func syncImport(workspaceRoot, outputDir string, record abi.ScaffoldFile, opts Options, res Result,
 	drafted []draftedFile, rec *recordEntry, onDisk string) (Result, error) {
 	root := writescope.RootFor(workspaceRoot, outputDir)
 	res.Files = nil
@@ -245,10 +271,8 @@ func syncImport(workspaceRoot, outputDir, target, catalogSnapshot, answers strin
 		return Result{}, &SyncConflictError{OutputDir: outputDir, Conflicts: plan.conflicts}
 	}
 	files := plan.writes
-	if rec != nil || len(drafted) > 0 {
-		if record := recordScaffold(target, catalogSnapshot, answers, drafted); record.Content != onDisk {
-			files = append(files, record)
-		}
+	if (rec != nil || len(drafted) > 0) && record.Content != onDisk {
+		files = append(files, record)
 	}
 	res.Files = files
 	res.Drift = plan.drift
@@ -271,7 +295,7 @@ func syncImport(workspaceRoot, outputDir, target, catalogSnapshot, answers strin
 	return res, nil
 }
 
-// recordLists reports whether the record lists a drafted path.
+// recordLists reports whether the entry lists a drafted path.
 func recordLists(rec recordEntry, path string) bool {
 	for _, f := range rec.Files {
 		if f.Path == path {

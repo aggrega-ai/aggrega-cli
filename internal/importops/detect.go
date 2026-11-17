@@ -55,6 +55,14 @@ type UndetectedFormatError struct {
 	// naming a format for a directory source may usefully name. A format is listed
 	// when one importer advertising it declares patterns.
 	DirectoryAdvertised []string
+	// Recorded is every format the record beside the drafts holds an entry for,
+	// in the record's order, set where the record holds entries of several
+	// formats and the source was tried before the entry the import reads was
+	// chosen — against the importers of the workspace's catalog folders and the
+	// ones the binary carries alone, since the entry names the published catalog
+	// snapshot the import reads. They are the formats a caller names one of
+	// instead, for a file and a directory alike.
+	Recorded []string
 }
 
 // Error renders the condition's registered sentence, the source, and the
@@ -71,6 +79,19 @@ func (e *UndetectedFormatError) Unwrap() error { return e.occurrence() }
 // the fields rather than held, so the value a caller constructs and the value
 // the recognition returns render the same text.
 func (e *UndetectedFormatError) occurrence() *cerrors.CompilerError {
+	if len(e.Recorded) > 0 {
+		subject := "source " + strconv.Quote(e.Source)
+		if e.Directory {
+			subject = "directory " + strconv.Quote(e.Source)
+		}
+		return cerrors.Raise(errUnrecognisedImportFormat, "", cerrors.SourceLocation{},
+			cerrors.ComposeMessage(errUnrecognisedImportFormat, []string{subject},
+				"Pass --format naming the import it is ("+formatExamples(e.Recorded, "--format ")+"): the record of "+
+					"what imports wrote beside the drafts holds an entry for each of several formats, and the entry an "+
+					"import reads names the published catalog it reads, so the source was tried against the importers "+
+					"of the workspace's catalog folders and the compiler's own alone"),
+			nil)
+	}
 	if e.Directory {
 		remedy := "Import one of the directory's files on its own; no importer in the workspace's catalog declares " +
 			"the file patterns a directory is read through"
@@ -108,6 +129,12 @@ func (e *UndetectedFormatError) IsDirectory() bool { return e.Directory }
 // surface re-wording the refusal of a directory names only the formats that can
 // help it.
 func (e *UndetectedFormatError) DirectoryFormats() []string { return e.DirectoryAdvertised }
+
+// RecordedFormats returns the formats the record beside the drafts holds an
+// entry for, where the source was tried before the entry the import reads was
+// chosen, and nil otherwise, so a surface re-wording this refusal names the
+// imports a caller may name instead of every format the importers advertise.
+func (e *UndetectedFormatError) RecordedFormats() []string { return e.Recorded }
 
 // AmbiguousFormatError reports a source the signatures of more than one format
 // recognise. It carries the occurrence of [ErrAmbiguousImportFormat], so a

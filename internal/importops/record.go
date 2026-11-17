@@ -22,12 +22,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 )
 
-// RecordFileName is the name of the record an import writes beside its drafts,
+// RecordFileName is the name of the record imports write beside their drafts,
 // in the directory the drafted paths are relative to.
 //
-// The record lists every part the import drafted and a digest of the text it
-// wrote for each, which is what lets a later sync tell a part the import wrote
-// and nobody has touched from a part an author edited or added. It is JSON
+// The record holds one entry per import format, and each entry lists every part
+// that format's import drafted and a digest of the text it wrote for each, which
+// is what lets a later sync tell a part the import wrote and nobody has touched
+// from a part an author edited or added. It is JSON
 // rather than YAML so that nothing reading the workspace's YAML documents reads
 // it, and its name opens with a full stop so a directory listing keeps it out of
 // the author's way.
@@ -189,13 +190,82 @@ func (r importRecord) with(e recordEntry) importRecord {
 	return importRecord{Imports: out}
 }
 
-// sole is the record's first entry, the one a directory holding a single format
-// has, and a zero entry where the record holds none.
-func (r importRecord) sole() recordEntry {
-	if len(r.Imports) == 0 {
-		return recordEntry{}
+// only returns the record's entry where it holds exactly one.
+func (r importRecord) only() (recordEntry, bool) {
+	if len(r.Imports) != 1 {
+		return recordEntry{}, false
 	}
-	return r.Imports[0]
+	return r.Imports[0], true
+}
+
+// formats is the format of every entry naming one, in the record's order.
+func (r importRecord) formats() []string {
+	out := make([]string, 0, len(r.Imports))
+	for _, e := range r.Imports {
+		if e.Format != "" {
+			out = append(out, e.Format)
+		}
+	}
+	return out
+}
+
+// readBy returns the entry an import of format reads: its format's own, or,
+// where the record holds none, the entry naming no format — the one an older
+// version's record reads as, which may be this import's. For an import whose
+// format is not known yet, it is the record's only entry. It is nil where there
+// is none of these.
+func (r importRecord) readBy(format string) *recordEntry {
+	if format == "" {
+		if only, ok := r.only(); ok {
+			return &only
+		}
+		return nil
+	}
+	if own, ok := r.entry(format); ok {
+		return &own
+	}
+	if older, ok := r.entry(""); ok {
+		return &older
+	}
+	return nil
+}
+
+// without returns the record with format's entry left out and every other kept.
+// The receiver is not changed.
+func (r importRecord) without(format string) importRecord {
+	out := make([]recordEntry, 0, len(r.Imports))
+	for _, e := range r.Imports {
+		if e.Format != format {
+			out = append(out, e)
+		}
+	}
+	return importRecord{Imports: out}
+}
+
+// listedByAnother returns the format of another import's entry that lists path
+// — an entry naming a format other than format — and "" where format's own entry
+// lists it or no other does. The entry naming no format is no other import's:
+// it may be this one's.
+func (r importRecord) listedByAnother(path, format string) string {
+	if own, ok := r.entry(format); ok && recordLists(own, path) {
+		return ""
+	}
+	for _, e := range r.Imports {
+		if e.Format != "" && e.Format != format && recordLists(e, path) {
+			return e.Format
+		}
+	}
+	return ""
+}
+
+// listsAnyOf reports whether e lists one of the drafted files.
+func listsAnyOf(e recordEntry, drafted []draftedFile) bool {
+	for _, f := range drafted {
+		if recordLists(e, f.path) {
+			return true
+		}
+	}
+	return false
 }
 
 // recordBytes renders a record as the bytes written to disk: indented JSON, its
@@ -221,13 +291,18 @@ func recordBytes(rec importRecord) string {
 }
 
 // recordScaffold is the record as one more file an import writes, placed after
-// the drafts it describes, naming the catalog snapshot the draft was composed
-// against where it read one, and the answers file where the drafts owe values.
-func recordScaffold(target, catalogSnapshot, answers string, files []draftedFile) abi.ScaffoldFile {
+// the drafts it describes: base with the entry of format replaced by the one the
+// draft composes, or added where base holds none, and every other entry kept as
+// it is. The entry names the target the draft was composed for, the catalog
+// snapshot it was composed against where it read one, and the answers file where
+// the drafts owe values.
+func recordScaffold(base importRecord, format, target, catalogSnapshot, answers string,
+	files []draftedFile) abi.ScaffoldFile {
 	rec := recordFor(target, files)
+	rec.Format = format
 	rec.CatalogSnapshot = catalogSnapshot
 	rec.Answers = answers
-	return abi.ScaffoldFile{Path: RecordFileName, Content: recordBytes(importRecord{Imports: []recordEntry{rec}})}
+	return abi.ScaffoldFile{Path: RecordFileName, Content: recordBytes(base.with(rec))}
 }
 
 // recordDocument is a record's document as it is read: the entries of the

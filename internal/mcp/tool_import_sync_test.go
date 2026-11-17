@@ -105,3 +105,71 @@ func TestTheToolRewordsASyncConflictForItsCaller(t *testing.T) {
 		})
 	}
 }
+
+// TestImportRecordFormatsRefusalsNameTheToolsArguments pins how this surface
+// words the refusals of an import into a directory other formats' imports
+// drafted in: an entity another format's import drafted, with and without
+// 'sync', naming that import and never offering 'sync' where it would not help; a
+// sync the record's entry naming no format does not answer for; and a source no
+// importer recognises before the record's entry is chosen, naming the record's
+// formats rather than every format the importers advertise. No command-line flag
+// is named.
+//
+// 🔴 PLANTED DEFECT: in importRecordRefusal (tool_import.go), drop the branch for
+// an entry naming no format: the unclaimed row reads as an entity no record
+// lists, and reddens.
+func TestImportRecordFormatsRefusalsNameTheToolsArguments(t *testing.T) {
+	t.Parallel()
+	tw := &toolWorkspace{root: "/srv/ws", transport: transportStdio}
+	for _, tc := range []struct {
+		name   string
+		text   string
+		want   []string
+		absent []string
+	}{
+		{"an Aggregate another format's import drafted, without sync",
+			importExistingEntityRefusal(tw, &importops.ExistingEntityError{Path: "aggregate.yaml",
+				OutputDir: "/srv/ws/drafts", Kind: "Aggregate", Format: "compose"}),
+			[]string{`"aggregate.yaml"`, "Aggregate", "the compose import", "'output_dir'", "Nothing was written"},
+			[]string{"'sync'"}},
+		{"a sync over an Aggregate another format's entry lists",
+			importRecordRefusal(tw, &importops.ImportRecordError{Record: importops.RecordFileName,
+				OutputDir: "/srv/ws/drafts", Path: "aggregate.yaml", Kind: "Aggregate", Format: "compose"}),
+			[]string{"'sync'", `"aggregate.yaml"`, "the compose import", importops.RecordFileName, "Nothing was written"},
+			nil},
+		{"a sync the entry naming no format does not answer for",
+			importRecordRefusal(tw, &importops.ImportRecordError{Record: importops.RecordFileName,
+				OutputDir: "/srv/ws/drafts", Unclaimed: true}),
+			[]string{"'sync'", importops.RecordFileName, "names no format", "without 'sync'", "Nothing was written"},
+			[]string{`""`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, want := range tc.want {
+				if !strings.Contains(tc.text, want) {
+					t.Errorf("the refusal does not carry %q:\n%s", want, tc.text)
+				}
+			}
+			for _, absent := range append([]string{"--"}, tc.absent...) {
+				if strings.Contains(tc.text, absent) {
+					t.Errorf("the refusal carries %q:\n%s", absent, tc.text)
+				}
+			}
+		})
+	}
+
+	text, unsettled := importFormatRefusal(&importops.UndetectedFormatError{Source: "mystery.json",
+		Advertised: []string{"langflow"}, Recorded: []string{"compose", "mcp"}})
+	if !unsettled {
+		t.Fatal("a source no importer recognises over several entries was not recognised by its type")
+	}
+	for _, want := range []string{"E0350: ", "mystery.json", "'format'", `one of "compose", "mcp"`, "Nothing was written"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the refusal does not carry %q:\n%s", want, text)
+		}
+	}
+	for _, absent := range []string{"langflow", "--format"} {
+		if strings.Contains(text, absent) {
+			t.Errorf("the refusal carries %q:\n%s", absent, text)
+		}
+	}
+}

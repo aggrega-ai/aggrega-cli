@@ -204,3 +204,69 @@ func TestImportSyncRefusalsNameTheRequestField(t *testing.T) {
 		t.Errorf("the conflicting parts are not named in the operation's order:\n%s", message)
 	}
 }
+
+// TestImportRecordFormatsRefusalsNameTheRequestField holds the refusals of an
+// import into a directory other formats' imports drafted in to this surface's
+// words: an entity another format's import drafted, with and without sync,
+// naming that import and never offering sync where it would not help; a sync the
+// record's entry naming no format does not answer for; and a source no importer
+// recognises before the record's entry is chosen, naming the record's formats
+// rather than every format the importers advertise. No command-line flag is
+// named.
+//
+// 🔴 PLANTED DEFECT: in sessionExistingEntity (internal/serve/import.go), drop the
+// branch for another format's entity: the first row offers sync, and reddens.
+func TestImportRecordFormatsRefusalsNameTheRequestField(t *testing.T) {
+	t.Parallel()
+	outputDir := filepath.Join(t.TempDir(), "drafts")
+	record := filepath.Join(outputDir, importops.RecordFileName)
+	for _, tc := range []struct {
+		name    string
+		message string
+		want    []string
+		absent  []string
+	}{
+		{
+			name: "an Aggregate another format's import drafted, without sync",
+			message: sessionExistingEntity(&importops.ExistingEntityError{Path: "aggregate.yaml", OutputDir: outputDir,
+				Kind: entitykind.Aggregate, Format: "compose"}),
+			want: []string{"import: ", "the Aggregate at " + filepath.Join(outputDir, "aggregate.yaml"),
+				"the compose import", "nothing was written", "outputDir"},
+			absent: []string{"send sync"},
+		},
+		{
+			name: "a sync over an Aggregate another format's entry lists",
+			message: sessionImportRecord(&importops.ImportRecordError{Record: importops.RecordFileName,
+				OutputDir: outputDir, Path: "aggregate.yaml", Kind: entitykind.Aggregate, Format: "compose"}),
+			want: []string{"import: sync was sent", "the Aggregate at " + filepath.Join(outputDir, "aggregate.yaml"),
+				"the compose import", record, "nothing was written"},
+		},
+		{
+			name: "a sync the entry naming no format does not answer for",
+			message: sessionImportRecord(&importops.ImportRecordError{Record: importops.RecordFileName,
+				OutputDir: outputDir, Unclaimed: true}),
+			want:   []string{"import: sync was sent", record, "names no format", "without sync", "nothing was written"},
+			absent: []string{"the  at"},
+		},
+		{
+			name: "a source no importer recognises over several entries",
+			message: sessionUndetectedFormat(&importops.UndetectedFormatError{Source: "mystery.json",
+				Advertised: []string{"langflow"}, Recorded: []string{"compose", "mcp"}}),
+			want:   []string{"import: ", "mystery.json", "send format", "compose or mcp"},
+			absent: []string{"langflow"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, want := range tc.want {
+				if !strings.Contains(tc.message, want) {
+					t.Errorf("the refusal does not carry %q:\n%s", want, tc.message)
+				}
+			}
+			for _, absent := range append([]string{"--sync", "--output-dir", "--format"}, tc.absent...) {
+				if strings.Contains(tc.message, absent) {
+					t.Errorf("the refusal carries %q:\n%s", absent, tc.message)
+				}
+			}
+		})
+	}
+}

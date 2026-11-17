@@ -26,11 +26,11 @@ import (
 //
 // upgrade asks for the newest snapshot the registry publishes, fetched now and
 // made the one the workspace reads from then on, whatever the workspace or the
-// record beside the drafts holds. pinned is the manifest digest the record beside
-// the drafts names — the record of an earlier import into the same directory,
-// read whether or not the import is a sync — empty where there is no record or it
-// names none: an import into drafts an earlier import wrote reads the catalog they
-// were imported against.
+// record beside the drafts holds. pinned is the manifest digest the import's
+// entry in the record beside the drafts names — the entry of an earlier import
+// into the same directory, read whether or not the import is a sync — empty where
+// there is no such entry or it names none: an import into drafts an earlier
+// import wrote reads the catalog they were imported against.
 //
 // folders says the workspace names catalog folders, which the snapshot is read
 // behind. An import over folders that does not ask for the newest snapshot goes

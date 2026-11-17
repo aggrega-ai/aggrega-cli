@@ -6,6 +6,7 @@ package importops
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -66,6 +67,11 @@ func (e *EscapingPathError) Offending() string { return e.Path }
 // bounded to the kinds an author is expected to own. Bringing them up to date
 // with the source is what a sync does instead.
 //
+// Where another format's import into the same directory drafted the entity —
+// its entry in the record beside the drafts lists the path — the refusal names
+// that import, and offers drafting beneath another directory alone: a sync of
+// this import's format would not bring that import's entity up to date.
+//
 // Its message names the command line's flag, which is the remedy at a terminal;
 // a protocol surface recognises the refusal by its type and words it with the
 // field its caller sends instead.
@@ -77,10 +83,19 @@ type ExistingEntityError struct {
 	OutputDir string
 	// Kind is the kind the file already at Path declares.
 	Kind entitykind.Kind
+	// Format is the format of another import into OutputDir whose entry in the
+	// record beside the drafts lists Path, and is empty where none does.
+	Format string
 }
 
 // Error names the entity and what the reader may do about it.
 func (e *ExistingEntityError) Error() string {
+	if e.Format != "" {
+		return fmt.Sprintf("the import would write over the %s %q beneath %q, which the %s import into that "+
+			"directory drafted and the record of what imports wrote there (%s) lists for it, so no files were written; "+
+			"pass --output-dir to draft beneath another directory", e.Kind, e.Path, e.OutputDir, e.Format,
+			RecordFileName)
+	}
 	return fmt.Sprintf("the import would write over the %s %q beneath %q, which an author may have edited "+
 		"since it was drafted, so no files were written; pass --sync to bring it up to date with the source, or "+
 		"--output-dir to draft beneath another directory", e.Kind, e.Path, e.OutputDir)
@@ -116,9 +131,9 @@ func (e *ExistingEntityError) Error() string {
 // output directory up to date with the source, rather than writing the draft
 // whole. Without it an import whose drafts would be written over an existing
 // Aggregate is refused before anything is written or reported
-// ([ExistingEntityError]). With it, the import reads the record an import
-// writes beside its drafts ([RecordFileName]) and judges every part three ways —
-// see [Import].
+// ([ExistingEntityError]). With it, the import reads its entry in the record
+// imports write beside their drafts ([RecordFileName]) and judges every part
+// three ways — see [Import].
 //
 // BeforeWrite, where set, is handed the result once every part is judged and
 // before anything is written or removed, under both deliveries: a caller
@@ -137,24 +152,25 @@ func (e *ExistingEntityError) Error() string {
 // refused before the importer runs ([ErrImportTargetUnbound]). Every surface
 // hands its target here as it received it, so the Manifest is composed in one
 // place for all of them — see [Import]. Under Sync an empty Target is the target
-// the record of the import being brought up to date names, where it names one.
+// the entry of the import being brought up to date names, where it names one.
 //
 // Upgrade says which published catalog snapshot the import reads, behind the
 // workspace's catalog folders where it names some and as its whole catalog where it
 // names none. Which snapshot an import reads: with Upgrade, the newest; otherwise
-// the one the record beside the drafts names, fetched by its digest when this
-// machine does not hold it; otherwise the one the workspace last fetched as the
-// newest; otherwise the newest. Under Upgrade the newest is fetched now, and the
+// the one its entry in the record beside the drafts names, fetched by its digest
+// when this machine does not hold it; otherwise the one the workspace last
+// fetched as the newest; otherwise the newest. Under Upgrade the newest is fetched now, and the
 // workspace reads it from then on. It is refused under the offline posture, with
 // no default registry named and with the registry out of reach, since only the
 // registry can say which snapshot is the newest.
 //
 // Answers is the answers file on this host ([AnswersFileName]) the values the
 // drafts leave empty that no source can hold are read from and written to. Empty
-// is the one the record beside the drafts names, where an earlier import into the
-// same directory wrote one, and otherwise [DefaultAnswersPath] of the source. Every
-// surface hands the path it was given here, resolved by its own rule for which
-// paths it may name, so the file is read and written in one place for all of them.
+// is the one the import's entry in the record beside the drafts names, where an
+// earlier import into the same directory wrote one, and otherwise
+// [DefaultAnswersPath] of the source. Every surface hands the path it was given
+// here, resolved by its own rule for which paths it may name, so the file is read
+// and written in one place for all of them.
 //
 // Ask, where set, puts each value the answers file leaves unanswered to a person,
 // one at a time, and the answers are written into the drafts and into the answers
@@ -393,15 +409,15 @@ func (r Result) Halted() bool {
 // parser or an importer is resolved layer by layer: one the folders hold for a
 // syntax or a format is chosen before any the published catalog holds, save a
 // published importer a plugins.importer attachment names (see buildSeam).
-// Which snapshot: with Options.Upgrade, the newest; otherwise the one the record
-// beside the drafts names, fetched by its digest when this machine does not hold
-// it; otherwise the one the workspace last fetched as the newest; otherwise the
-// newest. A snapshot the content cache holds is read from there, held to its
-// digest, and no registry is asked for it; one it does not hold is fetched, held
-// to the manifest it came in and to its signature under the registry's trust
-// policy, and kept. The record the import writes names the snapshot it read, by
+// Which snapshot: with Options.Upgrade, the newest; otherwise the one the
+// import's entry in the record beside the drafts names, fetched by its digest
+// when this machine does not hold it; otherwise the one the workspace last
+// fetched as the newest; otherwise the newest. A snapshot the content cache
+// holds is read from there, held to its digest, and no registry is asked for it;
+// one it does not hold is fetched, held to the manifest it came in and to its
+// signature under the registry's trust policy, and kept. The entry the import writes names the snapshot it read, by
 // its manifest digest; an import that read the folders alone because the
-// snapshot the record pins could not be read writes that pin back unchanged. In a
+// snapshot its entry pins could not be read writes that pin back unchanged. In a
 // workspace that names no catalog folder, an import
 // needing a fetch under the offline posture is refused, naming what to run, and a
 // registry that publishes no snapshot leaves the import with no catalog, which a
@@ -448,10 +464,13 @@ func (r Result) Halted() bool {
 // compiler's release that is not on the machine and could not be fetched, or whose
 // fetched module did not verify, a guest that failed,
 // an escaping path, a draft Windows cannot hold where the import runs on Windows,
-// a draft that would be written over an Aggregate already on disk
+// a draft that would be written over an entity already on disk
 // ([*ExistingEntityError]), a drafted path at the record's own place, a sync
-// whose record is missing, does not list the Aggregate or cannot be read
-// ([*ImportRecordError]), a sync that would change or remove what an author
+// whose record is missing, whose entry does not list the entity, another
+// format's entry lists it, whose entry naming no format lists none of its drafts,
+// or whose record cannot be read ([*ImportRecordError]), a source not recognised
+// before the entry of a record of several formats is chosen
+// ([*UndetectedFormatError]), a sync that would change or remove what an author
 // wrote ([*SyncConflictError]), or a write that failed.
 //
 // Given Options.Target, the import composes the draft set the importer returned
@@ -463,25 +482,48 @@ func (r Result) Halted() bool {
 // reporting delivery. A target no Recipe of the catalog binds to is refused once
 // the catalog is loaded, before the source is recognised or the importer runs.
 //
-// Every import that drafts anything writes, beside its drafts, the record of
-// what it wrote ([RecordFileName]): the target it was given, where it was given
-// one, and each drafted file, and for a drafted Aggregate or Release each of its
-// mapping entries at every depth, with a digest of the text written there; any
-// other drafted file is recorded whole, under one digest. An entry's text is its
-// key line, its value's lines for an entry whose value is not a mapping of
-// entries, and the comment lines written directly above its key at the key's own
-// column. A reporting delivery hands the record back among the files.
+// Every import that drafts anything writes, beside its drafts, its entry in the
+// record of what imports wrote there ([RecordFileName]), which holds one entry
+// per import format, sorted by format: the format, the target it was given, where
+// it was given one, and each drafted file, and for a drafted Aggregate or Release
+// each of its mapping entries at every depth, with a digest of the text written
+// there; any other drafted file is recorded whole, under one digest. An entry's
+// text is its key line, its value's lines for an entry whose value is not a
+// mapping of entries, and the comment lines written directly above its key at
+// the key's own column. The import replaces its format's entry, or adds it, and
+// writes every other entry back as it read it, so imports of different formats
+// into one directory each keep theirs. A record an older version wrote — one
+// import's fields at its top level — reads as one entry naming no format. A
+// record that cannot be read refuses a sync, and an import that is not a sync
+// writes it anew, holding its own entry alone, with a warning that what it held
+// for other formats' imports is lost. A reporting delivery hands the record back
+// among the files.
 //
-// Without Options.Sync, an Aggregate already at a drafted path refuses the import
+// The entry an import reads is chosen by its format, before the published
+// catalog snapshot is read, since the entry pins the snapshot: the format named;
+// for a sync naming none over a record of one entry, that entry's; for an import
+// naming none over a record of several, the format its source is recognised as
+// by the importers of the workspace's catalog folders and the ones the binary
+// carries, refused naming the record's formats where none recognises it
+// (formatBeforeEntry); otherwise it is recognised over the whole view, the
+// record's only entry pinning the snapshot. An import reads its format's entry,
+// or, where the record holds none, the entry naming no format.
+//
+// Without Options.Sync, an entity already at a drafted path refuses the import
 // whatever the delivery, before anything is asked, written or reported, so a dry
-// run refuses it as the write does. Every other file already at a drafted path is
+// run refuses it as the write does, naming another format's import where that
+// import's entry lists the path. Every other file already at a drafted path is
 // written over, and a file an earlier import drafted that this one does not draft
-// is left where it is.
+// is left where it is. An entry naming no format is kept as it is, beside the
+// import's own.
 //
 // With Options.Sync, the record is read before the target is settled: a sync
-// given no target drafts for the target the record names, and one given a target
-// drafts for it and records it in place of the one recorded. The import then
-// judges every part three ways — what the record says the import last wrote
+// given no target drafts for the target its entry names, and one given a target
+// drafts for it and records it in place of the one recorded. A sync reading the
+// entry naming no format takes it over — writes it back under its format — where
+// it lists a path the sync drafts, and is refused otherwise, since it may be
+// another import's and its files would read as dropped by the source. The import
+// then judges every part three ways — what its entry says the import last wrote
 // there, what is on disk, and what the source drafts now — and changes only what
 // the import owns. A part the source left as the
 // import last wrote it stays exactly as it is on disk, whether or not an author
@@ -490,13 +532,15 @@ func (r Result) Halted() bool {
 // the import last wrote it and holds nothing an author added — a drafted file
 // deleted whole; a part the source gained is added beside the parts the draft
 // names around it. Everything else on disk — a key an author added, a comment
-// not written directly above an owned key, a file no record lists — is left byte
-// for byte. A sync that would change or remove a part an author edited, add a
-// part where an author already wrote one, or remove a part holding what an author
-// added, is refused naming each, and nothing is written. An Aggregate on disk at
-// a drafted path that no record lists refuses the sync. A sync whose importer
-// reported a halt writes nothing. A sync into a directory holding no record and
-// nothing at its drafted paths writes the whole draft, as a plain import does.
+// not written directly above an owned key, a file its entry does not list, every
+// other format's entry and file — is left byte for byte. A sync that would change
+// or remove a part an author edited, add a part where an author already wrote one,
+// or remove a part holding what an author added, is refused naming each, and
+// nothing is written. An entity on disk at a drafted path its entry does not list
+// refuses the sync, naming another format's import where that import's entry
+// lists it. A sync whose importer reported a halt writes nothing. A sync into a
+// directory whose record holds no entry it reads, and nothing at its drafted
+// paths, writes the whole draft, as a plain import does.
 func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Options) (Result, error) {
 	if _, err := workspaceOrRefuse(rw); err != nil {
 		return Result{}, err
@@ -528,39 +572,42 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 
-	// A sync reads the record of the import it brings up to date before the target
-	// is settled, because a sync given no target takes the one that import was
-	// given: the drafts it judges were composed for that target, and composing them
-	// for none would read as the source having dropped the drafted Manifest.
+	// The record beside the drafts is read before the target and the catalog are
+	// settled, because the entry of it this import reads names both: a sync given
+	// no target takes the one that import was given — the drafts it judges were
+	// composed for that target, and composing them for none would read as the
+	// source having dropped the drafted Manifest — and every import reads the
+	// catalog snapshot its entry pins. A record a sync cannot read refuses it; one
+	// an import that is not a sync cannot read is written anew, holding its entry
+	// alone, and a warning says so.
+	found, recordOnDisk, recordErr := readRecord(writescope.RootFor(rw.Root(), outputDir), outputDir)
+	if recordErr != nil && opts.Sync {
+		return Result{}, recordErr
+	}
+	var record importRecord
+	if found != nil {
+		record = *found
+	}
+	format, err := formatBeforeEntry(ctx, opts, src, seam, record)
+	if err != nil {
+		return Result{}, err
+	}
+	rec := record.readBy(format)
 	target := opts.Target
-	var rec *recordEntry
-	var recordOnDisk string
-	if opts.Sync {
-		if rec, recordOnDisk, err = readRecord(writescope.RootFor(rw.Root(), outputDir), outputDir); err != nil {
-			return Result{}, err
-		}
-		if target == "" && rec != nil {
-			target = rec.Target
-		}
+	if opts.Sync && target == "" && rec != nil {
+		target = rec.Target
 	}
 
 	// The published catalog snapshot an import reads — behind the workspace's
-	// catalog folders, or as its whole catalog where it names none — is the one the
-	// record beside the drafts names, where there is one: a sync's record, read
-	// above, and otherwise the record of an earlier import into the same directory,
-	// whatever this import does with it. A record a plain import
-	// cannot read pins nothing — it is written over with the record this import
-	// writes — while a sync's was refused above. A harness standing in for the seam
-	// reads no snapshot and no record for one.
-	prior := rec
-	if !opts.Sync {
-		prior, _, _ = readRecord(writescope.RootFor(rw.Root(), outputDir), outputDir)
-	}
+	// catalog folders, or as its whole catalog where it names none — is the one its
+	// entry in the record beside the drafts names, where it has one, whatever this
+	// import does with the record. A harness standing in for the seam reads no
+	// snapshot for one.
 	var snapshot catalogSnapshot
 	if seam.readSnapshot != nil {
 		read := catalogSnapshotRead{upgrade: opts.Upgrade}
-		if prior != nil {
-			read.pinned = prior.CatalogSnapshot
+		if rec != nil {
+			read.pinned = rec.CatalogSnapshot
 		}
 		if seam, snapshot, err = seam.readSnapshot(ctx, read); err != nil {
 			return Result{}, err
@@ -579,9 +626,15 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 
-	format, err := SelectFormat(ctx, opts.Format, src, seam)
-	if err != nil {
-		return Result{}, err
+	if format == "" {
+		if format, err = SelectFormat(ctx, "", src, seam); err != nil {
+			return Result{}, err
+		}
+		// The format recognised now chooses the entry the import reads its answers
+		// file pointer from and writes, where the record's only entry, which pinned
+		// the snapshot, is another format's. A sync's is the entry it read already:
+		// a record of one entry naming a format gave the sync that format.
+		rec = record.readBy(format)
 	}
 
 	attachments := rw.Config().Plugins.Importer
@@ -637,7 +690,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	// a person never types an answer into a run that then throws it away. The
 	// answers change what a draft holds, never where it lands or what kind it is,
 	// so what is judged here is what the answered drafts would be judged as.
-	if err := checkDraftPlaces(rw.Root(), outputDir, draft, opts.Sync, rec); err != nil {
+	if err := checkDraftPlaces(rw.Root(), outputDir, draft, opts.Sync, record, format, rec); err != nil {
 		return Result{}, err
 	}
 
@@ -652,7 +705,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	if opts.Delivery.Reports() || (opts.Sync && (Result{Diagnostics: diagnostics}).Halted()) {
 		ask = nil
 	}
-	owing, err := answerDrafts(rw.Root(), outputDir, prior, opts, ask, seam.Recipes, draft)
+	owing, err := answerDrafts(rw.Root(), outputDir, rec, opts, ask, seam.Recipes, draft)
 	if err != nil {
 		return Result{}, err
 	}
@@ -675,20 +728,29 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		res.Answers = owing.path
 	}
 	// The record of what the import writes is composed from the draft, and placed
-	// after it, at the place judged with the drafted paths above.
+	// after it, at the place judged with the drafted paths above: the record read,
+	// with this import's entry in it replaced or added and every other entry as it
+	// was — save the entry naming no format a sync took over, which its entry
+	// replaces.
 	drafted := draftedFiles(draft)
+	base := record
+	if opts.Sync && rec != nil && rec.Format == "" {
+		base = record.without("")
+	}
+	recordFile := recordScaffold(base, format, target, snapshot.recorded(), owing.pointer, drafted)
 	files := draft
 	if len(drafted) > 0 {
-		files = append(append(make([]abi.ScaffoldFile, 0, len(files)+1), files...),
-			recordScaffold(target, snapshot.recorded(), owing.pointer, drafted))
+		files = append(append(make([]abi.ScaffoldFile, 0, len(files)+1), files...), recordFile)
+		if recordErr != nil {
+			res.Diagnostics = append(res.Diagnostics, warnDiagnostic(unreadableRecordNotice(outputDir, recordErr)))
+		}
 	}
 	// The offline posture is known now, so a pull it will not let the import make
 	// is named among the diagnostics a surface reports before anything is written.
 	release := draftedReleasePlace(outputDir, draft)
 	res.Diagnostics = append(res.Diagnostics, pullNotice(opts, rw, res, release)...)
 	if opts.Sync {
-		res, err = syncImport(rw.Root(), outputDir, target, snapshot.recorded(), owing.pointer, opts, res, drafted,
-			rec, recordOnDisk)
+		res, err = syncImport(rw.Root(), outputDir, recordFile, opts, res, drafted, rec, recordOnDisk)
 		if err != nil {
 			return Result{}, err
 		}
@@ -727,10 +789,10 @@ type owing struct {
 }
 
 // answerDrafts lists what the drafts owe ([readOwed]), answers it from the
-// answers file — the one opts names, the one the record of an earlier import into
-// the same directory names, or the one beside the source — and through ask where
-// it is set, and composes the answers file that lists every owed value with its
-// answer.
+// answers file — the one opts names, the one prior names (the import's entry in
+// the record beside the drafts), or the one beside the source — and through ask
+// where it is set, and composes the answers file that lists every owed value with
+// its answer.
 //
 // Each answer a person gives is written into the answers file at once, held to
 // the root a file there is written beneath against the workspace at
@@ -871,14 +933,68 @@ func finishImport(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, op
 	return res, nil
 }
 
+// formatBeforeEntry settles the format of an import before the entry of the
+// record beside the drafts it reads is chosen, where the entry turns on it, and
+// returns "" where the format is left to the recognition over the catalog the
+// entry chosen pins ([SelectFormat]).
+//
+// The entry is chosen before the published catalog snapshot is read, because it
+// names the snapshot. So: a format the caller names is the import's at once; a
+// sync naming none over a record holding one entry takes that entry's format —
+// none, for the entry an older version's record reads as, whose import is then
+// recognised as any import is; and an import naming none over a record holding
+// entries of several formats has its source recognised now, by the importers of
+// the seam built before any snapshot is read — the workspace's catalog folders'
+// and the ones the binary carries — through the one recognition every import
+// takes. Where none of those recognises the source, it is refused as an
+// [UndetectedFormatError] naming the record's formats, so the reader names the
+// import it is; an importer only the published catalog holds is never asked.
+// Every other import — over no record, or over one entry — is left to the
+// recognition over the whole view.
+func formatBeforeEntry(ctx context.Context, opts Options, src *Source, seam Seam, record importRecord) (string,
+	error) {
+	if opts.Format != "" {
+		return opts.Format, nil
+	}
+	if only, ok := record.only(); ok && opts.Sync {
+		return only.Format, nil
+	}
+	if len(record.Imports) < 2 {
+		return "", nil
+	}
+	format, err := SelectFormat(ctx, "", src, seam)
+	if undetected := (*UndetectedFormatError)(nil); errors.As(err, &undetected) {
+		return "", &UndetectedFormatError{Source: undetected.Source, Advertised: undetected.Advertised,
+			Directory: undetected.Directory, DirectoryAdvertised: undetected.DirectoryAdvertised,
+			Recorded: record.formats()}
+	}
+	return format, err
+}
+
+// unreadableRecordNotice is the warning of an import that writes anew the record
+// beside its drafts because the one there cannot be read: why, and that what it
+// held for other formats' imports does not reach the record written.
+func unreadableRecordNotice(outputDir string, err error) string {
+	reason := err
+	if refused := (*ImportRecordError)(nil); errors.As(err, &refused) && refused.Err != nil {
+		reason = refused.Err
+	}
+	return fmt.Sprintf("the record of what imports wrote beneath %q, %s, cannot be read: %v; this import writes it "+
+		"anew, holding its own entry alone, so any entry it held for another format's import is lost", outputDir,
+		RecordFileName, reason)
+}
+
 // checkDraftPlaces takes every judgement of a draft set that turns on where its
 // files land and what is on disk there, and none on what they hold: each drafted
 // path, and the record's, held inside the output directory and, with its links
 // resolved, to the root it picks against the workspace at workspaceRoot
 // ([checkFiles]); no draft at the record's own place ([checkRecordPlace]); and,
 // without sync, no guarded entity already on disk at a drafted path
-// ([checkExistingEntity]) — with sync, none there that rec, the record of the
-// import being brought up to date, does not list ([ImportRecordError]).
+// ([checkExistingEntity]) — with sync, none there that rec, the entry of the
+// record the sync reads, does not list, and no entry naming no format read in
+// place of the sync's own that lists none of the drafted paths
+// ([ImportRecordError]). A guarded entity another format's entry in record lists
+// refuses either, naming that format's import.
 //
 // They are taken together, once, before the drafts' owed values are answered and
 // before either delivery answers, so a dry run refuses what the write refuses and
@@ -886,7 +1002,8 @@ func finishImport(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, op
 // what a draft holds and never its path or its kind, so the answered drafts are
 // judged by what is judged here. An entity on disk is read only after every
 // path is held inside the root, so it is read only at a place already judged.
-func checkDraftPlaces(workspaceRoot, outputDir string, draft []abi.ScaffoldFile, sync bool, rec *recordEntry) error {
+func checkDraftPlaces(workspaceRoot, outputDir string, draft []abi.ScaffoldFile, sync bool, record importRecord,
+	format string, rec *recordEntry) error {
 	drafted := draftedFiles(draft)
 	files := draft
 	if len(drafted) > 0 {
@@ -900,7 +1017,13 @@ func checkDraftPlaces(workspaceRoot, outputDir string, draft []abi.ScaffoldFile,
 		return err
 	}
 	if !sync {
-		return checkExistingEntity(outputDir, draft)
+		return checkExistingEntity(outputDir, draft, record, format)
+	}
+	// An entry naming no format is this sync's only where it lists a path the sync
+	// drafts: otherwise it may be another import's record, whose files the sync
+	// would remove as dropped by the source.
+	if rec != nil && rec.Format == "" && !listsAnyOf(*rec, drafted) {
+		return &ImportRecordError{Record: RecordFileName, OutputDir: outputDir, Unclaimed: true}
 	}
 	for _, f := range drafted {
 		place, err := draftPlace(outputDir, f.path)
@@ -908,7 +1031,8 @@ func checkDraftPlaces(workspaceRoot, outputDir string, draft []abi.ScaffoldFile,
 			return err
 		}
 		if kind := guardedKindAt(place); kind != "" && (rec == nil || !recordLists(*rec, f.path)) {
-			return &ImportRecordError{Record: RecordFileName, OutputDir: outputDir, Path: f.path, Kind: kind}
+			return &ImportRecordError{Record: RecordFileName, OutputDir: outputDir, Path: f.path, Kind: kind,
+				Format: record.listedByAnother(f.path, format)}
 		}
 	}
 	return nil
@@ -1031,9 +1155,10 @@ func checkFiles(workspaceRoot, outputDir string, files []abi.ScaffoldFile) error
 	return nil
 }
 
-// checkExistingEntity refuses an import one of whose drafts would be written
-// over an entity already on disk, as an [ExistingEntityError] naming the first
-// such draft in the importer's order.
+// checkExistingEntity refuses an import of format one of whose drafts would be
+// written over an entity already on disk, as an [ExistingEntityError] naming the
+// first such draft in the importer's order, and the format of another import
+// whose entry in record lists it, where one does.
 //
 // What is judged is the file already at the place: a regular file whose
 // top-level kind is one an import guards ([guardedKindAt]). The draft's own
@@ -1044,14 +1169,15 @@ func checkFiles(workspaceRoot, outputDir string, files []abi.ScaffoldFile) error
 //
 // Every path has already passed checkFiles, and each is placed by [draftPlace]
 // again, so the place read is the place that was judged.
-func checkExistingEntity(outputDir string, files []abi.ScaffoldFile) error {
+func checkExistingEntity(outputDir string, files []abi.ScaffoldFile, record importRecord, format string) error {
 	for _, f := range files {
 		place, err := draftPlace(outputDir, f.Path)
 		if err != nil {
 			return err
 		}
 		if kind := guardedKindAt(place); kind != "" {
-			return &ExistingEntityError{Path: f.Path, OutputDir: outputDir, Kind: kind}
+			return &ExistingEntityError{Path: f.Path, OutputDir: outputDir, Kind: kind,
+				Format: record.listedByAnother(f.Path, format)}
 		}
 	}
 	return nil
