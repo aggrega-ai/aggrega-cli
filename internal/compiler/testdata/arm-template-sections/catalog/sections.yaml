@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-sections
+  version: 1.0.0
+  description: >
+    A fragment that declares every section a template can carry: a parameter, a
+    variable, a definition, a function, a metadata entry and an output beside its
+    resource. The parameter, the definition, the function and the metadata entry
+    are written the same way by every component, so a template assembled from two
+    components holds each once.
+spec:
+  capability: arm
+  implements: example/resource/plain:1.0.0
+  artifacts:
+    sections.yaml: |
+      parameters:
+        {{ .values.param }}:
+          type: string
+          defaultValue: "{{ .values.tier }}"
+      variables:
+        {{ .values.symbol }}Label: "{{ .context.instance_id }}"
+      definitions:
+        size:
+          type: string
+          allowedValues: [small, large]
+      functions:
+        - namespace: sections
+          members:
+            describe:
+              parameters:
+                - name: size
+                  type: string
+              output:
+                type: string
+                value: "[concat('size-', parameters('size'))]"
+      metadata:
+        note: Written by the sections fixture.
+      resources:
+        {{ .values.symbol }}:
+          type: Microsoft.Storage/storageAccounts
+          apiVersion: "2023-05-01"
+          name: "{{ .context.instance_id }}"
+          location: "[resourceGroup().location]"
+          sku:
+            name: "[parameters('{{ .values.param }}')]"
+          properties:
+            label: "[variables('{{ .values.symbol }}Label')]"
+            description: "[sections.describe('small')]"
+      outputs:
+        label:
+          type: string
+          value: "[variables('{{ .values.symbol }}Label')]"

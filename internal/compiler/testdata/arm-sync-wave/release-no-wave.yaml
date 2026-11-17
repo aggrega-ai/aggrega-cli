@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: arm-sync-wave
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  # The same three boundaries and the same shared directory, with no wave
+  # declared anywhere.
+  boundaries:
+    foundation:
+      directory: ./dist/stack
+      components:
+        network: {}
+    data:
+      directory: ./dist/stack
+      components:
+        store: {}
+    edge:
+      directory: ./dist/stack
+      components:
+        app: {}

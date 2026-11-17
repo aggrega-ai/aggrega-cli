@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-language-version
+  version: 1.0.0
+  description: >
+    A fragment that writes a language version other than the one the provider
+    writes templates in.
+spec:
+  capability: arm
+  implements: example/resource/plain:1.0.0
+  artifacts:
+    fragment.yaml: |
+      languageVersion: "1.0"
+      resources:
+        {{ .values.symbol }}:
+          type: Microsoft.Storage/storageAccounts
+          apiVersion: "2023-05-01"
+          name: "{{ .context.instance_id }}"

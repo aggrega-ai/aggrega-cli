@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-provenance
+  version: "1.0.0"
+  description: >
+    A datastore carrying an attachment, and an application that reads it. Their
+    resources come from a Component's Recipe, a component-scope attachment and,
+    with the boundary-wide settings, a boundary-scope attachment, so every origin
+    a resource can have is present in one template.
+spec:
+  components:
+    store:
+      type: example/datastore/store
+      features:
+        diag:
+          type: example/diagnostics
+    app:
+      type: example/compute/consumer
+      uses:
+        database:
+          primary:
+            target: store
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host

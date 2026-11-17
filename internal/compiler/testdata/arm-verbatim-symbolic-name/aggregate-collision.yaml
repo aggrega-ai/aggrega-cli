@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-verbatim-collision
+  version: "1.0.0"
+  description: >
+    Two datastores whose Recipe writes the same symbolic name for both, which a template cannot hold twice.
+spec:
+  components:
+    alpha:
+      type: example/datastore/store
+      values:
+        symbol: Shared
+    beta:
+      type: example/datastore/store
+      values:
+        symbol: Shared

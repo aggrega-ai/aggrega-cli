@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: arm-attachments-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        example/datastore/store:1.0.0: arm-store:1.0.0
+    features:
+      type:
+        example/diagnostics:1.0.0: arm-diagnostics:1.0.0
+        example/shared-settings:1.0.0: arm-shared-settings:1.0.0

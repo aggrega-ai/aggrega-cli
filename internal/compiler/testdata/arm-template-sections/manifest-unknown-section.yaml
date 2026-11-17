@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: arm-template-sections-unknown-section-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        example/resource/plain:1.0.0: arm-unknown-section:1.0.0

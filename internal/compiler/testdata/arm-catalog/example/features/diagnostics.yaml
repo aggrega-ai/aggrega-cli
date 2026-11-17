@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Feature
+metadata:
+  name: example/diagnostics
+  version: 1.0.0
+  description: >
+    Keeps a component's diagnostics for a number of days. Its FeatureRecipe is
+    component-scope: one fragment per attached component.
+spec:
+  schema:
+    values:
+      retention_days:
+        type: integer
+        default: 30
+        description: How many days the diagnostics are kept.

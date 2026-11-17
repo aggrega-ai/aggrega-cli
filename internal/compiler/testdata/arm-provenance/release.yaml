@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: arm-provenance
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack:
+      directory: ./dist/stack
+      features:
+        settings:
+          type: example/shared-settings
+      components:
+        store: {}
+        app: {}

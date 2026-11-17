@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: arm-provenance-no-resources-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        example/resource/plain:1.0.0: arm-no-resources:1.0.0

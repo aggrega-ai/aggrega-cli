@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-wave
+  version: 1.0.0
+  description: >
+    A fragment of two resources, the second of which already depends on the
+    first. A wave must extend that list rather than replace it, so this pair
+    shows an authored ordering surviving beside the wave's.
+spec:
+  capability: arm
+  implements: example/resource/plain:1.0.0
+  artifacts:
+    fragment.yaml: |
+      resources:
+        {{ .values.symbol }}Primary:
+          type: Microsoft.Storage/storageAccounts
+          apiVersion: "2023-05-01"
+          name: "{{ .context.instance_id }}primary"
+          location: "[resourceGroup().location]"
+        {{ .values.symbol }}Policy:
+          type: Microsoft.Storage/storageAccounts/managementPolicies
+          apiVersion: "2023-05-01"
+          name: "{{ .context.instance_id }}policy"
+          dependsOn:
+            - {{ .values.symbol }}Primary

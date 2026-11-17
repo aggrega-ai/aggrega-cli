@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-template-sections-single
+  version: "1.0.0"
+  description: >
+    One component, for the fragments that carry one fault each.
+spec:
+  components:
+    alpha:
+      type: example/resource/plain
+      values:
+        symbol: Alpha

@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: FeatureRecipe
+metadata:
+  name: arm-shared-settings
+  version: 1.0.0
+  description: >
+    One settings resource per boundary, written as an ARM fragment. It reads the
+    boundary's own resolved values, so it has no single component to belong to.
+spec:
+  capability: arm
+  implements: example/shared-settings:1.0.0
+  executionScope: boundary
+  artifacts:
+    settings.yaml: |
+      resources:
+        {{ capitalizedWords .boundary.boundary_name }}Settings:
+          type: Microsoft.AppConfiguration/configurationStores
+          apiVersion: "2023-03-01"
+          name: "{{ .boundary.boundary_name }}-settings"
+          location: "[resourceGroup().location]"
+          properties:
+            tier: "{{ .infra.tier }}"
+      outputs:
+        tier:
+          type: string
+          value: "{{ .infra.tier }}"

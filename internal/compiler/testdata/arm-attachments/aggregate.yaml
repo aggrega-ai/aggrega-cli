@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-attachments
+  version: "1.0.0"
+  description: >
+    A datastore carrying an attachment. The attachment's fragment assembles into
+    the datastore's own template, and its outputs are scoped to the datastore it
+    is attached to.
+spec:
+  components:
+    store:
+      type: example/datastore/store
+      features:
+        diag:
+          type: example/diagnostics

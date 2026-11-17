@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-store
+  version: 1.0.0
+  description: >
+    A datastore written as an ARM fragment. The resource's symbolic name is the
+    component's own symbol value, written verbatim, and the fragment's host
+    output reads the server's address.
+spec:
+  capability: arm
+  implements: example/datastore/store:1.0.0
+  locals:
+    symbol: '{{ .values.symbol }}'
+  # The delivered host is ARM-ready: a consumer in the same template writes it
+  # whole or inside literal text.
+  provides:
+    host: "[reference('{{ .locals.symbol }}').fullyQualifiedDomainName]"
+    port: "5432"
+  artifacts:
+    store.yaml: |
+      resources:
+        {{ .locals.symbol }}:
+          type: Microsoft.DBforPostgreSQL/flexibleServers
+          apiVersion: "2024-08-01"
+          name: "{{ .context.instance_id }}"
+          location: "[resourceGroup().location]"
+          sku:
+            name: "{{ .infra.sku }}"
+          properties:
+            version: "16"
+      outputs:
+        host:
+          type: string
+          value: "[reference('{{ .locals.symbol }}').fullyQualifiedDomainName]"

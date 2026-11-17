@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-sync-wave
+  version: "1.0.0"
+  description: >
+    Three components whose fragments assemble into one template: a network, a
+    store provisioned after it, and an application provisioned after the store.
+    Each fragment holds two resources, one of which already depends on the other,
+    so the template shows both what a wave adds and what it leaves alone.
+spec:
+  components:
+    network:
+      type: example/resource/plain
+      values:
+        symbol: Network
+    store:
+      type: example/resource/plain
+      values:
+        symbol: Store
+    app:
+      type: example/resource/plain
+      values:
+        symbol: App

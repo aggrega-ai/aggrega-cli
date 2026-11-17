@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: arm-compose-tags-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        example/datastore/store:1.0.0: arm-store:1.0.0
+        example/compute/consumer:1.0.0: arm-consumer-tags:1.0.0

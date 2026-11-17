@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: arm-compose-two-boundaries
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest-two-boundaries.yaml
+  boundaries:
+    data:
+      directory: ./dist/data
+      components:
+        store: {}
+    web:
+      directory: ./dist/web
+      components:
+        app: {}

@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-template-sections
+  version: "1.0.0"
+  description: >
+    Two components whose fragments declare the same parameter, definition, function and metadata entry the same way.
+spec:
+  components:
+    alpha:
+      type: example/resource/plain
+      values:
+        symbol: Alpha
+    beta:
+      type: example/resource/plain
+      values:
+        symbol: Beta

@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-template-sections-conflict
+  version: "1.0.0"
+  description: >
+    Two components whose fragments declare one parameter with different defaults.
+spec:
+  components:
+    alpha:
+      type: example/resource/plain
+      values:
+        symbol: Alpha
+        tier: small
+    beta:
+      type: example/resource/plain
+      values:
+        symbol: Beta
+        tier: large

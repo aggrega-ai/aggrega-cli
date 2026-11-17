@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-names
+  version: "1.0.0"
+  description: >
+    Three datastores whose instance names differ only in punctuation. Each
+    declares its own symbolic name, so the three resources stay apart in the
+    template and the outputs they declare are the subject: a derivation that
+    drops punctuation maps all three onto one output name.
+spec:
+  components:
+    payments-db:
+      type: example/datastore/store
+      values:
+        symbol: PaymentsHyphenDb
+    payments_db:
+      type: example/datastore/store
+      values:
+        symbol: PaymentsUnderscoreDb
+    paymentsdb:
+      type: example/datastore/store
+      values:
+        symbol: PaymentsFlatDb

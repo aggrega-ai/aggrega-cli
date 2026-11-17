@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-api-profile
+  version: 1.0.0
+  description: >
+    A fragment that writes an API profile, which would change the apiVersion of
+    every resource the template holds.
+spec:
+  capability: arm
+  implements: example/resource/plain:1.0.0
+  artifacts:
+    fragment.yaml: |
+      apiProfile: 2019-03-01-hybrid
+      resources:
+        {{ .values.symbol }}:
+          type: Microsoft.Storage/storageAccounts
+          apiVersion: "2023-05-01"
+          name: "{{ .context.instance_id }}"

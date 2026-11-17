@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: arm-template-sections-language-version-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        example/resource/plain:1.0.0: arm-language-version:1.0.0

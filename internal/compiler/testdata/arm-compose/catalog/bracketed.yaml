@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-consumer-bracketed
+  version: 1.0.0
+  description: >
+    An application whose settings hold bracketed text that is not an ARM expression, beside the delivered host written whole.
+spec:
+  capability: arm
+  implements: example/compute/consumer:1.0.0
+  locals:
+    symbol: '{{ capitalizedWords .context.instance_id }}'
+  artifacts:
+    consumer.yaml: |
+      {{- $env := optional (default dict .context.inject) "env" dict -}}
+      resources:
+        {{ .locals.symbol }}:
+          type: Microsoft.App/containerApps
+          apiVersion: "2024-03-01"
+          name: "{{ .context.instance_id }}"
+          location: "[resourceGroup().location]"
+
+          properties:
+            settings:
+              databaseHost: "{{ $env.DB_HOST }}"
+              pattern: "match [a-z]+ against array[0] in a [test] value"
+              probe: "if [ -f /etc/ready ]; then echo ready; fi"

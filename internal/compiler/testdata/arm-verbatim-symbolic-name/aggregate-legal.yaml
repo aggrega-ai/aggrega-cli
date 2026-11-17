@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-verbatim-legal
+  version: "1.0.0"
+  description: >
+    Two datastores whose symbolic names are legal, the control the two faults are read against.
+spec:
+  components:
+    alpha:
+      type: example/datastore/store
+      values:
+        symbol: Alpha
+    beta:
+      type: example/datastore/store
+      values:
+        symbol: Beta

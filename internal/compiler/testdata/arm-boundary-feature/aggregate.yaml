@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-boundary-feature
+  version: "1.0.0"
+  description: >
+    Two datastores in two boundaries. The boundary-wide settings attachment is
+    written once per boundary, so each boundary's template holds the settings
+    resource once whatever number of components the boundary holds.
+spec:
+  components:
+    alpha:
+      type: example/datastore/store
+      values:
+        symbol: Alpha
+    beta:
+      type: example/datastore/store
+      values:
+        symbol: Beta
+    gamma:
+      type: example/datastore/store
+      values:
+        symbol: Gamma

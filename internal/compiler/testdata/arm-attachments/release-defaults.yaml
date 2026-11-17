@@ -1,0 +1,22 @@
+# One boundary holding the datastore and the boundary-wide settings attachment,
+# with no infra authored anywhere. The three declared defaults are read off one
+# assembled template: the datastore's own infra default is the control, the
+# component-scope attachment's values default and the boundary-scope
+# attachment's infra default are the two surfaces under test.
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: arm-attachment-defaults
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-defaults.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack:
+      directory: ./dist/stack
+      features:
+        settings:
+          type: example/shared-settings
+      components:
+        store: {}

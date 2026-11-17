@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: arm-provenance-existing-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        example/resource/plain:1.0.0: arm-existing:1.0.0

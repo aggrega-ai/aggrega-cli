@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-compose
+  version: "1.0.0"
+  description: >
+    A datastore and an application that reads its host. How the application's
+    Recipe writes the delivered host is the subject of each Release.
+spec:
+  components:
+    store:
+      type: example/datastore/store
+    app:
+      type: example/compute/consumer
+      uses:
+        database:
+          primary:
+            target: store
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host

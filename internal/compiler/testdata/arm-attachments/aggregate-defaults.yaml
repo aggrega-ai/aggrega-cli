@@ -1,0 +1,19 @@
+# Developer intent authored so that every schema-declared default in play is
+# omitted rather than restated: what arrives when nothing is written down is the
+# subject, so a fixture that restated a default would render the right bytes
+# while proving nothing about where they came from.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-attachment-defaults
+  version: "1.0.0"
+  description: >
+    A datastore carrying a diagnostics attachment, with every schema-declared
+    default left unauthored.
+spec:
+  components:
+    store:
+      type: example/datastore/store
+      features:
+        diag:
+          type: example/diagnostics

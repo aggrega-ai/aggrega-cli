@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: arm-compose-inside-expression
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest-inside-expression.yaml
+  boundaries:
+    stack:
+      directory: ./dist/stack
+      components:
+        store: {}
+        app: {}

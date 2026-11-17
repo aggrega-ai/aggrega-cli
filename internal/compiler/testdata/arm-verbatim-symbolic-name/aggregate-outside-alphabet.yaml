@@ -1,0 +1,17 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-verbatim-outside-alphabet
+  version: "1.0.0"
+  description: >
+    A datastore whose symbolic name carries a hyphen, which ARM does not admit in a symbolic name.
+spec:
+  components:
+    alpha:
+      type: example/datastore/store
+      values:
+        symbol: payments-db
+    beta:
+      type: example/datastore/store
+      values:
+        symbol: Beta

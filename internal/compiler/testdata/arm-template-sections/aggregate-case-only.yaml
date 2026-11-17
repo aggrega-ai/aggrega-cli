@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-template-sections-case-only
+  version: "1.0.0"
+  description: >
+    Two components whose fragments declare parameters whose names differ only in case.
+spec:
+  components:
+    alpha:
+      type: example/resource/plain
+      values:
+        symbol: Alpha
+        param: Tier
+    beta:
+      type: example/resource/plain
+      values:
+        symbol: Beta
+        param: tier

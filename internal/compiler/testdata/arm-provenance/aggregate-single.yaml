@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-provenance-single
+  version: "1.0.0"
+  description: >
+    One component, for the fragments that carry one case each.
+spec:
+  components:
+    alpha:
+      type: example/resource/plain
+      values:
+        symbol: Alpha

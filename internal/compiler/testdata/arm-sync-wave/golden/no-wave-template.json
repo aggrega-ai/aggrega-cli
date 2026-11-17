@@ -1,0 +1,121 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "languageVersion": "2.0",
+  "resources": {
+    "AppPolicy": {
+      "apiVersion": "2023-05-01",
+      "dependsOn": [
+        "AppPrimary"
+      ],
+      "metadata": {
+        "aggrega.ai/provenance": {
+          "aggrega.ai/aggregate-name": "arm-sync-wave",
+          "aggrega.ai/boundary-path": "edge",
+          "aggrega.ai/compiler-version": "0.1.0",
+          "aggrega.ai/component-id": "app",
+          "aggrega.ai/environment": "production",
+          "aggrega.ai/provider": "arm",
+          "aggrega.ai/provider-version": "0.0.0-test",
+          "aggrega.ai/recipe-uri": "arm-wave:1.0.0"
+        }
+      },
+      "name": "apppolicy",
+      "type": "Microsoft.Storage/storageAccounts/managementPolicies"
+    },
+    "AppPrimary": {
+      "apiVersion": "2023-05-01",
+      "location": "[resourceGroup().location]",
+      "metadata": {
+        "aggrega.ai/provenance": {
+          "aggrega.ai/aggregate-name": "arm-sync-wave",
+          "aggrega.ai/boundary-path": "edge",
+          "aggrega.ai/compiler-version": "0.1.0",
+          "aggrega.ai/component-id": "app",
+          "aggrega.ai/environment": "production",
+          "aggrega.ai/provider": "arm",
+          "aggrega.ai/provider-version": "0.0.0-test",
+          "aggrega.ai/recipe-uri": "arm-wave:1.0.0"
+        }
+      },
+      "name": "appprimary",
+      "type": "Microsoft.Storage/storageAccounts"
+    },
+    "NetworkPolicy": {
+      "apiVersion": "2023-05-01",
+      "dependsOn": [
+        "NetworkPrimary"
+      ],
+      "metadata": {
+        "aggrega.ai/provenance": {
+          "aggrega.ai/aggregate-name": "arm-sync-wave",
+          "aggrega.ai/boundary-path": "foundation",
+          "aggrega.ai/compiler-version": "0.1.0",
+          "aggrega.ai/component-id": "network",
+          "aggrega.ai/environment": "production",
+          "aggrega.ai/provider": "arm",
+          "aggrega.ai/provider-version": "0.0.0-test",
+          "aggrega.ai/recipe-uri": "arm-wave:1.0.0"
+        }
+      },
+      "name": "networkpolicy",
+      "type": "Microsoft.Storage/storageAccounts/managementPolicies"
+    },
+    "NetworkPrimary": {
+      "apiVersion": "2023-05-01",
+      "location": "[resourceGroup().location]",
+      "metadata": {
+        "aggrega.ai/provenance": {
+          "aggrega.ai/aggregate-name": "arm-sync-wave",
+          "aggrega.ai/boundary-path": "foundation",
+          "aggrega.ai/compiler-version": "0.1.0",
+          "aggrega.ai/component-id": "network",
+          "aggrega.ai/environment": "production",
+          "aggrega.ai/provider": "arm",
+          "aggrega.ai/provider-version": "0.0.0-test",
+          "aggrega.ai/recipe-uri": "arm-wave:1.0.0"
+        }
+      },
+      "name": "networkprimary",
+      "type": "Microsoft.Storage/storageAccounts"
+    },
+    "StorePolicy": {
+      "apiVersion": "2023-05-01",
+      "dependsOn": [
+        "StorePrimary"
+      ],
+      "metadata": {
+        "aggrega.ai/provenance": {
+          "aggrega.ai/aggregate-name": "arm-sync-wave",
+          "aggrega.ai/boundary-path": "data",
+          "aggrega.ai/compiler-version": "0.1.0",
+          "aggrega.ai/component-id": "store",
+          "aggrega.ai/environment": "production",
+          "aggrega.ai/provider": "arm",
+          "aggrega.ai/provider-version": "0.0.0-test",
+          "aggrega.ai/recipe-uri": "arm-wave:1.0.0"
+        }
+      },
+      "name": "storepolicy",
+      "type": "Microsoft.Storage/storageAccounts/managementPolicies"
+    },
+    "StorePrimary": {
+      "apiVersion": "2023-05-01",
+      "location": "[resourceGroup().location]",
+      "metadata": {
+        "aggrega.ai/provenance": {
+          "aggrega.ai/aggregate-name": "arm-sync-wave",
+          "aggrega.ai/boundary-path": "data",
+          "aggrega.ai/compiler-version": "0.1.0",
+          "aggrega.ai/component-id": "store",
+          "aggrega.ai/environment": "production",
+          "aggrega.ai/provider": "arm",
+          "aggrega.ai/provider-version": "0.0.0-test",
+          "aggrega.ai/recipe-uri": "arm-wave:1.0.0"
+        }
+      },
+      "name": "storeprimary",
+      "type": "Microsoft.Storage/storageAccounts"
+    }
+  }
+}

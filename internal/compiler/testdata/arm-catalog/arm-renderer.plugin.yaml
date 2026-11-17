@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Plugin
+metadata:
+  name: arm
+  version: 0.0.0-test
+  pluginType: provider
+spec:
+  abiVersion: v1beta1
+  runtime:
+    maxMemoryPages: 4096
+    # Generous per-call cap: the guest's runtime initialization is seconds-scale
+    # where the host runs the Wasm engine without native code generation, so a
+    # legitimate render never false-times-out.
+    timeoutMs: 300000
+    hostFunctions:
+      - aggrega_pack_source
+  # The plugin reads ARM template fragments and merges a dispatch group's
+  # fragments into one resource group template. The version is a test version, so
+  # the fixture needs no edit when a release tag changes: its guest still
+  # resolves from the binary's embed tier.
+  exports:
+    - name: render_node
+    - name: validate_node_input
+    - name: assemble_boundary
+  provider:
+    capabilities:
+      - arm
+    contract:
+      inputKinds:
+        sourced: true
+        artifactsStandalone: true
+      boundaryAssembly: merge
+      reusableInstance: true
+      omits: true

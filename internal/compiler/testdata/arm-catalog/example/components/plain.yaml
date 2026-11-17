@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: example/resource/plain
+  version: 1.0.0
+  description: >
+    A component with no sockets. Its values name what its fragment declares, so a
+    fixture decides every name the Recipe writes verbatim.
+  labels:
+    component.aggrega.ai/type: resource
+spec:
+  schema:
+    values:
+      symbol:
+        type: string
+        default: Plain
+        description: The symbolic name the Recipe declares the resource under.
+      param:
+        type: string
+        default: tier
+        description: The name the Recipe declares its template parameter under.
+      tier:
+        type: string
+        default: small
+        description: The default value of the template parameter.

@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Feature
+metadata:
+  name: example/shared-settings
+  version: 1.0.0
+  description: >
+    Settings every component of a boundary shares. Its FeatureRecipe runs once
+    per boundary.
+spec:
+  schema:
+    infra:
+      tier:
+        type: string
+        default: standard
+        description: The tier label written into the boundary's settings.

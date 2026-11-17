@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-unknown-section
+  version: 1.0.0
+  description: >
+    A fragment that writes a top-level key no template section accounts for.
+spec:
+  capability: arm
+  implements: example/resource/plain:1.0.0
+  artifacts:
+    fragment.yaml: |
+      x-owner: platform team
+      resources:
+        {{ .values.symbol }}:
+          type: Microsoft.Storage/storageAccounts
+          apiVersion: "2023-05-01"
+          name: "{{ .context.instance_id }}"

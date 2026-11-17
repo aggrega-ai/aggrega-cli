@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: example/compute/consumer
+  version: 1.0.0
+  description: >
+    An application that reads a datastore's published host from its injection
+    context and writes it into its settings.
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  inject: [env]
+  usesSchema:
+    database:
+      selector: "component.aggrega.ai/type=stateful-server"
+      inject: [env]

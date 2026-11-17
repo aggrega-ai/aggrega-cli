@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: example/datastore/store
+  version: 1.0.0
+  description: >
+    A datastore the fixtures place in an ARM template. The symbolic name its
+    resource is declared under is a value, so a fixture decides the name the
+    Recipe writes verbatim.
+  labels:
+    component.aggrega.ai/type: stateful-server
+spec:
+  # The datastore may inject its own provides keys into a consumer's env.
+  inject: [env]
+  schema:
+    values:
+      symbol:
+        type: string
+        default: Store
+        description: The symbolic name the Recipe declares the datastore's resource under.
+    infra:
+      sku:
+        type: string
+        default: Standard_B1ms
+        description: The compute SKU the datastore runs on.
+    provides:
+      host:
+        type: string
+        required: true
+        description: Address a client opens its connection to, as an ARM expression that resolves where the datastore is deployed.
+      port:
+        type: integer
+        required: true
+        description: TCP port the datastore accepts connections on.

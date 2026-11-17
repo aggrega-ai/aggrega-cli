@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-existing
+  version: 1.0.0
+  description: >
+    A fragment that deploys one resource and reads one that already exists. The
+    existing resource is deployed by nobody, so it carries no provenance.
+spec:
+  capability: arm
+  implements: example/resource/plain:1.0.0
+  artifacts:
+    fragment.yaml: |
+      resources:
+        {{ .values.symbol }}:
+          type: Microsoft.Storage/storageAccounts
+          apiVersion: "2023-05-01"
+          name: "{{ .context.instance_id }}"
+          location: "[resourceGroup().location]"
+        SharedVault:
+          existing: true
+          type: Microsoft.KeyVault/vaults
+          apiVersion: "2023-07-01"
+          name: shared-vault

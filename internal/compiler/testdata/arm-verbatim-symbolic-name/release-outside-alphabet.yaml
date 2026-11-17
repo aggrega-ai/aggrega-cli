@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: arm-verbatim-outside-alphabet
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-outside-alphabet.yaml
+  manifest: ./manifest.yaml
+  boundaries:
+    stack:
+      directory: ./dist/stack
+      components:
+        alpha: {}
+        beta: {}
