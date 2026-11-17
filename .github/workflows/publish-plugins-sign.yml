@@ -1121,7 +1121,10 @@ jobs:
         # refused if its git configuration still carries an authorization header,
         # so no token reaches the build job with them; then writes the folder's
         # SHA-256 list, through the smoke library's one writer of it, which the
-        # build job holds the checkouts to before it takes them.
+        # build job holds the checkouts to before it takes them. The list holds
+        # files and directories only, so each symbolic link in a checkout (a kit
+        # links its crate's LICENSE to the repository's own) is first replaced by
+        # a copy of the file it names, which must lie in the same checkout.
         run: |
           set -euo pipefail
           mkdir "$HANDOVER/sources"
@@ -1141,6 +1144,22 @@ jobs:
                 exit 1
               fi
             fi
+            checkout="$(cd "$GITHUB_WORKSPACE/$repo" && pwd -P)"
+            while IFS= read -r -d '' link; do
+              target="$(readlink -f -- "$link")"
+              case "$target" in
+                "$checkout"/*) ;;
+                *)
+                  echo "publish-plugins: $link in the $repo checkout names $target, outside the checkout; it is not handed over" >&2
+                  exit 1
+                  ;;
+              esac
+              if [ ! -f "$target" ]; then
+                echo "publish-plugins: $link in the $repo checkout names no file; it is not handed over" >&2
+                exit 1
+              fi
+              cp --remove-destination -- "$target" "$link"
+            done < <(find "$checkout" -path "$checkout/.git" -prune -o -type l -print0)
             mv -- "$GITHUB_WORKSPACE/$repo" "$HANDOVER/sources/$repo"
           done
           . aggrega-cli/scripts/lib/platform-smoke-common.sh
