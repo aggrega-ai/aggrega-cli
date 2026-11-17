@@ -22,16 +22,20 @@ func TestRepositoryOnly(t *testing.T) {
 		}
 	}
 	for url, fault := range map[string]string{
-		"oci://r/m:1.0.0":     `carries the tag "1.0.0"`,
-		"oci://r/m@" + digest: "carries the digest",
-		"oci://r/m?tag=v1":    "carries a query",
-		"oci://r/m#frag":      "carries a fragment",
-		"oci://r/m//sub":      "carries an empty path segment",
-		"oci://r":             "names no repository",
-		"oci://r/":            "names no repository",
-		"oci://r/Modules/x":   "names an invalid registry or repository",
-		"https://r/m":         "is not an oci:// reference",
-		"":                    "is empty",
+		"oci://r/m:1.0.0":         `carries the tag "1.0.0"`,
+		"oci://r/m@" + digest:     "carries the digest",
+		"oci://r/m:":              "carries an empty tag",
+		"oci://r/m@":              "carries an empty digest",
+		"oci://r/m:tag@" + digest: `carries the digest "` + digest + `"`,
+		"oci://r/m:1.0.0/x":       `carries the tag "1.0.0/x"`,
+		"oci://r/m?tag=v1":        "carries a query",
+		"oci://r/m#frag":          "carries a fragment",
+		"oci://r/m//sub":          "carries an empty path segment",
+		"oci://r":                 "names no repository",
+		"oci://r/":                "names no repository",
+		"oci://r/Modules/x":       "names an invalid registry or repository",
+		"https://r/m":             "is not an oci:// reference",
+		"":                        "is empty",
 	} {
 		err := RepositoryOnly(url)
 		if err == nil || !strings.Contains(err.Error(), fault) {

@@ -42,17 +42,25 @@ func RepositoryOnly(url string) error {
 	if !found || registryHost == "" || repository == "" {
 		return errors.New("names no repository")
 	}
-	ref, err := registry.ParseReference(rest)
-	if err != nil {
+	if _, written, found := strings.Cut(repository, "@"); found {
+		return markerFault("digest", written)
+	}
+	if _, written, found := strings.Cut(repository, ":"); found {
+		return markerFault("tag", written)
+	}
+	if _, err := registry.ParseReference(rest); err != nil {
 		return fmt.Errorf("names an invalid registry or repository: %w", err)
 	}
-	if strings.Contains(rest, "@") {
-		return fmt.Errorf("carries the digest %q", ref.Reference)
-	}
-	if ref.Reference != "" {
-		return fmt.Errorf("carries the tag %q", ref.Reference)
-	}
 	return nil
+}
+
+// markerFault names a tag or digest marker written after the repository, empty
+// or not.
+func markerFault(kind, written string) error {
+	if written == "" {
+		return fmt.Errorf("carries an empty %s", kind)
+	}
+	return fmt.Errorf("carries the %s %q", kind, written)
 }
 
 // TagOrDigest checks that version is a tag in the OCI distribution grammar or a
