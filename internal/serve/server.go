@@ -1024,6 +1024,13 @@ type session struct {
 	// parse-cache read after the second wait closes. A nil hook is a no-op.
 	testDiagnosticsFoundHook func(file string)
 
+	// testLockfileHoldHook, when non-nil, runs inside runTier4Validation each time
+	// the validation holds the named Release to its lockfile, which it does only
+	// once a gate over the Release's dependencies has refused. The production setup
+	// never sets this field; it exists so a test can tell that a validation no gate
+	// refused ran no drift check. A nil hook is a no-op.
+	testLockfileHoldHook func()
+
 	// validationWaitBudget overrides how long a diagnostics request waits for a
 	// validation of its file that is already running. Zero — the production
 	// value, since nothing outside the in-memory test harness sets it — means

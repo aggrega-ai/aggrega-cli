@@ -116,7 +116,10 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// publication. Lockfile drift is surfaced by the graph request, whose
 	// notification persists in the client; re-publishing here (validate fires per
 	// edit) would re-send an un-deduplicated drift notice at editing cadence
-	// without adding a needed signal.
+	// without adding a needed signal. The one drift check this validation runs is
+	// asked only once a gate over the dependencies has refused, and its finding
+	// answers on the Aggregate in place of that refusal (holdReleaseToLockfile);
+	// an edit no gate refuses runs none.
 	//
 	// ORDERING IS LOAD-BEARING: the view's pins are set (via ForRequest) before
 	// any Tier-2 read fires. An unpinned view uses no cached slot at all, so
@@ -127,9 +130,10 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// The loaded lockfile is retained past the pin extraction because the
 	// deprecation report below reads its recorded markers and the validation core
 	// reads its library rows (a recorded library is read at its recorded version,
-	// every other at the version a bare reference selects). Retaining it does NOT
-	// change what is passed to the closure resolution: that still receives nil, so
-	// the quiet-load posture described above is untouched.
+	// every other at the version a bare reference selects), and a gate that refuses
+	// holds the Release to it. Retaining it does NOT change what is passed to the
+	// closure resolution: that still receives nil, so the quiet-load posture
+	// described above is untouched.
 	//
 	// A lockfile that is a link leading out of the root a write of it is held to is
 	// not absent but refused, and the validation reports the refusal as it reports
@@ -224,7 +228,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 
 	// Quiet load — pins only, no drift verify, and no lockfile reaches the
 	// resolution. Drift is surfaced by the graph request, which reconstructs the
-	// closure axes and verifies against them.
+	// closure axes and verifies against them, and by a gate below that refuses.
 	resolved, envelope := s.resolveReleaseClosure(ctx, view, releasePath)
 	if envelope != nil {
 		// A document the daemon reads as no kind of its own (classifyBuffer) — a
@@ -352,6 +356,27 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	// positioned there, and nothing else.
 	if !onAggregate {
 		return s.ownDocumentDiagnostics(vr.RunErr, vr.Tier4, relFile, content, doc)
+	}
+
+	// A gate over the dependencies refused, and the lockfile may be why: the gates
+	// read each library the lockfile records at the recorded version, the version a
+	// build reads, so a lockfile recording a version the Release no longer asks for
+	// — a raised floor, to use an entry only a newer version declares — refuses a
+	// reference the catalog satisfies. Where the Release no longer matches its
+	// lockfile, the drift halt with its remedy takes the refusal's place: it is what
+	// a build and `aggrega validate --release` report for the same workspace, and a
+	// pull that clears it may clear the refusal too. Where it matches, the refusal
+	// stands.
+	if len(vr.ClosureExtendsErrors) > 0 || vr.PillarError != nil {
+		if drift := s.holdReleaseToLockfile(ctx, view, releasePath, lf); drift != nil {
+			return append(leadingDiags, Diagnostic{
+				Line:           1,
+				Column:         1,
+				Severity:       editorSeverityError,
+				Message:        "Dependencies: " + drift.Error(),
+				ConditionCodes: conditionCodesOf(drift),
+			})
+		}
 	}
 
 	// Closure-scoped extends — early-warning extends gate. A dangling parent (or
@@ -527,6 +552,26 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	}
 
 	return diags
+}
+
+// holdReleaseToLockfile asks whether lf, the lockfile beside the Release at
+// releasePath, still describes what that Release resolves to, through the drift
+// check the command line's validation runs (compilerops.HoldReleaseToLockfile),
+// and returns the drift halt where it does not. It returns nil where there is no
+// lockfile, and where the check cannot resolve the Release.
+//
+// The check resolves the Release as a build does, which an edit that passes the
+// validation has no need of, so runTier4Validation asks it only once a gate over
+// the dependencies has refused. It resolves through a view forked from view, so
+// the request's own view is left as it was.
+func (s *Server) holdReleaseToLockfile(ctx context.Context, view *catalog.LazyLookup, releasePath string, lf *lockfile.Lockfile) error {
+	if lf == nil {
+		return nil
+	}
+	if s.testLockfileHoldHook != nil {
+		s.testLockfileHoldHook()
+	}
+	return compilerops.HoldReleaseToLockfile(ctx, view, releasePath, s.workspaceRoot, s.wsConfig, lf)
 }
 
 // closureAdvisoryDiagnostic shapes one exit-code-neutral, closure-level advisory

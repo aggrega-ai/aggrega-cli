@@ -405,9 +405,6 @@ spec:
 				WorkspaceConfig:          wsCfg,
 				CompilerVersion:          "test",
 			})
-			if errors.Is(vr.PillarError, compactform.ErrUnresolvedSchemaLibraryRef()) {
-				t.Errorf("a library the catalog holds was reported unresolved under a stale record: %v", vr.PillarError)
-			}
 			if vr.PillarError != nil {
 				t.Errorf("pillar error under a stale record: %v", vr.PillarError)
 			}
