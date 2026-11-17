@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: app
+  version: 1.0.0
+spec:
+  capability: arm
+  implements: acme/compute/app:1.0.0
+  artifacts:
+    app.yaml: |
+      resources:
+        {{ capitalizedWords .context.instance_id }}:
+          type: Microsoft.App/containerApps
+          apiVersion: "2024-03-01"
+          name: "{{ .context.instance_id }}"
+          location: "[resourceGroup().location]"
+          properties:
+            template:
+              containers:
+                - name: main
+                  image: "{{ .infra.image }}"

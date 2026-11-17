@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: acme/compute/app
+  version: 1.0.0
+  description: >
+    A component whose two infra keys are what the render-verdict rule judges:
+    whether its database storage is encrypted, and the image its container runs.
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema:
+    infra:
+      storage_encrypted:
+        type: boolean
+        default: true
+        description: Whether the CloudFormation database stores its data encrypted.
+      image:
+        type: string
+        default: registry.example.com/app:1.4.2
+        description: The image the Azure container runs.

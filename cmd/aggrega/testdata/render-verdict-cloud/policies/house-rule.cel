@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio s.r.l.
+//
+// A house rule over the files a build writes, read from a CloudFormation template
+// and from an Azure Resource Manager template: a database instance stores its data
+// encrypted, and a container image names a fixed version.
+//
+// It is written twice, here and in house-rule.rego, each on its own from this
+// description: a deliberate near-duplicate, so that the two engines reaching one
+// verdict is a result and not a copy. Every key is tested with has() before it is
+// read, because reading a key a document lacks is an evaluation fault here.
+{
+  "deny":
+    input.artifacts
+      .filter(a, has(a.documents) && a.documents.exists(d,
+        has(d.Resources) && d.Resources.exists(r,
+          has(d.Resources[r].Type) && d.Resources[r].Type == "AWS::RDS::DBInstance"
+          && !(has(d.Resources[r].Properties) && has(d.Resources[r].Properties.StorageEncrypted)
+               && d.Resources[r].Properties.StorageEncrypted == true))))
+      .map(a, a.path + ": a database instance stores its data unencrypted")
+
+    + input.artifacts
+      .filter(a, has(a.documents) && a.documents.exists(d,
+        has(d.resources) && d.resources.exists(r,
+          has(d.resources[r].type) && d.resources[r].type == "Microsoft.App/containerApps"
+          && has(d.resources[r].properties) && has(d.resources[r].properties.template)
+          && has(d.resources[r].properties.template.containers)
+          && d.resources[r].properties.template.containers.exists(c,
+            !c.image.contains("@") && (c.image.endsWith(":latest") || !c.image.matches(":[^/]+$"))))))
+      .map(a, a.path + ": a container runs an image with no tag or the tag latest"),
+}

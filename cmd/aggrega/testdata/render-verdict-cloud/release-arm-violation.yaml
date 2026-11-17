@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: orders-arm-violation
+  environment: testing
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate.yaml
+  manifest: ./manifest-arm.yaml
+  boundaries:
+    stack:
+      directory: ./arm
+      components:
+        app:
+          infra:
+            image: registry.example.com/app

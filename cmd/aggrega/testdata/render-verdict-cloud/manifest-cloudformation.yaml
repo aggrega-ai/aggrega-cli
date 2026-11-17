@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: manifest-cloudformation
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        acme/compute/app:1.0.0: cloudformation/app:1.0.0
