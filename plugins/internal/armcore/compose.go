@@ -98,15 +98,13 @@ func deliveredValues(s site, text string, functions map[string]bool) ([]delivere
 			i = end
 			continue
 		}
-		if text[i] == '[' {
-			if n, end, ok := armexpr.ParseSpan(text, i); ok && callsKnownFunction(n, functions) {
-				if expressionHoldsPlaceholder(n) {
-					return nil, placeholderInsideExpression(s)
-				}
-				values = append(values, deliveredValue{start: i, end: end, argument: armexpr.Print(n)})
-				i = end
-				continue
+		if n, end, ok := callAt(text, i, functions); ok {
+			if expressionHoldsPlaceholder(n) {
+				return nil, placeholderInsideExpression(s)
 			}
+			values = append(values, deliveredValue{start: i, end: end, argument: armexpr.Print(n)})
+			i = end
+			continue
 		}
 		i++
 	}
@@ -130,14 +128,36 @@ func formatExpression(text string, values []deliveredValue) string {
 }
 
 // declaredFunctions returns the lowercase namespace.member name of each
-// user-defined function the level declares. ARM reads function names without
-// regard to case.
+// user-defined function the level declares.
 func (l *level) declaredFunctions() map[string]bool {
+	return functionNames(l.sections[sectionFunctions])
+}
+
+// functionNames returns the lowercase form of each namespace.member name that
+// keys functions. ARM reads function names without regard to case.
+func functionNames[V any](functions map[string]V) map[string]bool {
 	out := map[string]bool{}
-	for _, name := range sortedKeys(l.sections[sectionFunctions]) {
+	for _, name := range sortedKeys(functions) {
 		out[strings.ToLower(name)] = true
 	}
 	return out
+}
+
+// callAt returns the call a bracketed span opening at text[i] holds and the
+// offset just past the span, where the span parses as a complete call to a
+// template function, or to a user-defined function in functions, with any
+// member and index accessors after it. ARM evaluates a bracketed call only as a
+// whole string, so such a span inside literal text is a value written there.
+// Other bracketed text, such as array[0] or [a-z], is not one.
+func callAt(text string, i int, functions map[string]bool) (armexpr.Node, int, bool) {
+	if text[i] != '[' {
+		return nil, 0, false
+	}
+	n, end, ok := armexpr.ParseSpan(text, i)
+	if !ok || !callsKnownFunction(n, functions) {
+		return nil, 0, false
+	}
+	return n, end, true
 }
 
 // callsKnownFunction reports whether the call at the root of n, beneath any

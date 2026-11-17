@@ -638,6 +638,79 @@ func TestLinkResolveValueInLiteralTextHalts(t *testing.T) {
 	}
 }
 
+func TestLinkPublishSplicedCallHalts(t *testing.T) {
+	t.Parallel()
+	const spliced = "mysql://[reference('Db').properties.fullyQualifiedDomainName]:3306"
+	functions := []any{map[string]any{"namespace": "naming", "members": map[string]any{
+		"host": map[string]any{"output": map[string]any{"type": "string", "value": "db"}},
+	}}}
+	cases := []struct {
+		name, text string
+		inject     bool
+	}{
+		{"a read key", spliced, false},
+		{"an injected key", spliced, true},
+		{"a call to a function the producing template declares", "mysql://[NAMING.host()]:3306", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			edge := injecting(providing(testLink(), "url", c.text))
+			if c.inject {
+				edge = injecting(edge, "DATABASE_URL", "url")
+			} else {
+				edge.ReadProvidesKeys = []string{"url"}
+			}
+			_, err := LinkPublish(edge, producerFiles(t, map[string]any{sectionFunctions: functions}))
+			wantCondition(t, err, plugincondition.ErrPluginValueNotRepresentable(), "mysql://", "fullyQualifiedDomainName", "NAMING")
+			for _, want := range []string{
+				`"url"`, `"payments-db"`, `"database"`,
+				"splices a template call into literal text",
+				"unevaluated",
+				"[format('postgres://{0}:5432', reference('Db').outputs.fqdn.value)]",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the halt does not say %q: %v", want, err)
+				}
+			}
+		})
+	}
+}
+
+func TestLinkPublishBracketedLiteralIsWrittenBack(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ name, text string }{
+		{"bracketed text that is no call", "match [a-z]+ against array[0] in a [test] value"},
+		{"a call to a function no template declares", "mysql://[naming.host()]:3306"},
+		{"text that opens with [[", "[[reference('Db').properties.version]"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			edge := injecting(providing(testLink(), "pattern", c.text))
+			edge.ReadProvidesKeys = []string{"pattern"}
+			out, err := LinkPublish(edge, producerFiles(t, nil))
+			if err != nil {
+				t.Fatalf("LinkPublish: %v", err)
+			}
+			for _, op := range opsOf(t, out.Patches) {
+				if strings.HasPrefix(op.Path, "/outputs") {
+					t.Errorf("literal text wrote an output: %+v", op)
+				}
+			}
+			files := consumerFiles(t, map[string]any{"pattern": placeholder("pattern")}, nil, nil)
+			resolved, err := LinkResolve(edge, out.Handle, files)
+			if err != nil {
+				t.Fatalf("LinkResolve: %v", err)
+			}
+			ops := opsOf(t, resolved.Patches)
+			if len(ops) != 1 || ops[0].Path != "/resources/App/properties/pattern" || ops[0].Value != c.text {
+				t.Errorf("write-back = %+v, want %q at /resources/App/properties/pattern", ops, c.text)
+			}
+		})
+	}
+}
+
 func TestLinkPublishInjectedKeyAbsentFromProvidesHalts(t *testing.T) {
 	t.Parallel()
 	edge := injecting(testLink(), "DB_HOST", "host", "DB_REPLICA", "replica")

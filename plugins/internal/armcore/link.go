@@ -48,7 +48,10 @@ const deploymentIDFormat = "/subscriptions/{0}/resourceGroups/{1}/providers/Micr
 // ErrPluginOutputNameCollision. An expression that reads a secret (a list
 // function, or a securestring or secureObject parameter of the producing template,
 // IsSecretExpression) halts wrapping ErrPluginValueNotRepresentable: another
-// deployment's read of it would store it in that deployment's history. The
+// deployment's read of it would store it in that deployment's history. A key
+// whose provides text is literal text splicing a complete template call
+// (refuseSplicedCalls) halts wrapping ErrPluginValueNotRepresentable too: across
+// the link that text would arrive as text, never evaluated. The
 // template with the outputs added is checked against the limits ARM sets
 // (CheckLimits), which halts past 64 outputs.
 //
@@ -76,6 +79,9 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 	}
 	metadata, hasMetadata, err := sectionObject(template, sectionMetadata, edge.Target.Boundary)
 	if err != nil {
+		return rendercore.LinkPublishOutput{}, err
+	}
+	if err := refuseSplicedCalls(edge, keys, template); err != nil {
 		return rendercore.LinkPublishOutput{}, err
 	}
 	secure := secureParameters(template)
@@ -279,6 +285,40 @@ func literalText(s string) string {
 		return s[1:]
 	}
 	return s
+}
+
+// refuseSplicedCalls halts wrapping ErrPluginValueNotRepresentable on the first
+// key the link carries, read through an output in sorted order and then each
+// literal key, whose provides text is literal text holding a complete bracketed
+// call (callAt, over the template functions and the functions the producing
+// template declares). The assembly writes such text as a format() expression
+// within one template, but across a link it would reach the consumer as text,
+// never evaluated. Text that opens with [[ is kept literal, as the assembly
+// keeps it.
+func refuseSplicedCalls(edge rendercore.LinkEdge, keys linkKeys, template map[string]any) error {
+	declared, err := readFunctions(template[sectionFunctions])
+	if err != nil {
+		return err
+	}
+	functions := functionNames(declared)
+	carried := slices.Clone(keys.referenced)
+	for _, lit := range keys.literal {
+		carried = append(carried, lit.key)
+	}
+	for _, key := range carried {
+		text, _ := edge.Provides.Get(key)
+		if armexpr.IsExpression(text) || strings.HasPrefix(text, "[[") {
+			continue
+		}
+		for i := 0; i < len(text); i++ {
+			if _, _, ok := callAt(text, i, functions); ok {
+				return refuse(plugincondition.ErrPluginValueNotRepresentable,
+					fmt.Sprintf("provides key %q of component %q, which the link on socket %q carries to another deployment, splices a template call into literal text, which that deployment would receive unevaluated, as text; write the provides value as one expression, such as [format('postgres://{0}:5432', reference('Db').outputs.fqdn.value)]",
+						key, edge.Target.Node, edge.Socket))
+			}
+		}
+	}
+	return nil
 }
 
 // outputValue returns the value of the output a provides key is read through:
