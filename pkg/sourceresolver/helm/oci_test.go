@@ -256,3 +256,39 @@ func filenameHasSuffix(p, suffix string) bool {
 	}
 	return p[len(p)-len(suffix):] == suffix
 }
+
+// TestOCIResolveReportsANonChartArtifactAsNoContentLayer pulls an artifact whose
+// only layer is not a chart: the registry answered, so the failure is the
+// missing content layer and not an unreachable network.
+func TestOCIResolveReportsANonChartArtifactAsNoContentLayer(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := memory.New()
+	layer, err := oras.PushBytes(ctx, store, "application/vnd.ms.bicep.module.layer.v1+json", []byte("{}"))
+	if err != nil {
+		t.Fatalf("push layer: %v", err)
+	}
+	manifest, err := oras.PackManifest(ctx, store, oras.PackManifestVersion1_1, "application/vnd.ms.bicep.module.artifact",
+		oras.PackManifestOptions{Layers: []ocispec.Descriptor{layer}})
+	if err != nil {
+		t.Fatalf("pack manifest: %v", err)
+	}
+	if err := store.Tag(ctx, manifest, "1.0.0"); err != nil {
+		t.Fatalf("tag: %v", err)
+	}
+	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return store, nil }}
+
+	_, err = a.Resolve(ctx, sourceresolver.SourceSpec{
+		Kind:          KindOCI,
+		URL:           "oci://example.com/bicep/module",
+		Version:       "1.0.0",
+		WorkspaceRoot: t.TempDir(),
+		CacheDir:      ".aggrega/cache",
+	})
+	if !errors.Is(err, ocierr.ErrNoContentLayer()) {
+		t.Fatalf("error should wrap ErrNoContentLayer; got %v", err)
+	}
+	if errors.Is(err, sourceresolver.ErrFetchNetworkUnreachable()) {
+		t.Errorf("a non-chart artifact must not read as network unreachable; got %v", err)
+	}
+}

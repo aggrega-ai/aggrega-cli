@@ -27,7 +27,6 @@ package helm
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -88,8 +87,9 @@ func (a *ociAdapter) Kind() string { return KindOCI }
 // "hub.aggrega.ai/charts/mariadb" — the oci:// prefix is stripped
 // before passing to ORAS). spec.Version is the tag.
 //
-// Errors wrap one of the four fetch sentinels with adapter-specific
-// context via sourceresolver.Wrap.
+// A failed pull is reported through sourceresolver.WrapOCIPull; a target
+// that cannot be built wraps the network-unreachable sentinel via
+// sourceresolver.Wrap.
 //
 // ctx reaches the ORAS pull, so ending it abandons the transfer on the
 // wire rather than leaving it running behind a caller that has stopped
@@ -108,7 +108,7 @@ func (a *ociAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec
 	// the chart content regardless of layer order.
 	result, err := ocierr.Pull(ctx, target, spec.Version, MediatypeHelmChart)
 	if err != nil {
-		return nil, mapOCIError(spec, err)
+		return nil, sourceresolver.WrapOCIPull(spec, err)
 	}
 
 	digest := archive.Digest(result.Bytes)
@@ -135,26 +135,6 @@ func (a *ociAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec
 		CachePath:      slot + "/blob.tgz",
 		OriginalSource: spec.OriginalSource,
 	}, nil
-}
-
-// mapOCIError maps a raw pkg/oci error to a sourceresolver-wrapped
-// sentinel. The mapping is centralised so the kind→sentinel
-// translation is auditable in one place; if the underlying error
-// chain carries one of the four ErrFetch* sentinels, that sentinel
-// is preserved through the wrap.
-func mapOCIError(spec sourceresolver.SourceSpec, cause error) error {
-	switch {
-	case errors.Is(cause, ocierr.ErrFetchNotFound()):
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNotFound(), cause)
-	case errors.Is(cause, ocierr.ErrFetchUnauthorized()):
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchUnauthorized(), cause)
-	case errors.Is(cause, ocierr.ErrFetchNetworkUnreachable()):
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), cause)
-	case errors.Is(cause, ocierr.ErrFetchIntegrity()):
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchIntegrity(), cause)
-	default:
-		return sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), cause)
-	}
 }
 
 func init() {

@@ -4,12 +4,15 @@
 package sourceresolver_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/netrc"
@@ -255,3 +258,76 @@ func TestAnUnauthorizedFetchOverHTTPAdvisesTheNetrcFile(t *testing.T) {
 }
 
 var _ = oci.ErrFetchIntegrity() // keep oci import healthy if test set shrinks
+
+func TestWrapOCIPullKeepsEachIdentity(t *testing.T) {
+	t.Parallel()
+	spec := sourceresolver.SourceSpec{Kind: "test-kind", URL: "oci://example.com/foo", Version: "1.0.0"}
+	cases := []struct {
+		name     string
+		identity error
+		code     string
+	}{
+		{"not found", oci.ErrFetchNotFound(), "E0137"},
+		{"unauthorized", oci.ErrFetchUnauthorized(), "E0138"},
+		{"network unreachable", oci.ErrFetchNetworkUnreachable(), "E0136"},
+		{"integrity", oci.ErrFetchIntegrity(), "E0135"},
+		{"no content layer", oci.ErrNoContentLayer(), "E0140"},
+		{"ambiguous content layer", oci.ErrAmbiguousContentLayer(), "E0132"},
+		{"retired media type", oci.ErrRetiredMediaType(), "E0375"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := sourceresolver.WrapOCIPull(spec, fmt.Errorf("pull: %w", tc.identity))
+			if !errors.Is(got, tc.identity) {
+				t.Fatalf("errors.Is(got, identity) = false; got %v", got)
+			}
+			if code, _ := cerrors.ShortCodeOf(got); code != tc.code {
+				t.Errorf("short code = %q; want %q", code, tc.code)
+			}
+		})
+	}
+}
+
+func TestWrapOCIPullReportsUnreachableOnlyForTransport(t *testing.T) {
+	t.Parallel()
+	spec := sourceresolver.SourceSpec{Kind: "test-kind", URL: "oci://example.com/foo", Version: "1.0.0"}
+
+	got := sourceresolver.WrapOCIPull(spec, &net.DNSError{})
+	if !errors.Is(got, oci.ErrFetchNetworkUnreachable()) {
+		t.Errorf("a DNS failure should report network unreachable; got %v", got)
+	}
+	if code, _ := cerrors.ShortCodeOf(got); code != "E0136" {
+		t.Errorf("short code = %q; want E0136", code)
+	}
+
+	cause := errors.New("unexpected status 500")
+	got = sourceresolver.WrapOCIPull(spec, cause)
+	if errors.Is(got, oci.ErrFetchNetworkUnreachable()) {
+		t.Errorf("an unclassified error must not report network unreachable; got %v", got)
+	}
+	if strings.Contains(got.Error(), "check network connectivity") {
+		t.Errorf("an unclassified error must not carry the connectivity remediation; got %q", got)
+	}
+	if !errors.Is(got, cause) {
+		t.Errorf("the cause must stay matchable; got %v", got)
+	}
+	for _, want := range []string{"test-kind", "oci://example.com/foo", "1.0.0", "unexpected status 500"} {
+		if !strings.Contains(got.Error(), want) {
+			t.Errorf("message should contain %q; got %q", want, got)
+		}
+	}
+}
+
+func TestWrapOCIPullReportsAWithdrawal(t *testing.T) {
+	t.Parallel()
+	spec := sourceresolver.SourceSpec{Kind: "test-kind", URL: "oci://example.com/foo", Version: "1.0.0"}
+	got := sourceresolver.WrapOCIPull(spec, context.Canceled)
+	if !errors.Is(got, context.Canceled) {
+		t.Errorf("a withdrawal must stay matchable; got %v", got)
+	}
+	if code, ok := cerrors.ShortCodeOf(got); ok {
+		t.Errorf("a withdrawal carries no short code; got %q", code)
+	}
+}

@@ -111,6 +111,41 @@ func Wrap(spec SourceSpec, sentinel error, cause error) error {
 	return base
 }
 
+// WrapOCIPull reports a failed pull of an OCI artifact by what the registry
+// answered, so every OCI source kind reads one failure the same way.
+//
+// A cause carrying the caller's withdrawal is reported as Wrap reports one. A
+// cause carrying a fetch identity (not found, unauthorized, network unreachable,
+// integrity) or an artifact-shape identity (no content layer, an ambiguous
+// content layer, a retired media type) is wrapped under that same identity,
+// whatever else the cause reads as. Otherwise a failure [oci.Unreachable] reads as
+// a transport failure is reported as network unreachable. Any other cause is
+// returned with the source's kind, url and version and stays matchable through
+// errors.Is, claiming no fetch condition: a registry that answered is not an
+// unreachable one.
+func WrapOCIPull(spec SourceSpec, err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return Wrap(spec, nil, err)
+	}
+	for _, identity := range []error{
+		oci.ErrFetchNotFound(),
+		oci.ErrFetchUnauthorized(),
+		oci.ErrFetchNetworkUnreachable(),
+		oci.ErrFetchIntegrity(),
+		oci.ErrNoContentLayer(),
+		oci.ErrAmbiguousContentLayer(),
+		oci.ErrRetiredMediaType(),
+	} {
+		if errors.Is(err, identity) {
+			return Wrap(spec, identity, err)
+		}
+	}
+	if oci.Unreachable(err) {
+		return Wrap(spec, oci.ErrFetchNetworkUnreachable(), err)
+	}
+	return fmt.Errorf("sourceresolver: kind=%s url=%s version=%s: %w", spec.Kind, spec.URL, spec.Version, err)
+}
+
 // remediationFor is the advice appended to a fetch failure on spec.
 //
 // A refused credential on a source fetched over http or https is answered by the
