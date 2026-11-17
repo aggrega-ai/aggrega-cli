@@ -4,6 +4,7 @@
 package schemadraft
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
@@ -44,7 +45,8 @@ type Placed struct {
 	Property *Property
 	Pillar   Pillar
 	// Key is snake_case under values, infra, provides and a secret, and the
-	// vendor's spelling under overrides; for a property neither drafted nor
+	// vendor's spelling under overrides, or its path, dotted, where an override
+	// placed before it holds its name; for a property neither drafted nor
 	// provided it is the vendor's path, dotted.
 	Key string
 	// Rule is composed text naming the rule that placed the property, and
@@ -52,8 +54,9 @@ type Placed struct {
 	// and why its key carries a numeric suffix.
 	Rule string
 	// Renamed is the composed text naming the property and the one holding the
-	// key its name gives, where its key carries the kit's numeric suffix; Rule
-	// carries it too. It is empty otherwise.
+	// key its name gives, where its key carries the kit's numeric suffix or, for
+	// an override, is its dotted path; Rule carries it too. It is empty
+	// otherwise.
 	Renamed string
 	// Required is set for a key a draft requires. A provides key is never
 	// required, since it is published rather than read.
@@ -107,12 +110,16 @@ const (
 //  3. placement (Rules.Placement), typed in infra;
 //  4. identity (Rules.Identity), in values;
 //  5. any other property the vendor requires, typed and required in infra;
-//  6. every other writable property, in infra.overrides under its vendor name.
+//  6. every other writable property, in infra.overrides under its vendor name,
+//     or under its vendor path, dotted, where an override placed before it
+//     holds that name, as the root kind and properties.kind of one resource
+//     both would.
 //
 // An object every member of which is read back is read back. Placement and
 // identity are required where the vendor requires them; a provides key is
 // never required, whatever the vendor says of it. A create-only property
-// outside identity is marked replaced on change, a deprecated one deprecated.
+// outside identity is marked replaced on change, unless it is read back, which
+// a draft writes no value for; a deprecated one is marked deprecated.
 // Keys are taken in the vendor's order, each pillar its own space, infra's
 // holding overrides already; a name reaching a taken key takes the kit's
 // numeric suffix, and its rule and its Renamed name both.
@@ -121,8 +128,8 @@ const (
 // values, infra and provides — into its pillar, and for an override one for
 // each cut in it.
 func Split(t *Type, r Rules) ([]Placed, []aggrega.Diagnostic) {
-	s := &splitter{t: t, r: r,
-		values: newKeySpace(), infra: newKeySpace(overridesKey), provides: newKeySpace(), secrets: newKeySpace()}
+	s := &splitter{t: t, r: r, values: newKeySpace(), infra: newKeySpace(overridesKey), provides: newKeySpace(),
+		secrets: newKeySpace(), overrides: overrideKeys{}}
 	for _, p := range t.Properties {
 		s.place(p)
 	}
@@ -134,6 +141,7 @@ type splitter struct {
 	t                                *Type
 	r                                Rules
 	values, infra, provides, secrets *keySpace
+	overrides                        overrideKeys
 	placed                           []Placed
 	diags                            []aggrega.Diagnostic
 }
@@ -157,8 +165,9 @@ func (s *splitter) place(p *Property) {
 	case p.Required:
 		s.keyed(p, p.Name, PillarInfra, s.infra, ruleRequired, true)
 	default:
-		s.placed = append(s.placed, Placed{Property: p, Pillar: PillarOverrides, Key: p.Name,
-			Rule: noted(ruleOverride, p.CreateOnly, p.Deprecated, "")})
+		key, renamed := s.overrides.take(p)
+		s.placed = append(s.placed, Placed{Property: p, Pillar: PillarOverrides, Key: key,
+			Rule: noted(ruleOverride, p.CreateOnly, p.Deprecated, renamed), Renamed: renamed})
 		s.diags = append(s.diags, cuts(p, vendorPath(p))...)
 	}
 	if s.r.NestedProvides {
@@ -203,7 +212,7 @@ func (s *splitter) nestedReadBack(p *Property, names []string) {
 // the warnings of carrying it into its pillar.
 func (s *splitter) keyed(p *Property, vendor string, pillar Pillar, space *keySpace, rule string, required bool) {
 	key, renamed := space.take(vendor)
-	rule = noted(rule, p.CreateOnly && pillar != PillarValues, p.Deprecated, renamed)
+	rule = noted(rule, p.CreateOnly && pillar != PillarValues && pillar != PillarProvides, p.Deprecated, renamed)
 	s.placed = append(s.placed, Placed{Property: p, Pillar: pillar, Key: key, Rule: rule, Renamed: renamed,
 		Required: required})
 	if pillar != PillarSecret {
@@ -226,6 +235,25 @@ func noted(rule string, replaced, deprecated bool, renamed string) string {
 		parts = append(parts, renamed)
 	}
 	return strings.Join(parts, "; ")
+}
+
+// overrideKeys holds the keys taken under infra.overrides, where each
+// writable property no other rule places is read in the vendor's spelling.
+type overrideKeys map[string]bool
+
+// take returns the key the override p is read under: its vendor name, or
+// where an override taken before it holds that name, its vendor path, dotted,
+// with composed text saying why. A format whose properties of one name sit at
+// several paths, such as a resource's root keys and the members of its
+// properties, so reads each under a key of its own.
+func (o overrideKeys) take(p *Property) (key, renamed string) {
+	key = p.Name
+	if o[key] {
+		key = vendorPath(p)
+		renamed = fmt.Sprintf("%s is read under its path, since the override %s holds its name", key, p.Name)
+	}
+	o[key] = true
+	return key, renamed
 }
 
 func ruled(rule func(*Type, *Property) bool, t *Type, p *Property) bool {

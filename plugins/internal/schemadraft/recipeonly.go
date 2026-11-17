@@ -17,8 +17,8 @@ type recipeOnlyMatch struct {
 	// Matched are the Component's values keys a property carries the name of,
 	// and Unmatched the others, each in the Component's order.
 	Matched, Unmatched []string
-	// Required are the vendor names of the properties the vendor requires that
-	// no values key matches, read from infra.overrides, in the vendor's order.
+	// Required are the keys under infra.overrides of the properties the vendor
+	// requires that no values key matches, in the vendor's order.
 	Required []string
 }
 
@@ -29,9 +29,10 @@ type recipeOnlyMatch struct {
 // Each values key of c equal, both snake-cased, to the name of a writable
 // property that is not a secret is read from values, the first such property in
 // the vendor's order taking it. Every other writable property that is not a
-// secret is read from infra.overrides under its vendor name, since the draft
-// does not see c's infra; one the vendor requires is required there. A secret
-// is read as Split placed it. Each provides key of c equal, both snake-cased,
+// secret is read from infra.overrides, since the draft does not see c's infra,
+// under the key Split would give it: its vendor name, or its dotted path where
+// an override read before it holds that name. One the vendor requires is
+// required there. A secret is read as Split placed it. Each provides key of c equal, both snake-cased,
 // to the joined path of a scalar read back is published from that attribute;
 // every other is unmapped, offered the attributes read back that no key maps.
 func recipeOnlyResource(t *Type, placed []Placed, c aggrega.CatalogComponent) (Resource, []string, recipeOnlyMatch) {
@@ -53,6 +54,7 @@ func recipeOnlyResource(t *Type, placed []Placed, c aggrega.CatalogComponent) (R
 	r := Resource{Type: t}
 	var rules []string
 	var readBack []Placed
+	overrides := overrideKeys{}
 	for _, pl := range placed {
 		p := pl.Property
 		switch {
@@ -68,15 +70,16 @@ func recipeOnlyResource(t *Type, placed []Placed, c aggrega.CatalogComponent) (R
 					false, p.Deprecated, ""))
 				continue
 			}
+			key, renamed := overrides.take(p)
 			rule := ruleOverride
 			if p.Required {
 				rule = fmt.Sprintf("required: the vendor schema requires it and %s declares no values key of its "+
 					"name, so the Release sets it under infra.overrides", c.Name)
-				m.Required = append(m.Required, p.Name)
+				m.Required = append(m.Required, key)
 			}
-			r.Inputs = append(r.Inputs, Input{Property: p, Source: InputSource{Pillar: PillarOverrides, Key: p.Name},
+			r.Inputs = append(r.Inputs, Input{Property: p, Source: InputSource{Pillar: PillarOverrides, Key: key},
 				Required: p.Required})
-			rules = append(rules, noted(rule, p.CreateOnly, p.Deprecated, ""))
+			rules = append(rules, noted(rule, p.CreateOnly, p.Deprecated, renamed))
 		case pl.Pillar == PillarProvides:
 			readBack = append(readBack, pl)
 		}

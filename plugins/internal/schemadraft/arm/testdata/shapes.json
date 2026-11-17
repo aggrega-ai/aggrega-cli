@@ -1,0 +1,117 @@
+[
+  {"$type": "StringType"},
+  {
+    "$type": "ObjectType",
+    "name": "Microsoft.Example/shapes",
+    "properties": {
+      "name": {"type": {"$ref": "#/0"}, "flags": 9, "description": "The shape's name."},
+      "location": {"type": {"$ref": "#/0"}, "flags": 1, "description": "The region of the shape."},
+      "properties": {"type": {"$ref": "#/2"}, "flags": 8, "description": "The settings of the shape."}
+    }
+  },
+  {
+    "$type": "ObjectType",
+    "name": "ShapeProperties",
+    "properties": {
+      "required": {"type": {"$ref": "#/0"}, "flags": 1, "description": "Set on every shape."},
+      "readBack": {"type": {"$ref": "#/0"}, "flags": 2, "description": "Read back once the shape exists."},
+      "writeOnly": {"type": {"$ref": "#/0"}, "flags": 4, "description": "Written and never read back."},
+      "createOnly": {"type": {"$ref": "#/0"}, "flags": 8, "description": "Fixed once the shape exists."},
+      "identifier": {"type": {"$ref": "#/0"}, "flags": 16, "description": "Tells one shape from another."},
+      "secret": {"type": {"$ref": "#/3"}, "flags": 0, "description": "A value kept from logs."},
+      "count": {"type": {"$ref": "#/4"}, "flags": 0, "description": "How many there are."},
+      "enabled": {"type": {"$ref": "#/5"}, "flags": 0, "description": "Whether it is on."},
+      "list": {"type": {"$ref": "#/6"}, "flags": 0, "description": "Some names."},
+      "mode": {"type": {"$ref": "#/9"}, "flags": 0, "description": "One of two modes."},
+      "tier": {"type": {"$ref": "#/10"}, "flags": 0, "description": "A known tier or another."},
+      "mixed": {"type": {"$ref": "#/11"}, "flags": 0, "description": "Text or a number."},
+      "shape": {"type": {"$ref": "#/12"}, "flags": 1, "description": "The outline, by kind."},
+      "anything": {"type": {"$ref": "#/15"}, "flags": 0, "description": "Any value at all."},
+      "node": {"type": {"$ref": "#/16"}, "flags": 0, "description": "A node of a tree."},
+      "deep": {"type": {"$ref": "#/17"}, "flags": 0, "description": "A chain of objects."},
+      "future": {"type": {"$ref": "#/24"}, "flags": 0, "description": "A value of a kind the reader does not know."},
+      "literal": {"type": {"$ref": "#/7"}, "flags": 0, "description": "One value alone."},
+      "labels": {"type": {"$ref": "#/25"}, "flags": 1, "description": "Labels by name."}
+    }
+  },
+  {"$type": "StringType", "sensitive": true, "minLength": 8, "maxLength": 64, "pattern": "^[^ ]+$"},
+  {"$type": "IntegerType", "minValue": 1, "maxValue": 5},
+  {"$type": "BooleanType"},
+  {"$type": "ArrayType", "itemType": {"$ref": "#/0"}, "minLength": 1, "maxLength": 3},
+  {"$type": "StringLiteralType", "value": "A"},
+  {"$type": "StringLiteralType", "value": "B"},
+  {"$type": "UnionType", "elements": [{"$ref": "#/7"}, {"$ref": "#/8"}]},
+  {"$type": "UnionType", "elements": [{"$ref": "#/7"}, {"$ref": "#/8"}, {"$ref": "#/0"}]},
+  {"$type": "UnionType", "elements": [{"$ref": "#/0"}, {"$ref": "#/4"}]},
+  {
+    "$type": "DiscriminatedObjectType",
+    "name": "Shape",
+    "discriminator": "kind",
+    "baseProperties": {"size": {"type": {"$ref": "#/4"}, "flags": 0, "description": "The size of the shape."}},
+    "elements": {"circle": {"$ref": "#/13"}, "square": {"$ref": "#/14"}}
+  },
+  {"$type": "ObjectType", "name": "Circle", "properties": {"radius": {"type": {"$ref": "#/4"}, "flags": 1}}},
+  {"$type": "ObjectType", "name": "Square", "properties": {"side": {"type": {"$ref": "#/4"}, "flags": 1}}},
+  {"$type": "AnyType"},
+  {
+    "$type": "ObjectType",
+    "name": "Node",
+    "properties": {
+      "label": {"type": {"$ref": "#/0"}, "flags": 0, "description": "The node's label."},
+      "child": {"type": {"$ref": "#/16"}, "flags": 0, "description": "The node below."}
+    }
+  },
+  {"$type": "ObjectType", "name": "Level1", "properties": {"next": {"type": {"$ref": "#/18"}, "flags": 0}}},
+  {"$type": "ObjectType", "name": "Level2", "properties": {"next": {"type": {"$ref": "#/19"}, "flags": 0}}},
+  {"$type": "ObjectType", "name": "Level3", "properties": {"next": {"type": {"$ref": "#/20"}, "flags": 0}}},
+  {"$type": "ObjectType", "name": "Level4", "properties": {"next": {"type": {"$ref": "#/21"}, "flags": 0}}},
+  {"$type": "ObjectType", "name": "Level5", "properties": {"next": {"type": {"$ref": "#/22"}, "flags": 0, "description": "Too deep."}}},
+  {"$type": "ObjectType", "name": "Level6", "properties": {"next": {"type": {"$ref": "#/23"}, "flags": 0}}},
+  {"$type": "ObjectType", "name": "Level7", "properties": {"leaf": {"type": {"$ref": "#/0"}, "flags": 0}}},
+  {"$type": "FutureType"},
+  {"$type": "ObjectType", "name": "Labels", "properties": {}, "additionalProperties": {"$ref": "#/0"}},
+  {
+    "$type": "ResourceType",
+    "name": "Microsoft.Example/shapes@2025-02-01",
+    "body": {"$ref": "#/1"},
+    "readableScopes": 31,
+    "writableScopes": 12
+  },
+  {
+    "$type": "DiscriminatedObjectType",
+    "name": "Microsoft.Example/scripts",
+    "discriminator": "kind",
+    "baseProperties": {
+      "name": {"type": {"$ref": "#/0"}, "flags": 9, "description": "The script's name."},
+      "location": {"type": {"$ref": "#/0"}, "flags": 1, "description": "The region of the script."}
+    },
+    "elements": {"cli": {"$ref": "#/28"}, "shell": {"$ref": "#/29"}}
+  },
+  {
+    "$type": "ObjectType",
+    "name": "CliScript",
+    "properties": {
+      "kind": {"type": {"$ref": "#/30"}, "flags": 1, "description": "The kind of script."},
+      "properties": {"type": {"$ref": "#/32"}, "flags": 1, "description": "The settings of a command-line script."}
+    }
+  },
+  {
+    "$type": "ObjectType",
+    "name": "ShellScript",
+    "properties": {
+      "kind": {"type": {"$ref": "#/31"}, "flags": 1, "description": "The kind of script."},
+      "properties": {"type": {"$ref": "#/33"}, "flags": 1, "description": "The settings of a shell script."}
+    }
+  },
+  {"$type": "StringLiteralType", "value": "cli"},
+  {"$type": "StringLiteralType", "value": "shell"},
+  {"$type": "ObjectType", "name": "CliProperties", "properties": {"command": {"type": {"$ref": "#/0"}, "flags": 1}}},
+  {"$type": "ObjectType", "name": "ShellProperties", "properties": {"script": {"type": {"$ref": "#/0"}, "flags": 1}}},
+  {
+    "$type": "ResourceType",
+    "name": "Microsoft.Example/scripts@2025-02-01",
+    "body": {"$ref": "#/27"},
+    "readableScopes": 8,
+    "writableScopes": 8
+  }
+]

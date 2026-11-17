@@ -1,0 +1,83 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: microsoft-example-vaults
+  version: 0.1.0
+  description: "Draft Recipe realizing imported/component/microsoft-example-vaults on arm with one resource of the type Microsoft.Example/vaults@2025-01-01, imported from a source in the arm-schema format."
+spec:
+  # This Recipe realizes imported/component/microsoft-example-vaults with one resource of the type Microsoft.Example/vaults@2025-01-01. It reads the keys below, each with its type, its rule and the first sentence of the vendor's description; any other key under infra.overrides halts the build naming it.
+  # A secret is a deploy-time parameter whose name is the instance's name in capitalized words, written <instance> below, followed by the name the line gives.
+  # infra.overrides.identity: object; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] The identity the vault acts as.
+  # infra.location: string, required; placement: where the resource is deployed
+  # [vendor schema text] The region the vault is placed in.
+  # values.name: string, required; identity: the resource's own name or identifier
+  # [vendor schema text] The vault's name, unique in its resource group.
+  # infra.sku: object, required; required: the vendor schema requires it
+  # [vendor schema text] The pricing tier of the vault.
+  # infra.overrides.tags: object; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Labels set on the vault.
+  # infra.overrides.accessPolicies: array; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Who may use the vault.
+  # parameter <instance>AdminPassword: string, required; secret: declared by the Recipe as a deploy-time parameter
+  # [vendor schema text] The password of the vault's administrator.
+  # infra.overrides.createMode: string; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] How the vault is created.
+  # infra.overrides.enabledForDeployment: boolean; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Whether a template being deployed may read the vault.
+  # infra.overrides.softDeleteRetentionInDays: integer; override: writable, set under infra.overrides in the vendor's spelling; replaced on change
+  # [vendor schema text] How long a deleted item is kept, in days.
+  # infra.tenant_id: string, required; required: the vendor schema requires it
+  # [vendor schema text] The tenant the vault serves.
+  # template.yaml declares the resource under the symbolic name locals.symbol holds, and the arm provider merges it into the template of the instance's boundary.
+  capability: arm
+  implements: imported/component/microsoft-example-vaults:0.1.0
+  locals:
+    # The resource's symbolic name: the instance's name in capitalized words, letters and digits alone, so two instances in one template declare two resources.
+    symbol: "{{ capitalizedWords .context.instance_id }}"
+  provides:
+    # The String Pipe: each value is one whole ARM expression, piped as written into a consumer's context; ARM evaluates it when the template is deployed.
+    etag: "[reference('{{ .locals.symbol }}', '2025-01-01', 'Full').etag]"
+    id: "[resourceId('Microsoft.Example/vaults'{{ range splitList \"/\" (toString (index .values \"name\")) }}, '{{ replace \"'\" \"''\" . }}'{{ end }})]"
+    identity_principal_id: "[reference('{{ .locals.symbol }}', '2025-01-01', 'Full').identity.principalId]"
+    identity_tenant_id: "[reference('{{ .locals.symbol }}', '2025-01-01', 'Full').identity.tenantId]"
+    endpoints_primary: "[reference('{{ .locals.symbol }}').endpoints.primary]"
+    endpoints_secondary: "[reference('{{ .locals.symbol }}').endpoints.secondary]"
+    provisioning_state: "[reference('{{ .locals.symbol }}').provisioningState]"
+    vault_uri: "[reference('{{ .locals.symbol }}').vaultUri]"
+  assertions:
+    # Halts naming any key under infra.overrides this Recipe does not read.
+    overrides_this_recipe_reads: |
+      {{- $o := optional .infra "overrides" dict -}}
+      {{- range $k, $v := $o -}}
+      {{- if not (has $k (list "identity" "tags" "accessPolicies" "createMode" "enabledForDeployment" "softDeleteRetentionInDays")) -}}
+      {{- fail (printf "infra.overrides.%s is not a setting this Recipe reads: it reads %s from infra.overrides; remove infra.overrides.%s from the Release" $k "identity, tags, accessPolicies, createMode, enabledForDeployment and softDeleteRetentionInDays" $k) -}}
+      {{- end -}}
+      {{- end -}}
+    # Halts on an attachment under admin_password: this Recipe declares each secret as a deploy-time parameter instead.
+    secrets_are_parameters: |
+      {{- $f := default dict .features -}}
+      {{- if hasKey $f "admin_password" -}}
+      {{- fail (printf "a secret is attached under %s, and this Recipe declares the secret %s of %s as the deploy-time parameter %s%s, supplied when the template is deployed: remove the attachment and supply the value to that parameter when deploying" "admin_password" "adminPassword" "Microsoft.Example/vaults@2025-01-01" (capitalizedWords .metadata.instance_id) "AdminPassword") -}}
+      {{- end -}}
+  artifacts:
+    template.yaml: |
+      {{- $resource := dict "type" "Microsoft.Example/vaults" "apiVersion" "2025-01-01" -}}
+      {{- $properties := dict -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "identity") }}{{ $_ := set $resource "identity" (index .infra "overrides" "identity") }}{{ end -}}
+      {{ $_ := set $resource "location" (index .infra "location") -}}
+      {{ $_ := set $resource "name" (index .values "name") -}}
+      {{ $in1 := (index .infra "sku") }}{{ $out1 := dict }}{{ if hasKey $in1 "max_capacity" }}{{ $_ := set $out1 "maxCapacity" (index $in1 "max_capacity") }}{{ end }}{{ if hasKey $in1 "name" }}{{ $_ := set $out1 "name" (index $in1 "name") }}{{ end }}{{ $_ := set $resource "sku" $out1 -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "tags") }}{{ $_ := set $resource "tags" (index .infra "overrides" "tags") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "accessPolicies") }}{{ $_ := set $properties "accessPolicies" (index .infra "overrides" "accessPolicies") }}{{ end -}}
+      {{ $_ := set $properties "adminPassword" (printf "[parameters('%s%s')]" .locals.symbol "AdminPassword") -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "createMode") }}{{ $_ := set $properties "createMode" (index .infra "overrides" "createMode") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "enabledForDeployment") }}{{ $_ := set $properties "enabledForDeployment" (index .infra "overrides" "enabledForDeployment") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "softDeleteRetentionInDays") }}{{ $_ := set $properties "softDeleteRetentionInDays" (index .infra "overrides" "softDeleteRetentionInDays") }}{{ end -}}
+      {{ $_ := set $properties "tenantId" (index .infra "tenant_id") -}}
+      {{ if $properties }}{{ $_ := set $resource "properties" $properties }}{{ end -}}
+      parameters:
+        {{ .locals.symbol }}AdminPassword:
+          type: securestring
+      resources:
+        {{ .locals.symbol }}: {{ toJson $resource }}

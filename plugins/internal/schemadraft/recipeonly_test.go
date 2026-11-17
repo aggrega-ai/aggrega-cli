@@ -172,3 +172,24 @@ func TestComponentDraftedNewWarns(t *testing.T) {
 		t.Errorf("a drafted Component's Recipe requires overrides")
 	}
 }
+
+// TestRecipeOnlyOverridesSharingANameTakeTheirPath reads two overrides of one
+// vendor name on a Recipe drafted for a catalog Component under two keys, as
+// Split keys them.
+func TestRecipeOnlyOverridesSharingANameTakeTheirPath(t *testing.T) {
+	root := prop("kind", KindString)
+	inner := member([]string{"properties"}, "kind", KindString)
+	typ := typeOf(root, inner)
+	placed, _ := Split(typ, testRules)
+	res, rules, _ := recipeOnlyResource(typ, placed, aggrega.CatalogComponent{Name: "core/messaging/queue"})
+	var keys []string
+	for _, in := range res.Inputs {
+		keys = append(keys, in.Source.Key)
+	}
+	if want := []string{"kind", "properties.kind"}; !reflect.DeepEqual(keys, want) {
+		t.Fatalf("override keys %v, want %v", keys, want)
+	}
+	if !strings.Contains(rules[1], "properties.kind is read under its path") {
+		t.Errorf("rule %q does not say why properties.kind is read under its path", rules[1])
+	}
+}

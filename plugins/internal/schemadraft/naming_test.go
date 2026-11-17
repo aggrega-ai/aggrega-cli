@@ -181,3 +181,55 @@ func TestRespellReadsTheKeysCarryWrites(t *testing.T) {
 		t.Fatalf("respelled %v, want %v", got, want)
 	}
 }
+
+// TestRespellerValueBuildsIntoADict sets the values one Respeller rebuilds into
+// a dict of one template text, as a writer building a whole body does: the
+// statements of two values never share a variable, they write nothing, and the
+// dict holds each value under the vendor's names.
+func TestRespellerValueBuildsIntoADict(t *testing.T) {
+	settings := prop("Settings", KindObject)
+	limits := member(settings.Path, "Limits", KindObject)
+	limits.Properties = []*Property{member(limits.Path, "MaxSize", KindInteger)}
+	settings.Properties = []*Property{member(settings.Path, "KmsKeyId", KindString), limits}
+	rules := prop("Rules", KindArray)
+	rules.Items = &Property{Name: "Rules", Kinds: []Kind{KindObject}}
+	rules.Items.Properties = []*Property{member(nil, "CidrIp", KindString)}
+
+	var r Respeller
+	s1, v1 := r.Value(settings, `(index .infra "settings")`)
+	s2, v2 := r.Value(rules, `(index .infra "rules")`)
+	if v1 == v2 {
+		t.Fatalf("two values are held by one variable %s", v1)
+	}
+	for _, s := range []string{s1, s2} {
+		if s == "" || strings.ContainsAny(s, "\n") || strings.Contains(s, "{{-") || strings.Contains(s, "-}}") {
+			t.Fatalf("statements %q, want one line of actions with no trim marker", s)
+		}
+	}
+	text := `{{ $body := dict }}` + s1 + `{{ $_ := set $body "Settings" ` + v1 + ` }}` + s2 +
+		`{{ $_ := set $body "Rules" ` + v2 + ` }}{{ toJson $body }}`
+	tpl, err := template.New("dict").Option("missingkey=error").Funcs(gotmpl.FuncMap()).Parse(text)
+	if err != nil {
+		t.Fatalf("parse %q: %v", text, err)
+	}
+	var out strings.Builder
+	infra := jsonValue(t, `{"settings": {"kms_key_id": "k", "limits": {"max_size": 3}}, "rules": [{"cidr_ip": "10.0.0.0/8"}]}`)
+	if err := tpl.Execute(&out, map[string]any{"infra": infra}); err != nil {
+		t.Fatalf("execute %q: %v", text, err)
+	}
+	want := jsonValue(t, `{"Settings": {"KmsKeyId": "k", "Limits": {"MaxSize": 3}}, "Rules": [{"CidrIp": "10.0.0.0/8"}]}`)
+	if got := jsonValue(t, out.String()); !reflect.DeepEqual(got, want) {
+		t.Fatalf("built %v, want %v", got, want)
+	}
+
+	// A value passed whole takes no statement and is its own expression.
+	if s, v := r.Value(prop("Name", KindString), ".infra.name"); s != "" || v != ".infra.name" {
+		t.Errorf("a scalar gives %q and %q, want no statement and its expression", s, v)
+	}
+	// Respell is a fresh Respeller's statements followed by toJson of its value.
+	var fresh Respeller
+	s, v := fresh.Value(settings, ".infra.v")
+	if got := Respell(settings, ".infra.v"); got != s+"{{ toJson "+v+" }}" {
+		t.Errorf("Respell wrote %q, want the statements and toJson of %s", got, v)
+	}
+}

@@ -169,6 +169,18 @@ func TestSplitCreateOnlyIsReplacedOnChange(t *testing.T) {
 	}
 }
 
+// TestSplitReadBackIsNeverReplacedOnChange holds a create-only attribute the
+// vendor reads back to a provides key whose rule says nothing of a change, a
+// draft writing no value for it.
+func TestSplitReadBackIsNeverReplacedOnChange(t *testing.T) {
+	id := prop("Id", KindString)
+	id.ReadOnly, id.CreateOnly = true, true
+	placed, _ := Split(typeOf(id), testRules)
+	if got := placedAs(t, placed, "Id"); got.Pillar != PillarProvides || strings.Contains(got.Rule, "replaced on change") {
+		t.Errorf("Id placed %+v, want a provides key whose rule says nothing of a change", got)
+	}
+}
+
 func TestSplitDeprecatedIsMarked(t *testing.T) {
 	old := prop("OldSetting", KindString)
 	old.Deprecated = true
@@ -263,5 +275,28 @@ func TestSplitNamesBothPropertiesOfOneKey(t *testing.T) {
 	if want := "SIZE is written size_2, since Size takes size"; got.Key != "size_2" || got.Renamed != want ||
 		!strings.HasSuffix(got.Rule, want) {
 		t.Errorf("SIZE placed %+v, want renamed %q", got, want)
+	}
+}
+
+// TestSplitOverridesSharingANameTakeTheirPath reads two overrides of one vendor
+// name, at two paths, under two keys: the first under its name, the second
+// under its dotted path, its rule saying why.
+func TestSplitOverridesSharingANameTakeTheirPath(t *testing.T) {
+	root := prop("kind", KindString)
+	inner := member([]string{"properties"}, "kind", KindString)
+	typ := typeOf(root, inner)
+	placed, _ := Split(typ, testRules)
+	if got := placedAs(t, placed, "kind"); got.Pillar != PillarOverrides || got.Key != "kind" || got.Renamed != "" {
+		t.Errorf("kind placed %+v, want the override kind", got)
+	}
+	got := placedAs(t, placed, "properties.kind")
+	want := "properties.kind is read under its path, since the override kind holds its name"
+	if got.Pillar != PillarOverrides || got.Key != "properties.kind" || got.Renamed != want ||
+		!strings.HasSuffix(got.Rule, want) {
+		t.Errorf("properties.kind placed %+v, want the override properties.kind renamed %q", got, want)
+	}
+	res, _ := resourceFor(typ, placed)
+	if len(res.Inputs) != 2 || res.Inputs[0].Source.Template() == res.Inputs[1].Source.Template() {
+		t.Errorf("the two overrides are read alike: %+v", res.Inputs)
 	}
 }

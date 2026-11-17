@@ -1,0 +1,109 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: imported/component/microsoft-example-vaults
+  version: 0.1.0
+  description: "Draft Component of the resource type Microsoft.Example/vaults@2025-01-01, imported from a source in the arm-schema format."
+  labels:
+    component.aggrega.ai/type: resource
+    component.aggrega.ai/hosting: managed
+spec:
+  schema:
+    values:
+      type: object
+      properties:
+        # identity: the resource's own name or identifier
+        # [vendor schema text] The vault's name, unique in its resource group.
+        name:
+          type: string
+          description: "[vendor schema text] The vault's name, unique in its resource group."
+          required: true
+          pattern: "^[a-z][a-z0-9-]{2,23}$"
+          minLength: 3
+          maxLength: 24
+      additionalProperties: false
+    infra:
+      type: object
+      properties:
+        # placement: where the resource is deployed
+        # [vendor schema text] The region the vault is placed in.
+        location:
+          type: string
+          description: "[vendor schema text] The region the vault is placed in."
+          required: true
+        # required: the vendor schema requires it
+        # [vendor schema text] The pricing tier of the vault.
+        sku:
+          type: object
+          description: "[vendor schema text] The pricing tier of the vault."
+          required: true
+          properties:
+            max_capacity:
+              type: integer
+              description: "[vendor schema text] The most units the tier scales to."
+              min: 1
+              max: 10
+            name:
+              type: string
+              description: "[vendor schema text] The tier's name."
+              required: true
+              enum: ["Standard", "Premium"]
+          additionalProperties: false
+        # required: the vendor schema requires it
+        # [vendor schema text] The tenant the vault serves. Requests from other tenants are refused.
+        tenant_id:
+          type: string
+          description: "[vendor schema text] The tenant the vault serves. Requests from other tenants are refused."
+          required: true
+          pattern: "^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$"
+        # override: every writable property no other rule places, each under the vendor's own name
+        overrides:
+          type: object
+          description: "Writable settings of Microsoft.Example/vaults@2025-01-01, each under the vendor's own name, which the Recipe passes to the resource as written; its header lists the names it reads."
+          additionalProperties: true
+      additionalProperties: false
+    provides:
+      type: object
+      properties:
+        # read back: published under provides
+        # [vendor schema text] The version stamp of the vault's state.
+        etag:
+          type: string
+          description: "[vendor schema text] The version stamp of the vault's state."
+        # read back: published under provides
+        # [vendor schema text] The vault's resource ID. Written for this test.
+        id:
+          type: string
+          description: "[vendor schema text] The vault's resource ID. Written for this test."
+        # read back: published under provides
+        # [vendor schema text] The principal the identity signs in as.
+        identity_principal_id:
+          type: string
+          description: "[vendor schema text] The principal the identity signs in as."
+        # read back: published under provides
+        # [vendor schema text] The tenant of the identity.
+        identity_tenant_id:
+          type: string
+          description: "[vendor schema text] The tenant of the identity."
+        # read back: published under provides
+        # [vendor schema text] The primary address.
+        endpoints_primary:
+          type: string
+          description: "[vendor schema text] The primary address."
+        # read back: published under provides
+        # [vendor schema text] The secondary address.
+        endpoints_secondary:
+          type: string
+          description: "[vendor schema text] The secondary address."
+        # read back: published under provides
+        # [vendor schema text] The state of the last change.
+        provisioning_state:
+          type: string
+          description: "[vendor schema text] The state of the last change."
+          enum: ["Succeeded", "Failed"]
+        # read back: published under provides
+        # [vendor schema text] The address clients reach the vault at.
+        vault_uri:
+          type: string
+          description: "[vendor schema text] The address clients reach the vault at."
+      additionalProperties: false

@@ -1,0 +1,28 @@
+[
+  {"$type": "StringType"},
+  {
+    "$type": "ObjectType",
+    "name": "Microsoft.Example/policies",
+    "properties": {
+      "id": {"type": {"$ref": "#/0"}, "flags": 10, "description": "The policy's resource ID."},
+      "name": {"type": {"$ref": "#/0"}, "flags": 9, "description": "The policy's name."},
+      "properties": {"type": {"$ref": "#/2"}, "flags": 0, "description": "The settings of the policy."}
+    }
+  },
+  {
+    "$type": "ObjectType",
+    "name": "PolicyProperties",
+    "properties": {
+      "level": {"type": {"$ref": "#/0"}, "flags": 1, "description": "How strictly the policy applies."},
+      "state": {"type": {"$ref": "#/0"}, "flags": 2, "description": "Whether the policy is in force."}
+    }
+  },
+  {"$type": "ResourceType", "name": "Microsoft.Example/tenantPolicies@2025-03-01", "body": {"$ref": "#/1"}, "readableScopes": 1, "writableScopes": 1},
+  {"$type": "ResourceType", "name": "Microsoft.Example/extensionPolicies@2025-03-01", "body": {"$ref": "#/1"}, "readableScopes": 16, "writableScopes": 16},
+  {"$type": "ResourceType", "name": "Microsoft.Example/tenantAndExtensionPolicies@2025-03-01", "body": {"$ref": "#/1"}, "readableScopes": 17, "writableScopes": 17},
+  {"$type": "ResourceType", "name": "Microsoft.Example/subscriptionPolicies@2025-03-01", "body": {"$ref": "#/1"}, "readableScopes": 4, "writableScopes": 4},
+  {"$type": "ResourceType", "name": "Microsoft.Example/managementGroupPolicies@2025-03-01", "body": {"$ref": "#/1"}, "readableScopes": 2, "writableScopes": 2},
+  {"$type": "ResourceType", "name": "Microsoft.Example/policies@2025-03-01", "body": {"$ref": "#/1"}, "readableScopes": 31, "writableScopes": 31},
+  {"$type": "ResourceType", "name": "Microsoft.Example/widePolicies@2025-03-01", "body": {"$ref": "#/1"}, "readableScopes": 7, "writableScopes": 7},
+  {"$type": "ResourceType", "name": "Microsoft.Example/readOnlyPolicies@2025-03-01", "body": {"$ref": "#/1"}, "readableScopes": 8, "writableScopes": 0}
+]

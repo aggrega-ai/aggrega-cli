@@ -105,8 +105,8 @@ type memberKey struct {
 }
 
 // memberKeys returns the members of the object p a draft describes, in the
-// vendor's order, each with its key. Carry describes these members and Respell
-// reads them, so the Component and the Recipe name each member alike.
+// vendor's order, each with its key. Carry describes these members and a
+// Respeller reads them, so the Component and the Recipe name each member alike.
 func memberKeys(p *Property) []memberKey {
 	space := newKeySpace()
 	var out []memberKey
@@ -133,24 +133,44 @@ func rebuildsList(p *Property) bool {
 }
 
 // Respell returns the template text that writes, as JSON, the vendor-spelled
-// value of p built from the snake_case pillar value expr evaluates to. It holds
-// no line break and no trim marker, so it stands after a key as
+// value of p built from the snake_case pillar value expr evaluates to: the
+// statements a fresh Respeller's Value gives, followed by toJson of its value.
+// It holds no line break and no trim marker, so it stands after a key as
 // {{ toJson <expr> }} would, which is what it is for a value passed whole: a
-// scalar, an open or cut object, or a list of such values.
+// scalar, an open or cut object, or a list of such values. Two Respell texts
+// written into one template each number their variables from one, so the
+// second redeclares the first's; a text building several values that it reads
+// together takes one Respeller instead.
+func Respell(p *Property, expr string) string {
+	var r Respeller
+	statements, value := r.Value(p, expr)
+	return statements + "{{ toJson " + value + " }}"
+}
+
+// Respeller rebuilds vendor-spelled values within one template text, numbering
+// the variables of every value it rebuilds in turn, so the values of one text
+// never share a variable. A writer building a whole body as a dict takes one
+// Respeller for the text and sets each value Value gives into the dict.
+type Respeller struct{ n int }
+
+// Value returns the statements that build the vendor-spelled value of p from the
+// snake_case pillar value expr evaluates to, and the template expression
+// holding it once they have run. A value passed whole — a scalar, an open or cut
+// object, or a list of such values — takes no statement, and its expression is
+// expr.
 //
 // A closed object is rebuilt member by member under the vendor's names, and a
 // list of such objects item by item. A member is copied where the value holds
 // its key, tested with hasKey and read with index, so a member set to false, 0
-// or "" is copied as set and an unset one is left out. Every statement before
-// the final toJson only assigns, so it writes nothing. Its variables are named
-// $in, $out and $item followed by a number, and $_; text it is written into
-// declares none of those names.
-func Respell(p *Property, expr string) string {
+// or "" is copied as set and an unset one is left out. The statements hold no
+// line break and no trim marker, and only assign, so they write nothing; the
+// expression is read in the scope they run in. Their variables are named $in,
+// $out and $item followed by a number, and they discard what set returns into
+// $_; text they are written into declares none of the numbered names.
+func (r *Respeller) Value(p *Property, expr string) (statements, value string) {
 	var b strings.Builder
-	n := 0
-	value := respell(&b, p, expr, &n)
-	b.WriteString("{{ toJson " + value + " }}")
-	return b.String()
+	value = respell(&b, p, expr, &r.n)
+	return b.String(), value
 }
 
 // respell writes the statements building the vendor-spelled value of p from

@@ -1,0 +1,136 @@
+[
+  {"$type": "StringType"},
+  {"$type": "StringLiteralType", "value": "Microsoft.Example/vaults"},
+  {"$type": "StringLiteralType", "value": "2025-01-01"},
+  {
+    "$type": "ObjectType",
+    "name": "Microsoft.Example/vaults",
+    "properties": {
+      "id": {"type": {"$ref": "#/0"}, "flags": 10, "description": "The vault's resource ID. Written for this test."},
+      "name": {"type": {"$ref": "#/4"}, "flags": 9, "description": "The vault's name, unique in its resource group."},
+      "type": {"type": {"$ref": "#/1"}, "flags": 10, "description": "The resource type."},
+      "apiVersion": {"type": {"$ref": "#/2"}, "flags": 10, "description": "The version of the API."},
+      "location": {"type": {"$ref": "#/0"}, "flags": 1, "description": "The region the vault is placed in."},
+      "tags": {"type": {"$ref": "#/5"}, "flags": 0, "description": "Labels set on the vault."},
+      "sku": {"type": {"$ref": "#/6"}, "flags": 1, "description": "The pricing tier of the vault.\n\nA second paragraph the draft leaves out."},
+      "identity": {"type": {"$ref": "#/11"}, "flags": 0, "description": "The identity the vault acts as."},
+      "etag": {"type": {"$ref": "#/0"}, "flags": 2, "description": "The version stamp of the vault's state."},
+      "properties": {"type": {"$ref": "#/15"}, "flags": 1, "description": "The settings of the vault."}
+    }
+  },
+  {"$type": "StringType", "minLength": 3, "maxLength": 24, "pattern": "^[a-z][a-z0-9-]{2,23}$"},
+  {"$type": "ObjectType", "name": "VaultTags", "properties": {}, "additionalProperties": {"$ref": "#/0"}},
+  {
+    "$type": "ObjectType",
+    "name": "Sku",
+    "properties": {
+      "name": {"type": {"$ref": "#/9"}, "flags": 1, "description": "The tier's name."},
+      "maxCapacity": {"type": {"$ref": "#/10"}, "flags": 0, "description": "The most units the tier scales to."}
+    }
+  },
+  {"$type": "StringLiteralType", "value": "Standard"},
+  {"$type": "StringLiteralType", "value": "Premium"},
+  {"$type": "UnionType", "elements": [{"$ref": "#/7"}, {"$ref": "#/8"}]},
+  {"$type": "IntegerType", "minValue": 1, "maxValue": 10},
+  {
+    "$type": "ObjectType",
+    "name": "VaultIdentity",
+    "properties": {
+      "type": {"type": {"$ref": "#/14"}, "flags": 1, "description": "How the vault is identified."},
+      "principalId": {"type": {"$ref": "#/0"}, "flags": 2, "description": "The principal the identity signs in as."},
+      "tenantId": {"type": {"$ref": "#/0"}, "flags": 2, "description": "The tenant of the identity."}
+    }
+  },
+  {"$type": "StringLiteralType", "value": "None"},
+  {"$type": "StringLiteralType", "value": "SystemAssigned"},
+  {"$type": "UnionType", "elements": [{"$ref": "#/12"}, {"$ref": "#/13"}]},
+  {
+    "$type": "ObjectType",
+    "name": "VaultProperties",
+    "properties": {
+      "tenantId": {"type": {"$ref": "#/16"}, "flags": 1, "description": "The tenant the vault serves. Requests from other tenants are refused."},
+      "adminPassword": {"type": {"$ref": "#/17"}, "flags": 5, "description": "The password of the vault's administrator."},
+      "enabledForDeployment": {"type": {"$ref": "#/18"}, "flags": 0, "description": "Whether a template being deployed may read the vault."},
+      "softDeleteRetentionInDays": {"type": {"$ref": "#/19"}, "flags": 8, "description": "How long a deleted item is kept, in days."},
+      "accessPolicies": {"type": {"$ref": "#/20"}, "flags": 0, "description": "Who may use the vault."},
+      "createMode": {"type": {"$ref": "#/26"}, "flags": 4, "description": "How the vault is created."},
+      "vaultUri": {"type": {"$ref": "#/0"}, "flags": 2, "description": "The address clients reach the vault at."},
+      "provisioningState": {"type": {"$ref": "#/29"}, "flags": 2, "description": "The state of the last change."},
+      "endpoints": {"type": {"$ref": "#/30"}, "flags": 2, "description": "The addresses of the vault by protocol."}
+    }
+  },
+  {"$type": "StringType", "pattern": "^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$"},
+  {"$type": "StringType", "sensitive": true, "minLength": 12},
+  {"$type": "BooleanType"},
+  {"$type": "IntegerType", "minValue": 7, "maxValue": 90},
+  {"$type": "ArrayType", "itemType": {"$ref": "#/21"}, "maxLength": 16},
+  {
+    "$type": "ObjectType",
+    "name": "AccessPolicy",
+    "properties": {
+      "objectId": {"type": {"$ref": "#/0"}, "flags": 1, "description": "The principal granted access."},
+      "permissions": {"type": {"$ref": "#/22"}, "flags": 0, "description": "What the principal may do."}
+    }
+  },
+  {"$type": "ArrayType", "itemType": {"$ref": "#/25"}},
+  {"$type": "StringLiteralType", "value": "get"},
+  {"$type": "StringLiteralType", "value": "list"},
+  {"$type": "UnionType", "elements": [{"$ref": "#/23"}, {"$ref": "#/24"}, {"$ref": "#/0"}]},
+  {"$type": "UnionType", "elements": [{"$ref": "#/27"}, {"$ref": "#/28"}]},
+  {"$type": "StringLiteralType", "value": "default"},
+  {"$type": "StringLiteralType", "value": "recover"},
+  {"$type": "UnionType", "elements": [{"$ref": "#/31"}, {"$ref": "#/32"}]},
+  {
+    "$type": "ObjectType",
+    "name": "VaultEndpoints",
+    "properties": {
+      "primary": {"type": {"$ref": "#/0"}, "flags": 0, "description": "The primary address."},
+      "secondary": {"type": {"$ref": "#/0"}, "flags": 0, "description": "The secondary address."}
+    }
+  },
+  {"$type": "StringLiteralType", "value": "Succeeded"},
+  {"$type": "StringLiteralType", "value": "Failed"},
+  {
+    "$type": "ResourceType",
+    "name": "Microsoft.Example/vaults@2025-01-01",
+    "body": {"$ref": "#/3"},
+    "readableScopes": 8,
+    "writableScopes": 8
+  },
+  {
+    "$type": "ResourceFunctionType",
+    "name": "listKeys",
+    "resourceType": "Microsoft.Example/vaults",
+    "apiVersion": "2025-01-01",
+    "output": {"$ref": "#/0"}
+  },
+  {"$type": "StringType", "maxLength": 10, "pattern": "^[a-z]{3,10}$"},
+  {"$type": "StringLiteralType", "value": "Microsoft.Example/vaults/keys"},
+  {
+    "$type": "ObjectType",
+    "name": "Microsoft.Example/vaults/keys",
+    "properties": {
+      "id": {"type": {"$ref": "#/0"}, "flags": 10, "description": "The key's resource ID."},
+      "name": {"type": {"$ref": "#/35"}, "flags": 9, "description": "The key's name."},
+      "type": {"type": {"$ref": "#/36"}, "flags": 10, "description": "The resource type."},
+      "apiVersion": {"type": {"$ref": "#/2"}, "flags": 10, "description": "The version of the API."},
+      "properties": {"type": {"$ref": "#/38"}, "flags": 1, "description": "The settings of the key."}
+    }
+  },
+  {
+    "$type": "ObjectType",
+    "name": "KeyProperties",
+    "properties": {
+      "size": {"type": {"$ref": "#/39"}, "flags": 1, "description": "The key's size in bits."},
+      "keyUri": {"type": {"$ref": "#/0"}, "flags": 2, "description": "The key's address."}
+    }
+  },
+  {"$type": "IntegerType", "minValue": 2048},
+  {
+    "$type": "ResourceType",
+    "name": "Microsoft.Example/vaults/keys@2025-01-01",
+    "body": {"$ref": "#/37"},
+    "readableScopes": 8,
+    "writableScopes": 8
+  }
+]
