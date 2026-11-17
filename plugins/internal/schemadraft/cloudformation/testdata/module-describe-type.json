@@ -1,0 +1,11 @@
+{
+  "Arn": "arn:aws:cloudformation:eu-west-1::type/module/Example-Ledger-Bundle-MODULE",
+  "Type": "MODULE",
+  "TypeName": "Example::Ledger::Bundle::MODULE",
+  "Description": "A module bundling a ledger, written for this test.",
+  "Schema": "{\"typeName\":\"Example::Ledger::Bundle::MODULE\",\"description\":\"A module bundling a ledger and its subnet group, written for this test.\",\"properties\":{\"Parameters\":{\"type\":\"object\",\"description\":\"The module's parameters.\"},\"Resources\":{\"type\":\"object\",\"description\":\"The resources the module holds.\"}},\"additionalProperties\":true}",
+  "ProvisioningType": "FULLY_MUTABLE",
+  "DeprecatedStatus": "LIVE",
+  "Visibility": "PUBLIC",
+  "IsDefaultVersion": true
+}

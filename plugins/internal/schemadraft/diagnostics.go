@@ -19,10 +19,19 @@ const (
 
 // The codes of the diagnostics an import raises once a type is selected.
 const (
-	codeResourceSchemaUnreadable = "resource-schema-unreadable"
-	codeComponentExists          = "component-exists"
-	codeComponentDraftedNew      = "component-drafted-new"
-	codeProvidesUnmapped         = "provides-unmapped"
+	codeComponentExists     = "component-exists"
+	codeComponentDraftedNew = "component-drafted-new"
+	codeProvidesUnmapped    = "provides-unmapped"
+)
+
+// The codes a format's reader halts with, which the core raises too.
+const (
+	// CodeResourceSchemaUnreadable halts on a source that parses but is not the
+	// format's schema shape, naming what it lacks.
+	CodeResourceSchemaUnreadable = "resource-schema-unreadable"
+	// CodeResourceTypeRefused halts on a requested type the format's provider
+	// cannot realize, naming why.
+	CodeResourceTypeRefused = "resource-type-refused"
 )
 
 // resourceTypesUnreadable halts on a resource_types value, or an entry of it,

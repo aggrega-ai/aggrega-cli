@@ -1,0 +1,9 @@
+{
+  "typeName": "Example::Ledger::Bundle::MODULE",
+  "description": "A module bundling a ledger and its subnet group, written for this test.",
+  "properties": {
+    "Parameters": {"type": "object", "description": "The module's parameters."},
+    "Resources": {"type": "object", "description": "The resources the module holds."}
+  },
+  "additionalProperties": true
+}

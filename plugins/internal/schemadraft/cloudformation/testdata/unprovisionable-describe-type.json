@@ -1,0 +1,11 @@
+{
+  "Arn": "arn:aws:cloudformation:eu-west-1::type/resource/AWS-Example-Archive",
+  "Type": "RESOURCE",
+  "TypeName": "AWS::Example::Archive",
+  "Description": "An archive CloudFormation cannot create, written for this test.",
+  "Schema": "{\"typeName\":\"AWS::Example::Archive\",\"description\":\"An archive the example service keeps, written for this test.\",\"properties\":{\"ArchiveName\":{\"type\":\"string\",\"description\":\"The archive's name.\"}},\"additionalProperties\":false}",
+  "ProvisioningType": "NON_PROVISIONABLE",
+  "DeprecatedStatus": "LIVE",
+  "Visibility": "PUBLIC",
+  "IsDefaultVersion": true
+}

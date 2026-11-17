@@ -276,12 +276,12 @@ func paramsSummary(res Resource) string {
 }
 
 // draftRationale states what a Component drafted for t holds, counting its keys
-// by the rule that placed them, and where they hold, that it refreshes the
-// Component the catalog holds, that its category is the fallback segment, and
-// each property whose key carries a numeric suffix.
+// by the rule that placed them and naming each secret, and where they hold, that
+// it refreshes the Component the catalog holds, that its category is the
+// fallback segment, and each property whose key carries a numeric suffix.
 func draftRationale(f Format, t *Type, name string, placed []Placed, refresh, fallback bool) string {
-	var identity, placement, required, overrides, secrets, provided, withheld, notProvided int
-	var renamed []string
+	var identity, placement, required, overrides, provided, withheld, notProvided int
+	var renamed, secrets []string
 	for _, pl := range placed {
 		switch pl.Pillar {
 		case PillarValues:
@@ -295,7 +295,7 @@ func draftRationale(f Format, t *Type, name string, placed []Placed, refresh, fa
 		case PillarOverrides:
 			overrides++
 		case PillarSecret:
-			secrets++
+			secrets = append(secrets, pl.Property.Name)
 		case PillarProvides:
 			provided++
 		case PillarWithheld:
@@ -334,16 +334,17 @@ func draftRationale(f Format, t *Type, name string, placed []Placed, refresh, fa
 }
 
 // recipeOnlyRationale states what a Recipe drafted for the catalog Component
-// name matched of it, counting the keys it reads by rule.
+// name matched of it, counting the keys it reads by rule and naming each secret.
 func recipeOnlyRationale(f Format, t *Type, name string, spec recipeSpec) string {
 	m := spec.recipeOnly
-	var overrides, secrets int
+	var overrides int
+	var secrets []string
 	for _, in := range spec.res.Inputs {
 		switch in.Source.Pillar {
 		case PillarOverrides:
 			overrides++
 		case PillarSecret:
-			secrets++
+			secrets = append(secrets, in.Property.Name)
 		}
 	}
 	var unmapped []string
@@ -385,13 +386,17 @@ func counted(n int, singular, plural string) string {
 	return fmt.Sprintf("%d %s", n, plural)
 }
 
-// countedSecrets counts n secrets, delivered on slots or declared as
-// deploy-time parameters.
-func countedSecrets(n int, slots bool) string {
+// countedSecrets counts the secrets of the vendor names given, delivered on
+// slots or declared as deploy-time parameters, and names each.
+func countedSecrets(names []string, slots bool) string {
+	text := counted(len(names), "secret as a deploy-time parameter", "secrets as deploy-time parameters")
 	if slots {
-		return counted(n, "secret on a featuresSchema slot", "secrets on featuresSchema slots")
+		text = counted(len(names), "secret on a featuresSchema slot", "secrets on featuresSchema slots")
 	}
-	return counted(n, "secret as a deploy-time parameter", "secrets as deploy-time parameters")
+	if text == "" {
+		return ""
+	}
+	return text + " (" + andList(names) + ")"
 }
 
 // nonZero joins the counts that are not empty, or says no property was placed.
@@ -541,7 +546,7 @@ func twoRequestsDraftOnePath(earlier, later, path string) aggrega.Diagnostic {
 func noBody(ref TypeRef) aggrega.Diagnostic {
 	return aggrega.Diagnostic{
 		Severity:  "halt",
-		Code:      codeResourceSchemaUnreadable,
+		Code:      CodeResourceSchemaUnreadable,
 		Message:   fmt.Sprintf("the source holds no body the format reads for the resource type %s", ref.Name),
 		SourceRef: ref.Source,
 	}

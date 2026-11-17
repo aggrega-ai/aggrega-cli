@@ -1,0 +1,86 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: imported/component/aws-example-ledger
+  version: 0.1.0
+  description: "[vendor schema text] A ledger the example service keeps, written for this test. It records entries for its readers.\u000A\u000ADraft Component of the resource type AWS::Example::Ledger, imported from a source in the cloudformation-schema format."
+  labels:
+    component.aggrega.ai/type: resource
+    component.aggrega.ai/hosting: managed
+spec:
+  schema:
+    values:
+      type: object
+      properties:
+        # identity: the resource's own name or identifier
+        # [vendor schema text] The ledger's own identifier.
+        identifier:
+          type: string
+          description: "[vendor schema text] The ledger's own identifier."
+          required: true
+          pattern: "^[a-z0-9-]{3,40}$"
+        # identity: the resource's own name or identifier
+        # [vendor schema text] The ledger's name. It is unique in an account.
+        ledger_name:
+          type: string
+          description: "[vendor schema text] The ledger's name. It is unique in an account."
+          minLength: 3
+          maxLength: 63
+        # identity: the resource's own name or identifier
+        # [vendor schema text] A display name for the ledger.
+        name:
+          type: string
+          description: "[vendor schema text] A display name for the ledger."
+      additionalProperties: false
+    infra:
+      type: object
+      properties:
+        # required: the vendor schema requires it
+        # [vendor schema text] How much the ledger serves. Its members are read at creation.
+        capacity:
+          type: object
+          description: "[vendor schema text] How much the ledger serves. Its members are read at creation."
+          required: true
+          properties:
+            mode:
+              type: string
+              description: "[vendor schema text] How the ledger scales under load."
+              enum: ["STANDARD", "BURST"]
+            read_units:
+              type: integer
+              description: "[vendor schema text] How many reads a second the ledger serves."
+              required: true
+              min: 1
+              max: 400
+          additionalProperties: false
+        # required: the vendor schema requires it; replaced on change
+        # [vendor schema text] The subnet group the ledger is placed in.
+        subnet_group:
+          type: string
+          description: "[vendor schema text] The subnet group the ledger is placed in."
+          required: true
+        # override: every writable property no other rule places, each under the vendor's own name
+        overrides:
+          type: object
+          description: "Writable settings of AWS::Example::Ledger, each under the vendor's own name, which the Recipe passes to the resource as written; its header lists the names it reads."
+          additionalProperties: true
+      additionalProperties: false
+    provides:
+      type: object
+      properties:
+        # read back: published under provides
+        # [vendor schema text] The ledger's resource name.
+        arn:
+          type: string
+          description: "[vendor schema text] The ledger's resource name."
+        # read back: published under provides
+        # [vendor schema text] The host name a reader connects to.
+        endpoint_address:
+          type: string
+          description: "[vendor schema text] The host name a reader connects to."
+        # read back: published under provides
+        # [vendor schema text] The port a reader connects to.
+        endpoint_port:
+          type: integer
+          description: "[vendor schema text] The port a reader connects to."
+      additionalProperties: false

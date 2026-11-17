@@ -1,0 +1,6 @@
+{
+  "typeName": "AWS::Example::Journal",
+  "description": "A journal whose schema lists no properties, written for this test.",
+  "primaryIdentifier": ["/properties/JournalId"],
+  "additionalProperties": false
+}

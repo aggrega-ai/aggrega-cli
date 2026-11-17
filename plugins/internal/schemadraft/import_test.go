@@ -858,8 +858,8 @@ func TestDecisionCountsKeysByRule(t *testing.T) {
 	if want := "1 values, 2 infra, 3 overrides, 1 secrets, 2 provides"; queue.SourceNode.ParamsSummary != want {
 		t.Errorf("params summary %q, want %q", queue.SourceNode.ParamsSummary, want)
 	}
-	for _, want := range []string{"1 identity key", "1 placement key", "1 required key", "3 overrides", "1 secret",
-		"2 read-back attributes", "1 sensitive read-back attribute withheld", "1 read-back attribute not provided"} {
+	for _, want := range []string{"1 identity key", "1 placement key", "1 required key", "3 overrides",
+		"1 secret as a deploy-time parameter (AccessToken)", "2 read-back attributes", "1 sensitive read-back attribute withheld", "1 read-back attribute not provided"} {
 		if !strings.Contains(queue.Rationale, want) {
 			t.Errorf("rationale %q does not count %q", queue.Rationale, want)
 		}

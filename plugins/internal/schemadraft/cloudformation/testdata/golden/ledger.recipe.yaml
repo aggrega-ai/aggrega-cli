@@ -1,0 +1,91 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: aws-example-ledger
+  version: 0.1.0
+  description: "Draft Recipe realizing imported/component/aws-example-ledger on cloudformation with one resource of the type AWS::Example::Ledger, imported from a source in the cloudformation-schema format."
+spec:
+  # This Recipe realizes imported/component/aws-example-ledger with one resource of the type AWS::Example::Ledger. It reads the keys below, each with its type, its rule and the first sentence of the vendor's description; any other key under infra.overrides halts the build naming it.
+  # A secret is a deploy-time parameter whose name is the instance's name in capitalized words, written <instance> below, followed by the name the line gives.
+  # infra.capacity: object, required; required: the vendor schema requires it
+  # [vendor schema text] How much the ledger serves.
+  # infra.overrides.DeletionProtection: boolean; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Whether the ledger refuses to be deleted.
+  # values.identifier: string, required; identity: the resource's own name or identifier
+  # [vendor schema text] The ledger's own identifier.
+  # infra.overrides.KmsKeyId: string; override: writable, set under infra.overrides in the vendor's spelling; replaced on change
+  # [vendor schema text] The key that encrypts the ledger.
+  # values.ledger_name: string; identity: the resource's own name or identifier
+  # [vendor schema text] The ledger's name.
+  # infra.overrides.LegacyMode: boolean; override: writable, set under infra.overrides in the vendor's spelling; deprecated
+  # [vendor schema text] A mode kept for older readers.
+  # parameter <instance>MasterPassword: string; secret: declared by the Recipe as a deploy-time parameter
+  # [vendor schema text] The password of the ledger's first user.
+  # values.name: string; identity: the resource's own name or identifier
+  # [vendor schema text] A display name for the ledger.
+  # infra.overrides.Rules: array; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] The rules the ledger applies to each entry.
+  # infra.subnet_group: string, required; required: the vendor schema requires it; replaced on change
+  # [vendor schema text] The subnet group the ledger is placed in.
+  # template.yaml declares the resource under the logical id in locals, and the cloudformation provider projects its provides block into the stack's Outputs.
+  capability: cloudformation
+  implements: imported/component/aws-example-ledger:0.1.0
+  locals:
+    # The resource's logical id: the instance's name in capitalized words, letters and digits alone, so two instances in one stack declare two resources.
+    logical_id: "{{ capitalizedWords .context.instance_id }}"
+  provides:
+    # The String Pipe: each value is piped as written into a consumer's context; the provides block of template.yaml carries the same values into the stack's Outputs.
+    arn: "!GetAtt {{ .locals.logical_id }}.Arn"
+    endpoint_address: "!GetAtt {{ .locals.logical_id }}.Endpoint.Address"
+    endpoint_port: "!GetAtt {{ .locals.logical_id }}.Endpoint.Port"
+  assertions:
+    # Halts naming any key under infra.overrides this Recipe does not read.
+    overrides_this_recipe_reads: |
+      {{- $o := optional .infra "overrides" dict -}}
+      {{- range $k, $v := $o -}}
+      {{- if not (has $k (list "DeletionProtection" "KmsKeyId" "LegacyMode" "Rules")) -}}
+      {{- fail (printf "infra.overrides.%s is not a setting this Recipe reads: it reads %s from infra.overrides; remove infra.overrides.%s from the Release" $k "DeletionProtection, KmsKeyId, LegacyMode and Rules" $k) -}}
+      {{- end -}}
+      {{- end -}}
+    # Halts on an attachment under master_password: this Recipe declares each secret as a deploy-time parameter instead.
+    secrets_are_parameters: |
+      {{- $f := default dict .features -}}
+      {{- if hasKey $f "master_password" -}}
+      {{- fail (printf "a secret is attached under %s, and this Recipe declares the secret %s of %s as the deploy-time parameter %s%s, supplied when the template is deployed: remove the attachment and supply the value to that parameter when deploying" "master_password" "MasterPassword" "AWS::Example::Ledger" (capitalizedWords .metadata.instance_id) "MasterPassword") -}}
+      {{- end -}}
+  artifacts:
+    template.yaml: |
+      Parameters:
+        {{ .locals.logical_id }}MasterPassword:
+          Type: String
+          NoEcho: true
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::Example::Ledger
+          Properties:
+            Capacity: {{ $in1 := (index .infra "capacity") }}{{ $out1 := dict }}{{ if hasKey $in1 "mode" }}{{ $_ := set $out1 "Mode" (index $in1 "mode") }}{{ end }}{{ if hasKey $in1 "read_units" }}{{ $_ := set $out1 "ReadUnits" (index $in1 "read_units") }}{{ end }}{{ toJson $out1 }}
+            {{- if (hasKey (optional .infra "overrides" dict) "DeletionProtection") }}
+            DeletionProtection: {{ toJson (index .infra "overrides" "DeletionProtection") }}
+            {{- end }}
+            Identifier: {{ toJson (index .values "identifier") }}
+            {{- if (hasKey (optional .infra "overrides" dict) "KmsKeyId") }}
+            KmsKeyId: {{ toJson (index .infra "overrides" "KmsKeyId") }}
+            {{- end }}
+            {{- if (hasKey .values "ledger_name") }}
+            LedgerName: {{ toJson (index .values "ledger_name") }}
+            {{- end }}
+            {{- if (hasKey (optional .infra "overrides" dict) "LegacyMode") }}
+            LegacyMode: {{ toJson (index .infra "overrides" "LegacyMode") }}
+            {{- end }}
+            MasterPassword: !Ref {{ .locals.logical_id }}MasterPassword
+            {{- if (hasKey .values "name") }}
+            Name: {{ toJson (index .values "name") }}
+            {{- end }}
+            {{- if (hasKey (optional .infra "overrides" dict) "Rules") }}
+            Rules: {{ toJson (index .infra "overrides" "Rules") }}
+            {{- end }}
+            SubnetGroup: {{ toJson (index .infra "subnet_group") }}
+      provides:
+        arn: !GetAtt {{ .locals.logical_id }}.Arn
+        endpoint_address: !GetAtt {{ .locals.logical_id }}.Endpoint.Address
+        endpoint_port: !GetAtt {{ .locals.logical_id }}.Endpoint.Port
