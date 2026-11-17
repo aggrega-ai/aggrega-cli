@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-gateway-identity
+  version: "1.0.0"
+spec:
+  components:
+    gateway:
+      type: core/gateway/azure-api-management
+      values:
+        model: gpt-4o-mini

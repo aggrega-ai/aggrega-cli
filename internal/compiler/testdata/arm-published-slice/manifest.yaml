@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: arm-published-slice
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/gateway/azure-api-management:1.0.0: arm/azure-api-management:1.0.0
+        core/datastore/postgres:1.0.0: arm/postgres-flexible-server:1.0.0
+    features:
+      type:
+        core/referenced-secret:1.0.0: arm/key-vault-secret:1.0.0
