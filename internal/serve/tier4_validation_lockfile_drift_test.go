@@ -218,10 +218,10 @@ func diagnosticsWithCode(diags []Diagnostic, code string) []Diagnostic {
 // TestTier4ValidationReportsAStaleLockfileForARaisedLibraryFloor: a Component
 // that raises its SchemaLibrary floor to use an entry only the newer version
 // declares, under a lockfile still recording the older version, is answered on the
-// Aggregate with the lockfile-drift condition and its remedy — what the command
-// line reports for the same workspace — and not with the reference as unresolved,
-// which the validation core reports when it reads the library at the recorded
-// version.
+// Aggregate with the lockfile-drift condition and its remedy, naming the Release
+// relative to the workspace root — what the command line reports for the same
+// workspace — and not with the reference as unresolved, which the validation core
+// reports when it reads the library at the recorded version.
 func TestTier4ValidationReportsAStaleLockfileForARaisedLibraryFloor(t *testing.T) {
 	t.Parallel()
 	driftCode := conditionCodesOf(lockfile.ErrLockfileDrift()).Code
@@ -252,12 +252,15 @@ func TestTier4ValidationReportsAStaleLockfileForARaisedLibraryFloor(t *testing.T
 	if len(drift) != 1 {
 		t.Fatalf("want one lockfile-drift diagnostic; got %d among %v", len(drift), diagMessages(diags))
 	}
+	if holds != 1 {
+		t.Errorf("the validation held the Release to its lockfile %d times; want once", holds)
+	}
 	d := drift[0]
 	if d.Severity != editorSeverityError {
 		t.Errorf("Severity = %q; want %q", d.Severity, editorSeverityError)
 	}
-	if !strings.Contains(d.Message, compilerops.LockfileDriftRemedy(w.releasePath)) {
-		t.Errorf("the drift diagnostic does not carry the remedy %q: %q", compilerops.LockfileDriftRemedy(w.releasePath), d.Message)
+	if remedy := compilerops.LockfileDriftRemedy("release.yaml"); !strings.Contains(d.Message, remedy) {
+		t.Errorf("the drift diagnostic does not carry the remedy %q: %q", remedy, d.Message)
 	}
 	if !strings.Contains(d.Message, `schema-library "Lib"`) {
 		t.Errorf("the drift diagnostic does not name the library whose recorded version moved: %q", d.Message)
@@ -265,10 +268,10 @@ func TestTier4ValidationReportsAStaleLockfileForARaisedLibraryFloor(t *testing.T
 }
 
 // TestTier4ValidationKeepsAnUnresolvedLibraryReferenceTheLockfileDoesNotExplain:
-// a SchemaLibrary reference the catalog cannot satisfy is reported as unresolved
-// whether the lockfile matches the Release or the drift check cannot resolve the
-// Release at all — the drift check runs, and finding no drift, leaves the refusal
-// standing.
+// a SchemaLibrary reference no version the catalog holds satisfies is reported as
+// unresolved, and the Release is not held to its lockfile: the reference fails at
+// the version a bare reference selects too, so the recorded versions do not
+// explain it.
 func TestTier4ValidationKeepsAnUnresolvedLibraryReferenceTheLockfileDoesNotExplain(t *testing.T) {
 	t.Parallel()
 	driftCode := conditionCodesOf(lockfile.ErrLockfileDrift()).Code
@@ -307,8 +310,8 @@ func TestTier4ValidationKeepsAnUnresolvedLibraryReferenceTheLockfileDoesNotExpla
 			var holds int
 			diags := w.validateAggregate(t, w.server(t, &holds))
 
-			if holds != 1 {
-				t.Errorf("the validation held the Release to its lockfile %d times; want once, after the gate refused", holds)
+			if holds != 0 {
+				t.Errorf("the validation held the Release to its lockfile %d times; want none", holds)
 			}
 			if got := diagnosticsWithCode(diags, driftCode); len(got) != 0 {
 				t.Errorf("a lockfile-drift diagnostic was reported: %v", diagMessages(got))
@@ -317,6 +320,55 @@ func TestTier4ValidationKeepsAnUnresolvedLibraryReferenceTheLockfileDoesNotExpla
 				t.Errorf("want one unresolved SchemaLibrary reference diagnostic; got %d among %v", len(got), diagMessages(diags))
 			}
 		})
+	}
+}
+
+// TestTier4ValidationKeepsAMisspeltEntryOverAStaleLockfile: an entry name
+// misspelt in a Component edited after the pull is reported as unresolved, not as
+// the lockfile being out of date, though the edit has made it so: the reference
+// fails at the version a bare reference selects too, and a pull would leave it as
+// wrong as it is. The Release is not held to its lockfile.
+func TestTier4ValidationKeepsAMisspeltEntryOverAStaleLockfile(t *testing.T) {
+	t.Parallel()
+	driftCode := conditionCodesOf(lockfile.ErrLockfileDrift()).Code
+	unresolvedCode := conditionCodesOf(compactform.ErrUnresolvedSchemaLibraryRef()).Code
+	if driftCode == "" || unresolvedCode == "" {
+		t.Fatalf("a condition carries no code (drift %q, unresolved reference %q), so the assertions would be vacuous", driftCode, unresolvedCode)
+	}
+
+	w := newLibraryReferenceWorkspace(t)
+	w.holdLibrary(t, "1.0.0", "Settings")
+	w.reference(t, "Lib:1.0.0#/schemas/Settings")
+	w.lock(t)
+	w.reference(t, "Lib:1.0.0#/schemas/Setings")
+
+	lf, _, err := lockfile.Load(w.root, lockfile.PathFor(w.releasePath))
+	if err != nil {
+		t.Fatalf("load the lockfile: %v", err)
+	}
+	pins, err := catalog.PinsFromLockfile(lf)
+	if err != nil {
+		t.Fatalf("pin the oracle view: %v", err)
+	}
+	oracleView := catalog.NewLazyLookup(w.root, "", []string{w.catalogDir}, nil).ForRequest(pins)
+	if err := compilerops.HoldReleaseToLockfile(context.Background(), oracleView, w.releasePath, w.root, w.config(), lf); !errors.Is(err, lockfile.ErrLockfileDrift()) {
+		t.Fatalf("the edit left the lockfile matching (drift check: %v), so the case shows nothing about a stale one", err)
+	}
+	if vr := w.lockedValidation(t); !errors.Is(vr.PillarError, compactform.ErrUnresolvedSchemaLibraryRef()) {
+		t.Fatalf("the misspelt entry is not refused as unresolved (pillar error %v)", vr.PillarError)
+	}
+
+	var holds int
+	diags := w.validateAggregate(t, w.server(t, &holds))
+
+	if got := diagnosticsWithCode(diags, unresolvedCode); len(got) != 1 {
+		t.Errorf("want one unresolved SchemaLibrary reference diagnostic; got %d among %v", len(got), diagMessages(diags))
+	}
+	if got := diagnosticsWithCode(diags, driftCode); len(got) != 0 {
+		t.Errorf("the misspelt entry was answered with lockfile drift: %v", diagMessages(got))
+	}
+	if holds != 0 {
+		t.Errorf("the validation held the Release to its lockfile %d times; want none", holds)
 	}
 }
 

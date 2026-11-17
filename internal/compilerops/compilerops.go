@@ -152,10 +152,10 @@ func (r *ResolvedClosure) Libraries(view *catalog.LazyLookup) catalog.LibrarySet
 // the view does not hold) is read at the version a bare reference selects. The
 // surfaces that read this way either run the drift check before validating or,
 // keeping a quiet load on every edit, run it once a gate over the dependencies has
-// refused and report the drift in place of that refusal, so a stale lockfile is
-// reported by the drift check and never as a library the catalog holds being
-// missing. With no lockfile every library is read at the version a bare reference
-// selects.
+// refused on account of the recorded versions (LibraryRecordExplainsGateRefusal)
+// and report the drift in place of that refusal, so a stale lockfile is reported
+// by the drift check and never as a library the catalog holds being missing. With
+// no lockfile every library is read at the version a bare reference selects.
 func releaseLibraries(view *catalog.LazyLookup, cl closure.Closure, librariesResolved bool, record *lockfile.Lockfile) catalog.LibrarySet {
 	if librariesResolved {
 		return view.ClosureLibraries(cl)

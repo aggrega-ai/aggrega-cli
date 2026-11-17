@@ -379,6 +379,15 @@ func lockfileDriftHalt(findings error, release string) error {
 // failure only the build's fuller resolution meets is the build's to report.
 // A lockfile that matches is the third.
 func HoldReleaseToLockfile(ctx context.Context, view *catalog.LazyLookup, releasePath, workspaceRoot string, workspaceConfig workspaceconfig.Config, lf *lockfile.Lockfile) error {
+	return HoldNamedReleaseToLockfile(ctx, view, releasePath, releasePath, workspaceRoot, workspaceConfig, lf)
+}
+
+// HoldNamedReleaseToLockfile is HoldReleaseToLockfile for a surface that reads the
+// Release at one path and names it to its reader by another: the Release is
+// resolved from releasePath and the remedy names release. The language server is
+// one: it reads a Release at the absolute path its request resolves to and names
+// it relative to the workspace root.
+func HoldNamedReleaseToLockfile(ctx context.Context, view *catalog.LazyLookup, releasePath, release, workspaceRoot string, workspaceConfig workspaceconfig.Config, lf *lockfile.Lockfile) error {
 	if lf == nil {
 		return nil
 	}
@@ -393,7 +402,7 @@ func HoldReleaseToLockfile(ctx context.Context, view *catalog.LazyLookup, releas
 		return nil
 	}
 	if step, err := reconstructAndVerifyLockfile(ctx, held, lf, workspaceRoot, workspaceConfig, resolved, true); step == lockfileStepVerify {
-		return lockfileDriftHalt(err, releasePath)
+		return lockfileDriftHalt(err, release)
 	}
 	return nil
 }
