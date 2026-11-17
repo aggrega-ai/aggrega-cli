@@ -396,7 +396,7 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	tier4, runErr := pipeline.RunTier4Pipeline(
 		ctx,
 		inputs,
-		in.View.AsCatalogLookupContext(ctx),
+		in.View.AsCatalogLookupForClosure(ctx, in.Closure),
 		in.View.RecipeLookupWithManifest(in.Manifest),
 		in.View.SubAggregateLoader(),
 	)

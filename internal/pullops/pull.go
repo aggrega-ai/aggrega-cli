@@ -1127,7 +1127,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// are the ones already run above, against the closure this pass is pinning.
 	report.phase(PhaseSources)
 	aggBytes := aggRes.Bytes
-	pullLookup := lazyView.AsCatalogLookupContext(ctx)
+	pullLookup := lazyView.AsCatalogLookupForClosure(ctx, cl)
 	// The lockfile this run assembles is carried out of the source-descent scope
 	// and written further down, once the external-input discovery below has had its
 	// chance to add to it. Assembling and writing are separate steps for two

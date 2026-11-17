@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 )
 
 // concurrencyComponentYAML is a minimal Component the lazy catalog walk
@@ -525,7 +526,7 @@ func TestLazyLookupConcurrentAccessRaceClean(t *testing.T) {
 					cl.Component("core/x")
 					cl.Feature("core/x")
 				case 3:
-					l.MappingLibraries()
+					l.ClosureLibraries(closure.Closure{})
 				case 4:
 					l.Skips()
 				case 5:

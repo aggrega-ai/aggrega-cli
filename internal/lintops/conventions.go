@@ -340,6 +340,7 @@ func runRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	index := map[string]string{}
 	for _, f := range files {
 		index[f.Kind+"|"+f.Name] = f.Path
+		index[libraryIdentityKey(f.Kind, f.Name, f.Version)] = f.Path
 	}
 	paths := closureEntityFiles(lazyView, rc.Closure, index)
 	// The documents a rule reading a whole Release is handed are assembled only
@@ -700,6 +701,12 @@ func walkCatalogEntityFiles(ctx context.Context, wsRoot string, dirs, named []st
 	return files, passedOver, nil
 }
 
+// libraryIdentityKey is the index key of one library at one version, so a catalog
+// holding several versions of a library name keeps each version's file apart.
+func libraryIdentityKey(kind, name, version string) string {
+	return kind + "|" + name + ":" + version
+}
+
 // closureEntityFiles maps the entities a Release's closure reaches back to their
 // author-owned catalog files. Recipes and FeatureRecipes resolve through the lazy
 // view's local-path bridge; Components, Features, Plugins, and libraries resolve
@@ -756,12 +763,12 @@ func closureEntityFiles(lazyView *catalog.LazyLookup, cl closure.Closure, index 
 	}
 	// Every declared library axis, not a chosen subset: a locally-authored library
 	// on an axis this loop skipped would reach no convention rule at all, and
-	// nothing else would report that it had been skipped.
+	// nothing else would report that it had been skipped. Each library is read at
+	// the version the closure resolved, so a catalog holding other versions of the
+	// name lints the file the Release builds from.
 	for _, axis := range closure.LibraryAxes() {
 		for _, lib := range axis.Libraries(&cl) {
-			if name, ok := lazyView.LibraryName(axis, lib.URI); ok {
-				add(byName(axis.Kind, name))
-			}
+			add(index[libraryIdentityKey(axis.Kind, lib.URI, lib.ResolvedVersion)])
 		}
 	}
 	paths := make([]string, 0, len(set))

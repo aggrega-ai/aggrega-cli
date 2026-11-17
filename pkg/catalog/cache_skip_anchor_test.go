@@ -103,7 +103,7 @@ func TestLazyWalks_SkipArtifactCacheBelowWorkspaceRoot(t *testing.T) {
 	if _, ok := subject.defaultSchemaLibraries()["DbSizing"]; ok {
 		t.Error("buildSchemaLibraries ingested a cached SchemaLibrary from a cache below the workspace root")
 	}
-	if _, ok := subject.MappingLibraries()["BaseMappings"]; ok {
+	if _, ok := defaultViewLibraries(subject).Mappings["BaseMappings"]; ok {
 		t.Error("buildRecipeIndex ingested a cached MappingLibrary from a cache below the workspace root")
 	}
 	if _, ok := subject.componentIndex[entityIndexKey("core/authored-app", "1.0.0")]; !ok {
