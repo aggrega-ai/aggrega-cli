@@ -16,8 +16,10 @@
 // consistent with it. The provider set comes from the declarative shipped-plugin
 // manifest rather than from a listing of the declarations, so a provider that
 // ships without a support claim still gets its rows and its silence is visible
-// on the page. And a shipped provider with no published entity is an error
-// rather than an all-declined row.
+// on the page. A shipped provider's input kinds are read from its published
+// entity, looked for first; where the catalog carries none, they are read from
+// the entity the build generates beside the provider's guest. A shipped provider
+// with neither is an error rather than an all-declined row.
 //
 // Run it as:
 //

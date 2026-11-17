@@ -1,0 +1,2 @@
+# fixture manifest
+provider	x	./plugins/x-provider	go

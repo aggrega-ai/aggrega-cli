@@ -4,7 +4,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -34,13 +36,19 @@ const (
 	catalogRelDir = "aggrega-catalog/plugin/provider"
 )
 
+// generatedEntityRelDir is the directory, relative to the module root, that holds
+// the Plugin entity the build generates beside each embedded guest. It is read
+// for a shipped provider the published catalog does not carry.
+const generatedEntityRelDir = "internal/wasm/embedded/plugins"
+
 // provider is one provider's published annotation support claim, assembled from
 // the two homes that hold it.
 type provider struct {
 	// Name is the provider name a Recipe targets.
 	Name string
 	// InputKinds is the provider's own render-behavior claim, read from its
-	// published entity. It fixes which rows are answerable at all: a key cannot
+	// published entity or, where the catalog carries none, from the entity its
+	// build generates. It fixes which rows are answerable at all: a key cannot
 	// be applied on an input kind the provider does not render, and a cell for
 	// one is not a gap but an absence of a question.
 	InputKinds types.PluginInputKinds
@@ -56,7 +64,9 @@ type provider struct {
 // contract is machine-derived from the plugin's own self-report and lands on the
 // published entity, which is where a catalog reader finds it. Reading each from
 // where it is produced is what keeps this projection from becoming a third place
-// either could be written.
+// either could be written. The published entity is looked for first; a provider
+// the catalog does not carry has its contract read from the entity its build
+// generates beside its guest (see providerEntity).
 //
 // Manifest order is author order and is preserved rather than sorted, so a row
 // moves only when the shipped set moves.
@@ -79,7 +89,7 @@ func scan(moduleRoot, catalogRoot string) ([]provider, error) {
 			return nil, err
 		}
 
-		entityPath, err := publishedEntity(catalogRoot, name)
+		entityPath, err := providerEntity(moduleRoot, catalogRoot, name)
 		if err != nil {
 			return nil, err
 		}
@@ -154,31 +164,60 @@ func providerNames(path string) ([]string, error) {
 	return out, nil
 }
 
+// providerEntity resolves the Plugin entity a provider's render-behavior contract
+// is read from. The published entity wins where the catalog carries one. Where it
+// carries none, the entity the build generates beside the guest is read, so a
+// provider that is shipped but not yet released still gets its rows. With
+// neither, the error names both places looked, because either one is what the
+// author has to make present.
+func providerEntity(moduleRoot, catalogRoot, name string) (string, error) {
+	published, found, err := publishedEntity(catalogRoot, name)
+	if err != nil {
+		return "", err
+	}
+	if found {
+		return published, nil
+	}
+
+	generated := filepath.Join(moduleRoot, filepath.FromSlash(generatedEntityRelDir), name+".plugin.yaml")
+	_, err = os.Stat(generated)
+	switch {
+	case err == nil:
+		return generated, nil
+	case !errors.Is(err, fs.ErrNotExist):
+		return "", fmt.Errorf("provider %q generated entity: %w", name, err)
+	}
+
+	pattern := filepath.Join(catalogRoot, filepath.FromSlash(catalogRelDir), name, "*", "plugin.yaml")
+	return "", fmt.Errorf("provider %q is shipped but has no published entity at %s and no generated entity at %s; "+
+		"publish the provider's entity to the catalog, or build the provider so its entity is generated beside its guest",
+		name, pattern, generated)
+}
+
 // publishedEntity resolves the one published entity of a provider within the
-// catalog tree.
+// catalog tree. found is false when the catalog carries none; providerEntity
+// decides what that absence means.
 //
-// Exactly one version directory must be present. None means the shipped set and
-// the published catalog disagree, which would otherwise render as a provider
-// whose every cell reads "renders nothing"; more than one means this projection
-// cannot know which published claim the page describes, and picking either would
-// publish a coin flip.
-func publishedEntity(catalogRoot, name string) (string, error) {
+// Exactly one version directory may be present. More than one means this
+// projection cannot know which published claim the page describes, and picking
+// either would publish a coin flip.
+func publishedEntity(catalogRoot, name string) (path string, found bool, err error) {
 	pattern := filepath.Join(catalogRoot, filepath.FromSlash(catalogRelDir), name, "*", "plugin.yaml")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		return "", fmt.Errorf("provider %q: %w", name, err)
+		return "", false, fmt.Errorf("provider %q: %w", name, err)
 	}
 	// Glob order is already lexical, but sorting explicitly says so: the error
 	// message below names every candidate, and a message that varied between
 	// runs would be a diagnostic nobody could diff.
 	sort.Strings(matches)
 	switch len(matches) {
-	case 1:
-		return matches[0], nil
 	case 0:
-		return "", fmt.Errorf("provider %q is shipped but has no published entity at %s", name, pattern)
+		return "", false, nil
+	case 1:
+		return matches[0], true, nil
 	default:
-		return "", fmt.Errorf("provider %q has %d published entities (%s); this projection describes one",
+		return "", false, fmt.Errorf("provider %q has %d published entities (%s); this projection describes one",
 			name, len(matches), strings.Join(matches, ", "))
 	}
 }

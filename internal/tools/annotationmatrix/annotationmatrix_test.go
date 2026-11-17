@@ -321,3 +321,101 @@ func TestScanRefusesAShippedDeclarationWithNoScope(t *testing.T) {
 		t.Errorf("error does not say what went wrong: %v", err)
 	}
 }
+
+// fixtureUnpublishedModule holds a shipped provider that has no published entity
+// yet: its overlay and its generated entity beside the guest are present, and
+// the catalog tree holds nothing for it.
+const (
+	fixtureUnpublishedModule  = "testdata/unpublished-provider"
+	fixtureUnpublishedCatalog = "testdata/unpublished-provider/catalog"
+)
+
+// writeTree writes each relative path under root with its body, creating the
+// directories it needs.
+func writeTree(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, body := range files {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestScanReadsAnUnpublishedProviderFromItsGeneratedEntity covers a shipped
+// provider that the published catalog does not carry yet: its input kinds come
+// from the entity its build generates beside its guest.
+func TestScanReadsAnUnpublishedProviderFromItsGeneratedEntity(t *testing.T) {
+	got, err := scan(fixtureUnpublishedModule, fixtureUnpublishedCatalog)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "x" {
+		t.Fatalf("extracted %+v, want the one provider x", got)
+	}
+	if k := got[0].InputKinds; !k.Sourced || !k.ArtifactsStandalone || k.Synthesized {
+		t.Errorf("x input kinds not read from its generated entity: %+v", k)
+	}
+	if n := len(got[0].Annotations); n != 1 {
+		t.Errorf("x declares %d annotations, want 1", n)
+	}
+}
+
+// TestScanPrefersThePublishedEntity pins the order the entity is looked for: a
+// published entity wins over the generated one when both are present, so a
+// build's output cannot override the claim the catalog publishes.
+func TestScanPrefersThePublishedEntity(t *testing.T) {
+	module := t.TempDir()
+	catalog := t.TempDir()
+	writeTree(t, module, map[string]string{
+		"internal/wasm/embedded/embedded-plugins.tsv": "provider\tx\t./plugins/x-provider\tgo\n",
+		"internal/wasm/embedded/plugins/x.plugin.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: x\n" +
+			"spec:\n  provider:\n    contract:\n      inputKinds:\n        sourced: true\n",
+	})
+	writeTree(t, catalog, map[string]string{
+		"plugin-overlays/provider/x.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: x\n",
+		"aggrega-catalog/plugin/provider/x/1.0.0/plugin.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: x\n" +
+			"spec:\n  provider:\n    contract:\n      inputKinds:\n        synthesized: true\n",
+	})
+
+	got, err := scan(module, catalog)
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("extracted %d providers, want 1", len(got))
+	}
+	if k := got[0].InputKinds; k.Sourced || !k.Synthesized {
+		t.Errorf("input kinds read from the generated entity, not the published one: %+v", k)
+	}
+}
+
+// TestScanRefusesAProviderWithNeitherEntity covers a shipped provider with
+// nothing to read its input kinds from. The error names both places looked, so
+// the fix is findable from the message alone.
+func TestScanRefusesAProviderWithNeitherEntity(t *testing.T) {
+	module := t.TempDir()
+	catalog := t.TempDir()
+	writeTree(t, module, map[string]string{
+		"internal/wasm/embedded/embedded-plugins.tsv": "provider\tx\t./plugins/x-provider\tgo\n",
+	})
+	writeTree(t, catalog, map[string]string{
+		"plugin-overlays/provider/x.yaml": "apiVersion: aggrega.ai/v1beta1\nkind: Plugin\nmetadata:\n  name: x\n",
+	})
+
+	_, err := scan(module, catalog)
+	if err == nil {
+		t.Fatal("expected an error for a shipped provider with neither a published nor a generated entity")
+	}
+	published := filepath.Join("aggrega-catalog", "plugin", "provider", "x")
+	generated := filepath.Join("internal", "wasm", "embedded", "plugins", "x.plugin.yaml")
+	if !strings.Contains(err.Error(), published) {
+		t.Errorf("error does not name the published location %q: %v", published, err)
+	}
+	if !strings.Contains(err.Error(), generated) {
+		t.Errorf("error does not name the generated location %q: %v", generated, err)
+	}
+}

@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Plugin
+metadata:
+  name: x
+spec:
+  provider:
+    wellKnownAnnotations:
+      - key: aggrega.ai/first
+        purpose: First key.
+        defaultBehavior: Nothing happens.
+        scope:
+          - sourced
