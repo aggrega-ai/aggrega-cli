@@ -108,17 +108,6 @@ func armAdvisoryBySourceRef(advisories []renderer.Diagnostic, sourceRef string) 
 	return out
 }
 
-// armHasSeverity reports whether any advisory of the given severity carries the
-// text.
-func armHasSeverity(advisories []renderer.Diagnostic, severity, text string) bool {
-	for _, d := range advisories {
-		if d.Severity == severity && strings.Contains(d.Message, text) {
-			return true
-		}
-	}
-	return false
-}
-
 // armCompareGolden asserts the emitted bytes equal the committed golden, and
 // writes the golden instead when AGGREGA_UPDATE_GOLDENS=1. An empty golden is
 // refused: a comparison against nothing certifies nothing.

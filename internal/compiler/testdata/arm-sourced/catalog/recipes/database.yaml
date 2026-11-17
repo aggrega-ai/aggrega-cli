@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-sourced-database
+  version: 1.0.0
+  description: >
+    A database taken from a compiled ARM template kept beside the Recipe. The
+    template is wrapped as one nested deployment and its sku parameter is bound
+    from the component's values.
+spec:
+  capability: arm
+  implements: example/sourced/database:1.0.0
+  source: ./sources/database.json
+  valuesMapping: |
+    sku: "{{ .values.sku }}"

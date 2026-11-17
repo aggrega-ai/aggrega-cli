@@ -12,7 +12,6 @@ metadata:
   labels:
     component.aggrega.ai/type: server
 spec:
-  inject: [env]
   usesSchema:
     database:
       selector: "component.aggrega.ai/type=stateful-server"

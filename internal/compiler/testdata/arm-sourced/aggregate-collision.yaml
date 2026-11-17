@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-sourced-collision
+  version: "1.0.0"
+  description: >
+    Two databases whose instance names read as the same words, so both derive
+    the one nested deployment symbol PaymentsDb.
+spec:
+  components:
+    payments-db:
+      type: example/sourced/database
+    paymentsDb:
+      type: example/sourced/database

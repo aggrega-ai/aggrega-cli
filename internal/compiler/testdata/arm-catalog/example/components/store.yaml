@@ -13,8 +13,6 @@ metadata:
   labels:
     component.aggrega.ai/type: stateful-server
 spec:
-  # The datastore may inject its own provides keys into a consumer's env.
-  inject: [env]
   schema:
     values:
       symbol:

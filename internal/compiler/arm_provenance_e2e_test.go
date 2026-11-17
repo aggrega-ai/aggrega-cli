@@ -12,6 +12,10 @@
 package compiler_test
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"strings"
 	"testing"
 
 	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
@@ -152,4 +156,99 @@ func TestArmFragmentWithoutResourcesAdvises(t *testing.T) {
 // resources assembles the same bytes across repeated runs.
 func TestArmProvenanceIsDeterministic(t *testing.T) {
 	pipelinetest.AssertDeterministic(t, armProvenanceInput("release.yaml"))
+}
+
+// TestArmSourcedProvenanceOnTheNestedDeploymentOnly builds a Recipe that sources a
+// compiled template and asserts where the provenance lands: in the metadata of the
+// nested deployment resource that carries the template, and nowhere inside it. The
+// template the deployment carries is the source read and written again with its
+// keys sorted and nothing else touched, so the bytes in properties.template equal
+// the source's re-serialized bytes; a stamp inside would make them differ and would
+// change what Resource Manager deploys.
+func TestArmSourcedProvenanceOnTheNestedDeploymentOnly(t *testing.T) {
+	t.Parallel()
+	result := pipelinetest.Build(t, armInput(armSourcedDir+"release.yaml", armSourcedCatalog))
+	_, raw := findArmTemplate(t, result.Artifacts, "stack")
+	t.Logf("assembled template:\n%s", raw)
+
+	var doc struct {
+		Metadata  json.RawMessage `json:"metadata"`
+		Resources map[string]struct {
+			Metadata   map[string]any `json:"metadata"`
+			Properties struct {
+				Template json.RawMessage `json:"template"`
+			} `json:"properties"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("the assembled template is not valid JSON: %v", err)
+	}
+	if doc.Metadata != nil {
+		t.Errorf("the template carries a top-level metadata object %s; provenance belongs on the nested deployment", doc.Metadata)
+	}
+	if got := sortedAnyKeys(armSection(t, mustDecode(t, raw), "resources")); !equalStringSlice(got, []string{"PaymentsDb"}) {
+		t.Fatalf("the template declares resources %v, want exactly the nested deployment PaymentsDb", got)
+	}
+	deployment := doc.Resources["PaymentsDb"]
+
+	block, ok := deployment.Metadata[armProvenanceKey].(map[string]any)
+	if !ok {
+		t.Fatalf("the nested deployment carries no provenance in its own metadata: %#v", deployment.Metadata)
+	}
+	if block["aggrega.ai/component-id"] != "payments-db" || block["aggrega.ai/provider"] != "arm" || block["aggrega.ai/boundary-path"] != "stack" {
+		t.Errorf("the nested deployment carries the provenance %#v, want component payments-db, provider arm and boundary stack", block)
+	}
+
+	source, err := os.ReadFile(armSourcedCatalog + "/recipes/sources/database.json")
+	if err != nil {
+		t.Fatalf("reading the source template: %v", err)
+	}
+	want := armReserialized(t, source)
+	var compactSource bytes.Buffer
+	if err := json.Compact(&compactSource, source); err != nil {
+		t.Fatalf("compacting the source: %v", err)
+	}
+	if bytes.Equal(want, compactSource.Bytes()) {
+		t.Fatalf("the source is already written with sorted keys, so its re-serialized bytes cannot show the guest sorted them; write the fixture's keys out of order")
+	}
+	var got bytes.Buffer
+	if err := json.Compact(&got, deployment.Properties.Template); err != nil {
+		t.Fatalf("compacting the carried template: %v", err)
+	}
+	if !bytes.Equal(got.Bytes(), want) {
+		t.Errorf("properties.template is not the source re-serialized\n--- got ---\n%s\n--- want ---\n%s", got.Bytes(), want)
+	}
+	if bytes.Contains(deployment.Properties.Template, []byte(armProvenanceKey)) || strings.Contains(string(deployment.Properties.Template), `"metadata"`) {
+		t.Errorf("the carried template holds a metadata object or the provenance key, which belong outside it:\n%s", deployment.Properties.Template)
+	}
+}
+
+// armReserialized reads a template as the provider does, with numbers kept as
+// written, and writes it again with sorted keys, no escaping of markup characters
+// and no insignificant whitespace.
+func armReserialized(t *testing.T, source []byte) []byte {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(source))
+	dec.UseNumber()
+	var tree any
+	if err := dec.Decode(&tree); err != nil {
+		t.Fatalf("reading the source: %v", err)
+	}
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(tree); err != nil {
+		t.Fatalf("writing the source again: %v", err)
+	}
+	return bytes.TrimSpace(out.Bytes())
+}
+
+// mustDecode decodes raw bytes as a generic JSON object.
+func mustDecode(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("not valid JSON: %v", err)
+	}
+	return out
 }

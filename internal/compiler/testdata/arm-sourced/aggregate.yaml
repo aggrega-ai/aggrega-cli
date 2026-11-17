@@ -1,0 +1,13 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-sourced
+  version: "1.0.0"
+  description: >
+    One database whose Recipe sources a compiled ARM template.
+spec:
+  components:
+    payments-db:
+      type: example/sourced/database
+      values:
+        sku: Standard_B2s

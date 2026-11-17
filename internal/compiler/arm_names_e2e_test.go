@@ -16,13 +16,25 @@
 package compiler_test
 
 import (
+	"errors"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-const armNamesRelease = "testdata/arm-names/release.yaml"
+const (
+	armNamesRelease = "testdata/arm-names/release.yaml"
+
+	// armSourcedDir holds the fixtures whose Recipe sources a compiled template
+	// kept beside it, and armSourcedCatalog the entities those fixtures build
+	// against.
+	armSourcedDir     = "testdata/arm-sourced/"
+	armSourcedCatalog = armSourcedDir + "catalog"
+)
 
 // TestArmOutputNamesStayApartAcrossNodes builds three datastores into one
 // template and asserts the exact set of output names. Each name is written out
@@ -72,4 +84,43 @@ func sortedAnyKeys(m map[string]any) []string {
 	keys := mapKeys(m)
 	sort.Strings(keys)
 	return keys
+}
+
+// TestArmDerivedSymbolCollisionHaltsNamingBothNodes builds two databases whose
+// Recipe sources a template. The Recipe wraps each as a nested deployment declared
+// under a symbolic name derived from the instance name, and `payments-db` and
+// `paymentsDb` read as the same words, so both derive PaymentsDb. The build halts
+// on the name two nodes met on, naming both nodes, the name and the key space,
+// rather than deploying one database where two were declared.
+func TestArmDerivedSymbolCollisionHaltsNamingBothNodes(t *testing.T) {
+	t.Parallel()
+	input := armInput(armSourcedDir+"release-collision.yaml", armSourcedCatalog)
+	result, err := pipelinetest.BuildE(t, input)
+	if err == nil {
+		t.Fatalf("the build emitted %v; two nodes deriving the one symbol PaymentsDb must halt it", sortedKeys(result.Artifacts))
+	}
+	if !errors.Is(err, renderer.ErrDerivedKeyCollision()) {
+		t.Fatalf("the build failed for a different reason than the derived-name collision: %s", cerrors.CauseChain(err))
+	}
+
+	var envelope *cerrors.CompilerError
+	if !errors.As(err, &envelope) {
+		t.Fatalf("the halt is not a categorised diagnostic: %v", err)
+	}
+	var findings []string
+	if joined, ok := envelope.Unwrap().(interface{ Unwrap() []error }); ok {
+		for _, member := range joined.Unwrap() {
+			findings = append(findings, member.Error())
+		}
+	} else {
+		findings = []string{envelope.Error()}
+	}
+	whole := strings.Join(findings, "\n")
+	t.Logf("the collision halts with %d finding(s):\n%s", len(findings), whole)
+
+	for _, want := range []string{`"payments-db"`, `"paymentsDb"`, "PaymentsDb", "symbolic-names"} {
+		if !strings.Contains(whole, want) {
+			t.Errorf("the halt does not name %s:\n%s", want, whole)
+		}
+	}
 }

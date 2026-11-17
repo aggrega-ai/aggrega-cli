@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: arm-sourced-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        example/sourced/database:1.0.0: arm-sourced-database:1.0.0

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: example/sourced/database
+  version: 1.0.0
+  description: >
+    A database whose Recipe sources a compiled ARM template, so the fixtures
+    place it in an assembled template as one nested deployment.
+  labels:
+    component.aggrega.ai/type: stateful-server
+spec:
+  schema:
+    values:
+      sku:
+        type: string
+        default: Standard_B1ms
+        description: The compute SKU the sourced template binds to its sku parameter.
