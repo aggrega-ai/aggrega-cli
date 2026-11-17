@@ -64,7 +64,7 @@ func armChainCatalog() *catalog.Catalog {
 // cascade, the pinned-digest integrity check (both arms), and the entity's runtime
 // limits flowing to the loader spec. It does not re-prove render byte-identity;
 // this capstone is resolution + digest + limits, plus a describe() smoke asserting
-// the three exports the guest declares.
+// the exports the guest declares and that it links uses edges across boundaries.
 func TestEmbeddedArmProviderResolutionChain(t *testing.T) {
 	cat := armChainCatalog()
 	lookup := cat.CatalogLookup()
@@ -174,15 +174,16 @@ func TestEmbeddedArmProviderResolutionChain(t *testing.T) {
 			t.Fatalf("describe() plugin_type = %q, want %q", desc.PluginType, wasm.PluginTypeProvider)
 		}
 		// The exports must be present: render_node drives per-node render,
-		// validate_node_input checks a sourced template ahead of render, and
-		// assemble_boundary drives the per-group merge.
-		for _, name := range []string{"render_node", "validate_node_input", "assemble_boundary"} {
+		// validate_node_input checks a sourced template ahead of render,
+		// assemble_boundary drives the per-group merge, and link_publish and
+		// link_resolve wire a uses edge across boundaries.
+		for _, name := range []string{"render_node", "validate_node_input", "assemble_boundary", "link_publish", "link_resolve"} {
 			if _, ok := findExport(desc, name); !ok {
 				t.Fatalf("describe() does not declare the %q export", name)
 			}
 		}
-		if desc.Contract.CrossBoundaryLinking {
-			t.Fatal("describe() declares the cross_boundary_linking capability; the arm provider links no boundaries")
+		if !desc.Contract.CrossBoundaryLinking {
+			t.Fatal("describe() does not declare the cross_boundary_linking capability; the arm provider links uses edges across boundaries")
 		}
 		if desc.Contract.BoundaryAssembly != wasm.BoundaryAssemblyMerge {
 			t.Fatalf("describe() boundary_assembly = %q, want %q", desc.Contract.BoundaryAssembly, wasm.BoundaryAssemblyMerge)
