@@ -90,6 +90,10 @@ type Recipe struct {
 	sourceReference         string
 	sourceReferenceInURLKey bool
 
+	// sourceFields is the text each key of the document's structured source
+	// writes, as authored. It is only looked up by key, never iterated.
+	sourceFields map[string]string
+
 	// outputLabelKeys are the keys the literal output-label block declares, in
 	// sorted order.
 	outputLabelKeys []string
@@ -177,6 +181,7 @@ func NewRecipe(path string, r *types.Recipe) Recipe {
 		sourceKindWritten:        written,
 		sourceReference:          reference,
 		sourceReferenceInURLKey:  inURLKey,
+		sourceFields:             authoredSourceFields(r.Spec.Source),
 		outputLabelKeys:          authoredOutputLabelKeys(r.Spec.OutputLabels),
 		outputComponentLabelKeys: authoredOutputComponentLabelKeys(r.Spec.OutputComponentLabels),
 		pipelineStepIDs:          authoredPipelineStepIDs(r.Spec.Pipeline),
@@ -241,6 +246,29 @@ func authoredSourceReference(src any) (string, bool) {
 	return reference, structured
 }
 
+// authoredSourceFields reads the text each key of a structured source writes, as
+// authored. It is the one reader of those keys for both authored kinds that write a
+// source. A value that is not a string is presented as its text, so a rule is
+// handed what the author typed; a source written as a single URI writes no keys.
+func authoredSourceFields(src any) map[string]string {
+	structured, ok := src.(map[string]any)
+	if !ok {
+		return nil
+	}
+	fields := make(map[string]string, len(structured))
+	for key, value := range structured {
+		if value == nil {
+			continue
+		}
+		text, isString := value.(string)
+		if !isString {
+			text = fmt.Sprint(value)
+		}
+		fields[key] = text
+	}
+	return fields
+}
+
 // RecipeValuesMappingDeclared reports whether the presented Recipe declares a
 // values overlay.
 func (v Recipe) RecipeValuesMappingDeclared(document string) bool {
@@ -288,6 +316,27 @@ func (v Recipe) RecipeAuthoredSourceKind(document string) (string, bool) {
 func (v Recipe) RecipeAuthoredSourceReference(document string) (string, bool) {
 	v.refuseOtherDocument(document, "RecipeAuthoredSourceReference")
 	return v.sourceReference, v.sourceReferenceInURLKey
+}
+
+// RecipeAuthoredSourceField is the text the presented Recipe's structured source
+// writes under key, as authored, and whether it writes that key.
+func (v Recipe) RecipeAuthoredSourceField(document, key string) (string, bool) {
+	v.refuseOtherDocument(document, "RecipeAuthoredSourceField")
+	text, written := v.sourceFields[key]
+	return text, written
+}
+
+// RecipeSourceKindOciModule reports whether kind is an OCI module kind and, if
+// so, whether it takes `module_subdir`, read from the kinds' one declaration.
+func (v Recipe) RecipeSourceKindOciModule(kind string) (takesModuleSubdir, isModuleKind bool) {
+	return ociModuleRowOf(kind)
+}
+
+// ociModuleRowOf is the one reading of the OCI module kinds' declaration for both
+// authored kinds that write a source.
+func ociModuleRowOf(kind string) (takesModuleSubdir, isModuleKind bool) {
+	row, found := sourcekind.OCIArtifactOf(kind)
+	return row.TakesModuleSubdir, found
 }
 
 // RecipeSourceKindServed reports whether this program serves kind, read from the

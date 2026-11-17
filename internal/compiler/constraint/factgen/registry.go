@@ -1447,6 +1447,25 @@ var facts = []factDecl{
 			"invoked once per, while the answer follows from the kind alone.",
 	},
 	{
+		Name:        "recipe-authored-source-field",
+		Stage:       "document",
+		SourceField: "types.RecipeSpec.Source",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}, {Name: "key", Type: "string"}},
+		Returns:     "(string, bool)",
+		Doc:         "RecipeAuthoredSourceField is the text the presented Recipe's structured source writes under a key, as the author wrote it, and whether the source writes that key at all.\n\nIt lets a rule over an OCI module source read the coordinates beside the reference (`version`, `chart`, `ref`, `module_subdir`) without the host interpreting any of them: a value written as anything but a string answers with its text, so a rule is handed what the author typed. The second result is false for a source written as a single URI, for a Recipe declaring no source, and for a key the structured source does not write.",
+	},
+	{
+		Name:         "recipe-source-kind-oci-module",
+		Stage:        "document",
+		SourceField:  "sourcekind.OCIArtifactOf(kind)",
+		DocumentKind: "Recipe",
+		Subject:      []string{"document"},
+		Params:       []paramDecl{{Name: "kind", Type: "string"}},
+		Returns:      "(bool, bool)",
+		Doc:          "RecipeSourceKindOCIModule reports whether a source kind is an OCI module kind, and whether a source of that kind may name a directory inside the package with `module_subdir`.\n\nThe answer is the program's rather than the document's: it is read from the one declaration of the OCI module kinds, and is presented beside the kind a Recipe names so a rule over an OCI module source is asked as the document arrives, before anything is fetched. The first result is whether the kind takes `module_subdir`; the second is whether the kind is an OCI module kind at all.",
+	},
+	{
 		Name:        "recipe-authored-source-reference",
 		Stage:       "document",
 		SourceField: "types.RecipeSpec.Source",
@@ -1723,6 +1742,25 @@ var facts = []factDecl{
 			"for the reason the authored kind is: a fact is filed under one " +
 			"document kind. Both read the one declaration of the served set, so " +
 			"the two cannot answer differently about a kind.",
+	},
+	{
+		Name:        "feature-recipe-authored-source-field",
+		Stage:       "document",
+		SourceField: "types.FeatureRecipeSpec.Source",
+		Subject:     []string{"document"},
+		Params:      []paramDecl{{Name: "document", Type: "string"}, {Name: "key", Type: "string"}},
+		Returns:     "(string, bool)",
+		Doc:         "FeatureRecipeAuthoredSourceField is the text the presented FeatureRecipe's structured source writes under a key, and whether it writes that key.\n\nIt is the Recipe's fact for the other authored kind that writes a source, declared twice because a fact is filed under exactly one document kind. What it reads, and when its second result is false, is what the Recipe's own fact states.",
+	},
+	{
+		Name:         "feature-recipe-source-kind-oci-module",
+		Stage:        "document",
+		SourceField:  "sourcekind.OCIArtifactOf(kind)",
+		DocumentKind: "FeatureRecipe",
+		Subject:      []string{"document"},
+		Params:       []paramDecl{{Name: "kind", Type: "string"}},
+		Returns:      "(bool, bool)",
+		Doc:          "FeatureRecipeSourceKindOCIModule reports whether a source kind is an OCI module kind, and whether a source of that kind may name a directory inside the package with `module_subdir`.\n\nThe answer is the program's rather than the document's: it is read from the one declaration of the OCI module kinds, and is presented beside the kind a FeatureRecipe names so a rule over an OCI module source is asked as the document arrives, before anything is fetched. The first result is whether the kind takes `module_subdir`; the second is whether the kind is an OCI module kind at all.",
 	},
 	{
 		Name:        "feature-recipe-authored-source-reference",

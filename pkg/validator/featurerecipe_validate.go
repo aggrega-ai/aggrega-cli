@@ -46,9 +46,10 @@ var errFeatureRecipeValuesMappingRequiresSource = cerrors.Register("feature-reci
 // Called from catalog loading immediately after yaml.Unmarshal succeeds.
 // Returns a *ValidationError against the FeatureRecipe kind (or nil on pass).
 //
-// Three rules: values-mapping (valuesMapping requires source), source-kind (a
-// structured source names a kind an adapter serves) and source-url (the reference
-// a source names carries no credential of its own). There is deliberately no
+// The rules are values-mapping (valuesMapping requires source), source-kind (a
+// structured source names a kind an adapter serves), oci-module-source (a source of
+// an OCI module kind names exactly one artifact) and source-url (the reference a
+// source names carries no credential of its own). There is deliberately no
 // at-least-one-input-kind rule: a FeatureRecipe may be pure-wiring (provider +
 // implements only) or inject-only.
 func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
@@ -59,6 +60,9 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 		return err
 	}
 	if err := validateFeatureRecipeSourceKind(fr, sourcePath); err != nil {
+		return err
+	}
+	if err := validateFeatureRecipeOCIModuleSource(fr, sourcePath); err != nil {
 		return err
 	}
 	if err := validateFeatureRecipeSourceURL(fr, sourcePath); err != nil {
@@ -156,6 +160,35 @@ func validateFeatureRecipeValuesMapping(fr *types.FeatureRecipe, sourcePath stri
 			Name:    fr.Metadata.Name,
 			Version: fr.Metadata.Version,
 			Rule:    "values-mapping",
+		},
+	)
+	if len(failures) == 0 {
+		return nil
+	}
+	return failures[0]
+}
+
+// validateFeatureRecipeOCIModuleSource enforces the rule over an OCI module source: it names
+// exactly one artifact.
+//
+// The rule itself is declared rather than written out here: see
+// featureRecipeOCIModuleSourceNamesOneArtifact, which names the facts it reads and is
+// invoked once per presented document. What this function does is present the
+// document the load is holding and render whatever came back into the failure shape
+// this package's callers read.
+func validateFeatureRecipeOCIModuleSource(fr *types.FeatureRecipe, sourcePath string) error {
+	var presented constraint.DocumentView = documentview.NewFeatureRecipe(sourcePath, fr)
+	failures := shapeRuleErrorsFrom(
+		constraint.RunOnDocument(
+			sourcePath,
+			presented,
+			featureRecipeOCIModuleSourceNamesOneArtifact,
+		),
+		ruleSubject{
+			Kind:    envelope.KindFeatureRecipe,
+			Name:    fr.Metadata.Name,
+			Version: fr.Metadata.Version,
+			Rule:    "oci-module-source",
 		},
 	)
 	if len(failures) == 0 {

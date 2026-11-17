@@ -215,6 +215,18 @@ func (AggregateDocumentBase) RecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceField panics. This view does not carry
+// recipe-authored-source-field, which a Recipe document carries.
+func (AggregateDocumentBase) RecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-field, which a Recipe document carries")
+}
+
+// RecipeSourceKindOciModule panics. This view does not carry
+// recipe-source-kind-oci-module, which a Recipe document carries.
+func (AggregateDocumentBase) RecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry recipe-source-kind-oci-module, which a Recipe document carries")
+}
+
 // RecipeAuthoredSourceReference panics. This view does not carry
 // recipe-authored-source-reference, which a Recipe document carries.
 func (AggregateDocumentBase) RecipeAuthoredSourceReference(document string) (string, bool) {
@@ -276,6 +288,20 @@ func (AggregateDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (s
 // carries.
 func (AggregateDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceField panics. This view does not carry
+// feature-recipe-authored-source-field, which a FeatureRecipe document
+// carries.
+func (AggregateDocumentBase) FeatureRecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-field, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindOciModule panics. This view does not carry
+// feature-recipe-source-kind-oci-module, which a FeatureRecipe document
+// carries.
+func (AggregateDocumentBase) FeatureRecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry feature-recipe-source-kind-oci-module, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceReference panics. This view does not carry
@@ -473,6 +499,18 @@ func (ComponentDocumentBase) RecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceField panics. This view does not carry
+// recipe-authored-source-field, which a Recipe document carries.
+func (ComponentDocumentBase) RecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-field, which a Recipe document carries")
+}
+
+// RecipeSourceKindOciModule panics. This view does not carry
+// recipe-source-kind-oci-module, which a Recipe document carries.
+func (ComponentDocumentBase) RecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry recipe-source-kind-oci-module, which a Recipe document carries")
+}
+
 // RecipeAuthoredSourceReference panics. This view does not carry
 // recipe-authored-source-reference, which a Recipe document carries.
 func (ComponentDocumentBase) RecipeAuthoredSourceReference(document string) (string, bool) {
@@ -534,6 +572,20 @@ func (ComponentDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (s
 // carries.
 func (ComponentDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceField panics. This view does not carry
+// feature-recipe-authored-source-field, which a FeatureRecipe document
+// carries.
+func (ComponentDocumentBase) FeatureRecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-field, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindOciModule panics. This view does not carry
+// feature-recipe-source-kind-oci-module, which a FeatureRecipe document
+// carries.
+func (ComponentDocumentBase) FeatureRecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry feature-recipe-source-kind-oci-module, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceReference panics. This view does not carry
@@ -743,6 +795,18 @@ func (FeatureDocumentBase) RecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceField panics. This view does not carry
+// recipe-authored-source-field, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-field, which a Recipe document carries")
+}
+
+// RecipeSourceKindOciModule panics. This view does not carry
+// recipe-source-kind-oci-module, which a Recipe document carries.
+func (FeatureDocumentBase) RecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry recipe-source-kind-oci-module, which a Recipe document carries")
+}
+
 // RecipeAuthoredSourceReference panics. This view does not carry
 // recipe-authored-source-reference, which a Recipe document carries.
 func (FeatureDocumentBase) RecipeAuthoredSourceReference(document string) (string, bool) {
@@ -804,6 +868,20 @@ func (FeatureDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (str
 // carries.
 func (FeatureDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceField panics. This view does not carry
+// feature-recipe-authored-source-field, which a FeatureRecipe document
+// carries.
+func (FeatureDocumentBase) FeatureRecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-field, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindOciModule panics. This view does not carry
+// feature-recipe-source-kind-oci-module, which a FeatureRecipe document
+// carries.
+func (FeatureDocumentBase) FeatureRecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry feature-recipe-source-kind-oci-module, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceReference panics. This view does not carry
@@ -1001,6 +1079,18 @@ func (ManifestDocumentBase) RecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceField panics. This view does not carry
+// recipe-authored-source-field, which a Recipe document carries.
+func (ManifestDocumentBase) RecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-field, which a Recipe document carries")
+}
+
+// RecipeSourceKindOciModule panics. This view does not carry
+// recipe-source-kind-oci-module, which a Recipe document carries.
+func (ManifestDocumentBase) RecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry recipe-source-kind-oci-module, which a Recipe document carries")
+}
+
 // RecipeAuthoredSourceReference panics. This view does not carry
 // recipe-authored-source-reference, which a Recipe document carries.
 func (ManifestDocumentBase) RecipeAuthoredSourceReference(document string) (string, bool) {
@@ -1050,6 +1140,20 @@ func (ManifestDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (st
 // carries.
 func (ManifestDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceField panics. This view does not carry
+// feature-recipe-authored-source-field, which a FeatureRecipe document
+// carries.
+func (ManifestDocumentBase) FeatureRecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-field, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindOciModule panics. This view does not carry
+// feature-recipe-source-kind-oci-module, which a FeatureRecipe document
+// carries.
+func (ManifestDocumentBase) FeatureRecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry feature-recipe-source-kind-oci-module, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceReference panics. This view does not carry
@@ -1256,6 +1360,18 @@ func (ReleaseDocumentBase) RecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceField panics. This view does not carry
+// recipe-authored-source-field, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-field, which a Recipe document carries")
+}
+
+// RecipeSourceKindOciModule panics. This view does not carry
+// recipe-source-kind-oci-module, which a Recipe document carries.
+func (ReleaseDocumentBase) RecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry recipe-source-kind-oci-module, which a Recipe document carries")
+}
+
 // RecipeAuthoredSourceReference panics. This view does not carry
 // recipe-authored-source-reference, which a Recipe document carries.
 func (ReleaseDocumentBase) RecipeAuthoredSourceReference(document string) (string, bool) {
@@ -1317,6 +1433,20 @@ func (ReleaseDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (str
 // carries.
 func (ReleaseDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceField panics. This view does not carry
+// feature-recipe-authored-source-field, which a FeatureRecipe document
+// carries.
+func (ReleaseDocumentBase) FeatureRecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-field, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindOciModule panics. This view does not carry
+// feature-recipe-source-kind-oci-module, which a FeatureRecipe document
+// carries.
+func (ReleaseDocumentBase) FeatureRecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry feature-recipe-source-kind-oci-module, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceReference panics. This view does not carry
@@ -1545,6 +1675,20 @@ func (RecipeDocumentBase) FeatureRecipeAuthoredSourceKind(document string) (stri
 // carries.
 func (RecipeDocumentBase) FeatureRecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceField panics. This view does not carry
+// feature-recipe-authored-source-field, which a FeatureRecipe document
+// carries.
+func (RecipeDocumentBase) FeatureRecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-field, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindOciModule panics. This view does not carry
+// feature-recipe-source-kind-oci-module, which a FeatureRecipe document
+// carries.
+func (RecipeDocumentBase) FeatureRecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry feature-recipe-source-kind-oci-module, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceReference panics. This view does not carry
@@ -1783,6 +1927,18 @@ func (FeatureRecipeDocumentBase) RecipeAuthoredSourceKind(document string) (stri
 // recipe-source-kind-served, which a Recipe document carries.
 func (FeatureRecipeDocumentBase) RecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
+}
+
+// RecipeAuthoredSourceField panics. This view does not carry
+// recipe-authored-source-field, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-field, which a Recipe document carries")
+}
+
+// RecipeSourceKindOciModule panics. This view does not carry
+// recipe-source-kind-oci-module, which a Recipe document carries.
+func (FeatureRecipeDocumentBase) RecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry recipe-source-kind-oci-module, which a Recipe document carries")
 }
 
 // RecipeAuthoredSourceReference panics. This view does not carry
@@ -2047,6 +2203,18 @@ func (CatalogViewBase) RecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry recipe-source-kind-served, which a Recipe document carries")
 }
 
+// RecipeAuthoredSourceField panics. This view does not carry
+// recipe-authored-source-field, which a Recipe document carries.
+func (CatalogViewBase) RecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry recipe-authored-source-field, which a Recipe document carries")
+}
+
+// RecipeSourceKindOciModule panics. This view does not carry
+// recipe-source-kind-oci-module, which a Recipe document carries.
+func (CatalogViewBase) RecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry recipe-source-kind-oci-module, which a Recipe document carries")
+}
+
 // RecipeAuthoredSourceReference panics. This view does not carry
 // recipe-authored-source-reference, which a Recipe document carries.
 func (CatalogViewBase) RecipeAuthoredSourceReference(document string) (string, bool) {
@@ -2108,6 +2276,20 @@ func (CatalogViewBase) FeatureRecipeAuthoredSourceKind(document string) (string,
 // carries.
 func (CatalogViewBase) FeatureRecipeSourceKindServed(kind string) bool {
 	panic("this view does not carry feature-recipe-source-kind-served, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeAuthoredSourceField panics. This view does not carry
+// feature-recipe-authored-source-field, which a FeatureRecipe document
+// carries.
+func (CatalogViewBase) FeatureRecipeAuthoredSourceField(document string, key string) (string, bool) {
+	panic("this view does not carry feature-recipe-authored-source-field, which a FeatureRecipe document carries")
+}
+
+// FeatureRecipeSourceKindOciModule panics. This view does not carry
+// feature-recipe-source-kind-oci-module, which a FeatureRecipe document
+// carries.
+func (CatalogViewBase) FeatureRecipeSourceKindOciModule(kind string) (bool, bool) {
+	panic("this view does not carry feature-recipe-source-kind-oci-module, which a FeatureRecipe document carries")
 }
 
 // FeatureRecipeAuthoredSourceReference panics. This view does not carry
@@ -3735,6 +3917,8 @@ type RecipeDocumentFacts interface {
 	RecipeArtifactsDeclared(document string) bool
 	RecipeAuthoredSourceKind(document string) (string, bool)
 	RecipeSourceKindServed(kind string) bool
+	RecipeAuthoredSourceField(document string, key string) (string, bool)
+	RecipeSourceKindOciModule(kind string) (bool, bool)
 	RecipeAuthoredSourceReference(document string) (string, bool)
 	RecipeOutputLabelKeys(document string) []string
 	RecipeOutputComponentLabelKeys(document string) []string
@@ -3759,6 +3943,8 @@ type FeatureRecipeDocumentFacts interface {
 	FeatureRecipeValuesMappingDeclared(document string) bool
 	FeatureRecipeAuthoredSourceKind(document string) (string, bool)
 	FeatureRecipeSourceKindServed(kind string) bool
+	FeatureRecipeAuthoredSourceField(document string, key string) (string, bool)
+	FeatureRecipeSourceKindOciModule(kind string) (bool, bool)
 	FeatureRecipeAuthoredSourceReference(document string) (string, bool)
 	FeatureRecipePipelineStepIds(document string) []string
 }

@@ -81,6 +81,9 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 	if err := validateRecipeSourceKind(r, sourcePath); err != nil {
 		return err
 	}
+	if err := validateRecipeOCIModuleSource(r, sourcePath); err != nil {
+		return err
+	}
 	if err := validateRecipeSourceURL(r, sourcePath); err != nil {
 		return err
 	}
@@ -377,6 +380,35 @@ func validateRecipeInputKinds(r *types.Recipe, sourcePath string) error {
 			Name:    r.Metadata.Name,
 			Version: r.Metadata.Version,
 			Rule:    "input-kinds",
+		},
+	)
+	if len(failures) == 0 {
+		return nil
+	}
+	return failures[0]
+}
+
+// validateRecipeOCIModuleSource enforces the rule over an OCI module source: it names
+// exactly one artifact.
+//
+// The rule itself is declared rather than written out here: see
+// recipeOCIModuleSourceNamesOneArtifact, which names the facts it reads and is
+// invoked once per presented document. What this function does is present the
+// document the load is holding and render whatever came back into the failure shape
+// this package's callers read.
+func validateRecipeOCIModuleSource(r *types.Recipe, sourcePath string) error {
+	var presented constraint.DocumentView = documentview.NewRecipe(sourcePath, r)
+	failures := shapeRuleErrorsFrom(
+		constraint.RunOnDocument(
+			sourcePath,
+			presented,
+			recipeOCIModuleSourceNamesOneArtifact,
+		),
+		ruleSubject{
+			Kind:    envelope.KindRecipe,
+			Name:    r.Metadata.Name,
+			Version: r.Metadata.Version,
+			Rule:    "oci-module-source",
 		},
 	)
 	if len(failures) == 0 {

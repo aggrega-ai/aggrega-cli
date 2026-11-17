@@ -77,6 +77,10 @@ type FeatureRecipe struct {
 	sourceReference         string
 	sourceReferenceInURLKey bool
 
+	// sourceFields is the text each key of the document's structured source
+	// writes, as authored. It is only looked up by key, never iterated.
+	sourceFields map[string]string
+
 	// pipelineStepIDs are the ids the pipeline's steps declare, one per step, in
 	// the order the steps are written.
 	pipelineStepIDs []string
@@ -100,6 +104,7 @@ func NewFeatureRecipe(path string, fr *types.FeatureRecipe) FeatureRecipe {
 		sourceKindWritten:       written,
 		sourceReference:         reference,
 		sourceReferenceInURLKey: inURLKey,
+		sourceFields:            authoredSourceFields(fr.Spec.Source),
 		pipelineStepIDs:         authoredPipelineStepIDs(fr.Spec.Pipeline),
 	}
 }
@@ -138,6 +143,20 @@ func (v FeatureRecipe) FeatureRecipeAuthoredSourceKind(document string) (string,
 func (v FeatureRecipe) FeatureRecipeAuthoredSourceReference(document string) (string, bool) {
 	v.refuseOtherDocument(document, "FeatureRecipeAuthoredSourceReference")
 	return v.sourceReference, v.sourceReferenceInURLKey
+}
+
+// FeatureRecipeAuthoredSourceField is the text the presented FeatureRecipe's
+// structured source writes under key, as authored, and whether it writes that key.
+func (v FeatureRecipe) FeatureRecipeAuthoredSourceField(document, key string) (string, bool) {
+	v.refuseOtherDocument(document, "FeatureRecipeAuthoredSourceField")
+	text, written := v.sourceFields[key]
+	return text, written
+}
+
+// FeatureRecipeSourceKindOciModule reports whether kind is an OCI module kind and,
+// if so, whether it takes `module_subdir`, read from the kinds' one declaration.
+func (v FeatureRecipe) FeatureRecipeSourceKindOciModule(kind string) (takesModuleSubdir, isModuleKind bool) {
+	return ociModuleRowOf(kind)
 }
 
 // FeatureRecipeSourceKindServed reports whether this program serves kind, read
