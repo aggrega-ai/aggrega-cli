@@ -432,6 +432,8 @@ func TestOCIModuleSourceTerraformPullAndBuild(t *testing.T) {
 	t.Run("MovedTag", func(t *testing.T) {
 		movedRoot, movedRelease, movedCatalog, movedEntities := fresh(t, one, nil)
 		lockBefore := mustReadFile(t, recipeLockPath(movedEntities[0]))
+		// The tag is restored for the sub-tests that follow, however this one ends.
+		t.Cleanup(func() { pushNet(t, host, pkg, netVersion) })
 		pushNet(t, host, zipPackage(t, [2]string{"main.tf", "# a different package\n"}), netVersion)
 		err := plainPull(t, movedRoot, movedRelease, movedCatalog)
 		if err == nil {
@@ -448,8 +450,6 @@ func TestOCIModuleSourceTerraformPullAndBuild(t *testing.T) {
 		if !bytes.Equal(lockBefore, mustReadFile(t, recipeLockPath(movedEntities[0]))) {
 			t.Error("the refused pull rewrote the entity.lock")
 		}
-		// The tag is restored for the sub-tests that follow.
-		pushNet(t, host, pkg, netVersion)
 	})
 
 	t.Run("ByManifestDigest", func(t *testing.T) {
