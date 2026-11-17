@@ -61,7 +61,7 @@ func TestEagerLoad_SkipsArtifactCacheBelowWorkspaceRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadPassOne: %v", err)
 	}
-	if _, ok := cat.SchemaLibraries["DbSizing"]; ok {
+	if _, ok := cat.DefaultLibraries().Schemas["DbSizing"]; ok {
 		t.Error("the catalog load ingested a cached SchemaLibrary as an authored entity; the cache skip did not fire for a cache below the workspace root")
 	}
 	if _, ok := cat.Components["core/authored-app:1.0.0"]; !ok {
@@ -73,7 +73,7 @@ func TestEagerLoad_SkipsArtifactCacheBelowWorkspaceRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canary LoadPassOne: %v", err)
 	}
-	if _, ok := canary.SchemaLibraries["DbSizing"]; !ok {
+	if _, ok := canary.DefaultLibraries().Schemas["DbSizing"]; !ok {
 		t.Error("canary failed: an unconfigured-cache load did NOT ingest the cached SchemaLibrary, so the skip assertion is vacuous")
 	}
 }
@@ -100,10 +100,10 @@ func TestLazyWalks_SkipArtifactCacheBelowWorkspaceRoot(t *testing.T) {
 	}
 	subject.buildComponentIndex()
 
-	if _, ok := subject.schemaLibraries["DbSizing"]; ok {
+	if _, ok := subject.defaultSchemaLibraries()["DbSizing"]; ok {
 		t.Error("buildSchemaLibraries ingested a cached SchemaLibrary from a cache below the workspace root")
 	}
-	if _, ok := subject.mappingLibraries["BaseMappings"]; ok {
+	if _, ok := subject.DefaultLibraries().Mappings["BaseMappings"]; ok {
 		t.Error("buildRecipeIndex ingested a cached MappingLibrary from a cache below the workspace root")
 	}
 	if _, ok := subject.componentIndex[entityIndexKey("core/authored-app", "1.0.0")]; !ok {
@@ -115,7 +115,7 @@ func TestLazyWalks_SkipArtifactCacheBelowWorkspaceRoot(t *testing.T) {
 	if err := canary.buildSchemaLibraries(); err != nil {
 		t.Fatalf("canary buildSchemaLibraries: %v", err)
 	}
-	if _, ok := canary.schemaLibraries["DbSizing"]; !ok {
+	if _, ok := canary.defaultSchemaLibraries()["DbSizing"]; !ok {
 		t.Error("canary failed: an unconfigured-cache walk did NOT ingest the cached SchemaLibrary, so the skip assertion is vacuous")
 	}
 }

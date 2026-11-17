@@ -423,11 +423,12 @@ func validateComponentEntity(res *EntityResult, wsRoot, cacheDir string, dirs, n
 	if err != nil {
 		return err
 	}
-	if err := validator.ValidateSchemaPillars("Component", comp.Metadata.Name, path, comp.Spec.Extends, &comp.Spec.Schema, cat.SchemaLibraries); err != nil {
+	schemaLibraries := cat.DefaultLibraries().Schemas
+	if err := validator.ValidateSchemaPillars("Component", comp.Metadata.Name, path, comp.Spec.Extends, &comp.Spec.Schema, schemaLibraries); err != nil {
 		return fmt.Errorf("pillars: %w", withCachedLibraryRemedy(err, wsRoot, cacheDir, dirs, named))
 	}
 	if errs := catalog.UnusablePillarContractErrors(
-		"Component", comp.Metadata.Name, path, comp.Spec.Extends, &comp.Spec.Schema, comp.Spec.UsesSchema, cat.SchemaLibraries,
+		"Component", comp.Metadata.Name, path, comp.Spec.Extends, &comp.Spec.Schema, comp.Spec.UsesSchema, schemaLibraries,
 	); len(errs) > 0 {
 		return fmt.Errorf("pillars: %w", errors.Join(errs...))
 	}
@@ -459,11 +460,12 @@ func validateFeatureEntity(res *EntityResult, wsRoot, cacheDir string, dirs, nam
 	if err != nil {
 		return err
 	}
-	if err := validator.ValidateSchemaPillars("Feature", feat.Metadata.Name, path, feat.Spec.Extends, &feat.Spec.Schema, cat.SchemaLibraries); err != nil {
+	schemaLibraries := cat.DefaultLibraries().Schemas
+	if err := validator.ValidateSchemaPillars("Feature", feat.Metadata.Name, path, feat.Spec.Extends, &feat.Spec.Schema, schemaLibraries); err != nil {
 		return fmt.Errorf("pillars: %w", withCachedLibraryRemedy(err, wsRoot, cacheDir, dirs, named))
 	}
 	if errs := catalog.UnusablePillarContractErrors(
-		"Feature", feat.Metadata.Name, path, feat.Spec.Extends, &feat.Spec.Schema, feat.Spec.UsesSchema, cat.SchemaLibraries,
+		"Feature", feat.Metadata.Name, path, feat.Spec.Extends, &feat.Spec.Schema, feat.Spec.UsesSchema, schemaLibraries,
 	); len(errs) > 0 {
 		return fmt.Errorf("pillars: %w", errors.Join(errs...))
 	}
@@ -753,18 +755,20 @@ func buildOfOneReadsOf(rec *types.Recipe, cat *catalog.Catalog, lookup resolver.
 
 // templateLibrariesOf is the set of libraries a Recipe's `$import:` entries
 // resolve against in this scope: the ones the catalog directories the check is
-// handed hold. No lockfile is read here, so a library reaches the check only by
-// sitting in one of those directories.
+// handed hold, one version per name as a bare reference selects it. No lockfile
+// is read here, so a library reaches the check only by sitting in one of those
+// directories.
 //
 // The census of what a Recipe reads and the isolated render both take this one
 // set. A render handed none would stop at the first import as a library the
 // catalog does not hold while the census beside it resolved the same import, so
 // the two would disagree about one Recipe in one run.
 func templateLibrariesOf(cat *catalog.Catalog) renderer.RecipeTemplateLibraries {
+	libraries := cat.DefaultLibraries()
 	return renderer.RecipeTemplateLibraries{
-		Mappings:  cat.MappingLibraries,
-		Workloads: cat.WorkloadLibraries,
-		Artifacts: cat.ArtifactLibraries,
+		Mappings:  libraries.Mappings,
+		Workloads: libraries.Workloads,
+		Artifacts: libraries.Artifacts,
 	}
 }
 

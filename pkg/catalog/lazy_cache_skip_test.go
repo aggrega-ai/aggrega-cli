@@ -131,10 +131,10 @@ func TestLazyWalks_SkipArtifactCacheUnderCatalogDir(t *testing.T) {
 	}
 	subject.buildComponentIndex()
 
-	if _, ok := subject.schemaLibraries["DbSizing"]; ok {
+	if _, ok := subject.defaultSchemaLibraries()["DbSizing"]; ok {
 		t.Error("buildSchemaLibraries ingested a cached SchemaLibrary as authored catalog; the cache walk-skip failed")
 	}
-	if _, ok := subject.mappingLibraries["BaseMappings"]; ok {
+	if _, ok := subject.DefaultLibraries().Mappings["BaseMappings"]; ok {
 		t.Error("buildRecipeIndex ingested a cached MappingLibrary as authored catalog; the cache walk-skip failed")
 	}
 	for identity, doc := range subject.componentIndex {
@@ -155,10 +155,10 @@ func TestLazyWalks_SkipArtifactCacheUnderCatalogDir(t *testing.T) {
 		t.Fatalf("canary buildSchemaLibraries: %v", err)
 	}
 	canary.buildComponentIndex()
-	if _, ok := canary.schemaLibraries["DbSizing"]; !ok {
+	if _, ok := canary.defaultSchemaLibraries()["DbSizing"]; !ok {
 		t.Error("canary failed: an unconfigured-cache walk did NOT ingest the cached SchemaLibrary, so the skip assertion is vacuous")
 	}
-	if _, ok := canary.mappingLibraries["BaseMappings"]; !ok {
+	if _, ok := canary.DefaultLibraries().Mappings["BaseMappings"]; !ok {
 		t.Error("canary failed: an unconfigured-cache walk did NOT ingest the cached MappingLibrary, so the skip assertion is vacuous")
 	}
 	var canarySawCachePath bool
@@ -174,15 +174,15 @@ func TestLazyWalks_SkipArtifactCacheUnderCatalogDir(t *testing.T) {
 
 // TestLazyWalks_CachedVersionCollisionDoesNotBypassPin is the first consequence.
 // Two versions of ONE SchemaLibrary name sit in the cache; only 1.10.0 is
-// lockfile-pinned. The Tier-1 walk keys the library on its BARE NAME with no
-// version and overwrites unconditionally, so the two slots collide and the
-// LEXICALLY LAST one wins — "DbSizing:1.9.0" sorts after "DbSizing:1.10.0", so
-// the stale, UNPINNED bytes take the name. The pinned Tier-2 fold that follows
-// is first-win, so it finds the name already claimed and skips the one slot that
+// lockfile-pinned. A Tier-1 walk that read the cache would place both slots as
+// catalog-directory copies, so the catalog directory would own the name: the
+// stale, UNPINNED 1.9.0 would be held beside an unverified 1.10.0, and the pinned
+// Tier-2 fold that follows would find the name owned and skip the one slot that
 // would have been digest- and manifest-verified.
 //
 // The net effect is a pin bypass: the build resolves bytes no lockfile vouches
-// for, and the recorded pin never gets to say otherwise.
+// for, and the recorded pin never gets to say otherwise. So the view must hold
+// 1.10.0 alone, and hold it as read from its pinned slot.
 func TestLazyWalks_CachedVersionCollisionDoesNotBypassPin(t *testing.T) {
 	ws := t.TempDir()
 
@@ -197,7 +197,7 @@ func TestLazyWalks_CachedVersionCollisionDoesNotBypassPin(t *testing.T) {
 		t.Fatalf("buildSchemaLibraries: %v", err)
 	}
 
-	lib, ok := subject.schemaLibraries["DbSizing"]
+	lib, ok := subject.defaultSchemaLibraries()["DbSizing"]
 	if !ok {
 		t.Fatal("the lockfile-pinned SchemaLibrary did not resolve at all")
 	}
@@ -205,18 +205,26 @@ func TestLazyWalks_CachedVersionCollisionDoesNotBypassPin(t *testing.T) {
 		t.Errorf("resolved SchemaLibrary DbSizing at version %q, want the lockfile-pinned %q; an unpinned cache slot won the name and the verified slot was skipped",
 			lib.Metadata.Version, "1.10.0")
 	}
-	if got := subject.entityBytes[entityBytesKey("SchemaLibrary", "DbSizing")]; !bytes.Equal(got, []byte(pinnedLibYAML)) {
+	pinnedClaim := entityBytesKey("SchemaLibrary", entityIndexKey("DbSizing", "1.10.0"))
+	if got := subject.entityBytes[pinnedClaim]; !bytes.Equal(got, []byte(pinnedLibYAML)) {
 		t.Errorf("retained SchemaLibrary bytes are not the digest-verified pinned bytes:\n got %q", string(got))
+	}
+	if doc, authored := subject.origins[pinnedClaim].authoredDocument(); authored {
+		t.Errorf("DbSizing:1.10.0 is recorded as authored at %s, not as read from its pinned slot", doc)
+	}
+	if _, held := subject.schemaLibraryVersions[entityIndexKey("DbSizing", "1.9.0")]; held {
+		t.Error("the unpinned cache slot DbSizing:1.9.0 is held")
 	}
 }
 
 // TestLazyWalks_CachedMappingLibraryDoesNotShadowAuthored is the second
-// consequence. A cached MappingLibrary and an authored one share a name. The
-// recipe-shell fold is first-win and a directory walk visits entries in lexical
-// order, where "." precedes every letter and digit — so the cache directory is
-// descended into FIRST and its copy claims the name. The authored file is then
-// dropped and recorded as the shadowed one, which points the author at their own
-// correct file as the problem.
+// consequence. A cached MappingLibrary and an authored one share a name. A walk
+// that read the cache would read it as part of the catalog directory, ahead of the
+// author's file — a directory walk visits entries in lexical order, where "."
+// precedes every letter and digit — and the cached copy would be held beside the
+// authored one as a version of the same name nothing verified, or, at the same
+// version, would claim the identity and leave the author's own correct file
+// recorded as the duplicate.
 func TestLazyWalks_CachedMappingLibraryDoesNotShadowAuthored(t *testing.T) {
 	ws := t.TempDir()
 
@@ -227,7 +235,7 @@ func TestLazyWalks_CachedMappingLibraryDoesNotShadowAuthored(t *testing.T) {
 	subject := NewLazyLookup(ws, cacheUnderCatalogDir, []string{ws}, nil)
 	subject.buildRecipeIndex()
 
-	lib, ok := subject.mappingLibraries["BaseMappings"]
+	lib, ok := subject.DefaultLibraries().Mappings["BaseMappings"]
 	if !ok {
 		t.Fatal("the authored MappingLibrary did not resolve at all")
 	}
@@ -240,6 +248,9 @@ func TestLazyWalks_CachedMappingLibraryDoesNotShadowAuthored(t *testing.T) {
 	}
 	if _, ingested := subject.recipeSkips[cachedPath]; ingested {
 		t.Errorf("the cached copy at %s was parsed and folded (then reported); it should never have been visited", cachedPath)
+	}
+	if _, held := subject.mappingLibraryVersions[entityIndexKey("BaseMappings", "1.0.0")]; held {
+		t.Errorf("the cached copy at %s is held as a version of the authored library; it should never have been visited", cachedPath)
 	}
 }
 
@@ -259,7 +270,7 @@ func TestUnverifiedCachedSchemaLibraries_NamesOnlyWhatWentUnused(t *testing.T) {
 	if err := subject.buildSchemaLibraries(); err != nil {
 		t.Fatalf("buildSchemaLibraries: %v", err)
 	}
-	if _, ok := subject.schemaLibraries["Verified"]; !ok {
+	if _, ok := subject.defaultSchemaLibraries()["Verified"]; !ok {
 		t.Fatal("the lockfile-pinned library did not resolve; the fixture is not measuring what it claims")
 	}
 

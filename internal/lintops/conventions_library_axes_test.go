@@ -14,12 +14,16 @@ import (
 // TestClosureEntityFilesCoversEveryLibraryAxis pins the conventions walk to every
 // library axis the closure declares, not a subset of them.
 //
-// The collection used to name two axes and stop, so a locally-authored library on
-// either of the other two was never handed to the conventions rules: it was linted
-// by nobody, and nothing reported the gap — a convention violation in such a
-// library simply shipped. Asserting against the declared axis set rather than a
-// hand-written list of axis names is what keeps that from recurring, because a new
-// axis joins this assertion by being declared rather than by being remembered here.
+// A collection naming only some axes never hands a locally-authored library on
+// another axis to the conventions rules: it is linted by nobody, and nothing
+// reports the gap. Asserting against the declared axis set rather than a
+// hand-written list of axis names keeps the coverage a property of the axis set: a
+// new axis joins this assertion by being declared rather than by being remembered
+// here.
+//
+// The closure names each library at the version its resolution recorded, and the
+// index is the one the release pass builds from the catalog walk, so each library
+// is looked up exactly as a Release's lint looks it up.
 func TestClosureEntityFilesCoversEveryLibraryAxis(t *testing.T) {
 	ws := t.TempDir()
 
@@ -75,23 +79,25 @@ spec:
 		paths[file] = p
 	}
 
-	// The name index the collection joins on, one entry per authored library.
-	index := map[string]string{
-		"SchemaLibrary|ProbeSchemas":     paths["schema.yaml"],
-		"MappingLibrary|ProbeMappings":   paths["mapping.yaml"],
-		"WorkloadLibrary|ProbeWorkloads": paths["workload.yaml"],
-		"ArtifactLibrary|ProbeArtifacts": paths["artifacts.yaml"],
+	// The index the collection joins on, built from the catalog walk as the release
+	// pass builds it.
+	files, _, err := walkCatalogEntityFiles(t.Context(), ws, []string{ws}, nil, "")
+	if err != nil {
+		t.Fatalf("walk catalog: %v", err)
 	}
 
+	resolved := func(name string) []closure.ResolvedLibrary {
+		return []closure.ResolvedLibrary{{URI: name, ResolvedVersion: "1.0.0"}}
+	}
 	cl := closure.Closure{
-		SchemaLibraries:   []closure.ResolvedLibrary{{URI: "ProbeSchemas"}},
-		MappingLibraries:  []closure.ResolvedLibrary{{URI: "ProbeMappings"}},
-		WorkloadLibraries: []closure.ResolvedLibrary{{URI: "ProbeWorkloads"}},
-		ArtifactLibraries: []closure.ResolvedLibrary{{URI: "ProbeArtifacts"}},
+		SchemaLibraries:   resolved("ProbeSchemas"),
+		MappingLibraries:  resolved("ProbeMappings"),
+		WorkloadLibraries: resolved("ProbeWorkloads"),
+		ArtifactLibraries: resolved("ProbeArtifacts"),
 	}
 
 	lazyView := catalog.NewLazyLookup(ws, "", []string{ws}, nil)
-	got := closureEntityFiles(lazyView, cl, index)
+	got := closureEntityFiles(lazyView, cl, entityFileIndex(files))
 
 	returned := map[string]bool{}
 	for _, p := range got {

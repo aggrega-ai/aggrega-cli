@@ -87,7 +87,10 @@ type BuildInputs struct {
 func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (pipeline.Outcome, error) {
 	view := in.View
 	r := in.Resolved
-	catLookup := view.AsCatalogLookupContext(ctx)
+	// Each library is read at the version this Release's closure resolved, where
+	// the closure was resolved with its library axes (ResolvedClosure.Libraries).
+	libraries := r.Libraries(view)
+	catLookup := view.AsCatalogLookupWithSchemas(ctx, libraries.Schemas)
 
 	// Reconstruct provider resolution from the LOCKFILE, never the workspace
 	// config, so rendered output is invariant to a plugins.providers change made
@@ -133,9 +136,9 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 		// path.
 		PluginPins:                       pluginpath.RecordedPins(lockfile.PluginPins(in.Lockfile, in.ReleasePath)),
 		WorkspaceRoot:                    in.WorkspaceRoot,
-		MappingLibraries:                 view.MappingLibraries(),
-		WorkloadLibraries:                view.WorkloadLibraries(),
-		ArtifactLibraries:                view.ArtifactLibraries(),
+		MappingLibraries:                 libraries.Mappings,
+		WorkloadLibraries:                libraries.Workloads,
+		ArtifactLibraries:                libraries.Artifacts,
 		RecordedPins:                     view.RecordedPins(),
 		CompilerVersion:                  in.CompilerVersion,
 		TolerateCatalogViewInconsistency: in.TolerateCatalogViewInconsistency,

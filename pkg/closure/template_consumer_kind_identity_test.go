@@ -48,7 +48,7 @@ func (recipesOnlySource) WorkloadLibrary(string) (types.WorkloadLibrary, bool) {
 func (recipesOnlySource) ArtifactLibrary(string) (types.ArtifactLibrary, bool) {
 	return types.ArtifactLibrary{}, false
 }
-func (recipesOnlySource) HoldResolvedLibrary(LibraryAxis, ResolvedLibrary) {}
+func (recipesOnlySource) HoldResolvedLibrary(LibraryAxis, ResolvedLibrary) error { return nil }
 
 // TestEachEntityContributesTemplateConsumersAsTheKindItWasCollectedAs holds the
 // template-library consumer scan to the identity the walk collected each entity

@@ -2,9 +2,9 @@
 // Copyright 2026 Cognitio s.r.l.
 
 // Tests for the cross-document $ref lookup perspective on the catalog's
-// SchemaLibraries map. The compactform compiler resolves cross-document
-// $ref URIs (e.g. "BaseComponents#/schemas/BaseComponentParameter") by
-// consulting Catalog.SchemaLibraries[<library-name>] directly. These tests
+// name-keyed SchemaLibrary selection. The compactform compiler resolves
+// cross-document $ref URIs (e.g. "BaseComponents#/schemas/BaseComponentParameter")
+// by consulting Catalog.DefaultLibraries().Schemas[<library-name>]. These tests
 // pin the contract that backs that resolution: a library loaded into the
 // catalog is reachable by its PascalCase metadata.name; an unregistered
 // name resolves to a zero-value + ok=false the compactform expander treats
@@ -61,11 +61,12 @@ spec:
 		t.Fatalf("Load: %v", err)
 	}
 
-	if got := len(c.SchemaLibraries); got != 1 {
+	schemas := c.DefaultLibraries().Schemas
+	if got := len(schemas); got != 1 {
 		t.Fatalf("SchemaLibraries length = %d, want 1", got)
 	}
 
-	lib, ok := c.SchemaLibraries["BaseComponents"]
+	lib, ok := schemas["BaseComponents"]
 	if !ok {
 		t.Fatalf("BaseComponents not registered in SchemaLibraries; keys = %v", schemaLibraryKeys(c))
 	}
@@ -110,15 +111,15 @@ spec:
 		t.Fatalf("Load: %v", err)
 	}
 
-	_, ok := c.SchemaLibraries["UnregisteredLibrary"]
+	_, ok := c.DefaultLibraries().Schemas["UnregisteredLibrary"]
 	if ok {
 		t.Error("lookup of unregistered library name returned ok=true; want false")
 	}
 }
 
 func schemaLibraryKeys(c *Catalog) []string {
-	keys := make([]string, 0, len(c.SchemaLibraries))
-	for k := range c.SchemaLibraries {
+	keys := make([]string, 0, len(c.SchemaLibraryVersions))
+	for k := range c.SchemaLibraryVersions {
 		keys = append(keys, k)
 	}
 	return keys

@@ -85,7 +85,7 @@ func schemaLib(name string) types.SchemaLibrary {
 func TestVerifyNoOCILocationCollision(t *testing.T) {
 	t.Parallel()
 
-	clean := &catalog.Catalog{SchemaLibraries: map[string]types.SchemaLibrary{
+	clean := &catalog.Catalog{SchemaLibraryVersions: map[string]types.SchemaLibrary{
 		"AIDatastores":   schemaLib("AIDatastores"),
 		"BaseComponents": schemaLib("BaseComponents"),
 	}}
@@ -93,7 +93,7 @@ func TestVerifyNoOCILocationCollision(t *testing.T) {
 		t.Fatalf("clean catalog: unexpected collision: %v", err)
 	}
 
-	bad := &catalog.Catalog{SchemaLibraries: map[string]types.SchemaLibrary{
+	bad := &catalog.Catalog{SchemaLibraryVersions: map[string]types.SchemaLibrary{
 		"AIDatastores": schemaLib("AIDatastores"),
 		"AiDatastores": schemaLib("AiDatastores"),
 	}}

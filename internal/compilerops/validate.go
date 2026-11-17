@@ -154,10 +154,21 @@ func resolveModuleReferences(ctx context.Context, resolved *ResolvedClosure) err
 // carries its own contract below. ReleasePath locates the record the
 // verdict-plugin trust gate reads and carries its own contract below.
 type ValidateInputs struct {
-	View     *catalog.LazyLookup
-	Closure  closure.Closure
-	Release  *types.Release
-	Manifest *types.Manifest
+	View    *catalog.LazyLookup
+	Closure closure.Closure
+	// ClosureLibrariesResolved is ResolvedClosure.LibrariesResolved of the closure
+	// handed in: true where it was resolved with its library axes folded in, so each
+	// library is read at the version Closure names.
+	ClosureLibrariesResolved bool
+	// LibraryRecord is the lockfile whose library rows fix the version each library
+	// is read at where Closure carries none (ClosureLibrariesResolved false). Nil
+	// reads each library at the version a bare reference selects. It is separate
+	// from Lockfile, which also holds the pipeline's guests to their recorded
+	// identities, a footing a surface that only reads the record's libraries leaves
+	// off.
+	LibraryRecord *lockfile.Lockfile
+	Release       *types.Release
+	Manifest      *types.Manifest
 	// ReleasePath is the path of the Release being validated. It locates the record
 	// of the plugin identities trusted for this Release's verdict attachments, which
 	// sits beside that Release, and it is required: validation runs the same
@@ -337,12 +348,10 @@ type ValidateResult struct {
 func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	r := &ValidateResult{}
 
-	if extErrs := in.View.ResolveClosureExtends(ctx, in.Closure); len(extErrs) > 0 {
+	libraries := releaseLibraries(in.View, in.Closure, in.ClosureLibrariesResolved, in.LibraryRecord)
+	if extErrs, pillarErr := closureGates(ctx, in.View, in.Closure, libraries.Schemas); len(extErrs) > 0 || pillarErr != nil {
 		r.ClosureExtendsErrors = extErrs
-		return r
-	}
-	if err := in.View.ValidateClosureScopedPillars(ctx, in.Closure); err != nil {
-		r.PillarError = err
+		r.PillarError = pillarErr
 		return r
 	}
 
@@ -396,7 +405,7 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	tier4, runErr := pipeline.RunTier4Pipeline(
 		ctx,
 		inputs,
-		in.View.AsCatalogLookupContext(ctx),
+		in.View.AsCatalogLookupWithSchemas(ctx, libraries.Schemas),
 		in.View.RecipeLookupWithManifest(in.Manifest),
 		in.View.SubAggregateLoader(),
 	)
@@ -415,6 +424,41 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		r.NarrowingWarnings = in.View.ClosureNarrowingWarnings()
 	}
 	return r
+}
+
+// closureGates runs the two gates Validate runs ahead of everything else over the
+// closure — the closure-scoped extends gate, then the closure-scoped schema-pillar
+// gate — each reading SchemaLibraries from schemas, and returns the refusal of the
+// first that refuses, or neither.
+func closureGates(ctx context.Context, view *catalog.LazyLookup, cl closure.Closure, schemas map[string]types.SchemaLibrary) (extendsErrs []error, pillarErr error) {
+	if extErrs := view.ResolveClosureExtends(ctx, cl, schemas); len(extErrs) > 0 {
+		return extErrs, nil
+	}
+	return nil, view.ValidateClosureScopedPillars(ctx, cl, schemas)
+}
+
+// LibraryRecordExplainsGateRefusal is asked of a validation whose extends or
+// schema-pillar gate refused (ValidateResult.ClosureExtendsErrors or PillarError)
+// while it read each library at the version in.LibraryRecord records. It reports
+// whether the same two gates pass with every library read at the version a bare
+// reference selects: where they do, the refusal comes of the versions the
+// lockfile records — one recording a version the Release no longer asks for, say
+// a raised floor — and the lockfile is what to look at; where they do not, the
+// refusal is about what the workspace declares and stands whatever the lockfile
+// holds.
+//
+// It is false where there is nothing to compare: a closure resolved with its
+// library axes, which reads no record, and a validation handed none. It runs
+// over in.View, the view the refused validation read, and the extends gate
+// records on that view what it composes, so it is asked of a validation that
+// stopped at its gates, never ahead of a pipeline over the same view.
+func LibraryRecordExplainsGateRefusal(ctx context.Context, in ValidateInputs) bool {
+	if in.ClosureLibrariesResolved || in.LibraryRecord == nil {
+		return false
+	}
+	libraries := releaseLibraries(in.View, in.Closure, false, nil)
+	extErrs, pillarErr := closureGates(ctx, in.View, in.Closure, libraries.Schemas)
+	return len(extErrs) == 0 && pillarErr == nil
 }
 
 // closureRecipes resolves the Recipe and FeatureRecipe entities a closure reaches

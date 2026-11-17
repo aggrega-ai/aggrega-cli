@@ -107,7 +107,7 @@ func TestLazyLookup_ExtendsComposition_BuildPathServesInheritedSchema(t *testing
 		{URI: "core/test/child-comp:1.0.0"},
 		{URI: "core/test/child-feat:1.0.0"},
 	}}
-	if errs := lazy.ResolveClosureExtends(t.Context(), cl); len(errs) > 0 {
+	if errs := lazy.ResolveClosureExtends(t.Context(), cl, lazy.DefaultLibraries().Schemas); len(errs) > 0 {
 		t.Fatalf("ResolveClosureExtends: %v", errs)
 	}
 	lookup := lazy.AsCatalogLookup()

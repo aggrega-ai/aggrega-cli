@@ -617,7 +617,7 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	// With --release the account is the one the workspace gives for that Release,
 	// which names its entry under workspace.releases rather than the workspace's
 	// list, since that entry is what the lookup read.
-	match, found := compilerops.ResolveEntity(catalogEntityView{cat: cat, lookup: cat.CatalogLookup()}, identifier)
+	match, found := compilerops.ResolveEntity(newCatalogEntityView(cat), identifier)
 	if !found {
 		return fmt.Errorf("%q matched no catalog entity of any kind%s", identifier,
 			compilerops.LocalCatalogAdvice(rw.LocalCatalogAdviceNote(opts.release), nil, identifier, ""))
@@ -700,6 +700,11 @@ type catalogEntityView struct {
 	lookup resolver.CatalogLookup
 }
 
+// newCatalogEntityView is the adapter over cat and its lookup.
+func newCatalogEntityView(cat *catalog.Catalog) catalogEntityView {
+	return catalogEntityView{cat: cat, lookup: cat.CatalogLookup()}
+}
+
 func (v catalogEntityView) Component(uri string) (types.Component, bool) {
 	return v.lookup.Component(uri)
 }
@@ -724,24 +729,23 @@ func (v catalogEntityView) AggregateLookup() resolver.AggregateLookup {
 	return v.cat.AggregateLookup()
 }
 
+// SchemaLibrary, MappingLibrary, WorkloadLibrary and ArtifactLibrary read the
+// library a reference selects among the versions the catalog holds: a bare name
+// reads the highest, and a name with a version the version that floor selects.
 func (v catalogEntityView) SchemaLibrary(uri string) (types.SchemaLibrary, bool) {
-	lib, ok := v.cat.SchemaLibraries[uri]
-	return lib, ok
+	return v.cat.SchemaLibrary(uri)
 }
 
 func (v catalogEntityView) MappingLibrary(uri string) (types.MappingLibrary, bool) {
-	lib, ok := v.cat.MappingLibraries[uri]
-	return lib, ok
+	return v.cat.MappingLibrary(uri)
 }
 
 func (v catalogEntityView) WorkloadLibrary(uri string) (types.WorkloadLibrary, bool) {
-	lib, ok := v.cat.WorkloadLibraries[uri]
-	return lib, ok
+	return v.cat.WorkloadLibrary(uri)
 }
 
 func (v catalogEntityView) ArtifactLibrary(uri string) (types.ArtifactLibrary, bool) {
-	lib, ok := v.cat.ArtifactLibraries[uri]
-	return lib, ok
+	return v.cat.ArtifactLibrary(uri)
 }
 
 // LocalEntityPath reports no authored document, for any kind.

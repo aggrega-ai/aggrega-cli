@@ -236,9 +236,9 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 		entityBytesKey("Recipe", recipeIdentityKey("compose", "mariadb", "1.0.0")):              recipeBlob,
 		entityBytesKey("FeatureRecipe", recipeIdentityKey("compose", "dotenv-secret", "1.0.0")): frBlob,
 		entityBytesKey("Aggregate", entityIndexKey("example/app", "1.0.0")):                     []byte(pinnedAggregateYAML),
-		entityBytesKey("SchemaLibrary", "DbSizing"):                                             []byte(dbSizingLibYAML),
-		entityBytesKey("MappingLibrary", "BaseMappings"):                                        []byte(pinnedMappingLibYAML),
-		entityBytesKey("WorkloadLibrary", "BaseWorkloads"):                                      []byte(pinnedWorkloadLibYAML),
+		entityBytesKey("SchemaLibrary", entityIndexKey("DbSizing", "1.0.0")):                    []byte(dbSizingLibYAML),
+		entityBytesKey("MappingLibrary", entityIndexKey("BaseMappings", "1.0.0")):               []byte(pinnedMappingLibYAML),
+		entityBytesKey("WorkloadLibrary", entityIndexKey("BaseWorkloads", "1.0.0")):             []byte(pinnedWorkloadLibYAML),
 	}
 	for k, want := range wantBytes {
 		got, ok := subject.entityBytes[k]
@@ -256,12 +256,12 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 	if _, ok := subject.aggregates[entityIndexKey("example/app", "1.0.0")]; !ok {
 		t.Errorf("bare-URI-pinned Aggregate example/app not folded into the enumerated set")
 	}
-	if _, ok := subject.schemaLibraries["DbSizing"]; !ok {
+	if _, ok := subject.defaultSchemaLibraries()["DbSizing"]; !ok {
 		t.Errorf("bare-URI-pinned SchemaLibrary DbSizing not folded into the enumerated set")
 	}
 	// The bare-pinned remote WorkloadLibrary folded into the enumerated set the
 	// renderer's workload `$import` resolution consumes — the B→A bridge.
-	if _, ok := subject.workloadLibraries["BaseWorkloads"]; !ok {
+	if _, ok := subject.DefaultLibraries().Workloads["BaseWorkloads"]; !ok {
 		t.Errorf("bare-URI-pinned WorkloadLibrary BaseWorkloads not folded into the enumerated set (B→A bridge)")
 	}
 }

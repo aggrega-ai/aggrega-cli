@@ -19,6 +19,7 @@ package compilerops
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -74,6 +75,11 @@ type ResolvedClosure struct {
 	AggBytes      []byte
 	AggregatePath string
 	Closure       closure.Closure
+	// LibrariesResolved records that the closure was resolved with its library
+	// axes folded in (ClosureInputs.Augment), so Closure names each library at the
+	// version this Release resolved. A closure resolved without them names no
+	// library, and Libraries reads the default selection for it instead.
+	LibrariesResolved bool
 	// Lookup is the hermetic Lookup (nil OCIPuller) the closure was walked
 	// through. A caller that verifies drift against a lockfile reuses it to
 	// reconstruct the sub-aggregate and plugin axes ComputeClosure leaves empty,
@@ -119,6 +125,59 @@ type ResolvedClosure struct {
 	// caller reporting on a document lists them with its other findings. Neither
 	// may halt on them.
 	ReleaseCompositionAdvisories []error
+}
+
+// Libraries returns the libraries a build or preview of this Release reads, one
+// version per library name: each at the version the closure resolved where the
+// closure was resolved with its library axes, and at the version a bare reference
+// selects where it was not.
+func (r *ResolvedClosure) Libraries(view *catalog.LazyLookup) catalog.LibrarySet {
+	return releaseLibraries(view, r.Closure, r.LibrariesResolved, nil)
+}
+
+// releaseLibraries is the one choice of the library versions a Release's surfaces
+// read.
+//
+// A closure resolved with its library axes (librariesResolved) names each library
+// at the version it resolved, and is read strictly: a resolved version the view
+// does not hold is absent, never replaced by another, so the reader reports the
+// library missing. That reading belongs to the surfaces that build, pull or
+// preview, whose drift gate refuses a lockfile that no longer matches the
+// workspace.
+//
+// A closure resolved without them names no library. Where a lockfile is in hand
+// its rows overlay the default selection: a library the lockfile records at a
+// version the view holds is read at exactly that version, the version a build
+// reads, and every other library (one the lockfile lacks, or records at a version
+// the view does not hold) is read at the version a bare reference selects. The
+// surfaces that read this way either run the drift check before validating or,
+// keeping a quiet load on every edit, run it once a gate over the dependencies has
+// refused on account of the recorded versions (LibraryRecordExplainsGateRefusal)
+// and report the drift in place of that refusal, so a stale lockfile is reported
+// by the drift check and never as a library the catalog holds being missing. With
+// no lockfile every library is read at the version a bare reference selects.
+func releaseLibraries(view *catalog.LazyLookup, cl closure.Closure, librariesResolved bool, record *lockfile.Lockfile) catalog.LibrarySet {
+	if librariesResolved {
+		return view.ClosureLibraries(cl)
+	}
+	libraries := view.DefaultLibraries()
+	if record == nil {
+		return libraries
+	}
+	for _, axis := range closure.LibraryAxes() {
+		rows, _ := lockfile.LibraryPins(record, axis)
+		libs := make([]closure.ResolvedLibrary, 0, len(rows))
+		for _, row := range rows {
+			libs = append(libs, closure.ResolvedLibrary{URI: row.URI, ResolvedVersion: row.ResolvedVersion, Digest: row.Digest})
+		}
+		axis.SetLibraries(&cl, libs)
+	}
+	recorded := view.ClosureLibraries(cl)
+	maps.Copy(libraries.Schemas, recorded.Schemas)
+	maps.Copy(libraries.Mappings, recorded.Mappings)
+	maps.Copy(libraries.Workloads, recorded.Workloads)
+	maps.Copy(libraries.Artifacts, recorded.Artifacts)
+	return libraries
 }
 
 // ClosureStage names the point in ResolveClosure at which resolution failed, so
@@ -377,6 +436,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 		AggBytes:                     aggBytes,
 		AggregatePath:                aggRes.Path,
 		Closure:                      cl,
+		LibrariesResolved:            in.Augment,
 		Lookup:                       lookup,
 		ManifestConsistencyFindings:  consistencyFindings,
 		ReleaseCompositionAdvisories: releaseAdvisories,

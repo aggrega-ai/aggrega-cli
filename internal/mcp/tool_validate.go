@@ -372,18 +372,20 @@ func validateReleaseScope(
 	// it repairs both. A workspace with no record loads none and validates as
 	// before.
 	vr := compilerops.Validate(ctx, compilerops.ValidateInputs{
-		View:            view,
-		Closure:         resolved.Closure,
-		Release:         resolved.Release,
-		ReleasePath:     releasePath,
-		Manifest:        resolved.Manifest,
-		AggBytes:        resolved.AggBytes,
-		Lockfile:        lf,
-		AggregatePath:   resolved.AggregatePath,
-		WorkspaceRoot:   tw.root,
-		WorkspaceConfig: tw.cfg,
-		CompilerVersion: s.serverVersion,
-		Display:         s.runDisplay(),
+		View:                     view,
+		Closure:                  resolved.Closure,
+		Release:                  resolved.Release,
+		ReleasePath:              releasePath,
+		Manifest:                 resolved.Manifest,
+		AggBytes:                 resolved.AggBytes,
+		Lockfile:                 lf,
+		ClosureLibrariesResolved: resolved.LibrariesResolved,
+		LibraryRecord:            lf,
+		AggregatePath:            resolved.AggregatePath,
+		WorkspaceRoot:            tw.root,
+		WorkspaceConfig:          tw.cfg,
+		CompilerVersion:          s.serverVersion,
+		Display:                  s.runDisplay(),
 	})
 
 	diags := validateDiagnostics(vr, resolved.ManifestConsistencyFindings)

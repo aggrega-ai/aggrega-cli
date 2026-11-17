@@ -89,10 +89,11 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 
 // TestLoad_SchemaLibrary verifies the catalog walker recognises
 // SchemaLibrary entries (kind: SchemaLibrary) and indexes them by
-// metadata.name. The walker treats SchemaLibrary like any other catalog
-// entity kind — the recursive WalkDir reaches library.yaml at whatever
-// depth it sits and the index key is metadata.name rather than a path
-// segment, so the fixture below need not reproduce the authoring layout
+// `<metadata.name>:<metadata.version>`. The walker treats SchemaLibrary like
+// any other catalog entity kind — the recursive WalkDir reaches library.yaml
+// at whatever depth it sits and the index key is the library's name and
+// version rather than a path segment, so the fixture below need not
+// reproduce the authoring layout
 // (schemalibrary/<name>/<version>/library.yaml — a library kind carries
 // no publisher segment). This test verifies the kind dispatch + map
 // indexing.
@@ -127,12 +128,12 @@ spec:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(c.SchemaLibraries) != 1 {
-		t.Fatalf("expected 1 SchemaLibrary; got %d", len(c.SchemaLibraries))
+	if len(c.SchemaLibraryVersions) != 1 {
+		t.Fatalf("expected 1 SchemaLibrary; got %d", len(c.SchemaLibraryVersions))
 	}
-	lib, ok := c.SchemaLibraries["Probes"]
+	lib, ok := c.DefaultLibraries().Schemas["Probes"]
 	if !ok {
-		t.Fatalf("expected Probes SchemaLibrary; got %v", c.SchemaLibraries)
+		t.Fatalf("expected Probes SchemaLibrary; got %v", c.SchemaLibraryVersions)
 	}
 	if lib.Spec.Schemas.Len() != 1 {
 		t.Errorf("expected 1 schema entry; got %d", lib.Spec.Schemas.Len())
@@ -141,7 +142,7 @@ spec:
 
 // TestLoad_MappingLibrary verifies the catalog walker recognises
 // MappingLibrary entries (kind: MappingLibrary) and indexes them by
-// metadata.name. The authoring layout is
+// `<metadata.name>:<metadata.version>`. The authoring layout is
 // mappinglibrary/<name>/<version>/library.yaml — a library kind carries
 // no publisher segment — and the recursive WalkDir reaches library.yaml
 // at whatever depth it sits, so the fixture's own path is incidental to
@@ -172,12 +173,12 @@ spec:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(c.MappingLibraries) != 1 {
-		t.Fatalf("expected 1 MappingLibrary; got %d", len(c.MappingLibraries))
+	if len(c.MappingLibraryVersions) != 1 {
+		t.Fatalf("expected 1 MappingLibrary; got %d", len(c.MappingLibraryVersions))
 	}
-	lib, ok := c.MappingLibraries["BaseMappings"]
+	lib, ok := c.DefaultLibraries().Mappings["BaseMappings"]
 	if !ok {
-		t.Fatalf("expected BaseMappings MappingLibrary; got %v", c.MappingLibraries)
+		t.Fatalf("expected BaseMappings MappingLibrary; got %v", c.MappingLibraryVersions)
 	}
 	if lib.Spec.Mappings.Len() != 2 {
 		t.Errorf("expected 2 mapping entries; got %d", lib.Spec.Mappings.Len())
@@ -185,7 +186,7 @@ spec:
 }
 
 // TestLoad_WorkloadLibrary verifies the eager catalog load arm indexes a
-// WorkloadLibrary into Catalog.WorkloadLibraries, keyed by metadata.name,
+// WorkloadLibrary into Catalog.WorkloadLibraryVersions, keyed by identity,
 // with its workload entries captured.
 func TestLoad_WorkloadLibrary(t *testing.T) {
 	t.Parallel()
@@ -213,12 +214,12 @@ spec:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(c.WorkloadLibraries) != 1 {
-		t.Fatalf("expected 1 WorkloadLibrary; got %d", len(c.WorkloadLibraries))
+	if len(c.WorkloadLibraryVersions) != 1 {
+		t.Fatalf("expected 1 WorkloadLibrary; got %d", len(c.WorkloadLibraryVersions))
 	}
-	lib, ok := c.WorkloadLibraries["BaseWorkloads"]
+	lib, ok := c.DefaultLibraries().Workloads["BaseWorkloads"]
 	if !ok {
-		t.Fatalf("expected BaseWorkloads WorkloadLibrary; got %v", c.WorkloadLibraries)
+		t.Fatalf("expected BaseWorkloads WorkloadLibrary; got %v", c.WorkloadLibraryVersions)
 	}
 	if lib.Spec.Workloads.Len() != 2 {
 		t.Errorf("expected 2 workload entries; got %d", lib.Spec.Workloads.Len())
@@ -249,7 +250,7 @@ spec:
 	}
 
 	ll := NewLazyLookup("", "", []string{dir}, nil)
-	libs := ll.WorkloadLibraries()
+	libs := ll.DefaultLibraries().Workloads
 	if len(libs) != 1 {
 		t.Fatalf("expected 1 enumerated WorkloadLibrary; got %d", len(libs))
 	}

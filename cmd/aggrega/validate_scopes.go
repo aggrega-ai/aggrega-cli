@@ -259,18 +259,20 @@ func validateRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	// it. A workspace with no record loads none here and validates as before, with
 	// the resolution saying which plugins it could not check.
 	vr := compilerops.Validate(ctx, compilerops.ValidateInputs{
-		View:            lazyView,
-		Closure:         resolved.Closure,
-		Release:         resolved.Release,
-		ReleasePath:     releasePath,
-		Manifest:        resolved.Manifest,
-		AggBytes:        resolved.AggBytes,
-		Lockfile:        lf,
-		AggregatePath:   catalog.RelativeToWorkspace(wsRoot, resolved.AggregatePath),
-		WorkspaceRoot:   wsRoot,
-		WorkspaceConfig: wsCfg,
-		CompilerVersion: provenanceCompilerVersion(),
-		Display:         diagOut,
+		View:                     lazyView,
+		Closure:                  resolved.Closure,
+		Release:                  resolved.Release,
+		ReleasePath:              releasePath,
+		Manifest:                 resolved.Manifest,
+		AggBytes:                 resolved.AggBytes,
+		Lockfile:                 lf,
+		ClosureLibrariesResolved: resolved.LibrariesResolved,
+		LibraryRecord:            lf,
+		AggregatePath:            catalog.RelativeToWorkspace(wsRoot, resolved.AggregatePath),
+		WorkspaceRoot:            wsRoot,
+		WorkspaceConfig:          wsCfg,
+		CompilerVersion:          provenanceCompilerVersion(),
+		Display:                  diagOut,
 	})
 	// The deprecation report is the shared one every surface reads, over both the
 	// lockfile loaded above and the plugin trust record beside the Release. This

@@ -378,6 +378,17 @@ type ResolvedLibrary struct {
 	Consumers      []LibraryConsumer
 }
 
+// Reference returns the library reference naming lib at the version it resolved
+// to, `<URI>:<ResolvedVersion>`, or the bare URI where it resolved to no version.
+// A catalog read of that reference selects the copy held at exactly that version
+// wherever one is held.
+func (lib ResolvedLibrary) Reference() string {
+	if lib.ResolvedVersion == "" {
+		return lib.URI
+	}
+	return lib.URI + ":" + lib.ResolvedVersion
+}
+
 // LibraryConsumer records a single catalog-entity → library
 // reference edge. Mirrors the lockfile package's LibraryConsumer
 // wire shape so the lockfile writer can copy field-for-field.
@@ -539,7 +550,9 @@ type Resolution struct {
 	// that condition in place of the not-found one, because the name is right and
 	// only the version is not, so "no entity matches" would send the author
 	// looking for a misspelt name. Nil wherever the lookup holds nothing under
-	// the name.
+	// the name. A condition with a method HeldIdentities() []string names the
+	// identities held under the name, and the walk reports them beside the
+	// request.
 	UnsatisfiedPin error
 }
 

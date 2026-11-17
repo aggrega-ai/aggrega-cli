@@ -71,10 +71,10 @@ spec:
 			pillars := closure.Closure{Entities: []closure.ResolvedRef{{URI: "core/broken-ref:1.0.0", KindHint: tc.hint}}}
 			readings := map[string]bool{
 				"eager closure extends refused": len(eager.ResolveClosureExtends(cl)) > 0,
-				"lazy closure extends refused":  len(lazy.ResolveClosureExtends(t.Context(), cl)) > 0,
+				"lazy closure extends refused":  len(lazy.ResolveClosureExtends(t.Context(), cl, lazy.DefaultLibraries().Schemas)) > 0,
 				"lazy ClosureComponent read":    read,
 				"eager closure pillars refused": eager.ValidateClosureScopedPillars(pillars) != nil,
-				"lazy closure pillars refused":  lazy.ValidateClosureScopedPillars(t.Context(), pillars) != nil,
+				"lazy closure pillars refused":  lazy.ValidateClosureScopedPillars(t.Context(), pillars, lazy.DefaultLibraries().Schemas) != nil,
 			}
 			for name, got := range readings {
 				if got != tc.readComponent {

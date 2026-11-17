@@ -24,19 +24,27 @@ type LibrarySource interface {
 	// ExtendsSource reads the Component or Feature a closure entity reference
 	// resolves to, for the library discovery and the extends descent alike.
 	ExtendsSource
-	SchemaLibrary(uri string) (types.SchemaLibrary, bool)
+	// SchemaLibrary, MappingLibrary, WorkloadLibrary and ArtifactLibrary read the
+	// library a reference selects: a bare name reads the highest version held, and
+	// `<name>:<version>` the version that floor selects, which is that version
+	// itself wherever it is held.
+	SchemaLibrary(ref string) (types.SchemaLibrary, bool)
 	RecipeByURI(uri string) (types.Recipe, bool)
 	FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool)
-	MappingLibrary(uri string) (types.MappingLibrary, bool)
-	WorkloadLibrary(uri string) (types.WorkloadLibrary, bool)
-	ArtifactLibrary(uri string) (types.ArtifactLibrary, bool)
+	MappingLibrary(ref string) (types.MappingLibrary, bool)
+	WorkloadLibrary(ref string) (types.WorkloadLibrary, bool)
+	ArtifactLibrary(ref string) (types.ArtifactLibrary, bool)
 	// HoldResolvedLibrary makes a library the discovery has just resolved on axis
 	// readable through the per-kind read above, at the version and content digest
-	// its resolution recorded, where the source does not already hold it. A
-	// library read from a catalog directory is held already; one the resolution
-	// served from the content cache or a registry may be held by nothing else yet,
-	// and its body is what the discovery descends next.
-	HoldResolvedLibrary(axis LibraryAxis, lib ResolvedLibrary)
+	// its resolution recorded, where the source does not already hold it at that
+	// version. A library read from a catalog directory is held already; one the
+	// resolution served from the content cache or a registry may be held by
+	// nothing else yet, or only at a version a later requirement raised it from,
+	// and its body is what the discovery descends next. Where the source still
+	// holds no copy at that version, it returns the refusal it met holding one —
+	// a copy whose bytes are not the pinned ones, a document that does not parse —
+	// and nil where it can name none.
+	HoldResolvedLibrary(axis LibraryAxis, lib ResolvedLibrary) error
 }
 
 // AugmentClosure resolves what the entity walk does not descend and every
@@ -212,10 +220,10 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 	// descending its cross-document $ref:s, read through the source at the
 	// resolution the discovery just made (heldLibraryBodies).
 	axis := LibraryAxisNamed("SchemaLibraries")
-	body := heldLibraryBodies(src, axis, func(uri string) ([]*yaml.Node, bool) {
-		sl, ok := src.SchemaLibrary(uri)
+	body := heldLibraryBodies(src, axis, func(ref string) (string, []*yaml.Node, bool) {
+		sl, ok := src.SchemaLibrary(ref)
 		if !ok {
-			return nil, false
+			return "", nil, false
 		}
 		keys := sl.Spec.Schemas.Keys()
 		bodies := make([]*yaml.Node, 0, len(keys))
@@ -224,7 +232,7 @@ func discoverClosureLibraries(ctx context.Context, cl *Closure, src LibrarySourc
 			node := entry.Content
 			bodies = append(bodies, &node)
 		}
-		return bodies, true
+		return sl.Metadata.Version, bodies, true
 	})
 
 	return cl.DiscoverSchemaLibraries(ctx, lookup, consumers, body)
@@ -255,18 +263,39 @@ func entitySchemaConsumers(kind, uri string, schema *yaml.Node, sockets types.Or
 
 // heldLibraryBodies is the body accessor every library axis hands the discovery
 // fixpoint: it has the source hold the library at the resolution the fixpoint just
-// made, then reads that library's entry bodies with read. A library resolved from
-// a catalog directory and one served from the content cache or a registry are
-// therefore read alike, and a library reached only through another is discovered
-// whichever source served that other one: a chain of any depth resolves from a
-// registry as it resolves from a catalog directory.
+// made, then reads that library's entry bodies with read, at exactly the version
+// the resolution recorded (ResolvedLibrary.Reference). A library resolved from a
+// catalog directory and one served from the content cache or a registry are
+// therefore read alike — including at a version a later requirement raised it to —
+// and a library reached only through another is discovered whichever source served
+// that other one: a chain of any depth resolves from a registry as it resolves from
+// a catalog directory. Where the source holds the library at several versions, only
+// the resolved version's own references are descended.
 //
-// A library the source cannot read even then stops the descent through it.
-func heldLibraryBodies[B any](src LibrarySource, axis LibraryAxis, read func(uri string) ([]B, bool)) func(ResolvedLibrary) ([]B, bool, error) {
+// read reports the version of the copy it read. A resolved library the source
+// cannot read at its resolved version even then halts the discovery with the
+// unresolvable-reference condition naming the library at that version, because
+// the references its body makes would otherwise be missing from the closure
+// without a word. The halt says what disagrees with the resolution: the version
+// the copy held declares, where the reference reads a copy at another version, or
+// that no copy at that version could be held, with the refusal the source met
+// holding one where it names one.
+func heldLibraryBodies[B any](src LibrarySource, axis LibraryAxis, read func(ref string) (version string, bodies []B, ok bool)) func(ResolvedLibrary) ([]B, bool, error) {
 	return func(lib ResolvedLibrary) ([]B, bool, error) {
-		src.HoldResolvedLibrary(axis, lib)
-		bodies, ok := read(lib.URI)
-		return bodies, ok, nil
+		refusal := src.HoldResolvedLibrary(axis, lib)
+		version, bodies, ok := read(lib.Reference())
+		switch {
+		case !ok && refusal != nil:
+			return nil, false, fmt.Errorf("%w: library %q: no copy at that version could be held: %s",
+				ErrUnresolvableURI(), lib.Reference(), refusal)
+		case !ok:
+			return nil, false, fmt.Errorf("%w: library %q: no copy at that version could be held",
+				ErrUnresolvableURI(), lib.Reference())
+		case lib.ResolvedVersion != "" && version != lib.ResolvedVersion:
+			return nil, false, fmt.Errorf("%w: library %q: the copy held declares version %s",
+				ErrUnresolvableURI(), lib.Reference(), version)
+		}
+		return bodies, true, nil
 	}
 }
 
@@ -288,17 +317,17 @@ func discoverClosureMappingLibraries(ctx context.Context, cl *Closure, src Libra
 		})
 
 	axis := LibraryAxisNamed("MappingLibraries")
-	body := heldLibraryBodies(src, axis, func(uri string) ([]string, bool) {
-		ml, ok := src.MappingLibrary(uri)
+	body := heldLibraryBodies(src, axis, func(ref string) (string, []string, bool) {
+		ml, ok := src.MappingLibrary(ref)
 		if !ok {
-			return nil, false
+			return "", nil, false
 		}
 		bodies := make([]string, 0, ml.Spec.Mappings.Len())
 		for _, k := range ml.Spec.Mappings.Keys() {
 			entry, _ := ml.Spec.Mappings.Get(k)
 			bodies = append(bodies, entry.Body)
 		}
-		return bodies, true
+		return ml.Metadata.Version, bodies, true
 	})
 
 	return cl.DiscoverTemplateLibraries(ctx, axis, lookup, consumers, body)
@@ -322,17 +351,17 @@ func discoverClosureWorkloadLibraries(ctx context.Context, cl *Closure, src Libr
 		})
 
 	axis := LibraryAxisNamed("WorkloadLibraries")
-	body := heldLibraryBodies(src, axis, func(uri string) ([]string, bool) {
-		wl, ok := src.WorkloadLibrary(uri)
+	body := heldLibraryBodies(src, axis, func(ref string) (string, []string, bool) {
+		wl, ok := src.WorkloadLibrary(ref)
 		if !ok {
-			return nil, false
+			return "", nil, false
 		}
 		bodies := make([]string, 0, wl.Spec.Workloads.Len())
 		for _, k := range wl.Spec.Workloads.Keys() {
 			entry, _ := wl.Spec.Workloads.Get(k)
 			bodies = append(bodies, entry.Body)
 		}
-		return bodies, true
+		return wl.Metadata.Version, bodies, true
 	})
 
 	return cl.DiscoverTemplateLibraries(ctx, axis, lookup, consumers, body)
@@ -356,10 +385,10 @@ func discoverClosureArtifactLibraries(ctx context.Context, cl *Closure, src Libr
 
 	// A discovered bundle's own file bodies, flattened across every bundle entry.
 	axis := LibraryAxisNamed("ArtifactLibraries")
-	body := heldLibraryBodies(src, axis, func(uri string) ([]string, bool) {
-		al, ok := src.ArtifactLibrary(uri)
+	body := heldLibraryBodies(src, axis, func(ref string) (string, []string, bool) {
+		al, ok := src.ArtifactLibrary(ref)
 		if !ok {
-			return nil, false
+			return "", nil, false
 		}
 		var bodies []string
 		for _, k := range al.Spec.Artifacts.Keys() {
@@ -369,7 +398,7 @@ func discoverClosureArtifactLibraries(ctx context.Context, cl *Closure, src Libr
 				bodies = append(bodies, fb)
 			}
 		}
-		return bodies, true
+		return al.Metadata.Version, bodies, true
 	})
 
 	return cl.DiscoverTemplateLibraries(ctx, axis, lookup, consumers, body)

@@ -38,7 +38,7 @@ func loadLibraryFixture(t *testing.T, src string) (types.SchemaLibrary, error) {
 	if err != nil {
 		return types.SchemaLibrary{}, err
 	}
-	lib, ok := c.SchemaLibraries["DbSizing"]
+	lib, ok := c.DefaultLibraries().Schemas["DbSizing"]
 	if !ok {
 		t.Fatalf("DbSizing not registered; keys = %v", schemaLibraryKeys(c))
 	}

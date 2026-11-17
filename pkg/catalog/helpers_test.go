@@ -322,16 +322,16 @@ func TestResolveAllExtends_FeatureChain(t *testing.T) {
 func TestIndexFile_NonEntityYAML(t *testing.T) {
 	t.Parallel()
 	c := &Catalog{
-		Components:       map[string]types.Component{},
-		Features:         map[string]types.Feature{},
-		Recipes:          map[string]types.Recipe{},
-		FeatureRecipes:   map[string]types.FeatureRecipe{},
-		Aggregates:       map[string]types.Aggregate{},
-		SchemaLibraries:  map[string]types.SchemaLibrary{},
-		MappingLibraries: map[string]types.MappingLibrary{},
-		componentSources: map[string]string{},
-		featureSources:   map[string]string{},
-		aggregateSources: map[string]string{},
+		Components:             map[string]types.Component{},
+		Features:               map[string]types.Feature{},
+		Recipes:                map[string]types.Recipe{},
+		FeatureRecipes:         map[string]types.FeatureRecipe{},
+		Aggregates:             map[string]types.Aggregate{},
+		SchemaLibraryVersions:  map[string]types.SchemaLibrary{},
+		MappingLibraryVersions: map[string]types.MappingLibrary{},
+		componentSources:       map[string]string{},
+		featureSources:         map[string]string{},
+		aggregateSources:       map[string]string{},
 	}
 	// Non-entity YAML.
 	if err := c.indexFile([]byte("not: an entity\n"), "p"); err != nil {
@@ -364,17 +364,17 @@ metadata:
 
 func makeEmptyCatalog() *Catalog {
 	return &Catalog{
-		Components:       map[string]types.Component{},
-		Features:         map[string]types.Feature{},
-		Recipes:          map[string]types.Recipe{},
-		FeatureRecipes:   map[string]types.FeatureRecipe{},
-		Aggregates:       map[string]types.Aggregate{},
-		SchemaLibraries:  map[string]types.SchemaLibrary{},
-		MappingLibraries: map[string]types.MappingLibrary{},
-		componentSources: map[string]string{},
-		featureSources:   map[string]string{},
-		aggregateSources: map[string]string{},
-		entityBytes:      map[string][]byte{},
+		Components:             map[string]types.Component{},
+		Features:               map[string]types.Feature{},
+		Recipes:                map[string]types.Recipe{},
+		FeatureRecipes:         map[string]types.FeatureRecipe{},
+		Aggregates:             map[string]types.Aggregate{},
+		SchemaLibraryVersions:  map[string]types.SchemaLibrary{},
+		MappingLibraryVersions: map[string]types.MappingLibrary{},
+		componentSources:       map[string]string{},
+		featureSources:         map[string]string{},
+		aggregateSources:       map[string]string{},
+		entityBytes:            map[string][]byte{},
 	}
 }
 

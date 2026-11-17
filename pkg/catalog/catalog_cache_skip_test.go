@@ -53,10 +53,10 @@ spec:
 	if err != nil {
 		t.Fatalf("LoadWithCacheDir: %v", err)
 	}
-	if _, ok := skipped.SchemaLibraries["Cached"]; ok {
+	if _, ok := skipped.DefaultLibraries().Schemas["Cached"]; ok {
 		t.Error("LoadWithCacheDir ingested the cached library at Tier-1; the cache walk-skip failed")
 	}
-	if _, ok := skipped.SchemaLibraries["Authored"]; !ok {
+	if _, ok := skipped.DefaultLibraries().Schemas["Authored"]; !ok {
 		t.Error("LoadWithCacheDir dropped the authored library; the skip over-reached")
 	}
 
@@ -67,7 +67,7 @@ spec:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if _, ok := unskipped.SchemaLibraries["Cached"]; !ok {
+	if _, ok := unskipped.DefaultLibraries().Schemas["Cached"]; !ok {
 		t.Error("canary failed: Load did not ingest the cached library, so the skip assertion is vacuous")
 	}
 }

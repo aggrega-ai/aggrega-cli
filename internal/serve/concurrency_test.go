@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 )
 
 // concurrencyComponentYAML is a minimal Component the lazy catalog walk
@@ -488,7 +489,7 @@ func TestConcurrentIrGraphValidateInvalidateRaceClean(t *testing.T) {
 
 // TestLazyLookupConcurrentAccessRaceClean is the direct pkg-level proof
 // that LazyLookup is concurrency-safe: it fans out concurrent
-// Component/Feature/AsCatalogLookup/MappingLibraries/Skips/Reset/SetPins
+// Component/Feature/AsCatalogLookup/ClosureLibraries/Skips/Reset/SetPins
 // calls — including invoking the closures AsCatalogLookup hands out
 // after a concurrent SetPins/Reset — on one *LazyLookup over a shared
 // catalog directory. Under -race this fails if any exported method or
@@ -503,6 +504,10 @@ func TestLazyLookupConcurrentAccessRaceClean(t *testing.T) {
 		t.Fatalf("write component fixture: %v", err)
 	}
 	l := catalog.NewLazyLookup(tmp, "", []string{tmp}, nil)
+	// A closure naming a library on every axis, so each ClosureLibraries call
+	// reads all four library maps.
+	named := []closure.ResolvedLibrary{{URI: "Lib", ResolvedVersion: "1.0.0"}}
+	libraries := closure.Closure{SchemaLibraries: named, MappingLibraries: named, WorkloadLibraries: named, ArtifactLibraries: named}
 
 	const workers = 32
 	var wg sync.WaitGroup
@@ -525,7 +530,7 @@ func TestLazyLookupConcurrentAccessRaceClean(t *testing.T) {
 					cl.Component("core/x")
 					cl.Feature("core/x")
 				case 3:
-					l.MappingLibraries()
+					l.ClosureLibraries(libraries)
 				case 4:
 					l.Skips()
 				case 5:
