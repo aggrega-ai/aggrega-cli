@@ -337,12 +337,7 @@ func runRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 	if err != nil {
 		return err
 	}
-	index := map[string]string{}
-	for _, f := range files {
-		index[f.Kind+"|"+f.Name] = f.Path
-		index[libraryIdentityKey(f.Kind, f.Name, f.Version)] = f.Path
-	}
-	paths := closureEntityFiles(lazyView, rc.Closure, index)
+	paths := closureEntityFiles(lazyView, rc.Closure, entityFileIndex(files))
 	// The documents a rule reading a whole Release is handed are assembled only
 	// when some such rule is in the set, so a run whose set holds none does the
 	// per-entity work alone. They resolve each instance's type through this pass's
@@ -561,7 +556,8 @@ func plural(n int, one, many string) string {
 // catalogEntityFile records a catalog entity file discovered by walking the
 // catalog directories, with the identity fields peeled from its YAML header. It
 // drives the conventions passes: the whole-catalog pass lints every Path; the
-// release pass indexes by Kind+Name to map a closure entity back to its file.
+// release pass indexes them (entityFileIndex) to map a closure entity back to its
+// file.
 type catalogEntityFile struct {
 	Path    string
 	Kind    string
@@ -707,12 +703,27 @@ func libraryIdentityKey(kind, name, version string) string {
 	return kind + "|" + name + ":" + version
 }
 
+// entityFileIndex is the index closureEntityFiles joins a closure on, built from
+// the catalog walk: every file under its Kind+Name, which a Component, Feature or
+// Plugin is looked up by, and under its library identity (libraryIdentityKey),
+// which a library is looked up by at the version the closure resolved.
+func entityFileIndex(files []catalogEntityFile) map[string]string {
+	index := map[string]string{}
+	for _, f := range files {
+		index[f.Kind+"|"+f.Name] = f.Path
+		index[libraryIdentityKey(f.Kind, f.Name, f.Version)] = f.Path
+	}
+	return index
+}
+
 // closureEntityFiles maps the entities a Release's closure reaches back to their
 // author-owned catalog files. Recipes and FeatureRecipes resolve through the lazy
-// view's local-path bridge; Components, Features, Plugins, and libraries resolve
-// through the Kind+Name index built from the catalog walk. A closure entity with
-// no local file (a registry-pinned cache slot) or one absent from the index is
-// skipped — the conventions rules apply to locally-authored files. Sub-aggregate
+// view's local-path bridge; Components, Features and Plugins resolve through the
+// Kind+Name index built from the catalog walk, and libraries through the
+// Kind+Name:Version identity index, at the version the closure resolved
+// (entityFileIndex). A closure entity with no local file (a registry-pinned cache
+// slot) or one absent from the index is skipped — the conventions rules apply to
+// locally-authored files. Sub-aggregate
 // references (KindHint "aggregate") are authoring-side and are not conventions-
 // linted. The returned paths are deduplicated and sorted for determinism.
 func closureEntityFiles(lazyView *catalog.LazyLookup, cl closure.Closure, index map[string]string) []string {
