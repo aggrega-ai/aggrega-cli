@@ -43,6 +43,9 @@ func TestReadFragmentScopeFromSchema(t *testing.T) {
 	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Errorf("tenant schema: want E0288, got %v", err)
 	}
+	if err != nil && !strings.Contains(err.Error(), "resource group scope, so write a resource group template") {
+		t.Errorf("tenant schema: the halt does not name resource group scope: %v", err)
+	}
 }
 
 func TestReadFragmentRefuses(t *testing.T) {
