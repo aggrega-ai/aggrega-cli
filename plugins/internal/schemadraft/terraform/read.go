@@ -285,7 +285,11 @@ func (l *lifter) blockType(name string, path []string, raw json.RawMessage) *sch
 	}
 	p := &schemadraft.Property{Name: name, Path: path}
 	if len(path) > schemadraft.MaxDepth {
-		_, p.Description = l.block(b.Block, path[:0:0])
+		var described struct {
+			Description string `json:"description"`
+		}
+		_ = json.Unmarshal(b.Block, &described) // only the description is read; the cut subtree is not lifted
+		p.Description = schemadraft.FirstParagraph(described.Description)
 		return cut(p)
 	}
 	props, description := l.block(b.Block, path)
@@ -349,12 +353,15 @@ func (l *lifter) cty(name string, path []string, raw json.RawMessage) *schemadra
 		p.Items = l.cty(name, path, parts[1])
 	case "map":
 		p.Kinds, p.Open = []schemadraft.Kind{schemadraft.KindObject}, true
+		p.Dropped = append(p.Dropped, "map element type: the draft carries a map as an open object, without the "+
+			"type of its values")
 	case "object":
 		p.Kinds = []schemadraft.Kind{schemadraft.KindObject}
 		if !isObject(parts[1]) {
 			l.fail("the object type of %s holds no attributes", describePath(path))
 			return p
 		}
+		p.Dropped = append(p.Dropped, objectRequirement(parts))
 		for _, e := range importer.ObjectEntries(parts[1]) {
 			memberPath := appended(path, e.Key)
 			if len(memberPath) > schemadraft.MaxDepth {
@@ -365,10 +372,27 @@ func (l *lifter) cty(name string, path []string, raw json.RawMessage) *schemadra
 		}
 	case "tuple":
 		p.Kinds = []schemadraft.Kind{schemadraft.KindArray}
+		p.Dropped = append(p.Dropped, "tuple element types: the draft carries a tuple as an array, without the "+
+			"type of each position")
 	default:
 		l.fail("the type %q of %s is not a Terraform type", constructor, describePath(path))
 	}
 	return p
+}
+
+// objectRequirement is the Dropped entry for an object type, whose members the
+// draft never marks required: the type requires each member unless its optional
+// list, the third element, names it.
+func objectRequirement(parts []json.RawMessage) string {
+	var optional []string
+	if len(parts) > 2 {
+		_ = json.Unmarshal(parts[2], &optional) // an unreadable list names none
+	}
+	if len(optional) > 0 {
+		return "object optional attributes: the type marks " + strings.Join(optional, ", ") +
+			" optional and requires its other members, and the draft marks no member required"
+	}
+	return "object required attributes: the type requires every member, and the draft marks no member required"
 }
 
 // cut makes p an open object, cut for its depth.

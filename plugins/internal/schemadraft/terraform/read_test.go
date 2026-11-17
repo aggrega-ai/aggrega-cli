@@ -544,3 +544,78 @@ func TestTerraformListsLargeExport(t *testing.T) {
 		t.Errorf("lifted %d properties with %+v", len(ty.Properties), diags)
 	}
 }
+
+// liftAttribute lifts a type of one attribute, typed as the cty type typ.
+func liftAttribute(t *testing.T, typ string) *schemadraft.Property {
+	t.Helper()
+	ref := schemadraft.TypeRef{Name: "x_thing", Source: "export.json", Body: json.RawMessage(
+		`{"block":{"attributes":{"a":{"optional":true,"type":` + typ + `}}}}`)}
+	ty, diags := Format.Lift(ref)
+	if len(diags) != 0 {
+		t.Fatalf("lifting %s raised %+v", typ, diags)
+	}
+	return ty.Properties[0]
+}
+
+func TestTerraformReportsDroppedMapElementType(t *testing.T) {
+	p := liftAttribute(t, `["map","string"]`)
+	want := []string{"map element type: the draft carries a map as an open object, without the type of its values"}
+	if !slices.Equal(p.Dropped, want) {
+		t.Errorf("dropped %q, want %q", p.Dropped, want)
+	}
+	// An element of a list is reported on the element.
+	if q := liftAttribute(t, `["list",["map","number"]]`); len(q.Dropped) != 0 || len(q.Items.Dropped) != 1 {
+		t.Errorf("a list of maps reports %q on the list and %q on its items", q.Dropped, q.Items.Dropped)
+	}
+}
+
+func TestTerraformReportsDroppedTupleElementTypes(t *testing.T) {
+	p := liftAttribute(t, `["tuple",["string","number"]]`)
+	want := []string{"tuple element types: the draft carries a tuple as an array, without the type of each position"}
+	if !slices.Equal(p.Dropped, want) {
+		t.Errorf("dropped %q, want %q", p.Dropped, want)
+	}
+}
+
+func TestTerraformReportsDroppedObjectRequirements(t *testing.T) {
+	p := liftAttribute(t, `["object",{"a":"string","b":"number","c":"bool"},["b","c"]]`)
+	want := []string{"object optional attributes: the type marks b, c optional and requires its other members, " +
+		"and the draft marks no member required"}
+	if !slices.Equal(p.Dropped, want) {
+		t.Errorf("dropped %q, want %q", p.Dropped, want)
+	}
+	p = liftAttribute(t, `["object",{"a":"string"}]`)
+	want = []string{"object required attributes: the type requires every member, and the draft marks no member required"}
+	if !slices.Equal(p.Dropped, want) {
+		t.Errorf("dropped %q, want %q", p.Dropped, want)
+	}
+	// A primitive drops nothing.
+	if p := liftAttribute(t, `"string"`); len(p.Dropped) != 0 {
+		t.Errorf("a string drops %q", p.Dropped)
+	}
+}
+
+func TestTerraformDepthCutReadsNoDiscardedSubtree(t *testing.T) {
+	// A block nested beyond the depth limit holds a member no lift could read.
+	inner := `{"nesting_mode":"list","block":{"description":"Too deep.","attributes":{"bad":{"type":["fraction","x"]}}}}`
+	body := inner
+	for i := schemadraft.MaxDepth; i >= 1; i-- {
+		body = fmt.Sprintf(`{"nesting_mode":"list","block":{"block_types":{"n%d":%s}}}`, i+1, body)
+	}
+	ref := schemadraft.TypeRef{Name: "x_thing", Source: "export.json",
+		Body: json.RawMessage(`{"block":{"block_types":{"n1":` + body + `}}}`)}
+	ty, diags := Format.Lift(ref)
+	if len(diags) != 0 || ty == nil {
+		t.Fatalf("lifted %+v with %+v, want no halt", ty, diags)
+	}
+	p := find(t, ty.Properties, "n1")
+	for depth := 1; p.Cut == ""; depth++ {
+		if p.Items == nil {
+			t.Fatalf("no cut at depth %d", depth)
+		}
+		p = p.Items.Properties[0]
+	}
+	if p.Cut != "depth" || p.Description != "Too deep." || len(p.Path) != schemadraft.MaxDepth+1 {
+		t.Errorf("the cut is %+v", p)
+	}
+}
