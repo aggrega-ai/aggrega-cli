@@ -84,16 +84,25 @@ func selectLibrary[V any](index map[string]V, ref string, meta func(V) (string, 
 }
 
 // defaultLibrarySelection derives a name-keyed map from an identity-keyed index:
-// per library name, the version a bare reference selects.
+// per library name, the version a bare reference selects. The index is grouped by
+// name in one pass and each name selected among its own versions only, which is
+// every version a bare reference to the name considers, so the index is read once
+// rather than once per name.
 func defaultLibrarySelection[V any](index map[string]V, meta func(V) (string, string)) map[string]V {
-	out := map[string]V{}
-	for _, v := range index {
+	byName := map[string]map[string]V{}
+	for key, v := range index {
 		name, _ := meta(v)
-		if _, done := out[name]; done {
-			continue
+		versions := byName[name]
+		if versions == nil {
+			versions = map[string]V{}
+			byName[name] = versions
 		}
-		if key, ok, err := selectLibraryVersion(index, name, meta); ok && err == nil {
-			out[name] = index[key]
+		versions[key] = v
+	}
+	out := make(map[string]V, len(byName))
+	for name, versions := range byName {
+		if key, ok, err := selectLibraryVersion(versions, name, meta); ok && err == nil {
+			out[name] = versions[key]
 		}
 	}
 	return out
