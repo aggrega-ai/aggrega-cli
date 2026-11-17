@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+# The workspace reads the Recipe beside this file and every other entity from the
+# standard catalog checked out beside the repository.
+workspace:
+  catalog_dirs:
+    - catalog
+    - ../../../../../../aggrega-hub/aggrega-catalog
+auto_pull: false

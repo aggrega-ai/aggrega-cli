@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: aggregate
+  version: "1.0.0"
+spec:
+  components:
+    orders-api:
+      type: core/compute/server

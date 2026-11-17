@@ -560,3 +560,133 @@ func equalTrees(a, b map[string]string) bool {
 	}
 	return true
 }
+
+const (
+	// bicepModuleArtifactType is the artifact type of a published Bicep module.
+	bicepModuleArtifactType = "application/vnd.ms.bicep.module.artifact"
+	// bicepConfigMediaType is the media type of the config such a module carries.
+	bicepConfigMediaType = "application/vnd.ms.bicep.module.config.v1+json"
+	// bicepTemplateMediaType is the media type of the module's compiled template layer.
+	bicepTemplateMediaType = "application/vnd.ms.bicep.module.layer.v1+json"
+	// bicepSourceMediaType is the media type of the module's source layer.
+	bicepSourceMediaType = "application/vnd.ms.bicep.module.source.v1.tar+gzip"
+
+	// armFixtureDir is the workspace the arm tests build, relative to this
+	// package's directory.
+	armFixtureDir = "testdata/oci-module-sources/arm-container-app"
+	// armTemplatePath is a compiled template written for the tests, relative to
+	// this package's directory.
+	armTemplatePath = "../../internal/compiler/renderer/testdata/arm-published/container-app/main.json"
+)
+
+// TestOCIModuleSourceArmPullAndBuild drives an arm Recipe sourcing a published
+// Bicep module from a loopback registry through pin, pull and build. The pull
+// records the compiled template layer; the build nests that template as one
+// template resource with telemetry off and writes nothing of the module's source layer.
+func TestOCIModuleSourceArmPullAndBuild(t *testing.T) {
+	template, err := os.ReadFile(armTemplatePath)
+	if err != nil {
+		t.Fatalf("read the compiled template: %v", err)
+	}
+	source := []byte("source layer bytes that no output carries")
+	host := startRegistry(t, nil)
+	const repository, tag = "bicep/avm/res/app/container-app", "0.23.1"
+	manifestDigest := pushOCIModule(t, host, repository, tag, bicepModuleArtifactType,
+		&ociLayer{MediaType: bicepConfigMediaType, Content: []byte("{}")},
+		ociLayer{MediaType: bicepTemplateMediaType, Content: template},
+		ociLayer{MediaType: bicepSourceMediaType, Content: source})
+
+	fixture, err := filepath.Abs(armFixtureDir)
+	if err != nil {
+		t.Fatalf("locate the fixture workspace: %v", err)
+	}
+	// The standard catalog is found from the package directory, before the test
+	// moves into its workspace.
+	standardCatalog := standardCatalogDir(t)
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(fixture)); err != nil {
+		t.Fatalf("copy the fixture workspace: %v", err)
+	}
+	t.Chdir(root)
+	writeFixture(t, filepath.Join(root, ".aggrega-config.yaml"),
+		"workspace:\n  catalog_dirs:\n    - catalog\n    - "+standardCatalog+"\nauto_pull: false\n")
+	recipe := filepath.Join(root, "catalog", "recipe", "arm", "container-app-oci", "1.0.0", "recipe.yaml")
+	body := mustReadFile(t, recipe)
+	const authoredURL = "oci://mcr.microsoft.com/bicep/avm/res/app/container-app"
+	if !bytes.Contains(body, []byte(authoredURL)) {
+		t.Fatalf("the fixture Recipe does not name %s", authoredURL)
+	}
+	writeFixture(t, recipe, strings.Replace(string(body), authoredURL, "oci://"+host+"/"+repository, 1))
+
+	if err := pinRun(context.Background(), io.Discard, resolveTempWorkspace(t, tempWorkspaceOptions{Root: root}), recipe, false); err != nil {
+		t.Fatalf("pin the Recipe: %s", cerrors.CauseChain(err))
+	}
+	releasePath := filepath.Join(root, "release.yaml")
+	for _, args := range [][]string{{"pull", "--release", "release.yaml"}, {"build", "--release", "release.yaml"}} {
+		var out string
+		var err error
+		stderr := captureStderr(t, func() { out, err = runAggrega(t, args...) })
+		if err != nil {
+			t.Fatalf("aggrega %s failed: %v\ncommand output:\n%s\nstderr:\n%s", strings.Join(args, " "), err, out, stderr)
+		}
+	}
+
+	rows := sourceRows(t, releasePath)
+	if len(rows) != 1 {
+		t.Fatalf("want one source row; got %+v", rows)
+	}
+	for _, c := range []struct{ field, got, want string }{
+		{"kind", rows[0].Kind, sourcekind.BicepModuleOCI},
+		{"url", rows[0].URL, "oci://" + host + "/" + repository},
+		{"pinned_version", rows[0].PinnedVersion, tag},
+		{"mediatype", rows[0].Mediatype, bicepTemplateMediaType},
+		{"digest", rows[0].Digest, sha256Of(template)},
+		{"manifest_digest", rows[0].ManifestDigest, manifestDigest},
+	} {
+		if c.got != c.want {
+			t.Errorf("the lockfile row's %s is %q; want %q", c.field, c.got, c.want)
+		}
+	}
+
+	tree := renderedTree(t, filepath.Join(root, "dist"))
+	for p, content := range tree {
+		if strings.Contains(content, string(source)) {
+			t.Errorf("%s carries the module's source layer", p)
+		}
+	}
+	var wantTemplate map[string]any
+	if err := json.Unmarshal(template, &wantTemplate); err != nil {
+		t.Fatalf("decode the pushed template: %v", err)
+	}
+	var nested []map[string]any
+	for p, content := range tree {
+		if !strings.HasSuffix(p, ".json") {
+			continue
+		}
+		var boundary struct {
+			Resources map[string]struct {
+				Type       string         `json:"type"`
+				Properties map[string]any `json:"properties"`
+			} `json:"resources"`
+		}
+		if json.Unmarshal([]byte(content), &boundary) != nil {
+			continue
+		}
+		for _, r := range boundary.Resources {
+			if r.Type == "Microsoft.Resources/deployments" {
+				nested = append(nested, r.Properties)
+			}
+		}
+	}
+	if len(nested) != 1 {
+		t.Fatalf("want one nested template resource in the output; got %d in %v", len(nested), sortedTreeKeys(tree))
+	}
+	if !reflect.DeepEqual(nested[0]["template"], any(wantTemplate)) {
+		t.Errorf("the nested resource's template is not the pushed template:\n%v", nested[0]["template"])
+	}
+	parameters, _ := nested[0]["parameters"].(map[string]any)
+	telemetry, _ := parameters["enableTelemetry"].(map[string]any)
+	if telemetry["value"] != false {
+		t.Errorf("the nested template resource binds enableTelemetry %v; want false", parameters["enableTelemetry"])
+	}
+}

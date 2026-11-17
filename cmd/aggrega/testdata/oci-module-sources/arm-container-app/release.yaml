@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: orders
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: aggregate
+  manifest: manifest
+  boundaries:
+    azure:
+      directory: azure
+      components:
+        orders-api:
+          infra:
+            image: registry.example.com/orders-api:1.0.0
+            port: 8080
+            replicas: 2
+            overrides:
+              container_app_environment_id: /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/orders-apps/providers/Microsoft.App/managedEnvironments/orders-environment
