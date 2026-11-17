@@ -84,18 +84,28 @@ func TestRecordEntriesRefuseMixedShape(t *testing.T) {
 	t.Parallel()
 	d := digestOf("x")
 	file := `{"path": "a.yaml", "digest": "` + d + `"}`
-	for _, row := range []struct{ name, doc string }{
-		{"imports and top-level files", `{"imports": [{"format": "a", "files": [` + file + `]}], "files": [` + file + `]}`},
-		{"imports and a top-level target", `{"imports": [], "target": "compose"}`},
-		{"two entries of one format", `{"imports": [{"format": "a", "files": [` + file + `]}, {"format": "a", "files": []}]}`},
-		{"two entries with no format", `{"imports": [{"files": []}, {"files": []}]}`},
-		{"an entry file with no path", `{"imports": [{"format": "a", "files": [{"digest": "` + d + `"}]}]}`},
-		{"an entry file named twice", `{"imports": [{"format": "a", "files": [` + file + `, ` + file + `]}]}`},
-		{"an entry snapshot not a digest", `{"imports": [{"format": "a", "catalogSnapshot": "nope", "files": []}]}`},
-		{"an unknown entry field", `{"imports": [{"format": "a", "extra": 1, "files": []}]}`},
+	for _, row := range []struct{ name, doc, want string }{
+		{"imports and top-level files", `{"imports": [{"format": "a", "files": [` + file + `]}], "files": [` + file + `]}`,
+			"both entries under"},
+		{"imports and a top-level target", `{"imports": [], "target": "compose"}`, "both entries under"},
+		{"two entries of one format", `{"imports": [{"format": "a", "files": [` + file + `]}, {"format": "a", "files": []}]}`,
+			`more than one entry for the format "a"`},
+		{"two entries with no format", `{"imports": [{"files": []}, {"files": []}]}`,
+			`more than one entry for the format ""`},
+		{"an entry file with no path", `{"imports": [{"format": "a", "files": [{"digest": "` + d + `"}]}]}`,
+			"a file with no path"},
+		{"an entry file named twice", `{"imports": [{"format": "a", "files": [` + file + `, ` + file + `]}]}`,
+			`the file "a.yaml" more than once`},
+		{"an entry snapshot not a digest", `{"imports": [{"format": "a", "catalogSnapshot": "nope", "files": []}]}`,
+			`catalog snapshot "nope"`},
+		{"an unknown entry field", `{"imports": [{"format": "a", "extra": 1, "files": []}]}`,
+			`unknown field "extra"`},
 	} {
-		if _, err := parseRecord([]byte(row.doc)); err == nil {
+		_, err := parseRecord([]byte(row.doc))
+		if err == nil {
 			t.Errorf("%s: the record is accepted", row.name)
+		} else if !strings.Contains(err.Error(), row.want) {
+			t.Errorf("%s: refused with %q; want it to name %q", row.name, err, row.want)
 		}
 	}
 }

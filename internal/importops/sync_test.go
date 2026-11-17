@@ -445,8 +445,10 @@ func TestTheSamePlanTwice(t *testing.T) {
 	if !reflect.DeepEqual(a, b) {
 		t.Errorf("two plans over the same inputs differ:\n%+v\n%+v", a, b)
 	}
-	if !reflect.DeepEqual(recordFor("compose", draftedFiles(aggregateDraft(syncFresh))),
-		recordFor("compose", draftedFiles(aggregateDraft(syncFresh)))) {
+	asBytes := func() string {
+		return recordBytes(importRecord{Imports: []recordEntry{recordFor("compose", draftedFiles(aggregateDraft(syncFresh)))}})
+	}
+	if asBytes() != asBytes() {
 		t.Error("two records of one draft differ")
 	}
 }
