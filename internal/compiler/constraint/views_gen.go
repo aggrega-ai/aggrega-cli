@@ -1501,7 +1501,7 @@ type DocumentView interface {
 	// kind, and whether a source of that kind may name a directory inside the
 	// package with `module_subdir`.
 	//
-	// The answer is the program's rather than the document's: it is read from
+	// The answer is the program's rather than the document's: it comes from
 	// the one declaration of the OCI module kinds, and is presented beside the
 	// kind a Recipe names so a rule over an OCI module source is asked as the
 	// document arrives, before anything is fetched. The first result is
@@ -1695,7 +1695,7 @@ type DocumentView interface {
 	// module kind, and whether a source of that kind may name a directory
 	// inside the package with `module_subdir`.
 	//
-	// The answer is the program's rather than the document's: it is read from
+	// The answer is the program's rather than the document's: it comes from
 	// the one declaration of the OCI module kinds, and is presented beside the
 	// kind a FeatureRecipe names so a rule over an OCI module source is asked
 	// as the document arrives, before anything is fetched. The first result is

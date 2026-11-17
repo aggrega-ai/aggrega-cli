@@ -1463,7 +1463,7 @@ var facts = []factDecl{
 		Subject:      []string{"document"},
 		Params:       []paramDecl{{Name: "kind", Type: "string"}},
 		Returns:      "(bool, bool)",
-		Doc:          "RecipeSourceKindOCIModule reports whether a source kind is an OCI module kind, and whether a source of that kind may name a directory inside the package with `module_subdir`.\n\nThe answer is the program's rather than the document's: it is read from the one declaration of the OCI module kinds, and is presented beside the kind a Recipe names so a rule over an OCI module source is asked as the document arrives, before anything is fetched. The first result is whether the kind takes `module_subdir`; the second is whether the kind is an OCI module kind at all.",
+		Doc:          "RecipeSourceKindOCIModule reports whether a source kind is an OCI module kind, and whether a source of that kind may name a directory inside the package with `module_subdir`.\n\nThe answer is the program's rather than the document's: it comes from the one declaration of the OCI module kinds, and is presented beside the kind a Recipe names so a rule over an OCI module source is asked as the document arrives, before anything is fetched. The first result is whether the kind takes `module_subdir`; the second is whether the kind is an OCI module kind at all.",
 	},
 	{
 		Name:        "recipe-authored-source-reference",
@@ -1760,7 +1760,7 @@ var facts = []factDecl{
 		Subject:      []string{"document"},
 		Params:       []paramDecl{{Name: "kind", Type: "string"}},
 		Returns:      "(bool, bool)",
-		Doc:          "FeatureRecipeSourceKindOCIModule reports whether a source kind is an OCI module kind, and whether a source of that kind may name a directory inside the package with `module_subdir`.\n\nThe answer is the program's rather than the document's: it is read from the one declaration of the OCI module kinds, and is presented beside the kind a FeatureRecipe names so a rule over an OCI module source is asked as the document arrives, before anything is fetched. The first result is whether the kind takes `module_subdir`; the second is whether the kind is an OCI module kind at all.",
+		Doc:          "FeatureRecipeSourceKindOCIModule reports whether a source kind is an OCI module kind, and whether a source of that kind may name a directory inside the package with `module_subdir`.\n\nThe answer is the program's rather than the document's: it comes from the one declaration of the OCI module kinds, and is presented beside the kind a FeatureRecipe names so a rule over an OCI module source is asked as the document arrives, before anything is fetched. The first result is whether the kind takes `module_subdir`; the second is whether the kind is an OCI module kind at all.",
 	},
 	{
 		Name:        "feature-recipe-authored-source-reference",
