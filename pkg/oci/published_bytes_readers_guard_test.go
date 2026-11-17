@@ -72,17 +72,19 @@ var publishedByteSources = map[string]bool{
 // through oci.EntityYAML first.
 var publishedByteReaders = map[string]string{
 	// --- the transport itself: it yields bytes and reads none of them ---
-	"pkg/catalog.DefaultOCIPuller.Pull":            "the fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
-	"pkg/catalog.DefaultOCIPuller.PullEntity":      "the kind-bound fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
-	"pkg/catalog.DefaultOCIPuller.PullLibrary":     "the kind-bound fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
-	"pkg/catalog.DefaultOCIPuller.PullAggregate":   "the bare-name fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
-	"pkg/catalog.DefaultOCIPuller.readAhead":       "makes a dependency walk's fetches ahead through the puller's own fetches, so their answers wait in the run's memo of registry reads for the walk's own fetch; discards every result and parses nothing",
-	"pkg/oci.MemoizedPull":                         "hands on oci.Pull's answer unread: its own, or the one a read ahead kept for the same reference and tag, handed out once; parses nothing",
-	"pkg/catalog.tier2ReadVerifiedWithManifest":    "the pin-verified cache read; holds the persisted manifest to its pin where one is recorded, then the bytes to that manifest's descriptor, then to the content pin over the subject its row records (catalog.PinDigest, which reads the entity through oci.EntityYAML to learn its kind), and returns the bytes beside the manifest",
-	"pkg/catalog.tier2ReadVerified":                "hands on the verified read's bytes unread and drops the manifest; verifies nothing itself",
-	"pkg/catalog.catalogLookup.tier2":              "hands the slot's bytes to the cascade after the reuse-check, described through catalog.PinDigest (oci.EntityYAML); parses nothing else",
-	"pkg/catalog.LazyLookup.tier2Verified":         "hands the verified read's bytes, the manifest they were verified against, and the slot they were read from to the cascade under the verify posture; parses nothing",
-	"pkg/catalog.LazyLookup.VerifyPinnedIntegrity": "verifies every pinned slot and discards the bytes; nothing is parsed",
+	"pkg/catalog.DefaultOCIPuller.Pull":              "the fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
+	"pkg/catalog.DefaultOCIPuller.PullEntity":        "the kind-bound fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
+	"pkg/catalog.DefaultOCIPuller.PullLibrary":       "the kind-bound fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
+	"pkg/catalog.DefaultOCIPuller.PullAggregate":     "the bare-name fetch, read through the run's memo of registry reads (oci.MemoizedPull); returns what the registry served, parses nothing",
+	"pkg/catalog.DefaultOCIPuller.readAhead":         "makes a dependency walk's fetches ahead through the puller's own fetches, so their answers wait in the run's memo of registry reads for the walk's own fetch; discards every result and parses nothing",
+	"pkg/oci.MemoizedPull":                           "hands on oci.Pull's answer unread: its own, or the one a read ahead kept for the same reference and tag, handed out once; parses nothing",
+	"pkg/catalog.tier2ReadVerifiedWithManifest":      "the pin-verified cache read; holds the persisted manifest to its pin where one is recorded, then the bytes to that manifest's descriptor, then to the content pin over the subject its row records (catalog.PinDigest, which reads the entity through oci.EntityYAML to learn its kind), and returns the bytes beside the manifest",
+	"pkg/catalog.tier2ReadVerified":                  "hands on the verified read's bytes unread and drops the manifest; verifies nothing itself",
+	"pkg/catalog.catalogLookup.tier2":                "hands the slot's bytes to the cascade after the reuse-check, described through catalog.PinDigest (oci.EntityYAML); parses nothing else",
+	"pkg/catalog.LazyLookup.tier2Verified":           "hands the verified read's bytes, the manifest they were verified against, and the slot they were read from to the cascade under the verify posture; parses nothing",
+	"pkg/catalog.LazyLookup.VerifyPinnedIntegrity":   "verifies every pinned slot and discards the bytes; nothing is parsed",
+	"pkg/catalog.LazyLookup.pinnedSlotRefusal":       "reads a pinned slot only to learn whether the pin-verified read refuses it (tier2ReadVerifiedWithManifest holds the manifest and bytes to their pins) and discards the bytes; nothing is parsed",
+	"pkg/sourceresolver/ociartifact.adapter.Resolve": "pulls a module package's content layer, checked by oci.Pull against the manifest the registry served, lays a zip package out through sourcecache.CheckZipLayout, and writes the layer's bytes verbatim to the source slot beside their digest; the bytes are never parsed as an entity document",
 
 	// --- entity readers: each takes the document through oci.EntityYAML ---
 	"pkg/catalog.tier3PullCatalogEntity":                "pins the entity's own metadata.version, read through oci.EntityYAML",
