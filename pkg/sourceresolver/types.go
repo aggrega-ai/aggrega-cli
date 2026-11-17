@@ -7,15 +7,15 @@
 // ResolvedSource lock-time output shape, and the kind-dispatching
 // framework that routes by source kind.
 //
-// Four per-kind transport adapters — helm-oci-chart, helm-https-chart,
-// compose-https-fragment and git-repository — live in sub-packages
-// and register with the dispatcher at import time. Consumers that want
-// the full registered set blank-import the adapter sub-packages
-// alongside this one; the dispatcher then routes any registered kind
-// without further wiring. A fifth kind, terraform-module-oci, is
-// reserved in the lockfile's kind enum and has no adapter, so a source
-// declaring it resolves to the unknown-kind refusal rather than being
-// silently accepted.
+// The per-kind transport adapters live in sub-packages and register
+// with the dispatcher at import time: helm for the two Helm kinds,
+// compose for the compose fragment, gitrepo for a Git repository and
+// ociartifact for each OCI module kind. Consumers that want the full
+// registered set blank-import the adapter sub-packages alongside this
+// one; the dispatcher then routes any registered kind without further
+// wiring. The kinds the program serves are declared in package
+// sourcekind, and a kind declared nowhere there is refused as the
+// document naming it is read.
 //
 // The adapters split on where an archive's trust anchor comes from, and
 // the split is a determinism contract rather than an implementation
@@ -50,9 +50,9 @@ import (
 // The side knobs (Chart, ModuleSubdir, Ref) are optional and
 // consumed only by the kinds that need them: Chart by helm-oci-chart
 // and helm-https-chart (when the URL is a repo root rather than a
-// direct chart artifact); ModuleSubdir by git-repository and
-// terraform-module-oci (when the artifact sits in a directory inside
-// a larger repository or registry artifact); Ref by git-repository
+// direct chart artifact); ModuleSubdir by git-repository (a directory
+// of the cloned repository) and by an OCI module kind whose row takes
+// one (a directory of the module package); Ref by git-repository
 // (tag, branch, or commit SHA). Adapters ignore knobs they don't
 // recognise.
 //
@@ -99,16 +99,17 @@ type SourceSpec struct {
 
 // ResolvedSource is the lock-time output of source resolution: the
 // canonical resolved URL, the concrete pinned version, the content
-// digest over the always-`.tar.gz` archive, and the cache paths
-// where the archive and its extracted form live locally.
+// digest over the cached artifact, and the cache paths where the
+// artifact and its extracted form live locally.
 //
 // The YAML tags map field-for-field to the lockfile's future
 // `source_artifacts:` section. Once the lockfile schema extends to
 // include that section, the integration is a straightforward
 // per-field copy — no shape adaptation required.
 //
-// CachePath names the archive's location in the local cache
-// (a single `.tar.gz` file under the workspace cache directory).
+// CachePath names the artifact's location in the local cache
+// (a single file under the workspace cache directory: a `.tar.gz`
+// archive, or the selected layer of an OCI module as published).
 // ExtractedPath names where the archive's extracted contents live
 // (the always-re-extract-on-read discipline keeps the extracted
 // form fresh; the path is populated by the cache layer downstream
@@ -123,7 +124,8 @@ type SourceSpec struct {
 // Mediatype is the canonical media-type for the kind (e.g.,
 // "application/vnd.cncf.helm.chart.content.v1.tar+gzip" for helm
 // charts, "application/x-yaml" for compose fragments,
-// "application/gzip" for git-repository archives). The adapter
+// "application/gzip" for git-repository archives, the selected
+// layer's media type for an OCI module). The adapter
 // populates this from its kind-specific constant or from the
 // upstream registry's manifest mediatype when available. The
 // lockfile writer copies the field verbatim into the lockfile's
@@ -141,11 +143,12 @@ type ResolvedSource struct {
 	// same version resolve distinctly. Empty for a direct .tgz, OCI, compose, or
 	// git source, none of which selects a chart within the URL.
 	Chart string `yaml:"chart,omitempty"`
-	// ModuleSubdir names the directory within a git-sourced repository that is the
-	// artifact (spec.ModuleSubdir), part of the resolved-source identity so two
-	// directories of one repository at one commit resolve distinctly. Empty when
-	// the whole repository is the artifact, and for every kind that reaches its
-	// artifact by URL rather than by descending into a clone.
+	// ModuleSubdir names the directory that is the artifact within a git-sourced
+	// repository or within an OCI module package (spec.ModuleSubdir), part of the
+	// resolved-source identity so two directories of one repository at one commit,
+	// or of one package at one version, resolve distinctly. Empty when the whole
+	// repository or package is the artifact, and for every kind that reaches its
+	// artifact by URL alone.
 	ModuleSubdir  string `yaml:"module_subdir,omitempty"`
 	PinnedVersion string `yaml:"pinned_version"`
 	Digest        string `yaml:"digest"`
@@ -156,8 +159,8 @@ type ResolvedSource struct {
 	ResolvedURL string `yaml:"resolved_url,omitempty"`
 	// ManifestDigest is the OCI manifest digest the cached archive is verified
 	// against — the independent root of trust. It differs from Digest, the
-	// portable content digest. Only an OCI-distributed source (helm-oci-chart)
-	// populates it; https and git resolvers leave it empty.
+	// portable content digest. Only an OCI-distributed source (a Helm chart or an
+	// OCI module) populates it; https and git resolvers leave it empty.
 	ManifestDigest string `yaml:"manifest_digest,omitempty"`
 	Mediatype      string `yaml:"mediatype"`
 	CachePath      string `yaml:"cache_path,omitempty"`

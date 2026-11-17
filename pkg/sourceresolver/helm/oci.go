@@ -29,6 +29,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	ocierr "github.com/aggrega-ai/aggrega-cli/pkg/oci"
@@ -131,7 +132,7 @@ func (a *ociAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec
 		Digest:         digest,
 		ManifestDigest: result.Digest,
 		Mediatype:      mediatype,
-		CachePath:      slot + "/blob.tgz",
+		CachePath:      filepath.Join(slot, cacheslot.BlobFile),
 		OriginalSource: spec.OriginalSource,
 	}, nil
 }

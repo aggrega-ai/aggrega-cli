@@ -14,7 +14,8 @@
 // The <chart> segment is present only for a repo-root helm source (where the
 // URL path is the repository root and the chart name distinguishes artifacts
 // served from it); the <module-subdir> segment only for a git source that names
-// a directory within the cloned repository. Both are dropped for kinds that pass
+// a directory within the cloned repository or an OCI module source that names a
+// directory within its package. Both are dropped for kinds that pass
 // them empty, keeping those kinds' slot layout unchanged. The two are separate
 // segments rather than one shared one because they answer the same question for
 // different kinds and a single segment would make one kind's slot path readable
@@ -83,8 +84,8 @@ var errEmptyWorkspaceRoot = cerrors.Register("empty-workspace-root", cerrors.Met
 // kinds that identify by URL alone (a direct .tgz, OCI, compose) keep the
 // slot layout they had before chart entered the identity.
 //
-// moduleSubdir is the directory within a git-sourced repository that is the
-// artifact; it becomes its own intermediate segment so two directories of one
+// moduleSubdir is the directory within a git-sourced repository or an OCI module
+// package that is the artifact; it becomes its own intermediate segment so two directories of one
 // repository at one commit occupy distinct slots. Its slash-separated parts are
 // spelled one directory each, the way a URL path's parts are. An empty
 // moduleSubdir is dropped, so every other kind's layout is unchanged.
@@ -121,24 +122,23 @@ func Slot(workspaceRoot, cacheDir, kind, sourceURL, chart, moduleSubdir, version
 }
 
 // CheckModuleSubdir reports whether moduleSubdir, the directory of a git-sourced
-// repository a source names as its artifact, stays beneath the place it names: nil
+// repository or an OCI module package a source names as its artifact, stays beneath the place it names: nil
 // when it does, and otherwise the refusal [Slot] gives the same value
 // (oci.ErrCacheLocationOutsideCache), quoting it under its source key.
 //
-// The value names one place twice — a directory of the repository's checkout,
-// which is read to make the archive, and the segment of the slot the archive is
-// kept in. Slot judges the second, and only once the archive's digest is known,
-// which is after the checkout was read; a value climbing above its place would by
-// then have had the files beside the checkout read. So a resolver asks this
-// before it fetches anything, and a value that climbs is refused with nothing
-// read.
+// The value names one place twice — a directory of what the source provides, which
+// is read to make the artifact, and the segment of the slot the artifact is kept
+// in. Slot judges the second, and only once the artifact's digest is known, which
+// is after the source was read; a value climbing above its place would by then
+// have had the files beside it read. So a resolver asks this before it fetches
+// anything, and a value that climbs is refused with nothing read.
 //
 // It judges the value as the checkout's join reads it, by the rule
 // oci.JoinCacheLocation states for a value naming a directory path: separators
 // leading or trailing it dropped, as a join drops them, and a backslash read as a
 // separator, as a Windows join reads one — so a value climbing through
 // backslashes is refused on every platform rather than read beside the checkout
-// on one. An empty moduleSubdir names the whole repository and passes.
+// on one. An empty moduleSubdir names the whole repository or package and passes.
 func CheckModuleSubdir(kind, sourceURL, moduleSubdir string) error {
 	_, err := oci.JoinCacheLocation("", sourceSubject(kind, sourceURL), oci.CacheSegment{
 		Key:     "module_subdir",

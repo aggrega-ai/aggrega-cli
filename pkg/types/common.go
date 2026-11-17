@@ -26,12 +26,14 @@ type Maintainer struct {
 // repo root or a direct .tgz for helm-https), and the two selector terms name
 // whatever the URL alone does not: Chart names the chart within a repo root, so
 // two charts served from one repo root at the same version pin distinctly, and
-// ModuleSubdir names the directory within a git-sourced repository, so two
-// directories of one repository at one commit pin distinctly. A single entity's
+// ModuleSubdir names the directory within a git-sourced repository or an OCI
+// module package, so two directories of one repository at one commit, or of one
+// package at one version, pin distinctly. A single entity's
 // lock carries more than one entry when its source knobs are templated and
 // resolve differently per consuming instance, which is why both selector terms
 // belong to the identity here as well as in the lockfile. Digest is the SHA-256 of
-// the fetched archive and ManifestDigest is the OCI manifest digest for an
+// the fetched archive (for an OCI module, of the selected layer as published) and
+// ManifestDigest is the OCI manifest digest for an
 // OCI-distributed source (empty otherwise). The resolution phase writes these into
 // the lock from the fetched bytes; the build reads them back and verifies the
 // cached source has not drifted. The entity document itself is never written to.

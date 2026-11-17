@@ -6,7 +6,7 @@
 //
 // A structured source names its kind, and the kind selects the adapter that
 // fetches the artifact: a chart from an OCI registry or an HTTPS repository, a
-// compose fragment over HTTPS, a Git repository. The set is held here, in a
+// compose fragment over HTTPS, a Git repository, a module from an OCI registry. The set is held here, in a
 // package that depends on nothing, so the readers that need it — the document
 // check refusing a kind nothing serves, the lock-time reading of a source, and
 // every adapter declaring the kind it registers for — read one declaration
@@ -47,10 +47,12 @@ const (
 // served is the set Served answers from, in sorted order so ServedKinds hands it
 // out without sorting.
 var served = []string{
+	BicepModuleOCI,
 	ComposeHTTPSFragment,
 	GitRepository,
 	HelmHTTPSChart,
 	HelmOCIChart,
+	TerraformModuleOCI,
 }
 
 // Served reports whether this program serves kind: whether an adapter ships that

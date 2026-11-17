@@ -23,8 +23,7 @@ import (
 // dispatched to. Either way the served declaration and the binary disagree, and
 // this is where that is caught rather than at a pull.
 //
-// The reserved terraform-module-oci kind is in neither set, so an adapter
-// registered for it fails here as one the served set omits.
+// An adapter registered for a kind the served set omits fails here.
 func TestShippedSourceAdaptersRegistered(t *testing.T) {
 	t.Parallel()
 	registered := sourceresolver.Kinds()

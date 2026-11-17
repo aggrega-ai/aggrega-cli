@@ -13,12 +13,12 @@ package main
 // set pkg/sourcekind declares.
 //
 // One import of the helm package covers both helm adapters (helm-oci-chart and
-// helm-https-chart register in the same package's init functions). The shipped
-// kinds are helm-oci-chart, helm-https-chart, compose-https-fragment, and
-// git-repository; the reserved terraform-module-oci kind has no adapter yet and
-// is intentionally absent.
+// helm-https-chart register in the same package's init functions), and one import
+// of the ociartifact package covers every OCI module kind, which it registers one
+// adapter per kind for.
 import (
 	_ "github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/compose"
 	_ "github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/gitrepo"
 	_ "github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/helm"
+	_ "github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/ociartifact"
 )

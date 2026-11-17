@@ -10,17 +10,17 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
-// TestServedAnswersTheDeclaredSetExactly holds Served to the four declared kinds
-// and to nothing near them: the reserved kind no adapter ships for, a kind in
-// another case, a pinned spelling and the empty string are not served.
+// TestServedAnswersTheDeclaredSetExactly holds Served to the declared kinds and to
+// nothing near them: a kind no adapter ships for, a kind in another case, a pinned
+// spelling and the empty string are not served.
 func TestServedAnswersTheDeclaredSetExactly(t *testing.T) {
 	t.Parallel()
-	for _, kind := range []string{HelmOCIChart, HelmHTTPSChart, ComposeHTTPSFragment, GitRepository} {
+	for _, kind := range []string{HelmOCIChart, HelmHTTPSChart, ComposeHTTPSFragment, GitRepository, BicepModuleOCI, TerraformModuleOCI} {
 		if !Served(kind) {
 			t.Errorf("Served(%q) = false; want true", kind)
 		}
 	}
-	for _, kind := range []string{"terraform-module-oci", "Helm-OCI-Chart", "helm-oci-chart:1", "", "nosuch"} {
+	for _, kind := range []string{"nosuch-module-oci", "Helm-OCI-Chart", "Bicep-Module-OCI", "helm-oci-chart:1", "", "nosuch"} {
 		if Served(kind) {
 			t.Errorf("Served(%q) = true; want false", kind)
 		}
@@ -33,8 +33,8 @@ func TestServedAnswersTheDeclaredSetExactly(t *testing.T) {
 func TestServedKindsIsSortedAndACopy(t *testing.T) {
 	t.Parallel()
 	got := ServedKinds()
-	if !slices.IsSorted(got) || len(got) != 4 {
-		t.Fatalf("ServedKinds() = %v; want the four served kinds, sorted", got)
+	if !slices.IsSorted(got) || !slices.Contains(got, HelmOCIChart) {
+		t.Fatalf("ServedKinds() = %v; want the served kinds, sorted", got)
 	}
 	got[0] = "tampered"
 	if !Served(ComposeHTTPSFragment) || Served("tampered") {

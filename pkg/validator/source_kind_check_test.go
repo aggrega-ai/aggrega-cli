@@ -27,7 +27,7 @@ var sourceKindRows = []struct {
 	{"a structured source writing no kind (control)", map[string]any{"url": "oci://r/c", "version": "1.0.0"}, false},
 	{"a structured source writing an empty kind (control)", map[string]any{"kind": "", "url": "oci://r/c"}, false},
 	{"a misspelt kind", map[string]any{"kind": "nosuch", "url": "https://example.com/x", "version": "1.0.0"}, true},
-	{"the reserved kind no adapter ships for", map[string]any{"kind": "terraform-module-oci", "url": "oci://r/m"}, true},
+	{"a well-formed kind no adapter ships for", map[string]any{"kind": "nosuch-module-oci", "url": "oci://r/m"}, true},
 	{"a served kind in another case", map[string]any{"kind": "Helm-OCI-Chart", "url": "oci://r/c"}, true},
 }
 

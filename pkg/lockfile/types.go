@@ -341,7 +341,8 @@ type LibraryConsumer struct {
 // directories of one repository at one commit pin to distinct entries. The
 // lockfile dedupes multiple Recipes pinning the same artifact into one
 // entry with multiple ReferencedBy records. Digest verifies the cached
-// archive; Mediatype carries the canonical type the registry advertised.
+// archive; Mediatype carries the canonical type the registry advertised (for an
+// OCI module, the media type of the layer the kind selects).
 // ResolvedURL is provenance only (the concrete .tgz a repo-root helm
 // source resolved to), never part of identity.
 //
@@ -358,8 +359,10 @@ type LibraryConsumer struct {
 //     entry by the authored ref rather than by the commit, which is
 //     what lets a Recipe name a tag and still resolve to the commit
 //     that tag was pinned at.
-//   - terraform-module-oci: reserved for the future terraform
-//     provider; no adapter ships in the current implementation.
+//   - bicep-module-oci, terraform-module-oci: PinnedVersion is the
+//     user-authored tag or manifest digest, recorded verbatim. A
+//     terraform-module-oci entry carries the authored module_subdir
+//     in ModuleSubdir when the source names one.
 type SourceArtifact struct {
 	Kind string `yaml:"kind"`
 	// URL is the authored identity URL — spec.source.url as authored (a repo root
@@ -372,11 +375,11 @@ type SourceArtifact struct {
 	// Empty (and omitted) for a direct .tgz, OCI, compose, or git source, none of
 	// which selects a chart within the URL.
 	Chart string `yaml:"chart,omitempty"`
-	// ModuleSubdir names the directory within a git-sourced repository that is the
-	// artifact, part of the identity so two directories of one repository at one
-	// commit pin distinctly. Empty (and omitted) when the whole repository is the
-	// artifact, and for every kind that reaches its artifact by URL rather than by
-	// descending into a clone.
+	// ModuleSubdir names the directory within a git-sourced repository or an OCI
+	// module package that is the artifact, part of the identity so two directories
+	// of one repository at one commit, or of one package at one version, pin
+	// distinctly. Empty (and omitted) when the whole repository or package is the
+	// artifact, and for every kind that reaches its artifact by URL alone.
 	ModuleSubdir  string `yaml:"module_subdir,omitempty"`
 	PinnedVersion string `yaml:"pinned_version"`
 	Digest        string `yaml:"digest"`
@@ -387,7 +390,7 @@ type SourceArtifact struct {
 	// ManifestDigest is the OCI manifest digest the cached archive is verified
 	// against — the independent root of trust. It differs from Digest, the
 	// portable content digest used for the cache pin and integrity check. Present
-	// only for an OCI-distributed source (a helm-oci-chart); empty (and omitted)
+	// only for an OCI-distributed source (a Helm chart or an OCI module); empty (and omitted)
 	// for an https or git source, which carries no manifest by construction.
 	ManifestDigest string                    `yaml:"manifest_digest,omitempty"`
 	Mediatype      string                    `yaml:"mediatype"`
