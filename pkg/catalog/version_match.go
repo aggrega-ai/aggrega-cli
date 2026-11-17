@@ -307,3 +307,74 @@ func higherCandidate(a, b versionCandidate) bool {
 		return a.key < b.key
 	}
 }
+
+// selectLibraryVersion resolves a library reference (SchemaLibrary,
+// MappingLibrary, WorkloadLibrary or ArtifactLibrary) against an index of the
+// library versions a catalog holds, returning the index KEY of the pick. The
+// reference's version is a floor, not an exact pin or a range:
+//
+//   - bare ("Lib")        -> the highest non-prerelease version, as
+//     selectEntityVersion picks it;
+//   - floor ("Lib:1.1.0") -> the lowest held version at or above the floor that
+//     shares the floor's major component. A floor may omit trailing components
+//     ("Lib:1.1" reads as 1.1.0). Versions of major 0 share one major, so 0.5.1
+//     is satisfied by 0.6.0. A prerelease is selected only when the floor names
+//     it literally.
+//
+// Returns the same three-way contract selectEntityVersion does: (key, true, nil)
+// on a pick, ("", false, nil) when the library name is held at no version, and
+// ("", false, ErrUnsatisfiableEntityVersion) when the name is held but no version
+// satisfies the floor. A floor that is no version at all reports the malformed-pin
+// fault types.ParseVersionPin states.
+//
+// A caret reference names a range rather than a floor and is selected by
+// selectEntityVersion.
+//
+// Determinism: candidates are ordered by semver and then by index key, never by
+// map-iteration order.
+func selectLibraryVersion[V any](index map[string]V, ref string, meta func(V) (name, version string)) (string, bool, error) {
+	pin := types.ParseVersionPin(ref)
+	floorText, hasFloor := pin.Pin()
+	if !hasFloor || pin.IsCaret() {
+		return selectEntityVersion(index, ref, meta)
+	}
+
+	floor, floorErr := semver.NewVersion(floorText)
+	base := pin.Base()
+	held := false
+	best := versionCandidate{}
+	found := false
+	for k, v := range index {
+		n, ver := meta(v)
+		if n != base {
+			continue
+		}
+		held = true
+		if floorErr != nil {
+			continue
+		}
+		parsed, err := semver.NewVersion(ver)
+		if err != nil || parsed.Major() != floor.Major() || parsed.LessThan(floor) {
+			continue
+		}
+		if parsed.Prerelease() != "" && !parsed.Equal(floor) {
+			continue
+		}
+		c := versionCandidate{key: k, raw: ver, parsed: parsed}
+		if !found || higherCandidate(best, c) {
+			best, found = c, true
+		}
+	}
+	switch {
+	case !held:
+		return "", false, nil
+	case floorErr != nil:
+		if fault := pin.Fault(); fault != nil {
+			return "", false, fault
+		}
+		return "", false, ErrUnsatisfiableEntityVersion()
+	case !found:
+		return "", false, ErrUnsatisfiableEntityVersion()
+	}
+	return best.key, true, nil
+}
