@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: example/scope/group
+  version: 1.0.0
+  description: >
+    A resource group, declared by a template deployed to a subscription. Its
+    values name the group and, where set, a template parameter its fragment
+    declares beside it.
+  labels:
+    component.aggrega.ai/type: resource
+spec:
+  schema:
+    values:
+      symbol:
+        type: string
+        default: Group
+        description: The symbolic name the Recipe declares the resource group under.
+      name:
+        type: string
+        default: orders-rg
+        description: The name of the resource group.
+      param:
+        type: string
+        default: ""
+        description: The name of a template parameter the fragment declares; none where empty.
+      tier:
+        type: string
+        default: Standard_LRS
+        description: The default value of that template parameter.

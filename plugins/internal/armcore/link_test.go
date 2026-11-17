@@ -867,3 +867,116 @@ func TestLinkResolveReadKeyAbsentFromProvidesHalts(t *testing.T) {
 		}
 	}
 }
+
+func TestLinkResolveRefusesAProducerDeployedAtAWiderScope(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		scope, words string
+	}{
+		{"subscription", "subscription scope"},
+		{"managementGroup", "management-group scope"},
+	} {
+		t.Run(c.scope, func(t *testing.T) {
+			t.Parallel()
+			edge := testLink()
+			edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: c.scope, AnnotationResourceGroup: "rg-payments"}
+			_, publishErr := LinkPublish(edge, producerFiles(t, nil))
+			files := consumerFiles(t, map[string]any{"settings": map[string]any{"host": placeholder("host")}}, nil, nil)
+			_, resolveErr := LinkResolve(edge, map[string]string{handleDeploymentName: linkedDeployment, handleOutputNamePrefix + "host": hostOutput}, files)
+			for side, err := range map[string]error{"publish": publishErr, "resolve": resolveErr} {
+				wantCondition(t, err, plugincondition.ErrPluginCannotExpressInput(), "rg-payments")
+				for _, want := range []string{
+					"arm links to a producer deployed at resource-group scope; this producer's boundary deploys at " + c.words,
+					`"orders-api"`, `"payments-db"`, `"database"`, `"stack-a/arm"`,
+				} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("%s: the halt does not say %q: %v", side, want, err)
+					}
+				}
+				for _, banned := range []string{"yet", "not available"} {
+					if strings.Contains(err.Error(), banned) {
+						t.Errorf("%s: the halt says %q: %v", side, banned, err)
+					}
+				}
+			}
+		})
+	}
+	t.Run("a resource group producer is linked", func(t *testing.T) {
+		t.Parallel()
+		edge := testLink()
+		edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: "resourceGroup"}
+		if _, err := LinkPublish(edge, producerFiles(t, nil)); err != nil {
+			t.Errorf("LinkPublish: %v", err)
+		}
+	})
+}
+
+// subscriptionConsumerFiles assembles the consumer at subscription scope: its
+// application, whose settings read the host, as resource group content, and the
+// given subscription content beside it.
+func subscriptionConsumerFiles(t *testing.T, subscriptionContent string) []rendercore.RenderedFile {
+	t.Helper()
+	app := "resources:\n  App:\n    type: Microsoft.App/containerApps\n    apiVersion: '2024-03-01'\n    name: orders-api\n    properties:\n      settings:\n        host: " + placeholder("host") + "\n"
+	contribs := []Contribution{subscriptionBoundary(contributes("orders-api", 0, app))}
+	if subscriptionContent != "" {
+		contribs = append(contribs, subscriptionBoundary(contributes("watcher", 0, subscriptionContent)))
+	}
+	out, err := Assemble(contribs)
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	return out.Files
+}
+
+func TestLinkResolveReadsInsideTheResourceGroupLevel(t *testing.T) {
+	t.Parallel()
+	edge := testLink()
+	files := subscriptionConsumerFiles(t, "")
+	out, err := LinkResolve(edge, published(t, edge), files)
+	if err != nil {
+		t.Fatalf("LinkResolve: %v", err)
+	}
+	ops := opsOf(t, out.Patches)
+	path := "/resources/" + LevelResourceGroupSymbol + "/properties/template/resources/App/properties/settings/host"
+	// Inside the level, resourceGroup() is the level's own resource group.
+	if len(ops) != 1 || ops[0].Op != "replace" || ops[0].Path != path || ops[0].Value != "["+defaultReference+"]" {
+		t.Fatalf("operations = %+v\nwant replace %s = [%s]", ops, path, defaultReference)
+	}
+	resolved := templateOf(t, applied(t, files, out.Patches))
+	if strings.Contains(mustJSON(t, resolved), rendercore.CrossBoundaryLinkSentinelPrefix) {
+		t.Errorf("a placeholder remains:\n%s", mustJSON(t, resolved))
+	}
+}
+
+func TestLinkResolveAtSubscriptionScopeNeedsTheProducersResourceGroup(t *testing.T) {
+	t.Parallel()
+	watcher := subscriptionSchemaLine + "resources:\n  Watch:\n    type: Microsoft.Insights/activityLogAlerts\n    apiVersion: '2020-10-01'\n    name: watch\n    location: global\n    properties:\n      description: " + placeholder("host") + "\n"
+	pointer := "/resources/Watch/properties/description"
+
+	edge := testLink()
+	files := subscriptionConsumerFiles(t, watcher)
+	_, err := LinkResolve(edge, published(t, edge), files)
+	wantCondition(t, err, plugincondition.ErrPluginRequiredInputUnresolved(), "fullyQualifiedDomainName")
+	for _, want := range []string{pointer, `"host"`, `"payments-db"`, AnnotationResourceGroup, "subscription scope"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not say %q: %v", want, err)
+		}
+	}
+
+	edge.TargetAnnotations = map[string]string{AnnotationResourceGroup: "rg-payments"}
+	out, err := LinkResolve(edge, published(t, edge), files)
+	if err != nil {
+		t.Fatalf("LinkResolve with the producer's resource group: %v", err)
+	}
+	want := map[string]any{
+		pointer: "[reference(format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Resources/deployments/{2}', subscription().subscriptionId, 'rg-payments', 'aggrega--orders--stack-a-zsarm'), '2025-04-01').outputs.payments_zhdb__host.value]",
+		"/resources/" + LevelResourceGroupSymbol + "/properties/template/resources/App/properties/settings/host": "[reference(format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Resources/deployments/{2}', subscription().subscriptionId, 'rg-payments', 'aggrega--orders--stack-a-zsarm'), '2025-04-01').outputs.payments_zhdb__host.value]",
+	}
+	got := map[string]any{}
+	for _, op := range opsOf(t, out.Patches) {
+		got[op.Path] = op.Value
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("operations:\n got %v\nwant %v", got, want)
+	}
+}

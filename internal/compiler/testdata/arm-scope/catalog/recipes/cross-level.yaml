@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-scope-cross-level
+  version: 1.0.0
+  description: >
+    A storage account written as a fragment of a resource group template that
+    reads the location of the resource group a subscription template declares,
+    by its symbolic name.
+spec:
+  capability: arm
+  implements: example/resource/plain:1.0.0
+  artifacts:
+    plain.yaml: |
+      resources:
+        {{ .values.symbol }}:
+          type: Microsoft.Storage/storageAccounts
+          apiVersion: "2023-05-01"
+          name: "{{ .context.instance_id }}"
+          location: "[resourceGroup().location]"
+          kind: StorageV2
+          sku:
+            name: Standard_LRS
+          properties:
+            groupLocation: "[reference('Group').location]"

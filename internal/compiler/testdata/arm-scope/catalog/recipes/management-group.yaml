@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-scope-management-group
+  version: 1.0.0
+  description: >
+    A policy definition written as a fragment of a template deployed to a
+    management group, which its $schema declares.
+spec:
+  capability: arm
+  implements: example/resource/plain:1.0.0
+  artifacts:
+    plain.yaml: |
+      $schema: https://schema.management.azure.com/schemas/2019-08-01/managementGroupDeploymentTemplate.json#
+      resources:
+        {{ .values.symbol }}:
+          type: Microsoft.Authorization/policyDefinitions
+          apiVersion: "2023-04-01"
+          name: "{{ .context.instance_id }}"
+          properties:
+            policyType: Custom
+            mode: All

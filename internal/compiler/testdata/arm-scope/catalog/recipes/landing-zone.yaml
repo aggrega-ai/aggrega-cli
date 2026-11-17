@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-scope-landing-zone
+  version: 1.0.0
+  description: >
+    Shared resource groups taken from a compiled template, kept beside the
+    Recipe, that is deployed to a subscription. The template is wrapped as one
+    nested deployment and its name parameter is bound from the component's
+    values.
+spec:
+  capability: arm
+  implements: example/scope/landing-zone:1.0.0
+  source: ./sources/landing-zone.json
+  valuesMapping: |
+    sharedName: "{{ .values.shared }}"

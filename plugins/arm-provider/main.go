@@ -92,7 +92,7 @@ func descriptor() aggrega.PluginDescriptor {
 				Name:         "assemble_boundary",
 				InputPattern: "b",
 				Stability:    "experimental",
-				Description:  "merges the per-node ARM template fragments at one dispatch group into a single resource group template, ordering the merged resources by the declared wave",
+				Description:  "merges the per-node ARM template fragments at one dispatch group into a single template at the scope the boundary deploys at, nesting resource group content in a level of its own at subscription scope, ordering the merged resources by the declared wave",
 			},
 			{
 				Name:         "link_publish",

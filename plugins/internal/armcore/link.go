@@ -55,12 +55,18 @@ const deploymentIDFormat = "/subscriptions/{0}/resourceGroups/{1}/providers/Micr
 // template with the outputs added is checked against the limits ARM sets
 // (CheckLimits), which halts past 64 outputs.
 //
+// A producer whose boundary deploys at a scope wider than a resource group halts
+// wrapping ErrPluginCannotExpressInput (refuseWiderProducer).
+//
 // The producing template records DeploymentName(edge.Target.Release,
 // edge.Target.Boundary) in its metadata under DeploymentNameMetadataKey, gaining
 // the metadata member where it writes none; a different name recorded there
 // halts wrapping ErrPluginOutputNameCollision. The returned handle carries the
 // deployment name and the output name of each key read through an output.
 func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFile) (rendercore.LinkPublishOutput, error) {
+	if err := refuseWiderProducer(edge); err != nil {
+		return rendercore.LinkPublishOutput{}, err
+	}
 	keys, err := linkKeysOf(edge)
 	if err != nil {
 		return rendercore.LinkPublishOutput{}, err
@@ -175,6 +181,16 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 // naming the JSON pointer. So does a read inside literal text that is not an
 // expression, such as text that opens with [[, which ARM keeps as written.
 //
+// The consuming template's top level is read at the scope its $schema names.
+// At subscription scope the template's resource group level, the template of
+// the nested deployment LevelResourceGroupSymbol, is read too, as a level
+// deployed to a resource group: the pointers of its strings run through that
+// deployment. ARM evaluates resourceGroup() only in a template deployed to a
+// resource group, so a read at subscription scope from a producer whose boundary
+// names no resource group halts wrapping ErrPluginRequiredInputUnresolved,
+// naming AnnotationResourceGroup. A producer whose boundary deploys at a scope
+// wider than a resource group halts as LinkPublish does.
+//
 // A key read off the edge whose text is literal is written back in place of its
 // placeholder: a whole string as ArmLiteral writes the text ARM reads from it, a
 // string argument as an ARM string literal of that text, and inside literal text
@@ -186,6 +202,9 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 // that edge's resolve, and a key whose placeholder the consumer did not write
 // contributes nothing.
 func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFiles []rendercore.RenderedFile) (rendercore.LinkResolveOutput, error) {
+	if err := refuseWiderProducer(edge); err != nil {
+		return rendercore.LinkResolveOutput{}, err
+	}
 	keys, err := linkKeysOf(edge)
 	if err != nil {
 		return rendercore.LinkResolveOutput{}, err
@@ -194,23 +213,34 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 	if err != nil {
 		return rendercore.LinkResolveOutput{}, err
 	}
+	scope, err := scopeOfSchema(template[sectionSchema])
+	if err != nil {
+		return rendercore.LinkResolveOutput{}, err
+	}
 	values, order, err := resolvedValues(edge, handle, keys)
 	if err != nil {
 		return rendercore.LinkResolveOutput{}, err
 	}
 	var ops []frp.JSONPatchOp
-	err = templateLevel(template).eachString(func(s site, text string) (string, error) {
-		resolved, err := resolveString(edge, s, text, values, order)
-		if err != nil {
-			return "", err
+	visit := func(at Scope) visitFunc {
+		return func(s site, text string) (string, error) {
+			resolved, err := resolveString(edge, s, text, values, order, at)
+			if err != nil {
+				return "", err
+			}
+			if resolved != text {
+				ops = append(ops, frp.JSONPatchOp{Scope: frp.DocumentScopeOwn, Key: TemplateFileName, Op: "replace", Path: s.pointer(), Value: resolved})
+			}
+			return text, nil
 		}
-		if resolved != text {
-			ops = append(ops, frp.JSONPatchOp{Scope: frp.DocumentScopeOwn, Key: TemplateFileName, Op: "replace", Path: s.pointer(), Value: resolved})
-		}
-		return text, nil
-	})
-	if err != nil {
+	}
+	if err := templateLevel(template, "").eachString(visit(scope)); err != nil {
 		return rendercore.LinkResolveOutput{}, err
+	}
+	if inner, prefix, nested := resourceGroupLevelOf(template, scope); nested {
+		if err := templateLevel(inner, prefix).eachString(visit(ScopeResourceGroup)); err != nil {
+			return rendercore.LinkResolveOutput{}, err
+		}
 	}
 	out := rendercore.LinkResolveOutput{}
 	if len(ops) > 0 {
@@ -418,8 +448,9 @@ func resolvedValues(edge rendercore.LinkEdge, handle map[string]string, keys lin
 }
 
 // resolveString returns text with every placeholder of the link in it resolved,
-// or text unchanged where it holds none.
-func resolveString(edge rendercore.LinkEdge, s site, text string, values map[string]linkedValue, order []string) (string, error) {
+// or text unchanged where it holds none. at is the scope of the level text sits
+// in.
+func resolveString(edge rendercore.LinkEdge, s site, text string, values map[string]linkedValue, order []string, at Scope) (string, error) {
 	if !strings.Contains(text, rendercore.CrossBoundaryLinkSentinelPrefix) {
 		return text, nil
 	}
@@ -427,8 +458,8 @@ func resolveString(edge rendercore.LinkEdge, s site, text string, values map[str
 		if v.read == nil {
 			return ArmLiteral(v.literal), nil
 		}
-		if !s.readsRuntimeState() {
-			return "", readOutsideRuntimeState(edge, s, v.key)
+		if err := readableAt(edge, s, v.key, at); err != nil {
+			return "", err
 		}
 		return armexpr.Expression(v.read), nil
 	}
@@ -456,8 +487,10 @@ func resolveString(edge rendercore.LinkEdge, s site, text string, values map[str
 		if !changed {
 			return text, nil
 		}
-		if readKey != "" && !s.readsRuntimeState() {
-			return "", readOutsideRuntimeState(edge, s, readKey)
+		if readKey != "" {
+			if err := readableAt(edge, s, readKey, at); err != nil {
+				return "", err
+			}
 		}
 		return armexpr.Expression(resolved), nil
 	}
@@ -480,6 +513,22 @@ func resolveString(edge rendercore.LinkEdge, s site, text string, values map[str
 		text = strings.ReplaceAll(text, placeholder, v.literal)
 	}
 	return text, nil
+}
+
+// readableAt halts where a value read from another deployment cannot be read at
+// site s of a level at scope at: outside the places ARM evaluates reference(),
+// and at a scope wider than a resource group when the read names the
+// consumer's own resource group.
+func readableAt(edge rendercore.LinkEdge, s site, key string, at Scope) error {
+	if !s.readsRuntimeState() {
+		return readOutsideRuntimeState(edge, s, key)
+	}
+	if at != ScopeResourceGroup && placementOf(edge.TargetAnnotations).readsOwnResourceGroup() {
+		return refuse(plugincondition.ErrPluginRequiredInputUnresolved,
+			fmt.Sprintf("at JSON pointer %s in the template of boundary %q, the value of provides key %q of component %q is read from another deployment at %s scope, where the template has no resource group of its own to take as the producer's; annotate the boundary of %q with %s",
+				s.pointer(), edge.Source.Boundary, key, edge.Target.Node, scopeWords(at), edge.Target.Node, AnnotationResourceGroup))
+	}
+	return nil
 }
 
 // readOutsideRuntimeState is the halt for a value read from another deployment
@@ -584,18 +633,52 @@ func addOp(path string, value any) frp.JSONPatchOp {
 // templateLevel returns an assembled template as a level, so its strings are
 // visited with the site each sits at: each member of a top-level object is an
 // entry of that section, and a top-level value that is not an object is one entry
-// of its own section. Every entry's pointer is its JSON pointer in the template.
-func templateLevel(template map[string]any) *level {
+// of its own section. Every entry's pointer is its JSON pointer in the template,
+// after prefix, the pointer of the template in the file that holds it.
+func templateLevel(template map[string]any, prefix string) *level {
 	l := newLevel()
 	for _, section := range sortedKeys(template) {
 		entries, ok := template[section].(map[string]any)
 		if !ok {
-			l.put(section, "", &levelEntry{body: template[section], pointer: "/" + escapePointer(section)})
+			l.put(section, "", &levelEntry{body: template[section], pointer: prefix + "/" + escapePointer(section)})
 			continue
 		}
 		for _, name := range sortedKeys(entries) {
-			l.put(section, name, &levelEntry{body: entries[name], pointer: "/" + escapePointer(section) + "/" + escapePointer(name)})
+			l.put(section, name, &levelEntry{body: entries[name], pointer: prefix + "/" + escapePointer(section) + "/" + escapePointer(name)})
 		}
 	}
 	return l
+}
+
+// resourceGroupLevelOf returns the resource group level of an assembled template
+// at subscription scope, the template its nested deployment
+// LevelResourceGroupSymbol carries, with that template's JSON pointer, and
+// whether the template holds one.
+func resourceGroupLevelOf(template map[string]any, scope Scope) (map[string]any, string, bool) {
+	if scope != ScopeSubscription {
+		return nil, "", false
+	}
+	resources, _ := template[sectionResources].(map[string]any)
+	deployment, _ := resources[LevelResourceGroupSymbol].(map[string]any)
+	if !isDeployment(deployment) {
+		return nil, "", false
+	}
+	properties, _ := deployment["properties"].(map[string]any)
+	inner, ok := properties["template"].(map[string]any)
+	return inner, "/" + sectionResources + "/" + LevelResourceGroupSymbol + "/properties/template", ok
+}
+
+// refuseWiderProducer halts wrapping ErrPluginCannotExpressInput when the
+// producer's boundary deploys at a scope wider than a resource group, as its
+// AnnotationDeploymentScope names: a link reads the producer's deployment by the
+// resource ID of a deployment to a resource group. A value that names no scope
+// halts as BoundaryScope does.
+func refuseWiderProducer(edge rendercore.LinkEdge) error {
+	scope, err := scopeAnnotation(edge.TargetAnnotations, edge.Target.Node)
+	if err != nil || scope == ScopeResourceGroup {
+		return err
+	}
+	return refuse(plugincondition.ErrPluginCannotExpressInput,
+		fmt.Sprintf("arm links to a producer deployed at resource-group scope; this producer's boundary deploys at %s scope, so the link from component %q to component %q on socket %q, whose producer is in boundary %q, cannot be wired; place component %q in a boundary deployed at resource-group scope",
+			scopeWords(scope), edge.Source.Node, edge.Target.Node, edge.Socket, edge.Target.Boundary, edge.Target.Node))
 }

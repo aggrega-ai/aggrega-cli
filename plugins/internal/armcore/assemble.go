@@ -31,7 +31,8 @@ type Contribution struct {
 	// node contributes are ordered after the resources of the preceding
 	// populated wave.
 	SyncWave int
-	// Annotations are the node's merged annotations. Assemble does not read them.
+	// Annotations are the node's merged annotations. Assemble reads
+	// AnnotationDeploymentScope and AnnotationResourceGroup from them.
 	Annotations map[string]string
 }
 
@@ -51,37 +52,49 @@ var carriedSections = []string{sectionDefinitions, sectionParameters, sectionVar
 // the template always carries them.
 var mergedSections = []string{sectionDefinitions, sectionParameters, sectionVariables, sectionMetadata, sectionOutputs}
 
-// Assemble merges the fragments of a dispatch group into one resource group
-// scope template, written as arm-template.json.
+// Assemble merges the fragments of a dispatch group into one template, written
+// as arm-template.json, at the scope its boundary deploys at.
+//
+// The scope is the one every contribution's AnnotationDeploymentScope resolves
+// to (boundaryScopeOf): a resource group where none names one. A boundary at
+// management group scope halts wrapping ErrPluginCannotExpressInput, and so does
+// a fragment written for a wider scope than its boundary's, by its $schema.
 //
 // Every fragment of every contribution is read before any entry is inserted.
-// Resources merge by symbolic name; parameters, variables, definitions, functions
-// and metadata keys merge by the name written; each output lands under
-// OutputName of the contributor's identity and the entry's name, keeping its
-// type. A name restated with an identical body merges once. A name restated with
-// a different body, or a carried name spelled differently from another
-// contributor's but equal without regard to case, halts wrapping
-// ErrPluginOutputNameCollision and names both contributors and the section. A
-// fragment written for a wider scope than a resource group halts wrapping
-// ErrPluginCannotExpressInput.
+// Content written for the boundary's scope lands at the template's top level.
+// At subscription scope, resource group content lands in a level of its own,
+// the nested deployment LevelResourceGroupSymbol (nestResourceGroupLevel), which
+// is assembled on the same terms as the top level.
+//
+// Within a level, resources merge by symbolic name; parameters, variables,
+// definitions, functions and metadata keys merge by the name written; each
+// output lands under OutputName of the contributor's identity and the entry's
+// name, keeping its type. A name restated with an identical body merges once. A
+// name restated with a different body, or a carried name spelled differently
+// from another contributor's but equal without regard to case, halts wrapping
+// ErrPluginOutputNameCollision and names both contributors and the section.
 //
 // Delivered values inside literal text are composed, and every reference is
-// checked, on the merged level (composeLiterals, checkReferences). The resources
-// of each wave then depend on the resources of the preceding populated wave,
-// appended after the dependsOn the author wrote; a resource declared
-// existing: true takes no part. Last, the template is checked against the limits
-// ARM sets (CheckLimits).
+// checked, on each merged level (composeLiterals, checkReferences), so a
+// reference reaches only its own level. The resources of each wave then depend
+// on the resources of the preceding populated wave, appended after the dependsOn
+// the author wrote; a resource declared existing: true takes no part. Last, the
+// template is checked against the limits ARM sets (CheckLimits).
 //
 // functions is written as a list of namespaces sorted by name, each with its
 // members sorted by name; a section no fragment wrote is not written, and
 // resources always is. The output is a function of the input alone.
 func Assemble(contribs []Contribution) (rendercore.AssembleBoundaryOutput, error) {
-	type read struct {
-		identity string
-		wave     int
-		frag     Fragment
+	scope, err := boundaryScopeOf(contribs)
+	if err != nil {
+		return rendercore.AssembleBoundaryOutput{}, err
 	}
-	var reads []read
+	if len(contribs) > 0 {
+		if err := refuseBoundaryScope(scope, ContributorIdentity(contribs[0])); err != nil {
+			return rendercore.AssembleBoundaryOutput{}, err
+		}
+	}
+	var topReads, nested []read
 	var diags []renderctx.Diagnostic
 	for _, c := range contribs {
 		identity := ContributorIdentity(c)
@@ -90,20 +103,80 @@ func Assemble(contribs []Contribution) (rendercore.AssembleBoundaryOutput, error
 			if err != nil {
 				return rendercore.AssembleBoundaryOutput{}, err
 			}
-			if frag.Scope != ScopeResourceGroup {
-				return rendercore.AssembleBoundaryOutput{}, refuse(plugincondition.ErrPluginCannotExpressInput,
-					fmt.Sprintf("the fragment of %q is written for a %s scope template; the arm provider assembles a boundary at resource group scope, so write the resources of this boundary in a resource group template, or remove %s to write one",
-						identity, frag.Scope, sectionSchema))
+			if scopeRank(frag.Scope) > scopeRank(scope) {
+				return rendercore.AssembleBoundaryOutput{}, widerContent(identity, frag.Scope, scope)
 			}
 			diags = append(diags, fragDiags...)
-			reads = append(reads, read{identity, c.SyncWave, frag})
+			r := read{identity: identity, wave: c.SyncWave, annotations: c.Annotations, frag: frag}
+			if frag.Scope == scope {
+				topReads = append(topReads, r)
+			} else {
+				nested = append(nested, r)
+			}
 		}
 	}
 
-	l := newLevel()
-	folded := map[string]map[string]string{}
-	waves := map[string]int{}
-	functions := map[string]FunctionSource{}
+	top := newLevelBuild()
+	if err := top.mergeReads(topReads); err != nil {
+		return rendercore.AssembleBoundaryOutput{}, err
+	}
+	composed, err := top.checkLevel()
+	if err != nil {
+		return rendercore.AssembleBoundaryOutput{}, err
+	}
+	diags = append(diags, composed...)
+	if len(nested) > 0 {
+		levelDiags, err := nestResourceGroupLevel(top, nested)
+		if err != nil {
+			return rendercore.AssembleBoundaryOutput{}, err
+		}
+		diags = append(diags, levelDiags...)
+	}
+	if err := applyWaveOrdering(top.l.sections[sectionResources], top.waves); err != nil {
+		return rendercore.AssembleBoundaryOutput{}, err
+	}
+
+	template := top.template(scope)
+	content, err := encodeTemplate(template)
+	if err != nil {
+		return rendercore.AssembleBoundaryOutput{}, err
+	}
+	if err := CheckLimits(template, content); err != nil {
+		return rendercore.AssembleBoundaryOutput{}, err
+	}
+	return rendercore.AssembleBoundaryOutput{
+		Files:       []rendercore.RenderedFile{{Path: TemplateFileName, Content: content, Format: "json"}},
+		Diagnostics: diags,
+	}, nil
+}
+
+// read is one fragment of one contribution, read and ready to merge.
+type read struct {
+	identity    string
+	wave        int
+	annotations map[string]string
+	frag        Fragment
+}
+
+// levelBuild is one template level under assembly, with what merging records
+// beside it: the spelling each carried name was first written in, keyed by
+// section and by the name in lower case; the wave of the contributor that wrote
+// each resource; and where each function was written.
+type levelBuild struct {
+	l         *level
+	folded    map[string]map[string]string
+	waves     map[string]int
+	functions map[string]FunctionSource
+}
+
+// newLevelBuild returns a level build holding no entries.
+func newLevelBuild() *levelBuild {
+	return &levelBuild{l: newLevel(), folded: map[string]map[string]string{}, waves: map[string]int{}, functions: map[string]FunctionSource{}}
+}
+
+// mergeReads inserts every entry of every read into the level, in the order of
+// the reads and, within one, by section and name.
+func (b *levelBuild) mergeReads(reads []read) error {
 	for _, r := range reads {
 		for _, section := range sortedKeys(r.frag.Sections) {
 			entries := r.frag.Sections[section]
@@ -117,46 +190,57 @@ func Assemble(contribs []Contribution) (rendercore.AssembleBoundaryOutput, error
 				}
 				entry := &levelEntry{body: entries[name], contributor: r.identity, pointer: pointer}
 				if section == sectionFunctions {
-					if _, seen := functions[key]; !seen {
-						functions[key] = r.frag.Functions[name]
+					if _, seen := b.functions[key]; !seen {
+						b.functions[key] = r.frag.Functions[name]
 					}
 				}
-				if err := insert(l, folded, section, key, entry); err != nil {
-					return rendercore.AssembleBoundaryOutput{}, err
+				if err := b.insert(section, key, entry); err != nil {
+					return err
 				}
 				if section == sectionResources {
-					if _, seen := waves[key]; !seen {
-						waves[key] = r.wave
+					if _, seen := b.waves[key]; !seen {
+						b.waves[key] = r.wave
 					}
 				}
 			}
 		}
 	}
+	return nil
+}
 
-	composed, err := l.composeLiterals()
-	if err != nil {
-		return rendercore.AssembleBoundaryOutput{}, err
-	}
-	diags = append(diags, composed...)
-	if err := l.checkReferences(); err != nil {
-		return rendercore.AssembleBoundaryOutput{}, err
-	}
-	if err := applyWaveOrdering(l.sections[sectionResources], waves); err != nil {
-		return rendercore.AssembleBoundaryOutput{}, err
-	}
+// insert lands one entry in the level, as the package-level insert does.
+func (b *levelBuild) insert(section, key string, e *levelEntry) error {
+	return insert(b.l, b.folded, section, key, e)
+}
 
-	template := l.template(functions)
-	content, err := encodeTemplate(template)
+// checkLevel composes the delivered values inside the level's literal text and
+// checks its references, returning the composition diagnostics.
+func (b *levelBuild) checkLevel() ([]renderctx.Diagnostic, error) {
+	composed, err := b.l.composeLiterals()
 	if err != nil {
-		return rendercore.AssembleBoundaryOutput{}, err
+		return nil, err
 	}
-	if err := CheckLimits(template, content); err != nil {
-		return rendercore.AssembleBoundaryOutput{}, err
+	if err := b.l.checkReferences(); err != nil {
+		return nil, err
 	}
-	return rendercore.AssembleBoundaryOutput{
-		Files:       []rendercore.RenderedFile{{Path: TemplateFileName, Content: content, Format: "json"}},
-		Diagnostics: diags,
-	}, nil
+	return composed, nil
+}
+
+// finishLevel checks the level (checkLevel) and orders its resources by wave.
+func (b *levelBuild) finishLevel() ([]renderctx.Diagnostic, error) {
+	composed, err := b.checkLevel()
+	if err != nil {
+		return nil, err
+	}
+	if err := applyWaveOrdering(b.l.sections[sectionResources], b.waves); err != nil {
+		return nil, err
+	}
+	return composed, nil
+}
+
+// template returns the level as a template for scope.
+func (b *levelBuild) template(scope Scope) map[string]any {
+	return b.l.template(scope, b.functions)
 }
 
 // insert lands one entry in the level, halting on a name the level already
@@ -191,10 +275,11 @@ func nameCollision(section, what string, e, other *levelEntry) error {
 			section, e.contributor, e.pointer, what, other.pointer, other.contributor))
 }
 
-// template returns the level as the value tree the template is written from.
-func (l *level) template(functions map[string]FunctionSource) map[string]any {
+// template returns the level as the value tree a template for scope is written
+// from.
+func (l *level) template(scope Scope, functions map[string]FunctionSource) map[string]any {
 	t := map[string]any{
-		sectionSchema:          SchemaResourceGroup,
+		sectionSchema:          schemaOf(scope),
 		sectionLanguageVersion: LanguageVersion,
 		sectionContentVersion:  ContentVersion,
 		sectionResources:       l.object(sectionResources),

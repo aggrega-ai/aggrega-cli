@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: arm-scope-cross-level
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-pair.yaml
+  manifest: ./manifest-cross-level.yaml
+  boundaries:
+    platform:
+      directory: ./dist/platform
+      annotations:
+        aggrega.ai/azure-deployment-scope: subscription
+        aggrega.ai/azure-resource-group: orders-rg
+      components:
+        group: {}
+        store: {}

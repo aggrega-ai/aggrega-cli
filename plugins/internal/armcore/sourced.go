@@ -185,9 +185,14 @@ type SourcedNode struct {
 // deployment resource: the template, parsed and written again with sorted keys,
 // is its properties.template, evaluated in its own scope and deployed
 // incrementally, and the values mapping binds its properties.parameters where
-// ValuesMapped. The node's provenance set is stamped on the nested deployment's
-// own metadata. It returns the fragment, the nested deployment's symbolic name
-// and the positions of the omits it honoured.
+// ValuesMapped. A template whose $schema names a subscription or a management
+// group is wrapped in a fragment written for that scope, and its nested
+// deployment takes the location of the deployment that holds it,
+// [deployment().location], which a deployment at those scopes requires; a
+// resource group template's fragment writes neither. The node's provenance set
+// is stamped on the nested deployment's own metadata. It returns the fragment,
+// the nested deployment's symbolic name and the positions of the omits it
+// honoured.
 func RenderSourced(n SourcedNode) (fragment []byte, symbol string, omitted []int, err error) {
 	symbol, err = NestedDeploymentSymbol(n.Identity)
 	if err != nil {
@@ -201,6 +206,8 @@ func RenderSourced(n SourcedNode) (fragment []byte, symbol string, omitted []int
 		return nil, "", nil, valueNotRepresentable(fmt.Sprintf("arm-provider: %s %s", templateSubject(n.Path), problem))
 	}
 	template := doc.(map[string]any)
+	// shapeProblem has read the $schema, so it names a scope.
+	scope, _ := scopeOfSchema(template[sectionSchema])
 	omitted, err = leaveOut(templateSubject(n.Path), template, n.Omits)
 	if err != nil {
 		return nil, "", nil, err
@@ -224,12 +231,19 @@ func RenderSourced(n SourcedNode) (fragment []byte, symbol string, omitted []int
 		"name":       NestedDeploymentHistoryName(symbol),
 		"properties": properties,
 	}
+	if scope != ScopeResourceGroup {
+		resource["location"] = "[deployment().location]"
+	}
 	if len(n.Provenance) > 0 {
 		// The wrapper is built here with no metadata of its own, so withProvenance
 		// has no non-object metadata to refuse and always reports true.
 		resource, _ = withProvenance(resource, n.Provenance)
 	}
-	fragment, err = encodeTemplate(map[string]any{sectionResources: map[string]any{symbol: resource}})
+	wrapped := map[string]any{sectionResources: map[string]any{symbol: resource}}
+	if scope != ScopeResourceGroup {
+		wrapped[sectionSchema] = schemaOf(scope)
+	}
+	fragment, err = encodeTemplate(wrapped)
 	if err != nil {
 		return nil, "", nil, err
 	}

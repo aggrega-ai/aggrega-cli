@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-scope-parameter-conflict
+  version: "1.0.0"
+  description: >
+    A resource group whose subscription fragment declares the template
+    parameter a storage account written for a resource group declares, with
+    another default.
+spec:
+  components:
+    group:
+      type: example/scope/group
+      values:
+        param: tier
+        tier: Premium_LRS
+    store:
+      type: example/resource/plain
+      values:
+        symbol: Store
+        tier: Standard_LRS

@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-scope-group
+  version: 1.0.0
+  description: >
+    A resource group written as a fragment of a template deployed to a
+    subscription, which its $schema declares.
+spec:
+  capability: arm
+  implements: example/scope/group:1.0.0
+  artifacts:
+    group.yaml: |
+      $schema: https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#
+      {{- if .values.param }}
+      parameters:
+        {{ .values.param }}:
+          type: string
+          defaultValue: "{{ .values.tier }}"
+      {{- end }}
+      resources:
+        {{ .values.symbol }}:
+          type: Microsoft.Resources/resourceGroups
+          apiVersion: "2024-03-01"
+          name: "{{ .values.name }}"
+          location: "[deployment().location]"

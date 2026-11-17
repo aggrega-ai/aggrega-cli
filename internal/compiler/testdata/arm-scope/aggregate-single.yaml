@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-scope-single
+  version: "1.0.0"
+  description: >
+    One storage account written for a resource group.
+spec:
+  components:
+    store:
+      type: example/resource/plain
+      values:
+        symbol: Store
+        tier: Standard_LRS

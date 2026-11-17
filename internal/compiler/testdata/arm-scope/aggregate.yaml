@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-scope
+  version: "1.0.0"
+  description: >
+    A resource group and shared resource groups, each declared by a template
+    deployed to a subscription, beside two storage accounts written for a
+    resource group. Both storage accounts declare the same template parameter.
+spec:
+  components:
+    group:
+      type: example/scope/group
+    zone:
+      type: example/scope/landing-zone
+    store:
+      type: example/resource/plain
+      values:
+        symbol: Store
+        tier: Standard_LRS
+    cache:
+      type: example/resource/plain
+      values:
+        symbol: Cache
+        tier: Standard_LRS

@@ -27,7 +27,7 @@ import (
 // a git repository, seeded in the cache as a pull leaves it, through RenderAll and
 // the embedded arm guest. The guest wraps the template as one nested deployment and
 // binds the Recipe's valuesMapping to that deployment's parameters; the build
-// assembles the resource group template a Release deploys.
+// assembles the template a Release deploys.
 
 const (
 	armSourcedURL    = "https://example.com/arm/templates.git"

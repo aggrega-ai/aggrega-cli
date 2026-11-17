@@ -10,14 +10,22 @@ type placement struct {
 	subscription, resourceGroup string
 }
 
+// The expressions that read the consuming template's own subscription and
+// resource group where it is deployed. ARM evaluates resourceGroup() only in a
+// template deployed to a resource group.
+const (
+	ownSubscription  = "subscription().subscriptionId"
+	ownResourceGroup = "resourceGroup().name"
+)
+
 // placementOf reads where a producing template is deployed from the annotations
 // of its boundary. AnnotationSubscription and AnnotationResourceGroup, where
 // given, are written as ARM string literals. Where one is absent or empty, the
 // producer is taken to share the consuming template's own subscription or
-// resource group, which subscription().subscriptionId and resourceGroup().name
-// read where the consumer is deployed.
+// resource group, which ownSubscription and ownResourceGroup read where the
+// consumer is deployed.
 func placementOf(annotations map[string]string) placement {
-	p := placement{subscription: "subscription().subscriptionId", resourceGroup: "resourceGroup().name"}
+	p := placement{subscription: ownSubscription, resourceGroup: ownResourceGroup}
 	if s := annotations[AnnotationSubscription]; s != "" {
 		p.subscription = StringLiteral(s)
 	}
@@ -25,4 +33,11 @@ func placementOf(annotations map[string]string) placement {
 		p.resourceGroup = StringLiteral(r)
 	}
 	return p
+}
+
+// readsOwnResourceGroup reports whether the placement takes the producer's
+// resource group to be the consumer's own, because the producer's boundary names
+// none.
+func (p placement) readsOwnResourceGroup() bool {
+	return p.resourceGroup == ownResourceGroup
 }

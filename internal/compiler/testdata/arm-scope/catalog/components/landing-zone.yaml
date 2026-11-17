@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: example/scope/landing-zone
+  version: 1.0.0
+  description: >
+    Shared resource groups whose Recipe sources a compiled template deployed to
+    a subscription.
+  labels:
+    component.aggrega.ai/type: resource
+spec:
+  schema:
+    values:
+      shared:
+        type: string
+        default: shared-rg
+        description: The name of the shared resource group the sourced template declares.

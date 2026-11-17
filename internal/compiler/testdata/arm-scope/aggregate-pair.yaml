@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-scope-pair
+  version: "1.0.0"
+  description: >
+    A resource group declared by a template deployed to a subscription, beside
+    one storage account, for the Recipes that carry one fault each.
+spec:
+  components:
+    group:
+      type: example/scope/group
+    store:
+      type: example/resource/plain
+      values:
+        symbol: Store
+        tier: Standard_LRS

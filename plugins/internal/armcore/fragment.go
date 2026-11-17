@@ -135,7 +135,7 @@ func scopeOfSchema(value any) (Scope, error) {
 		return ScopeManagementGroup, nil
 	case "tenantDeploymentTemplate":
 		return "", refuse(plugincondition.ErrPluginCannotExpressInput,
-			fmt.Sprintf("%s names a tenant scope template, which the provider does not write; the provider assembles a boundary at resource group scope, so write a resource group template", sectionSchema))
+			fmt.Sprintf("%s names a tenant scope template, which the provider does not write; %s, so write a template for one of those scopes", sectionSchema, assembledScopes))
 	}
 	return "", refuse(plugincondition.ErrPluginCannotExpressInput,
 		fmt.Sprintf("%s does not name a template schema the provider reads (deploymentTemplate, subscriptionDeploymentTemplate or managementGroupDeploymentTemplate); correct it, or remove it for a resource group template", sectionSchema))

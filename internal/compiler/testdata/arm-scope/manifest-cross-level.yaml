@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: arm-scope-cross-level-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        example/scope/group:1.0.0: arm-scope-group:1.0.0
+        example/scope/landing-zone:1.0.0: arm-scope-landing-zone:1.0.0
+        example/resource/plain:1.0.0: arm-scope-cross-level:1.0.0

@@ -18,10 +18,10 @@ spec:
     hostFunctions:
       - aggrega_pack_source
   # The plugin reads ARM template fragments, merges a dispatch group's fragments
-  # into one resource group template, and wires cross-boundary uses edges through
-  # the link_publish and link_resolve export pair. The version is a test version,
-  # so the fixture needs no edit when a release tag changes: its guest still
-  # resolves from the binary's embed tier.
+  # into one template at the scope its boundary deploys at, and wires
+  # cross-boundary uses edges through the link_publish and link_resolve export
+  # pair. The version is a test version, so the fixture needs no edit when a
+  # release tag changes: its guest still resolves from the binary's embed tier.
   exports:
     - name: render_node
     - name: validate_node_input
