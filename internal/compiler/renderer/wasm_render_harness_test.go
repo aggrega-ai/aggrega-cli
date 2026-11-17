@@ -46,6 +46,7 @@ func embeddedProviderURI(t *testing.T, provider string) string {
 		"helm-chart":     "helm-chart",
 		"terraform":      "terraform",
 		"cloudformation": "cloudformation",
+		"arm":            "arm",
 	}[provider]
 	if leaf == "" {
 		t.Fatalf("no embedded rendering guest known for provider %q", provider)
@@ -98,7 +99,7 @@ func wasmEngineFactory(t *testing.T) renderer.EngineFactory {
 	return func(providerRef string) (renderer.Provider, error) {
 		bare := renderer.ProviderEngineKind(providerRef)
 		switch bare {
-		case "", "helm", "compose", "helm-chart", "terraform", "cloudformation":
+		case "", "helm", "compose", "helm-chart", "terraform", "cloudformation", "arm":
 		default:
 			return nil, fmt.Errorf("%w: %q", renderer.ErrUnknownProvider(), providerRef)
 		}

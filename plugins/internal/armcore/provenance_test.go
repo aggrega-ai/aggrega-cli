@@ -140,3 +140,47 @@ func TestStampedFragmentsAssembleWithoutCollision(t *testing.T) {
 		t.Errorf("template metadata written: %v", m["metadata"])
 	}
 }
+
+func TestWriteFragmentReadsBack(t *testing.T) {
+	t.Parallel()
+	src := []byte(`{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "parameters": {"location": {"type": "string"}},
+  "functions": [
+    {"namespace": "b", "members": {"two": {"output": {"type": "int", "value": 2}}}},
+    {"namespace": "a", "members": {"one": {"output": {"type": "int", "value": 1}}}}
+  ],
+  "resources": {"Db": {"type": "T"}},
+  "outputs": {"host": {"type": "string", "value": "x"}}
+}`)
+	first, _, err := ReadFragment(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, err := WriteFragment(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := ReadFragment(written)
+	if err != nil {
+		t.Fatalf("written fragment does not read back: %v\n%s", err, written)
+	}
+	if second.Scope != ScopeSubscription {
+		t.Errorf("scope = %q", second.Scope)
+	}
+	for _, section := range []string{"parameters", "functions", "resources", "outputs"} {
+		if len(second.Sections[section]) != len(first.Sections[section]) {
+			t.Errorf("section %s: %v != %v", section, second.Sections[section], first.Sections[section])
+		}
+	}
+	if got := second.Functions["a.one"]; got.Namespace != "a" || got.Member != "one" {
+		t.Errorf("function source = %v", got)
+	}
+	again, err := WriteFragment(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(again) != string(written) {
+		t.Errorf("a second write differs:\n%s\n%s", written, again)
+	}
+}

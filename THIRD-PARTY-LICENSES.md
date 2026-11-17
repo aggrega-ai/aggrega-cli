@@ -8,8 +8,8 @@ Shipped artifacts covered:
 - the Go host binary (`cmd/aggrega`)
 - the Go WebAssembly provider guests (`plugins/helm-provider`,
   `plugins/compose-provider`, `plugins/helmchart-provider`,
-  `plugins/terraform-provider`, `plugins/cloudformation-provider`), embedded into
-  the host binary
+  `plugins/terraform-provider`, `plugins/cloudformation-provider`,
+  `plugins/arm-provider`), embedded into the host binary
 - the Rust WebAssembly guest (`plugins/publishing-linter`)
 
 **These files are generated. Do not edit them by hand.** Regenerate with:
@@ -47,7 +47,7 @@ best-effort. For Rust crates it is read verbatim from the crate's `Cargo.toml`
 | Ecosystem | Third-party dependencies |
 | --- | --- |
 | Go | 163 |
-| Rust | 44 |
+| Rust | 46 |
 | TypeScript | 0 |
 
 Distinct licenses: 9 (see `LICENSES/`).
@@ -77,17 +77,17 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `github.com/davecgh/go-spew` | `v1.1.2-0.20180830191138-d8f796af33cc` | go | cli-host, wasm-provider-guests | `ISC` | [ISC](LICENSES/ISC.txt) |
 | `github.com/digitorus/pkcs7` | `v0.0.0-20230818184609-3a137a874352` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/digitorus/timestamp` | `v0.0.0-20231217203849-220c5c2851b7` | go | cli-host | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
-| `github.com/dylibso/observe-sdk/go` | `v0.0.0-20240819160327-2d926c5d788a` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/dylibso/observe-sdk/go` | `v0.0.0-20240819160327-2d926c5d788a` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/emicklei/go-restful/v3` | `v3.13.0` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/emirpasic/gods` | `v1.18.1` | go | cli-host | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
 | `github.com/evanphx/json-patch` | `v5.9.11+incompatible` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/extism/go-pdk` | `v1.1.3` | go | wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
-| `github.com/extism/go-sdk` | `v1.7.1` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
+| `github.com/extism/go-sdk` | `v1.7.1` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/fxamacker/cbor/v2` | `v2.9.1` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/go-errors/errors` | `v1.5.1` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
-| `github.com/go-git/gcfg` | `v1.5.1-0.20230307220236-3a3c6141e376` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
-| `github.com/go-git/go-billy/v5` | `v5.9.0` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
-| `github.com/go-git/go-git/v5` | `v5.19.1` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/go-git/gcfg` | `v1.5.1-0.20230307220236-3a3c6141e376` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
+| `github.com/go-git/go-billy/v5` | `v5.9.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/go-git/go-git/v5` | `v5.19.1` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/go-jose/go-jose/v4` | `v4.1.4` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/go-logr/logr` | `v1.4.4` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/go-logr/stdr` | `v1.2.2` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
@@ -128,10 +128,10 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `github.com/hashicorp/go-retryablehttp` | `v0.7.8` | go | cli-host | `MPL-2.0` | [MPL-2.0](LICENSES/MPL-2.0.txt) |
 | `github.com/hashicorp/hcl/v2` | `v2.24.0` | go | wasm-provider-guests | `MPL-2.0` | [MPL-2.0](LICENSES/MPL-2.0.txt) |
 | `github.com/huandu/xstrings` | `v1.5.0` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
-| `github.com/ianlancetaylor/demangle` | `v0.0.0-20240805132620-81f5be970eca` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
+| `github.com/ianlancetaylor/demangle` | `v0.0.0-20240805132620-81f5be970eca` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/in-toto/attestation` | `v1.2.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/in-toto/in-toto-golang` | `v0.11.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
-| `github.com/jbenet/go-context` | `v0.0.0-20150711004518-d14ea06fba99` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
+| `github.com/jbenet/go-context` | `v0.0.0-20150711004518-d14ea06fba99` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/jedisct1/go-minisign` | `v0.0.0-20211028175153-1c139d1cc84b` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/json-iterator/go` | `v1.1.12` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/kevinburke/ssh_config` | `v1.2.0` | go | cli-host | `MIT` | [MIT](LICENSES/MIT.txt) |
@@ -168,8 +168,8 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `github.com/spf13/cast` | `v1.10.0` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/spf13/cobra` | `v1.10.2` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/spf13/pflag` | `v1.0.10` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
-| `github.com/tetratelabs/wabin` | `v0.0.0-20230304001439-f6f874872834` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
-| `github.com/tetratelabs/wazero` | `v1.12.0` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/tetratelabs/wabin` | `v0.0.0-20230304001439-f6f874872834` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `github.com/tetratelabs/wazero` | `v1.12.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/theupdateframework/go-tuf/v2` | `v2.4.2-0.20260407074541-7e8f69f906ef` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `github.com/theupdateframework/go-tuf` | `v0.7.0` | go | cli-host | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/transparency-dev/formats` | `v0.1.1` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
@@ -183,7 +183,7 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `go.opentelemetry.io/otel/metric` | `v1.45.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `go.opentelemetry.io/otel/trace` | `v1.45.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `go.opentelemetry.io/otel` | `v1.45.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
-| `go.opentelemetry.io/proto/otlp` | `v1.11.0` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `go.opentelemetry.io/proto/otlp` | `v1.11.0` | go | cli-host | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `go.yaml.in/yaml/v2` | `v2.4.4` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `go.yaml.in/yaml/v3` | `v3.0.5` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `golang.org/x/crypto` | `v0.58.0` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
@@ -201,7 +201,7 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `google.golang.org/protobuf` | `v1.36.12` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `gopkg.in/evanphx/json-patch.v4` | `v4.13.0` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `gopkg.in/inf.v0` | `v0.9.1` | go | cli-host, wasm-provider-guests | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
-| `gopkg.in/warnings.v0` | `v0.1.2` | go | cli-host, wasm-provider-guests | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
+| `gopkg.in/warnings.v0` | `v0.1.2` | go | cli-host | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
 | `gopkg.in/yaml.v3` | `v3.0.1` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `helm.sh/helm/v4` | `v4.3.1` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `k8s.io/apiextensions-apiserver` | `v0.37.1` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
@@ -219,6 +219,8 @@ Distinct licenses: 9 (see `LICENSES/`).
 | `sigs.k8s.io/randfill` | `v1.0.0` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `sigs.k8s.io/structured-merge-diff/v6` | `v6.4.2` | go | cli-host, wasm-provider-guests | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `sigs.k8s.io/yaml` | `v1.6.0` | go | cli-host, wasm-provider-guests | `MIT` | [MIT](LICENSES/MIT.txt) |
+| `aggrega-abi` | `0.9.0` | rust | wasm-provider-guest (publishing-linter) | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
+| `aggrega-pdk-rust` | `0.9.0` | rust | wasm-provider-guest (publishing-linter) | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `aho-corasick` | `1.1.4` | rust | wasm-provider-guest (publishing-linter) | `Unlicense OR MIT` | [MIT](LICENSES/MIT.txt), [Unlicense](LICENSES/Unlicense.txt) |
 | `anyhow` | `1.0.102` | rust | wasm-provider-guest (publishing-linter) | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `autocfg` | `1.5.0` | rust | wasm-provider-guest (publishing-linter) | `Apache-2.0 OR MIT` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |

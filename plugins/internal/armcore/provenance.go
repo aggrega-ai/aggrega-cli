@@ -77,3 +77,44 @@ func withProvenance(body map[string]any, set map[string]string) (map[string]any,
 	out[sectionMetadata] = metadata
 	return out, true
 }
+
+// WriteFragment writes a fragment as the JSON document ReadFragment reads back
+// to the same sections: the $schema of its scope, then each carried section it
+// holds, with the functions regrouped as a list of namespaces sorted by name.
+// Keys are sorted and the document ends in one newline.
+func WriteFragment(f Fragment) ([]byte, error) {
+	doc := map[string]any{sectionSchema: schemaOf(f.Scope)}
+	for _, section := range sortedKeys(f.Sections) {
+		entries := f.Sections[section]
+		if section != sectionFunctions {
+			doc[section] = entries
+			continue
+		}
+		byNamespace := map[string]map[string]any{}
+		for _, full := range sortedKeys(entries) {
+			src := f.Functions[full]
+			if byNamespace[src.Namespace] == nil {
+				byNamespace[src.Namespace] = map[string]any{}
+			}
+			byNamespace[src.Namespace][src.Member] = entries[full]
+		}
+		list := make([]any, 0, len(byNamespace))
+		for _, namespace := range sortedKeys(byNamespace) {
+			list = append(list, map[string]any{"namespace": namespace, "members": byNamespace[namespace]})
+		}
+		doc[section] = list
+	}
+	return encodeTemplate(doc)
+}
+
+// schemaOf returns the $schema of a scope; a scope it does not know is a
+// resource group's.
+func schemaOf(s Scope) string {
+	switch s {
+	case ScopeSubscription:
+		return SchemaSubscription
+	case ScopeManagementGroup:
+		return SchemaManagementGroup
+	}
+	return SchemaResourceGroup
+}

@@ -30,6 +30,7 @@ provider	compose	./plugins/compose-provider	go
 provider	helm-chart	./plugins/helmchart-provider	go
 provider	terraform	./plugins/terraform-provider	go
 provider	cloudformation	./plugins/cloudformation-provider	go
+provider	arm	./plugins/arm-provider	go
 linter	publishing	plugins/publishing-linter	rust
 parser	hcl	./plugins/hcl-parser	go
 parser	toml	./plugins/toml-parser	go

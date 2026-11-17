@@ -249,6 +249,7 @@ func findExport(desc wasm.PluginDescriptor, name string) (wasm.PluginExport, boo
 // removing, or renaming an embedded provider is expected to fail this list; update
 // it in the same change.
 var embeddedProviderCoordinates = []string{
+	"provider/arm",
 	"provider/cloudformation",
 	"provider/compose",
 	"provider/helm",

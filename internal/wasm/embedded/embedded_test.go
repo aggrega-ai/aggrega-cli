@@ -78,6 +78,7 @@ func TestManifestDerivedURIsAreStable(t *testing.T) {
 		"provider/helm-chart",
 		"provider/terraform",
 		"provider/cloudformation",
+		"provider/arm",
 		"linter/publishing",
 		"parser/hcl",
 		"parser/toml",

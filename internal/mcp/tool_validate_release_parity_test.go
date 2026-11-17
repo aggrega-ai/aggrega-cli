@@ -204,6 +204,40 @@ spec:
         core/compute/api-server: api-sourceonly:1.0.0
 `
 
+const releaseParityArmInputKindManifest = `apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: parity-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        core/compute/api-server: api-arm:1.0.0
+`
+
+// releaseParityArmInputKindRecipe declares a synthesized workload but binds the
+// arm capability, whose embedded provider takes sourced and artifact input only.
+const releaseParityArmInputKindRecipe = `apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: api-arm
+  version: "1.0.0"
+spec:
+  capability: arm
+  implements: core/compute/api-server
+  provides:
+    host: "{{ .context.instance_id }}.svc"
+    service_port: "8080"
+  workload: |
+    apiVersion: aggrega.ai/v1beta1
+    kind: Workload
+    replicas: 1
+    containers:
+      main:
+        image: x:latest
+`
+
 // releaseParityInputKindRecipe declares a synthesized workload but binds a
 // capability whose serving plugin supports only the sourced input kind, so the
 // input-kind capability check reports it.
@@ -247,7 +281,7 @@ spec:
       boundaryAssembly: nest
 `
 
-// releaseParityCases enumerates the six fixture cases every leg shares. Each
+// releaseParityCases enumerates the fixture cases every leg shares. Each
 // isolates one ValidateResult field so the parity assertions read cleanly.
 func releaseParityCases() []releaseParityCase {
 	return []releaseParityCase{
@@ -287,6 +321,15 @@ func releaseParityCases() []releaseParityCase {
 				"recipes/api-sourceonly.yaml":        releaseParityInputKindRecipe,
 				"plugins/sourced-only-renderer.yaml": releaseParityInputKindPlugin,
 			},
+		},
+		// The same class against the arm provider the binary embeds: the Recipe
+		// declares a synthesized workload, and the embedded arm contract accepts
+		// no synthesized input.
+		{
+			name:      "arm-input-kind-capability-failing",
+			aggregate: releaseParityBackendAggregate,
+			manifest:  releaseParityArmInputKindManifest,
+			overlay:   map[string]string{"recipes/api-arm.yaml": releaseParityArmInputKindRecipe},
 		},
 		// The mapping-table class. It is the one case here whose finding is decided
 		// by the closure RESOLUTION rather than by a ValidateResult gate, so it is
