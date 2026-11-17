@@ -18,21 +18,19 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// armArtifactURI is the bare identity (<socket>/<name>) that is the
-// arm provider plugin's identity — the value the arm-renderer
-// Plugin entity's metadata.name carries and the key the embed tier registers its
-// bytes under. No digest literal is frozen here: the reference digest is derived
+// armArtifactURI is the bare identity (<socket>/<name>) of the arm provider
+// plugin: the key the embed tier registers its bytes under, and the identity the
+// provider/arm Plugin entity's name resolves to. No digest literal is frozen here: the reference digest is derived
 // from the embed tier's own bytes at test time (embeddedReferenceDigest), so the
 // resolution assertion is a self-consistency check against the shipped bytes.
 const (
-	armArtifactURI    = "provider/arm"
-	armPluginEntity   = armArtifactURI + ":" + testCorePluginVersion
-	armProviderMemPag = 4096
+	armArtifactURI         = "provider/arm"
+	armPluginEntity        = armArtifactURI + ":" + testCorePluginVersion
+	armProviderMemoryPages = 4096
 )
 
-// armChainCatalog builds an eager Catalog carrying the
-// arm-renderer provider-rendering Plugin entity with the same field
-// values the shipped hub YAML declares, so its CatalogLookup drives the real
+// armChainCatalog builds an eager Catalog carrying the provider/arm Plugin
+// entity with the same field values the shipped hub overlay declares, so its CatalogLookup drives the real
 // resolution chain against the artifact embedded in the binary. The Plugin serves
 // the "arm" provider name through its targets list and advertises the
 // render_node, validate_node_input and assemble_boundary exports — the merge
@@ -52,7 +50,7 @@ func armChainCatalog() *catalog.Catalog {
 						{Name: "validate_node_input"},
 						{Name: "assemble_boundary"},
 					},
-					Runtime: &types.PluginRuntime{MaxMemoryPages: armProviderMemPag},
+					Runtime: &types.PluginRuntime{MaxMemoryPages: armProviderMemoryPages},
 				},
 			},
 		},
@@ -124,9 +122,9 @@ func TestEmbeddedArmProviderResolutionChain(t *testing.T) {
 			t.Fatal("resolved.Limits is nil; the entity front did not attach the entity's runtime limits")
 		}
 		spec := resolver.PluginSpec("arm", resolved)
-		if spec.MaxMemoryPages != armProviderMemPag {
+		if spec.MaxMemoryPages != armProviderMemoryPages {
 			t.Fatalf("loader spec MaxMemoryPages = %d, want %d (from Plugin entity runtime)",
-				spec.MaxMemoryPages, armProviderMemPag)
+				spec.MaxMemoryPages, armProviderMemoryPages)
 		}
 	})
 

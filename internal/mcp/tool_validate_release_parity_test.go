@@ -57,6 +57,10 @@ type releaseParityCase struct {
 	manifest  string
 	release   string
 	overlay   map[string]string
+	// onlyInputKindFindings, when set, is the number of input-kind findings the
+	// case must produce and the only findings it may produce, so the fixture
+	// cannot pass for an unrelated fault.
+	onlyInputKindFindings int
 }
 
 const releaseParityBackendAggregate = `apiVersion: aggrega.ai/v1beta1
@@ -330,6 +334,8 @@ func releaseParityCases() []releaseParityCase {
 			aggregate: releaseParityBackendAggregate,
 			manifest:  releaseParityArmInputKindManifest,
 			overlay:   map[string]string{"recipes/api-arm.yaml": releaseParityArmInputKindRecipe},
+
+			onlyInputKindFindings: 1,
 		},
 		// The mapping-table class. It is the one case here whose finding is decided
 		// by the closure RESOLUTION rather than by a ValidateResult gate, so it is
@@ -440,6 +446,20 @@ func TestValidateToolReleaseScopeCoreParity(t *testing.T) {
 				}
 			} else if len(wantDiags) == 0 {
 				t.Fatalf("case %q produced no core diagnostics; the fixture no longer exercises its class", c.name)
+			}
+
+			if c.onlyInputKindFindings > 0 {
+				// The finding is read off the typed input-kind result, not off its
+				// text, and it must be the whole of the verdict.
+				if got := len(vr.InputKindErrors); got != c.onlyInputKindFindings {
+					t.Fatalf("input-kind findings = %d, want %d", got, c.onlyInputKindFindings)
+				}
+				if len(wantDiags) != c.onlyInputKindFindings {
+					t.Fatalf("diagnostics = %#v, want only the %d input-kind finding(s)", wantDiags, c.onlyInputKindFindings)
+				}
+				if want := "input-kind: " + vr.InputKindErrors[0].Error(); wantDiags[0] != want {
+					t.Fatalf("diagnostic = %q, want the input-kind finding %q", wantDiags[0], want)
+				}
 			}
 
 			if payload.Valid != (len(wantDiags) == 0) {

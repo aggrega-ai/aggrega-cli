@@ -4,6 +4,7 @@
 package armcore
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -168,10 +169,8 @@ func TestWriteFragmentReadsBack(t *testing.T) {
 	if second.Scope != ScopeSubscription {
 		t.Errorf("scope = %q", second.Scope)
 	}
-	for _, section := range []string{"parameters", "functions", "resources", "outputs"} {
-		if len(second.Sections[section]) != len(first.Sections[section]) {
-			t.Errorf("section %s: %v != %v", section, second.Sections[section], first.Sections[section])
-		}
+	if !reflect.DeepEqual(second.Sections, first.Sections) {
+		t.Errorf("sections differ after a write and read:\n%v\n%v", second.Sections, first.Sections)
 	}
 	if got := second.Functions["a.one"]; got.Namespace != "a" || got.Member != "one" {
 		t.Errorf("function source = %v", got)
@@ -182,5 +181,36 @@ func TestWriteFragmentReadsBack(t *testing.T) {
 	}
 	if string(again) != string(written) {
 		t.Errorf("a second write differs:\n%s\n%s", written, again)
+	}
+}
+
+func TestWriteFragmentKeepsStampedProvenance(t *testing.T) {
+	t.Parallel()
+	first, _, err := ReadFragment([]byte(`{"resources": {"Db": {"type": "T", "metadata": {"author": "x"}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := map[string]string{"aggrega.ai/component-id": "payments-db"}
+	if adv := StampProvenance(map[string]any{"resources": first.Sections["resources"]}, set); adv != "" {
+		t.Fatalf("advisory = %q", adv)
+	}
+	written, err := WriteFragment(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := ReadFragment(written)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(second.Sections, first.Sections) {
+		t.Errorf("sections differ after a write and read:\n%v\n%v", second.Sections, first.Sections)
+	}
+	block := provenanceOf(map[string]any{"resources": second.Sections["resources"]}, "Db")
+	if block["aggrega.ai/component-id"] != "payments-db" {
+		t.Errorf("provenance block = %v", block)
+	}
+	md := second.Sections["resources"]["Db"].(map[string]any)["metadata"].(map[string]any)
+	if md["author"] != "x" {
+		t.Errorf("authored metadata lost: %v", md)
 	}
 }
