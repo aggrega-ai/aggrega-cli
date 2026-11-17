@@ -49,6 +49,8 @@ func TestSelectLibraryVersion(t *testing.T) {
 		{"other major only", lib("2.0.0"), "Lib:1.0.0", "", false, true},
 		{"major 0 is one major", lib("0.5.0", "0.6.0"), "Lib:0.5.1", "Lib:0.6.0", true, false},
 		{"name not held", lib("1.0.0"), "Other", "", false, false},
+		{"floor tie keeps the smaller key", lib("1.0.0+b", "1.0.0+a"), "Lib:1.0.0", "Lib:1.0.0+a", true, false},
+		{"bare tie keeps the smaller key", lib("1.0.0+b", "1.0.0+a"), "Lib", "Lib:1.0.0+a", true, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

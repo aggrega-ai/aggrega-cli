@@ -338,7 +338,9 @@ func higherCandidate(a, b versionCandidate) bool {
 // selectEntityVersion.
 //
 // Determinism: candidates are ordered by semver and then by index key, never by
-// map-iteration order.
+// map-iteration order. Versions equal in semver (differing in build metadata
+// only) select the smaller index key, for a floor as for a bare reference, so
+// "Lib" and "Lib:1.0.0" read the same copy of 1.0.0.
 func selectLibraryVersion[V any](index map[string]V, ref string, meta func(V) (name, version string)) (string, bool, error) {
 	pin := types.ParseVersionPin(ref)
 	floorText, hasFloor := pin.Pin()
@@ -367,7 +369,8 @@ func selectLibraryVersion[V any](index map[string]V, ref string, meta func(V) (n
 		if c.parsed.Prerelease() != "" && !c.parsed.Equal(floor) {
 			continue
 		}
-		if !found || higherCandidate(best, c) {
+		// higherCandidate(best, c) asks whether c is lower, keeping the lowest; a semver tie keeps the smaller key, as a bare reference does.
+		if !found || (c.parsed.Equal(best.parsed) && c.key < best.key) || (!c.parsed.Equal(best.parsed) && higherCandidate(best, c)) {
 			best, found = c, true
 		}
 	}
