@@ -12,6 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/internal/documentview"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/netrc"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -117,6 +118,9 @@ func TestMalformedOCIModuleSource_RaisesOneObjectionPerFaultInOrder(t *testing.T
 			// Each advice opens with the key it is about.
 			for _, key := range []string{"url:", "version:", "chart:", "ref:", "module_subdir:"} {
 				opens := "the source writes " + key
+				if key == "url:" {
+					opens = "the source's url"
+				}
 				if key == "version:" {
 					opens = "the source writes no version"
 				}
@@ -143,4 +147,81 @@ func TestMalformedOCIModuleSource_RaisesOneObjectionPerFaultInOrder(t *testing.T
 		var presented constraint.DocumentView = documentview.NewFeatureRecipe("featurerecipe.yaml", fr)
 		run(t, constraint.RunOnDocument("featurerecipe.yaml", presented, featureRecipeOCIModuleSourceNamesOneArtifact))
 	})
+}
+
+// ociModuleCredentialURLs are urls of an OCI module kind carrying a credential in
+// the user-information part, with the text of the secret each carries.
+//
+// A password is a credential by the one detector the source-url rule uses; a user
+// written alone over oci:// is not, so the OCI module rule refuses that url as
+// an invalid registry, and says so without repeating the user.
+var ociModuleCredentialURLs = []struct {
+	url, secret string
+	// userOnly marks a url the source-url rule does not refuse.
+	userOnly bool
+}{
+	{"oci://user:s3cr3tpw@myacr.azurecr.io/bicep/x", "s3cr3tpw", false},
+	{"oci://user:s3cr3tpw@myacr.azurecr.io/Bicep/x:1.0", "s3cr3tpw", false},
+	{"oci://s3cr3tuser@myacr.azurecr.io/bicep/x", "s3cr3tuser", true},
+}
+
+// TestOCIModuleSource_NeverPrintsACredentialWrittenInTheURL holds that a credential
+// in the url of an OCI module source is refused by the source-url rule, and that no
+// objection of the OCI module rule, nor the first failure a load returns, repeats it.
+func TestOCIModuleSource_NeverPrintsACredentialWrittenInTheURL(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{sourcekind.BicepModuleOCI, sourcekind.TerraformModuleOCI} {
+		for _, tc := range ociModuleCredentialURLs {
+			source := map[string]any{"kind": kind, "url": tc.url, "version": "1.0.0"}
+			t.Run("Recipe/"+kind+"/"+tc.secret, func(t *testing.T) {
+				t.Parallel()
+				r := &types.Recipe{}
+				r.Metadata.Name = "svc"
+				r.Metadata.Version = "1.0.0"
+				r.Spec.Capability = "bicep"
+				r.Spec.Implements = "test/svc"
+				r.Spec.Source = source
+				err := ValidateRecipe(r, "recipe.yaml")
+				assertCredentialRefusedWithoutSecret(t, err, tc.secret, tc.userOnly)
+				var presented constraint.DocumentView = documentview.NewRecipe("recipe.yaml", r)
+				assertNoObjectionRepeats(t, constraint.RunOnDocument("recipe.yaml", presented, recipeOCIModuleSourceNamesOneArtifact), tc.secret)
+			})
+			t.Run("FeatureRecipe/"+kind+"/"+tc.secret, func(t *testing.T) {
+				t.Parallel()
+				fr := &types.FeatureRecipe{}
+				fr.Metadata.Name = "cred"
+				fr.Metadata.Version = "1.0.0"
+				fr.Spec.Capability = "bicep"
+				fr.Spec.Implements = "test/cred"
+				fr.Spec.Source = source
+				err := ValidateFeatureRecipe(fr, "featurerecipe.yaml")
+				assertCredentialRefusedWithoutSecret(t, err, tc.secret, tc.userOnly)
+				var presented constraint.DocumentView = documentview.NewFeatureRecipe("featurerecipe.yaml", fr)
+				assertNoObjectionRepeats(t, constraint.RunOnDocument("featurerecipe.yaml", presented, featureRecipeOCIModuleSourceNamesOneArtifact), tc.secret)
+			})
+		}
+	}
+}
+
+func assertCredentialRefusedWithoutSecret(t *testing.T, err error, secret string, userOnly bool) {
+	t.Helper()
+	want := netrc.ErrSourceURLCarriesCredential()
+	if userOnly {
+		want = sourcekind.ErrOCIModuleSourceMalformed()
+	}
+	if !errors.Is(err, want) {
+		t.Fatalf("want %v; got %v", want, err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("the refusal repeats the secret: %v", err)
+	}
+}
+
+func assertNoObjectionRepeats(t *testing.T, objections []constraint.Objection, secret string) {
+	t.Helper()
+	for _, o := range objections {
+		if strings.Contains(o.Advice(), secret) || strings.Contains(strings.Join(o.RenderedDetail(), "\n"), secret) {
+			t.Errorf("an objection repeats the secret: %q", o.Advice())
+		}
+	}
 }

@@ -81,10 +81,10 @@ func ValidateRecipe(r *types.Recipe, sourcePath string) error {
 	if err := validateRecipeSourceKind(r, sourcePath); err != nil {
 		return err
 	}
-	if err := validateRecipeOCIModuleSource(r, sourcePath); err != nil {
+	if err := validateRecipeSourceURL(r, sourcePath); err != nil {
 		return err
 	}
-	if err := validateRecipeSourceURL(r, sourcePath); err != nil {
+	if err := validateRecipeOCIModuleSource(r, sourcePath); err != nil {
 		return err
 	}
 	return nil

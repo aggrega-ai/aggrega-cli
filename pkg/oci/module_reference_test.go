@@ -33,13 +33,17 @@ func TestRepositoryOnly(t *testing.T) {
 		"oci://r/m//sub":          "carries an empty path segment",
 		"oci://r":                 "names no repository",
 		"oci://r/":                "names no repository",
-		"oci://r/Modules/x":       "names an invalid registry or repository",
-		"https://r/m":             "is not an oci:// reference",
-		"":                        "is empty",
+		"oci://r/Modules/x":       `names an invalid repository "Modules/x"`,
+		"oci://user:s3cr3tpw@myacr.azurecr.io/bicep/x": "names an invalid registry",
+		"https://r/m": "is not an oci:// reference",
+		"":            "is empty",
 	} {
 		err := RepositoryOnly(url)
 		if err == nil || !strings.Contains(err.Error(), fault) {
 			t.Errorf("RepositoryOnly(%q) = %v; want an error containing %q", url, err, fault)
+		}
+		if err != nil && strings.Contains(err.Error(), "s3cr3tpw") {
+			t.Errorf("RepositoryOnly(%q) repeats the credential: %v", url, err)
 		}
 	}
 }

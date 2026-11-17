@@ -10,6 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/netrc"
 )
 
 // ociModuleSourceFaults reads an OCI module source's coordinates and returns one
@@ -21,13 +22,19 @@ import (
 // source. The grammar of the url and of the version is pkg/oci's; each piece of
 // advice opens with what was written and names what to write.
 //
+// The advice never quotes the url: it may write user information, and a refusal
+// repeating it would put it in the places the source-url rule keeps a credential
+// out of. A url the source-url rule refuses for a credential is not judged here.
+//
 // A version that still carries template text is not judged: it names nothing until
 // it is evaluated, and the pull judges what it evaluates to.
 func ociModuleSourceFaults(url string, takesModuleSubdir bool, field func(key string) (string, bool)) []string {
 	var advice []string
-	if err := oci.RepositoryOnly(url); err != nil {
-		advice = append(advice, fmt.Sprintf("the source writes url: %q, which %s; write url: "+
-			"oci://<registry>/<repository> and put the tag or digest under version:", url, err))
+	// A url carrying a credential is left to the source-url rule.
+	_, carriesCredential := netrc.URLCredential(url)
+	if err := oci.RepositoryOnly(url); err != nil && !carriesCredential {
+		advice = append(advice, fmt.Sprintf("the source's url %s; write url: "+
+			"oci://<registry>/<repository> and put the tag or digest under version:", err))
 	}
 	version, written := field("version")
 	switch {

@@ -62,10 +62,10 @@ func ValidateFeatureRecipe(fr *types.FeatureRecipe, sourcePath string) error {
 	if err := validateFeatureRecipeSourceKind(fr, sourcePath); err != nil {
 		return err
 	}
-	if err := validateFeatureRecipeOCIModuleSource(fr, sourcePath); err != nil {
+	if err := validateFeatureRecipeSourceURL(fr, sourcePath); err != nil {
 		return err
 	}
-	if err := validateFeatureRecipeSourceURL(fr, sourcePath); err != nil {
+	if err := validateFeatureRecipeOCIModuleSource(fr, sourcePath); err != nil {
 		return err
 	}
 	return nil

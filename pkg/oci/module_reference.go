@@ -20,7 +20,8 @@ var sha256Digest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 // more: `oci://<registry>/<repository>`, the registry optionally carrying a
 // port. A tag, a digest, a query, a fragment or a `//` after the scheme is
 // refused, since the version of a module source is written apart from its url.
-// The error names what the url carries.
+// The error names what the url carries, except that it never repeats the
+// registry part, where a url may carry a credential.
 func RepositoryOnly(url string) error {
 	if url == "" {
 		return errors.New("is empty")
@@ -48,8 +49,13 @@ func RepositoryOnly(url string) error {
 	if _, written, found := strings.Cut(repository, ":"); found {
 		return markerFault("tag", written)
 	}
-	if _, err := registry.ParseReference(rest); err != nil {
-		return fmt.Errorf("names an invalid registry or repository: %w", err)
+	ref := registry.Reference{Registry: registryHost, Repository: repository}
+	if ref.ValidateRegistry() != nil {
+		// The registry part is never repeated: a url may write a credential there.
+		return errors.New("names an invalid registry")
+	}
+	if ref.ValidateRepository() != nil {
+		return fmt.Errorf("names an invalid repository %q", repository)
 	}
 	return nil
 }
