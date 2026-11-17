@@ -17,14 +17,17 @@ spec:
     timeoutMs: 300000
     hostFunctions:
       - aggrega_pack_source
-  # The plugin reads ARM template fragments and merges a dispatch group's
-  # fragments into one resource group template. The version is a test version, so
-  # the fixture needs no edit when a release tag changes: its guest still
+  # The plugin reads ARM template fragments, merges a dispatch group's fragments
+  # into one resource group template, and wires cross-boundary uses edges through
+  # the link_publish and link_resolve export pair. The version is a test version,
+  # so the fixture needs no edit when a release tag changes: its guest still
   # resolves from the binary's embed tier.
   exports:
     - name: render_node
     - name: validate_node_input
     - name: assemble_boundary
+    - name: link_publish
+    - name: link_resolve
   provider:
     capabilities:
       - arm
@@ -34,4 +37,7 @@ spec:
         artifactsStandalone: true
       boundaryAssembly: merge
       reusableInstance: true
+      # A uses edge whose ends assemble into different templates is wired by the
+      # paired link_publish and link_resolve exports declared above.
+      crossBoundaryLinking: true
       omits: true

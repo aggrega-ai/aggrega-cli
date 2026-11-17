@@ -170,24 +170,36 @@ func TestArmReferenceInTagsHalts(t *testing.T) {
 	}
 }
 
-// TestArmCrossDeploymentEdgeHaltsAsDanglingReference builds a datastore and the
-// application that reads it into two boundaries, each assembled into a template
-// of its own. The application's template carries the datastore's host expression,
-// which names a resource only the other template declares, so the build halts as
-// an unresolved input naming the symbol.
-func TestArmCrossDeploymentEdgeHaltsAsDanglingReference(t *testing.T) {
+// TestArmCrossDeploymentLinkHaltsOnTheProducersOwnOutput builds a datastore and
+// the application that reads it into two boundaries, each assembled into a
+// template of its own. The application reads the datastore's host across the
+// boundary, so the link writes the host as a string output of the datastore's
+// template; the datastore's fragment already writes its own host output, which
+// lands under that same name with another body. The build halts as two things
+// occupying one name, naming the output, the provides key and the fragment to
+// change.
+func TestArmCrossDeploymentLinkHaltsOnTheProducersOwnOutput(t *testing.T) {
 	t.Parallel()
 	_, err := pipelinetest.BuildE(t, armComposeInput("release-two-boundaries.yaml"))
 	if err == nil {
-		t.Fatal("a uses edge between two boundaries built cleanly")
+		t.Fatal("a link onto an output the producer already writes built cleanly")
 	}
-	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
-		t.Fatalf("the build failed for a different reason than the unresolved reference: %v", err)
+	if !errors.Is(err, plugincondition.ErrPluginOutputNameCollision()) {
+		t.Fatalf("the build failed for a different reason than the output the link writes: %v", err)
 	}
 	msg := cerrors.CauseChain(err)
-	for _, want := range []string{"arm-provider:", `"Store"`, "no resource in this template declares"} {
+	for _, want := range []string{
+		"arm-provider:",
+		`the output "store__host"`,
+		`provides key "host" of component "store"`,
+		`the fragment of "store" writes an output "host"`,
+		"rename that output",
+	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("the halt does not say %q: %s", want, msg)
 		}
+	}
+	if strings.Contains(msg, "fullyQualifiedDomainName") {
+		t.Errorf("the halt quotes the host expression: %s", msg)
 	}
 }
