@@ -83,6 +83,7 @@ var publishedByteReaders = map[string]string{
 	"pkg/catalog.catalogLookup.tier2":              "hands the slot's bytes to the cascade after the reuse-check, described through catalog.PinDigest (oci.EntityYAML); parses nothing else",
 	"pkg/catalog.LazyLookup.tier2Verified":         "hands the verified read's bytes, the manifest they were verified against, and the slot they were read from to the cascade under the verify posture; parses nothing",
 	"pkg/catalog.LazyLookup.VerifyPinnedIntegrity": "verifies every pinned slot and discards the bytes; nothing is parsed",
+	"pkg/catalog.LazyLookup.pinnedSlotRefusal":     "reads a pinned slot only to learn whether the pin-verified read refuses it (tier2ReadVerifiedWithManifest holds the manifest and bytes to their pins) and discards the bytes; nothing is parsed",
 
 	// --- entity readers: each takes the document through oci.EntityYAML ---
 	"pkg/catalog.tier3PullCatalogEntity":                "pins the entity's own metadata.version, read through oci.EntityYAML",
