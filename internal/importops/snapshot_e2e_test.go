@@ -125,13 +125,13 @@ func snapshotImportOptions(t *testing.T, delivery authoredcontent.Delivery) Opti
 
 // recordIn reads the record a result carries, failing the test where it carries
 // none or one an import does not write.
-func recordIn(t *testing.T, res Result) importRecord {
+func recordIn(t *testing.T, res Result) recordEntry {
 	t.Helper()
 	rec, err := parseRecord([]byte(fileNamed(t, res, RecordFileName)))
 	if err != nil {
 		t.Fatalf("the record the import wrote does not read back: %v", err)
 	}
-	return rec
+	return rec.sole()
 }
 
 // currentSnapshot returns the digest the workspace's content cache names as the
@@ -301,7 +301,7 @@ func TestUpgradeRefreshesThePinnedSnapshot(t *testing.T) {
 		if err != nil {
 			t.Fatalf("the record beside the drafts does not read back: %v", err)
 		}
-		return rec.CatalogSnapshot
+		return rec.sole().CatalogSnapshot
 	}
 	report := func(t *testing.T, upgrade, sync bool) Options {
 		o := snapshotImportOptions(t, authoredcontent.DeliveryReport)

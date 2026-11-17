@@ -655,7 +655,7 @@ func TestLayeredCatalogPinsSnapshotInRecord(t *testing.T) {
 		if err != nil {
 			t.Fatalf("the record beside the drafts does not read back: %v", err)
 		}
-		return rec.CatalogSnapshot, asked
+		return rec.sole().CatalogSnapshot, asked
 	}
 
 	for _, tc := range []struct {
@@ -894,7 +894,7 @@ func pinOnDisk(t *testing.T, outputDir string) string {
 	if err != nil {
 		t.Fatalf("the record beside the drafts does not read back: %v", err)
 	}
-	return rec.CatalogSnapshot
+	return rec.sole().CatalogSnapshot
 }
 
 // TestLayeredCatalogFoldersAloneKeepsThePin imports in a workspace whose catalog

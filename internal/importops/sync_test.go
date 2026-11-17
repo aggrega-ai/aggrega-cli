@@ -445,8 +445,8 @@ func TestTheSamePlanTwice(t *testing.T) {
 	if !reflect.DeepEqual(a, b) {
 		t.Errorf("two plans over the same inputs differ:\n%+v\n%+v", a, b)
 	}
-	if recordBytes(recordFor("compose", draftedFiles(aggregateDraft(syncFresh)))) !=
-		recordBytes(recordFor("compose", draftedFiles(aggregateDraft(syncFresh)))) {
+	if !reflect.DeepEqual(recordFor("compose", draftedFiles(aggregateDraft(syncFresh))),
+		recordFor("compose", draftedFiles(aggregateDraft(syncFresh)))) {
 		t.Error("two records of one draft differ")
 	}
 }
@@ -607,7 +607,7 @@ func TestAnEditedReleaseEntryTheSourceChangesConflicts(t *testing.T) {
 func TestAReleaseRecordedWholeIsJudgedWhole(t *testing.T) {
 	t.Parallel()
 	fresh := draftedRelease + gitServer
-	whole := importRecord{Files: []recordFile{{Path: "release.yaml", Digest: digestOf(draftedRelease)}}}
+	whole := recordEntry{Files: []recordFile{{Path: "release.yaml", Digest: digestOf(draftedRelease)}}}
 	for _, row := range []struct {
 		name      string
 		disk      string
@@ -643,21 +643,22 @@ func TestAReleaseRecordedWholeIsJudgedWhole(t *testing.T) {
 // the record: first, under target, for an import given one, and absent for an
 // import given none; and a record carrying one reads back with it.
 //
-// 🔴 PLANTED DEFECT: drop omitempty from importRecord.Target
+// 🔴 PLANTED DEFECT: drop omitempty from recordEntry.Target
 // (internal/importops/record.go): the no-target row reddens on an empty target
 // written into the record.
 func TestTheRecordCarriesTheTarget(t *testing.T) {
 	t.Parallel()
 	files := draftedFiles(aggregateDraft("kind: Aggregate\nspec: {}\n"))
-	with := recordBytes(recordFor("compose", files))
-	if !strings.HasPrefix(with, "{\n  \"target\": \"compose\",\n  \"files\": [") {
+	asRecord := func(e recordEntry) string { return recordBytes(importRecord{Imports: []recordEntry{e}}) }
+	with := asRecord(recordFor("compose", files))
+	if !strings.HasPrefix(with, "{\n  \"imports\": [\n    {\n      \"target\": \"compose\",\n      \"files\": [") {
 		t.Errorf("the record of an import given the target compose opens\n%s", with)
 	}
 	rec, err := parseRecord([]byte(with))
-	if err != nil || rec.Target != "compose" {
-		t.Errorf("the record reads back with the target %q (%v); want compose", rec.Target, err)
+	if err != nil || rec.sole().Target != "compose" {
+		t.Errorf("the record reads back with the target %q (%v); want compose", rec.sole().Target, err)
 	}
-	if without := recordBytes(recordFor("", files)); strings.Contains(without, "target") {
+	if without := asRecord(recordFor("", files)); strings.Contains(without, "target") {
 		t.Errorf("the record of an import given no target names one:\n%s", without)
 	}
 }

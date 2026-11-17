@@ -166,7 +166,7 @@ type syncPlan struct {
 // Every path the record lists is placed and held as a drafted path is, before
 // anything is read through it or removed: the record is a file on disk anyone
 // can edit, so a path in it is no more trusted than one an importer returns.
-func readRecord(root, outputDir string) (*importRecord, string, error) {
+func readRecord(root, outputDir string) (*recordEntry, string, error) {
 	place, err := draftPlace(outputDir, RecordFileName)
 	if err != nil {
 		return nil, "", err
@@ -181,10 +181,13 @@ func readRecord(root, outputDir string) (*importRecord, string, error) {
 	if err != nil {
 		return nil, "", &ImportRecordError{Record: RecordFileName, OutputDir: outputDir, Err: err}
 	}
-	rec, err := parseRecord(data)
+	parsed, err := parseRecord(data)
 	if err != nil {
 		return nil, "", &ImportRecordError{Record: RecordFileName, OutputDir: outputDir, Err: err}
 	}
+	// A directory holds one format's record until imports pick their own entry:
+	// the record's only entry stands for it.
+	rec := parsed.sole()
 	recordPlace := place
 	for _, f := range rec.Files {
 		place, err := draftPlace(outputDir, f.Path)
@@ -225,7 +228,7 @@ func readRecord(root, outputDir string) (*importRecord, string, error) {
 // either, because a draft the importer could not finish would read as the
 // source having dropped the parts it did not reach.
 func syncImport(workspaceRoot, outputDir, target, catalogSnapshot, answers string, opts Options, res Result,
-	drafted []draftedFile, rec *importRecord, onDisk string) (Result, error) {
+	drafted []draftedFile, rec *recordEntry, onDisk string) (Result, error) {
 	root := writescope.RootFor(workspaceRoot, outputDir)
 	res.Files = nil
 	if res.Halted() {
@@ -269,7 +272,7 @@ func syncImport(workspaceRoot, outputDir, target, catalogSnapshot, answers strin
 }
 
 // recordLists reports whether the record lists a drafted path.
-func recordLists(rec importRecord, path string) bool {
+func recordLists(rec recordEntry, path string) bool {
 	for _, f := range rec.Files {
 		if f.Path == path {
 			return true
@@ -341,7 +344,7 @@ func readDisk(outputDir, path string) (diskFile, error) {
 // wrote it and holds nothing an author added, and a conflict otherwise. A part
 // the source gained is added where nothing is at its key, and a conflict where an
 // author wrote something there.
-func planSync(outputDir string, fresh []draftedFile, rec *importRecord) (syncPlan, error) {
+func planSync(outputDir string, fresh []draftedFile, rec *recordEntry) (syncPlan, error) {
 	var plan syncPlan
 	entries := map[string]*recordFile{}
 	if rec != nil {

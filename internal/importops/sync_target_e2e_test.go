@@ -49,7 +49,7 @@ func recordedTarget(t *testing.T, outputDir string) string {
 	if err != nil {
 		t.Fatalf("parse the record: %v", err)
 	}
-	return rec.Target
+	return rec.sole().Target
 }
 
 // TestASyncWithNoTargetDraftsForTheRecordedOne drafts for the compose target,

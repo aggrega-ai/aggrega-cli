@@ -533,7 +533,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	// given: the drafts it judges were composed for that target, and composing them
 	// for none would read as the source having dropped the drafted Manifest.
 	target := opts.Target
-	var rec *importRecord
+	var rec *recordEntry
 	var recordOnDisk string
 	if opts.Sync {
 		if rec, recordOnDisk, err = readRecord(writescope.RootFor(rw.Root(), outputDir), outputDir); err != nil {
@@ -736,7 +736,7 @@ type owing struct {
 // the root a file there is written beneath against the workspace at
 // workspaceRoot, so a refusal judged after the questions — a sync's conflicts, or
 // a write that fails — leaves what was typed in the file for the next run to read.
-func answerDrafts(workspaceRoot, outputDir string, prior *importRecord, opts Options, ask Ask, recipes RecipeIndex,
+func answerDrafts(workspaceRoot, outputDir string, prior *recordEntry, opts Options, ask Ask, recipes RecipeIndex,
 	draft []abi.ScaffoldFile) (owing, error) {
 	out := owing{files: draft}
 	owed := readOwed(draft, recipes)
@@ -886,7 +886,7 @@ func finishImport(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, op
 // what a draft holds and never its path or its kind, so the answered drafts are
 // judged by what is judged here. An entity on disk is read only after every
 // path is held inside the root, so it is read only at a place already judged.
-func checkDraftPlaces(workspaceRoot, outputDir string, draft []abi.ScaffoldFile, sync bool, rec *importRecord) error {
+func checkDraftPlaces(workspaceRoot, outputDir string, draft []abi.ScaffoldFile, sync bool, rec *recordEntry) error {
 	drafted := draftedFiles(draft)
 	files := draft
 	if len(drafted) > 0 {

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -32,7 +33,19 @@ import (
 // the author's way.
 const RecordFileName = ".aggrega-import.json"
 
-// importRecord is the record's document.
+// importRecord is the record's document: one entry per import format, so two
+// imports of different formats into one directory each keep their own.
+//
+// A record an older version wrote has the entry's fields at its top level and no
+// format; it reads as one entry with no format.
+type importRecord struct {
+	Imports []recordEntry `json:"imports"`
+}
+
+// recordEntry is the record of one format's import.
+//
+// Format names the import format the entry belongs to and is empty, and left
+// out of the record, only for the entry an older record is read as.
 //
 // Target is the target the import was given — the provider capability its
 // drafted Manifest is for — and is empty, and left out of the record, for an
@@ -60,7 +73,8 @@ const RecordFileName = ".aggrega-import.json"
 // owned whole carries Digest; a drafted Aggregate or Release carries Parts, one
 // per mapping entry, in document order. Both are slices rather than maps, so the
 // record's bytes are a function of the draft alone.
-type importRecord struct {
+type recordEntry struct {
+	Format          string       `json:"format,omitempty"`
 	Target          string       `json:"target,omitempty"`
 	CatalogSnapshot string       `json:"catalogSnapshot,omitempty"`
 	Answers         string       `json:"answers,omitempty"`
@@ -126,8 +140,8 @@ func draftedFiles(files []abi.ScaffoldFile) []draftedFile {
 
 // recordFor composes the record of what a draft writes, for the target the draft
 // was composed for.
-func recordFor(target string, files []draftedFile) importRecord {
-	rec := importRecord{Target: target, Files: make([]recordFile, 0, len(files))}
+func recordFor(target string, files []draftedFile) recordEntry {
+	rec := recordEntry{Target: target, Files: make([]recordFile, 0, len(files))}
 	for _, f := range files {
 		rec.Files = append(rec.Files, recordEntryFor(f))
 	}
@@ -146,10 +160,59 @@ func recordEntryFor(f draftedFile) recordFile {
 	return recordFile{Path: f.path, Parts: parts}
 }
 
-// recordBytes renders a record as the bytes written to disk: indented JSON with
-// a closing newline.
+// entry returns the entry of format, and whether the record holds one.
+func (r importRecord) entry(format string) (recordEntry, bool) {
+	for _, e := range r.Imports {
+		if e.Format == format {
+			return e, true
+		}
+	}
+	return recordEntry{}, false
+}
+
+// with returns the record with e's format replaced by e, or added where the
+// record holds none, and every other entry kept. The receiver is not changed.
+func (r importRecord) with(e recordEntry) importRecord {
+	out := make([]recordEntry, 0, len(r.Imports)+1)
+	replaced := false
+	for _, have := range r.Imports {
+		if have.Format == e.Format {
+			out = append(out, e)
+			replaced = true
+			continue
+		}
+		out = append(out, have)
+	}
+	if !replaced {
+		out = append(out, e)
+	}
+	return importRecord{Imports: out}
+}
+
+// sole is the record's first entry, the one a directory holding a single format
+// has, and a zero entry where the record holds none.
+func (r importRecord) sole() recordEntry {
+	if len(r.Imports) == 0 {
+		return recordEntry{}
+	}
+	return r.Imports[0]
+}
+
+// recordBytes renders a record as the bytes written to disk: indented JSON, its
+// entries sorted by format with the entry that has none first, and a closing
+// newline.
 func recordBytes(rec importRecord) string {
-	data, err := json.MarshalIndent(rec, "", "  ")
+	entries := slices.Clone(rec.Imports)
+	if entries == nil {
+		entries = []recordEntry{}
+	}
+	slices.SortStableFunc(entries, func(a, b recordEntry) int { return strings.Compare(a.Format, b.Format) })
+	for i := range entries {
+		if entries[i].Files == nil {
+			entries[i].Files = []recordFile{}
+		}
+	}
+	data, err := json.MarshalIndent(importRecord{Imports: entries}, "", "  ")
 	if err != nil {
 		// The record holds strings and slices only, which always marshal.
 		panic(fmt.Sprintf("importops: marshal the import record: %v", err))
@@ -164,61 +227,97 @@ func recordScaffold(target, catalogSnapshot, answers string, files []draftedFile
 	rec := recordFor(target, files)
 	rec.CatalogSnapshot = catalogSnapshot
 	rec.Answers = answers
-	return abi.ScaffoldFile{Path: RecordFileName, Content: recordBytes(rec)}
+	return abi.ScaffoldFile{Path: RecordFileName, Content: recordBytes(importRecord{Imports: []recordEntry{rec}})}
+}
+
+// recordDocument is a record's document as it is read: the entries of the
+// current shape, and the fields an older record held at its top level.
+type recordDocument struct {
+	Imports         []recordEntry `json:"imports"`
+	Target          string        `json:"target"`
+	CatalogSnapshot string        `json:"catalogSnapshot"`
+	Answers         string        `json:"answers"`
+	Files           []recordFile  `json:"files"`
 }
 
 // parseRecord reads a record's bytes, refusing anything that is not a record an
-// import writes: an unknown field, a file named twice or with neither or both of
-// a digest and parts, a part with no key or named twice, a digest of another
-// shape, or a second document after the first.
+// import writes: an unknown field, a document holding both entries and an older
+// record's top-level fields, two entries of one format, a file named twice or
+// with neither or both of a digest and parts, a part with no key or named twice,
+// a digest of another shape, or a second document after the first.
+//
+// A record an older version wrote reads as one entry with no format.
 func parseRecord(data []byte) (importRecord, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	var rec importRecord
-	if err := dec.Decode(&rec); err != nil {
+	var doc recordDocument
+	if err := dec.Decode(&doc); err != nil {
 		return importRecord{}, err
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return importRecord{}, fmt.Errorf("it holds more than one JSON value")
 	}
+	legacy := doc.Target != "" || doc.CatalogSnapshot != "" || doc.Answers != "" || doc.Files != nil
+	rec := importRecord{Imports: doc.Imports}
+	switch {
+	case doc.Imports != nil && legacy:
+		return importRecord{}, fmt.Errorf("it holds both entries under \"imports\" and the fields of an older record")
+	case legacy:
+		rec.Imports = []recordEntry{{Target: doc.Target, CatalogSnapshot: doc.CatalogSnapshot, Answers: doc.Answers,
+			Files: doc.Files}}
+	}
+	formats := make(map[string]bool, len(rec.Imports))
+	for _, e := range rec.Imports {
+		if formats[e.Format] {
+			return importRecord{}, fmt.Errorf("it holds more than one entry for the format %q", e.Format)
+		}
+		formats[e.Format] = true
+		if err := checkEntry(e); err != nil {
+			return importRecord{}, err
+		}
+	}
+	return rec, nil
+}
+
+// checkEntry holds one entry to the shape an import writes.
+func checkEntry(rec recordEntry) error {
 	if rec.CatalogSnapshot != "" && !wellFormedDigest(rec.CatalogSnapshot) {
-		return importRecord{}, fmt.Errorf("it names the catalog snapshot %q, which is not a digest an import writes",
+		return fmt.Errorf("it names the catalog snapshot %q, which is not a digest an import writes",
 			rec.CatalogSnapshot)
 	}
 	paths := make(map[string]bool, len(rec.Files))
 	for _, f := range rec.Files {
 		if f.Path == "" {
-			return importRecord{}, fmt.Errorf("it lists a file with no path")
+			return fmt.Errorf("it lists a file with no path")
 		}
 		if paths[f.Path] {
-			return importRecord{}, fmt.Errorf("it lists the file %q more than once", f.Path)
+			return fmt.Errorf("it lists the file %q more than once", f.Path)
 		}
 		paths[f.Path] = true
 		if (f.Digest == "") == (len(f.Parts) == 0) {
-			return importRecord{}, fmt.Errorf("its entry for %q carries neither or both of a digest and parts", f.Path)
+			return fmt.Errorf("its entry for %q carries neither or both of a digest and parts", f.Path)
 		}
 		if f.Digest != "" && !wellFormedDigest(f.Digest) {
-			return importRecord{}, fmt.Errorf("its entry for %q carries the digest %q, which is not one an import writes",
+			return fmt.Errorf("its entry for %q carries the digest %q, which is not one an import writes",
 				f.Path, f.Digest)
 		}
 		keys := make(map[string]bool, len(f.Parts))
 		for _, p := range f.Parts {
 			if len(p.Key) == 0 {
-				return importRecord{}, fmt.Errorf("its entry for %q lists a part with no key", f.Path)
+				return fmt.Errorf("its entry for %q lists a part with no key", f.Path)
 			}
 			if !wellFormedDigest(p.Digest) {
-				return importRecord{}, fmt.Errorf("its entry for %q carries the digest %q, which is not one an import "+
+				return fmt.Errorf("its entry for %q carries the digest %q, which is not one an import "+
 					"writes", f.Path, p.Digest)
 			}
 			k := joinKey(p.Key)
 			if keys[k] {
-				return importRecord{}, fmt.Errorf("its entry for %q lists the part %s more than once", f.Path,
-					RenderKey(p.Key))
+				return fmt.Errorf("its entry for %q lists the part %s more than once", f.Path, RenderKey(p.Key))
 			}
 			keys[k] = true
 		}
 	}
-	return rec, nil
+	return nil
 }
 
 // digestPrefix opens every digest the record carries.
