@@ -8,9 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
 // closureAxisCase is one library kind as the closure-reading tests drive it: how a
@@ -177,9 +179,15 @@ spec:
 				Entities:        []closure.ResolvedRef{{URI: "test/svc:1.0.0"}},
 				SchemaLibraries: []closure.ResolvedLibrary{{URI: "Lib", ResolvedVersion: tc.resolved}},
 			}
-			err := view.ValidateClosureScopedPillars(t.Context(), cl)
-			if tc.refused && err == nil {
-				t.Errorf("closure resolving Lib at %s passed; the schema reference needs 1.0.0's Settings", tc.resolved)
+			err := view.ValidateClosureScopedPillars(t.Context(), cl, view.ClosureLibraries(cl).Schemas)
+			if tc.refused {
+				if err == nil {
+					t.Fatalf("closure resolving Lib at %s passed; the schema reference needs 1.0.0's Settings", tc.resolved)
+				}
+				if !strings.Contains(cerrors.CauseChain(err), "Lib#/schemas/Settings") {
+					t.Errorf("the refusal does not name the unresolved fragment Lib#/schemas/Settings: %s", cerrors.CauseChain(err))
+				}
+				return
 			}
 			if !tc.refused && err != nil {
 				t.Errorf("closure resolving Lib at %s was refused: %v", tc.resolved, err)

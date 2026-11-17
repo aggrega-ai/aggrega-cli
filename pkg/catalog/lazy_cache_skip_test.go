@@ -134,7 +134,7 @@ func TestLazyWalks_SkipArtifactCacheUnderCatalogDir(t *testing.T) {
 	if _, ok := subject.defaultSchemaLibraries()["DbSizing"]; ok {
 		t.Error("buildSchemaLibraries ingested a cached SchemaLibrary as authored catalog; the cache walk-skip failed")
 	}
-	if _, ok := defaultViewLibraries(subject).Mappings["BaseMappings"]; ok {
+	if _, ok := subject.DefaultLibraries().Mappings["BaseMappings"]; ok {
 		t.Error("buildRecipeIndex ingested a cached MappingLibrary as authored catalog; the cache walk-skip failed")
 	}
 	for identity, doc := range subject.componentIndex {
@@ -158,7 +158,7 @@ func TestLazyWalks_SkipArtifactCacheUnderCatalogDir(t *testing.T) {
 	if _, ok := canary.defaultSchemaLibraries()["DbSizing"]; !ok {
 		t.Error("canary failed: an unconfigured-cache walk did NOT ingest the cached SchemaLibrary, so the skip assertion is vacuous")
 	}
-	if _, ok := defaultViewLibraries(canary).Mappings["BaseMappings"]; !ok {
+	if _, ok := canary.DefaultLibraries().Mappings["BaseMappings"]; !ok {
 		t.Error("canary failed: an unconfigured-cache walk did NOT ingest the cached MappingLibrary, so the skip assertion is vacuous")
 	}
 	var canarySawCachePath bool
@@ -235,7 +235,7 @@ func TestLazyWalks_CachedMappingLibraryDoesNotShadowAuthored(t *testing.T) {
 	subject := NewLazyLookup(ws, cacheUnderCatalogDir, []string{ws}, nil)
 	subject.buildRecipeIndex()
 
-	lib, ok := defaultViewLibraries(subject).Mappings["BaseMappings"]
+	lib, ok := subject.DefaultLibraries().Mappings["BaseMappings"]
 	if !ok {
 		t.Fatal("the authored MappingLibrary did not resolve at all")
 	}

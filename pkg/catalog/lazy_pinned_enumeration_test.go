@@ -261,7 +261,7 @@ func TestLazyLookup_PinnedCacheEnumeration_Resolves(t *testing.T) {
 	}
 	// The bare-pinned remote WorkloadLibrary folded into the enumerated set the
 	// renderer's workload `$import` resolution consumes — the B→A bridge.
-	if _, ok := defaultViewLibraries(subject).Workloads["BaseWorkloads"]; !ok {
+	if _, ok := subject.DefaultLibraries().Workloads["BaseWorkloads"]; !ok {
 		t.Errorf("bare-URI-pinned WorkloadLibrary BaseWorkloads not folded into the enumerated set (B→A bridge)")
 	}
 }

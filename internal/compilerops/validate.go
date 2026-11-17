@@ -154,10 +154,15 @@ func resolveModuleReferences(ctx context.Context, resolved *ResolvedClosure) err
 // carries its own contract below. ReleasePath locates the record the
 // verdict-plugin trust gate reads and carries its own contract below.
 type ValidateInputs struct {
-	View     *catalog.LazyLookup
-	Closure  closure.Closure
-	Release  *types.Release
-	Manifest *types.Manifest
+	View    *catalog.LazyLookup
+	Closure closure.Closure
+	// ClosureLibrariesResolved is true where Closure was resolved with its library
+	// axes folded in, so each library is read at the version Closure names. False,
+	// which is what ResolveValidationClosure produces, reads each library at the
+	// version a bare reference selects.
+	ClosureLibrariesResolved bool
+	Release                  *types.Release
+	Manifest                 *types.Manifest
 	// ReleasePath is the path of the Release being validated. It locates the record
 	// of the plugin identities trusted for this Release's verdict attachments, which
 	// sits beside that Release, and it is required: validation runs the same
@@ -337,11 +342,12 @@ type ValidateResult struct {
 func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	r := &ValidateResult{}
 
-	if extErrs := in.View.ResolveClosureExtends(ctx, in.Closure); len(extErrs) > 0 {
+	libraries := releaseLibraries(in.View, in.Closure, in.ClosureLibrariesResolved)
+	if extErrs := in.View.ResolveClosureExtends(ctx, in.Closure, libraries.Schemas); len(extErrs) > 0 {
 		r.ClosureExtendsErrors = extErrs
 		return r
 	}
-	if err := in.View.ValidateClosureScopedPillars(ctx, in.Closure); err != nil {
+	if err := in.View.ValidateClosureScopedPillars(ctx, in.Closure, libraries.Schemas); err != nil {
 		r.PillarError = err
 		return r
 	}
@@ -396,7 +402,7 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	tier4, runErr := pipeline.RunTier4Pipeline(
 		ctx,
 		inputs,
-		in.View.AsCatalogLookupForClosure(ctx, in.Closure),
+		in.View.AsCatalogLookupWithSchemas(ctx, libraries.Schemas),
 		in.View.RecipeLookupWithManifest(in.Manifest),
 		in.View.SubAggregateLoader(),
 	)

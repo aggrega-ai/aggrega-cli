@@ -952,7 +952,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	// Closure-scoped validation: ONLY the entities the Release reaches, against
 	// the closure's libraries.
 	if pol.validateClosurePillars {
-		if err := in.view.ValidateClosureScopedPillars(ctx, resolved.Closure); err != nil {
+		if err := in.view.ValidateClosureScopedPillars(ctx, resolved.Closure, resolved.Libraries(in.view).Schemas); err != nil {
 			out.FailedGate = GateClosurePillars
 			return out, &resolutionFailure{err: err}
 		}
@@ -1000,7 +1000,7 @@ func runPreview(ctx context.Context, in PreviewInputs, pol previewPolicy, opts p
 	// Extends inheritance for the closure's Components and Features, so the
 	// pipeline sees fully-merged entities.
 	if pol.resolveExtends {
-		if extErrs := in.view.ResolveClosureExtends(ctx, resolved.Closure); len(extErrs) > 0 {
+		if extErrs := in.view.ResolveClosureExtends(ctx, resolved.Closure, resolved.Libraries(in.view).Schemas); len(extErrs) > 0 {
 			for _, e := range extErrs {
 				warn(WarningExtends, e.Error())
 			}

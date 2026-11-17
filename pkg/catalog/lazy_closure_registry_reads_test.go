@@ -170,9 +170,9 @@ func TestAClosureEntityIsAskedOfARegistryOnlyAsTheKindItWasCollectedAs(t *testin
 	}}
 	ctx := t.Context()
 
-	_ = view.ValidateClosureScopedPillars(ctx, cl)
+	_ = view.ValidateClosureScopedPillars(ctx, cl, view.DefaultLibraries().Schemas)
 	_ = view.ClosureLintWarnings(ctx, cl)
-	_ = view.ResolveClosureExtends(ctx, cl)
+	_ = view.ResolveClosureExtends(ctx, cl, view.DefaultLibraries().Schemas)
 	for _, ref := range cl.Entities {
 		view.ClosureComponent(ctx, ref)
 		view.ClosureFeature(ctx, ref)
@@ -227,9 +227,9 @@ func TestTheCallersContextReachesTheRegistryReadOfEveryClosureRead(t *testing.T)
 		{"the catalog lookup bound to a context", func(v *LazyLookup) { v.AsCatalogLookupContext(marked).Component(absentRef.URI) }},
 		{"the closure-entity Component read", func(v *LazyLookup) { v.ClosureComponent(marked, absentRef) }},
 		{"the extends chain a closure-entity read merges", func(v *LazyLookup) { v.ClosureComponent(marked, childRef) }},
-		{"the closure-scoped validation's extends chain", func(v *LazyLookup) { _ = v.ValidateClosureScopedPillars(marked, cl) }},
+		{"the closure-scoped validation's extends chain", func(v *LazyLookup) { _ = v.ValidateClosureScopedPillars(marked, cl, v.DefaultLibraries().Schemas) }},
 		{"the overlap lint's extends chain", func(v *LazyLookup) { _ = v.ClosureLintWarnings(marked, cl) }},
-		{"the extends gate", func(v *LazyLookup) { _ = v.ResolveClosureExtends(marked, cl) }},
+		{"the extends gate", func(v *LazyLookup) { _ = v.ResolveClosureExtends(marked, cl, v.DefaultLibraries().Schemas) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			puller := &kindRecordingPuller{}

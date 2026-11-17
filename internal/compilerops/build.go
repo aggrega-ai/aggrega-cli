@@ -87,9 +87,10 @@ type BuildInputs struct {
 func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (pipeline.Outcome, error) {
 	view := in.View
 	r := in.Resolved
-	catLookup := view.AsCatalogLookupForClosure(ctx, r.Closure)
-	// Each library is read at the version this Release's closure resolved.
-	libraries := view.ClosureLibraries(r.Closure)
+	// Each library is read at the version this Release's closure resolved, where
+	// the closure was resolved with its library axes (ResolvedClosure.Libraries).
+	libraries := r.Libraries(view)
+	catLookup := view.AsCatalogLookupWithSchemas(ctx, libraries.Schemas)
 
 	// Reconstruct provider resolution from the LOCKFILE, never the workspace
 	// config, so rendered output is invariant to a plugins.providers change made

@@ -380,33 +380,24 @@ func (l *LazyLookup) AsCatalogLookup() resolver.CatalogLookup {
 func (l *LazyLookup) AsCatalogLookupContext(ctx context.Context) resolver.CatalogLookup {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.catalogLookupLocked(ctx, nil)
+	_ = l.buildSchemaLibraries()
+	return l.catalogLookupLocked(ctx, l.defaultSchemaLibraries())
 }
 
-// AsCatalogLookupForClosure is AsCatalogLookupContext with its SchemaLibraries
-// field holding the versions the Release's closure resolved (ClosureLibraries)
-// rather than the version a bare reference to each name selects. It is the lookup
-// every surface on a Release's path hands the compilation.
-func (l *LazyLookup) AsCatalogLookupForClosure(ctx context.Context, cl closure.Closure) resolver.CatalogLookup {
+// AsCatalogLookupWithSchemas is AsCatalogLookupContext with its SchemaLibraries
+// field holding schemas, the set the caller chose (ClosureLibraries for a closure
+// that resolved its libraries, DefaultLibraries for one that did not), rather than
+// the version a bare reference to each name selects. It is the lookup every
+// surface on a Release's path hands the compilation.
+func (l *LazyLookup) AsCatalogLookupWithSchemas(ctx context.Context, schemas map[string]types.SchemaLibrary) resolver.CatalogLookup {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.catalogLookupLocked(ctx, &cl)
+	return l.catalogLookupLocked(ctx, schemas)
 }
 
-// catalogLookupLocked builds the lookup for a caller holding the lock; a non-nil
-// cl selects the SchemaLibrary versions that closure resolved.
-func (l *LazyLookup) catalogLookupLocked(ctx context.Context, cl *closure.Closure) resolver.CatalogLookup {
-	// Resolve the SchemaLibrary set (once, cached) so cross-document $ref expansion
-	// sees the same libraries the eager backing does. Best-effort here: a library that fails validation
-	// is surfaced by buildSchemaLibraries' returned error to a caller that observes
-	// it; AsCatalogLookup discards that error and exposes the resolvable set.
-	_ = l.buildSchemaLibraries()
-	schemaLibraries := func() map[string]types.SchemaLibrary {
-		if cl == nil {
-			return l.defaultSchemaLibraries()
-		}
-		return closureLibrarySelection(l.schemaLibraryVersions, cl.SchemaLibraries)
-	}()
+// catalogLookupLocked builds the lookup for a caller holding the lock, with
+// schemas as its SchemaLibrary set.
+func (l *LazyLookup) catalogLookupLocked(ctx context.Context, schemaLibraries map[string]types.SchemaLibrary) resolver.CatalogLookup {
 	return resolver.CatalogLookup{
 		Component: func(uri string) (types.Component, bool) {
 			return l.ComponentContext(ctx, uri)
@@ -2934,6 +2925,24 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 	return l.recipeCat
 }
 
+// DefaultLibraries returns, for every library name this view holds on each of the
+// four library kinds, the one version a bare reference to the name selects. It is
+// the reading for a closure resolved without its library axes, and for a surface
+// no Release is in play on. It builds the enumerations the four kinds live in on
+// first call.
+func (l *LazyLookup) DefaultLibraries() LibrarySet {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	_ = l.buildSchemaLibraries()
+	l.buildRecipeIndex()
+	return LibrarySet{
+		Schemas:   l.defaultSchemaLibraries(),
+		Mappings:  defaultLibrarySelection(l.mappingLibraryVersions, mappingLibraryMeta),
+		Workloads: defaultLibrarySelection(l.workloadLibraryVersions, workloadLibraryMeta),
+		Artifacts: defaultLibrarySelection(l.artifactLibraryVersions, artifactLibraryMeta),
+	}
+}
+
 // ClosureLibraries returns the libraries a Release's dependency closure resolved,
 // on each of the four library kinds, keyed by library name: for every library the
 // closure resolved, exactly the version it resolved, never the version a bare
@@ -3518,7 +3527,11 @@ func (l *LazyLookup) SkippedEntities() []SkippedEntity {
 //
 // Each entity is read as ClosureComponent and ClosureFeature read it: a registry
 // is asked only for a kind the walk collected the reference as, and under ctx.
-func (l *LazyLookup) ValidateClosureScopedPillars(ctx context.Context, cl closure.Closure) error {
+//
+// schemas is the SchemaLibrary set the schema references resolve against; the
+// caller chooses it (ClosureLibraries or DefaultLibraries) and an empty set means
+// no library is held.
+func (l *LazyLookup) ValidateClosureScopedPillars(ctx context.Context, cl closure.Closure, schemas map[string]types.SchemaLibrary) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	_ = l.buildSchemaLibraries()
@@ -3545,7 +3558,7 @@ func (l *LazyLookup) ValidateClosureScopedPillars(ctx context.Context, cl closur
 	// see from the file it is reported against: the library sits in the artifact
 	// cache with nothing vouching for it, so it was never read. Name it, and name
 	// the command that fixes it.
-	return ValidateClosurePillars(comps, compSrc, feats, featSrc, l.closureLibrariesLocked(cl).Schemas, func() string {
+	return ValidateClosurePillars(comps, compSrc, feats, featSrc, schemas, func() string {
 		return cachedLibraryRemedy(remedyLockfilePinned, l.unverifiedCachedSchemaLibraries())
 	})
 }
@@ -3860,7 +3873,10 @@ func (l *LazyLookup) extendsParents(ctx context.Context) extendsParents {
 // kind the walk collected one of its references as, for the reason
 // ClosureComponent gives; a parent in a chain is asked as the kind its child
 // names it as.
-func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closure) []error {
+//
+// schemaLibraries is the cross-document $ref context the schema merge composes
+// against, chosen by the caller as ValidateClosureScopedPillars' schemas are.
+func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closure, schemaLibraries map[string]types.SchemaLibrary) []error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	// Clear what this pass contributed on the last run. The daemon is long-lived
@@ -3869,9 +3885,7 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 	// reset. This pass is the field's only producer, so clearing the whole slice
 	// erases nothing another pass owns.
 	l.closureNarrowings = nil
-	// The closure's SchemaLibrary set is the cross-document $ref context the schema
-	// merge composes against: each library at the version the closure resolved.
-	schemaLibraries := l.closureLibrariesLocked(cl).Schemas
+	_ = l.buildSchemaLibraries()
 
 	compLookup := func(uri string) (types.Component, bool) {
 		return l.extendsParentComponent(ctx, uri)

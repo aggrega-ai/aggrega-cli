@@ -1108,7 +1108,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// is valid. An in-closure schema-invalid entity, or a $ref to a skipped/missing
 	// library, fails loudly here; an out-of-closure break is never validated.
 	report.phase(PhaseValidate)
-	if err := lazyView.ValidateClosureScopedPillars(ctx, cl); err != nil {
+	if err := lazyView.ValidateClosureScopedPillars(ctx, cl, lazyView.ClosureLibraries(cl).Schemas); err != nil {
 		return Result{}, cfg.annotate(rw, err, lazyView.SkippedEntities())
 	}
 
@@ -1127,7 +1127,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// are the ones already run above, against the closure this pass is pinning.
 	report.phase(PhaseSources)
 	aggBytes := aggRes.Bytes
-	pullLookup := lazyView.AsCatalogLookupForClosure(ctx, cl)
+	pullLookup := lazyView.AsCatalogLookupWithSchemas(ctx, lazyView.ClosureLibraries(cl).Schemas)
 	// The lockfile this run assembles is carried out of the source-descent scope
 	// and written further down, once the external-input discovery below has had its
 	// chance to add to it. Assembling and writing are separate steps for two

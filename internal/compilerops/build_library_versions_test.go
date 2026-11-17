@@ -130,6 +130,7 @@ func TestBuildToBufferRendersClosureLibraryVersion(t *testing.T) {
 			// resolved; ResolveClosure alone discovers no library, so the record
 			// under test is written here.
 			resolved.Closure.MappingLibraries = []closure.ResolvedLibrary{{URI: "Lib", ResolvedVersion: resolvedVersion}}
+			resolved.LibrariesResolved = true
 
 			res, err := BuildToBuffer(context.Background(), BuildInputs{
 				View:                             view,
@@ -158,5 +159,70 @@ func TestBuildToBufferRendersClosureLibraryVersion(t *testing.T) {
 				t.Errorf("the artifact carries Lib %s's body though the closure resolved %s", other, resolvedVersion)
 			}
 		})
+	}
+}
+
+// TestValidateReleaseReadsHeldSchemaLibrary: a Release validated through the
+// validation closure — resolved without its library axes — reads a SchemaLibrary a
+// Component's schema references at the version a bare reference selects, so a
+// library the catalog holds is found rather than reported as missing.
+func TestValidateReleaseReadsHeldSchemaLibrary(t *testing.T) {
+	ws, releasePath := libraryVersionsWorkspace(t)
+	for name, body := range map[string]string{
+		"catalog/component/demo/app/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: demo/app
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema:
+    infra:
+      settings:
+        $ref: "SettingsLib#/schemas/Settings"
+`,
+		"catalog/libraries/settings-lib.yaml": `apiVersion: aggrega.ai/v1beta1
+kind: SchemaLibrary
+metadata:
+  name: SettingsLib
+  version: "1.0.0"
+spec:
+  schemas:
+    Settings:
+      level: { type: string }
+`,
+	} {
+		if err := os.WriteFile(filepath.Join(ws, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wsCfg := workspaceconfig.Default()
+	view := catalog.NewLazyLookup(ws, wsCfg.ResolvedArtifactCacheDir(), []string{filepath.Join(ws, "catalog")}, nil).ForRequest(nil)
+	resolved, cerr := ResolveValidationClosure(context.Background(), ValidationClosureInputs{
+		View: view, ReleasePath: releasePath, WorkspaceRoot: ws, WorkspaceConfig: wsCfg,
+	})
+	if cerr != nil {
+		t.Fatalf("ResolveValidationClosure: stage=%d %v", cerr.Stage, cerr)
+	}
+	vr := Validate(context.Background(), ValidateInputs{
+		View:            view,
+		Closure:         resolved.Closure,
+		Release:         resolved.Release,
+		ReleasePath:     releasePath,
+		Manifest:        resolved.Manifest,
+		AggBytes:        resolved.AggBytes,
+		AggregatePath:   resolved.AggregatePath,
+		WorkspaceConfig: wsCfg,
+		CompilerVersion: "test",
+	})
+	if len(vr.ClosureExtendsErrors) > 0 {
+		t.Errorf("extends gate refused: %v", vr.ClosureExtendsErrors)
+	}
+	if vr.PillarError != nil {
+		t.Errorf("a Component referencing the held SchemaLibrary SettingsLib was refused: %v", vr.PillarError)
+	}
+	if vr.RunErr != nil {
+		t.Errorf("the validation pipeline failed: %v", vr.RunErr)
 	}
 }

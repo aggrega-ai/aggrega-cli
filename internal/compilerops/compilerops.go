@@ -74,6 +74,11 @@ type ResolvedClosure struct {
 	AggBytes      []byte
 	AggregatePath string
 	Closure       closure.Closure
+	// LibrariesResolved records that the closure was resolved with its library
+	// axes folded in (ClosureInputs.Augment), so Closure names each library at the
+	// version this Release resolved. A closure resolved without them names no
+	// library, and Libraries reads the default selection for it instead.
+	LibrariesResolved bool
 	// Lookup is the hermetic Lookup (nil OCIPuller) the closure was walked
 	// through. A caller that verifies drift against a lockfile reuses it to
 	// reconstruct the sub-aggregate and plugin axes ComputeClosure leaves empty,
@@ -119,6 +124,23 @@ type ResolvedClosure struct {
 	// caller reporting on a document lists them with its other findings. Neither
 	// may halt on them.
 	ReleaseCompositionAdvisories []error
+}
+
+// Libraries returns the libraries this Release's surfaces read, one version per
+// library name: each at the version the closure resolved where the closure was
+// resolved with its library axes, and at the version a bare reference selects
+// where it was not. It is the one place that choice is made for a resolved closure.
+func (r *ResolvedClosure) Libraries(view *catalog.LazyLookup) catalog.LibrarySet {
+	return releaseLibraries(view, r.Closure, r.LibrariesResolved)
+}
+
+// releaseLibraries is the choice Libraries makes, for a caller that holds a
+// closure and the fact of how it was resolved rather than a ResolvedClosure.
+func releaseLibraries(view *catalog.LazyLookup, cl closure.Closure, librariesResolved bool) catalog.LibrarySet {
+	if librariesResolved {
+		return view.ClosureLibraries(cl)
+	}
+	return view.DefaultLibraries()
 }
 
 // ClosureStage names the point in ResolveClosure at which resolution failed, so
@@ -377,6 +399,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 		AggBytes:                     aggBytes,
 		AggregatePath:                aggRes.Path,
 		Closure:                      cl,
+		LibrariesResolved:            in.Augment,
 		Lookup:                       lookup,
 		ManifestConsistencyFindings:  consistencyFindings,
 		ReleaseCompositionAdvisories: releaseAdvisories,

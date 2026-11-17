@@ -249,7 +249,7 @@ spec:
 	}
 
 	ll := NewLazyLookup("", "", []string{dir}, nil)
-	libs := defaultViewLibraries(ll).Workloads
+	libs := ll.DefaultLibraries().Workloads
 	if len(libs) != 1 {
 		t.Fatalf("expected 1 enumerated WorkloadLibrary; got %d", len(libs))
 	}

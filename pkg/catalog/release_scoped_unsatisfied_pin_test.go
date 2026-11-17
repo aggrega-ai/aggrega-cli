@@ -155,7 +155,7 @@ func TestReleaseScopedExtends_ReportsAParentPinTheCatalogCannotSatisfy(t *testin
 				errs []error
 			}{
 				{"eager closure extends", eagerExtends},
-				{"lazy closure extends", lazy.ResolveClosureExtends(t.Context(), cl)},
+				{"lazy closure extends", lazy.ResolveClosureExtends(t.Context(), cl, lazy.DefaultLibraries().Schemas)},
 				{"eager ancestry", nonNil(eagerAncestry)},
 				{"lazy ancestry", nonNil(lazyAncestry)},
 			}

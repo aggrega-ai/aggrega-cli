@@ -110,7 +110,7 @@ func TestResolveClosureExtends_NarrowingAdvisoriesDoNotAccumulate(t *testing.T) 
 	lazy := NewLazyLookup(ws, ".aggrega/cache", []string{cd}, nil)
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: "test/zzz-narrow:1.0.0"}}}
 
-	if errs := lazy.ResolveClosureExtends(t.Context(), cl); len(errs) > 0 {
+	if errs := lazy.ResolveClosureExtends(t.Context(), cl, lazy.DefaultLibraries().Schemas); len(errs) > 0 {
 		t.Fatalf("first closure extends: %v", errs)
 	}
 	first := strings.Join(lazy.ClosureNarrowingWarnings(), "\n")
@@ -121,7 +121,7 @@ func TestResolveClosureExtends_NarrowingAdvisoriesDoNotAccumulate(t *testing.T) 
 	// Three runs, not two: an off-by-one clear that trimmed only the previous run
 	// would still pass a two-run comparison.
 	for i := 0; i < 2; i++ {
-		if errs := lazy.ResolveClosureExtends(t.Context(), cl); len(errs) > 0 {
+		if errs := lazy.ResolveClosureExtends(t.Context(), cl, lazy.DefaultLibraries().Schemas); len(errs) > 0 {
 			t.Fatalf("repeat closure extends %d: %v", i, errs)
 		}
 	}
