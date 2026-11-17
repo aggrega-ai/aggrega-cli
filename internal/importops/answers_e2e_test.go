@@ -81,14 +81,16 @@ func owedKeys(owed []Owed) []string {
 	return out
 }
 
-// diagnosticsBesideTheOwed is a result's diagnostics without the warnings that
-// name the values its drafts owe, for a case about what else an import reports.
-func diagnosticsBesideTheOwed(res Result) []abi.Diagnostic {
+// diagnosticsBesideTheOwed is what the importer and the composition around it
+// report (importerDiagnostics) without the warnings that name the values its
+// drafts owe, for a case about what else an import reports.
+func diagnosticsBesideTheOwed(t *testing.T, res Result) []abi.Diagnostic {
+	t.Helper()
 	owed := make([]abi.Diagnostic, 0, len(res.Owed))
 	for _, o := range res.Owed {
 		owed = append(owed, owedDiagnostic(o))
 	}
-	return slices.DeleteFunc(slices.Clone(res.Diagnostics), func(d abi.Diagnostic) bool {
+	return slices.DeleteFunc(slices.Clone(importerDiagnostics(t, res)), func(d abi.Diagnostic) bool {
 		return slices.Contains(owed, d)
 	})
 }

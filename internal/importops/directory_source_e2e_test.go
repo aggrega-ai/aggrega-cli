@@ -85,12 +85,13 @@ func importDirectory(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, path, 
 	})
 }
 
-// probeReportOf reads the files-probe importer's report off an import's
-// diagnostics.
+// probeReportOf reads the files-probe importer's report off what an import's
+// importer reported (importerDiagnostics).
 func probeReportOf(t *testing.T, res Result) importopstest.FilesProbeReport {
 	t.Helper()
-	messages := make([]string, 0, len(res.Diagnostics))
-	for _, d := range res.Diagnostics {
+	reported := importerDiagnostics(t, res)
+	messages := make([]string, 0, len(reported))
+	for _, d := range reported {
 		messages = append(messages, d.Message)
 	}
 	return importopstest.ReadFilesProbeReport(t, messages)

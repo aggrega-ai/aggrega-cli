@@ -22,8 +22,9 @@ import (
 // layer media type are both oci.MediaTypeCatalogSnapshot, published under
 // SnapshotRepository beneath a registry's location prefix. A registry that
 // publishes catalog entities one by one can publish their tree this way too, and
-// a reader that names no catalog folder reads it in their place — fetched, held
-// to its signature, kept in the content cache and laid out as a folder there.
+// an import reads it — fetched, held to its signature, kept in the content cache
+// and laid out as a folder there — behind the workspace's catalog folders, or as
+// the whole catalog of a workspace that names none.
 //
 // This file is the one statement of the archive's layout. A publisher that cannot
 // call this code writes the same bytes by the same rule, and a test holds it to

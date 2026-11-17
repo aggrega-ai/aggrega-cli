@@ -138,8 +138,8 @@ func TestATargetDraftsTheManifestTheDraftedReleaseNeeds(t *testing.T) {
 	if got := fileNamed(t, res, "aggregate.yaml"); got != importopstest.DraftedAggregate {
 		t.Errorf("the drafted Aggregate changed:\n%s\nwant it as drafted\n%s", got, importopstest.DraftedAggregate)
 	}
-	if !slices.Equal(res.Diagnostics, wantComposedWarnings) {
-		t.Errorf("the import reported %+v\nwant %+v", res.Diagnostics, wantComposedWarnings)
+	if got := importerDiagnostics(t, res); !slices.Equal(got, wantComposedWarnings) {
+		t.Errorf("the import reported %+v\nwant %+v", got, wantComposedWarnings)
 	}
 	if res.Halted() {
 		t.Errorf("an import leaving types unmapped reported a halt; it warns and drafts")
@@ -176,7 +176,7 @@ func TestNoTargetDraftsExactlyTheImportersFiles(t *testing.T) {
 	if len(res.Owed) != 1 || !slices.Equal(res.Owed[0].Keys, []string{"spec", "manifest"}) {
 		t.Fatalf("an import with no target owes %+v; want exactly the Release's spec.manifest", res.Owed)
 	}
-	if want := []abi.Diagnostic{owedDiagnostic(res.Owed[0])}; !slices.Equal(res.Diagnostics, want) {
+	if want := []abi.Diagnostic{owedDiagnostic(res.Owed[0])}; !slices.Equal(importerDiagnostics(t, res), want) {
 		t.Errorf("an import with no target reported %+v; want only the owed manifest %+v", res.Diagnostics, want)
 	}
 }

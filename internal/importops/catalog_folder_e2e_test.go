@@ -26,6 +26,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -189,6 +191,25 @@ func catalogFolderImportWorkspaceAttaching(t *testing.T, settings map[string]any
 			rw.Root(), err)
 	}
 	return rw, folder
+}
+
+// foldersAloneWarning is the warning an import reports first in a workspace
+// naming catalog folders and no default registry — the workspace
+// importopstest.WriteConfiguration writes — saying it reads the folders alone,
+// without the published catalog behind them.
+var foldersAloneWarning = warnDiagnostic(noDefaultRegistryNotice())
+
+// importerDiagnostics is what an import's importer and the composition around
+// it reported, for a case in a workspace importopstest.WriteConfiguration wrote:
+// the result's diagnostics after foldersAloneWarning, which it is held to open
+// with.
+func importerDiagnostics(t *testing.T, res Result) []abi.Diagnostic {
+	t.Helper()
+	if len(res.Diagnostics) == 0 || res.Diagnostics[0] != foldersAloneWarning {
+		t.Fatalf("the import's diagnostics do not open with the warning of reading the catalog folders alone: %+v",
+			res.Diagnostics)
+	}
+	return res.Diagnostics[1:]
 }
 
 // draftPaths returns the drafted paths a result carries, sorted: the files the

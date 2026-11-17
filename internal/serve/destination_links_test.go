@@ -308,7 +308,13 @@ func TestADestinationARequestNamesIsJudgedByItsDeepestExistingPart(t *testing.T)
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
 			l := layDestinationLinks(t)
-			srv := linkedFilesServer(t, l.root, "workspace: {}\n")
+			config := "workspace: {}\n"
+			if row.method == "aggrega/import" {
+				// An import reads the published catalog behind the workspace's
+				// catalog folder, asked of a registry the test owns.
+				config += testOwnedRegistryConfig(t)
+			}
+			srv := linkedFilesServer(t, l.root, config)
 			if row.method == "aggrega/import" {
 				importopstest.LayJSONParser(t, l.root, filepath.Join(l.root, workspaceconfig.ConventionalCatalogDir))
 				srv.resolveImportPlugin = readableImport

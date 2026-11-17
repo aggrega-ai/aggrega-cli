@@ -21,7 +21,9 @@ import (
 )
 
 // importFixture is a Server over a scratch workspace with the machine-wide layer
-// redirected inside the scratch tree.
+// redirected inside the scratch tree, naming a registry the test owns as its
+// default one: an import reads the published catalog behind the workspace's
+// folders, and this one answers that it publishes none.
 //
 // It reuses the registry fixture rather than standing up a second one, for the
 // reason that fixture states: the redirect is what keeps a run from reading the
@@ -30,7 +32,7 @@ import (
 // resolved, so a fixture that stood one up would prove less about the ordering.
 func importFixture(t *testing.T) *Server {
 	t.Helper()
-	srv, _, _ := registryWriteFixture(t, "{}\n")
+	srv, _, _ := registryWriteFixture(t, testOwnedRegistryConfig(t))
 	return srv
 }
 

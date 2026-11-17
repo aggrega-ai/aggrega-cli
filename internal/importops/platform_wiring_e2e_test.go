@@ -1322,7 +1322,7 @@ func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) 
 	// Language Model node, wired to the model socket and selecting no model
 	// provider, reached other than through its connection.
 	var codes []string
-	reported := diagnosticsBesideTheOwed(res)
+	reported := diagnosticsBesideTheOwed(t, res)
 	for _, d := range reported {
 		if d.Code == "part-address-in-flow" {
 			codes = append(codes, d.Code+" "+d.SourceRef)

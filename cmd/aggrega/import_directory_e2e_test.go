@@ -108,7 +108,10 @@ func probeFlows(t *testing.T, dir string) ([]string, map[string]string) {
 }
 
 // assertProbeHanded holds a report the probe made, read off a surface's answer, to
-// the named sources it is to be handed, in order, with empty primary bytes.
+// the named sources it is to be handed, in order, with empty primary bytes. The
+// probe reports in information diagnostics, so messages are those alone: the
+// warning that the import reads the workspace's catalog folders alone, in a
+// workspace naming no default registry, is the import's own.
 func assertProbeHanded(t *testing.T, messages []string, names []string, bodies map[string]string) {
 	t.Helper()
 	report := importopstest.ReadFilesProbeReport(t, messages)
@@ -300,7 +303,8 @@ type directoryToolAnswer struct {
 	StructuredContent struct {
 		Format      string `json:"format"`
 		Diagnostics []struct {
-			Message string `json:"message"`
+			Severity string `json:"severity"`
+			Message  string `json:"message"`
 		} `json:"diagnostics"`
 	} `json:"structuredContent"`
 	IsError bool `json:"isError"`
@@ -364,9 +368,11 @@ func TestTheAssistantImportToolReadsADirectory(t *testing.T) {
 			if answer.IsError {
 				t.Fatalf("the import was refused: %+v", answer.Content)
 			}
-			messages := make([]string, 0, len(answer.StructuredContent.Diagnostics))
+			var messages []string
 			for _, d := range answer.StructuredContent.Diagnostics {
-				messages = append(messages, d.Message)
+				if d.Severity == "info" {
+					messages = append(messages, d.Message)
+				}
 			}
 			assertProbeHanded(t, messages, names, bodies)
 		})
@@ -446,7 +452,8 @@ func TestTheSessionImportMethodReadsADirectory(t *testing.T) {
 			var result struct {
 				Format      string `json:"format"`
 				Diagnostics []struct {
-					Message string `json:"message"`
+					Severity string `json:"severity"`
+					Message  string `json:"message"`
 				} `json:"diagnostics"`
 			}
 			if err := json.Unmarshal(frame["result"], &result); err != nil {
@@ -455,9 +462,11 @@ func TestTheSessionImportMethodReadsADirectory(t *testing.T) {
 			if result.Format != importopstest.FilesProbeFormat {
 				t.Errorf("the directory was read as the %q format, want %q", result.Format, importopstest.FilesProbeFormat)
 			}
-			messages := make([]string, 0, len(result.Diagnostics))
+			var messages []string
 			for _, d := range result.Diagnostics {
-				messages = append(messages, d.Message)
+				if d.Severity == "info" {
+					messages = append(messages, d.Message)
+				}
 			}
 			assertProbeHanded(t, messages, names, bodies)
 		})

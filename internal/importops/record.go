@@ -40,9 +40,9 @@ const RecordFileName = ".aggrega-import.json"
 // target out drafts the same Manifest the import it brings up to date drafted.
 //
 // CatalogSnapshot is the manifest digest of the published catalog snapshot the
-// import read its catalog from, for a workspace that names no catalog folder, and
-// is empty, and left out of the record, for an import that read catalog folders.
-// Which snapshot an import reads: with Upgrade, the newest; otherwise the one the
+// import read — behind the workspace's catalog folders, or as its whole catalog
+// where it names none — and is empty, and left out of the record, for an import
+// that read no snapshot. Which snapshot an import reads: with Upgrade, the newest; otherwise the one the
 // record beside the drafts names, fetched by its digest when this machine does not
 // hold it; otherwise the one the workspace last fetched as the newest; otherwise
 // the newest.

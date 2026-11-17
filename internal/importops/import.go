@@ -139,14 +139,15 @@ func (e *ExistingEntityError) Error() string {
 // place for all of them — see [Import]. Under Sync an empty Target is the target
 // the record of the import being brought up to date names, where it names one.
 //
-// Upgrade applies to an import in a workspace that names no catalog folder. Which
-// catalog snapshot such an import reads: with Upgrade, the newest; otherwise the
-// one the record beside the drafts names, fetched by its digest when this machine
-// does not hold it; otherwise the one the workspace last fetched as the newest;
-// otherwise the newest. Under Upgrade the newest is fetched now, and the workspace
-// reads it from then on. It is refused under the offline posture, since
-// only the registry can say which snapshot is the newest. Where the workspace names
-// a catalog folder no snapshot is read, and it changes nothing.
+// Upgrade says which published catalog snapshot the import reads, behind the
+// workspace's catalog folders where it names some and as its whole catalog where it
+// names none. Which snapshot an import reads: with Upgrade, the newest; otherwise
+// the one the record beside the drafts names, fetched by its digest when this
+// machine does not hold it; otherwise the one the workspace last fetched as the
+// newest; otherwise the newest. Under Upgrade the newest is fetched now, and the
+// workspace reads it from then on. It is refused under the offline posture, with
+// no default registry named and with the registry out of reach, since only the
+// registry can say which snapshot is the newest.
 //
 // Answers is the answers file on this host ([AnswersFileName]) the values the
 // drafts leave empty that no source can hold are read from and written to. Empty
@@ -382,19 +383,29 @@ func (r Result) Halted() bool {
 // fetched, the import is refused, naming the importer, its version and what puts
 // its module on the machine.
 //
-// The catalog view is the workspace's catalog folders. A workspace that names none
-// reads the catalog its default registry publishes as one signed snapshot, laid out
-// as a folder in the content cache and read through the same folder path. Which
-// snapshot: with Options.Upgrade, the newest; otherwise the one the record beside
-// the drafts names, fetched by its digest when this machine does not hold it;
-// otherwise the one the workspace last fetched as the newest; otherwise the
+// The catalog view is the build's resolution order: the workspace's catalog
+// folders first, then the catalog its default registry publishes as one signed
+// snapshot, laid out as a folder in the content cache and read through the same
+// folder path, last. The load is first-win by directory, so a folder's entity
+// shadows the published one of its identity and every other published entity
+// stays in view — for the projection the importer is handed, the importers, and
+// the Recipes a target is checked against and its Manifest drafted from alike.
+// Which snapshot: with Options.Upgrade, the newest; otherwise the one the record
+// beside the drafts names, fetched by its digest when this machine does not hold
+// it; otherwise the one the workspace last fetched as the newest; otherwise the
 // newest. A snapshot the content cache holds is read from there, held to its
 // digest, and no registry is asked for it; one it does not hold is fetched, held
 // to the manifest it came in and to its signature under the registry's trust
 // policy, and kept. The record the import writes names the snapshot it read, by
-// its manifest digest. Under the offline posture an import needing a
-// fetch is refused, naming what to run. A registry that publishes no snapshot
-// leaves the import with no catalog, and a warning among the diagnostics says so.
+// its manifest digest. In a workspace that names no catalog folder, an import
+// needing a fetch under the offline posture is refused, naming what to run, and a
+// registry that publishes no snapshot leaves the import with no catalog, which a
+// warning among the diagnostics says. In a workspace that names catalog folders,
+// a snapshot that cannot be read — offline with none on this machine, no default
+// registry named, a registry out of reach or publishing none — leaves the import
+// over the folders alone, and a warning among the diagnostics says why and what
+// reads the snapshot; one that is read and does not verify refuses the import
+// whatever the workspace names.
 //
 // 🔴 The write is CONTAINED, and the containment is the reused judgement rather
 // than a check written here. A scaffold path comes from the importer plugin, so
@@ -528,13 +539,14 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		}
 	}
 
-	// A workspace naming no catalog folder reads the published catalog snapshot the
+	// The published catalog snapshot an import reads — behind the workspace's
+	// catalog folders, or as its whole catalog where it names none — is the one the
 	// record beside the drafts names, where there is one: a sync's record, read
 	// above, and otherwise the record of an earlier import into the same directory,
-	// whatever this import does with it. A record a plain import cannot read pins
-	// nothing — it is written over with the record this import writes — while a
-	// sync's was refused above. A seam over catalog folders, and a harness standing
-	// in for the seam, read no snapshot and no record for one.
+	// whatever this import does with it. A record a plain import
+	// cannot read pins nothing — it is written over with the record this import
+	// writes — while a sync's was refused above. A harness standing in for the seam
+	// reads no snapshot and no record for one.
 	prior := rec
 	if !opts.Sync {
 		prior, _, _ = readRecord(writescope.RootFor(rw.Root(), outputDir), outputDir)
@@ -553,8 +565,8 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	// A target no Recipe of the catalog binds to is refused as soon as the catalog
 	// is in hand, before the source is recognised or the importer runs, so nothing
 	// is read through a parser, nothing is drafted and nothing is written. Where
-	// the catalog is empty because the registry publishes no snapshot, the refusal
-	// says that too.
+	// no snapshot was read behind the folders, or as the whole catalog, the
+	// refusal says why too.
 	if err := checkTarget(target, target != opts.Target, seam.Recipes); err != nil {
 		if snapshot.notice != "" {
 			return Result{}, fmt.Errorf("%w; %s", err, snapshot.notice)

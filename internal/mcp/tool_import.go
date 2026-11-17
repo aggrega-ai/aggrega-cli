@@ -81,8 +81,9 @@ type importArgs struct {
 	Sync bool `json:"sync"`
 
 	// Upgrade is the command line's --upgrade, a request field for the reason Sync
-	// is one: where the workspace names no catalog folder, it asks for the newest
-	// published catalog snapshot to be fetched and read, and held from then on.
+	// is one: it asks for the newest published catalog snapshot to be fetched and
+	// read, behind the workspace's catalog folders where it has some, and held from
+	// then on.
 	Upgrade bool `json:"upgrade"`
 
 	// Answers is the command line's --answers: the answers file the values the
@@ -437,7 +438,7 @@ var importToolSpec = toolSpec{
     },
     "upgrade": {
       "type": "boolean",
-      "description": "Where the workspace names no catalog folder, fetch the newest catalog snapshot its default registry publishes, verify it and import against it, holding it from then on in place of the one the workspace holds or the one the record beside the drafts names. It changes nothing where the workspace names a catalog folder, and is refused offline."
+      "description": "Fetch the newest catalog snapshot the workspace's default registry publishes, verify it and import against it — behind the workspace's catalog folders, where it has some — holding it from then on in place of the one the workspace holds or the one the record beside the drafts names. It is refused offline, and where no default registry is named or the registry cannot be reached."
     },
     "answers": {
       "type": "string",

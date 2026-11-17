@@ -85,9 +85,9 @@ import (
 // refused in this surface's words, naming this field.
 //
 // upgrade is the command line's --upgrade, carried as a field for the reason
-// sync is one: where the workspace names no catalog folder, it asks for the newest
-// catalog snapshot the workspace's default registry publishes to be fetched and
-// read, and held from then on. It is handed to the import as sent, so the session
+// sync is one: it asks for the newest catalog snapshot the workspace's default
+// registry publishes to be fetched and read, behind the workspace's catalog
+// folders where it has some, and held from then on. It is handed to the import as sent, so the session
 // refreshes exactly as the command and the assistant's tool do.
 //
 // answers is the command line's --answers, carried as a field: the answers file
@@ -267,9 +267,10 @@ type importResult struct {
 // only for two things the machine does not hold yet: a core importer of the
 // compiler's release, which the import fetches there, verifies as every fetched
 // plugin is verified, and keeps in the workspace's content cache, so later imports
-// reach no network for it; and, where the workspace names no catalog folder, the
-// published catalog snapshot the import reads as its catalog, fetched, verified
-// and kept the same way and named in the record beside the drafts. Every
+// reach no network for it; and the published catalog snapshot the import reads
+// behind the workspace's catalog folders, or as its whole catalog where it has
+// none, fetched, verified and kept the same way and named in the record beside the
+// drafts. Every
 // other importer, and the parser it draws on, is resolved from
 // the workspace's own catalog with its bytes from the shared plugin cascade —
 // except a parser for a syntax the catalog serves none for, which is the one the

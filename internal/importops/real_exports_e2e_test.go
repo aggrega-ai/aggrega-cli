@@ -237,7 +237,7 @@ func TestImportDraftsRealLangflowAndFlowiseExports(t *testing.T) {
 			if first.Format != ex.format {
 				t.Errorf("the export was read as the %q format, want %q", first.Format, ex.format)
 			}
-			if got := diagnosticsBesideTheOwed(first); len(got) != 0 {
+			if got := diagnosticsBesideTheOwed(t, first); len(got) != 0 {
 				t.Errorf("the importer reported %+v; this export reads with no diagnostic but the values its "+
 					"drafts owe", got)
 			}

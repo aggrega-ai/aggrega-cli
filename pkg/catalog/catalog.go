@@ -246,14 +246,17 @@ type Catalog struct {
 // concept — paths flow through verbatim, the no-normalization mode used
 // by synthetic tests and workspace-agnostic operations.
 //
-// Layered-catalog merge. Later directories override earlier ones on key
-// collisions — last write wins on the entity's index key (spec.implements
-// for Recipes / FeatureRecipes, metadata.name for the others). The pattern
-// supports layered catalog authoring like `base/` + `recipes/<variant>/`
-// where the variant directory's Recipe replaces the base entry under the
-// same `implements` URI without further ceremony. Within a single directory
-// the merge order is filesystem-defined (filepath.WalkDir order); duplicate
-// keys inside one directory are not currently flagged.
+// Layered-catalog merge. dirs is an ordered first-win precedence stack: each
+// directory is indexed on its own and merged in the order given, and where two
+// directories hold one identity the earlier directory's entity wins and the
+// later one is shadowed — not loaded, recorded in Shadows, and not an error. The
+// identity is the entity's metadata.name at its metadata.version, qualified by
+// spec.capability for a Recipe or FeatureRecipe; a library kind is first-win by
+// name, so the first directory holding any version of a library owns every
+// version of it. So a directory listed ahead of a shared one overrides selected
+// entities by identity while the rest fall through to the shared one. Two files
+// in one directory claiming one identity halt the load
+// (ErrDuplicateEntityIdentity).
 //
 // Error model. A read or unmarshal error on a recognised entity kind aborts
 // the walk and surfaces as a "catalog load %q: ..." wrapping the underlying

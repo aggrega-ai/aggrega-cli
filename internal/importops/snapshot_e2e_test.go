@@ -6,8 +6,9 @@ package importops
 // End-to-end proofs of an import in a workspace that names no catalog folder: it
 // reads the catalog its default registry publishes as one signed snapshot, keeps
 // it, pins it, reads it again with no request, refreshes it only when asked,
-// refuses it offline when the machine holds none, refuses one that does not
-// verify, and never fetches one where a catalog folder is named.
+// refuses it offline when the machine holds none, and refuses one that does not
+// verify. A workspace that names catalog folders reads the same snapshot behind
+// them (layered_catalog_e2e_test.go).
 //
 // Every case runs the REAL seam over a registry of its own on loopback that counts
 // the requests it answers (snapshottest.Registry). The snapshot it publishes is
@@ -24,7 +25,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -386,74 +386,6 @@ func TestOfflineWithNoSnapshotOnTheMachineRefusesNamingWhatToRun(t *testing.T) {
 			}
 			if !tc.held && currentSnapshot(t, rw) != "" {
 				t.Error("the refused import left a snapshot in the content cache")
-			}
-		})
-	}
-}
-
-// TestACatalogFolderWinsAndNoSnapshotIsFetched imports where the workspace names
-// a catalog folder — in its configuration, in AGGREGA_CATALOG_DIRS, or at the
-// conventional place in its root — with the draft-composition catalog there and a
-// registry publishing a snapshot as its default: the folder is read, the registry
-// is asked nothing, and the record names no snapshot.
-//
-// 🔴 PLANTED DEFECT: set readSnapshot in buildSeam whatever the stack holds: every
-// row asks the registry.
-func TestACatalogFolderWinsAndNoSnapshotIsFetched(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name string
-		rw   func(t *testing.T, f snapshotFixture) *workspaceconfig.ResolvedWorkspace
-	}{
-		{
-			name: "catalog_dirs in the configuration",
-			rw: func(t *testing.T, f snapshotFixture) *workspaceconfig.ResolvedWorkspace {
-				wsDir, dir := aWorkspaceDir(t), filepath.Join(t.TempDir(), "folder")
-				importopstest.LayDraftComposerCatalog(t, wsDir, dir)
-				body := f.reg.WorkspaceConfiguration(f.pub, false) + "workspace:\n  catalog_dirs: [" +
-					strconv.Quote(dir) + "]\n"
-				body = strings.Replace(body, "workspace: {}\n", "", 1)
-				if err := os.WriteFile(filepath.Join(wsDir, workspaceconfig.ConfigFilename), []byte(body), 0o644); err != nil {
-					t.Fatal(err)
-				}
-				return resolveWorkspaceAt(t, wsDir)
-			},
-		},
-		{
-			name: "AGGREGA_CATALOG_DIRS",
-			rw: func(t *testing.T, f snapshotFixture) *workspaceconfig.ResolvedWorkspace {
-				wsDir, dir := aWorkspaceDir(t), filepath.Join(t.TempDir(), "folder")
-				importopstest.LayDraftComposerCatalog(t, wsDir, dir)
-				snapshotWorkspaceAt(t, wsDir, f, false)
-				return resolveWorkspaceAtWith(t, wsDir, map[string]string{"AGGREGA_CATALOG_DIRS": dir})
-			},
-		},
-		{
-			name: "the conventional catalog folder",
-			rw: func(t *testing.T, f snapshotFixture) *workspaceconfig.ResolvedWorkspace {
-				wsDir := aWorkspaceDir(t)
-				importopstest.LayDraftComposerCatalog(t, wsDir, filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir))
-				return snapshotWorkspaceAt(t, wsDir, f, false)
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			f := publishedSnapshot(t)
-			rw := tc.rw(t, f)
-			before := f.reg.Requests()
-			res, err := Import(context.Background(), rw, snapshotImportOptions(t, authoredcontent.DeliveryReport))
-			if err != nil {
-				t.Fatalf("the import was refused: %v", err)
-			}
-			if after := f.reg.Requests(); after != before {
-				t.Errorf("the import asked the registry %d requests though a catalog folder is named", after-before)
-			}
-			if got := recordIn(t, res).CatalogSnapshot; got != "" {
-				t.Errorf("the record names the catalog snapshot %q though a catalog folder was read", got)
-			}
-			if got := fileNamed(t, res, ManifestFileName); got != importopstest.DraftedManifestComposed {
-				t.Errorf("the drafted Manifest is\n%s\nwant the folder's\n%s", got, importopstest.DraftedManifestComposed)
 			}
 		})
 	}

@@ -200,8 +200,15 @@ func LayImporters(t *testing.T, workspaceRoot, dir string, importers ...Importer
 }
 
 // WriteConfiguration writes the workspace configuration file at root: a
-// workspace block, which anchors the root at that directory, and, when
-// attachments are given, a plugins.importer list carrying them in order.
+// workspace block, which anchors the root at that directory, an empty
+// default_registry, and, when attachments are given, a plugins.importer list
+// carrying them in order.
+//
+// The workspace names no default registry, so an import in it reaches no
+// registry: it reads the workspace's catalog folders alone, without a published
+// catalog behind them, and says so in a warning, and one that needs a core
+// importer the machine does not hold is refused rather than fetching it. A case
+// about the published catalog, or about a fetch, names a registry of its own.
 //
 // It is encoded through the YAML marshaller rather than assembled from strings,
 // so a uri or a setting holding a character that has to be quoted is written as
@@ -211,9 +218,12 @@ func WriteConfiguration(t *testing.T, root string, attachments ...Attachment) {
 	writeConfiguration(t, root, false, attachments)
 }
 
-// WriteOfflineConfiguration is WriteConfiguration for a workspace under the
-// offline posture, whose import reaches no registry: one that needs a core
-// importer the machine does not hold is refused rather than fetching it.
+// WriteOfflineConfiguration writes the workspace block and the attachments
+// WriteConfiguration does, for a workspace under the offline posture that keeps
+// the built-in default registry, whose import reaches no registry: it reads the
+// workspace's catalog folders alone, saying so in a warning, and one that needs a
+// core importer the machine does not hold is refused as offline rather than
+// fetching it.
 func WriteOfflineConfiguration(t *testing.T, root string, attachments ...Attachment) {
 	t.Helper()
 	writeConfiguration(t, root, true, attachments)
@@ -226,6 +236,8 @@ func writeConfiguration(t *testing.T, root string, offline bool, attachments []A
 	doc := map[string]any{"workspace": map[string]any{}}
 	if offline {
 		doc[workspaceconfig.OfflineSettingKey] = true
+	} else {
+		doc["default_registry"] = ""
 	}
 	if len(attachments) > 0 {
 		entries := make([]map[string]any, 0, len(attachments))

@@ -81,13 +81,15 @@ func formatsDeclaringFilePatterns(t *testing.T, rw *workspaceconfig.ResolvedWork
 }
 
 // aWorkspaceWithAnEmptyCatalogFolder resolves a real workspace, as aWorkspace
-// does, whose conventional catalog folder exists and holds nothing: a catalog
-// holding no importer, read from a folder, so the importers recognition reads are
-// the core importers alone and no published catalog snapshot is asked for.
+// does, whose conventional catalog folder exists and holds nothing, and which
+// names no default registry: a catalog holding no importer, read from a folder
+// with no published catalog behind it, so the importers recognition reads are the
+// core importers alone and no registry is asked anything.
 func aWorkspaceWithAnEmptyCatalogFolder(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
 	wsDir := aWorkspaceDir(t)
-	if err := os.WriteFile(filepath.Join(wsDir, workspaceconfig.ConfigFilename), []byte("{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(wsDir, workspaceconfig.ConfigFilename), []byte("default_registry: \"\"\n"),
+		0o644); err != nil {
 		t.Fatalf("write workspace config: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir), 0o755); err != nil {

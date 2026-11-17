@@ -68,21 +68,30 @@ once with the network available, where that would fetch it, or placing the
 module beside a Plugin entity of that importer at that version in a catalog
 folder.
 
-The catalog an import reads is the workspace's catalog folders. Where the
-workspace names none — AGGREGA_CATALOG_DIRS is unset, its configuration lists
-no catalog_dirs, and it holds no catalog folder at its root — import reads the
-catalog its default registry publishes as one signed snapshot, at
-catalog/snapshot. A snapshot is fetched once: its signature is verified under
-that registry's trust policy, and it is kept in the workspace's content cache
-and read there as a catalog folder, held to its digest, with no registry asked
-for it again. Which snapshot an import reads: with --upgrade, the newest;
-otherwise the one the record beside the drafts names, fetched by its digest
-when this machine does not hold it; otherwise the one the workspace last
-fetched as the newest; otherwise the newest. The record an import writes names
-the snapshot it read by its digest. Under --offline an import that would have
-to fetch one stops, naming what to run. A registry that publishes no
-snapshot leaves the import with no catalog, and a warning says so. A workspace
-that names a catalog folder imports against it, and nothing is fetched.
+The catalog an import reads is the one a build resolves against: the
+workspace's catalog folders first — those AGGREGA_CATALOG_DIRS and its
+configuration's catalog_dirs name, then the catalog folder at its root — and
+last the catalog its default registry publishes as one signed snapshot, at
+catalog/snapshot. An entity a folder holds is read in place of the published
+one of the same identity — its kind, name and version, a Recipe's capability
+too, and a library's name alone — and every other published entity stays in
+view: the importers, the Components drafts are matched against and the Recipes
+--target maps from are the folders' and the published catalog's together. A
+snapshot is fetched once: its signature is verified under that registry's trust
+policy, and it is kept in the workspace's content cache and read there as a
+catalog folder, held to its digest, with no registry asked for it again. Which
+snapshot an import reads: with --upgrade, the newest; otherwise the one the
+record beside the drafts names, fetched by its digest when this machine does
+not hold it; otherwise the one the workspace last fetched as the newest;
+otherwise the newest. The record an import writes names the snapshot it read by
+its digest. Where the snapshot cannot be read — the workspace is offline and
+this machine does not hold it, the workspace names no default_registry, or the
+registry cannot be reached or publishes none — a workspace with catalog folders
+imports over them alone, and a warning says why and what reads the snapshot: an
+import run with the network available. A workspace with none stops instead,
+naming what to run, or, where the registry publishes no snapshot, imports with
+no catalog, and a warning says so. A configuration listing catalog_dirs as an
+empty list has no catalog folder, the one at its root included.
 
 The source is a file or a directory. A file is handed to the importer whole. A
 directory is read into named sources: exactly the files the importer's declared
@@ -477,7 +486,7 @@ source the write would refuse is refused here too.`,
 	c.Flags().StringVar(&opts.outputDir, "output-dir", "", "Directory the drafted files are written under. A relative path resolves against the directory you run the command in, and a drive named bare on Windows, such as D:, is the current directory on that drive. Without it the drafts are written beneath the root of the workspace the run resolved.")
 	c.Flags().BoolVar(&opts.sync, "sync", false, "Bring what an earlier import drafted up to date with the source, changing only what the import wrote, as the record beside the drafts lists it, and naming each part that drifted. With --dry-run, exit 0 when in step, 2 when drifted, 1 on an error or a refusal.")
 	c.Flags().StringVar(&opts.answers, "answers", "", "The answers file the values the drafts leave empty that no source can hold are read from and written to: under each drafted file's path, the key path inside it and its answer. A relative path resolves against the directory you run the command in. Without it, the answers file the record beside the drafts names, or else import-answers.yaml beside the source file, or inside the source directory. A secret's answer is the name of where the secret comes from, never the secret itself.")
-	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Re-read the published catalog from current registry state: fetch the newest catalog snapshot the workspace's default registry publishes, verify it, and import against it, holding it as the snapshot this workspace reads from then on in place of the one it holds or the one the record beside the drafts names. It has an effect only where the workspace names no catalog folder, and is refused under --offline")
+	c.Flags().BoolVar(&opts.upgrade, "upgrade", false, "Re-read the published catalog from current registry state: fetch the newest catalog snapshot the workspace's default registry publishes, verify it, and import against it, holding it as the snapshot this workspace reads from then on in place of the one it holds or the one the record beside the drafts names. The snapshot is read behind the workspace's catalog folders, where it has some. It is refused under --offline, and where no default registry is named or the registry cannot be reached")
 	return c
 }
 

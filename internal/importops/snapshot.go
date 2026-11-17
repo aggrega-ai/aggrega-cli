@@ -31,15 +31,30 @@ import (
 // read whether or not the import is a sync — empty where there is no record or it
 // names none: an import into drafts an earlier import wrote reads the catalog they
 // were imported against.
+//
+// folders says the workspace names catalog folders, which the snapshot is read
+// behind. An import over folders that does not ask for the newest snapshot goes
+// on over the folders alone where the snapshot cannot be read — the workspace is
+// offline and this machine does not hold it, the workspace names no default
+// registry, or the registry cannot be reached — rather than being refused, as an
+// import with no folder is; the notice of the snapshot it read none of says why.
 type catalogSnapshotRead struct {
 	upgrade bool
 	pinned  string
+	folders bool
 }
+
+// overFoldersAlone reports whether an import reading r goes on over the
+// workspace's catalog folders alone where the snapshot cannot be read. An import
+// asking for the newest snapshot is refused instead, since only a fetch answers
+// what it asked.
+func (r catalogSnapshotRead) overFoldersAlone() bool { return r.folders && !r.upgrade }
 
 // catalogSnapshot is the published catalog snapshot an import read: the directory
 // it is laid out as in the content cache and its manifest digest, which the record
-// beside the drafts names. Where the workspace's default registry publishes no
-// snapshot both are empty, and notice says so, in words the import reports as a
+// beside the drafts names. Where the import reads none — the workspace's default
+// registry publishes no snapshot, or a workspace naming catalog folders cannot
+// read it — both are empty, and notice says why, in words the import reports as a
 // warning.
 type catalogSnapshot struct {
 	dir    string
@@ -56,14 +71,29 @@ var snapshotRemedySteps = oci.RemedySteps{
 	Refresh: "the import with --upgrade, which fetches the newest catalog snapshot afresh",
 }
 
-// nameACatalogFolder is the other way out of every refusal here: a workspace that
-// names a catalog folder imports against it and fetches no snapshot.
+// nameACatalogFolder is the other way out of a refusal in a workspace that names
+// no catalog folder: a workspace that names one imports over it alone where the
+// snapshot behind it cannot be read.
 const nameACatalogFolder = "or name a catalog folder for the workspace — in AGGREGA_CATALOG_DIRS or under " +
 	"workspace.catalog_dirs — to import against it instead"
 
+// foldersAloneNotice is the warning of an import reading the workspace's catalog
+// folders alone because the published catalog behind them cannot be read: why,
+// what the import reads instead, and then, where something reads the snapshot,
+// what.
+func foldersAloneNotice(why, then string) string {
+	notice := why + ", so this import reads the workspace's catalog folders alone, without the published " +
+		"catalog behind them"
+	if then != "" {
+		notice += "; " + then
+	}
+	return notice
+}
+
 // readCatalogSnapshot returns the published catalog snapshot an import in rw reads,
-// laid out as a catalog folder in the workspace's content cache, for a workspace
-// that names no catalog folder.
+// laid out as a catalog folder in the workspace's content cache: the whole catalog
+// of a workspace that names no catalog folder, and the catalog read behind the
+// folders of one that names some.
 //
 // Which one, in order: with read.upgrade, the newest the workspace's default
 // registry publishes, fetched now; otherwise the one read.pinned names, where the
@@ -83,7 +113,15 @@ const nameACatalogFolder = "or name a catalog folder for the workspace — in AG
 // fetched, and an import needing a fetch is refused, naming what to run.
 //
 // A registry that answers that it publishes no snapshot at all leaves the import
-// with no catalog, which notice reports; asked for one by digest, it refuses.
+// with no snapshot, which notice reports; asked for one by digest, it refuses.
+//
+// An import over catalog folders that does not ask for the newest snapshot is not
+// refused for a snapshot it cannot read for want of the network or a registry —
+// under the offline posture with the snapshot not on this machine, with no default
+// registry named, or with the registry out of reach: it reads no snapshot, and
+// notice says why and what reads one (read.overFoldersAlone). A snapshot that is
+// read and does not verify, and a registry that answers with a refusal, refuse it
+// as they refuse any import.
 func readCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
 	read catalogSnapshotRead) (catalogSnapshot, error) {
 	if read.upgrade {
@@ -93,7 +131,7 @@ func readCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorksp
 			"registry for the newest catalog snapshot it publishes"); err != nil {
 			return catalogSnapshot{}, err
 		}
-		return fetchCatalogSnapshot(ctx, rw, "", true)
+		return fetchCatalogSnapshot(ctx, rw, read, "", true)
 	}
 	want, err := pinnedSnapshot(rw, read.pinned)
 	if err != nil {
@@ -104,9 +142,9 @@ func readCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorksp
 		if err != nil || held {
 			return catalogSnapshot{dir: dir, digest: want}, err
 		}
-		return fetchCatalogSnapshot(ctx, rw, want, read.pinned == "")
+		return fetchCatalogSnapshot(ctx, rw, read, want, read.pinned == "")
 	}
-	return fetchCatalogSnapshot(ctx, rw, "", true)
+	return fetchCatalogSnapshot(ctx, rw, read, "", true)
 }
 
 // pinnedSnapshot returns the manifest digest of the snapshot an import reads where
@@ -192,7 +230,9 @@ func heldSnapshotRefusal(slot string, err error) error {
 // registry — the one manifestDigest names, or the newest published where it is
 // empty — verifies it, keeps it in the content cache, lays it out there, and
 // returns where. makeCurrent records it as the snapshot the workspace reads from
-// then on.
+// then on. read says whether the import goes on over the workspace's catalog
+// folders alone where the snapshot cannot be fetched, and how a snapshot that is
+// not published is reported.
 //
 // Nothing is kept until everything holds: the archive is held to the manifest it
 // came in by the fetch itself (oci.Pull), the manifest to the digest asked for
@@ -203,11 +243,18 @@ func heldSnapshotRefusal(slot string, err error) error {
 // official hub requires one of every artifact it serves. The tree is laid out before the archive and its
 // manifest are written beside it, so a slot is read as holding the snapshot only
 // once all three are in place.
-func fetchCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, manifestDigest string,
-	makeCurrent bool) (catalogSnapshot, error) {
+func fetchCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, read catalogSnapshotRead,
+	manifestDigest string, makeCurrent bool) (catalogSnapshot, error) {
 	wsCfg := rw.Config()
 	prefix := wsCfg.DefaultRegistryLocation().Prefix()
 	if prefix == "" {
+		if read.overFoldersAlone() {
+			return catalogSnapshot{notice: noDefaultRegistryNotice()}, nil
+		}
+		if read.folders {
+			return catalogSnapshot{}, fmt.Errorf("the workspace names no default registry to fetch the newest " +
+				"published catalog from; set default_registry")
+		}
 		return catalogSnapshot{}, fmt.Errorf("the workspace names no catalog folder and no default registry to " +
 			"fetch the published catalog from; set default_registry, " + nameACatalogFolder)
 	}
@@ -224,6 +271,9 @@ func fetchCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	httpClient, err := egress.HTTPClient(wsCfg)
 	if err != nil {
 		if errors.Is(err, egress.ErrOfflineEgress()) {
+			if read.overFoldersAlone() {
+				return catalogSnapshot{notice: offlineSnapshotNotice(manifestDigest)}, nil
+			}
 			return catalogSnapshot{}, offlineSnapshotRefusal(rw, manifestDigest, err)
 		}
 		return catalogSnapshot{}, err
@@ -240,13 +290,17 @@ func fetchCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	pulled, err := oci.Pull(ctx, repo, tag, oci.MediaTypeCatalogSnapshot)
 	end(err)
 	if err != nil {
+		host := registryhost.Of(reference)
 		if manifestDigest == "" && errors.Is(err, oci.ErrFetchNotFound()) && ctx.Err() == nil {
-			return catalogSnapshot{notice: fmt.Sprintf("the workspace names no catalog folder, and its default "+
-				"registry %s publishes no catalog snapshot at %s, so this import reads no catalog; name a catalog "+
-				"folder — in AGGREGA_CATALOG_DIRS or under workspace.catalog_dirs — to import against one",
-				registryhost.Of(reference), reference)}, nil
+			return catalogSnapshot{notice: unpublishedSnapshotNotice(read, host, reference)}, nil
 		}
-		return catalogSnapshot{}, snapshotFetchRefusal(ctx, asked, registryhost.Of(reference), err)
+		if read.overFoldersAlone() && ctx.Err() == nil && unreached(err) {
+			return catalogSnapshot{notice: foldersAloneNotice(fmt.Sprintf("the workspace's default registry %s "+
+				"could not be reached for the catalog snapshot %s (%v)", host, asked, err), "run the import again "+
+				"with the network available, which fetches the catalog snapshot and keeps it on this machine for "+
+				"every later import")}, nil
+		}
+		return catalogSnapshot{}, snapshotFetchRefusal(ctx, asked, host, read.folders, err)
 	}
 	if len(pulled.ManifestBytes) == 0 {
 		return catalogSnapshot{}, fmt.Errorf("%s: the registry served no manifest body to keep: %w", asked,
@@ -272,6 +326,43 @@ func fetchCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	return catalogSnapshot{dir: dir, digest: pulled.Digest}, nil
 }
 
+// noDefaultRegistryNotice is the warning of an import over catalog folders in a
+// workspace that names no default registry: it reads the folders alone, and
+// naming one lets an import run online read the published catalog behind them.
+func noDefaultRegistryNotice() string {
+	return foldersAloneNotice("the workspace names no default registry to fetch the published catalog from",
+		"set default_registry, and an import run online reads the published catalog behind the folders")
+}
+
+// unpublishedSnapshotNotice is the warning of an import whose workspace's default
+// registry, at host, publishes no catalog snapshot at reference: the import reads
+// no catalog where the workspace names no catalog folder, and its folders alone
+// where it names some.
+func unpublishedSnapshotNotice(read catalogSnapshotRead, host, reference string) string {
+	if read.folders {
+		return foldersAloneNotice(fmt.Sprintf("the workspace's default registry %s publishes no catalog snapshot "+
+			"at %s", host, reference), "")
+	}
+	return fmt.Sprintf("the workspace names no catalog folder, and its default registry %s publishes no catalog "+
+		"snapshot at %s, so this import reads no catalog; name a catalog folder — in AGGREGA_CATALOG_DIRS or "+
+		"under workspace.catalog_dirs — to import against one", host, reference)
+}
+
+// offlineSnapshotNotice is the warning of an import over catalog folders that
+// would fetch a catalog snapshot while the workspace is offline: it reads the
+// folders alone, and a run with the network available reads the snapshot behind
+// them. manifestDigest is the snapshot asked for, empty for the newest published.
+func offlineSnapshotNotice(manifestDigest string) string {
+	if manifestDigest != "" {
+		return foldersAloneNotice("the workspace is offline, and the catalog snapshot "+manifestDigest+" the "+
+			"import reads is not on this machine", "run the import once with the network available, which fetches "+
+			"it and keeps it on this machine for every later import")
+	}
+	return foldersAloneNotice("the workspace is offline, and this machine holds no catalog snapshot for it",
+		"run the import once with the network available, which fetches the catalog snapshot its default registry "+
+			"publishes and keeps it on this machine for every later import")
+}
+
 // offlineSnapshotRefusal is the refusal of an import that needs a catalog snapshot
 // fetched while the workspace is offline: the offline condition, naming the layer
 // that set the posture (egress.RefuseIfOffline), followed by what puts a snapshot
@@ -294,18 +385,30 @@ func offlineSnapshotRefusal(rw *workspaceconfig.ResolvedWorkspace, manifestDiges
 		nameACatalogFolder)
 }
 
+// unreached reports whether err, the failure of a fetch from a registry, is a
+// registry that could not be reached rather than one that answered: a registry
+// that answered says why under a condition of its own.
+func unreached(err error) bool {
+	_, coded := cerrors.CodeOf(err)
+	return !coded
+}
+
 // snapshotFetchRefusal is the refusal of a fetch of the catalog snapshot asked for
 // from host that failed with err: a registry that answered says why, with the
 // remedy its condition names; anything else is a registry that could not be
-// reached, which a run with the network available gets past.
-func snapshotFetchRefusal(ctx context.Context, asked, host string, err error) error {
+// reached, which a run with the network available gets past. folders says the
+// workspace names catalog folders, so naming one is no way out.
+func snapshotFetchRefusal(ctx context.Context, asked, host string, folders bool, err error) error {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return fmt.Errorf("fetch the catalog snapshot %s: %w", asked, ctxErr)
 	}
 	refusal := fmt.Errorf("fetch the catalog snapshot %s: %w", asked, err)
-	if _, coded := cerrors.CodeOf(err); !coded {
-		return fmt.Errorf("%w; the registry %s could not be reached: run the import again with the network "+
-			"available, %s", refusal, host, nameACatalogFolder)
+	if unreached(err) {
+		rerun := "run the import again with the network available"
+		if !folders {
+			rerun += ", " + nameACatalogFolder
+		}
+		return fmt.Errorf("%w; the registry %s could not be reached: %s", refusal, host, rerun)
 	}
 	if remedy := oci.RemediationNaming(err, host, snapshotRemedySteps); remedy != "" {
 		return fmt.Errorf("%w\n  %s", refusal, remedy)

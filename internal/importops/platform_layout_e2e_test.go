@@ -502,7 +502,7 @@ func TestTheNodesLayoutDraftsEveryFixtureAsItsGolden(t *testing.T) {
 			t.Parallel()
 			rw, _ := catalogFolderImportWorkspaceAttaching(t, importopstest.NodesLayout())
 			res := importFlow(t, rw, fx.path)
-			if got := diagnosticsBesideTheOwed(res); len(got) != 0 {
+			if got := diagnosticsBesideTheOwed(t, res); len(got) != 0 {
 				t.Errorf("the import raised %+v; the node-by-node draft of this source raises none but the values "+
 					"its drafts owe", got)
 			}
