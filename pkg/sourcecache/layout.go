@@ -331,7 +331,7 @@ func placeIn(tree, rel string) (string, error) {
 
 // planTree reads what entries lays out in tree, refusing an entry that may not be
 // laid out there ([entryPlace]) and an archive naming one place as both a file and a
-// directory.
+// directory, the latter with a wrapped ErrFetchIntegrity.
 func planTree(tree string, entries entrySource) (treePlan, error) {
 	plan := treePlan{dirs: map[string]bool{}, files: map[string]int{}}
 	ordinal := -1
@@ -360,7 +360,7 @@ func planTree(tree string, entries entrySource) (treePlan, error) {
 	sort.Strings(names)
 	for _, rel := range names {
 		if plan.dirs[rel] {
-			return treePlan{}, fmt.Errorf("archive entry %q is both a file and a directory", rel)
+			return treePlan{}, fmt.Errorf("archive entry %q is both a file and a directory: %w", rel, ErrFetchIntegrity())
 		}
 	}
 	return plan, nil

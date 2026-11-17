@@ -205,3 +205,18 @@ func TestCheckZipLayoutRefusesAnEscapingEntry(t *testing.T) {
 		t.Fatalf("escaping entry: err = %v; want ErrFetchIntegrity", err)
 	}
 }
+
+func TestCheckZipLayoutRefusesAFileAndDirectorySharingAPlace(t *testing.T) {
+	t.Parallel()
+	archive := buildZip(t,
+		zipMember{name: "a", body: "file\n"},
+		zipMember{name: "a/b", body: "nested\n"},
+	)
+	err := sourcecache.CheckZipLayout(archive, "")
+	if !errors.Is(err, sourcecache.ErrFetchIntegrity()) {
+		t.Fatalf("file and directory in one place: err = %v; want ErrFetchIntegrity", err)
+	}
+	if !strings.Contains(err.Error(), `"a"`) {
+		t.Errorf("error %q does not name the conflicting path", err)
+	}
+}
