@@ -143,7 +143,7 @@ func WrapOCIPull(spec SourceSpec, err error) error {
 	if oci.Unreachable(err) {
 		return Wrap(spec, oci.ErrFetchNetworkUnreachable(), err)
 	}
-	return fmt.Errorf("sourceresolver: kind=%s url=%s version=%s: %w", spec.Kind, spec.URL, spec.Version, err)
+	return fmt.Errorf("kind=%s url=%s version=%s: %w", spec.Kind, spec.URL, spec.Version, err)
 }
 
 // remediationFor is the advice appended to a fetch failure on spec.
