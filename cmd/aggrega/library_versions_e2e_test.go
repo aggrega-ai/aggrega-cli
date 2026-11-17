@@ -197,9 +197,12 @@ func (w *libVerWorkspace) removeLib(dir, version string) {
 	}
 }
 
-// setRef rewrites the authored library reference.
+// setRef rewrites the authored library reference, which the Recipe or the
+// Component carries. It fails where neither carries from, so a step that
+// rewrote nothing never passes for one that moved the reference.
 func (w *libVerWorkspace) setRef(from, to string) {
 	w.t.Helper()
+	rewritten := false
 	for _, rel := range []string{"base/recipes/web.yaml", "base/components/web.yaml"} {
 		p := filepath.Join(w.root, rel)
 		b, err := os.ReadFile(p)
@@ -207,9 +210,16 @@ func (w *libVerWorkspace) setRef(from, to string) {
 			w.t.Fatal(err)
 		}
 		s := strings.Replace(string(b), `"`+from+`#`, `"`+to+`#`, 1)
+		if s == string(b) {
+			continue
+		}
+		rewritten = true
 		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
 			w.t.Fatal(err)
 		}
+	}
+	if !rewritten {
+		w.t.Fatalf("no authored reference to %s to rewrite to %s", from, to)
 	}
 }
 
