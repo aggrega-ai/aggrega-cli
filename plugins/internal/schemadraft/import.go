@@ -278,10 +278,11 @@ func paramsSummary(res Resource) string {
 // draftRationale states what a Component drafted for t holds, counting its keys
 // by the rule that placed them and naming each secret, and where they hold, that
 // it refreshes the Component the catalog holds, that its category is the
-// fallback segment, and each property whose key carries a numeric suffix.
+// fallback segment, each read-back property the format leaves out of provides
+// with its reason, and each property whose key carries a numeric suffix.
 func draftRationale(f Format, t *Type, name string, placed []Placed, refresh, fallback bool) string {
 	var identity, placement, required, overrides, provided, withheld, notProvided int
-	var renamed, secrets []string
+	var renamed, secrets, leftOut []string
 	for _, pl := range placed {
 		switch pl.Pillar {
 		case PillarValues:
@@ -301,7 +302,11 @@ func draftRationale(f Format, t *Type, name string, placed []Placed, refresh, fa
 		case PillarWithheld:
 			withheld++
 		case PillarNotProvided:
-			notProvided++
+			if why, ok := strings.CutPrefix(pl.Rule, ruleLeftOut); ok {
+				leftOut = append(leftOut, fmt.Sprintf("%s is %s%s", pl.Key, ruleLeftOut, why))
+			} else {
+				notProvided++
+			}
 		}
 		if pl.Renamed != "" {
 			renamed = append(renamed, pl.Renamed)
@@ -327,7 +332,7 @@ func draftRationale(f Format, t *Type, name string, placed []Placed, refresh, fa
 		text += fmt.Sprintf("; the format names no category for %s, so the Component takes the category segment %s",
 			typeName(t), fallbackCategory)
 	}
-	for _, r := range renamed {
+	for _, r := range append(leftOut, renamed...) {
 		text += "; " + r
 	}
 	return text

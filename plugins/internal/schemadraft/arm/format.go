@@ -25,6 +25,7 @@ const (
 	keyLocation   = "location"
 	keyID         = "id"
 	keyProperties = "properties"
+	keySystemData = "systemData"
 )
 
 // Format is the Bicep type file format, arm-schema: a types.json from
@@ -34,8 +35,9 @@ const (
 // spelling. Its Recipes target the arm provider. Placement is the root
 // location; identity is the root name; a secret is a sensitive property,
 // declared as a deploy-time parameter; a read-back scalar nested in objects is
-// provided, since reference reads it by a dotted path. A type writable at no
-// scope the provider deploys at is refused.
+// provided, since reference reads it by a dotted path, except within the root
+// systemData, which is not provided. A type writable at no scope the provider
+// deploys at is refused.
 var Format = schemadraft.Format{
 	Name:       formatName,
 	Capability: capability,
@@ -49,6 +51,7 @@ var Format = schemadraft.Format{
 		Identity:       identity,
 		Secret:         secret,
 		NestedProvides: true,
+		NotProvided:    notProvided,
 	},
 	Category: category,
 	Write:    Write,
@@ -67,6 +70,19 @@ func identity(_ *schemadraft.Type, p *schemadraft.Property) bool {
 
 // secret reports whether p is a secret: a property the file marks sensitive.
 func secret(_ *schemadraft.Type, p *schemadraft.Property) bool { return p.Sensitive }
+
+// systemDataWhy says why the root systemData is not provided.
+const systemDataWhy = "it is the metadata Azure Resource Manager keeps on every resource it tracks, naming who " +
+	"created and last changed it, not a value the resource publishes for its neighbours"
+
+// notProvided says why p is left out of provides: the root systemData, read
+// back on every tracked resource; "" for any other property.
+func notProvided(_ *schemadraft.Type, p *schemadraft.Property) string {
+	if slices.Equal(p.Path, []string{keySystemData}) {
+		return systemDataWhy
+	}
+	return ""
+}
 
 // The scopes a Bicep type file states a type is writable at, by the bit of
 // writableScopes each takes, in the order schemadraft.Type lists them.

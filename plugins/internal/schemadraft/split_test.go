@@ -107,6 +107,47 @@ func TestSplitReadBackNonScalarIsNotProvided(t *testing.T) {
 	}
 }
 
+// TestSplitFormatLeavesAReadBackUnprovided places a read-back object the
+// format's NotProvided rule names as not provided, members and all, its rule
+// and the decision's rationale both giving the format's reason, and counts it
+// apart from a read-back value left out for not being a scalar.
+func TestSplitFormatLeavesAReadBackUnprovided(t *testing.T) {
+	stats := prop("Stats", KindObject)
+	count := member(stats.Path, "Count", KindInteger)
+	stats.ReadOnly, count.ReadOnly = true, true
+	stats.Properties = []*Property{count}
+	arn := prop("Arn", KindString)
+	arn.ReadOnly = true
+	zones := prop("Zones", KindArray)
+	zones.ReadOnly = true
+	why := "it is bookkeeping the service keeps, not a value the resource publishes"
+	rules := testRules
+	rules.NestedProvides = true
+	rules.NotProvided = func(_ *Type, p *Property) string {
+		if p.Name == "Stats" {
+			return why
+		}
+		return ""
+	}
+	typ := typeOf(stats, arn, zones)
+	placed, _ := Split(typ, rules)
+	got := placedAs(t, placed, "Stats")
+	if got.Pillar != PillarNotProvided || got.Key != "Stats" || got.Rule != "read back and not provided: "+why {
+		t.Errorf("Stats placed %+v, want not provided for the format's reason", got)
+	}
+	for _, pl := range placed {
+		if pl.Pillar == PillarProvides && pl.Property != arn {
+			t.Errorf("%s is provided: %+v", pl.Key, pl)
+		}
+	}
+	rationale := draftRationale(Format{Name: "test", Capability: "test", Rules: rules}, typ, "imported/component/thing",
+		placed, false, false)
+	if !strings.Contains(rationale, "; Stats is read back and not provided: "+why) ||
+		!strings.Contains(rationale, "1 read-back attribute not provided, not being a scalar") {
+		t.Errorf("rationale %q, want Stats named with its reason and Zones counted alone", rationale)
+	}
+}
+
 func TestSplitSensitiveReadBackIsWithheld(t *testing.T) {
 	token := prop("Token", KindString)
 	token.ReadOnly, token.Sensitive = true, true

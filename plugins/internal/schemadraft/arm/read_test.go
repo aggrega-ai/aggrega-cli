@@ -596,6 +596,34 @@ func TestArmRules(t *testing.T) {
 	if !r.NestedProvides {
 		t.Errorf("a nested read-back scalar is not provided, though reference reads it by a dotted path")
 	}
+	if r.NotProvided(typ, root("systemData")) == "" || r.NotProvided(typ, inner("systemData")) != "" ||
+		r.NotProvided(typ, root("etag")) != "" {
+		t.Errorf("the root systemData alone is left out of provides")
+	}
+}
+
+// TestArmLeavesSystemDataOutOfProvides drafts a tracked type of the real file
+// with none of the metadata Azure Resource Manager keeps on it in its provides,
+// the decision naming systemData and why.
+func TestArmLeavesSystemDataOutOfProvides(t *testing.T) {
+	out := schemadraft.Import(fileInput(t, managedIdentity, userIdentity), Format, parse)
+	noHalt(t, out.Diagnostics)
+	for _, f := range out.Files {
+		if strings.Contains(f.Content, "system_data") || strings.Contains(f.Content, "systemData") {
+			t.Errorf("%s drafts the resource's system metadata:\n%s", f.Path, f.Content)
+		}
+	}
+	if len(out.Decisions) != 1 || !strings.Contains(out.Decisions[0].Rationale,
+		"systemData is read back and not provided: it is the metadata Azure Resource Manager keeps") {
+		t.Errorf("decisions %+v, want the rationale to name systemData and why", out.Decisions)
+	}
+	// The resource's own read-back values are still provided.
+	recipe := fileOf(t, out, "catalog/recipe/arm/microsoft-managedidentity-userassignedidentities/0.1.0/recipe.yaml")
+	for _, key := range []string{"principal_id:", "client_id:", "tenant_id:", "id:"} {
+		if !strings.Contains(recipe, "    "+key) {
+			t.Errorf("the Recipe does not provide %s\n%s", key, recipe)
+		}
+	}
 }
 
 func TestArmCategories(t *testing.T) {

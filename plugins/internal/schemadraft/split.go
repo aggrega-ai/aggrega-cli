@@ -76,6 +76,10 @@ type Rules struct {
 	// one at the top level, under the key of its joined path, for a format
 	// whose provider addresses a nested attribute by a dotted path.
 	NestedProvides bool
+	// NotProvided returns why the format leaves out of provides a property the
+	// vendor reads back, members and all, or "" to place it as rule 1 does; a
+	// nil rule leaves out none.
+	NotProvided func(t *Type, p *Property) string
 }
 
 // overridesKey is the infra key holding every writable property no other rule
@@ -87,6 +91,9 @@ const (
 	ruleProvides    = "read back: published under provides"
 	ruleWithheld    = "read back and sensitive: withheld, since provides are piped as plain strings"
 	ruleNotProvided = "read back and not a scalar: not provided, since provides are piped as strings"
+	// ruleLeftOut opens the rule of a read-back property the format leaves out
+	// of provides, followed by its reason.
+	ruleLeftOut     = "read back and not provided: "
 	ruleSecretSlot  = "secret: delivered by an attachment on its featuresSchema slot"
 	ruleSecretParam = "secret: declared by the Recipe as a deploy-time parameter"
 	rulePlacement   = "placement: where the resource is deployed"
@@ -102,10 +109,11 @@ const (
 
 // Split places each property of t by the first of these rules that takes it:
 //
-//  1. read back only: a scalar is provided, under the snake_case key of its
-//     name (with Rules.NestedProvides, a scalar nested in objects too, under
-//     the key of its joined path); a sensitive one is withheld; any other is
-//     listed as not provided;
+//  1. read back only: one the format leaves out (Rules.NotProvided) is listed
+//     as not provided, for its reason; a sensitive one is withheld; a scalar is
+//     provided, under the snake_case key of its name (with
+//     Rules.NestedProvides, a scalar nested in objects too, under the key of
+//     its joined path); any other is listed as not provided;
 //  2. secret (Rules.Secret);
 //  3. placement (Rules.Placement), typed in infra;
 //  4. identity (Rules.Identity), in values;
@@ -178,7 +186,13 @@ func (s *splitter) place(p *Property) {
 // readBack places p, read back only, reached by the vendor names names.
 func (s *splitter) readBack(p *Property, names []string) {
 	vendor := strings.Join(names, ".")
+	var why string
+	if s.r.NotProvided != nil {
+		why = s.r.NotProvided(s.t, p)
+	}
 	switch {
+	case why != "":
+		s.placed = append(s.placed, Placed{Property: p, Pillar: PillarNotProvided, Key: vendor, Rule: ruleLeftOut + why})
 	case p.Sensitive:
 		s.placed = append(s.placed, Placed{Property: p, Pillar: PillarWithheld, Key: vendor, Rule: ruleWithheld})
 	case scalar(p):
