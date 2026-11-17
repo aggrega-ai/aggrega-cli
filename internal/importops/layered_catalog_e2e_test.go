@@ -38,11 +38,13 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/snapshottest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -1009,6 +1011,169 @@ func TestLayeredCatalogFoldersAloneKeepsThePin(t *testing.T) {
 			}
 			if got := pinOnDisk(t, first.OutputDir); got != f.digest {
 				t.Errorf("after the sync online the record names %q; want the pin %q", got, f.digest)
+			}
+		})
+	}
+}
+
+// publishedParserJSON is the standard catalog's JSON parser entity, read from the
+// sibling hub checkout: the Plugin entity a published catalog holds for the json
+// syntax, under the binary's own coordinate.
+func publishedParserJSON(t *testing.T) []byte {
+	t.Helper()
+	found, err := filepath.Glob(filepath.Join(platformHub(t), "plugin", "parser", "json", "*", "plugin.yaml"))
+	if err != nil || len(found) == 0 {
+		t.Fatalf("the hub checkout holds no plugin/parser/json entity (%v)", err)
+	}
+	slices.Sort(found)
+	body, err := os.ReadFile(found[len(found)-1])
+	if err != nil {
+		t.Fatalf("read %s: %v", found[len(found)-1], err)
+	}
+	return body
+}
+
+// TestLayeredCatalogFolderParserServesBeforePublished imports a Langflow export
+// in a workspace whose catalog folder holds the reference importers, attached,
+// and the JSON parser under a name of its own, over a registry publishing a
+// catalog that holds the standard catalog's parser/json: two parsers of two names
+// advertise the json syntax across the two layers, which a view reading them as
+// one finds ambiguous (the control). The folder's parser serves the syntax, so
+// the published one is no candidate for it: the import runs, reading the
+// folder's parser from beside its entity and never parser/json, and the record
+// names the snapshot, which says the published catalog was in the view.
+//
+// 🔴 PLANTED DEFECT: in seamOver (internal/importops/seam.go), hand the parser
+// socket the whole view rather than foldersFirstParsers: the import is refused as
+// a syntax more than one parser advertises.
+func TestLayeredCatalogFolderParserServesBeforePublished(t *testing.T) {
+	wasmtest.RequireEmbeddedEntities(t)
+	t.Parallel()
+	src := catalogFolderSources[0]
+	tree := filepath.Join(t.TempDir(), "catalog")
+	writeCatalogFile(t, tree, "plugin/parser/json/published/plugin.yaml", string(publishedParserJSON(t)))
+	f := snapshotFixture{reg: snapshottest.NewRegistry(t)}
+	f.signer, f.pub = snapshottest.NewKey(t)
+	f.digest = f.reg.Publish(t, tree, catalog.SnapshotLatestTag)
+	f.reg.Sign(t, catalog.SnapshotLatestTag, f.signer)
+
+	wsDir := aWorkspaceDir(t)
+	folder := importopstest.LayCatalogFolder(t, wsDir, filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir), true)
+	config := f.reg.WorkspaceConfiguration(f.pub, false) + "plugins:\n  importer:\n"
+	for _, a := range folder.Attachments(nil) {
+		config += "    - uri: " + strconv.Quote(a.URI) + "\n"
+	}
+	writeWorkspaceConfiguration(t, wsDir, config)
+	rw := resolveWorkspaceAt(t, wsDir)
+
+	control, err := catalog.LoadAllWithNamedDirs(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), nil, folder.Dir, tree)
+	if err != nil {
+		t.Fatalf("load the folder and the published catalog as one view: %v", err)
+	}
+	if _, err := control.ParserPluginForFormat("json"); !errors.Is(err, catalog.ErrAmbiguousParserPlugin()) {
+		t.Fatalf("the folder and the published catalog read as one view resolve json without ambiguity (%v), so "+
+			"this case measures nothing", err)
+	}
+
+	cascade := &recordingCascade{}
+	res, err := Import(context.Background(), rw, Options{
+		SourcePath:    src.source,
+		SourceName:    filepath.Base(src.source),
+		Delivery:      authoredcontent.DeliveryFor(true),
+		ResolvePlugin: cascade.resolve,
+	})
+	if err != nil {
+		t.Fatalf("the import was refused: %v", err)
+	}
+	if res.Halted() {
+		t.Fatalf("the importer halted: %+v", res.Diagnostics)
+	}
+	assertTheDefaultDraft(t, res, src)
+	calls := cascade.resolutions()
+	i := slices.IndexFunc(calls, func(c cascadeResolution) bool { return c.uri == folder.Parser.Reference })
+	if i < 0 || calls[i].tier != pluginpath.TierColocated {
+		t.Errorf("the folder's parser %s was not read from beside its entity; the import resolved %+v",
+			folder.Parser.Reference, calls)
+	}
+	if slices.ContainsFunc(calls, func(c cascadeResolution) bool { return strings.HasPrefix(c.uri, "parser/json") }) {
+		t.Errorf("the import resolved the published parser/json: %+v", calls)
+	}
+	if got := recordIn(t, res).CatalogSnapshot; got != f.digest {
+		t.Errorf("the record names the catalog snapshot %q; want %q", got, f.digest)
+	}
+}
+
+// TestLayeredCatalogFolderImporterServesBeforePublished imports for the compose
+// target in a workspace whose catalog folder holds the draft-composition catalog
+// and the draft-set importer, over a registry publishing a catalog that holds
+// another importer advertising the draft-set format, published-draft-set, with no
+// module beside it: two importers of two names advertise the format across the
+// two layers, which a view reading them as one finds ambiguous (the control).
+//
+// With no attachment the folder's importer serves the format, so the published
+// one is no candidate for it, and the import drafts with the folder's. With an
+// attachment naming the published importer, the attachment chooses it wherever it
+// sits: the import loads it, and is refused for its module, which nothing holds —
+// the refusal naming it is what says it was the one chosen.
+//
+// 🔴 PLANTED DEFECTS:
+//   - in seamOver (internal/importops/seam.go), hand the import the whole view
+//     rather than foldersFirstImporters: the first row is refused as a format
+//     more than one importer advertises;
+//   - in foldersFirstImporters, return the folders' resolution whatever the
+//     attachments name: the second row drafts with the folder's importer.
+func TestLayeredCatalogFolderImporterServesBeforePublished(t *testing.T) {
+	t.Parallel()
+	tree := filepath.Join(t.TempDir(), "catalog")
+	published := importopstest.WriteImporterEntity(t, filepath.Join(tree, "plugin"), "published-draft-set",
+		[]string{importopstest.DraftSetFormat}, nil)
+
+	for _, tc := range []struct {
+		name        string
+		attachments string
+	}{
+		{name: "no attachment"},
+		{name: "an attachment naming the published importer",
+			attachments: "plugins:\n  importer:\n    - uri: " + strconv.Quote(published.Identity) + "\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := snapshotFixture{reg: snapshottest.NewRegistry(t)}
+			f.signer, f.pub = snapshottest.NewKey(t)
+			f.digest = f.reg.Publish(t, tree, catalog.SnapshotLatestTag)
+			f.reg.Sign(t, catalog.SnapshotLatestTag, f.signer)
+			folder, rw := conventionalFolder.resolve(t, aWorkspaceDir(t),
+				f.reg.WorkspaceConfiguration(f.pub, false)+tc.attachments)
+			importopstest.LayDraftComposerCatalog(t, rw.Root(), folder)
+
+			control, err := catalog.LoadAllWithNamedDirs(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), nil, folder,
+				tree)
+			if err != nil {
+				t.Fatalf("load the folder and the published catalog as one view: %v", err)
+			}
+			if _, _, err := control.ImporterPluginForFormat(importopstest.DraftSetFormat, nil); !errors.Is(err,
+				catalog.ErrAmbiguousImporterPlugin()) {
+				t.Fatalf("the folder and the published catalog read as one view resolve the draft-set format "+
+					"without ambiguity (%v), so this case measures nothing", err)
+			}
+
+			res, err := Import(context.Background(), rw, snapshotImportOptions(t, authoredcontent.DeliveryReport))
+			if tc.attachments != "" {
+				coordinate, _, _ := strings.Cut(published.Identity, ":")
+				if !errors.Is(err, pluginpath.ErrPluginArtifactNotFound()) || !strings.Contains(err.Error(),
+					coordinate) {
+					t.Fatalf("the import was not refused for the attached published importer's module: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("the import was refused: %v", err)
+			}
+			if got := fileNamed(t, res, ManifestFileName); got != importopstest.DraftedManifestComposed {
+				t.Errorf("the drafted Manifest is\n%s\nwant\n%s", got, importopstest.DraftedManifestComposed)
+			}
+			if got := recordIn(t, res).CatalogSnapshot; got != f.digest {
+				t.Errorf("the record names the catalog snapshot %q; want %q", got, f.digest)
 			}
 		})
 	}

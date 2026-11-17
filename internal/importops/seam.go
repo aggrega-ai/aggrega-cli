@@ -238,8 +238,12 @@ var BuildSeam = buildSeam
 // catalog load is first-win by directory, so a folder's entity shadows the
 // published one of its identity and every other published entity stays in view:
 // the projection, the importers and the Recipes come from the folders and the
-// snapshot through exactly the path a catalog folder takes. Nothing is read of an
-// entity but its identity to decide which one is in view. Where the workspace
+// snapshot through exactly the path a catalog folder takes. A plugin resolved by
+// the capability it serves — a parser by its syntax, an importer by its format —
+// is resolved layer by layer: where the folders' plugins serve a capability, the
+// published ones serving it are no candidates for it (foldersFirstParsers,
+// foldersFirstImporters). Nothing is read of an entity but its identity, and of a
+// plugin but the capabilities it declares, to decide which one is in view. Where the workspace
 // names catalog folders and the snapshot cannot be read for want of the network
 // or a registry, the view is the folders alone, and the import says so.
 func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesResolver) (Seam, error) {
@@ -252,10 +256,11 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 	if err != nil {
 		return Seam{}, err
 	}
-	seam, err := seamOver(rw, resolvePlugin, named, dirs)
+	folders, err := loadImportCatalog(rw, named, dirs)
 	if err != nil {
 		return Seam{}, err
 	}
+	seam := seamOver(rw, resolvePlugin, folders, nil)
 	seam.readSnapshot = func(ctx context.Context, read catalogSnapshotRead) (Seam, catalogSnapshot, error) {
 		read.folders = len(dirs) > 0
 		snapshot, err := readCatalogSnapshot(ctx, rw, read)
@@ -269,24 +274,49 @@ func buildSeam(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesR
 		// names wins over it on an identity both hold. It is named rather than
 		// conventional, so it has the root any named catalog folder has: the
 		// workspace's, where the content cache lies inside the workspace.
-		layered := append(slices.Clone(dirs), snapshot.dir)
-		layeredNamed := append(slices.Clone(named), snapshot.dir)
-		over, err := seamOver(rw, resolvePlugin, layeredNamed, layered)
-		return over, snapshot, err
+		layered, err := loadImportCatalog(rw, append(slices.Clone(named), snapshot.dir),
+			append(slices.Clone(dirs), snapshot.dir))
+		if err != nil {
+			return Seam{}, catalogSnapshot{}, err
+		}
+		var behind *catalog.Catalog
+		if len(dirs) > 0 {
+			behind = folders
+		}
+		return seamOver(rw, resolvePlugin, layered, behind), snapshot, nil
 	}
 	return seam, nil
 }
 
-// seamOver builds the real seam over the catalog folders dirs, of which named are
-// the ones somebody named, as [buildSeam] describes.
-func seamOver(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesResolver, named, dirs []string) (Seam, error) {
-	wsCfg := rw.Config()
-	cat, err := catalog.LoadAllWithNamedDirs(rw.Root(), wsCfg.ResolvedArtifactCacheDir(), named, dirs...)
+// loadImportCatalog loads the catalog view an import resolves against from the
+// catalog folders dirs, of which named are the ones somebody named, serving the
+// providers the binary embeds and the importers it carries as [buildSeam]
+// describes.
+func loadImportCatalog(rw *workspaceconfig.ResolvedWorkspace, named, dirs []string) (*catalog.Catalog, error) {
+	cat, err := catalog.LoadAllWithNamedDirs(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), named, dirs...)
 	if err != nil {
-		return Seam{}, fmt.Errorf("load catalog for import resolution: %w", err)
+		return nil, fmt.Errorf("load catalog for import resolution: %w", err)
 	}
 	cat.UseEmbeddedProviderResolution()
 	cat.UseCarriedImporterResolution()
+	return cat, nil
+}
+
+// seamOver builds the real seam over cat, as [buildSeam] describes. Where folders
+// is set, cat is the view of the workspace's catalog folders with the published
+// catalog snapshot behind them, folders the view of the folders alone, and a
+// parser or an importer is resolved layer by layer over the two
+// (foldersFirstParsers, foldersFirstImporters); where it is nil, cat is one layer.
+// Every plugin either layer resolves is loaded through cat, which holds each of
+// the folders' plugins at its identity beside its own entity.
+func seamOver(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesResolver, cat,
+	folders *catalog.Catalog) Seam {
+	var importers ImporterResolver = cat
+	var parsers parsersocket.ParserResolver = cat
+	if folders != nil {
+		importers = foldersFirstImporters{folders: folders, layered: cat}
+		parsers = foldersFirstParsers{folders: folders, layered: cat}
+	}
 
 	// One loader serves both sockets, and each import binds it to its own context
 	// at the call that loads a plugin. A parser is never a core importer, so
@@ -305,13 +335,13 @@ func seamOver(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesRe
 		}
 	}
 	return Seam{
-		ImporterRes: cat,
-		ParserRes:   parsersocket.WithBinaryParsers(cat),
+		ImporterRes: importers,
+		ParserRes:   parsersocket.WithBinaryParsers(parsers),
 		Catalog:     importersocket.ProjectCatalog(cat),
 		Importers:   cat.ImporterPlugins(),
 		Recipes:     cat,
 		loadIn:      loadIn,
-	}, nil
+	}
 }
 
 // loadCarriedImporter reads the module of p, a core importer the import's view

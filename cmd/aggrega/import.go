@@ -77,23 +77,27 @@ one of the same identity — its kind, name and version, a Recipe's capability
 too, and a library's name alone — and every other published entity stays in
 view: the importers, the Components drafts are matched against and the Recipes
 --target maps from are the folders' and the published catalog's together. A
-snapshot is fetched once: its signature is verified under that registry's trust
-policy, and it is kept in the workspace's content cache and read there as a
-catalog folder, held to its digest, with no registry asked for it again. Which
-snapshot an import reads: with --upgrade, the newest; otherwise the one the
-record beside the drafts names, fetched by its digest when this machine does
-not hold it; otherwise the one the workspace last fetched as the newest;
-otherwise the newest. The record an import writes names the snapshot it read by
-its digest. Where the snapshot cannot be read — the workspace is offline and
-this machine does not hold it, the workspace names no default_registry, or the
-registry cannot be reached or publishes none — a workspace with catalog folders
-imports over them alone, and a warning says why and what reads the snapshot: an
-import run with the network available. Such an import keeps the snapshot the
-record beside the drafts names, so the next import that can read it reads the
-same one. A workspace with no catalog folder stops instead, naming what to run,
-or, where the registry publishes no snapshot, imports with no catalog, and a
-warning says so. A configuration listing catalog_dirs as an empty list has no
-catalog folder, the one at its root included.
+parser or an importer the folders hold for a syntax or a format is chosen for
+it before any the published catalog holds, so a published one of another name
+or a later version is no candidate for that syntax or format, unless a
+plugins.importer attachment names that importer. A snapshot is fetched once:
+its signature is verified under that registry's trust policy, and it is kept in
+the workspace's content cache and read there as a catalog folder, held to its
+digest, with no registry asked for it again. Which snapshot an import reads:
+with --upgrade, the newest; otherwise the one the record beside the drafts
+names, fetched by its digest when this machine does not hold it; otherwise the
+one the workspace last fetched as the newest; otherwise the newest. The record
+an import writes names the snapshot it read by its digest. Where the snapshot
+cannot be read — the workspace is offline and this machine does not hold it,
+the workspace names no default_registry, or the registry cannot be reached or
+publishes none — a workspace with catalog folders imports over them alone, and
+a warning says why and what reads the snapshot: an import run with the network
+available. Such an import keeps the snapshot the record beside the drafts
+names, so the next import that can read it reads the same one. A workspace with
+no catalog folder stops instead, naming what to run, or, where the registry
+publishes no snapshot, imports with no catalog, and a warning says so. A
+configuration listing catalog_dirs as an empty list has no catalog folder, the
+one at its root included.
 
 The source is a file or a directory. A file is handed to the importer whole. A
 directory is read into named sources: exactly the files the importer's declared

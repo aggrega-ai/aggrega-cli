@@ -389,7 +389,10 @@ func (r Result) Halted() bool {
 // folder path, last. The load is first-win by directory, so a folder's entity
 // shadows the published one of its identity and every other published entity
 // stays in view — for the projection the importer is handed, the importers, and
-// the Recipes a target is checked against and its Manifest drafted from alike.
+// the Recipes a target is checked against and its Manifest drafted from alike. A
+// parser or an importer is resolved layer by layer: one the folders hold for a
+// syntax or a format is chosen before any the published catalog holds, save a
+// published importer a plugins.importer attachment names (see buildSeam).
 // Which snapshot: with Options.Upgrade, the newest; otherwise the one the record
 // beside the drafts names, fetched by its digest when this machine does not hold
 // it; otherwise the one the workspace last fetched as the newest; otherwise the
