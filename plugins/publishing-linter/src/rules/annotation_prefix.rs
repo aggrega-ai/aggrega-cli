@@ -173,6 +173,10 @@ const WELL_KNOWN_ANNOTATIONS: &[&str] = &[
     "aggrega.ai/aws-account",
     "aggrega.ai/aws-region",
     "aggrega.ai/aws-assume-role-arn",
+    "aggrega.ai/azure-subscription",
+    "aggrega.ai/azure-resource-group",
+    "aggrega.ai/azure-management-group",
+    "aggrega.ai/azure-deployment-scope",
     // Provenance labels emitted by providers
     "aggrega.ai/component-id",
     "aggrega.ai/recipe-uri",
