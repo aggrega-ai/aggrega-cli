@@ -37,6 +37,11 @@ const (
 	ComposeHTTPSFragment = "compose-https-fragment"
 	// GitRepository is a Git repository, or a directory inside one.
 	GitRepository = "git-repository"
+	// BicepModuleOCI is a Bicep module published to an OCI registry.
+	BicepModuleOCI = "bicep-module-oci"
+	// TerraformModuleOCI is a Terraform or OpenTofu module published to an OCI
+	// registry.
+	TerraformModuleOCI = "terraform-module-oci"
 )
 
 // served is the set Served answers from, in sorted order so ServedKinds hands it
