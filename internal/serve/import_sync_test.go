@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 )
 
 // TestImportAcceptsSyncAsARequestField is the request half of a sync over this
@@ -124,7 +125,7 @@ func TestImportDriftIsAlwaysAListInTheOperationsOrder(t *testing.T) {
 // 🔴 PLANTED DEFECTS:
 //   - have sessionSyncConflict return "import: " + e.Error(), the operation's
 //     own sentence: it names --sync and the conflict row reddens.
-//   - drop the "send sync" remedy from sessionExistingAggregate: the
+//   - drop the "send sync" remedy from sessionExistingEntity: the
 //     existing-Aggregate row reddens.
 func TestImportSyncRefusalsNameTheRequestField(t *testing.T) {
 	t.Parallel()
@@ -143,10 +144,18 @@ func TestImportSyncRefusalsNameTheRequestField(t *testing.T) {
 		want    []string
 	}{
 		{
-			name:    "an Aggregate at a drafted path, without sync",
-			message: sessionExistingAggregate(&importops.ExistingAggregateError{Path: "aggregate.yaml", OutputDir: outputDir}),
-			want: []string{"import: ", filepath.Join(outputDir, "aggregate.yaml"), "nothing was written",
+			name: "an Aggregate at a drafted path, without sync",
+			message: sessionExistingEntity(&importops.ExistingEntityError{Path: "aggregate.yaml", OutputDir: outputDir,
+				Kind: entitykind.Aggregate}),
+			want: []string{"import: ", "the Aggregate at " + filepath.Join(outputDir, "aggregate.yaml"), "nothing was written",
 				"send sync to bring it up to date with the source", "outputDir"},
+		},
+		{
+			name: "a Component at a drafted path, without sync",
+			message: sessionExistingEntity(&importops.ExistingEntityError{Path: "catalog/c.yaml", OutputDir: outputDir,
+				Kind: entitykind.Component}),
+			want: []string{"import: ", "the Component at " + filepath.Join(outputDir, "catalog", "c.yaml"),
+				"nothing was written", "send sync to bring it up to date with the source", "outputDir"},
 		},
 		{
 			name:    "a sync that would rewrite what an author wrote",
@@ -157,8 +166,15 @@ func TestImportSyncRefusalsNameTheRequestField(t *testing.T) {
 		{
 			name: "a sync over an Aggregate no record lists",
 			message: sessionImportRecord(&importops.ImportRecordError{Record: importops.RecordFileName,
-				OutputDir: outputDir, Aggregate: "aggregate.yaml"}),
-			want: []string{"import: sync was sent", filepath.Join(outputDir, "aggregate.yaml"),
+				OutputDir: outputDir, Path: "aggregate.yaml", Kind: entitykind.Aggregate}),
+			want: []string{"import: sync was sent", "the Aggregate at " + filepath.Join(outputDir, "aggregate.yaml"),
+				filepath.Join(outputDir, importops.RecordFileName), "nothing was written"},
+		},
+		{
+			name: "a sync over a Recipe no record lists",
+			message: sessionImportRecord(&importops.ImportRecordError{Record: importops.RecordFileName,
+				OutputDir: outputDir, Path: "catalog/r.yaml", Kind: entitykind.Recipe}),
+			want: []string{"import: sync was sent", "the Recipe at " + filepath.Join(outputDir, "catalog", "r.yaml"),
 				filepath.Join(outputDir, importops.RecordFileName), "nothing was written"},
 		},
 		{

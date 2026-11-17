@@ -70,8 +70,9 @@ import (
 // source and reports the same diagnostics, so a source the write would refuse is
 // refused here too.
 //
-// A request whose drafts would be written over an Aggregate already in outputDir
-// is refused under both deliveries, naming the Aggregate and sync, and nothing is
+// A request whose drafts would be written over an Aggregate, Component, Feature,
+// Recipe or FeatureRecipe already in outputDir is refused under both deliveries,
+// naming the entity and sync, and nothing is
 // written.
 //
 // sync asks for what an earlier import drafted beneath outputDir to be brought up
@@ -379,12 +380,12 @@ func (s *Server) dispatchImport(ctx context.Context, req *jsonRPCRequest) error 
 			fmt.Errorf("%w (source %s, recognised as %s); send format naming the one to read it as",
 				importops.ErrAmbiguousImportFormat(), ambiguous.Path(), strings.Join(ambiguous.Formats(), ", ")))
 	}
-	// An Aggregate already at a drafted path, a sync that would rewrite what an
+	// An entity already at a drafted path, a sync that would rewrite what an
 	// author wrote, and a sync no record answers for are refused in this surface's
 	// words, for the reason the format refusals above are: each refusal's own
 	// sentence names the command line's flags.
-	if existing := (*importops.ExistingAggregateError)(nil); errors.As(err, &existing) {
-		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, sessionExistingAggregate(existing))
+	if existing := (*importops.ExistingEntityError)(nil); errors.As(err, &existing) {
+		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, sessionExistingEntity(existing))
 	}
 	if conflicts := (*importops.SyncConflictError)(nil); errors.As(err, &conflicts) {
 		return s.writeError(ctx, req.ID, jsonRPCInvalidParams, sessionSyncConflict(conflicts))
@@ -462,12 +463,12 @@ func importOwedValues(owed []importops.Owed, given *importops.GivenAnswers) []im
 	return out
 }
 
-// sessionExistingAggregate words the refusal of a request whose drafts would be
-// written over an Aggregate already on disk, naming the Aggregate where it sits
-// and the fields a caller here can send instead.
-func sessionExistingAggregate(e *importops.ExistingAggregateError) string {
+// sessionExistingEntity words the refusal of a request whose drafts would be
+// written over an entity already on disk, naming it by its kind and where it
+// sits and the fields a caller here can send instead.
+func sessionExistingEntity(e *importops.ExistingEntityError) string {
 	place := filepath.Join(e.OutputDir, filepath.FromSlash(e.Path))
-	return "import: the draft " + e.Path + " would be written over the Aggregate at " + place + ", which an author " +
+	return "import: the draft " + e.Path + " would be written over the " + string(e.Kind) + " at " + place + ", which an author " +
 		"may have edited since it was drafted, so nothing was written; send sync to bring it up to date with the " +
 		"source, or name another outputDir to draft beneath"
 }
@@ -489,17 +490,17 @@ func sessionSyncConflict(e *importops.SyncConflictError) string {
 }
 
 // sessionImportRecord words the refusal of a sync the record beside the drafts
-// cannot answer for — no record lists the Aggregate it would bring up to date,
+// cannot answer for — no record lists the entity it would bring up to date,
 // or the record cannot be read — naming the field the caller sent rather than
-// the command line's flag, and the record and the Aggregate where they sit.
+// the command line's flag, and the record and the entity where they sit.
 func sessionImportRecord(e *importops.ImportRecordError) string {
 	record := filepath.Join(e.OutputDir, filepath.FromSlash(e.Record))
 	if e.Err != nil {
 		return "import: sync was sent, and the record of what an import wrote, " + record + ", cannot be read: " +
 			e.Err.Error() + "; nothing was written"
 	}
-	place := filepath.Join(e.OutputDir, filepath.FromSlash(e.Aggregate))
-	return "import: sync was sent, and no record of what an import wrote lists the Aggregate at " + place + " (" +
+	place := filepath.Join(e.OutputDir, filepath.FromSlash(e.Path))
+	return "import: sync was sent, and no record of what an import wrote lists the " + string(e.Kind) + " at " + place + " (" +
 		record + ", which every import writes beside its drafts), so its parts cannot be told from parts an author " +
 		"wrote; nothing was written"
 }

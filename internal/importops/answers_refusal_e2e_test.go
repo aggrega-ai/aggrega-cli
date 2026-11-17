@@ -64,7 +64,7 @@ func TestARefusalThatDoesNotTurnOnTheAnswersAsksNothing(t *testing.T) {
 			name:     "an Aggregate already at a drafted path",
 			existing: true,
 			refused: func(err error) bool {
-				var e *ExistingAggregateError
+				var e *ExistingEntityError
 				return errors.As(err, &e)
 			},
 		},

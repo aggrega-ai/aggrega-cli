@@ -54,32 +54,36 @@ func (e *EscapingPathError) Error() string {
 // refusal names the same path without parsing the message.
 func (e *EscapingPathError) Offending() string { return e.Path }
 
-// ExistingAggregateError reports an import refused because one of its drafts
-// would be written over an Aggregate already on disk.
+// ExistingEntityError reports an import refused because one of its drafts
+// would be written over an entity already on disk: a file at the drafted path
+// whose top-level kind is Aggregate, Component, Feature, Recipe or FeatureRecipe.
 //
 // 🔴 An Aggregate is the document an author goes on editing once it is drafted,
+// and a catalog entity is the document an author edits to fit their platform,
 // so an import never writes over one unasked: the same command doing different
 // things depending on what the destination holds would be a guess. Every other
 // existing file a draft lands on is written over as before, so the refusal is
-// bounded to the one document an author is expected to own. Bringing the
-// Aggregate up to date with the source is what a sync does instead.
+// bounded to the kinds an author is expected to own. Bringing them up to date
+// with the source is what a sync does instead.
 //
 // Its message names the command line's flag, which is the remedy at a terminal;
 // a protocol surface recognises the refusal by its type and words it with the
 // field its caller sends instead.
-type ExistingAggregateError struct {
-	// Path is the drafted path that would be written over the Aggregate, exactly
+type ExistingEntityError struct {
+	// Path is the drafted path that would be written over the entity, exactly
 	// as the importer returned it, relative to OutputDir.
 	Path string
 	// OutputDir is the directory the drafted paths are relative to.
 	OutputDir string
+	// Kind is the kind the file already at Path declares.
+	Kind entitykind.Kind
 }
 
-// Error names the Aggregate and what the reader may do about it.
-func (e *ExistingAggregateError) Error() string {
-	return fmt.Sprintf("the import would write over the Aggregate %q beneath %q, which an author may have edited "+
+// Error names the entity and what the reader may do about it.
+func (e *ExistingEntityError) Error() string {
+	return fmt.Sprintf("the import would write over the %s %q beneath %q, which an author may have edited "+
 		"since it was drafted, so no files were written; pass --sync to bring it up to date with the source, or "+
-		"--output-dir to draft beneath another directory", e.Path, e.OutputDir)
+		"--output-dir to draft beneath another directory", e.Kind, e.Path, e.OutputDir)
 }
 
 // Options carries the resolved inputs for one import.
@@ -112,7 +116,7 @@ func (e *ExistingAggregateError) Error() string {
 // output directory up to date with the source, rather than writing the draft
 // whole. Without it an import whose drafts would be written over an existing
 // Aggregate is refused before anything is written or reported
-// ([ExistingAggregateError]). With it, the import reads the record an import
+// ([ExistingEntityError]). With it, the import reads the record an import
 // writes beside its drafts ([RecordFileName]) and judges every part three ways —
 // see [Import].
 //
@@ -429,7 +433,7 @@ func (r Result) Halted() bool {
 // fetched module did not verify, a guest that failed,
 // an escaping path, a draft Windows cannot hold where the import runs on Windows,
 // a draft that would be written over an Aggregate already on disk
-// ([*ExistingAggregateError]), a drafted path at the record's own place, a sync
+// ([*ExistingEntityError]), a drafted path at the record's own place, a sync
 // whose record is missing, does not list the Aggregate or cannot be read
 // ([*ImportRecordError]), a sync that would change or remove what an author
 // wrote ([*SyncConflictError]), or a write that failed.
@@ -855,15 +859,15 @@ func finishImport(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, op
 // path, and the record's, held inside the output directory and, with its links
 // resolved, to the root it picks against the workspace at workspaceRoot
 // ([checkFiles]); no draft at the record's own place ([checkRecordPlace]); and,
-// without sync, no Aggregate already on disk at a drafted path
-// ([checkExistingAggregate]) — with sync, none there that rec, the record of the
+// without sync, no guarded entity already on disk at a drafted path
+// ([checkExistingEntity]) — with sync, none there that rec, the record of the
 // import being brought up to date, does not list ([ImportRecordError]).
 //
 // They are taken together, once, before the drafts' owed values are answered and
 // before either delivery answers, so a dry run refuses what the write refuses and
 // an import these refuse asks nobody anything. Answering an owed value changes
 // what a draft holds and never its path or its kind, so the answered drafts are
-// judged by what is judged here. An Aggregate on disk is read only after every
+// judged by what is judged here. An entity on disk is read only after every
 // path is held inside the root, so it is read only at a place already judged.
 func checkDraftPlaces(workspaceRoot, outputDir string, draft []abi.ScaffoldFile, sync bool, rec *importRecord) error {
 	drafted := draftedFiles(draft)
@@ -879,15 +883,15 @@ func checkDraftPlaces(workspaceRoot, outputDir string, draft []abi.ScaffoldFile,
 		return err
 	}
 	if !sync {
-		return checkExistingAggregate(outputDir, draft)
+		return checkExistingEntity(outputDir, draft)
 	}
 	for _, f := range drafted {
 		place, err := draftPlace(outputDir, f.path)
 		if err != nil {
 			return err
 		}
-		if isAggregateFile(place) && (rec == nil || !recordLists(*rec, f.path)) {
-			return &ImportRecordError{Record: RecordFileName, OutputDir: outputDir, Aggregate: f.path}
+		if kind := guardedKindAt(place); kind != "" && (rec == nil || !recordLists(*rec, f.path)) {
+			return &ImportRecordError{Record: RecordFileName, OutputDir: outputDir, Path: f.path, Kind: kind}
 		}
 	}
 	return nil
@@ -1010,44 +1014,50 @@ func checkFiles(workspaceRoot, outputDir string, files []abi.ScaffoldFile) error
 	return nil
 }
 
-// checkExistingAggregate refuses an import one of whose drafts would be written
-// over an Aggregate already on disk, as an [ExistingAggregateError] naming the
-// first such draft in the importer's order.
+// checkExistingEntity refuses an import one of whose drafts would be written
+// over an entity already on disk, as an [ExistingEntityError] naming the first
+// such draft in the importer's order.
 //
 // What is judged is the file already at the place: a regular file whose
-// top-level kind is Aggregate. The draft's own content is not read, because what
-// an import must not do is write over the document an author owns, whatever the
-// importer drafted in its place. A file that does not read as YAML, or reads as
-// another kind, is not an Aggregate, and a draft lands on it as before.
+// top-level kind is one an import guards ([guardedKindAt]). The draft's own
+// content is not read, because what an import must not do is write over a
+// document an author owns, whatever the importer drafted in its place. A file
+// that does not read as YAML, or reads as another kind, is not one, and a draft
+// lands on it as before.
 //
 // Every path has already passed checkFiles, and each is placed by [draftPlace]
 // again, so the place read is the place that was judged.
-func checkExistingAggregate(outputDir string, files []abi.ScaffoldFile) error {
+func checkExistingEntity(outputDir string, files []abi.ScaffoldFile) error {
 	for _, f := range files {
 		place, err := draftPlace(outputDir, f.Path)
 		if err != nil {
 			return err
 		}
-		if isAggregateFile(place) {
-			return &ExistingAggregateError{Path: f.Path, OutputDir: outputDir}
+		if kind := guardedKindAt(place); kind != "" {
+			return &ExistingEntityError{Path: f.Path, OutputDir: outputDir, Kind: kind}
 		}
 	}
 	return nil
 }
 
-// isAggregateFile reports whether a regular file at place reads as a document
-// whose top-level kind is Aggregate. Anything it cannot read as one — no file, a
-// directory, bytes that are not YAML — is not one.
-func isAggregateFile(place string) bool {
+// guardedKindAt returns the kind of a regular file at place that reads as a
+// document of a kind an import never writes over unasked — Aggregate, and the
+// kinds a catalog indexes: Component, Feature, Recipe and FeatureRecipe — and ""
+// for anything else: no file, a directory, bytes that are not YAML, another kind.
+func guardedKindAt(place string) entitykind.Kind {
 	info, err := os.Stat(place)
 	if err != nil || !info.Mode().IsRegular() {
-		return false
+		return ""
 	}
 	data, err := os.ReadFile(place)
 	if err != nil {
-		return false
+		return ""
 	}
-	return isAggregateBytes(data)
+	switch kind := draftKind(string(data)); kind {
+	case entitykind.Aggregate, entitykind.Component, entitykind.Feature, entitykind.Recipe, entitykind.FeatureRecipe:
+		return kind
+	}
+	return ""
 }
 
 // writeFiles writes each drafted file under root at its own path, creating

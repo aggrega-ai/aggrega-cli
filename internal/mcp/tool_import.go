@@ -358,10 +358,10 @@ var importToolSpec = toolSpec{
 		"one, the catalog snapshot it read, where it read one, each drafted file, and each key of a drafted " +
 		"Aggregate or Release at every depth, with a digest of " +
 		"its text, any other drafted file recorded whole — and `dry_run` hands it back among the " +
-		"drafts. A call whose drafts would be written over an Aggregate " +
-		"already in the output directory is refused, naming it, and nothing is written — under `dry_run` too — because " +
-		"an Aggregate is the document an author goes on editing once it is drafted; every other file already at " +
-		"a drafted path is written over. Send `sync` to bring what an earlier import drafted up to date with the " +
+		"drafts. A call whose drafts would be written over an Aggregate, " +
+		"Component, Feature, Recipe or FeatureRecipe already in the output directory is refused, naming it, and " +
+		"nothing is written — under `dry_run` too — because an author goes on editing such a document once it is " +
+		"drafted; every other file already at a drafted path is written over. Send `sync` to bring what an earlier import drafted up to date with the " +
 		"source instead, changing only what the import wrote — with no `target`, for the target the record names, " +
 		"and with one, for that target, which the record then names: a part the source left alone stays as it is on " +
 		"disk, edited or not; a part it changed, dropped or gained is written anew, removed — a drafted file " +
@@ -370,7 +370,7 @@ var importToolSpec = toolSpec{
 		"not list — stays byte for byte. The answer's `drift` lists each part brought up to date, or under " +
 		"`dry_run` each part that would be, empty when the drafts are in step. A sync that would change or remove " +
 		"what an author edited or added, or add a part where an author already wrote one, is refused naming each " +
-		"part and why, and nothing is written; so is a sync over an Aggregate no record lists, and one whose " +
+		"part and why, and nothing is written; so is a sync over such an entity no record lists, and one whose " +
 		"importer could not finish writes nothing. What the importer could not translate comes back as " +
 		"diagnostics, one per construct, and an import it could not finish still drafts what it could — read " +
 		"`halted` for that outcome and the diagnostics beside it for what stopped it. Values no source can hold " +
@@ -615,8 +615,8 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	if refusal, unsettled := importFormatRefusal(err); unsettled {
 		return errorResult(refusal)
 	}
-	if existing := (*importops.ExistingAggregateError)(nil); errors.As(err, &existing) {
-		return tw.answer(errorResult(importExistingAggregateRefusal(tw, existing)))
+	if existing := (*importops.ExistingEntityError)(nil); errors.As(err, &existing) {
+		return tw.answer(errorResult(importExistingEntityRefusal(tw, existing)))
 	}
 	if conflicts := (*importops.SyncConflictError)(nil); errors.As(err, &conflicts) {
 		return tw.answer(errorResult(importConflictRefusal(tw, conflicts)))
@@ -801,18 +801,18 @@ func (tw *toolWorkspace) importOutputDirWords(outputDir string) string {
 	return workspaceRootWords(told)
 }
 
-// importExistingAggregateRefusal composes this surface's sentence for a call
-// whose drafts would be written over an Aggregate already in the output
+// importExistingEntityRefusal composes this surface's sentence for a call
+// whose drafts would be written over an entity already in the output
 // directory, naming the arguments a caller here sends rather than the command
 // line's flags.
 //
-// The Aggregate is named by its drafted path and the directory that path is
+// The entity is named by its kind and its drafted path and the directory that path is
 // relative to, told as every location in an answer here is told.
-func importExistingAggregateRefusal(tw *toolWorkspace, e *importops.ExistingAggregateError) string {
-	return fmt.Sprintf("%s would write the draft %s over the Aggregate already at that path beneath %s, which "+
+func importExistingEntityRefusal(tw *toolWorkspace, e *importops.ExistingEntityError) string {
+	return fmt.Sprintf("%s would write the draft %s over the %s already at that path beneath %s, which "+
 		"an author may have edited since it was drafted, so nothing was written. Send 'sync' to ask for it to be "+
 		"brought up to date with the source, or name another 'output_dir' to draft beneath.", importToolName,
-		strconv.Quote(e.Path), tw.importOutputDirWords(e.OutputDir))
+		strconv.Quote(e.Path), e.Kind, tw.importOutputDirWords(e.OutputDir))
 }
 
 // importConflictRefusal composes this surface's sentence for a sync that would
@@ -835,7 +835,7 @@ func importConflictRefusal(tw *toolWorkspace, e *importops.SyncConflictError) st
 }
 
 // importRecordRefusal composes this surface's sentence for a sync the record
-// beside the drafts cannot answer for: no record lists the Aggregate it would
+// beside the drafts cannot answer for: no record lists the entity it would
 // bring up to date, or the record cannot be read. Why it cannot be read is
 // prose the operation composed, so it is told the way every such sentence here
 // is, keeping back a place on this host from a caller who is not told one.
@@ -844,9 +844,9 @@ func importRecordRefusal(tw *toolWorkspace, e *importops.ImportRecordError) stri
 		return fmt.Sprintf("%s was sent 'sync', and the record of what an import wrote, %s, cannot be read: %s. "+
 			"Nothing was written.", importToolName, strconv.Quote(e.Record), tw.reportedText(e.Err.Error()))
 	}
-	return fmt.Sprintf("%s was sent 'sync', and no record of what an import wrote lists the Aggregate at %s beneath "+
+	return fmt.Sprintf("%s was sent 'sync', and no record of what an import wrote lists the %s at %s beneath "+
 		"%s (%s, which every import writes beside its drafts), so its parts cannot be told from parts an author "+
-		"wrote. Nothing was written.", importToolName, strconv.Quote(e.Aggregate), tw.importOutputDirWords(e.OutputDir),
+		"wrote. Nothing was written.", importToolName, e.Kind, strconv.Quote(e.Path), tw.importOutputDirWords(e.OutputDir),
 		strconv.Quote(e.Record))
 }
 

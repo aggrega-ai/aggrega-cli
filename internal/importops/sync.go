@@ -14,6 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
@@ -111,11 +112,12 @@ func (e *SyncConflictError) Error() string {
 
 // ImportRecordError reports a sync refused because the record an import writes
 // beside its drafts cannot answer which parts an import wrote: it is not there,
-// it does not list the Aggregate the sync would bring up to date, or it cannot be
+// it does not list the entity the sync would bring up to date, or it cannot be
 // read. Nothing is written.
 //
-// Aggregate is set where an Aggregate the sync would bring up to date is on disk
-// and no record lists it; Err is set where the record is there and cannot be
+// Path and Kind are set where an entity the sync would bring up to date — an
+// Aggregate, Component, Feature, Recipe or FeatureRecipe — is on disk and no
+// record lists it; Err is set where the record is there and cannot be
 // read. Its message names the command line's flag; a protocol surface recognises
 // the refusal by its type and words it for its own caller.
 type ImportRecordError struct {
@@ -123,8 +125,11 @@ type ImportRecordError struct {
 	Record string
 	// OutputDir is the directory the drafted paths are relative to.
 	OutputDir string
-	// Aggregate is the drafted path of the Aggregate no record lists.
-	Aggregate string
+	// Path is the drafted path of the entity no record lists, relative to
+	// OutputDir.
+	Path string
+	// Kind is the kind the file at Path declares.
+	Kind entitykind.Kind
 	// Err is why the record could not be read.
 	Err error
 }
@@ -135,9 +140,9 @@ func (e *ImportRecordError) Error() string {
 		return fmt.Sprintf("--sync cannot read the record of what an import wrote beneath %q, %q: %v; no files were "+
 			"written", e.OutputDir, e.Record, e.Err)
 	}
-	return fmt.Sprintf("--sync cannot bring the Aggregate %q beneath %q up to date with the source: no record of what "+
+	return fmt.Sprintf("--sync cannot bring the %s %q beneath %q up to date with the source: no record of what "+
 		"an import wrote there lists it (%q, which every import writes beside its drafts), so its parts cannot be "+
-		"told from parts an author wrote; no files were written", e.Aggregate, e.OutputDir, e.Record)
+		"told from parts an author wrote; no files were written", e.Kind, e.Path, e.OutputDir, e.Record)
 }
 
 // Unwrap returns why the record could not be read.

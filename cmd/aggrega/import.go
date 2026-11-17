@@ -225,10 +225,11 @@ and import names the aggrega pull to run next. A pull that fails leaves the
 drafts written and stops import, naming why and the pull to run once it is
 fixed.
 
-An import never writes over an Aggregate already at one of its drafted paths:
-an Aggregate is the document an author goes on editing once it is drafted, so
-import stops, naming it and --sync, and writes nothing — under --dry-run too.
-Every other file already at a drafted path is written over, and a file an
+An import never writes over an Aggregate, Component, Feature, Recipe or
+FeatureRecipe already at one of its drafted paths: an author goes on editing
+such a document once it is drafted, so import stops, naming it and --sync, and
+writes nothing — under --dry-run too. Every other file already at a drafted
+path is written over, and a file an
 earlier import drafted that this one does not draft is left where it is.
 
 --sync brings what an earlier import drafted up to date with the source instead,
@@ -262,8 +263,8 @@ Where the sync would change or remove a part you edited, add a part where you
 already wrote one, or remove a part holding something you added, import stops,
 naming each such part and why, and writes no draft (an answer you typed is kept
 in the answers file); reconcile them by hand and sync again. A comment you write directly above a drafted key edits that key.
-An Aggregate at a drafted path that no record lists stops the sync too, saying
-so, as does a record that cannot be read. Where the importer reports a
+An Aggregate, Component, Feature, Recipe or FeatureRecipe at a drafted path
+that no record lists stops the sync too, saying so, as does a record that cannot be read. Where the importer reports a
 diagnostic that stops the import, a sync writes nothing. A sync into a directory
 holding no record and nothing at its drafted paths writes the whole draft.
 

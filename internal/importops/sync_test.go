@@ -456,8 +456,8 @@ func TestTheSamePlanTwice(t *testing.T) {
 // document order, by the one text rule — and no file of another kind entry by
 // entry, a Component and a Manifest each recorded whole.
 //
-// 🔴 PLANTED DEFECT: have draftedFiles (internal/importops/record.go) select by
-// isAggregateBytes again: the Release row reddens, recorded whole.
+// 🔴 PLANTED DEFECT: have draftedFiles (internal/importops/record.go) select only
+// the documents whose kind is Aggregate (drop Release from ownedByEntries): the Release row reddens, recorded whole.
 func TestTheRecordListsEveryEntryOfADraftedAggregate(t *testing.T) {
 	t.Parallel()
 	rec := recordFor("", draftedFiles([]abi.ScaffoldFile{

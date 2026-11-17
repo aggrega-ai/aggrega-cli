@@ -262,12 +262,6 @@ func joinKey(key []string) string {
 	return strings.Join(key, "\x00")
 }
 
-// isAggregateBytes reports whether data reads as a document whose top-level
-// kind is Aggregate.
-func isAggregateBytes(data []byte) bool {
-	return draftKind(string(data)) == entitykind.Aggregate
-}
-
 // ownedByEntries reports whether data reads as a document the record lists entry
 // by entry: one whose top-level kind is Aggregate or Release.
 func ownedByEntries(data []byte) bool {
