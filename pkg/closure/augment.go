@@ -39,7 +39,8 @@ type LibrarySource interface {
 	// its resolution recorded, where the source does not already hold it at that
 	// version. A library read from a catalog directory is held already; one the
 	// resolution served from the content cache or a registry may be held by
-	// nothing else yet, and its body is what the discovery descends next.
+	// nothing else yet, or only at a version a later requirement raised it from,
+	// and its body is what the discovery descends next.
 	HoldResolvedLibrary(axis LibraryAxis, lib ResolvedLibrary)
 }
 
@@ -262,21 +263,24 @@ func entitySchemaConsumers(kind, uri string, schema *yaml.Node, sockets types.Or
 // made, then reads that library's entry bodies with read, at exactly the version
 // the resolution recorded (ResolvedLibrary.Reference). A library resolved from a
 // catalog directory and one served from the content cache or a registry are
-// therefore read alike, and a library reached only through another is discovered
-// whichever source served that other one: a chain of any depth resolves from a
-// registry as it resolves from a catalog directory. Where the source holds the
-// library at several versions, only the resolved version's own references are
-// descended.
+// therefore read alike — including at a version a later requirement raised it to —
+// and a library reached only through another is discovered whichever source served
+// that other one: a chain of any depth resolves from a registry as it resolves from
+// a catalog directory. Where the source holds the library at several versions, only
+// the resolved version's own references are descended.
 //
-// read reports the version of the copy it read. A library the source cannot read
-// at its resolved version even then — none held, or only other versions — stops
-// the descent through it.
+// read reports the version of the copy it read. A resolved library the source
+// cannot read at its resolved version even then — none held, or only other
+// versions — halts the discovery with the unresolvable-reference condition naming
+// the library at that version, because the references its body makes would
+// otherwise be missing from the closure without a word.
 func heldLibraryBodies[B any](src LibrarySource, axis LibraryAxis, read func(ref string) (version string, bodies []B, ok bool)) func(ResolvedLibrary) ([]B, bool, error) {
 	return func(lib ResolvedLibrary) ([]B, bool, error) {
 		src.HoldResolvedLibrary(axis, lib)
 		version, bodies, ok := read(lib.Reference())
 		if !ok || (lib.ResolvedVersion != "" && version != lib.ResolvedVersion) {
-			return nil, false, nil
+			return nil, false, fmt.Errorf("%w: library %q resolved at that version, and no copy of it held at that version can be read for the references it makes",
+				ErrUnresolvableURI(), lib.Reference())
 		}
 		return bodies, true, nil
 	}

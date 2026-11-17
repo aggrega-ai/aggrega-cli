@@ -135,7 +135,9 @@ func TestHoldResolvedLibraryLeavesTheCallersPinsAsTheyWere(t *testing.T) {
 // the resolution recorded. Where the view already holds the library at that
 // version, the hold leaves the view as it was. Where no catalog directory holds the
 // name, a library the resolution served from the content cache or a registry at a
-// version the view does not hold becomes readable at exactly that version.
+// version the view does not hold becomes readable at exactly that version — also
+// where a lockfile pin names the library at another version, which gives way to
+// the resolution of the raised version.
 //
 // A catalog directory holding the name at other versions only never reaches a
 // hold: its selection is final for the name, so the resolution halts with the
@@ -183,6 +185,29 @@ func TestHoldResolvedLibraryHoldsTheResolvedVersion(t *testing.T) {
 		}
 		if skips := subject.Skips(); len(skips) != 0 {
 			t.Errorf("the hold recorded refusals: %v", skips)
+		}
+	})
+
+	t.Run("a version above the one a lockfile pin names", func(t *testing.T) {
+		t.Parallel()
+		ws := t.TempDir()
+		pinned := writePinnedSlot(t, ws, cacheUnderCatalogDir, "HeldMappings:1.0.0", oci.MediaTypeMappingLibrary, []byte(doc("1.0.0")))
+		raised := writePinnedSlot(t, ws, cacheUnderCatalogDir, "HeldMappings:1.1.0", oci.MediaTypeMappingLibrary, []byte(doc("1.1.0")))
+		key := PinKey{Kind: axis.Kind, URI: "HeldMappings"}
+		subject := NewLazyLookup(ws, cacheUnderCatalogDir, []string{ws}, nil)
+		subject.SetPins(Pins{key: pinned})
+		if lib, held := subject.MappingLibrary("HeldMappings"); !held || lib.Metadata.Version != "1.0.0" {
+			t.Fatalf("the view holds HeldMappings at %q (held %v); the row needs the pin's 1.0.0", lib.Metadata.Version, held)
+		}
+		subject.HoldResolvedLibrary(axis, closure.ResolvedLibrary{
+			URI: "HeldMappings", ResolvedVersion: raised.ResolvedVersion, Digest: raised.Digest, ManifestDigest: raised.ManifestDigest,
+			ResolutionPath: closure.ResolutionPathRegistry,
+		})
+		if lib, ok := subject.MappingLibrary("HeldMappings:1.1.0"); !ok || lib.Metadata.Version != "1.1.0" {
+			t.Errorf("read of HeldMappings:1.1.0 = %q (ok %v); want the raised 1.1.0", lib.Metadata.Version, ok)
+		}
+		if got := subject.pins[key].ResolvedVersion; got != "1.1.0" {
+			t.Errorf("the view pins HeldMappings at %q; want the raised 1.1.0", got)
 		}
 	})
 }

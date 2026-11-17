@@ -5,6 +5,7 @@ package closure_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
@@ -96,5 +97,44 @@ func TestDiscoverSchemaLibrariesCycleTerminates(t *testing.T) {
 	}
 	if !got["LibA"] || !got["LibB"] {
 		t.Errorf("expected both cycle members discovered; got %+v", c.SchemaLibraries)
+	}
+}
+
+// TestSettleKeepsLibrariesAnEntityOfTheSameNameConsumes: a Component named Foo
+// references the SchemaLibraries Foo and Bar. Its consumer rows are its own, though
+// the library Foo shares its name: the closure holds both libraries, each consumed
+// by Foo, once the discovery has read both bodies and settled the section.
+func TestSettleKeepsLibrariesAnEntityOfTheSameNameConsumes(t *testing.T) {
+	t.Parallel()
+	lookup := &fakeLookup{schemaLibs: map[string]closure.LibraryResolution{
+		"Foo": resolvedLib("1.0.0", "sha256:foo"),
+		"Bar": resolvedLib("1.0.0", "sha256:bar"),
+	}}
+	schema := mustParse(t, `
+properties:
+  a: { $ref: "Foo#/schemas/A" }
+  b: { $ref: "Bar#/schemas/B" }
+`)
+	read := map[string]bool{}
+	body := func(lib closure.ResolvedLibrary) ([]*yaml.Node, bool, error) {
+		read[lib.URI] = true
+		return nil, true, nil
+	}
+	var c closure.Closure
+	if err := c.DiscoverSchemaLibraries(context.Background(), lookup,
+		[]closure.SchemaConsumer{{URI: "Foo", Kind: closure.KindComponent, Schema: schema}}, body); err != nil {
+		t.Fatalf("DiscoverSchemaLibraries: %v", err)
+	}
+	if !read["Foo"] || !read["Bar"] {
+		t.Fatalf("the discovery read the bodies %v; the proof needs both read", read)
+	}
+	var got []string
+	for _, lib := range c.SchemaLibraries {
+		for _, cons := range lib.Consumers {
+			got = append(got, lib.URI+" <- "+cons.ConsumerURI)
+		}
+	}
+	if want := "Bar <- Foo, Foo <- Foo"; strings.Join(got, ", ") != want {
+		t.Errorf("schema libraries: got %q; want %q", strings.Join(got, ", "), want)
 	}
 }

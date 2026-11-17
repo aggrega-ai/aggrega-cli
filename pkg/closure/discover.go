@@ -5,6 +5,7 @@ package closure
 
 import (
 	"context"
+	"sort"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -124,9 +125,10 @@ type discoverConsumer[B any] struct {
 //
 // Once no body is left to descend, the section is settled against the versions
 // finally selected (settleLibraryConsumers): a library's references are those its
-// selected version's body makes, and a library no longer reached that way, or from
-// a consumer outside the axis, leaves the section. A discovery that read no
-// library body leaves the section as it found it.
+// selected version's body makes, and a library no longer reached that way from the
+// discovery's consumers, or from the section as the discovery found it, leaves the
+// section. A discovery that read no library body leaves the section as it found
+// it.
 //
 // This is the single producer of every library axis: a pin flow and a verify flow
 // calling it with the same inputs compute the identical closure, so the lockfile
@@ -141,8 +143,11 @@ func discoverLibraries[B any](
 	body func(lib ResolvedLibrary) ([]B, bool, error),
 ) error {
 	// descended holds, by ResolvedLibrary.Reference, the references each library
-	// body the discovery read makes; a body the source could not read makes none.
+	// body the discovery read makes.
 	descended := map[string][]discoverConsumer[B]{}
+	// initial is the section as the discovery found it, kept apart from what the
+	// discovery itself records.
+	initial := append([]ResolvedLibrary(nil), axis.Libraries(c)...)
 	frontier := append([]discoverConsumer[B]{}, consumers...)
 
 	for len(frontier) > 0 {
@@ -182,7 +187,7 @@ func discoverLibraries[B any](
 	if len(descended) == 0 {
 		return nil
 	}
-	return settleLibraryConsumers(c, axis, descended, walkOne)
+	return settleLibraryConsumers(c, axis, initial, consumers, descended, walkOne)
 }
 
 // settleLibraryConsumers settles an axis's section against the versions its
@@ -190,53 +195,72 @@ func discoverLibraries[B any](
 //
 // A round that raised a library's selected version kept the references the
 // earlier version's body made: they were seeded into every later round as that
-// library's consumer rows. Here every consumer row a library body recorded is
-// replaced by the rows the body of the library's selected version records
-// (descended), and every library then left unreached leaves the section — one
-// reached neither from a consumer outside the axis nor from a library that is
-// itself reached (pruneUnreachedLibraries). Resolutions are kept as they are: no
-// lookup is asked here.
+// library's consumer rows. The section is therefore rebuilt rather than edited. It
+// starts from the section as the discovery found it (initial) and the discovery's
+// own consumers, each walked under its own identity, and walks out from them
+// through the body of the version each library reached is finally selected at
+// (descended), until no library is left unwalked. A library only a body no longer
+// selected referenced is reached by none of these walks and leaves the section.
+// Each library keeps the resolution the discovery gave it: no lookup is asked
+// here.
 //
-// A library's body records its rows under the library's name as consumer, as the
-// lockfile records them, so a row is told apart from an entity's by that name
-// alone.
+// A row is never attributed to a library by its consumer's name: an entity and a
+// library of one name each contribute the rows their own walk records.
 func settleLibraryConsumers[B any](
 	c *Closure,
 	axis LibraryAxis,
+	initial []ResolvedLibrary,
+	consumers []discoverConsumer[B],
 	descended map[string][]discoverConsumer[B],
 	walkOne func(s *walkState, axis LibraryAxis, body B, consumer consumerIdentity) error,
 ) error {
-	read := map[string]struct{}{}
+	selected := map[string]ResolvedLibrary{}
 	for _, lib := range axis.Libraries(c) {
-		if _, ok := descended[lib.Reference()]; ok {
-			read[lib.URI] = struct{}{}
-		}
+		selected[lib.URI] = lib
 	}
 	state := newWalkState()
-	state.seedLibs(axis, axis.Libraries(c))
+	state.seedLibs(axis, initial)
+	for _, dc := range consumers {
+		if err := walkOne(state, axis, dc.Body, dc.Consumer); err != nil {
+			return err
+		}
+	}
 	pending := axis.pendingLibs(state)
-	// A library seeded with no consumer at all carries nothing to settle it by, so
-	// it stays as it arrived.
-	unreferenced := map[string]struct{}{}
-	for uri, lib := range pending {
-		if len(lib.fragmentsByCons) == 0 {
-			unreferenced[uri] = struct{}{}
+	walked := map[string]struct{}{}
+	for {
+		var next []string
+		for uri := range pending {
+			if _, done := walked[uri]; !done {
+				next = append(next, uri)
+			}
 		}
-		for consumer := range lib.fragmentsByCons {
-			if _, fromBody := read[consumer.URI]; fromBody {
-				delete(lib.fragmentsByCons, consumer)
-				delete(lib.versionByConsumer, consumer)
+		if len(next) == 0 {
+			break
+		}
+		sort.Strings(next)
+		for _, uri := range next {
+			walked[uri] = struct{}{}
+			lib, ok := selected[uri]
+			if !ok {
+				continue
+			}
+			for _, dc := range descended[lib.Reference()] {
+				if err := walkOne(state, axis, dc.Body, dc.Consumer); err != nil {
+					return err
+				}
 			}
 		}
 	}
-	for _, lib := range axis.Libraries(c) {
-		for _, dc := range descended[lib.Reference()] {
-			if err := walkOne(state, axis, dc.Body, dc.Consumer); err != nil {
-				return err
-			}
+	for uri, p := range pending {
+		if lib, ok := selected[uri]; ok {
+			p.resolution = &LibraryResolution{Resolution: Resolution{
+				ResolvedVersion: lib.ResolvedVersion,
+				Digest:          lib.Digest,
+				ManifestDigest:  lib.ManifestDigest,
+				ResolutionPath:  lib.ResolutionPath,
+			}}
 		}
 	}
-	state.pruneUnreachedLibraries(axis, unreferenced)
 	axis.SetLibraries(c, state.materialiseLibs(axis))
 	canonicaliseClosure(c)
 	return nil

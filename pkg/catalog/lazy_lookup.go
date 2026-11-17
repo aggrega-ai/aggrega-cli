@@ -3391,16 +3391,22 @@ func (l *LazyLookup) libraryLocked(axis closure.LibraryAxis, uri string) (name, 
 // from a catalog directory.
 //
 // It does nothing where the view already holds the library at the version the
-// resolution recorded, and nothing where a pin already names it: a lockfile's pin
-// is what a build holds the library to, and it is never replaced by the
-// resolution's. The view holding the library's name at another version does not
-// stop the hold. Otherwise the view's pins gain the library's pin — the projection
-// the closure's pins use for it (libraryPin) — and the one pinned slot is folded
-// through the same reading as every other pin (foldPinnedSlot), verified against
-// that pin. A slot that does not verify is not folded, and the library stays
-// unreadable, as it would under a lockfile's pin; a slot of a name a catalog
-// directory owns is recorded as the pinned duplicate it is, and is not folded
-// either.
+// resolution recorded, and nothing where a pin already names the library at that
+// version, or at no version: a lockfile's pin is what a build holds the library to, and a resolution
+// at the pinned version never replaces it — held to other bytes, the library stays
+// unreadable. The view holding the library at another version does not stop the
+// hold, and neither does a pin naming another version: a pin a lockfile recorded
+// before a requirement raised the library, or one an earlier round of this
+// discovery recorded, gives way to the resolution of the raised version, which is
+// what a pull then records, as it re-resolves a raised floor. Otherwise the view's
+// pin for the library becomes the resolution's — the projection the closure's pins
+// use for it (libraryPin) — and the one pinned slot is folded through the same
+// reading as every other pin (foldPinnedSlot), verified against that pin. A version
+// folded under an earlier pin stays held beside it, as several versions of one
+// library from one source are. A slot that does not verify is not folded, and the
+// library stays unreadable, as it would under a lockfile's pin; a slot of a name a
+// catalog directory owns is recorded as the pinned duplicate it is, and is not
+// folded either.
 //
 // The pin set is replaced rather than written into, because SetPins keeps the
 // caller's map and that map may be shared beyond this view.
@@ -3411,7 +3417,7 @@ func (l *LazyLookup) HoldResolvedLibrary(axis closure.LibraryAxis, lib closure.R
 		return
 	}
 	key := PinKey{Kind: axis.Kind, URI: lib.URI}
-	if _, pinned := l.pins[key]; pinned {
+	if pinned, ok := l.pins[key]; ok && (lib.ResolvedVersion == "" || pinned.ResolvedVersion == "" || pinned.ResolvedVersion == lib.ResolvedVersion) {
 		return
 	}
 	pin := libraryPin(lib)

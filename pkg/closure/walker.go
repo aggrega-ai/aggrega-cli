@@ -1108,55 +1108,6 @@ func (s *walkState) addEntityKind(uri, refPath, hint string) *pendingRef {
 	return p
 }
 
-// pruneUnreachedLibraries drops from an axis's accumulator every library that is
-// not reached: one with no consumer outside the axis — a consumer whose URI names
-// no library the accumulator holds — and none among the libraries that are reached,
-// followed through any number of libraries. The libraries named in kept count as
-// reached whatever their consumers. The consumer rows a dropped library recorded
-// in the libraries that stay are dropped with it.
-//
-// Reachability rather than a count of consumers decides it, so two libraries that
-// reference only each other leave together once nothing else reaches them.
-func (s *walkState) pruneUnreachedLibraries(axis LibraryAxis, kept map[string]struct{}) {
-	pending := axis.pendingLibs(s)
-	reached := map[string]bool{}
-	for uri := range kept {
-		reached[uri] = true
-	}
-	for grew := true; grew; {
-		grew = false
-		for uri, lib := range pending {
-			if reached[uri] {
-				continue
-			}
-			for consumer := range lib.fragmentsByCons {
-				if _, isLibrary := pending[consumer.URI]; !isLibrary || reached[consumer.URI] {
-					reached[uri] = true
-					grew = true
-					break
-				}
-			}
-		}
-	}
-	dropped := map[string]struct{}{}
-	for uri := range pending {
-		if !reached[uri] {
-			dropped[uri] = struct{}{}
-		}
-	}
-	for uri := range dropped {
-		delete(pending, uri)
-	}
-	for _, lib := range pending {
-		for consumer := range lib.fragmentsByCons {
-			if _, fromDropped := dropped[consumer.URI]; fromDropped {
-				delete(lib.fragmentsByCons, consumer)
-				delete(lib.versionByConsumer, consumer)
-			}
-		}
-	}
-}
-
 // seedLibs re-seeds an axis's accumulator from libraries already resolved into a
 // closure, so an incremental walk preserves them through materialisation.
 func (s *walkState) seedLibs(axis LibraryAxis, libs []ResolvedLibrary) {

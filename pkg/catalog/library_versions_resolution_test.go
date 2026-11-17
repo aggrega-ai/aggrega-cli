@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -215,36 +216,76 @@ func TestLibraryFloorAboveHeldVersions(t *testing.T) {
 	}
 }
 
-// servingLibraryPuller is a registry serving MappingLibrary Lib at the versions
-// its bodies hold, each fetched by its tag, and recording each tag it is asked for
-// ("" for a bare request).
+// servingLibraryPuller is a registry serving MappingLibrary documents, keyed
+// `<Name>:<version>`: a request with a floor fetches that tag, and a bare request
+// the one version served under the name. It records each request it is asked,
+// written `<Name>:<floor>`, or `<Name>` for a bare one.
 type servingLibraryPuller struct {
-	t      *testing.T
-	bodies map[string]string
-	mu     sync.Mutex
-	asked  []string
+	t         *testing.T
+	libraries map[string]string
+	mu        sync.Mutex
+	asked     []string
 }
 
 func (p *servingLibraryPuller) Pull(context.Context, string, string) (*oci.PullResult, error) {
 	return nil, oci.ErrFetchNotFound()
 }
 
-func (p *servingLibraryPuller) PullLibrary(_ context.Context, _, _, floorVersion string) (*oci.PullResult, string, error) {
+func (p *servingLibraryPuller) PullLibrary(_ context.Context, name, _, floorVersion string) (*oci.PullResult, string, error) {
 	p.mu.Lock()
-	p.asked = append(p.asked, floorVersion)
+	if floorVersion == "" {
+		p.asked = append(p.asked, name)
+	} else {
+		p.asked = append(p.asked, name+":"+floorVersion)
+	}
 	p.mu.Unlock()
-	body, ok := p.bodies[floorVersion]
+	version := floorVersion
+	if version == "" {
+		var served []string
+		for identity := range p.libraries {
+			if n, v, _ := strings.Cut(identity, ":"); n == name {
+				served = append(served, v)
+			}
+		}
+		if len(served) != 1 {
+			return nil, "", oci.ErrFetchNotFound()
+		}
+		version = served[0]
+	}
+	body, ok := p.libraries[name+":"+version]
 	if !ok {
 		return nil, "", oci.ErrFetchNotFound()
 	}
 	mb, md := manifestBytesFor(p.t, oci.MediaTypeMappingLibrary, []byte(body))
-	return &oci.PullResult{MediaType: oci.MediaTypeMappingLibrary, Bytes: []byte(body), ManifestBytes: mb, Digest: md}, floorVersion, nil
+	return &oci.PullResult{MediaType: oci.MediaTypeMappingLibrary, Bytes: []byte(body), ManifestBytes: mb, Digest: md}, version, nil
 }
 
-func (p *servingLibraryPuller) tagsAsked() []string {
+func (p *servingLibraryPuller) requests() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return append([]string(nil), p.asked...)
+}
+
+// importingRecipe is a helm Recipe named name at 1.0.0 whose values mapping
+// imports reference.
+func importingRecipe(name, reference string) string {
+	return fmt.Sprintf("apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: %s\n  version: \"1.0.0\"\n"+
+		"spec:\n  capability: helm\n  implements: core/consumer\n  source: ./chart\n  valuesMapping:\n    $import: %s\n",
+		name, reference)
+}
+
+// mappingRows reads the closure's MappingLibrary section as one line per
+// library: `<Name>:<version> <- <consumers>`.
+func mappingRows(cl closure.Closure) []string {
+	var rows []string
+	for _, lib := range cl.MappingLibraries {
+		var consumers []string
+		for _, c := range lib.Consumers {
+			consumers = append(consumers, c.ConsumerURI)
+		}
+		rows = append(rows, lib.URI+":"+lib.ResolvedVersion+" <- "+strings.Join(consumers, ","))
+	}
+	return rows
 }
 
 // TestLibraryFloorUnmetInOwningDirectory: a catalog directory holding a library's
@@ -262,21 +303,10 @@ func TestLibraryFloorUnmetInOwningDirectory(t *testing.T) {
 	mapping := augmentLibraryKinds()[1]
 	writeFixture(t, dir, "lib-1.0.0.yaml", libraryDocument(mapping.kind, "Lib", "1.0.0", mapping.leaf))
 	writeFixture(t, dir, "other.yaml", libraryDocument(mapping.kind, "Other", "1.0.0", mapping.leaf))
-	writeFixture(t, dir, "recipe.yaml", `apiVersion: aggrega.ai/v1beta1
-kind: Recipe
-metadata:
-  name: consumer-recipe
-  version: "1.0.0"
-spec:
-  capability: helm
-  implements: core/consumer
-  source: ./chart
-  valuesMapping:
-    $import: Lib:1.1.0#/mappings/X
-`)
+	writeFixture(t, dir, "recipe.yaml", importingRecipe("consumer-recipe", "Lib:1.1.0#/mappings/X"))
 	cached := libraryDocument(mapping.kind, "Lib", "1.1.0", mapping.referencing("Other"))
 	writePinnedSlot(t, ws, resolutionCacheDir, "Lib:1.1.0", oci.MediaTypeMappingLibrary, []byte(cached))
-	puller := &servingLibraryPuller{t: t, bodies: map[string]string{"1.1.0": cached}}
+	puller := &servingLibraryPuller{t: t, libraries: map[string]string{"Lib:1.1.0": cached}}
 
 	view := NewLazyLookup(ws, resolutionCacheDir, []string{dir}, puller)
 	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: "helm/consumer-recipe:1.0.0", KindHint: closure.KindRecipe}}}
@@ -287,8 +317,8 @@ spec:
 	if want := `library "Lib:1.1.0"; held: Lib:1.0.0`; !strings.Contains(err.Error(), want) {
 		t.Errorf("the halt %q does not say %s", err.Error(), want)
 	}
-	if asked := puller.tagsAsked(); len(asked) != 0 {
-		t.Errorf("a registry was asked for Lib at %q; the catalog directory owns the name", asked)
+	if asked := puller.requests(); len(asked) != 0 {
+		t.Errorf("a registry was asked for %q; the catalog directory owns the name", asked)
 	}
 }
 
@@ -296,37 +326,86 @@ spec:
 // pinned content cache holds goes on to the cache and registry tiers when its floor
 // is not met there. The lockfile pins Lib at 1.0.0, no catalog directory holds Lib,
 // and a Recipe's import floors it at 1.1.0, which a registry serves: the dependency
-// resolution resolves Lib at 1.1.0 from the registry, asked for that tag alone.
+// resolution resolves Lib at 1.1.0 from the registry, asked for that tag. The pin
+// the lockfile recorded at 1.0.0 gives way to the raised resolution, so Lib
+// 1.1.0's own body is read and Other, which it imports and the registry serves, is
+// in the closure — where the body Lib 1.0.0 had imports nothing.
 func TestLibraryFloorMetByRegistryWhenNoDirectoryOwnsName(t *testing.T) {
 	t.Parallel()
 	ws := t.TempDir()
 	dir := mkCatalogDir(t, filepath.Join(ws, "catalog"))
+	writeFixture(t, dir, "recipe.yaml", importingRecipe("consumer-recipe", "Lib:1.1.0#/mappings/X"))
 	mapping := augmentLibraryKinds()[1]
 	pinnedBody := libraryDocument(mapping.kind, "Lib", "1.0.0", mapping.leaf)
-	served := libraryDocument(mapping.kind, "Lib", "1.1.0", mapping.leaf)
+	served := libraryDocument(mapping.kind, "Lib", "1.1.0", mapping.referencing("Other"))
 	pin := writePinnedSlot(t, ws, resolutionCacheDir, "Lib:1.0.0", oci.MediaTypeMappingLibrary, []byte(pinnedBody))
-	puller := &servingLibraryPuller{t: t, bodies: map[string]string{"1.1.0": served}}
+	puller := &servingLibraryPuller{t: t, libraries: map[string]string{
+		"Lib:1.1.0":   served,
+		"Other:1.0.0": libraryDocument(mapping.kind, "Other", "1.0.0", mapping.leaf),
+	}}
 
 	view := NewLazyLookup(ws, resolutionCacheDir, []string{dir}, puller)
 	view.SetPins(Pins{{Kind: mapping.kind, URI: "Lib"}: pin})
 	if lib, ok := view.MappingLibrary("Lib"); !ok || lib.Metadata.Version != "1.0.0" {
 		t.Fatalf("the view holds Lib at %q (ok %v); the proof needs the pinned cache to hold it at 1.0.0", lib.Metadata.Version, ok)
 	}
-	var cl closure.Closure
-	lookup := view.ClosureLookup(puller, ws, resolutionCacheDir, nil, nil, nil)
-	if err := discoverReference(t, &cl, axisOfKind(t, mapping.kind), lookup, "Lib:1.1.0#/mappings/X"); err != nil {
-		t.Fatalf("discovery of Lib:1.1.0: %v", err)
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: "helm/consumer-recipe:1.0.0", KindHint: closure.KindRecipe}}}
+	if err := closure.AugmentClosure(context.Background(), &cl, view, view.ClosureLookup(puller, ws, resolutionCacheDir, nil, nil, nil)); err != nil {
+		t.Fatalf("AugmentClosure: %v", err)
 	}
-	if len(cl.MappingLibraries) != 1 {
-		t.Fatalf("mapping libraries = %+v; want Lib alone", cl.MappingLibraries)
+	want := []string{"Lib:1.1.0 <- helm/consumer-recipe:1.0.0", "Other:1.0.0 <- Lib"}
+	if got := mappingRows(cl); !reflect.DeepEqual(got, want) {
+		t.Errorf("mapping libraries:\n  got:  %q\n  want: %q", got, want)
 	}
-	lib := cl.MappingLibraries[0]
-	if lib.URI != "Lib" || lib.ResolvedVersion != "1.1.0" || lib.ResolutionPath != closure.ResolutionPathRegistry ||
-		lib.Digest != fileDigest(served) {
-		t.Errorf("Lib resolved as %+v; want 1.1.0 from the registry, with the served bytes' digest %s", lib, fileDigest(served))
+	for _, lib := range cl.MappingLibraries {
+		if lib.URI == "Lib" && (lib.ResolutionPath != closure.ResolutionPathRegistry || lib.Digest != fileDigest(served)) {
+			t.Errorf("Lib resolved as %+v; want 1.1.0 from the registry, with the served bytes' digest %s", lib, fileDigest(served))
+		}
 	}
-	if asked := puller.tagsAsked(); len(asked) != 1 || asked[0] != "1.1.0" {
-		t.Errorf("the registry was asked for Lib at %q; want the tag 1.1.0 alone", asked)
+	if asked, want := puller.requests(), []string{"Lib:1.1.0", "Other"}; !reflect.DeepEqual(asked, want) {
+		t.Errorf("the registry was asked for %q; want %q", asked, want)
+	}
+}
+
+// TestAugmentFollowsRaisedRegistryLibraryVersion is TestAugmentFollowsRaisedLibraryVersion
+// with Lib2, Zed and Wye served by a registry rather than a catalog directory: the
+// discovery holds Lib2 1.0.0 from its first fetch, and the later requirement
+// raising Lib2 to 1.1.0 makes the raised version readable in its place, so Lib2
+// 1.1.0's body is read. The closure holds Wye, consumed by Lib2, and holds no Zed,
+// which only Lib2 1.0.0 referenced; Lib2 1.1.0 is readable once the walk is done.
+func TestAugmentFollowsRaisedRegistryLibraryVersion(t *testing.T) {
+	t.Parallel()
+	ws := t.TempDir()
+	dir := mkCatalogDir(t, filepath.Join(ws, "catalog"))
+	mapping := augmentLibraryKinds()[1]
+	writeFixture(t, dir, "recipe-a.yaml", importingRecipe("recipe-a", "Lib:1.0.0#/mappings/X"))
+	writeFixture(t, dir, "recipe-b.yaml", importingRecipe("recipe-b", "Lib2:1.0.0#/mappings/X"))
+	writeFixture(t, dir, "lib.yaml", libraryDocument(mapping.kind, "Lib", "1.0.0", mapping.referencing("Lib2:1.1.0")))
+	puller := &servingLibraryPuller{t: t, libraries: map[string]string{
+		"Lib2:1.0.0": libraryDocument(mapping.kind, "Lib2", "1.0.0", mapping.referencing("Zed")),
+		"Lib2:1.1.0": libraryDocument(mapping.kind, "Lib2", "1.1.0", mapping.referencing("Wye")),
+		"Zed:1.0.0":  libraryDocument(mapping.kind, "Zed", "1.0.0", mapping.leaf),
+		"Wye:1.0.0":  libraryDocument(mapping.kind, "Wye", "1.0.0", mapping.leaf),
+	}}
+
+	view := NewLazyLookup(ws, resolutionCacheDir, []string{dir}, puller)
+	cl := closure.Closure{Entities: []closure.ResolvedRef{
+		{URI: "helm/recipe-a:1.0.0", KindHint: closure.KindRecipe},
+		{URI: "helm/recipe-b:1.0.0", KindHint: closure.KindRecipe},
+	}}
+	if err := closure.AugmentClosure(context.Background(), &cl, view, view.ClosureLookup(puller, ws, resolutionCacheDir, nil, nil, nil)); err != nil {
+		t.Fatalf("AugmentClosure: %v", err)
+	}
+	want := []string{
+		"Lib:1.0.0 <- helm/recipe-a:1.0.0",
+		"Lib2:1.1.0 <- Lib,helm/recipe-b:1.0.0",
+		"Wye:1.0.0 <- Lib2",
+	}
+	if got := mappingRows(cl); !reflect.DeepEqual(got, want) {
+		t.Errorf("mapping libraries:\n  got:  %q\n  want: %q\n  registry asked: %q", got, want, puller.requests())
+	}
+	if lib, ok := view.MappingLibrary("Lib2:1.1.0"); !ok || lib.Metadata.Version != "1.1.0" {
+		t.Errorf("after the walk the view reads Lib2:1.1.0 as %q (ok %v); want the raised 1.1.0", lib.Metadata.Version, ok)
 	}
 }
 
@@ -468,13 +547,8 @@ func TestAugmentFollowsRaisedLibraryVersion(t *testing.T) {
 	ws := t.TempDir()
 	dir := mkCatalogDir(t, filepath.Join(ws, "catalog"))
 	mapping := augmentLibraryKinds()[1]
-	recipe := func(name, reference string) string {
-		return fmt.Sprintf("apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: %s\n  version: \"1.0.0\"\n"+
-			"spec:\n  capability: helm\n  implements: core/consumer\n  source: ./chart\n  valuesMapping:\n    $import: %s\n",
-			name, reference)
-	}
-	writeFixture(t, dir, "recipe-a.yaml", recipe("recipe-a", "Lib:1.0.0#/mappings/X"))
-	writeFixture(t, dir, "recipe-b.yaml", recipe("recipe-b", "Lib2:1.0.0#/mappings/X"))
+	writeFixture(t, dir, "recipe-a.yaml", importingRecipe("recipe-a", "Lib:1.0.0#/mappings/X"))
+	writeFixture(t, dir, "recipe-b.yaml", importingRecipe("recipe-b", "Lib2:1.0.0#/mappings/X"))
 	writeFixture(t, dir, "lib.yaml", libraryDocument(mapping.kind, "Lib", "1.0.0", mapping.referencing("Lib2:1.1.0")))
 	writeFixture(t, dir, "lib2-1.0.0.yaml", libraryDocument(mapping.kind, "Lib2", "1.0.0", mapping.referencing("Zed")))
 	writeFixture(t, dir, "lib2-1.1.0.yaml", libraryDocument(mapping.kind, "Lib2", "1.1.0", mapping.referencing("Wye")))
@@ -489,21 +563,43 @@ func TestAugmentFollowsRaisedLibraryVersion(t *testing.T) {
 	if err := closure.AugmentClosure(context.Background(), &cl, view, view.ClosureLookup(nil, ws, resolutionCacheDir, nil, nil, nil)); err != nil {
 		t.Fatalf("AugmentClosure: %v", err)
 	}
-	var got []string
-	for _, lib := range cl.MappingLibraries {
-		var consumers []string
-		for _, c := range lib.Consumers {
-			consumers = append(consumers, c.ConsumerURI)
-		}
-		got = append(got, lib.URI+":"+lib.ResolvedVersion+" <- "+strings.Join(consumers, ","))
-	}
 	want := []string{
 		"Lib:1.0.0 <- helm/recipe-a:1.0.0",
 		"Lib2:1.1.0 <- Lib,helm/recipe-b:1.0.0",
 		"Wye:1.0.0 <- Lib2",
 	}
-	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+	if got := mappingRows(cl); !reflect.DeepEqual(got, want) {
 		t.Errorf("mapping libraries:\n  got:  %q\n  want: %q", got, want)
+	}
+}
+
+// TestAugmentHaltsOnAResolvedLibraryItCannotRead: a library the resolution
+// resolved at a version the view cannot read at that version halts the discovery
+// with the unresolvable-reference condition naming the library at that version,
+// rather than ending the descent through it without a word. The lockfile pins Lib
+// at 1.1.0 to bytes its cache slot no longer holds, so the view folds no copy of
+// Lib, while the cache tier answers the reference from that slot; Lib 1.1.0's body
+// imports Other, which would otherwise be missing from the closure unannounced.
+func TestAugmentHaltsOnAResolvedLibraryItCannotRead(t *testing.T) {
+	t.Parallel()
+	ws := t.TempDir()
+	dir := mkCatalogDir(t, filepath.Join(ws, "catalog"))
+	mapping := augmentLibraryKinds()[1]
+	writeFixture(t, dir, "recipe.yaml", importingRecipe("consumer-recipe", "Lib:1.1.0#/mappings/X"))
+	writeFixture(t, dir, "other.yaml", libraryDocument(mapping.kind, "Other", "1.0.0", mapping.leaf))
+	body := libraryDocument(mapping.kind, "Lib", "1.1.0", mapping.referencing("Other"))
+	pin := writePinnedSlot(t, ws, resolutionCacheDir, "Lib:1.1.0", oci.MediaTypeMappingLibrary, []byte(body))
+	pin.Digest = fileDigest("other bytes")
+
+	view := NewLazyLookup(ws, resolutionCacheDir, []string{dir}, nil)
+	view.SetPins(Pins{{Kind: mapping.kind, URI: "Lib"}: pin})
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: "helm/consumer-recipe:1.0.0", KindHint: closure.KindRecipe}}}
+	err := closure.AugmentClosure(context.Background(), &cl, view, view.ClosureLookup(nil, ws, resolutionCacheDir, nil, nil, nil))
+	if !errors.Is(err, closure.ErrUnresolvableURI()) {
+		t.Fatalf("AugmentClosure: %v; want the unresolvable-reference condition (closure %q)", err, mappingRows(cl))
+	}
+	if !strings.Contains(err.Error(), `library "Lib:1.1.0"`) {
+		t.Errorf("the halt %q does not name Lib:1.1.0", err.Error())
 	}
 }
 
