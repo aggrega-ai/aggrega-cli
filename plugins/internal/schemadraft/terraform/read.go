@@ -4,7 +4,6 @@
 package terraform
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -63,15 +62,15 @@ func listSource(src aggrega.ImportSource, parse schemadraft.ParseFunc) ([]schema
 			providers = e.Value
 		}
 	}
-	if _, ok := text(version); !ok {
+	if _, ok := schemadraft.JSONText(version); !ok {
 		return nil, unreadable(src.Name, "it holds no "+keyFormatVersion+" string")
 	}
-	if !isObject(providers) {
+	if !schemadraft.IsJSONObject(providers) {
 		return nil, unreadable(src.Name, "it holds no "+keyProviderSchemas+" object")
 	}
 	var refs []schemadraft.TypeRef
 	for _, p := range importer.ObjectEntries(providers) {
-		if !isObject(p.Value) {
+		if !schemadraft.IsJSONObject(p.Value) {
 			return nil, unreadable(src.Name, "the provider "+p.Key+" is not an object")
 		}
 		address := parseAddress(p.Key)
@@ -79,7 +78,7 @@ func listSource(src aggrega.ImportSource, parse schemadraft.ParseFunc) ([]schema
 			if member.Key != keyResourceSchemas {
 				continue
 			}
-			if !isObject(member.Value) {
+			if !schemadraft.IsJSONObject(member.Value) {
 				return nil, unreadable(src.Name, "the "+keyResourceSchemas+" of the provider "+p.Key+" is not an object")
 			}
 			for _, r := range importer.ObjectEntries(member.Value) {
@@ -152,7 +151,7 @@ func lift(ref schemadraft.TypeRef) (*schemadraft.Type, []aggrega.Diagnostic) {
 	}
 	if err := json.Unmarshal(ref.Body, &body); err != nil {
 		l.fail("its schema is not an object")
-	} else if !isObject(body.Block) {
+	} else if !schemadraft.IsJSONObject(body.Block) {
 		l.fail("its schema holds no block object")
 	}
 	t := &schemadraft.Type{Name: ref.Name, Source: ref.Source, Provider: ref.Provider}
@@ -199,12 +198,12 @@ func (l *lifter) block(raw json.RawMessage, path []string) ([]*schemadraft.Prope
 		if name.raw == nil {
 			continue
 		}
-		if !isObject(name.raw) {
+		if !schemadraft.IsJSONObject(name.raw) {
 			l.fail("the %s of %s are not an object", name.what, describePath(path))
 			return nil, ""
 		}
 		for _, e := range importer.ObjectEntries(name.raw) {
-			p := name.lift(e.Key, appended(path, e.Key), e.Value)
+			p := name.lift(e.Key, schemadraft.Appended(path, e.Key), e.Value)
 			if l.err != "" {
 				return nil, ""
 			}
@@ -272,7 +271,7 @@ func (l *lifter) nestedType(name string, path []string, raw json.RawMessage) *sc
 		MinItems   int             `json:"min_items"`
 		MaxItems   int             `json:"max_items"`
 	}
-	if err := json.Unmarshal(raw, &n); err != nil || !isObject(n.Attributes) {
+	if err := json.Unmarshal(raw, &n); err != nil || !schemadraft.IsJSONObject(n.Attributes) {
 		l.fail("the nested type of %s is not readable", describePath(path))
 		return &schemadraft.Property{Name: name, Path: path}
 	}
@@ -294,7 +293,7 @@ func (l *lifter) blockType(name string, path []string, raw json.RawMessage) *sch
 		MinItems int             `json:"min_items"`
 		MaxItems int             `json:"max_items"`
 	}
-	if err := json.Unmarshal(raw, &b); err != nil || !isObject(b.Block) {
+	if err := json.Unmarshal(raw, &b); err != nil || !schemadraft.IsJSONObject(b.Block) {
 		l.fail("the block %s is not readable", describePath(path))
 		return &schemadraft.Property{Name: name, Path: path}
 	}
@@ -346,7 +345,7 @@ func (l *lifter) nest(p *schemadraft.Property, mode string, lo, hi int, props []
 // a string, or a collection or structural type written as an array.
 func (l *lifter) cty(name string, path []string, raw json.RawMessage) *schemadraft.Property {
 	p := &schemadraft.Property{Name: name, Path: path}
-	if s, ok := text(raw); ok {
+	if s, ok := schemadraft.JSONText(raw); ok {
 		switch s {
 		case "string":
 			p.Kinds = []schemadraft.Kind{schemadraft.KindString}
@@ -366,7 +365,7 @@ func (l *lifter) cty(name string, path []string, raw json.RawMessage) *schemadra
 		l.fail("the type of %s is not a Terraform type", describePath(path))
 		return p
 	}
-	constructor, _ := text(parts[0])
+	constructor, _ := schemadraft.JSONText(parts[0])
 	switch constructor {
 	case "list", "set":
 		p.Kinds = []schemadraft.Kind{schemadraft.KindArray}
@@ -377,13 +376,13 @@ func (l *lifter) cty(name string, path []string, raw json.RawMessage) *schemadra
 			"type of its values")
 	case "object":
 		p.Kinds = []schemadraft.Kind{schemadraft.KindObject}
-		if !isObject(parts[1]) {
+		if !schemadraft.IsJSONObject(parts[1]) {
 			l.fail("the object type of %s holds no attributes", describePath(path))
 			return p
 		}
 		p.Dropped = append(p.Dropped, objectRequirement(parts))
 		for _, e := range importer.ObjectEntries(parts[1]) {
-			memberPath := appended(path, e.Key)
+			memberPath := schemadraft.Appended(path, e.Key)
 			if len(memberPath) > schemadraft.MaxDepth {
 				p.Properties = append(p.Properties, cut(&schemadraft.Property{Name: e.Key, Path: memberPath}))
 				continue
@@ -419,30 +418,6 @@ func objectRequirement(parts []json.RawMessage) string {
 func cut(p *schemadraft.Property) *schemadraft.Property {
 	p.Kinds, p.Open, p.Cut = []schemadraft.Kind{schemadraft.KindObject}, true, "depth"
 	return p
-}
-
-// text reads raw as a JSON string.
-func text(raw json.RawMessage) (string, bool) {
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || trimmed[0] != '"' {
-		return "", false
-	}
-	var s string
-	if json.Unmarshal(trimmed, &s) != nil {
-		return "", false
-	}
-	return s, true
-}
-
-// isObject reports whether raw is a JSON object.
-func isObject(raw json.RawMessage) bool {
-	trimmed := bytes.TrimSpace(raw)
-	return len(trimmed) > 0 && trimmed[0] == '{' && json.Valid(trimmed)
-}
-
-// appended is path followed by name, sharing no storage with path.
-func appended(path []string, name string) []string {
-	return append(slices.Clone(path), name)
 }
 
 // describePath names the property at path in a message.

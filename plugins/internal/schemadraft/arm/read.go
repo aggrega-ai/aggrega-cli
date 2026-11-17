@@ -86,7 +86,10 @@ type member struct {
 // readNode reads raw as a node and its $type; ok is false where raw is not an
 // object holding a $type string.
 func readNode(raw json.RawMessage) (n node, kind string, ok bool) {
-	if json.Unmarshal(raw, &n) != nil || !decode(n.Kind, &kind) {
+	if json.Unmarshal(raw, &n) != nil {
+		return node{}, "", false
+	}
+	if kind, ok = schemadraft.JSONText(n.Kind); !ok {
 		return node{}, "", false
 	}
 	return n, kind, true
@@ -98,8 +101,9 @@ func present(raw json.RawMessage) bool {
 	return len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null"))
 }
 
-// decode reads raw into target, reporting whether raw is present and of the
-// type target takes.
+// decode reads raw into target, a number, a boolean or a list, reporting
+// whether raw is present and of the type target takes. Text is read with
+// schemadraft.JSONText.
 func decode(raw json.RawMessage, target any) bool {
 	return present(raw) && json.Unmarshal(raw, target) == nil
 }
@@ -142,8 +146,8 @@ func listSource(src aggrega.ImportSource, parse schemadraft.ParseFunc) ([]schema
 		if !ok || kind != kindResource {
 			continue
 		}
-		var full string
-		name, version, named := "", "", decode(n.Name, &full)
+		full, named := schemadraft.JSONText(n.Name)
+		name, version := "", ""
 		if named {
 			name, version, named = splitName(full)
 		}
@@ -260,8 +264,7 @@ func (l *lifter) resource(ref schemadraft.TypeRef) (int, node) {
 	want := ref.Name + "@" + ref.APIVersion
 	for i, raw := range l.entries {
 		n, kind, ok := readNode(raw)
-		var name string
-		if ok && kind == kindResource && decode(n.Name, &name) && name == want {
+		if name, named := schemadraft.JSONText(n.Name); ok && kind == kindResource && named && name == want {
 			return i, n
 		}
 	}
@@ -274,8 +277,11 @@ func (l *lifter) target(raw json.RawMessage, where string) (int, node, string) {
 	var r struct {
 		Ref json.RawMessage `json:"$ref"`
 	}
-	var ref string
-	if json.Unmarshal(raw, &r) != nil || !decode(r.Ref, &ref) {
+	if json.Unmarshal(raw, &r) != nil {
+		r.Ref = nil
+	}
+	ref, isRef := schemadraft.JSONText(r.Ref)
+	if !isRef {
 		l.fail(`%s holds no reference such as {"$ref": "#/3"}`, where)
 		return -1, node{}, ""
 	}
@@ -357,7 +363,7 @@ func (l *lifter) readOnly(raw json.RawMessage) bool {
 // isMembers reports whether raw, the members of what, is an object or absent,
 // failing where it is neither.
 func (l *lifter) isMembers(raw json.RawMessage, what string) bool {
-	if present(raw) && !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
+	if present(raw) && !schemadraft.IsJSONObject(raw) {
 		l.fail("the members of %s are not an object", what)
 		return false
 	}
@@ -372,7 +378,7 @@ func (l *lifter) members(raw json.RawMessage, path []string, inherit int) []*sch
 	}
 	var out []*schemadraft.Property
 	for _, e := range importer.ObjectEntries(raw) {
-		p := l.property(e.Key, append(slices.Clone(path), e.Key), e.Value, inherit)
+		p := l.property(e.Key, schemadraft.Appended(path, e.Key), e.Value, inherit)
 		if l.err != "" {
 			return nil
 		}
@@ -391,7 +397,7 @@ func (l *lifter) member(raw json.RawMessage, path []string) (m member, flags int
 	if present(m.Flags) && !decode(m.Flags, &flags) {
 		l.fail("the flags of %s are not a number", describePath(path))
 	}
-	decode(m.Description, &description)
+	description, _ = schemadraft.JSONText(m.Description)
 	return m, flags, schemadraft.FirstParagraph(description)
 }
 
@@ -446,7 +452,9 @@ func (l *lifter) shape(p *schemadraft.Property, raw json.RawMessage, where strin
 		p.Sensitive = l.sensitive(n)
 		p.MinLength = l.length(n.MinLength, where, "minLength")
 		p.MaxLength = l.length(n.MaxLength, where, "maxLength")
-		if present(n.Pattern) && !decode(n.Pattern, &p.Pattern) {
+		if pattern, ok := schemadraft.JSONText(n.Pattern); ok {
+			p.Pattern = pattern
+		} else if present(n.Pattern) {
 			l.fail("the pattern of %s is not text", where)
 		}
 	case kindInteger:
@@ -479,8 +487,10 @@ func (l *lifter) shape(p *schemadraft.Property, raw json.RawMessage, where strin
 	case kindUnion:
 		l.union(p, n, where)
 	case kindDiscriminated:
-		discriminator := "kind"
-		decode(n.Discriminator, &discriminator)
+		discriminator, named := schemadraft.JSONText(n.Discriminator)
+		if !named {
+			discriminator = "kind"
+		}
 		p.Kinds, p.Open = []schemadraft.Kind{schemadraft.KindObject}, true
 		p.Dropped = append(p.Dropped, fmt.Sprintf("members of each %s: a discriminated object takes the members its "+
 			"%s names, which the draft does not describe, so the object is open", discriminator, discriminator))
@@ -527,11 +537,18 @@ func (l *lifter) number(raw json.RawMessage, where, named string) *json.Number {
 // literal reads the value of the literal type n of the $type kind, written at
 // where, and the kind of the value.
 func (l *lifter) literal(kind string, n node, where string) (schemadraft.Kind, json.RawMessage) {
+	if kind == kindStringLiteral {
+		text, ok := schemadraft.JSONText(n.Value)
+		if !ok {
+			l.fail("the value of the %s of %s is not one", kind, where)
+			return schemadraft.KindString, nil
+		}
+		value, _ := json.Marshal(text)
+		return schemadraft.KindString, value
+	}
 	var target any
-	k := schemadraft.KindString
+	var k schemadraft.Kind
 	switch kind {
-	case kindStringLiteral:
-		target = new(string)
 	case kindIntegerLiteral:
 		target, k = new(json.Number), schemadraft.KindInteger
 	default:
@@ -582,9 +599,9 @@ func (l *lifter) union(p *schemadraft.Property, n node, where string) {
 				k, value := l.literal(kind, en, where)
 				add(k)
 				literals = append(literals, value)
-				text := string(value)
-				if k == schemadraft.KindString {
-					decode(value, &text)
+				text, isText := schemadraft.JSONText(value)
+				if !isText {
+					text = string(value)
 				}
 				known = append(known, text)
 			case kindUnion:
@@ -653,8 +670,7 @@ type occurrence struct {
 // It is required where every kind requires it. A discriminator no kind declares
 // is a required string of the kinds' names.
 func (l *lifter) discriminatedBody(i int, n node) []*schemadraft.Property {
-	discriminator := ""
-	decode(n.Discriminator, &discriminator)
+	discriminator, _ := schemadraft.JSONText(n.Discriminator)
 	base := l.body(i, n.BaseProperties)
 	if l.err != "" || !l.isMembers(n.Elements, "the kinds of the resource body") {
 		return nil
@@ -740,8 +756,8 @@ func (l *lifter) declaredMember(name string, occ []occurrence, kinds int, discri
 		p = &schemadraft.Property{Name: name, Path: []string{name}, Kinds: []schemadraft.Kind{schemadraft.KindString},
 			Description: description}
 		for _, o := range occ {
-			var value string
-			if !decode(o.value, &value) {
+			value, ok := schemadraft.JSONText(o.value)
+			if !ok {
 				l.fail("the value of the %s %s refers to is not text", kindStringLiteral, describePath([]string{name}))
 				return p
 			}

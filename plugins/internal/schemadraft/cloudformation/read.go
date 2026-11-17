@@ -82,19 +82,19 @@ func listSource(src aggrega.ImportSource, parse schemadraft.ParseFunc) (schemadr
 	if _, ok := top[keyDescribedName]; !ok {
 		return schemadraft.TypeRef{}, unreadable(src.Name, "it holds no typeName string")
 	}
-	name, ok := text(top[keyDescribedName])
+	name, ok := schemadraft.JSONText(top[keyDescribedName])
 	if !ok || name == "" {
 		return schemadraft.TypeRef{}, unreadable(src.Name, "it holds no TypeName string")
 	}
 	if raw, ok := top[keyKind]; ok {
-		if _, isText := text(raw); !isText {
+		if _, isText := schemadraft.JSONText(raw); !isText {
 			return schemadraft.TypeRef{}, unreadable(src.Name, "it holds no Type string")
 		}
 	}
 	if refusal(name, top) != "" {
 		return schemadraft.TypeRef{Name: name, Source: src.Name, Body: tree}, nil
 	}
-	schema, ok := text(top[keySchema])
+	schema, ok := schemadraft.JSONText(top[keySchema])
 	if !ok {
 		return schemadraft.TypeRef{}, unreadable(src.Name, "it holds no Schema string")
 	}
@@ -112,11 +112,11 @@ func listSource(src aggrega.ImportSource, parse schemadraft.ParseFunc) (schemadr
 // providerSchema returns the type name a provider schema's members give, or the
 // member it lacks.
 func providerSchema(top map[string]json.RawMessage) (name, missing string) {
-	name, ok := text(top[keyTypeName])
+	name, ok := schemadraft.JSONText(top[keyTypeName])
 	if !ok || name == "" {
 		return "", "typeName string"
 	}
-	if !isObject(top[keyProperties]) {
+	if !schemadraft.IsJSONObject(top[keyProperties]) {
 		return "", "properties object"
 	}
 	return name, ""
@@ -127,10 +127,10 @@ func providerSchema(top map[string]json.RawMessage) (name, missing string) {
 // Type other than RESOURCE or of the ProvisioningType NON_PROVISIONABLE, or a
 // type whose name marks a module.
 func refusal(name string, top map[string]json.RawMessage) string {
-	if kind, ok := text(top[keyKind]); ok && kind != kindResource {
+	if kind, ok := schemadraft.JSONText(top[keyKind]); ok && kind != kindResource {
 		return "whose Type is " + kind + ", and the cloudformation provider realizes a RESOURCE type alone"
 	}
-	if provisioning, _ := text(top[keyProvisioning]); provisioning == nonProvisionable {
+	if provisioning, _ := schemadraft.JSONText(top[keyProvisioning]); provisioning == nonProvisionable {
 		return "whose ProvisioningType is " + nonProvisionable + ", so CloudFormation cannot create it in a stack"
 	}
 	if strings.HasSuffix(name, moduleSuffix) {
@@ -155,7 +155,7 @@ func lift(ref schemadraft.TypeRef) (*schemadraft.Type, []aggrega.Diagnostic) {
 	}
 	l := &lifter{definitionsRaw: top[keyDefinitions], flags: map[string]*pointerFlags{}}
 	t := &schemadraft.Type{Name: ref.Name, Source: ref.Source}
-	if description, ok := text(top[keyDescription]); ok {
+	if description, ok := schemadraft.JSONText(top[keyDescription]); ok {
 		t.Description = schemadraft.FirstParagraph(description)
 	}
 	for _, pointerList := range []struct {
@@ -224,13 +224,13 @@ func (l *lifter) members(raw json.RawMessage, path, ptr, required []string) []*s
 	if raw == nil {
 		return nil
 	}
-	if !isObject(raw) {
+	if !schemadraft.IsJSONObject(raw) {
 		l.fail("the properties of %s are not an object", describePath(path))
 		return nil
 	}
 	var out []*schemadraft.Property
 	for _, e := range importer.ObjectEntries(raw) {
-		p := l.property(e.Key, appended(path, e.Key), appended(ptr, e.Key), e.Value, slices.Contains(required, e.Key))
+		p := l.property(e.Key, schemadraft.Appended(path, e.Key), schemadraft.Appended(ptr, e.Key), e.Value, slices.Contains(required, e.Key))
 		if l.err != "" {
 			return nil
 		}
@@ -304,7 +304,7 @@ func (l *lifter) property(name string, path, ptr []string, raw json.RawMessage, 
 		p.Open = !n.closed || n.patterned || (branched && n.properties == nil)
 	}
 	if n.items != nil && slices.Contains(p.Kinds, schemadraft.KindArray) {
-		p.Items = l.property(name, path, appended(ptr, itemsSegment), n.items, false)
+		p.Items = l.property(name, path, schemadraft.Appended(ptr, itemsSegment), n.items, false)
 	}
 	p.Sensitive = credentialNamed(p)
 	return p
@@ -364,7 +364,7 @@ var droppedKeywords = map[string]string{
 // node reads the schema raw of the property at path.
 func (l *lifter) node(raw json.RawMessage, path []string) node {
 	var n node
-	if !isObject(raw) {
+	if !schemadraft.IsJSONObject(raw) {
 		l.fail("the schema of %s is not an object", describePath(path))
 		return n
 	}
@@ -376,7 +376,7 @@ func (l *lifter) node(raw json.RawMessage, path []string) node {
 		case "type":
 			n.kinds = l.kinds(e.Value, path)
 		case keyDescription:
-			if description, ok := text(e.Value); ok {
+			if description, ok := schemadraft.JSONText(e.Value); ok {
 				n.description = schemadraft.FirstParagraph(description)
 			}
 		case "$ref":
@@ -426,7 +426,7 @@ func (l *lifter) node(raw json.RawMessage, path []string) node {
 // adds no kind.
 func (l *lifter) kinds(raw json.RawMessage, path []string) []schemadraft.Kind {
 	var names []string
-	if one, ok := text(raw); ok {
+	if one, ok := schemadraft.JSONText(raw); ok {
 		names = []string{one}
 	} else if json.Unmarshal(raw, &names) != nil {
 		l.fail("the type of %s is neither a type name nor a list of them", describePath(path))
@@ -587,30 +587,6 @@ func members(raw json.RawMessage) map[string]json.RawMessage {
 		out[e.Key] = e.Value
 	}
 	return out
-}
-
-// text reads raw as a JSON string.
-func text(raw json.RawMessage) (string, bool) {
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 || trimmed[0] != '"' {
-		return "", false
-	}
-	var s string
-	if json.Unmarshal(trimmed, &s) != nil {
-		return "", false
-	}
-	return s, true
-}
-
-// isObject reports whether raw is a JSON object.
-func isObject(raw json.RawMessage) bool {
-	trimmed := bytes.TrimSpace(raw)
-	return len(trimmed) > 0 && trimmed[0] == '{' && json.Valid(trimmed)
-}
-
-// appended is path followed by name, sharing no storage with path.
-func appended(path []string, name string) []string {
-	return append(slices.Clone(path), name)
 }
 
 // unreadable halts on the source named source, which is neither shape the
