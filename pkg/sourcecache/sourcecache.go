@@ -37,6 +37,11 @@
 // change that will not survive, and the two cases fail in opposite
 // ways.
 //
+// A source of an OCI module kind is laid out by the row its kind carries
+// ([sourcekind.OCIArtifactOf]): a compiled template as a directory holding only its
+// one document, a module package as the tree of its files, rooted at `module_subdir`
+// where the row takes one.
+//
 // The package re-exports the four fetch-error sentinels from pkg/oci
 // so consumers can errors.Is against either name without importing
 // pkg/oci directly.
@@ -51,21 +56,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/readscope"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcekind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
-	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/helm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/metadata"
 	"github.com/aggrega-ai/aggrega-cli/pkg/writescope"
 )
 
-// kindExpectsManifest reports whether a source kind is OCI-distributed and
-// therefore persists an OCI manifest beside its cached archive. Only such a
-// kind's slot is held to manifest authority: a manifest-less slot for an OCI
-// kind is an incomplete cache entry and reads as a miss. A non-OCI source
-// (an HTTPS chart, a git module) has no manifest by construction and stays on
-// content-pin authority. Keyed off the canonical kind constant so the
-// OCI-vs-non-OCI classification has one home.
+// kindExpectsManifest reports whether a source kind is OCI-distributed
+// ([sourcekind.OCIDistributed]) and therefore persists an OCI manifest beside
+// its cached artifact. Only such a kind's slot is held to manifest authority: a
+// manifest-less slot for an OCI kind is an incomplete cache entry and reads as a
+// miss. A non-OCI source (an HTTPS chart, a git module) has no manifest by
+// construction and stays on content-pin authority.
 func kindExpectsManifest(kind string) bool {
-	return kind == helm.KindOCI
+	return sourcekind.OCIDistributed(kind)
 }
 
 // ErrFetchNotFound re-exports the canonical fetch-error identity declared in
@@ -89,6 +93,12 @@ func ErrFetchIntegrity() error { return oci.ErrFetchIntegrity() }
 // directly-loadable artifact root: a Helm chart untars under a
 // <chartname>/ subdirectory, and the consumer resolves its artifact
 // within.
+//
+// A source of an OCI module kind is laid out by its kind's row instead: a compiled
+// template as a directory holding only its document, a module package as its tree,
+// and for a kind that takes `module_subdir` and a source that names one, the returned
+// path is that directory of the tree; a value the package lacks returns a wrapped
+// ErrFetchNotFound naming it.
 //
 // The row is found by what the author wrote — ref where the source declares one,
 // version otherwise — which is what lets a source declared at a git tag or branch
@@ -135,12 +145,12 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 	if err != nil {
 		return "", err
 	}
-	blobPath := filepath.Join(slot, "blob.tgz")
+	blobPath := filepath.Join(slot, cacheslot.BlobFile)
 	// Every file the slot holds is judged before any is read, against the root the
 	// slot's write was held to: one leading through a link out of it is refused with
 	// the read hold's condition, naming the link, and nothing is read at all.
 	heldTo := writescope.RootForCache(workspaceRoot, cacheDir)
-	for _, name := range []string{"blob.tgz", "metadata.yaml", cacheslot.ManifestFile} {
+	for _, name := range []string{cacheslot.BlobFile, "metadata.yaml", cacheslot.ManifestFile} {
 		if err := readscope.CheckCacheRead(heldTo, filepath.Join(slot, name)); err != nil {
 			return "", err
 		}
@@ -167,8 +177,8 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 			meta.Digest, entry.Digest, ErrFetchIntegrity())
 	}
 
-	// Manifest authority. An OCI-distributed source (a helm-oci-chart) persists
-	// its OCI manifest beside the archive; it is the root the archive is verified
+	// Manifest authority. An OCI-distributed source (see kindExpectsManifest)
+	// persists its OCI manifest beside the artifact; it is the root the archive is verified
 	// against — the manifest is an independent record of the expected content, so
 	// a forged archive is caught even when every recorded content pin (this slot's
 	// metadata.yaml and the lockfile entry) has been forged to match it. When the
@@ -202,7 +212,46 @@ func LookupAndExtract(lf *lockfile.Lockfile, kind, url, chart, moduleSubdir, ver
 		return "", fmt.Errorf("sourcecache: read manifest for %s: %w", blobPath, mrerr)
 	}
 
-	return RegenerateExtracted(workspaceRoot, cacheDir, slot, blobBytes)
+	row, hasRow := sourcekind.OCIArtifactOf(kind)
+	if !hasRow {
+		return RegenerateExtracted(workspaceRoot, cacheDir, slot, blobBytes)
+	}
+	if row.Layout == sourcekind.LayoutDocument {
+		return RegenerateExtractedDocument(workspaceRoot, cacheDir, slot, row.DocumentName, blobBytes)
+	}
+	var tree string
+	switch row.Layout {
+	case sourcekind.LayoutZip:
+		tree, err = RegenerateExtractedZip(workspaceRoot, cacheDir, slot, blobBytes)
+	default:
+		tree, err = RegenerateExtracted(workspaceRoot, cacheDir, slot, blobBytes)
+	}
+	if err != nil || !row.TakesModuleSubdir || moduleSubdir == "" {
+		return tree, err
+	}
+	return moduleTreeRoot(kind, url, tree, moduleSubdir)
+}
+
+// moduleTreeRoot returns the directory of the laid-out tree that module_subdir
+// names, refusing a value that climbs ([cacheslot.CheckModuleSubdir]) and one that
+// is not a directory of the tree with a wrapped ErrFetchNotFound naming it as
+// written.
+func moduleTreeRoot(kind, url, tree, moduleSubdir string) (string, error) {
+	if err := cacheslot.CheckModuleSubdir(kind, url, moduleSubdir); err != nil {
+		return "", err
+	}
+	rel := moduleSubdirPlace(moduleSubdir)
+	if rel == "" {
+		return tree, nil
+	}
+	host, err := placeIn(tree, rel)
+	if err != nil {
+		return "", err
+	}
+	if fi, serr := os.Lstat(host); serr != nil || !fi.IsDir() {
+		return "", absentSubdir(moduleSubdir)
+	}
+	return host, nil
 }
 
 // SlotPath returns the cache-slot directory for the given lockfile

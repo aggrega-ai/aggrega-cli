@@ -181,6 +181,12 @@ func SourceArtifactsRoot(workspaceRoot, cacheDir string) string {
 	return filepath.Join(workspaceRoot, cacheDir, "source-artifacts")
 }
 
+// BlobFile is the slot filename of the cached artifact bytes, whatever the
+// artifact is: a gzipped archive, a zip package or a single document. The name
+// is the one every slot has carried; the layer media type recorded in
+// metadata.yaml, not this name, says what the bytes are.
+const BlobFile = "blob.tgz"
+
 // ManifestFile is the slot filename for the persisted OCI manifest — the
 // authority the build-time read verifies the cached archive against. It sits
 // beside blob.tgz and metadata.yaml. An OCI-distributed artifact writes it; a
@@ -224,7 +230,7 @@ const ManifestFile = "manifest"
 // through.
 func WriteBlobAndMetadata(workspaceRoot, cacheDir, slotDir string, archiveBytes []byte, kind, sourceURL, version, digest, mediatype, resolvedURL string, manifestBytes []byte) error {
 	root := writescope.RootForCache(workspaceRoot, cacheDir)
-	written := []string{slotDir, filepath.Join(slotDir, "blob.tgz"), filepath.Join(slotDir, "metadata.yaml")}
+	written := []string{slotDir, filepath.Join(slotDir, BlobFile), filepath.Join(slotDir, "metadata.yaml")}
 	if len(manifestBytes) > 0 {
 		written = append(written, filepath.Join(slotDir, ManifestFile))
 	}
@@ -236,7 +242,7 @@ func WriteBlobAndMetadata(workspaceRoot, cacheDir, slotDir string, archiveBytes 
 	if err := os.MkdirAll(slotDir, 0o755); err != nil {
 		return fmt.Errorf("cacheslot: mkdir %s: %w", slotDir, err)
 	}
-	blobPath := filepath.Join(slotDir, "blob.tgz")
+	blobPath := filepath.Join(slotDir, BlobFile)
 	if err := os.WriteFile(blobPath, archiveBytes, 0o644); err != nil {
 		return fmt.Errorf("cacheslot: write blob %s: %w", blobPath, err)
 	}

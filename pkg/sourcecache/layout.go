@@ -5,6 +5,7 @@ package sourcecache
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pathscope"
@@ -98,6 +100,53 @@ func RegenerateExtractedDocument(workspaceRoot, cacheDir, slot, name string, doc
 	return regenerate(workspaceRoot, cacheDir, slot, document, documentEntry(name, document))
 }
 
+// RegenerateExtractedZip is [RegenerateExtracted] for an artifact that is a zip
+// package: the slot's tree for it holds the package's directories and regular files,
+// laid out by the one placement rule an archive's entries are. An archive that does
+// not open, or an entry that cannot be read, is refused with a wrapped
+// ErrFetchIntegrity, and an entry of any type but a directory or a regular file (a
+// link) is not laid out.
+func RegenerateExtractedZip(workspaceRoot, cacheDir, slot string, archive []byte) (string, error) {
+	return regenerate(workspaceRoot, cacheDir, slot, archive, zipEntries(archive))
+}
+
+// CheckZipLayout reports whether archive is a zip package that lays out: it opens,
+// every entry places beneath a tree ([entryPlace]), and a non-empty moduleSubdir is a
+// directory of the tree the package lays out, named by an entry or implied by the
+// path of one. A package that does not open or has an entry that may not be laid out
+// is refused with a wrapped ErrFetchIntegrity, and a moduleSubdir the package lacks
+// with a wrapped ErrFetchNotFound naming the value as written. It writes nothing.
+func CheckZipLayout(archive []byte, moduleSubdir string) error {
+	plan, err := planTree("tree", zipEntries(archive))
+	if err != nil {
+		return err
+	}
+	rel := moduleSubdirPlace(moduleSubdir)
+	if rel != "" && !plan.dirs[rel] {
+		return absentSubdir(moduleSubdir)
+	}
+	return nil
+}
+
+// moduleSubdirPlace returns the slash-separated place in a laid-out tree that
+// moduleSubdir names, read as the checkout join reads it: a backslash is a
+// separator, and separators leading or trailing the value are dropped. Empty means
+// the tree itself.
+func moduleSubdirPlace(moduleSubdir string) string {
+	rel := path.Clean(strings.ReplaceAll(moduleSubdir, `\`, "/"))
+	rel = strings.Trim(rel, "/")
+	if rel == "." {
+		return ""
+	}
+	return rel
+}
+
+// absentSubdir is the refusal for a module_subdir that is not a directory of the
+// package.
+func absentSubdir(moduleSubdir string) error {
+	return fmt.Errorf("module_subdir %q is not a directory of the package: %w", moduleSubdir, ErrFetchNotFound())
+}
+
 // regenerate lays out what entries yields in the tree ExtractedTree names for
 // artifact, once the tree is held to the root the cache directory picks.
 func regenerate(workspaceRoot, cacheDir, slot string, artifact []byte, entries entrySource) (string, error) {
@@ -137,6 +186,56 @@ func tarGzEntries(archive []byte) entrySource {
 			}
 		}
 	}
+}
+
+// zipEntries walks the entries of the zip archive in central-directory order, each
+// as the tar header the planner reads: a directory, a regular file, or — for a link
+// or any other kind of entry — a header of that other type, which the layout does
+// not carry.
+func zipEntries(archive []byte) entrySource {
+	return func(visit func(*tar.Header, io.Reader) error) error {
+		zr, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+		// An entry named with a climbing or absolute path opens with
+		// zip.ErrInsecurePath beside a usable reader; entryPlace judges every name,
+		// so the walk goes on.
+		if err != nil && !(errors.Is(err, zip.ErrInsecurePath) && zr != nil) {
+			return fmt.Errorf("open zip: %w: %w", err, ErrFetchIntegrity())
+		}
+		for _, f := range zr.File {
+			hdr := &tar.Header{Name: f.Name, Size: int64(f.UncompressedSize64)}
+			switch mode := f.Mode(); {
+			case f.FileInfo().IsDir():
+				hdr.Typeflag = tar.TypeDir
+			case mode.IsRegular():
+				hdr.Typeflag = tar.TypeReg
+			case mode&fs.ModeSymlink != 0:
+				hdr.Typeflag = tar.TypeSymlink
+			default:
+				hdr.Typeflag = tar.TypeChar
+			}
+			if hdr.Typeflag != tar.TypeReg {
+				if err := visit(hdr, bytes.NewReader(nil)); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := visitZipFile(f, hdr, visit); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+// visitZipFile hands visit the body of the zip entry f, closed again when visit
+// returns.
+func visitZipFile(f *zip.File, hdr *tar.Header, visit func(*tar.Header, io.Reader) error) error {
+	body, err := f.Open()
+	if err != nil {
+		return fmt.Errorf("open zip entry %q: %w: %w", f.Name, err, ErrFetchIntegrity())
+	}
+	defer body.Close()
+	return visit(hdr, body)
 }
 
 // documentEntry walks one regular-file entry, name, holding document.
