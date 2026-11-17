@@ -437,6 +437,9 @@ func TestOCIModuleSourceTerraformPullAndBuild(t *testing.T) {
 		if err == nil {
 			t.Fatal("a pull adopted a package moved under its tag")
 		}
+		if !errors.Is(err, recipepin.ErrEntityNotPinned()) {
+			t.Fatalf("the halt does not carry the entity-not-pinned condition: %v", err)
+		}
 		for _, want := range []string{"the recorded pin no longer matches it", "aggrega pin"} {
 			if !strings.Contains(cerrors.CauseChain(err), want) {
 				t.Errorf("the refusal does not carry %q:\n%s", want, cerrors.CauseChain(err))
