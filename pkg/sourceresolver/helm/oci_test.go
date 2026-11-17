@@ -6,9 +6,11 @@ package helm
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -138,7 +140,7 @@ func TestOCIResolveNotFoundWrapsSentinel(t *testing.T) {
 
 func TestOCIResolveTargetFactoryFailureWrapsNetwork(t *testing.T) {
 	t.Parallel()
-	boom := errors.New("dial tcp: lookup failed")
+	boom := &net.DNSError{Err: "lookup failed", Name: "hub.aggrega.ai"}
 	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return nil, boom }}
 
 	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
@@ -150,6 +152,31 @@ func TestOCIResolveTargetFactoryFailureWrapsNetwork(t *testing.T) {
 	})
 	if !errors.Is(err, sourceresolver.ErrFetchNetworkUnreachable()) {
 		t.Errorf("error should wrap ErrFetchNetworkUnreachable; got %v", err)
+	}
+}
+
+func TestOCIResolveTargetFactoryNonTransportFailureIsNotNetworkUnreachable(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("invalid reference")
+	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return nil, cause }}
+
+	_, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
+		Kind:          KindOCI,
+		URL:           "oci://hub.aggrega.ai/charts/mariadb",
+		Version:       "25.0.8",
+		WorkspaceRoot: t.TempDir(),
+		CacheDir:      ".aggrega/cache",
+	})
+	if errors.Is(err, sourceresolver.ErrFetchNetworkUnreachable()) {
+		t.Errorf("a non-transport construction failure must not read as network unreachable; got %v", err)
+	}
+	if !errors.Is(err, cause) {
+		t.Errorf("the cause must stay matchable; got %v", err)
+	}
+	for _, want := range []string{KindOCI, "oci://hub.aggrega.ai/charts/mariadb", "25.0.8"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message should contain %q; got %q", want, err)
+		}
 	}
 }
 

@@ -87,9 +87,8 @@ func (a *ociAdapter) Kind() string { return KindOCI }
 // "hub.aggrega.ai/charts/mariadb" — the oci:// prefix is stripped
 // before passing to ORAS). spec.Version is the tag.
 //
-// A failed pull is reported through sourceresolver.WrapOCIPull; a target
-// that cannot be built wraps the network-unreachable sentinel via
-// sourceresolver.Wrap.
+// A target that cannot be built and a failed pull are both reported through
+// sourceresolver.WrapOCIPull.
 //
 // ctx reaches the ORAS pull, so ending it abandons the transfer on the
 // wire rather than leaving it running behind a caller that has stopped
@@ -98,7 +97,7 @@ func (a *ociAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec
 	reference := strings.TrimPrefix(spec.URL, "oci://")
 	target, err := a.newTarget(reference, spec.Client)
 	if err != nil {
-		return nil, sourceresolver.Wrap(spec, sourceresolver.ErrFetchNetworkUnreachable(), err)
+		return nil, sourceresolver.WrapOCIPull(spec, err)
 	}
 
 	// Select the chart content layer by media type: a signed chart's manifest
