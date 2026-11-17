@@ -182,12 +182,18 @@ func WriteModule(m Module) (importer.RecipeDraft, []aggrega.Diagnostic) {
 
 // VariableName is the module variable an input of the vendor name vendor
 // takes, and so the module argument and the valuesMapping key setting it: the
-// name as the kit writes a key, with
-// underscores for its hyphens; where Terraform reserves that name for an
-// argument of a module block (or OpenTofu does, as it does provider), the name
-// followed by _value; then the kit's numeric suffix where a variable taken
-// earlier holds it. used is the kit's record of the variables taken, in its own
-// spelling, and records this one.
+// name as the kit writes a key, with underscores for its hyphens; where
+// Terraform reserves that name for an argument of a module block (or OpenTofu
+// does, as it does provider), the name followed by _value; then the kit's
+// numeric suffix where a variable taken earlier holds it. used is the kit's
+// record of the variables taken, in its own spelling, and records this one.
+//
+// The name an input takes depends on the order the inputs are named in:
+// WriteModule names the inputs whose names Terraform admits first and the
+// reserved ones after them, so with both source and source_value among the
+// inputs, source takes source_value_2. A caller needing the variable of an
+// input reads it from the draft WriteModule returns rather than calling
+// VariableName itself.
 func VariableName(vendor string, used map[string]bool) string {
 	base := underscored(importer.Slug(vendor))
 	if slices.Contains(reservedVariables, base) {
