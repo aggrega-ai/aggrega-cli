@@ -1102,13 +1102,14 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	}
 
 	// Closure-scoped Pass-2: validate ONLY the entities the Release reaches against
-	// the closure's libraries, read through lazyView (the resolved closure, library
-	// $refs expanded against the lazily-walked SchemaLibrary set) — the same gate
-	// build applies, so this operation and a build of the same Release agree on what
-	// is valid. An in-closure schema-invalid entity, or a $ref to a skipped/missing
-	// library, fails loudly here; an out-of-closure break is never validated.
+	// the libraries the closure resolved, each at its resolved version and read
+	// through lazyView — the same gate build applies, so this operation and a build
+	// of the same Release agree on what is valid. An in-closure schema-invalid
+	// entity, or a $ref to a skipped/missing library, fails loudly here; an
+	// out-of-closure break is never validated.
 	report.phase(PhaseValidate)
-	if err := lazyView.ValidateClosureScopedPillars(ctx, cl, lazyView.ClosureLibraries(cl).Schemas); err != nil {
+	closureSchemas := lazyView.ClosureLibraries(cl).Schemas
+	if err := lazyView.ValidateClosureScopedPillars(ctx, cl, closureSchemas); err != nil {
 		return Result{}, cfg.annotate(rw, err, lazyView.SkippedEntities())
 	}
 
@@ -1127,7 +1128,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// are the ones already run above, against the closure this pass is pinning.
 	report.phase(PhaseSources)
 	aggBytes := aggRes.Bytes
-	pullLookup := lazyView.AsCatalogLookupWithSchemas(ctx, lazyView.ClosureLibraries(cl).Schemas)
+	pullLookup := lazyView.AsCatalogLookupWithSchemas(ctx, closureSchemas)
 	// The lockfile this run assembles is carried out of the source-descent scope
 	// and written further down, once the external-input discovery below has had its
 	// chance to add to it. Assembling and writing are separate steps for two

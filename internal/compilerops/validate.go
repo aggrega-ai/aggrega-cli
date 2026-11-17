@@ -156,13 +156,19 @@ func resolveModuleReferences(ctx context.Context, resolved *ResolvedClosure) err
 type ValidateInputs struct {
 	View    *catalog.LazyLookup
 	Closure closure.Closure
-	// ClosureLibrariesResolved is true where Closure was resolved with its library
-	// axes folded in, so each library is read at the version Closure names. False,
-	// which is what ResolveValidationClosure produces, reads each library at the
-	// version a bare reference selects.
+	// ClosureLibrariesResolved is ResolvedClosure.LibrariesResolved of the closure
+	// handed in: true where it was resolved with its library axes folded in, so each
+	// library is read at the version Closure names.
 	ClosureLibrariesResolved bool
-	Release                  *types.Release
-	Manifest                 *types.Manifest
+	// LibraryRecord is the lockfile whose library rows fix the version each library
+	// is read at where Closure carries none (ClosureLibrariesResolved false). Nil
+	// reads each library at the version a bare reference selects. It is separate
+	// from Lockfile, which also holds the pipeline's guests to their recorded
+	// identities, a footing a surface that only reads the record's libraries leaves
+	// off.
+	LibraryRecord *lockfile.Lockfile
+	Release       *types.Release
+	Manifest      *types.Manifest
 	// ReleasePath is the path of the Release being validated. It locates the record
 	// of the plugin identities trusted for this Release's verdict attachments, which
 	// sits beside that Release, and it is required: validation runs the same
@@ -342,7 +348,7 @@ type ValidateResult struct {
 func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	r := &ValidateResult{}
 
-	libraries := releaseLibraries(in.View, in.Closure, in.ClosureLibrariesResolved)
+	libraries := releaseLibraries(in.View, in.Closure, in.ClosureLibrariesResolved, in.LibraryRecord)
 	if extErrs := in.View.ResolveClosureExtends(ctx, in.Closure, libraries.Schemas); len(extErrs) > 0 {
 		r.ClosureExtendsErrors = extErrs
 		return r

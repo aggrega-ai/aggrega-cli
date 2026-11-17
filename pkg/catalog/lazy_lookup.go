@@ -387,8 +387,8 @@ func (l *LazyLookup) AsCatalogLookupContext(ctx context.Context) resolver.Catalo
 // AsCatalogLookupWithSchemas is AsCatalogLookupContext with its SchemaLibraries
 // field holding schemas, the set the caller chose (ClosureLibraries for a closure
 // that resolved its libraries, DefaultLibraries for one that did not), rather than
-// the version a bare reference to each name selects. It is the lookup every
-// surface on a Release's path hands the compilation.
+// the version a bare reference to each name selects. A compilation of a Release
+// is handed the set its closure's libraries select.
 func (l *LazyLookup) AsCatalogLookupWithSchemas(ctx context.Context, schemas map[string]types.SchemaLibrary) resolver.CatalogLookup {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -2948,10 +2948,10 @@ func (l *LazyLookup) DefaultLibraries() LibrarySet {
 // closure resolved, exactly the version it resolved, never the version a bare
 // reference to the name would select. A resolved library this view does not hold
 // at that version is absent from the set, so the reader that needs it reports it
-// missing instead of reading another version. It is the reading of every surface
-// on a Release's path; a surface with no Release in play reads a Catalog's
-// DefaultLibraries. It builds the enumerations the four kinds live in on first
-// call.
+// missing instead of reading another version. cl names libraries only where it
+// was resolved with its library axes or built from a lockfile's library rows; a
+// reader holding neither reads DefaultLibraries. It builds the enumerations the
+// four kinds live in on first call.
 func (l *LazyLookup) ClosureLibraries(cl closure.Closure) LibrarySet {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -3512,7 +3512,7 @@ func (l *LazyLookup) SkippedEntities() []SkippedEntity {
 
 // ValidateClosureScopedPillars runs closure-scoped pillar validation over the
 // LAZY backing: it resolves each closure Component/Feature through the cascade
-// and validates its schema pillars against the lazily-walked SchemaLibrary set —
+// and validates its schema pillars against the SchemaLibrary set the caller hands in (see schemas below) —
 // the daemon's early-warning gate, and narrower than a whole-catalog pillar
 // validation. A broken out-of-closure entity is never resolved here, so it is
 // never validated; an in-closure pillar error (a schema-invalid

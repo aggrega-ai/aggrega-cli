@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
 
@@ -183,6 +185,9 @@ spec:
 			if tc.refused {
 				if err == nil {
 					t.Fatalf("closure resolving Lib at %s passed; the schema reference needs 1.0.0's Settings", tc.resolved)
+				}
+				if !errors.Is(err, compactform.ErrUnresolvedSchemaLibraryRef()) {
+					t.Errorf("the refusal is not the unresolved SchemaLibrary reference condition: %v", err)
 				}
 				if !strings.Contains(cerrors.CauseChain(err), "Lib#/schemas/Settings") {
 					t.Errorf("the refusal does not name the unresolved fragment Lib#/schemas/Settings: %s", cerrors.CauseChain(err))

@@ -6,6 +6,7 @@ package compilerops
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
@@ -224,5 +227,93 @@ spec:
 	}
 	if vr.RunErr != nil {
 		t.Errorf("the validation pipeline failed: %v", vr.RunErr)
+	}
+}
+
+// TestValidateReleaseReadsLockedSchemaLibraryVersion: a Component whose schema
+// references Lib:1.0.0's Settings, which Lib 1.1.0 no longer declares, is valid
+// for a Release validated with a lockfile recording Lib at 1.0.0, the version a
+// build reads. Without a lockfile the validation reads the version a bare
+// reference selects, 1.1.0, and refuses the reference as unresolved.
+func TestValidateReleaseReadsLockedSchemaLibraryVersion(t *testing.T) {
+	files := map[string]string{
+		"catalog/component/demo/app/1.0.0/component.yaml": `apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: demo/app
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema:
+    infra:
+      settings:
+        $ref: "Lib:1.0.0#/schemas/Settings"
+`,
+	}
+	for v, entry := range map[string]string{"1.0.0": "Settings", "1.1.0": "Renamed"} {
+		files["catalog/libraries/schema-lib-"+v+".yaml"] = fmt.Sprintf(`apiVersion: aggrega.ai/v1beta1
+kind: SchemaLibrary
+metadata:
+  name: Lib
+  version: "%s"
+spec:
+  schemas:
+    %s:
+      level: { type: string }
+`, v, entry)
+	}
+	locked := &lockfile.Lockfile{SchemaLibraries: []lockfile.SchemaLibrary{{URI: "Lib", ResolvedVersion: "1.0.0"}}}
+
+	for _, tc := range []struct {
+		name   string
+		record *lockfile.Lockfile
+		valid  bool
+	}{
+		{name: "with a lockfile recording 1.0.0", record: locked, valid: true},
+		{name: "without a lockfile", record: nil, valid: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws, releasePath := libraryVersionsWorkspace(t)
+			for name, body := range files {
+				path := filepath.Join(ws, name)
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			wsCfg := workspaceconfig.Default()
+			view := catalog.NewLazyLookup(ws, wsCfg.ResolvedArtifactCacheDir(), []string{filepath.Join(ws, "catalog")}, nil).ForRequest(nil)
+			resolved, cerr := ResolveValidationClosure(context.Background(), ValidationClosureInputs{
+				View: view, ReleasePath: releasePath, WorkspaceRoot: ws, WorkspaceConfig: wsCfg,
+			})
+			if cerr != nil {
+				t.Fatalf("ResolveValidationClosure: stage=%d %v", cerr.Stage, cerr)
+			}
+			vr := Validate(context.Background(), ValidateInputs{
+				View:                     view,
+				Closure:                  resolved.Closure,
+				ClosureLibrariesResolved: resolved.LibrariesResolved,
+				LibraryRecord:            tc.record,
+				Release:                  resolved.Release,
+				ReleasePath:              releasePath,
+				Manifest:                 resolved.Manifest,
+				AggBytes:                 resolved.AggBytes,
+				AggregatePath:            resolved.AggregatePath,
+				WorkspaceConfig:          wsCfg,
+				CompilerVersion:          "test",
+			})
+			if tc.valid {
+				if vr.PillarError != nil {
+					t.Errorf("a Component referencing Lib:1.0.0 was refused under a lockfile recording 1.0.0: %v", vr.PillarError)
+				}
+				return
+			}
+			if !errors.Is(vr.PillarError, compactform.ErrUnresolvedSchemaLibraryRef()) {
+				t.Errorf("without a lockfile the pillar error = %v, want the unresolved SchemaLibrary reference condition", vr.PillarError)
+			}
+		})
 	}
 }

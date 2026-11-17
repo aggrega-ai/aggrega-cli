@@ -329,16 +329,18 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 	//
 	// Leave the field unset.
 	vr := compilerops.Validate(ctx, compilerops.ValidateInputs{
-		View:            view,
-		Closure:         resolved.Closure,
-		Release:         resolved.Release,
-		ReleasePath:     releasePath,
-		Manifest:        resolved.Manifest,
-		AggBytes:        resolved.AggBytes,
-		AggregatePath:   relAggPath,
-		WorkspaceRoot:   s.workspaceRoot,
-		WorkspaceConfig: s.wsConfig,
-		CompilerVersion: s.compilerVersion,
+		View:                     view,
+		Closure:                  resolved.Closure,
+		Release:                  resolved.Release,
+		ReleasePath:              releasePath,
+		Manifest:                 resolved.Manifest,
+		AggBytes:                 resolved.AggBytes,
+		ClosureLibrariesResolved: resolved.LibrariesResolved,
+		LibraryRecord:            lf,
+		AggregatePath:            relAggPath,
+		WorkspaceRoot:            s.workspaceRoot,
+		WorkspaceConfig:          s.wsConfig,
+		CompilerVersion:          s.compilerVersion,
 		// The run's displays go where this process says what it has to say; what
 		// the editor is shown comes off the run's advisory channel below.
 		Display: s.runDisplay(),

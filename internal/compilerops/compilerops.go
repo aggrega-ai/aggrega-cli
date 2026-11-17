@@ -126,18 +126,34 @@ type ResolvedClosure struct {
 	ReleaseCompositionAdvisories []error
 }
 
-// Libraries returns the libraries this Release's surfaces read, one version per
-// library name: each at the version the closure resolved where the closure was
-// resolved with its library axes, and at the version a bare reference selects
-// where it was not. It is the one place that choice is made for a resolved closure.
+// Libraries returns the libraries a build or preview of this Release reads, one
+// version per library name: each at the version the closure resolved where the
+// closure was resolved with its library axes, and at the version a bare reference
+// selects where it was not.
 func (r *ResolvedClosure) Libraries(view *catalog.LazyLookup) catalog.LibrarySet {
-	return releaseLibraries(view, r.Closure, r.LibrariesResolved)
+	return releaseLibraries(view, r.Closure, r.LibrariesResolved, nil)
 }
 
-// releaseLibraries is the choice Libraries makes, for a caller that holds a
-// closure and the fact of how it was resolved rather than a ResolvedClosure.
-func releaseLibraries(view *catalog.LazyLookup, cl closure.Closure, librariesResolved bool) catalog.LibrarySet {
-	if librariesResolved {
+// releaseLibraries is the one choice of the library versions a Release's surfaces
+// read. A closure resolved with its library axes (librariesResolved) names each
+// library at the version it resolved. One resolved without them names none, so
+// where a lockfile is in hand each library is read at exactly the version that
+// lockfile's row records, the version a build of the same Release reads, and
+// where none is the version a bare reference selects. A recorded version the view
+// does not hold is absent from the set, never replaced by another version.
+func releaseLibraries(view *catalog.LazyLookup, cl closure.Closure, librariesResolved bool, record *lockfile.Lockfile) catalog.LibrarySet {
+	switch {
+	case librariesResolved:
+		return view.ClosureLibraries(cl)
+	case record != nil:
+		for _, axis := range closure.LibraryAxes() {
+			rows, _ := lockfile.LibraryPins(record, axis)
+			libs := make([]closure.ResolvedLibrary, 0, len(rows))
+			for _, row := range rows {
+				libs = append(libs, closure.ResolvedLibrary{URI: row.URI, ResolvedVersion: row.ResolvedVersion, Digest: row.Digest})
+			}
+			axis.SetLibraries(&cl, libs)
+		}
 		return view.ClosureLibraries(cl)
 	}
 	return view.DefaultLibraries()
