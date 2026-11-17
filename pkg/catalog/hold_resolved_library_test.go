@@ -132,12 +132,14 @@ func TestHoldResolvedLibraryLeavesTheCallersPinsAsTheyWere(t *testing.T) {
 }
 
 // TestHoldResolvedLibraryHoldsTheResolvedVersion: a hold is decided by the version
-// the resolution recorded, not by the library's name. Where the view already holds
-// the library at that version, the hold leaves the view as it was. Where a catalog
-// directory holds the name at another version only, the hold still takes up the
-// resolution: the catalog directory owns the name, so the resolved version's slot
-// is recorded as the pinned duplicate it is, and the view reads the catalog
-// directory's version alone — never that version in place of the resolved one.
+// the resolution recorded. Where the view already holds the library at that
+// version, the hold leaves the view as it was. Where no catalog directory holds the
+// name, a library the resolution served from the content cache or a registry at a
+// version the view does not hold becomes readable at exactly that version.
+//
+// A catalog directory holding the name at other versions only never reaches a
+// hold: its selection is final for the name, so the resolution halts with the
+// unsatisfiable-version condition instead (TestLibraryFloorUnmetInOwningDirectory).
 func TestHoldResolvedLibraryHoldsTheResolvedVersion(t *testing.T) {
 	t.Parallel()
 	axis := closure.LibraryAxisNamed("MappingLibraries")
@@ -163,25 +165,24 @@ func TestHoldResolvedLibraryHoldsTheResolvedVersion(t *testing.T) {
 		}
 	})
 
-	t.Run("a version the view does not hold, beside one it does", func(t *testing.T) {
+	t.Run("a version the view does not hold, of a name no catalog directory holds", func(t *testing.T) {
 		t.Parallel()
 		ws := t.TempDir()
-		writeFixture(t, ws, "held-1.0.0.yaml", doc("1.0.0"))
+		writePinnedSlot(t, ws, cacheUnderCatalogDir, "HeldMappings:1.0.0", oci.MediaTypeMappingLibrary, []byte(doc("1.0.0")))
 		pin := writePinnedSlot(t, ws, cacheUnderCatalogDir, "HeldMappings:1.1.0", oci.MediaTypeMappingLibrary, []byte(doc("1.1.0")))
 		subject := NewLazyLookup(ws, cacheUnderCatalogDir, []string{ws}, nil)
+		if _, held := subject.MappingLibrary("HeldMappings"); held {
+			t.Fatal("the view holds HeldMappings before the hold, so the row proves nothing about the hold")
+		}
 		subject.HoldResolvedLibrary(axis, closure.ResolvedLibrary{
 			URI: "HeldMappings", ResolvedVersion: pin.ResolvedVersion, Digest: pin.Digest, ManifestDigest: pin.ManifestDigest,
 			ResolutionPath: closure.ResolutionPathRegistry,
 		})
-		key := PinKey{Kind: axis.Kind, URI: "HeldMappings"}
-		if err := subject.Skips()[pinnedSlotLabel(key)]; err == nil || !strings.Contains(err.Error(), "HeldMappings:1.1.0") {
-			t.Errorf("record of the resolved version's slot = %v; want the pinned duplicate naming HeldMappings:1.1.0", err)
+		if lib, ok := subject.MappingLibrary("HeldMappings:1.1.0"); !ok || lib.Metadata.Version != "1.1.0" {
+			t.Errorf("read of HeldMappings:1.1.0 = %q (ok %v); want the resolved 1.1.0", lib.Metadata.Version, ok)
 		}
-		if lib, ok := subject.MappingLibrary("HeldMappings:1.1.0"); ok {
-			t.Errorf("read of HeldMappings:1.1.0 returned version %s; the view holds no copy of 1.1.0", lib.Metadata.Version)
-		}
-		if lib, ok := subject.MappingLibrary("HeldMappings:1.0.0"); !ok || lib.Metadata.Version != "1.0.0" {
-			t.Errorf("read of HeldMappings:1.0.0 = %q (ok %v); want the catalog directory's 1.0.0", lib.Metadata.Version, ok)
+		if skips := subject.Skips(); len(skips) != 0 {
+			t.Errorf("the hold recorded refusals: %v", skips)
 		}
 	})
 }

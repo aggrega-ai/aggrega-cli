@@ -107,16 +107,26 @@ type discoverConsumer[B any] struct {
 // It walks the current frontier into a fresh walk state seeded from the libraries
 // already resolved, resolves the whole set so minimum-version selection sees every
 // consumer of every library, merges the result back into the axis's section, and
-// then builds the next frontier from libraries not yet descended. Re-seeding each
-// round is safe: a seeded library the selection still selects keeps the resolution
-// it arrived with (resolveLibraries), so a later round neither asks the lookup for
-// it again nor changes what the first answer recorded.
+// then builds the next frontier from the bodies of libraries not yet descended at
+// the version they now resolve to. Re-seeding each round is safe: a seeded library
+// the selection still selects keeps the resolution it arrived with
+// (resolveLibraries), so a later round neither asks the lookup for it again nor
+// changes what the first answer recorded.
 //
-// Termination is by a visited-set on the canonical library identity, so each
-// library's body is descended exactly once and a genuine library-to-library cycle
+// A library is descended once per version it resolves to: a later round whose
+// requirements raise a library's selected version descends the body of the new
+// version too, so the references that version makes are discovered. Termination
+// is by that visited set on the library's identity and version, of which a catalog
+// and a registry hold finitely many, so a genuine library-to-library cycle
 // terminates discovery without error. The cycle itself surfaces at reference
 // consumption, where the recursive expander detects it; discovery does not
 // duplicate that diagnostic.
+//
+// Once no body is left to descend, the section is settled against the versions
+// finally selected (settleLibraryConsumers): a library's references are those its
+// selected version's body makes, and a library no longer reached that way, or from
+// a consumer outside the axis, leaves the section. A discovery that read no
+// library body leaves the section as it found it.
 //
 // This is the single producer of every library axis: a pin flow and a verify flow
 // calling it with the same inputs compute the identical closure, so the lockfile
@@ -130,7 +140,9 @@ func discoverLibraries[B any](
 	walkOne func(s *walkState, axis LibraryAxis, body B, consumer consumerIdentity) error,
 	body func(lib ResolvedLibrary) ([]B, bool, error),
 ) error {
-	descended := map[string]struct{}{}
+	// descended holds, by ResolvedLibrary.Reference, the references each library
+	// body the discovery read makes; a body the source could not read makes none.
+	descended := map[string][]discoverConsumer[B]{}
 	frontier := append([]discoverConsumer[B]{}, consumers...)
 
 	for len(frontier) > 0 {
@@ -149,23 +161,84 @@ func discoverLibraries[B any](
 
 		frontier = frontier[:0]
 		for _, lib := range axis.Libraries(c) {
-			if _, seen := descended[lib.URI]; seen {
+			if _, seen := descended[lib.Reference()]; seen {
 				continue
 			}
-			descended[lib.URI] = struct{}{}
 			bodies, found, err := body(lib)
 			if err != nil {
 				return err
 			}
-			if !found {
-				continue
+			var made []discoverConsumer[B]
+			if found {
+				for _, b := range bodies {
+					// A library consuming another on its own axis is read as the axis's kind.
+					made = append(made, discoverConsumer[B]{Consumer: consumerIdentity{Kind: axis.Kind, URI: lib.URI}, Body: b})
+				}
 			}
-			for _, b := range bodies {
-				// A library consuming another on its own axis is read as the axis's kind.
-				frontier = append(frontier, discoverConsumer[B]{Consumer: consumerIdentity{Kind: axis.Kind, URI: lib.URI}, Body: b})
+			descended[lib.Reference()] = made
+			frontier = append(frontier, made...)
+		}
+	}
+	if len(descended) == 0 {
+		return nil
+	}
+	return settleLibraryConsumers(c, axis, descended, walkOne)
+}
+
+// settleLibraryConsumers settles an axis's section against the versions its
+// libraries finally resolve to, once the discovery has descended every body.
+//
+// A round that raised a library's selected version kept the references the
+// earlier version's body made: they were seeded into every later round as that
+// library's consumer rows. Here every consumer row a library body recorded is
+// replaced by the rows the body of the library's selected version records
+// (descended), and every library then left unreached leaves the section — one
+// reached neither from a consumer outside the axis nor from a library that is
+// itself reached (pruneUnreachedLibraries). Resolutions are kept as they are: no
+// lookup is asked here.
+//
+// A library's body records its rows under the library's name as consumer, as the
+// lockfile records them, so a row is told apart from an entity's by that name
+// alone.
+func settleLibraryConsumers[B any](
+	c *Closure,
+	axis LibraryAxis,
+	descended map[string][]discoverConsumer[B],
+	walkOne func(s *walkState, axis LibraryAxis, body B, consumer consumerIdentity) error,
+) error {
+	read := map[string]struct{}{}
+	for _, lib := range axis.Libraries(c) {
+		if _, ok := descended[lib.Reference()]; ok {
+			read[lib.URI] = struct{}{}
+		}
+	}
+	state := newWalkState()
+	state.seedLibs(axis, axis.Libraries(c))
+	pending := axis.pendingLibs(state)
+	// A library seeded with no consumer at all carries nothing to settle it by, so
+	// it stays as it arrived.
+	unreferenced := map[string]struct{}{}
+	for uri, lib := range pending {
+		if len(lib.fragmentsByCons) == 0 {
+			unreferenced[uri] = struct{}{}
+		}
+		for consumer := range lib.fragmentsByCons {
+			if _, fromBody := read[consumer.URI]; fromBody {
+				delete(lib.fragmentsByCons, consumer)
+				delete(lib.versionByConsumer, consumer)
 			}
 		}
 	}
+	for _, lib := range axis.Libraries(c) {
+		for _, dc := range descended[lib.Reference()] {
+			if err := walkOne(state, axis, dc.Body, dc.Consumer); err != nil {
+				return err
+			}
+		}
+	}
+	state.pruneUnreachedLibraries(axis, unreferenced)
+	axis.SetLibraries(c, state.materialiseLibs(axis))
+	canonicaliseClosure(c)
 	return nil
 }
 

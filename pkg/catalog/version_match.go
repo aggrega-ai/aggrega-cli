@@ -26,14 +26,17 @@ import (
 // Every kind reaches it through the same selection, so an unsatisfiable version
 // pin behaves alike wherever it is written: a version typo on a Manifest recipe
 // mapping halts exactly as the same typo on a component type does. Where a
-// Release's dependency closure is resolved, the walk reports it for a reference —
-// an entity's or a library's — every tier missed whose name the local catalog
-// holds at other versions only, and an extends link whose parent the catalog
-// holds at other versions only reports it too, both in the extends resolution
-// over the closure and in the ancestry reading the mapping-consistency gate
-// performs. The accessors whose shape
-// carries no error channel report it as a miss, and where the catalog was loaded
-// eagerly the resolution-completeness pass turns that miss into the loud halt.
+// Release's dependency closure is resolved, the walk reports it for an entity
+// reference every tier missed whose name the local catalog holds at other
+// versions only; for a library reference whose name a catalog directory holds at
+// other versions only, asking no other tier, or that every tier missed while the
+// pinned content cache holds its name at other versions only, naming the versions
+// held; and an extends link whose parent the catalog holds at other versions only
+// reports it too, both in the extends resolution over the closure and in the
+// ancestry reading the mapping-consistency gate performs. The accessors whose
+// shape carries no error channel report it as a miss, and where the catalog was
+// loaded eagerly the resolution-completeness pass turns that miss into the loud
+// halt.
 func ErrUnsatisfiableEntityVersion() error { return errUnsatisfiableEntityVersion }
 
 var errUnsatisfiableEntityVersion = cerrors.Register("unsatisfiable-entity-version", cerrors.Meta{
@@ -327,8 +330,9 @@ func higherCandidate(a, b versionCandidate) bool {
 // Returns the same three-way contract selectEntityVersion does: (key, true, nil)
 // on a pick, ("", false, nil) when the library name is held at no version, and
 // ("", false, ErrUnsatisfiableEntityVersion) when the name is held but no version
-// satisfies the floor. A floor that is no version at all reports the malformed-pin
-// fault types.ParseVersionPin states.
+// satisfies the floor — reported as an *unsatisfiedLibraryFloor, which names the
+// versions held. A floor that is no version at all reports the malformed-pin fault
+// types.ParseVersionPin states.
 //
 // A caret reference names a range rather than a floor and is selected by
 // selectEntityVersion.
@@ -344,7 +348,7 @@ func selectLibraryVersion[V any](index map[string]V, ref string, meta func(V) (n
 
 	floor, floorErr := semver.NewVersion(floorText)
 	base := pin.Base()
-	held := false
+	var held []versionCandidate
 	best := versionCandidate{}
 	found := false
 	for k, v := range index {
@@ -352,32 +356,64 @@ func selectLibraryVersion[V any](index map[string]V, ref string, meta func(V) (n
 		if n != base {
 			continue
 		}
-		held = true
-		if floorErr != nil {
+		c := versionCandidate{key: k, raw: ver}
+		if parsed, err := semver.NewVersion(ver); err == nil {
+			c.parsed = parsed
+		}
+		held = append(held, c)
+		if floorErr != nil || c.parsed == nil || c.parsed.Major() != floor.Major() || c.parsed.LessThan(floor) {
 			continue
 		}
-		parsed, err := semver.NewVersion(ver)
-		if err != nil || parsed.Major() != floor.Major() || parsed.LessThan(floor) {
+		if c.parsed.Prerelease() != "" && !c.parsed.Equal(floor) {
 			continue
 		}
-		if parsed.Prerelease() != "" && !parsed.Equal(floor) {
-			continue
-		}
-		c := versionCandidate{key: k, raw: ver, parsed: parsed}
 		if !found || higherCandidate(best, c) {
 			best, found = c, true
 		}
 	}
 	switch {
-	case !held:
+	case len(held) == 0:
 		return "", false, nil
 	case floorErr != nil:
 		if fault := pin.Fault(); fault != nil {
 			return "", false, fault
 		}
-		return "", false, ErrUnsatisfiableEntityVersion()
+		return "", false, newUnsatisfiedLibraryFloor(base, held)
 	case !found:
-		return "", false, ErrUnsatisfiableEntityVersion()
+		return "", false, newUnsatisfiedLibraryFloor(base, held)
 	}
 	return best.key, true, nil
 }
+
+// unsatisfiedLibraryFloor is the library selection's account of a floor no held
+// version meets. It is the unsatisfiable-version condition — it unwraps to
+// ErrUnsatisfiableEntityVersion and reads as it — carrying the versions the index
+// holds under the library's name, so a report of the condition can say what is
+// held as well as what was asked for.
+type unsatisfiedLibraryFloor struct {
+	// held is each held version's identity, written `<Name>:<version>`, in semver
+	// order.
+	held []string
+	// keys is the index key of each held version, in the same order.
+	keys []string
+}
+
+// newUnsatisfiedLibraryFloor is the condition for a floor on name that none of
+// the held candidates meets, the candidates put in semver order.
+func newUnsatisfiedLibraryFloor(name string, held []versionCandidate) *unsatisfiedLibraryFloor {
+	sort.Slice(held, func(i, j int) bool { return higherCandidate(held[j], held[i]) })
+	e := &unsatisfiedLibraryFloor{}
+	for _, c := range held {
+		e.held = append(e.held, name+":"+c.raw)
+		e.keys = append(e.keys, c.key)
+	}
+	return e
+}
+
+func (e *unsatisfiedLibraryFloor) Error() string { return ErrUnsatisfiableEntityVersion().Error() }
+
+func (e *unsatisfiedLibraryFloor) Unwrap() error { return ErrUnsatisfiableEntityVersion() }
+
+// HeldIdentities returns the identities held under the library's name, written
+// `<Name>:<version>`, in semver order.
+func (e *unsatisfiedLibraryFloor) HeldIdentities() []string { return e.held }

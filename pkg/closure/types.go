@@ -550,7 +550,9 @@ type Resolution struct {
 	// that condition in place of the not-found one, because the name is right and
 	// only the version is not, so "no entity matches" would send the author
 	// looking for a misspelt name. Nil wherever the lookup holds nothing under
-	// the name.
+	// the name. A condition with a method HeldIdentities() []string names the
+	// identities held under the name, and the walk reports them beside the
+	// request.
 	UnsatisfiedPin error
 }
 

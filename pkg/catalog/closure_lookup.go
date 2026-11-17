@@ -769,15 +769,21 @@ func (l *catalogLookup) lookupExternal(uri, entityKind string) (closure.Resoluti
 // cascade is written once here rather than copied per axis.
 //
 // The catalog tier answers with the copy the reference selects among the versions
-// it holds. A reference whose name it holds at no version the reference admits is
-// a miss there, and the cache and registry tiers are asked as for any other miss;
-// only when they miss as well does the resolution carry the catalog tier's
-// unsatisfiable-version condition (Resolution.UnsatisfiedPin), so a registry that
-// serves the version asked for still answers it.
+// it holds. Where a catalog directory holds the library's name, its selection is
+// final for that name: a reference whose floor no version there meets resolves to
+// nothing, carrying the selection's unsatisfiable-version condition
+// (Resolution.UnsatisfiedPin), and neither the cache nor a registry is asked for
+// it. A name that only the pinned content cache holds, or that nothing here holds,
+// goes on to the cache and registry tiers, and the resolution carries the
+// condition only when they miss as well and the cache holds the name at other
+// versions — so a registry that serves the version asked for still answers it.
 func (l *catalogLookup) ResolveLibrary(ctx context.Context, axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
 	res, entries, ok, unsatisfied := l.tier1Library(axis, uri)
 	if ok {
 		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
+	}
+	if l.catalogDirectoryOwns(axis.Kind, unsatisfied) {
+		return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true, UnsatisfiedPin: unsatisfied}}, nil
 	}
 	fetchURI := l.pinnedFetchURI(axis.Kind, uri)
 	if _, res, ok, err := l.tier2(axis.Kind, uri, fetchURI); err != nil {
@@ -1168,8 +1174,8 @@ func (l *catalogLookup) tier1RungsFor(entityKind string) []tier1Rung {
 //
 // A reference the catalog does not answer is a miss. Where the catalog holds the
 // name but no version the floor admits, the error returned is the selection's
-// unsatisfiable-version condition, for the resolution to report once every other
-// tier has missed too; it is nil for any other miss. An axis the local catalog
+// unsatisfiable-version condition (an *unsatisfiedLibraryFloor), for the
+// resolution to report; it is nil for any other miss. An axis the local catalog
 // holds no map for resolves as a miss rather than an error: a library that is not
 // authored locally is exactly what the cache and registry tiers below exist to
 // serve.
@@ -1185,6 +1191,20 @@ func (l *catalogLookup) tier1Library(axis closure.LibraryAxis, uri string) (clos
 	// of the copy read, under the identity it is indexed by.
 	d := contentDigest(l.catalog.entityBytes[entityBytesKey(axis.Kind, key)])
 	return l.tier1Resolution(axis.Kind, key, version, d), entries, true, nil
+}
+
+// catalogDirectoryOwns reports whether the versions an unsatisfied library floor
+// found held under the library's name (unsatisfiedLibraryFloor) were read from a
+// catalog directory rather than placed from the pinned content cache. Every
+// version of one library name comes from the one source that owns the name, so the
+// first held version answers for all of them. A condition naming no held version
+// reports false.
+func (l *catalogLookup) catalogDirectoryOwns(kind string, unsatisfied error) bool {
+	var floor *unsatisfiedLibraryFloor
+	if !errors.As(unsatisfied, &floor) || len(floor.keys) == 0 {
+		return false
+	}
+	return l.catalog.indexedResolutionPath(kind, floor.keys[0]) == closure.ResolutionPathCatalog
 }
 
 // localLibrary reads one library out of the locally-authored catalog, returning

@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
 // The proofs in this file cover how a library reference is answered once a catalog
@@ -149,14 +151,17 @@ func TestTier1LibraryReportsSelectedCopy(t *testing.T) {
 
 // TestLibraryFloorAboveHeldVersions: a library reference whose floor no version
 // the catalog holds satisfies, with no content cache entry and no registry to ask,
-// halts the dependency resolution with the unsatisfiable-version condition, naming
-// the library with the floor; a floor on another major than every held version
-// halts alike; a name the catalog does not hold keeps the not-found condition; and
-// a floor the catalog satisfies resolves.
+// halts the dependency resolution with the unsatisfiable-version condition. The
+// halt names the library with the floor and then every version held, in semver
+// order — 1.9.0 before 1.10.0, which a lexical order would reverse. A floor on
+// another major than every held version halts alike; a name the catalog does not
+// hold keeps the not-found condition and names nothing held; and a floor the
+// catalog satisfies resolves.
 func TestLibraryFloorAboveHeldVersions(t *testing.T) {
 	t.Parallel()
 	rows := []struct {
 		name string
+		held []string
 		ref  string
 		// want is the condition the walk halts with; nil for the control.
 		want error
@@ -165,20 +170,25 @@ func TestLibraryFloorAboveHeldVersions(t *testing.T) {
 		// named is what the halt names.
 		named string
 	}{
-		{name: "a floor the catalog holds (control)", ref: "Lib:1.0.0"},
-		{name: "a floor above every held version", ref: "Lib:1.1.0",
-			want: ErrUnsatisfiableEntityVersion(), not: closure.ErrUnresolvableURI(), named: "Lib:1.1.0"},
-		{name: "a floor on another major", ref: "Lib:2.0.0",
-			want: ErrUnsatisfiableEntityVersion(), not: closure.ErrUnresolvableURI(), named: "Lib:2.0.0"},
-		{name: "a name the catalog does not hold", ref: "Absent:1.0.0",
-			want: closure.ErrUnresolvableURI(), not: ErrUnsatisfiableEntityVersion(), named: "Absent"},
+		{name: "a floor the catalog holds (control)", held: []string{"1.0.0"}, ref: "Lib:1.0.0"},
+		{name: "a floor above every held version", held: []string{"1.0.0"}, ref: "Lib:1.1.0",
+			want: ErrUnsatisfiableEntityVersion(), not: closure.ErrUnresolvableURI(),
+			named: `library "Lib:1.1.0"; held: Lib:1.0.0`},
+		{name: "a floor above every held version of its major", held: []string{"2.0.0", "1.10.0", "1.9.0"}, ref: "Lib:1.11.0",
+			want: ErrUnsatisfiableEntityVersion(), not: closure.ErrUnresolvableURI(),
+			named: `library "Lib:1.11.0"; held: Lib:1.9.0, Lib:1.10.0, Lib:2.0.0`},
+		{name: "a floor on another major", held: []string{"1.0.0"}, ref: "Lib:2.0.0",
+			want: ErrUnsatisfiableEntityVersion(), not: closure.ErrUnresolvableURI(),
+			named: `library "Lib:2.0.0"; held: Lib:1.0.0`},
+		{name: "a name the catalog does not hold", held: []string{"1.0.0"}, ref: "Absent:1.0.0",
+			want: closure.ErrUnresolvableURI(), not: ErrUnsatisfiableEntityVersion(), named: `library "Absent"`},
 	}
 	for _, k := range libraryKindCases() {
 		axis := axisOfKind(t, k.kind)
 		for _, row := range rows {
 			t.Run(k.kind+"/"+row.name, func(t *testing.T) {
 				t.Parallel()
-				ws, dir := heldVersionsCatalog(t, k, "1.0.0")
+				ws, dir := heldVersionsCatalog(t, k, row.held...)
 				ref := row.ref + "#" + axis.FragmentPrefix + libraryEntry[k.kind]
 				for backing, lookup := range resolutionBackings(t, ws, dir) {
 					var cl closure.Closure
@@ -194,11 +204,129 @@ func TestLibraryFloorAboveHeldVersions(t *testing.T) {
 						continue
 					}
 					if !strings.Contains(err.Error(), row.named) {
-						t.Errorf("%s: the halt %q does not name %s", backing, err.Error(), row.named)
+						t.Errorf("%s: the halt %q does not say %s", backing, err.Error(), row.named)
+					}
+					if row.want == closure.ErrUnresolvableURI() && strings.Contains(err.Error(), "held:") {
+						t.Errorf("%s: the not-found halt %q names versions held", backing, err.Error())
 					}
 				}
 			})
 		}
+	}
+}
+
+// servingLibraryPuller is a registry serving MappingLibrary Lib at the versions
+// its bodies hold, each fetched by its tag, and recording each tag it is asked for
+// ("" for a bare request).
+type servingLibraryPuller struct {
+	t      *testing.T
+	bodies map[string]string
+	mu     sync.Mutex
+	asked  []string
+}
+
+func (p *servingLibraryPuller) Pull(context.Context, string, string) (*oci.PullResult, error) {
+	return nil, oci.ErrFetchNotFound()
+}
+
+func (p *servingLibraryPuller) PullLibrary(_ context.Context, _, _, floorVersion string) (*oci.PullResult, string, error) {
+	p.mu.Lock()
+	p.asked = append(p.asked, floorVersion)
+	p.mu.Unlock()
+	body, ok := p.bodies[floorVersion]
+	if !ok {
+		return nil, "", oci.ErrFetchNotFound()
+	}
+	mb, md := manifestBytesFor(p.t, oci.MediaTypeMappingLibrary, []byte(body))
+	return &oci.PullResult{MediaType: oci.MediaTypeMappingLibrary, Bytes: []byte(body), ManifestBytes: mb, Digest: md}, floorVersion, nil
+}
+
+func (p *servingLibraryPuller) tagsAsked() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.asked...)
+}
+
+// TestLibraryFloorUnmetInOwningDirectory: a catalog directory holding a library's
+// name owns that name, and its selection is final for it. The directory holds Lib
+// 1.0.0 and Other; the content cache holds Lib 1.1.0, whose body imports Other; a
+// registry serves Lib 1.1.0 too; and a Recipe imports Lib with the floor 1.1.0. The
+// dependency resolution halts with the unsatisfiable-version condition, naming the
+// request and the version the directory holds, and asks no registry for Lib —
+// where answering from the cache or a registry would resolve a version the
+// directory's ownership of the name keeps from ever being read.
+func TestLibraryFloorUnmetInOwningDirectory(t *testing.T) {
+	t.Parallel()
+	ws := t.TempDir()
+	dir := mkCatalogDir(t, filepath.Join(ws, "catalog"))
+	mapping := augmentLibraryKinds()[1]
+	writeFixture(t, dir, "lib-1.0.0.yaml", libraryDocument(mapping.kind, "Lib", "1.0.0", mapping.leaf))
+	writeFixture(t, dir, "other.yaml", libraryDocument(mapping.kind, "Other", "1.0.0", mapping.leaf))
+	writeFixture(t, dir, "recipe.yaml", `apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: consumer-recipe
+  version: "1.0.0"
+spec:
+  capability: helm
+  implements: core/consumer
+  source: ./chart
+  valuesMapping:
+    $import: Lib:1.1.0#/mappings/X
+`)
+	cached := libraryDocument(mapping.kind, "Lib", "1.1.0", mapping.referencing("Other"))
+	writePinnedSlot(t, ws, resolutionCacheDir, "Lib:1.1.0", oci.MediaTypeMappingLibrary, []byte(cached))
+	puller := &servingLibraryPuller{t: t, bodies: map[string]string{"1.1.0": cached}}
+
+	view := NewLazyLookup(ws, resolutionCacheDir, []string{dir}, puller)
+	cl := closure.Closure{Entities: []closure.ResolvedRef{{URI: "helm/consumer-recipe:1.0.0", KindHint: closure.KindRecipe}}}
+	err := closure.AugmentClosure(context.Background(), &cl, view, view.ClosureLookup(puller, ws, resolutionCacheDir, nil, nil, nil))
+	if !errors.Is(err, ErrUnsatisfiableEntityVersion()) {
+		t.Fatalf("AugmentClosure: %v; want the unsatisfiable-version condition (closure %+v)", err, cl.MappingLibraries)
+	}
+	if want := `library "Lib:1.1.0"; held: Lib:1.0.0`; !strings.Contains(err.Error(), want) {
+		t.Errorf("the halt %q does not say %s", err.Error(), want)
+	}
+	if asked := puller.tagsAsked(); len(asked) != 0 {
+		t.Errorf("a registry was asked for Lib at %q; the catalog directory owns the name", asked)
+	}
+}
+
+// TestLibraryFloorMetByRegistryWhenNoDirectoryOwnsName: a library name only the
+// pinned content cache holds goes on to the cache and registry tiers when its floor
+// is not met there. The lockfile pins Lib at 1.0.0, no catalog directory holds Lib,
+// and a Recipe's import floors it at 1.1.0, which a registry serves: the dependency
+// resolution resolves Lib at 1.1.0 from the registry, asked for that tag alone.
+func TestLibraryFloorMetByRegistryWhenNoDirectoryOwnsName(t *testing.T) {
+	t.Parallel()
+	ws := t.TempDir()
+	dir := mkCatalogDir(t, filepath.Join(ws, "catalog"))
+	mapping := augmentLibraryKinds()[1]
+	pinnedBody := libraryDocument(mapping.kind, "Lib", "1.0.0", mapping.leaf)
+	served := libraryDocument(mapping.kind, "Lib", "1.1.0", mapping.leaf)
+	pin := writePinnedSlot(t, ws, resolutionCacheDir, "Lib:1.0.0", oci.MediaTypeMappingLibrary, []byte(pinnedBody))
+	puller := &servingLibraryPuller{t: t, bodies: map[string]string{"1.1.0": served}}
+
+	view := NewLazyLookup(ws, resolutionCacheDir, []string{dir}, puller)
+	view.SetPins(Pins{{Kind: mapping.kind, URI: "Lib"}: pin})
+	if lib, ok := view.MappingLibrary("Lib"); !ok || lib.Metadata.Version != "1.0.0" {
+		t.Fatalf("the view holds Lib at %q (ok %v); the proof needs the pinned cache to hold it at 1.0.0", lib.Metadata.Version, ok)
+	}
+	var cl closure.Closure
+	lookup := view.ClosureLookup(puller, ws, resolutionCacheDir, nil, nil, nil)
+	if err := discoverReference(t, &cl, axisOfKind(t, mapping.kind), lookup, "Lib:1.1.0#/mappings/X"); err != nil {
+		t.Fatalf("discovery of Lib:1.1.0: %v", err)
+	}
+	if len(cl.MappingLibraries) != 1 {
+		t.Fatalf("mapping libraries = %+v; want Lib alone", cl.MappingLibraries)
+	}
+	lib := cl.MappingLibraries[0]
+	if lib.URI != "Lib" || lib.ResolvedVersion != "1.1.0" || lib.ResolutionPath != closure.ResolutionPathRegistry ||
+		lib.Digest != fileDigest(served) {
+		t.Errorf("Lib resolved as %+v; want 1.1.0 from the registry, with the served bytes' digest %s", lib, fileDigest(served))
+	}
+	if asked := puller.tagsAsked(); len(asked) != 1 || asked[0] != "1.1.0" {
+		t.Errorf("the registry was asked for Lib at %q; want the tag 1.1.0 alone", asked)
 	}
 }
 
@@ -324,6 +452,58 @@ spec:
 			t.Errorf("%s: the closure holds %v; want %s — the libraries Lib 1.0.0 references, and not those of Lib 1.1.0",
 				k.kind, got, want)
 		}
+	}
+}
+
+// TestAugmentFollowsRaisedLibraryVersion: a library whose selected version a later
+// round of the discovery raises is descended at the raised version, and the
+// references its earlier version made leave the closure. Recipe B imports Lib2
+// with the floor 1.0.0 and Recipe A imports Lib, whose body imports Lib2 with the
+// floor 1.1.0 — a requirement the discovery meets only once it has read Lib's
+// body, after Lib2 1.0.0 was selected and descended. Lib2 1.0.0 imports Zed and
+// Lib2 1.1.0 imports Wye: the closure holds Lib2 at 1.1.0 and Wye, consumed by
+// Lib2, and holds no Zed, which only the version no longer selected referenced.
+func TestAugmentFollowsRaisedLibraryVersion(t *testing.T) {
+	t.Parallel()
+	ws := t.TempDir()
+	dir := mkCatalogDir(t, filepath.Join(ws, "catalog"))
+	mapping := augmentLibraryKinds()[1]
+	recipe := func(name, reference string) string {
+		return fmt.Sprintf("apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: %s\n  version: \"1.0.0\"\n"+
+			"spec:\n  capability: helm\n  implements: core/consumer\n  source: ./chart\n  valuesMapping:\n    $import: %s\n",
+			name, reference)
+	}
+	writeFixture(t, dir, "recipe-a.yaml", recipe("recipe-a", "Lib:1.0.0#/mappings/X"))
+	writeFixture(t, dir, "recipe-b.yaml", recipe("recipe-b", "Lib2:1.0.0#/mappings/X"))
+	writeFixture(t, dir, "lib.yaml", libraryDocument(mapping.kind, "Lib", "1.0.0", mapping.referencing("Lib2:1.1.0")))
+	writeFixture(t, dir, "lib2-1.0.0.yaml", libraryDocument(mapping.kind, "Lib2", "1.0.0", mapping.referencing("Zed")))
+	writeFixture(t, dir, "lib2-1.1.0.yaml", libraryDocument(mapping.kind, "Lib2", "1.1.0", mapping.referencing("Wye")))
+	writeFixture(t, dir, "zed.yaml", libraryDocument(mapping.kind, "Zed", "1.0.0", mapping.leaf))
+	writeFixture(t, dir, "wye.yaml", libraryDocument(mapping.kind, "Wye", "1.0.0", mapping.leaf))
+
+	view := NewLazyLookup(ws, resolutionCacheDir, []string{dir}, nil)
+	cl := closure.Closure{Entities: []closure.ResolvedRef{
+		{URI: "helm/recipe-a:1.0.0", KindHint: closure.KindRecipe},
+		{URI: "helm/recipe-b:1.0.0", KindHint: closure.KindRecipe},
+	}}
+	if err := closure.AugmentClosure(context.Background(), &cl, view, view.ClosureLookup(nil, ws, resolutionCacheDir, nil, nil, nil)); err != nil {
+		t.Fatalf("AugmentClosure: %v", err)
+	}
+	var got []string
+	for _, lib := range cl.MappingLibraries {
+		var consumers []string
+		for _, c := range lib.Consumers {
+			consumers = append(consumers, c.ConsumerURI)
+		}
+		got = append(got, lib.URI+":"+lib.ResolvedVersion+" <- "+strings.Join(consumers, ","))
+	}
+	want := []string{
+		"Lib:1.0.0 <- helm/recipe-a:1.0.0",
+		"Lib2:1.1.0 <- Lib,helm/recipe-b:1.0.0",
+		"Wye:1.0.0 <- Lib2",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("mapping libraries:\n  got:  %q\n  want: %q", got, want)
 	}
 }
 
