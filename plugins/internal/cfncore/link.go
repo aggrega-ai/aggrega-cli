@@ -330,7 +330,7 @@ type plainReadKey struct {
 // A read key the edge's provides does not carry halts: it names a value the host
 // never delivered, so there is nothing to wire it to.
 func linkedKeys(edge rendercore.LinkEdge) (edgeLinkKeys, error) {
-	injected := injectedOutputKeys(edge)
+	injected := rendercore.LinkInjectedKeys(edge)
 	carried := make(map[string]bool, len(injected)+len(edge.ReadProvidesKeys))
 	for _, key := range injected {
 		carried[key] = true
@@ -358,27 +358,6 @@ func linkedKeys(edge rendercore.LinkEdge) (edgeLinkKeys, error) {
 	}
 	sort.Strings(referenced)
 	return edgeLinkKeys{referenced: referenced, plain: plain}, nil
-}
-
-// injectedOutputKeys returns the sorted, de-duplicated set of consumed output
-// keys the edge injects under every mechanism its inject mapping names — env,
-// file, arg and any mechanism of the author's naming alike, because the host
-// stamps a placeholder for a key under each — the keys the producer must export
-// and the consumer must resolve whatever their value. Sorting makes the publish
-// operations and handle entries byte-identical across runs of identical input.
-func injectedOutputKeys(edge rendercore.LinkEdge) []string {
-	seen := map[string]struct{}{}
-	for _, keymap := range edge.Inject.All() {
-		for _, outputKey := range keymap.All() {
-			seen[outputKey] = struct{}{}
-		}
-	}
-	keys := make([]string, 0, len(seen))
-	for k := range seen {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // findStackFile returns the assembled CloudFormation stack template's bytes from

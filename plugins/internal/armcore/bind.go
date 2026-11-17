@@ -161,7 +161,7 @@ func bindOne(where, name string, decl, definitions map[string]any, value any) (e
 			fmt.Sprintf("the value mapped to parameter %q of %s ", name, where)+fmt.Sprintf(format, args...))
 	}
 	typ, byRef := parameterType(decl, definitions)
-	secure := typ == typeSecureString || typ == typeSecureObject
+	secure := isSecureType(typ)
 
 	if value == nil {
 		if decl[paramNullable] != true {
@@ -220,6 +220,13 @@ func parameterType(decl, definitions map[string]any) (typ string, byRef bool) {
 		}
 	}
 	return "", true
+}
+
+// isSecureType reports whether a lower-cased parameter type, as parameterType
+// returns it, is one ARM keeps out of a deployment's history: securestring or
+// secureObject.
+func isSecureType(typ string) bool {
+	return typ == typeSecureString || typ == typeSecureObject
 }
 
 // typeName returns the type a parameter declares, as written, for a sentence.

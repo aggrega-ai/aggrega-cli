@@ -6,8 +6,9 @@
 // Command arm-provider is the Azure Resource Manager Provider Wasm guest. It
 // implements the artifacts-placement and sourced-render paths behind the provider
 // render ABI's render_node export, the sourced-template check behind its
-// validate_node_input export, and the per-dispatch-group merge behind its
-// assemble_boundary export.
+// validate_node_input export, the per-dispatch-group merge behind its
+// assemble_boundary export, and the cross-boundary-linking export pair
+// (link_publish and link_resolve).
 //
 // The guest decodes a RenderNodeInput and routes on what it carries. An artifacts
 // projection is the fragment path: each artifact's content, already evaluated by
@@ -26,6 +27,15 @@
 // armcore package the guest calls, so the Wasm host stays agnostic to ARM
 // semantics.
 //
+// The link_publish and link_resolve exports wire a uses edge between two arm
+// boundaries, each a template of its own. link_publish, on the producing
+// template's side, adds a string output for each value the consumer reads and
+// records the name the template is deployed under; link_resolve, on the
+// consuming template's side, replaces the placeholder the host stamped there with
+// ARM's reference() to that output, addressed by the resource ID built from the
+// recorded name and the producer's placement annotations. Every name and ID is a
+// deterministic pointer string the guest pipes and never resolves against Azure.
+//
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o arm-provider.wasm ./plugins/arm-provider
 // (c-shared produces a WASI reactor whose _initialize the host runs before
 // the first export, so the Go runtime is initialized before render_node.)
@@ -42,14 +52,17 @@ import (
 )
 
 // descriptor is the describe() self-report: a provider plugin compatible with the
-// arm provider, declaring the render_node, validate_node_input and
-// assemble_boundary exports and its render-behavior contract (sourced and
-// artifacts-standalone input, boundary-merge assembly, and its honouring of omit
+// arm provider, declaring the render_node, validate_node_input,
+// assemble_boundary, link_publish and link_resolve exports and its
+// render-behavior contract (sourced and artifacts-standalone input,
+// boundary-merge assembly, cross-boundary linking, and its honouring of omit
 // entries). The host reads it once at load and validates it before invoking any
 // export. The guest resolves a sourced template from the host's name-only listing
 // and asks the host to pack the selection, so render_node and validate_node_input
 // declare the aggrega_pack_source host function they import; the host cross-checks
-// this declaration against the functions the guest actually imports.
+// this declaration against the functions the guest actually imports. The
+// cross-boundary-linking capability is declared with both link exports as the
+// paired contract the load gate's coherence check requires.
 //
 // aggrega.MarshalDescriptor folds the build-provenance version and commit into
 // the metadata when the Go linker stamps them at build time; a plain build leaves
@@ -81,11 +94,24 @@ func descriptor() aggrega.PluginDescriptor {
 				Stability:    "experimental",
 				Description:  "merges the per-node ARM template fragments at one dispatch group into a single resource group template, ordering the merged resources by the declared wave",
 			},
+			{
+				Name:         "link_publish",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "adds the template outputs a cross-boundary link reads and records the name the producing template is deployed under",
+			},
+			{
+				Name:         "link_resolve",
+				InputPattern: "b",
+				Stability:    "experimental",
+				Description:  "replaces a consuming template's cross-boundary placeholder with a reference() to the producing template's output",
+			},
 		},
 		Contract: &aggrega.ProviderContract{
-			InputKinds:       aggrega.InputKinds{Sourced: true, Synthesized: false, ArtifactsStandalone: true},
-			BoundaryAssembly: "merge",
-			ReusableInstance: true,
+			InputKinds:           aggrega.InputKinds{Sourced: true, Synthesized: false, ArtifactsStandalone: true},
+			BoundaryAssembly:     "merge",
+			ReusableInstance:     true,
+			CrossBoundaryLinking: true,
 			// A sourced render leaves out every resource an omit entry names, and
 			// reports how many resources each entry left out.
 			Omits: true,
@@ -375,6 +401,60 @@ func assembleBoundaryOutput() (rendercore.AssembleBoundaryOutput, error) {
 		contribs = append(contribs, c)
 	}
 	return armcore.Assemble(contribs)
+}
+
+//go:wasmexport link_publish
+func linkPublish() int32 {
+	out, err := linkPublishOutput()
+	if err != nil {
+		out = rendercore.LinkPublishFailure(err)
+	}
+
+	encoded, mErr := out.EncodeCBOR()
+	if mErr != nil {
+		pdk.SetError(mErr)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+// linkPublishOutput decodes the link_publish input and produces the producing
+// template's side of the link, returning the error rather than reporting it for
+// the reason renderNodeOutput does.
+func linkPublishOutput() (rendercore.LinkPublishOutput, error) {
+	var in rendercore.LinkPublishInput
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
+		return rendercore.LinkPublishOutput{}, err
+	}
+	return armcore.LinkPublish(in.Edge, in.ProducerFiles)
+}
+
+//go:wasmexport link_resolve
+func linkResolve() int32 {
+	out, err := linkResolveOutput()
+	if err != nil {
+		out = rendercore.LinkResolveFailure(err)
+	}
+
+	encoded, mErr := out.EncodeCBOR()
+	if mErr != nil {
+		pdk.SetError(mErr)
+		return 1
+	}
+	pdk.Output(encoded)
+	return 0
+}
+
+// linkResolveOutput decodes the link_resolve input and produces the consuming
+// template's side of the link, returning the error rather than reporting it for
+// the reason renderNodeOutput does.
+func linkResolveOutput() (rendercore.LinkResolveOutput, error) {
+	var in rendercore.LinkResolveInput
+	if err := in.DecodeCBOR(pdk.Input()); err != nil {
+		return rendercore.LinkResolveOutput{}, err
+	}
+	return armcore.LinkResolve(in.Edge, in.Handle, in.ConsumerFiles)
 }
 
 func main() {}

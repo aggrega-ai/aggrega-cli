@@ -6,6 +6,7 @@ package rendercore
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"sort"
 )
 
 // CrossBoundaryLinkSentinelPrefix is the fixed leading run every cross-boundary
@@ -68,4 +69,24 @@ const crossBoundaryLinkReadMarker = "read-"
 func CrossBoundaryLinkReadPlaceholder(source, target, socket, providesKey string) string {
 	sum := sha256.Sum256([]byte("read\x1f" + source + "\x1f" + target + "\x1f" + socket + "\x1f" + providesKey))
 	return CrossBoundaryLinkSentinelPrefix + crossBoundaryLinkReadMarker + hex.EncodeToString(sum[:])
+}
+
+// LinkInjectedKeys returns the provides keys a cross-boundary link's inject
+// mapping delivers, under every mechanism it names — env, file, arg and any
+// mechanism of the author's naming alike, because the host stamps a placeholder
+// for a key under each. Each key is listed once and the list is sorted, so what a
+// provider derives from it is byte-identical across runs of identical input.
+func LinkInjectedKeys(edge LinkEdge) []string {
+	seen := map[string]struct{}{}
+	for _, keymap := range edge.Inject.All() {
+		for _, providesKey := range keymap.All() {
+			seen[providesKey] = struct{}{}
+		}
+	}
+	keys := make([]string, 0, len(seen))
+	for k := range seen {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
