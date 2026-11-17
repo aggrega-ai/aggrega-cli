@@ -601,13 +601,130 @@ func TestLinkResolvePlaceholderOutsidePropertiesHalts(t *testing.T) {
 	}
 }
 
-func TestLinkResolveValueInEscapedLiteralTextHalts(t *testing.T) {
+func TestLinkResolveValueInLiteralTextHalts(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, text string
+		says       []string
+		silent     []string
+	}{
+		// The assembly leaves text that opens with [[ as written, so a value read
+		// from another template stays inside it.
+		{"text that opens with [[", "[[db " + placeholder("host") + "]",
+			[]string{"opens with [[", "does not open with [["}, nil},
+		// Literal text the assembly did not write as a format() expression, such
+		// as text written into the template after it was assembled.
+		{"literal text that is not an expression", "db at " + placeholder("host"),
+			[]string{"literal text", "format() expression"}, []string{"[["}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			edge := testLink()
+			files := consumerFiles(t, map[string]any{"label": c.text}, nil, nil)
+			_, err := LinkResolve(edge, published(t, edge), files)
+			wantCondition(t, err, plugincondition.ErrPluginValueNotRepresentable(), "db at", "[[db")
+			for _, want := range append([]string{"/resources/App/properties/label", `"host"`, `"payments-db"`}, c.says...) {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the halt does not say %q: %v", want, err)
+				}
+			}
+			for _, absent := range c.silent {
+				if strings.Contains(err.Error(), absent) {
+					t.Errorf("the halt says %q, which is not true of this text: %v", absent, err)
+				}
+			}
+		})
+	}
+}
+
+func TestLinkPublishInjectedKeyAbsentFromProvidesHalts(t *testing.T) {
+	t.Parallel()
+	edge := injecting(testLink(), "DB_HOST", "host", "DB_REPLICA", "replica")
+	_, err := LinkPublish(edge, producerFiles(t, nil))
+	wantCondition(t, err, plugincondition.ErrPluginRequiredInputUnresolved())
+	for _, want := range []string{`"replica"`, `"orders-api"`, `"payments-db"`, `"database"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not name %s: %v", want, err)
+		}
+	}
+}
+
+func TestLinkPublishAndResolveHaltOnATemplateThatCannotBeRead(t *testing.T) {
+	t.Parallel()
+	file := func(content string) []rendercore.RenderedFile {
+		return []rendercore.RenderedFile{{Path: TemplateFileName, Content: []byte(content)}}
+	}
+	cases := []struct {
+		name  string
+		files []rendercore.RenderedFile
+		cond  error
+		says  []string
+	}{
+		{"absent", []rendercore.RenderedFile{{Path: "other.json", Content: []byte("{}")}},
+			plugincondition.ErrPluginRequiredInputUnresolved(), []string{TemplateFileName, "no template to wire"}},
+		{"not JSON", file(`{"resources": {"Db": `),
+			plugincondition.ErrPluginValueNotRepresentable(), []string{TemplateFileName, "does not parse", "one JSON object"}},
+		{"not an object", file(`["resources"]`),
+			plugincondition.ErrPluginValueNotRepresentable(), []string{TemplateFileName, "one JSON object"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			edge := testLink()
+			_, err := LinkPublish(edge, c.files)
+			wantCondition(t, err, c.cond, `"Db"`)
+			_, resolveErr := LinkResolve(edge, map[string]string{"deploymentName": linkedDeployment, "outputName.host": hostOutput}, c.files)
+			wantCondition(t, resolveErr, c.cond, `"Db"`)
+			for _, e := range []error{err, resolveErr} {
+				for _, want := range append([]string{`"orders-api"`, `"payments-db"`}, c.says...) {
+					if !strings.Contains(e.Error(), want) {
+						t.Errorf("the halt does not say %q: %v", want, e)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestLinkPublishSectionThatIsNotAnObjectHalts(t *testing.T) {
+	t.Parallel()
+	for _, section := range []string{sectionOutputs, sectionMetadata} {
+		t.Run(section, func(t *testing.T) {
+			t.Parallel()
+			_, err := LinkPublish(testLink(), producerFiles(t, map[string]any{section: []any{"x"}}))
+			wantCondition(t, err, plugincondition.ErrPluginValueNotRepresentable())
+			for _, want := range []string{`"` + section + `"`, `"stack-a/arm"`, "object"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the halt does not say %q: %v", want, err)
+				}
+			}
+		})
+	}
+}
+
+func TestLinkResolveExpressionThatDoesNotParseHalts(t *testing.T) {
 	t.Parallel()
 	edge := testLink()
-	files := consumerFiles(t, map[string]any{"label": "[[db " + placeholder("host") + "]"}, nil, nil)
+	// The two arguments of format() are not separated by a comma.
+	files := consumerFiles(t, map[string]any{"url": "[format('https://{0}' '" + placeholder("host") + "')]"}, nil, nil)
 	_, err := LinkResolve(edge, published(t, edge), files)
 	wantCondition(t, err, plugincondition.ErrPluginValueNotRepresentable())
-	for _, want := range []string{"/resources/App/properties/label", `"host"`, "[["} {
+	for _, want := range []string{"/resources/App/properties/url", `"stack-b/arm"`, "does not parse"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not say %q: %v", want, err)
+		}
+	}
+}
+
+func TestLinkResolveUnreadableOutputNameHalts(t *testing.T) {
+	t.Parallel()
+	edge := testLink()
+	files := consumerFiles(t, map[string]any{"host": placeholder("host")}, nil, nil)
+	handle := map[string]string{"deploymentName": linkedDeployment, "outputName.host": "payments db/host"}
+	_, err := LinkResolve(edge, handle, files)
+	wantCondition(t, err, plugincondition.ErrPluginValueNotRepresentable())
+	for _, want := range []string{`"outputName.host"`, `"orders-api"`, `"payments-db"`, `"database"`} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the halt does not say %q: %v", want, err)
 		}

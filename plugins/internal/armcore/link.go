@@ -4,6 +4,7 @@
 package armcore
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -69,11 +70,11 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 	if err != nil {
 		return rendercore.LinkPublishOutput{}, err
 	}
-	outputs, hasOutputs, err := sectionObject(template, sectionOutputs)
+	outputs, hasOutputs, err := sectionObject(template, sectionOutputs, edge.Target.Boundary)
 	if err != nil {
 		return rendercore.LinkPublishOutput{}, err
 	}
-	metadata, hasMetadata, err := sectionObject(template, sectionMetadata)
+	metadata, hasMetadata, err := sectionObject(template, sectionMetadata, edge.Target.Boundary)
 	if err != nil {
 		return rendercore.LinkPublishOutput{}, err
 	}
@@ -165,8 +166,8 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 // is written again canonically. ARM evaluates reference() only inside a
 // resource's properties, an output's value or the input of an output's copy
 // loop, so a read anywhere else halts wrapping ErrPluginValueNotRepresentable,
-// naming the JSON pointer. So does a read inside text that opens with [[, which
-// ARM keeps literal.
+// naming the JSON pointer. So does a read inside literal text that is not an
+// expression, such as text that opens with [[, which ARM keeps as written.
 //
 // A key read off the edge whose text is literal is written back in place of its
 // placeholder: a whole string as ArmLiteral writes the text ARM reads from it, a
@@ -360,7 +361,9 @@ func resolvedValues(edge rendercore.LinkEdge, handle map[string]string, keys lin
 			StringLiteral(deploymentIDFormat), at.subscription, at.resourceGroup, StringLiteral(deployment),
 			StringLiteral(DeploymentsAPIVersion), output))
 		if err != nil {
-			return nil, nil, fmt.Errorf("arm-provider: write the read of provides key %q of component %q: %w", key, edge.Target.Node, err)
+			return nil, nil, refuse(plugincondition.ErrPluginValueNotRepresentable,
+				fmt.Sprintf("the identity published for the link from component %q to component %q on socket %q gives under %q an output name ARM cannot read after .outputs; the link is resolved against the identity its publish returns, whose output names are lowercase letters, digits and underscores",
+					edge.Source.Node, edge.Target.Node, edge.Socket, handleOutputNamePrefix+key))
 		}
 		placeholder := rendercore.CrossBoundaryLinkSentinel(edge.Source.Node, edge.Target.Node, edge.Socket, key)
 		values[placeholder] = linkedValue{key: key, read: read}
@@ -392,7 +395,9 @@ func resolveString(edge rendercore.LinkEdge, s site, text string, values map[str
 	if armexpr.IsExpression(text) {
 		n, err := armexpr.Parse(text)
 		if err != nil {
-			return "", fmt.Errorf("arm-provider: the expression at JSON pointer %s of the template of boundary %q does not parse: %w", s.pointer(), edge.Source.Boundary, err)
+			// checkStrings holds the one sentence for an expression that does not
+			// parse; it reads text again and refuses it.
+			return "", checkStrings(text, fmt.Sprintf("%s in the template of boundary %q", s.pointer(), edge.Source.Boundary))
 		}
 		readKey := ""
 		resolved, changed := substitute(n, func(str armexpr.String) (armexpr.Node, bool) {
@@ -422,9 +427,15 @@ func resolveString(edge rendercore.LinkEdge, s site, text string, values map[str
 		}
 		v := values[placeholder]
 		if v.read != nil {
+			where := "inside literal text the assembly did not write as a format() expression, which ARM keeps as written"
+			remedy := "write the value whole as the string, or inside the literal text of a fragment, which the assembly writes as a format() expression"
+			if strings.HasPrefix(text, "[[") {
+				where = "inside text that opens with [[, which ARM keeps literal"
+				remedy = "write the value whole, or inside literal text that does not open with [[, which the assembly writes as a format() expression"
+			}
 			return "", refuse(plugincondition.ErrPluginValueNotRepresentable,
-				fmt.Sprintf("at JSON pointer %s in the template of boundary %q, the value of provides key %q of component %q is read from another deployment, and it is written inside text that opens with [[, which ARM keeps literal; write the value whole, or inside literal text that does not open with [[, which is written as a format() expression",
-					s.pointer(), edge.Source.Boundary, v.key, edge.Target.Node))
+				fmt.Sprintf("at JSON pointer %s in the template of boundary %q, the value of provides key %q of component %q is read from another deployment, and it is written %s; %s",
+					s.pointer(), edge.Source.Boundary, v.key, edge.Target.Node, where, remedy))
 		}
 		text = strings.ReplaceAll(text, placeholder, v.literal)
 	}
@@ -479,37 +490,48 @@ func substitute(n armexpr.Node, replace func(armexpr.String) (armexpr.Node, bool
 
 // linkedTemplate returns the assembled template among a link endpoint's files.
 // Files holding no template halt wrapping ErrPluginRequiredInputUnresolved,
-// naming the payload field that was empty.
+// naming the payload field that was empty; a template that is not one JSON
+// object halts wrapping ErrPluginValueNotRepresentable.
 func linkedTemplate(edge rendercore.LinkEdge, files []rendercore.RenderedFile, field string) (map[string]any, error) {
 	for _, f := range files {
 		if f.Path != TemplateFileName {
 			continue
 		}
 		doc, err := readTemplate(f.Content)
-		if err != nil {
-			return nil, fmt.Errorf("arm-provider: read the %s of the link from component %q to component %q: %w", TemplateFileName, edge.Source.Node, edge.Target.Node, err)
-		}
 		template, ok := doc.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("arm-provider: the %s of the link from component %q to component %q is not a JSON object", TemplateFileName, edge.Source.Node, edge.Target.Node)
+		if err == nil && ok {
+			return template, nil
 		}
-		return template, nil
+		fault := "is not one JSON object"
+		if err != nil {
+			fault = "does not parse as one JSON object"
+			var syntax *json.SyntaxError
+			if errors.As(err, &syntax) {
+				fault += fmt.Sprintf(" (at byte %d)", syntax.Offset)
+			}
+		}
+		return nil, refuse(plugincondition.ErrPluginValueNotRepresentable,
+			fmt.Sprintf("the %s handed to the link from component %q to component %q on socket %q in its %s %s, where a link reads the template its boundary assembled; make sure nothing rewrites that file after the boundary is assembled",
+				TemplateFileName, edge.Source.Node, edge.Target.Node, edge.Socket, field, fault))
 	}
 	return nil, refuse(plugincondition.ErrPluginRequiredInputUnresolved,
 		fmt.Sprintf("the link from component %q to component %q on socket %q was handed no %s in its %s, so there is no template to wire",
 			edge.Source.Node, edge.Target.Node, edge.Socket, TemplateFileName, field))
 }
 
-// sectionObject returns a top-level section of a template and whether the
-// template writes it. A section written as anything but an object is an error.
-func sectionObject(template map[string]any, section string) (map[string]any, bool, error) {
+// sectionObject returns a top-level section of the template of boundary and
+// whether the template writes it. A section written as anything but an object
+// halts wrapping ErrPluginValueNotRepresentable.
+func sectionObject(template map[string]any, section, boundary string) (map[string]any, bool, error) {
 	v, present := template[section]
 	if !present {
 		return nil, false, nil
 	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, true, fmt.Errorf("arm-provider: the assembled template writes %s as something other than an object", section)
+		return nil, true, refuse(plugincondition.ErrPluginValueNotRepresentable,
+			fmt.Sprintf("the template of boundary %q writes %q as something other than an object, so a link cannot add its entries to it; write %s as an object of named entries",
+				boundary, section, section))
 	}
 	return m, true, nil
 }
