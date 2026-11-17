@@ -397,7 +397,9 @@ func (r Result) Halted() bool {
 // digest, and no registry is asked for it; one it does not hold is fetched, held
 // to the manifest it came in and to its signature under the registry's trust
 // policy, and kept. The record the import writes names the snapshot it read, by
-// its manifest digest. In a workspace that names no catalog folder, an import
+// its manifest digest; an import that read the folders alone because the
+// snapshot the record pins could not be read writes that pin back unchanged. In a
+// workspace that names no catalog folder, an import
 // needing a fetch under the offline posture is refused, naming what to run, and a
 // registry that publishes no snapshot leaves the import with no catalog, which a
 // warning among the diagnostics says. In a workspace that names catalog folders,
@@ -675,15 +677,15 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	files := draft
 	if len(drafted) > 0 {
 		files = append(append(make([]abi.ScaffoldFile, 0, len(files)+1), files...),
-			recordScaffold(target, snapshot.digest, owing.pointer, drafted))
+			recordScaffold(target, snapshot.recorded(), owing.pointer, drafted))
 	}
 	// The offline posture is known now, so a pull it will not let the import make
 	// is named among the diagnostics a surface reports before anything is written.
 	release := draftedReleasePlace(outputDir, draft)
 	res.Diagnostics = append(res.Diagnostics, pullNotice(opts, rw, res, release)...)
 	if opts.Sync {
-		res, err = syncImport(rw.Root(), outputDir, target, snapshot.digest, owing.pointer, opts, res, drafted, rec,
-			recordOnDisk)
+		res, err = syncImport(rw.Root(), outputDir, target, snapshot.recorded(), owing.pointer, opts, res, drafted,
+			rec, recordOnDisk)
 		if err != nil {
 			return Result{}, err
 		}

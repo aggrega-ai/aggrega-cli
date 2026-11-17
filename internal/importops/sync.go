@@ -211,9 +211,11 @@ func readRecord(root, outputDir string) (*importRecord, string, error) {
 // read them — rec nil where there is none — read by [Import] before the draft was
 // composed, because a sync given no target takes the one the record names. The
 // record the sync writes names target, the one the draft was composed for, and
-// catalogSnapshot, the published catalog snapshot it was composed against, empty
-// where it read catalog folders, and answers, the answers file the draft's owed
-// values were answered from, empty where the draft owes none.
+// catalogSnapshot, the published catalog snapshot it was composed against — or,
+// where it read the workspace's catalog folders alone because the snapshot the
+// record pins could not be read, that pin — empty where it read none and keeps
+// none, and answers, the answers file the draft's owed values were answered
+// from, empty where the draft owes none.
 //
 // An Aggregate on disk at a drafted path that rec does not list was refused by
 // [checkDraftPlaces] before the draft's owed values were answered.

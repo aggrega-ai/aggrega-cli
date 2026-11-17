@@ -42,6 +42,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/snapshottest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -390,7 +391,8 @@ func TestLayeredCatalogOfflineWithFoldersWarns(t *testing.T) {
 		{
 			name: "offline with no snapshot on the machine", publish: true, asksNoOne: true,
 			config: func(t *testing.T, f snapshotFixture) string { return f.reg.WorkspaceConfiguration(f.pub, true) },
-			want:   []string{"the workspace is offline", "run the import once with the network available"},
+			want: []string{"holds no catalog snapshot for the workspace",
+				"the offline posture is set by `offline: true` in", "run the import once with the network available"},
 		},
 		{
 			name: "no default registry", publish: true, asksNoOne: true,
@@ -873,6 +875,140 @@ func TestLayeredCatalogCoreImporterStaysCarried(t *testing.T) {
 			assertTheDefaultDraft(t, res, src)
 			if got := recordIn(t, res).CatalogSnapshot; got != f.digest {
 				t.Errorf("the record names the catalog snapshot %q; want %q", got, f.digest)
+			}
+		})
+	}
+}
+
+// pinOnDisk returns the catalog snapshot the record beside the drafts in
+// outputDir names.
+func pinOnDisk(t *testing.T, outputDir string) string {
+	t.Helper()
+	onDisk, err := os.ReadFile(filepath.Join(outputDir, RecordFileName))
+	if err != nil {
+		t.Fatalf("read the record beside the drafts: %v", err)
+	}
+	rec, err := parseRecord(onDisk)
+	if err != nil {
+		t.Fatalf("the record beside the drafts does not read back: %v", err)
+	}
+	return rec.CatalogSnapshot
+}
+
+// TestLayeredCatalogFoldersAloneKeepsThePin imports in a workspace whose catalog
+// folder holds the draft-composition catalog and the draft-set importer, over a
+// registry publishing the same catalog, so the drafts read alike with the
+// published catalog behind the folder and without it. A first import pins the
+// snapshot; a newer one is then published and the content cache loses the pinned
+// one. Where the pinned snapshot cannot be read — the workspace offline, or its
+// registry out of reach — a sync of the first import's drafts and an import
+// beside its record read the folder alone, each warning once that it does,
+// naming the pin, and each writes the pin back unchanged: the record on disk
+// still names it, and so does the record handed back. Online again, a sync reads
+// that pin, asked for by its digest, never the newest.
+//
+// 🔴 PLANTED DEFECT: in readCatalogSnapshot (internal/importops/snapshot.go),
+// keep no pin for an import over the folders alone: the sync rewrites the record
+// naming no snapshot, and every row fails.
+func TestLayeredCatalogFoldersAloneKeepsThePin(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		config func(t *testing.T, f snapshotFixture) string
+	}{
+		{
+			name:   "offline",
+			config: func(t *testing.T, f snapshotFixture) string { return f.reg.WorkspaceConfiguration(f.pub, true) },
+		},
+		{
+			name: "a registry that cannot be reached",
+			config: func(t *testing.T, _ snapshotFixture) string {
+				return "workspace: {}\ndefault_registry: " + strconv.Quote(closedRegistryHost(t)) + "\n"
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := publishedSnapshot(t)
+			wsDir := aWorkspaceDir(t)
+			online := f.reg.WorkspaceConfiguration(f.pub, false)
+			folder, rw := conventionalFolder.resolve(t, wsDir, online)
+			importopstest.LayDraftComposerCatalog(t, wsDir, folder)
+			first := snapshotImportOptions(t, authoredcontent.DeliveryWrite)
+			if _, err := Import(context.Background(), rw, first); err != nil {
+				t.Fatalf("the first import was refused: %v", err)
+			}
+			if got := pinOnDisk(t, first.OutputDir); got != f.digest {
+				t.Fatalf("the first import pinned %q; want %q", got, f.digest)
+			}
+			record, err := os.ReadFile(filepath.Join(first.OutputDir, RecordFileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			newer := snapshotTree(t)
+			importopstest.WriteSource(t, filepath.Join(newer, "notes.txt"), "a file the first snapshot does not carry\n")
+			second := f.reg.Publish(t, newer, catalog.SnapshotLatestTag)
+			f.reg.Sign(t, catalog.SnapshotLatestTag, f.signer)
+			if second == f.digest {
+				t.Fatal("the second snapshot has the first one's digest, so nothing here could tell them apart")
+			}
+			if err := os.RemoveAll(oci.CatalogSnapshotsRoot(rw.Root(), rw.Config().ResolvedArtifactCacheDir())); err != nil {
+				t.Fatal(err)
+			}
+
+			writeWorkspaceConfiguration(t, wsDir, tc.config(t, f))
+			alone := resolveWorkspaceAt(t, wsDir)
+			sync := first
+			sync.Sync = true
+			res, err := Import(context.Background(), alone, sync)
+			if err != nil {
+				t.Fatalf("the sync over the folder alone was refused: %v", err)
+			}
+			warned := warningsCarrying(res.Diagnostics, foldersAloneWords)
+			if len(warned) != 1 || !strings.Contains(warned[0], f.digest) {
+				t.Errorf("the sync warned %q; want one warning of reading the folder alone, naming the pin %s",
+					warned, f.digest)
+			}
+			if len(res.Drift) != 0 {
+				t.Errorf("the sync found drift %+v over drafts the folder reads alike", res.Drift)
+			}
+			if got := pinOnDisk(t, first.OutputDir); got != f.digest {
+				t.Errorf("after the sync over the folder alone the record names %q; want the pin %q", got, f.digest)
+			}
+
+			beside := snapshotImportOptions(t, authoredcontent.DeliveryReport)
+			if err := os.WriteFile(filepath.Join(beside.OutputDir, RecordFileName), record, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			res, err = Import(context.Background(), alone, beside)
+			if err != nil {
+				t.Fatalf("the import beside the record over the folder alone was refused: %v", err)
+			}
+			if got := recordIn(t, res).CatalogSnapshot; got != f.digest {
+				t.Errorf("the import beside the record over the folder alone records %q; want the pin %q", got,
+					f.digest)
+			}
+
+			writeWorkspaceConfiguration(t, wsDir, online)
+			rw = resolveWorkspaceAt(t, wsDir)
+			before := f.reg.Requests()
+			resync := first
+			resync.Sync, resync.Delivery = true, authoredcontent.DeliveryReport
+			res, err = Import(context.Background(), rw, resync)
+			if err != nil {
+				t.Fatalf("the sync online was refused: %v", err)
+			}
+			if warned := warningsCarrying(res.Diagnostics, foldersAloneWords); len(warned) != 0 {
+				t.Errorf("the sync online read the folder alone: %q", warned)
+			}
+			asked := f.reg.Asked(before)
+			if !slices.Contains(asked, "GET "+f.reg.ManifestPath(f.digest)) ||
+				slices.Contains(asked, "GET "+f.reg.ManifestPath(catalog.SnapshotLatestTag)) {
+				t.Errorf("the sync online asked %v; want the pinned manifest by digest and never latest", asked)
+			}
+			if got := pinOnDisk(t, first.OutputDir); got != f.digest {
+				t.Errorf("after the sync online the record names %q; want the pin %q", got, f.digest)
 			}
 		})
 	}

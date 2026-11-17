@@ -51,15 +51,30 @@ type catalogSnapshotRead struct {
 func (r catalogSnapshotRead) overFoldersAlone() bool { return r.folders && !r.upgrade }
 
 // catalogSnapshot is the published catalog snapshot an import read: the directory
-// it is laid out as in the content cache and its manifest digest, which the record
-// beside the drafts names. Where the import reads none — the workspace's default
-// registry publishes no snapshot, or a workspace naming catalog folders cannot
-// read it — both are empty, and notice says why, in words the import reports as a
-// warning.
+// it is laid out as in the content cache and its manifest digest. Where the import
+// reads none — the workspace's default registry publishes no snapshot, or a
+// workspace naming catalog folders cannot read it — both are empty, and notice
+// says why, in words the import reports as a warning.
+//
+// kept is the pin the record beside the drafts named for an import that read the
+// workspace's catalog folders alone because the snapshot it pins could not be
+// read: a pin names the catalog later runs read, and a run that could not read
+// it does not move it. It is empty for every other import.
 type catalogSnapshot struct {
 	dir    string
 	digest string
 	notice string
+	kept   string
+}
+
+// recorded returns the manifest digest the record an import writes names: the
+// snapshot it read, or, where it read none, the pin it kept — empty where it
+// read none and kept none.
+func (s catalogSnapshot) recorded() string {
+	if s.digest != "" {
+		return s.digest
+	}
+	return s.kept
 }
 
 // snapshotRemedySteps names, in the remedy a registry refusal carries, the steps
@@ -94,6 +109,10 @@ func foldersAloneNotice(why, then string) string {
 // laid out as a catalog folder in the workspace's content cache: the whole catalog
 // of a workspace that names no catalog folder, and the catalog read behind the
 // folders of one that names some.
+//
+// An import over the folders alone that the record beside the drafts pins a
+// snapshot for keeps that pin (catalogSnapshot.kept), so the record it writes
+// names the snapshot the next run that can read it reads.
 //
 // Which one, in order: with read.upgrade, the newest the workspace's default
 // registry publishes, fetched now; otherwise the one read.pinned names, where the
@@ -142,7 +161,14 @@ func readCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorksp
 		if err != nil || held {
 			return catalogSnapshot{dir: dir, digest: want}, err
 		}
-		return fetchCatalogSnapshot(ctx, rw, read, want, read.pinned == "")
+		fetched, err := fetchCatalogSnapshot(ctx, rw, read, want, read.pinned == "")
+		if err == nil && fetched.dir == "" {
+			// A snapshot asked for by digest is never answered as unpublished, so
+			// reading none here is an import over the folders alone, which keeps the
+			// record's pin.
+			fetched.kept = read.pinned
+		}
+		return fetched, err
 	}
 	return fetchCatalogSnapshot(ctx, rw, read, "", true)
 }
@@ -272,7 +298,7 @@ func fetchCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	if err != nil {
 		if errors.Is(err, egress.ErrOfflineEgress()) {
 			if read.overFoldersAlone() {
-				return catalogSnapshot{notice: offlineSnapshotNotice(manifestDigest)}, nil
+				return catalogSnapshot{notice: offlineSnapshotNotice(rw, manifestDigest)}, nil
 			}
 			return catalogSnapshot{}, offlineSnapshotRefusal(rw, manifestDigest, err)
 		}
@@ -349,18 +375,42 @@ func unpublishedSnapshotNotice(read catalogSnapshotRead, host, reference string)
 }
 
 // offlineSnapshotNotice is the warning of an import over catalog folders that
-// would fetch a catalog snapshot while the workspace is offline: it reads the
-// folders alone, and a run with the network available reads the snapshot behind
-// them. manifestDigest is the snapshot asked for, empty for the newest published.
-func offlineSnapshotNotice(manifestDigest string) string {
+// would fetch a catalog snapshot while the workspace is offline: why, naming the
+// layer that set the posture (offlineWords), then that the import reads the
+// folders alone, and that a run with the network available reads the snapshot
+// behind them. manifestDigest is the snapshot asked for, empty for the newest
+// published.
+func offlineSnapshotNotice(rw *workspaceconfig.ResolvedWorkspace, manifestDigest string) string {
+	act := "this machine holds no catalog snapshot for the workspace, which only its default registry can give"
+	then := "run the import once with the network available, which fetches the catalog snapshot its default " +
+		"registry publishes and keeps it on this machine for every later import"
 	if manifestDigest != "" {
-		return foldersAloneNotice("the workspace is offline, and the catalog snapshot "+manifestDigest+" the "+
-			"import reads is not on this machine", "run the import once with the network available, which fetches "+
-			"it and keeps it on this machine for every later import")
+		act = "the catalog snapshot " + manifestDigest + " the import reads is not on this machine, which only the " +
+			"workspace's default registry can give"
+		then = "run the import once with the network available, which fetches it and keeps it on this machine for " +
+			"every later import"
 	}
-	return foldersAloneNotice("the workspace is offline, and this machine holds no catalog snapshot for it",
-		"run the import once with the network available, which fetches the catalog snapshot its default registry "+
-			"publishes and keeps it on this machine for every later import")
+	return foldersAloneNotice(offlineWords(rw, act), then)
+}
+
+// offlineWords is act followed by the layer that set the offline posture, in the
+// words the offline refusal names it with (egress.RefuseIfOffline), without the
+// condition that refusal wraps: a warning reports the posture, it does not refuse
+// under it.
+func offlineWords(rw *workspaceconfig.ResolvedWorkspace, act string) string {
+	unattributed := act + ", and the workspace is offline"
+	refusal := egress.RefuseIfOffline(rw, act)
+	if refusal == nil {
+		return unattributed
+	}
+	cause := errors.Unwrap(refusal)
+	if cause == nil {
+		return unattributed
+	}
+	if words, ok := strings.CutSuffix(refusal.Error(), ": "+cause.Error()); ok {
+		return words
+	}
+	return unattributed
 }
 
 // offlineSnapshotRefusal is the refusal of an import that needs a catalog snapshot
