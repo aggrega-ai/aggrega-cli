@@ -56,15 +56,19 @@ var mergedSections = []string{sectionDefinitions, sectionParameters, sectionVari
 // as arm-template.json, at the scope its boundary deploys at.
 //
 // The scope is the one every contribution's AnnotationDeploymentScope resolves
-// to (boundaryScopeOf): a resource group where none names one. A boundary at
-// management group scope halts wrapping ErrPluginCannotExpressInput, and so does
-// a fragment written for a wider scope than its boundary's, by its $schema.
+// to (boundaryScopeOf): a resource group where none names one. A fragment
+// written for a wider scope than its boundary's, by its $schema, halts wrapping
+// ErrPluginCannotExpressInput.
 //
 // Every fragment of every contribution is read before any entry is inserted.
 // Content written for the boundary's scope lands at the template's top level.
-// At subscription scope, resource group content lands in a level of its own,
-// the nested deployment LevelResourceGroupSymbol (nestResourceGroupLevel), which
-// is assembled on the same terms as the top level.
+// Content written for a narrower scope lands in a level of its own, a nested
+// deployment (nestLevel), assembled on the same terms as the top level: at
+// subscription scope the resource group content, in LevelResourceGroupSymbol,
+// and at management group scope the subscription content, in
+// LevelSubscriptionSymbol, and the resource group content, in
+// LevelResourceGroupSymbol, side by side. A wave order a nested deployment
+// cannot carry halts (checkLevelOrder).
 //
 // Within a level, resources merge by symbolic name; parameters, variables,
 // definitions, functions and metadata keys merge by the name written; each
@@ -89,12 +93,8 @@ func Assemble(contribs []Contribution) (rendercore.AssembleBoundaryOutput, error
 	if err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
 	}
-	if len(contribs) > 0 {
-		if err := refuseBoundaryScope(scope, ContributorIdentity(contribs[0])); err != nil {
-			return rendercore.AssembleBoundaryOutput{}, err
-		}
-	}
-	var topReads, nested []read
+	var topReads []read
+	nested := map[Scope][]read{}
 	var diags []renderctx.Diagnostic
 	for _, c := range contribs {
 		identity := ContributorIdentity(c)
@@ -111,7 +111,7 @@ func Assemble(contribs []Contribution) (rendercore.AssembleBoundaryOutput, error
 			if frag.Scope == scope {
 				topReads = append(topReads, r)
 			} else {
-				nested = append(nested, r)
+				nested[frag.Scope] = append(nested[frag.Scope], r)
 			}
 		}
 	}
@@ -125,12 +125,18 @@ func Assemble(contribs []Contribution) (rendercore.AssembleBoundaryOutput, error
 		return rendercore.AssembleBoundaryOutput{}, err
 	}
 	diags = append(diags, composed...)
-	if len(nested) > 0 {
-		levelDiags, err := nestResourceGroupLevel(top, nested)
+	for _, content := range []Scope{ScopeSubscription, ScopeResourceGroup} {
+		if len(nested[content]) == 0 {
+			continue
+		}
+		levelDiags, err := nestLevel(top, scope, content, nested[content])
 		if err != nil {
 			return rendercore.AssembleBoundaryOutput{}, err
 		}
 		diags = append(diags, levelDiags...)
+	}
+	if err := checkLevelOrder(top); err != nil {
+		return rendercore.AssembleBoundaryOutput{}, err
 	}
 	if err := applyWaveOrdering(top.l.sections[sectionResources], top.waves); err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
@@ -167,11 +173,13 @@ type levelBuild struct {
 	folded    map[string]map[string]string
 	waves     map[string]int
 	functions map[string]FunctionSource
+	// levels are the nested deployments added to the level, by symbolic name.
+	levels map[string]nestedLevel
 }
 
 // newLevelBuild returns a level build holding no entries.
 func newLevelBuild() *levelBuild {
-	return &levelBuild{l: newLevel(), folded: map[string]map[string]string{}, waves: map[string]int{}, functions: map[string]FunctionSource{}}
+	return &levelBuild{l: newLevel(), folded: map[string]map[string]string{}, waves: map[string]int{}, functions: map[string]FunctionSource{}, levels: map[string]nestedLevel{}}
 }
 
 // mergeReads inserts every entry of every read into the level, in the order of

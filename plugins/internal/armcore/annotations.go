@@ -41,3 +41,10 @@ func placementOf(annotations map[string]string) placement {
 func (p placement) readsOwnResourceGroup() bool {
 	return p.resourceGroup == ownResourceGroup
 }
+
+// readsOwnSubscription reports whether the placement takes the producer's
+// subscription to be the consumer's own, because the producer's boundary names
+// none.
+func (p placement) readsOwnSubscription() bool {
+	return p.subscription == ownSubscription
+}

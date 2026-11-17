@@ -8,12 +8,17 @@ metadata:
   environment: production
   version: "1.0.0"
 spec:
-  aggregate: ./aggregate-single.yaml
-  manifest: ./manifest.yaml
+  aggregate: ./aggregate-management-group.yaml
+  manifest: ./manifest-management-group.yaml
   boundaries:
     platform:
       directory: ./dist/platform
       annotations:
         aggrega.ai/azure-deployment-scope: managementGroup
+        aggrega.ai/azure-management-group: orders-mg
+        aggrega.ai/azure-subscription: orders-sub
+        aggrega.ai/azure-resource-group: orders-rg
       components:
+        policy: {}
+        group: {}
         store: {}

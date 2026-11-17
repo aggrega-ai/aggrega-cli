@@ -229,7 +229,7 @@ func TestAssembleRefusesWiderContentScope(t *testing.T) {
 	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Fatalf("err = %v, want cannot express input", err)
 	}
-	for _, want := range []string{"arm-provider:", `"payments-db"`, "subscription template", "resource-group scope", AnnotationDeploymentScope, "resource-group or subscription scope"} {
+	for _, want := range []string{"arm-provider:", `"payments-db"`, "subscription template", "resource-group scope", AnnotationDeploymentScope, "resource-group, subscription or management-group scope"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("message %q does not contain %q", err, want)
 		}

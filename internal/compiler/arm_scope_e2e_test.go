@@ -9,6 +9,13 @@
 // aggrega.ai/azure-resource-group names. Every build runs through the real
 // compiled Wasm guest, each successful build is repeated and must give
 // identical bytes, and each halt is raised twice with the same text.
+//
+// A boundary annotated aggrega.ai/azure-deployment-scope: managementGroup
+// assembles a template deployed to a management group: content written for a
+// management group sits at its top level, and subscription content and resource
+// group content sit in two nested deployments side by side, the subscription
+// level and the resource group level, each deployed to the subscription and
+// resource group the boundary's annotations name.
 
 package compiler_test
 
@@ -28,11 +35,15 @@ const (
 	// The literals the emitted template carries, written as it carries them.
 	armSubscriptionSchema  = "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#"
 	armResourceGroupSchema = "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#"
+	armManagementSchema    = "https://schema.management.azure.com/schemas/2019-08-01/managementGroupDeploymentTemplate.json#"
 	armLevelSymbol         = "_resourceGroup"
 	armLevelName           = "[format('rg-{0}', uniqueString(deployment().name))]"
 	armDeploymentsType     = "Microsoft.Resources/deployments"
 	armDeploymentsVersion  = "2025-04-01"
+	armSubscriptionLevel   = "_subscription"
+	armSubscriptionName    = "[format('sub-{0}', uniqueString(deployment().name))]"
 	armDeploymentScopeKey  = "aggrega.ai/azure-deployment-scope"
+	armSubscriptionKey     = "aggrega.ai/azure-subscription"
 	armResourceGroupKey    = "aggrega.ai/azure-resource-group"
 )
 
@@ -235,24 +246,118 @@ func TestArmMissingResourceGroupAnnotationHalts(t *testing.T) {
 func TestArmManagementGroupContentInASubscriptionBoundaryHalts(t *testing.T) {
 	t.Parallel()
 	msg := armAssertHaltsTwice(t, armScopeInput("release-management-group-content.yaml"), plugincondition.ErrPluginCannotExpressInput())
-	for _, want := range []string{"arm-provider:", `"store"`, "management-group template", "subscription scope", armDeploymentScopeKey, "resource-group or subscription scope"} {
+	for _, want := range []string{"arm-provider:", `"policy"`, "management-group template", "subscription scope", armDeploymentScopeKey, "resource-group, subscription or management-group scope"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("the halt does not say %q: %s", want, msg)
 		}
 	}
 }
 
-// TestArmManagementGroupBoundaryHalts builds a boundary annotated to deploy at
-// management group scope, which the provider does not assemble a template for.
-func TestArmManagementGroupBoundaryHalts(t *testing.T) {
+// TestArmManagementGroupScopeNestsTwoLevels builds a boundary deployed at
+// management group scope. A policy definition written for a management group
+// sits at the top level, stamped with the management group schema. The resource
+// group, written for a subscription, sits in the subscription level, deployed to
+// the boundary's subscription at the location its outer template deploys with; the storage account,
+// written for a resource group, sits in the resource group level, deployed into
+// the boundary's resource group of that subscription. Both levels are nested
+// directly under the management group, and the resource group level follows the
+// subscription level that declares its group.
+func TestArmManagementGroupScopeNestsTwoLevels(t *testing.T) {
 	t.Parallel()
-	msg := armAssertHaltsTwice(t, armScopeInput("release-management-group.yaml"), plugincondition.ErrPluginCannotExpressInput())
-	for _, want := range []string{"arm-provider:", `"store"`, "management-group scope", armDeploymentScopeKey, "resource-group or subscription scope"} {
+	in := armScopeInput("release-management-group.yaml")
+	result := pipelinetest.Build(t, in)
+	template, raw := findArmTemplate(t, result.Artifacts, "dist/platform/")
+	t.Logf("assembled template:\n%s", raw)
+
+	if template["$schema"] != armManagementSchema || template["languageVersion"] != "2.0" || template["contentVersion"] != "1.0.0.0" {
+		t.Errorf("the template is stamped %#v, %#v, %#v; want the management group schema, 2.0 and 1.0.0.0",
+			template["$schema"], template["languageVersion"], template["contentVersion"])
+	}
+	armWantKeys(t, "the top level's resources", armSection(t, template, "resources"), "Policy", armLevelSymbol, armSubscriptionLevel)
+
+	subscription := armResourceBody(t, template, armSubscriptionLevel)
+	for key, want := range map[string]any{
+		"type":           armDeploymentsType,
+		"apiVersion":     armDeploymentsVersion,
+		"name":           armSubscriptionName,
+		"subscriptionId": "orders-sub",
+		"location":       "[deployment().location]",
+	} {
+		if subscription[key] != want {
+			t.Errorf("%s has %s %#v, want %#v", armSubscriptionLevel, key, subscription[key], want)
+		}
+	}
+	for _, absent := range []string{"resourceGroup", "dependsOn"} {
+		if _, present := subscription[absent]; present {
+			t.Errorf("%s writes %s", armSubscriptionLevel, absent)
+		}
+	}
+	subscriptionTemplate, _ := subscription["properties"].(map[string]any)["template"].(map[string]any)
+	if subscriptionTemplate["$schema"] != armSubscriptionSchema {
+		t.Errorf("%s is stamped %#v, want the subscription schema", armSubscriptionLevel, subscriptionTemplate["$schema"])
+	}
+	armWantKeys(t, "the subscription level's resources", armSection(t, subscriptionTemplate, "resources"), "Group")
+
+	group := armLevel(t, template)
+	for key, want := range map[string]any{
+		"type":           armDeploymentsType,
+		"apiVersion":     armDeploymentsVersion,
+		"name":           armLevelName,
+		"subscriptionId": "orders-sub",
+		"resourceGroup":  "orders-rg",
+	} {
+		if group[key] != want {
+			t.Errorf("%s has %s %#v, want %#v", armLevelSymbol, key, group[key], want)
+		}
+	}
+	if _, present := group["location"]; present {
+		t.Errorf("%s writes a location", armLevelSymbol)
+	}
+	if got, want := group["dependsOn"], []any{armSubscriptionLevel}; !reflect.DeepEqual(got, want) {
+		t.Errorf("%s depends on %#v, want %#v", armLevelSymbol, got, want)
+	}
+	inner := armLevelTemplate(t, template)
+	if inner["$schema"] != armResourceGroupSchema {
+		t.Errorf("%s is stamped %#v, want the resource group schema", armLevelSymbol, inner["$schema"])
+	}
+	armWantKeys(t, "the resource group level's resources", armSection(t, inner, "resources"), "Store")
+	if _, ok := armProvenanceOf(armResourceBody(t, inner, "Store")); !ok {
+		t.Errorf("the resource group level's Store carries no provenance")
+	}
+	pipelinetest.AssertDeterministic(t, in)
+}
+
+// TestArmManagementGroupScopeSubscriptionAbsentHalts builds the management group
+// boundary without aggrega.ai/azure-subscription. Its subscription content and
+// its resource group content have no subscription to deploy to, so the build
+// halts naming the annotation and the scope.
+func TestArmManagementGroupScopeSubscriptionAbsentHalts(t *testing.T) {
+	t.Parallel()
+	msg := armAssertHaltsTwice(t, armScopeInput("release-management-group-missing-subscription.yaml"), plugincondition.ErrPluginRequiredInputUnresolved())
+	for _, want := range []string{"arm-provider:", armSubscriptionKey, "management-group scope", `"group"`} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("the halt does not say %q: %s", want, msg)
 		}
 	}
-	for _, banned := range []string{"yet", "not available"} {
+}
+
+// TestArmLinkToAManagementGroupScopeProducerIsRefused builds a datastore in a
+// boundary deployed at management group scope and an application in another
+// boundary that reads its host. A link reads a producer deployed at resource
+// group scope, so the build halts naming the link.
+func TestArmLinkToAManagementGroupScopeProducerIsRefused(t *testing.T) {
+	t.Parallel()
+	msg := armAssertHaltsTwice(t, armScopeLinkInput("release-link-producer-management-group.yaml"), plugincondition.ErrPluginCannotExpressInput())
+	for _, want := range []string{
+		"arm-provider:",
+		"arm links to a producer deployed at resource-group scope; this producer's boundary deploys at management-group scope",
+		`component "app"`, `component "store"`, `socket "database"`,
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the halt does not say %q: %s", want, msg)
+		}
+	}
+	for _, banned := range []string{"yet", "not available", "orders-data", "orders-sub", "orders-mg"} {
 		if strings.Contains(msg, banned) {
 			t.Errorf("the halt says %q: %s", banned, msg)
 		}

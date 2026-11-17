@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: arm-scope-link-producer-management-group
+  environment: production
+  version: "1.0.0"
+spec:
+  aggregate: ./aggregate-link.yaml
+  manifest: ./manifest-link.yaml
+  boundaries:
+    data:
+      directory: ./dist/data
+      annotations:
+        aggrega.ai/azure-deployment-scope: managementGroup
+        aggrega.ai/azure-management-group: orders-mg
+        aggrega.ai/azure-subscription: orders-sub
+        aggrega.ai/azure-resource-group: orders-data
+      components:
+        store: {}
+    web:
+      directory: ./dist/web
+      components:
+        app: {}

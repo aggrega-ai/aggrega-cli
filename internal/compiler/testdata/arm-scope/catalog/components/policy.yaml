@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: example/scope/policy
+  version: 1.0.0
+  description: >
+    A policy definition, declared by a template deployed to a management group.
+  labels:
+    component.aggrega.ai/type: resource
+spec:
+  schema:
+    values:
+      symbol:
+        type: string
+        default: Policy
+        description: The symbolic name the Recipe declares the policy definition under.

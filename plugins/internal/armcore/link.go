@@ -182,13 +182,14 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 // expression, such as text that opens with [[, which ARM keeps as written.
 //
 // The consuming template's top level is read at the scope its $schema names.
-// At subscription scope the template's resource group level, the template of
-// the nested deployment LevelResourceGroupSymbol, is read too, as a level
-// deployed to a resource group: the pointers of its strings run through that
-// deployment. ARM evaluates resourceGroup() only in a template deployed to a
-// resource group, so a read at subscription scope from a producer whose boundary
-// names no resource group halts wrapping ErrPluginRequiredInputUnresolved,
-// naming AnnotationResourceGroup. A producer whose boundary deploys at a scope
+// Its nested levels (nestedLevelsOf) are read too, each at the scope it deploys
+// at: the pointers of their strings run through the nested deployments. ARM
+// evaluates resourceGroup() only in a template deployed to a resource group, and
+// subscription() only in one deployed to a subscription or a resource group, so
+// a read at a wider scope from a producer whose boundary names no resource group,
+// or at management group scope none subscription, halts wrapping
+// ErrPluginRequiredInputUnresolved, naming AnnotationResourceGroup or
+// AnnotationSubscription. A producer whose boundary deploys at a scope
 // wider than a resource group halts as LinkPublish does.
 //
 // A key read off the edge whose text is literal is written back in place of its
@@ -237,8 +238,8 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 	if err := templateLevel(template, "").eachString(visit(scope)); err != nil {
 		return rendercore.LinkResolveOutput{}, err
 	}
-	if inner, prefix, nested := resourceGroupLevelOf(template, scope); nested {
-		if err := templateLevel(inner, prefix).eachString(visit(ScopeResourceGroup)); err != nil {
+	for _, nested := range nestedLevelsOf(template, scope) {
+		if err := templateLevel(nested.template, nested.prefix).eachString(visit(nested.scope)); err != nil {
 			return rendercore.LinkResolveOutput{}, err
 		}
 	}
@@ -523,6 +524,11 @@ func readableAt(edge rendercore.LinkEdge, s site, key string, at Scope) error {
 	if !s.readsRuntimeState() {
 		return readOutsideRuntimeState(edge, s, key)
 	}
+	if at == ScopeManagementGroup && placementOf(edge.TargetAnnotations).readsOwnSubscription() {
+		return refuse(plugincondition.ErrPluginRequiredInputUnresolved,
+			fmt.Sprintf("at JSON pointer %s in the template of boundary %q, the value of provides key %q of component %q is read from another deployment at %s scope, where the template has no subscription of its own to take as the producer's; annotate the boundary of %q with %s",
+				s.pointer(), edge.Source.Boundary, key, edge.Target.Node, scopeWords(at), edge.Target.Node, AnnotationSubscription))
+	}
 	if at != ScopeResourceGroup && placementOf(edge.TargetAnnotations).readsOwnResourceGroup() {
 		return refuse(plugincondition.ErrPluginRequiredInputUnresolved,
 			fmt.Sprintf("at JSON pointer %s in the template of boundary %q, the value of provides key %q of component %q is read from another deployment at %s scope, where the template has no resource group of its own to take as the producer's; annotate the boundary of %q with %s",
@@ -650,22 +656,46 @@ func templateLevel(template map[string]any, prefix string) *level {
 	return l
 }
 
-// resourceGroupLevelOf returns the resource group level of an assembled template
-// at subscription scope, the template its nested deployment
-// LevelResourceGroupSymbol carries, with that template's JSON pointer, and
-// whether the template holds one.
-func resourceGroupLevelOf(template map[string]any, scope Scope) (map[string]any, string, bool) {
-	if scope != ScopeSubscription {
-		return nil, "", false
+// linkedLevel is a nested level of an assembled template: the template of a
+// nested deployment, its JSON pointer, and the scope the level is deployed at.
+type linkedLevel struct {
+	template map[string]any
+	prefix   string
+	scope    Scope
+}
+
+// nestedLevelsOf returns the nested levels an assembled template at scope holds,
+// in the order the assembly writes them: at subscription scope the resource group
+// level, the template of the nested deployment LevelResourceGroupSymbol; at
+// management group scope the subscription level, LevelSubscriptionSymbol, and
+// the resource group level. A level the template does not hold is not returned.
+func nestedLevelsOf(template map[string]any, scope Scope) []linkedLevel {
+	var symbols []string
+	switch scope {
+	case ScopeSubscription:
+		symbols = []string{LevelResourceGroupSymbol}
+	case ScopeManagementGroup:
+		symbols = []string{LevelSubscriptionSymbol, LevelResourceGroupSymbol}
 	}
 	resources, _ := template[sectionResources].(map[string]any)
-	deployment, _ := resources[LevelResourceGroupSymbol].(map[string]any)
-	if !isDeployment(deployment) {
-		return nil, "", false
+	var out []linkedLevel
+	for _, symbol := range symbols {
+		deployment, _ := resources[symbol].(map[string]any)
+		if !isDeployment(deployment) {
+			continue
+		}
+		properties, _ := deployment["properties"].(map[string]any)
+		inner, ok := properties["template"].(map[string]any)
+		if !ok {
+			continue
+		}
+		at := ScopeResourceGroup
+		if symbol == LevelSubscriptionSymbol {
+			at = ScopeSubscription
+		}
+		out = append(out, linkedLevel{template: inner, prefix: "/" + sectionResources + "/" + symbol + "/properties/template", scope: at})
 	}
-	properties, _ := deployment["properties"].(map[string]any)
-	inner, ok := properties["template"].(map[string]any)
-	return inner, "/" + sectionResources + "/" + LevelResourceGroupSymbol + "/properties/template", ok
+	return out
 }
 
 // refuseWiderProducer halts wrapping ErrPluginCannotExpressInput when the

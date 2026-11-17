@@ -43,7 +43,7 @@ func TestReadFragmentScopeFromSchema(t *testing.T) {
 	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
 		t.Errorf("tenant schema: want E0288, got %v", err)
 	}
-	for _, want := range []string{"tenant scope", AnnotationDeploymentScope, "resource-group or subscription scope"} {
+	for _, want := range []string{"tenant scope", AnnotationDeploymentScope, "resource-group, subscription or management-group scope"} {
 		if err != nil && !strings.Contains(err.Error(), want) {
 			t.Errorf("tenant schema: the halt does not say %q: %v", want, err)
 		}

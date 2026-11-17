@@ -980,3 +980,79 @@ func TestLinkResolveAtSubscriptionScopeNeedsTheProducersResourceGroup(t *testing
 		t.Errorf("operations:\n got %v\nwant %v", got, want)
 	}
 }
+
+// managementGroupConsumerFiles assembles the consumer at management-group scope:
+// an application whose settings read the host as resource group content, and a
+// watcher whose description reads it as subscription content.
+func managementGroupConsumerFiles(t *testing.T) []rendercore.RenderedFile {
+	t.Helper()
+	app := "resources:\n  App:\n    type: Microsoft.App/containerApps\n    apiVersion: '2024-03-01'\n    name: orders-api\n    properties:\n      settings:\n        host: " + placeholder("host") + "\n"
+	watcher := subscriptionSchemaLine + "resources:\n  Watch:\n    type: Microsoft.Insights/activityLogAlerts\n    apiVersion: '2020-10-01'\n    name: watch\n    location: global\n    properties:\n      description: " + placeholder("host") + "\n"
+	out, err := Assemble([]Contribution{
+		managementGroupBoundary(contributes("orders-api", 0, app)),
+		managementGroupBoundary(contributes("watcher", 0, watcher)),
+	})
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	return out.Files
+}
+
+func TestLinkResolveReadsInsideTheLevelsOfAManagementGroupTemplate(t *testing.T) {
+	t.Parallel()
+	files := managementGroupConsumerFiles(t)
+
+	// The level a subscription template's watcher sits in has no resource group
+	// of its own, so the producer's must be named.
+	edge := testLink()
+	_, err := LinkResolve(edge, published(t, edge), files)
+	wantCondition(t, err, plugincondition.ErrPluginRequiredInputUnresolved(), "fullyQualifiedDomainName")
+	for _, want := range []string{"/resources/" + LevelSubscriptionSymbol + "/properties/template/resources/Watch/properties/description", `"payments-db"`, AnnotationResourceGroup, "subscription scope"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not say %q: %v", want, err)
+		}
+	}
+
+	edge.TargetAnnotations = map[string]string{AnnotationResourceGroup: "rg-payments"}
+	out, err := LinkResolve(edge, published(t, edge), files)
+	if err != nil {
+		t.Fatalf("LinkResolve: %v", err)
+	}
+	read := "[reference(format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Resources/deployments/{2}', subscription().subscriptionId, 'rg-payments', 'aggrega--orders--stack-a-zsarm'), '2025-04-01').outputs.payments_zhdb__host.value]"
+	got := map[string]any{}
+	for _, op := range opsOf(t, out.Patches) {
+		got[op.Path] = op.Value
+	}
+	want := map[string]any{
+		"/resources/" + LevelSubscriptionSymbol + "/properties/template/resources/Watch/properties/description":  read,
+		"/resources/" + LevelResourceGroupSymbol + "/properties/template/resources/App/properties/settings/host": read,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("operations:\n got %v\nwant %v", got, want)
+	}
+	if resolved := mustJSON(t, templateOf(t, applied(t, files, out.Patches))); strings.Contains(resolved, rendercore.CrossBoundaryLinkSentinelPrefix) {
+		t.Errorf("a placeholder remains:\n%s", resolved)
+	}
+}
+
+func TestLinkResolveAtManagementGroupScopeNeedsTheProducersSubscription(t *testing.T) {
+	t.Parallel()
+	policy := managementGroupSchemaLine + "resources:\n  Policy:\n    type: Microsoft.Authorization/policyDefinitions\n    apiVersion: '2023-04-01'\n    name: policy\n    properties:\n      description: " + placeholder("host") + "\n"
+	out, err := Assemble([]Contribution{managementGroupBoundary(contributes("policy", 0, policy))})
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	edge := testLink()
+	edge.TargetAnnotations = map[string]string{AnnotationResourceGroup: "rg-payments"}
+	_, err = LinkResolve(edge, published(t, edge), out.Files)
+	wantCondition(t, err, plugincondition.ErrPluginRequiredInputUnresolved(), "fullyQualifiedDomainName")
+	for _, want := range []string{"/resources/Policy/properties/description", `"payments-db"`, AnnotationSubscription, "management-group scope"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not say %q: %v", want, err)
+		}
+	}
+	edge.TargetAnnotations[AnnotationSubscription] = "sub-payments"
+	if _, err := LinkResolve(edge, published(t, edge), out.Files); err != nil {
+		t.Errorf("LinkResolve with the producer's subscription and resource group: %v", err)
+	}
+}

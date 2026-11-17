@@ -23,6 +23,9 @@ const (
 	// levelGroup is the resource group the fixtures' resource group content is
 	// deployed into.
 	levelGroup = "orders-rg"
+	// levelSubscription is the subscription the fixtures' management-group
+	// boundaries deploy their subscription and resource group content into.
+	levelSubscription = "orders-sub"
 )
 
 // atScope is c with its merged annotations set to the given pairs of key and
@@ -392,24 +395,6 @@ func TestScopeManagementGroupContentInASubscriptionBoundaryHalts(t *testing.T) {
 	}
 }
 
-func TestScopeManagementGroupBoundaryHalts(t *testing.T) {
-	t.Parallel()
-	_, err := Assemble([]Contribution{atScope(contributes("payments-db", 0, storage("Db")), AnnotationDeploymentScope, "managementGroup")})
-	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
-		t.Fatalf("err = %v, want cannot express input", err)
-	}
-	for _, want := range []string{"arm-provider:", `"payments-db"`, AnnotationDeploymentScope, "management-group scope", "resource-group or subscription scope"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("message %q does not contain %q", err, want)
-		}
-	}
-	for _, banned := range []string{"yet", "not available"} {
-		if strings.Contains(err.Error(), banned) {
-			t.Errorf("message %q contains %q", err, banned)
-		}
-	}
-}
-
 func TestScopeLevelSymbolTakenHalts(t *testing.T) {
 	t.Parallel()
 	taken := subscriptionSchemaLine + "resources:\n  _resourceGroup:\n    type: T\n    name: x\n"
@@ -525,5 +510,308 @@ func TestScopeWrapsAWiderSourcedTemplateWithTheDeploymentLocation(t *testing.T) 
 	}
 	if _, present := frag.Sections[sectionResources][plainSymbol].(map[string]any)["location"]; present {
 		t.Errorf("a resource group wrapper writes a location:\n%s", plain)
+	}
+}
+
+// managementGroupBoundary is c in a boundary deployed at management-group scope
+// whose subscription and resource group content land in levelSubscription and
+// levelGroup.
+func managementGroupBoundary(c Contribution) Contribution {
+	return atScope(c, AnnotationDeploymentScope, string(ScopeManagementGroup), AnnotationManagementGroup, "orders-mg",
+		AnnotationSubscription, levelSubscription, AnnotationResourceGroup, levelGroup)
+}
+
+// nestedDeploymentOf returns the nested deployment held under symbol at the top level of a
+// template.
+func nestedDeploymentOf(t *testing.T, template map[string]any, symbol string) map[string]any {
+	t.Helper()
+	resources, _ := template[sectionResources].(map[string]any)
+	level, ok := resources[symbol].(map[string]any)
+	if !ok {
+		t.Fatalf("the template holds no %s; resources = %v", symbol, resources)
+	}
+	return level
+}
+
+func TestScopeManagementGroupLevels(t *testing.T) {
+	t.Parallel()
+	m, _ := assembled(t,
+		managementGroupBoundary(contributes("policy", 0, managementGroupSchemaLine+storage("Policy"))),
+		managementGroupBoundary(contributes("group", 0, groupFragment(levelGroup))),
+		managementGroupBoundary(contributes("payments-db", 0, storage("Db"))),
+		managementGroupBoundary(contributes("orders-api", 0, storage("Api"))),
+	)
+	if m[sectionSchema] != SchemaManagementGroup || m[sectionLanguageVersion] != LanguageVersion || m[sectionContentVersion] != ContentVersion {
+		t.Errorf("stamped top level = %v %v %v", m[sectionSchema], m[sectionLanguageVersion], m[sectionContentVersion])
+	}
+	if got, want := keysOf(m[sectionResources]), []string{"Policy", LevelResourceGroupSymbol, LevelSubscriptionSymbol}; !reflect.DeepEqual(got, want) {
+		t.Errorf("top-level resources = %v, want %v", got, want)
+	}
+
+	sub := nestedDeploymentOf(t, m, LevelSubscriptionSymbol)
+	for key, want := range map[string]any{
+		"type":           "Microsoft.Resources/deployments",
+		"apiVersion":     DeploymentsAPIVersion,
+		"name":           LevelHistoryName(ScopeSubscription),
+		"subscriptionId": levelSubscription,
+		"location":       "[deployment().location]",
+	} {
+		if sub[key] != want {
+			t.Errorf("%s %s = %v, want %v", LevelSubscriptionSymbol, key, sub[key], want)
+		}
+	}
+	for _, absent := range []string{"resourceGroup", "dependsOn"} {
+		if _, present := sub[absent]; present {
+			t.Errorf("%s writes %s = %v", LevelSubscriptionSymbol, absent, sub[absent])
+		}
+	}
+	subProperties, _ := sub["properties"].(map[string]any)
+	subTemplate, _ := subProperties["template"].(map[string]any)
+	if subTemplate[sectionSchema] != SchemaSubscription {
+		t.Errorf("%s template schema = %v", LevelSubscriptionSymbol, subTemplate[sectionSchema])
+	}
+	if got, want := keysOf(subTemplate[sectionResources]), []string{"Group"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("%s resources = %v, want %v", LevelSubscriptionSymbol, got, want)
+	}
+	if subProperties["mode"] != "Incremental" {
+		t.Errorf("%s mode = %v", LevelSubscriptionSymbol, subProperties["mode"])
+	}
+	if eval, _ := subProperties["expressionEvaluationOptions"].(map[string]any); eval["scope"] != "inner" {
+		t.Errorf("%s expressionEvaluationOptions = %v", LevelSubscriptionSymbol, subProperties["expressionEvaluationOptions"])
+	}
+
+	group := nestedDeploymentOf(t, m, LevelResourceGroupSymbol)
+	for key, want := range map[string]any{
+		"type":           "Microsoft.Resources/deployments",
+		"apiVersion":     DeploymentsAPIVersion,
+		"name":           LevelHistoryName(ScopeResourceGroup),
+		"subscriptionId": levelSubscription,
+		"resourceGroup":  levelGroup,
+	} {
+		if group[key] != want {
+			t.Errorf("%s %s = %v, want %v", LevelResourceGroupSymbol, key, group[key], want)
+		}
+	}
+	if _, present := group["location"]; present {
+		t.Errorf("%s writes a location: %v", LevelResourceGroupSymbol, group["location"])
+	}
+	// The resource group level follows the subscription level that declares its group.
+	if got, want := group["dependsOn"], []any{LevelSubscriptionSymbol}; !reflect.DeepEqual(got, want) {
+		t.Errorf("%s dependsOn = %v, want %v", LevelResourceGroupSymbol, got, want)
+	}
+	groupProperties, _ := group["properties"].(map[string]any)
+	groupTemplate, _ := groupProperties["template"].(map[string]any)
+	if groupTemplate[sectionSchema] != SchemaResourceGroup {
+		t.Errorf("%s template schema = %v", LevelResourceGroupSymbol, groupTemplate[sectionSchema])
+	}
+	if got, want := keysOf(groupTemplate[sectionResources]), []string{"Api", "Db"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("%s resources = %v, want %v", LevelResourceGroupSymbol, got, want)
+	}
+
+	t.Run("a resource group declared in another subscription is not depended on", func(t *testing.T) {
+		t.Parallel()
+		m, _ := assembled(t,
+			managementGroupBoundary(contributes("group", 0, groupFragment(levelGroup))),
+			atScope(contributes("payments-db", 0, storage("Db")), AnnotationDeploymentScope, "managementGroup",
+				AnnotationSubscription, "other-sub", AnnotationResourceGroup, levelGroup),
+		)
+		if _, present := nestedDeploymentOf(t, m, LevelResourceGroupSymbol)["dependsOn"]; present {
+			t.Errorf("%s depends on %v, but its group is declared in another subscription", LevelResourceGroupSymbol, nestedDeploymentOf(t, m, LevelResourceGroupSymbol)["dependsOn"])
+		}
+	})
+
+	t.Run("resource group content alone has no subscription level", func(t *testing.T) {
+		t.Parallel()
+		m, _ := assembled(t, managementGroupBoundary(contributes("payments-db", 0, storage("Db"))))
+		if got, want := keysOf(m[sectionResources]), []string{LevelResourceGroupSymbol}; !reflect.DeepEqual(got, want) {
+			t.Errorf("top-level resources = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestScopeManagementGroupAnnotationsAbsentHalt(t *testing.T) {
+	t.Parallel()
+	subscriptionContent := groupFragment(levelGroup)
+	groupContent := storage("Db")
+	for _, c := range []struct {
+		name       string
+		fragment   string
+		pairs      []string
+		annotation string
+	}{
+		{"subscription content without a subscription", subscriptionContent, []string{AnnotationDeploymentScope, "managementGroup"}, AnnotationSubscription},
+		{"subscription content with an empty subscription", subscriptionContent, []string{AnnotationDeploymentScope, "managementGroup", AnnotationSubscription, ""}, AnnotationSubscription},
+		{"resource group content without a subscription", groupContent, []string{AnnotationDeploymentScope, "managementGroup", AnnotationResourceGroup, levelGroup}, AnnotationSubscription},
+		{"resource group content without a resource group", groupContent, []string{AnnotationDeploymentScope, "managementGroup", AnnotationSubscription, levelSubscription}, AnnotationResourceGroup},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := Assemble([]Contribution{atScope(contributes("payments-db", 0, c.fragment), c.pairs...)})
+			if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
+				t.Fatalf("err = %v, want a required input unresolved", err)
+			}
+			for _, want := range []string{"arm-provider:", `"payments-db"`, c.annotation, "management-group scope"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("message %q does not contain %q", err, want)
+				}
+			}
+			for _, quoted := range []string{levelGroup, levelSubscription} {
+				if strings.Contains(err.Error(), quoted) {
+					t.Errorf("message %q quotes the value %q", err, quoted)
+				}
+			}
+		})
+	}
+}
+
+func TestScopeDisagreeingSubscriptionAnnotationsHalt(t *testing.T) {
+	t.Parallel()
+	_, err := Assemble([]Contribution{
+		managementGroupBoundary(contributes("group", 0, groupFragment(levelGroup))),
+		atScope(contributes("landing-zone", 0, groupFragment("other-rg")), AnnotationDeploymentScope, "managementGroup", AnnotationSubscription, "elsewhere-sub"),
+	})
+	if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
+		t.Fatalf("err = %v, want a required input unresolved", err)
+	}
+	for _, want := range []string{"arm-provider:", `"group"`, `"landing-zone"`, AnnotationSubscription} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q does not contain %q", err, want)
+		}
+	}
+	for _, quoted := range []string{levelSubscription, "elsewhere-sub"} {
+		if strings.Contains(err.Error(), quoted) {
+			t.Errorf("message %q quotes the value %q", err, quoted)
+		}
+	}
+}
+
+func TestScopeManagementGroupLevelSymbolsTakenHalt(t *testing.T) {
+	t.Parallel()
+	for _, symbol := range []string{LevelSubscriptionSymbol, LevelResourceGroupSymbol} {
+		t.Run(symbol, func(t *testing.T) {
+			t.Parallel()
+			taken := managementGroupSchemaLine + "resources:\n  " + symbol + ":\n    type: T\n    name: x\n"
+			_, err := Assemble([]Contribution{
+				managementGroupBoundary(contributes("policy", 0, taken)),
+				managementGroupBoundary(contributes("group", 0, groupFragment(levelGroup))),
+				managementGroupBoundary(contributes("payments-db", 0, storage("Db"))),
+			})
+			if !errors.Is(err, plugincondition.ErrPluginOutputNameCollision()) {
+				t.Fatalf("err = %v, want an output name collision", err)
+			}
+			for _, want := range []string{"arm-provider:", `"policy"`, symbol} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("message %q does not contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestScopeManagementGroupParametersPassToEachLevel(t *testing.T) {
+	t.Parallel()
+	declares := "parameters:\n  tier:\n    type: string\n    defaultValue: small\n"
+	m, _ := assembled(t,
+		managementGroupBoundary(contributes("group", 0, subscriptionSchemaLine+declares+"resources:\n  Group:\n    type: Microsoft.Resources/resourceGroups\n    apiVersion: '2024-03-01'\n    name: "+levelGroup+"\n    location: '[deployment().location]'\n")),
+		managementGroupBoundary(contributes("payments-db", 0, declares+storage("Db"))),
+	)
+	body := map[string]any{"type": "string", "defaultValue": "small"}
+	if got := m[sectionParameters].(map[string]any)["tier"]; !reflect.DeepEqual(got, body) {
+		t.Errorf("top-level tier = %v, want %v", got, body)
+	}
+	want := map[string]any{"tier": map[string]any{"value": "[parameters('tier')]"}}
+	for _, symbol := range []string{LevelSubscriptionSymbol, LevelResourceGroupSymbol} {
+		properties, _ := nestedDeploymentOf(t, m, symbol)["properties"].(map[string]any)
+		if !reflect.DeepEqual(properties["parameters"], want) {
+			t.Errorf("%s passed parameters = %v, want %v", symbol, properties["parameters"], want)
+		}
+	}
+}
+
+func TestScopeLevelAfterItsGroupInWaveOrderHalts(t *testing.T) {
+	t.Parallel()
+	t.Run("the group of a subscription boundary sits in a later wave", func(t *testing.T) {
+		t.Parallel()
+		_, err := Assemble([]Contribution{
+			subscriptionBoundary(contributes("group", 1, groupFragment(levelGroup))),
+			subscriptionBoundary(contributes("payments-db", 0, storage("Db"))),
+		})
+		if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
+			t.Fatalf("err = %v, want cannot express input", err)
+		}
+		for _, want := range []string{"arm-provider:", `"group"`, "Group", LevelResourceGroupSymbol, "wave 0", "wave 1", "earlier wave"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("message %q does not contain %q", err, want)
+			}
+		}
+		if strings.Contains(err.Error(), levelGroup) {
+			t.Errorf("message %q quotes the group name", err)
+		}
+	})
+
+	t.Run("the subscription level sits in a later wave than the resource group level", func(t *testing.T) {
+		t.Parallel()
+		_, err := Assemble([]Contribution{
+			managementGroupBoundary(contributes("group", 2, groupFragment(levelGroup))),
+			managementGroupBoundary(contributes("payments-db", 0, storage("Db"))),
+		})
+		if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
+			t.Fatalf("err = %v, want cannot express input", err)
+		}
+		for _, want := range []string{"arm-provider:", LevelSubscriptionSymbol, LevelResourceGroupSymbol, "wave 0", "wave 2", "earlier wave"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("message %q does not contain %q", err, want)
+			}
+		}
+	})
+
+	t.Run("the same wave is ordered", func(t *testing.T) {
+		t.Parallel()
+		assembled(t,
+			managementGroupBoundary(contributes("group", 1, groupFragment(levelGroup))),
+			managementGroupBoundary(contributes("payments-db", 1, storage("Db"))),
+		)
+	})
+}
+
+func TestScopeWaveBetweenALevelsWavesHalts(t *testing.T) {
+	t.Parallel()
+	_, err := Assemble([]Contribution{
+		subscriptionBoundary(contributes("payments-db", 0, storage("Db"))),
+		subscriptionBoundary(contributes("orders-api", 2, storage("Api"))),
+		subscriptionBoundary(contributes("group", 1, groupFragment("other-rg"))),
+	})
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
+		t.Fatalf("err = %v, want cannot express input", err)
+	}
+	for _, want := range []string{"arm-provider:", LevelResourceGroupSymbol, `"group"`, "wave 0", "wave 1", "wave 2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q does not contain %q", err, want)
+		}
+	}
+
+	// A top-level wave at either end of the level's span is ordered.
+	for _, wave := range []int{0, 2} {
+		assembled(t,
+			subscriptionBoundary(contributes("payments-db", 0, storage("Db"))),
+			subscriptionBoundary(contributes("orders-api", 2, storage("Api"))),
+			subscriptionBoundary(contributes("group", wave, groupFragment("other-rg"))),
+		)
+	}
+}
+
+func TestScopeManagementGroupAssemblyIsDeterministic(t *testing.T) {
+	t.Parallel()
+	contribs := []Contribution{
+		managementGroupBoundary(contributes("policy", 0, managementGroupSchemaLine+storage("Policy"))),
+		managementGroupBoundary(contributes("group", 0, groupFragment(levelGroup))),
+		managementGroupBoundary(contributes("payments-db", 0, "parameters:\n  b:\n    type: string\n  a:\n    type: string\n"+storage("Db"))),
+		managementGroupBoundary(contributes("orders-api", 1, storage("Api"))),
+	}
+	_, first := assembled(t, contribs...)
+	for i := 0; i < 20; i++ {
+		if _, again := assembled(t, contribs...); !bytes.Equal(first, again) {
+			t.Fatalf("run %d differs", i)
+		}
 	}
 }

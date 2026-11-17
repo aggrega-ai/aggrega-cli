@@ -10,6 +10,6 @@ spec:
   mappings:
     components:
       type:
+        example/scope/policy:1.0.0: arm-scope-management-group:1.0.0
         example/scope/group:1.0.0: arm-scope-group:1.0.0
-        example/scope/landing-zone:1.0.0: arm-scope-landing-zone:1.0.0
-        example/resource/plain:1.0.0: arm-scope-management-group:1.0.0
+        example/resource/plain:1.0.0: arm-scope-plain:1.0.0

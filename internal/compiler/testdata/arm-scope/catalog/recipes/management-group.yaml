@@ -11,7 +11,7 @@ metadata:
     management group, which its $schema declares.
 spec:
   capability: arm
-  implements: example/resource/plain:1.0.0
+  implements: example/scope/policy:1.0.0
   artifacts:
     plain.yaml: |
       $schema: https://schema.management.azure.com/schemas/2019-08-01/managementGroupDeploymentTemplate.json#

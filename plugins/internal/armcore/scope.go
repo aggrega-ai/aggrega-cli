@@ -66,7 +66,7 @@ func scopeRank(s Scope) int {
 
 // assembledScopes says, in a sentence, which scopes the provider assembles a
 // boundary at and how a boundary chooses one.
-var assembledScopes = fmt.Sprintf("a boundary deploys at the scope its %s annotation names, resource-group when it names none, and the arm provider assembles a boundary at resource-group or subscription scope",
+var assembledScopes = fmt.Sprintf("a boundary deploys at the scope its %s annotation names, resource-group when it names none, and the arm provider assembles a boundary at resource-group, subscription or management-group scope",
 	AnnotationDeploymentScope)
 
 // boundaryScopeOf returns the scope the contributions of one dispatch group
@@ -96,83 +96,117 @@ func boundaryScopeOf(contribs []Contribution) (Scope, error) {
 	return scope, nil
 }
 
-// refuseBoundaryScope halts wrapping ErrPluginCannotExpressInput for a boundary
-// deploying at a scope the provider does not assemble a template for: a
-// management group. contributor is a component of the boundary, named in the
-// halt.
-func refuseBoundaryScope(scope Scope, contributor string) error {
-	if scope != ScopeManagementGroup {
-		return nil
-	}
-	return refuse(plugincondition.ErrPluginCannotExpressInput,
-		fmt.Sprintf("the boundary of %q deploys at %s scope; %s, so set that annotation to %s or %s",
-			contributor, scopeWords(scope), assembledScopes, ScopeResourceGroup, ScopeSubscription))
-}
-
 // widerContent is the halt for a fragment written for a wider scope than the one
 // its boundary deploys at.
 func widerContent(identity string, content, boundary Scope) error {
-	remedy := "write these resources in a resource-group or subscription template"
+	remedy := fmt.Sprintf("annotate the boundary %s: %s, or write these resources in a resource-group or subscription template", AnnotationDeploymentScope, ScopeManagementGroup)
 	if content == ScopeSubscription {
-		remedy = fmt.Sprintf("annotate the boundary %s: %s, or write these resources in a resource-group template", AnnotationDeploymentScope, ScopeSubscription)
+		remedy = fmt.Sprintf("annotate the boundary %s: %s or %s, or write these resources in a resource-group template", AnnotationDeploymentScope, ScopeSubscription, ScopeManagementGroup)
 	}
 	return refuse(plugincondition.ErrPluginCannotExpressInput,
 		fmt.Sprintf("the fragment of %q is written for a %s template, wider than the %s scope its boundary deploys at; %s, so %s",
 			identity, scopeWords(content), scopeWords(boundary), assembledScopes, remedy))
 }
 
-// levelResourceGroup returns the resource group the resource group level of a
-// subscription scope template deploys into: the value of AnnotationResourceGroup
-// every contributor holding resource group content resolves. An absent or empty
-// value halts wrapping ErrPluginRequiredInputUnresolved naming the contributor,
-// and so do two contributors resolving it to different values, naming both and
-// neither value.
-func levelResourceGroup(nested []read) (string, error) {
-	group, first := "", ""
-	for _, r := range nested {
-		value := r.annotations[AnnotationResourceGroup]
-		if value == "" {
-			return "", refuse(plugincondition.ErrPluginRequiredInputUnresolved,
-				fmt.Sprintf("the fragment of %q is written for a resource group, and its boundary deploys at subscription scope, where the resources of a resource-group template deploy into the resource group the %s annotation names; annotate the boundary with %s",
-					r.identity, AnnotationResourceGroup, AnnotationResourceGroup))
-		}
-		if first == "" {
-			group, first = value, r.identity
-			continue
-		}
-		if value != group {
-			return "", refuse(plugincondition.ErrPluginRequiredInputUnresolved,
-				fmt.Sprintf("%q and %q write resource-group content into one subscription-scope template, and their %s annotations name different resource groups; the template deploys its resource-group content into one resource group, so give both the same value, or place them in boundaries of their own",
-					first, r.identity, AnnotationResourceGroup))
-		}
+// levelSymbolOf returns the symbolic name of the nested deployment that holds
+// the content written for a scope: LevelSubscriptionSymbol or
+// LevelResourceGroupSymbol.
+func levelSymbolOf(content Scope) string {
+	if content == ScopeSubscription {
+		return LevelSubscriptionSymbol
 	}
-	return group, nil
+	return LevelResourceGroupSymbol
 }
 
-// nestResourceGroupLevel assembles the resource group content of a subscription
-// scope template into a level of its own and adds it to top, the template's
-// top level, as the nested deployment LevelResourceGroupSymbol.
+// levelAnnotation returns the value of annotation that every contributor of
+// nested content resolves, for a nested deployment of the content written for a
+// scope inside a template at the boundary's scope. noun names what the value
+// is, as "resource group" or "subscription". An absent or empty value halts
+// wrapping ErrPluginRequiredInputUnresolved naming the contributor and the
+// annotation, and so do two contributors resolving it to different values,
+// naming both and neither value.
+func levelAnnotation(nested []read, boundary, content Scope, annotation, noun string) (string, error) {
+	value, first := "", ""
+	for _, r := range nested {
+		v := r.annotations[annotation]
+		if v == "" {
+			return "", refuse(plugincondition.ErrPluginRequiredInputUnresolved,
+				fmt.Sprintf("the fragment of %q is written for a %s template, and its boundary deploys at %s scope, where %s content deploys into the %s the %s annotation names; annotate the boundary with %s",
+					r.identity, scopeWords(content), scopeWords(boundary), scopeWords(content), noun, annotation, annotation))
+		}
+		if first == "" {
+			value, first = v, r.identity
+			continue
+		}
+		if v != value {
+			return "", refuse(plugincondition.ErrPluginRequiredInputUnresolved,
+				fmt.Sprintf("%q and %q write %s content into one %s-scope template, and their %s annotations name different values; the template deploys its %s content into one %s, so give both the same value, or place them in boundaries of their own",
+					first, r.identity, scopeWords(content), scopeWords(boundary), annotation, scopeWords(content), noun))
+		}
+	}
+	return value, nil
+}
+
+// nestedLevel is a nested deployment added to a template's top level: the level
+// it holds, where it deploys and the waves of its contributors.
+type nestedLevel struct {
+	// inner is the level the nested deployment's template is written from.
+	inner *levelBuild
+	// subscription is the subscription the deployment targets by subscriptionId,
+	// empty where it does not set one.
+	subscription string
+	// first and last are the earliest and latest waves of the contributors of the
+	// content.
+	first, last int
+}
+
+// nestLevel assembles the content written for the scope content, which is
+// narrower than the scope boundary its template deploys at, into a level of its
+// own and adds it to top, the template's top level, as the nested deployment
+// levelSymbolOf(content).
 //
 // The level is merged, composed, checked for references and ordered by wave as
 // any template level is (mergeReads, finishLevel), and checked against the
-// limits ARM sets on one template. It is deployed into the resource group
-// levelResourceGroup reads, evaluated in its own scope and deployed
-// incrementally, under the name LevelHistoryName(ScopeResourceGroup). Each
-// parameter the level declares is declared at the top level too, under the same
-// name and with the same body, and passed to the level as
+// limits ARM sets on one template. It is deployed incrementally, evaluated in its
+// own scope, under the name LevelHistoryName(content), at the place its
+// annotations name:
+//
+//   - a resource group level of a subscription-scope template deploys into the
+//     resource group AnnotationResourceGroup names;
+//   - a subscription level of a management-group-scope template deploys to the
+//     subscription AnnotationSubscription names, at the location of the
+//     deployment that holds it;
+//   - a resource group level of a management-group-scope template deploys into
+//     the resource group AnnotationResourceGroup names, in the subscription
+//     AnnotationSubscription names.
+//
+// Each parameter the level declares is declared at the top level too, under the
+// same name and with the same body, and passed to the level as
 // {"value": "[parameters('<name>')]"}; a name the top level already declares
-// with another body halts as any collision does. The nested deployment depends on
-// each top-level resource of type Microsoft.Resources/resourceGroups, matched
-// without regard to case and not declared existing: true, whose name is exactly
-// that resource group's, and on nothing else. At the top level it takes the
-// earliest wave of the level's contributors. A top-level resource that already
-// holds the symbolic name halts wrapping ErrPluginOutputNameCollision.
+// with another body halts as any collision does. A resource group level depends
+// on each resource of type Microsoft.Resources/resourceGroups, matched without
+// regard to case and not declared existing: true, whose name is exactly that
+// resource group's: of the top level in a subscription-scope template, and in a
+// management-group-scope template of the subscription level, when that level
+// deploys to the same subscription, as a dependency on the level itself. It
+// depends on nothing else. At the top level a nested deployment takes the
+// earliest wave of its contributors. A top-level resource that already holds the
+// symbolic name halts wrapping ErrPluginOutputNameCollision.
 //
 // It returns the composition diagnostics of the level.
-func nestResourceGroupLevel(top *levelBuild, nested []read) ([]renderctx.Diagnostic, error) {
-	group, err := levelResourceGroup(nested)
-	if err != nil {
-		return nil, err
+func nestLevel(top *levelBuild, boundary, content Scope, nested []read) ([]renderctx.Diagnostic, error) {
+	symbol := levelSymbolOf(content)
+	var subscription, group string
+	var err error
+	if boundary == ScopeManagementGroup {
+		if subscription, err = levelAnnotation(nested, boundary, content, AnnotationSubscription, "subscription"); err != nil {
+			return nil, err
+		}
+	}
+	if content == ScopeResourceGroup {
+		if group, err = levelAnnotation(nested, boundary, content, AnnotationResourceGroup, "resource group"); err != nil {
+			return nil, err
+		}
 	}
 	inner := newLevelBuild()
 	if err := inner.mergeReads(nested); err != nil {
@@ -182,7 +216,7 @@ func nestResourceGroupLevel(top *levelBuild, nested []read) ([]renderctx.Diagnos
 	if err != nil {
 		return nil, err
 	}
-	template := inner.template(ScopeResourceGroup)
+	template := inner.template(content)
 	encoded, err := encodeTemplate(template)
 	if err != nil {
 		return nil, err
@@ -201,10 +235,10 @@ func nestResourceGroupLevel(top *levelBuild, nested []read) ([]renderctx.Diagnos
 		passed[name] = map[string]any{"value": "[parameters(" + StringLiteral(name) + ")]"}
 	}
 
-	if other, taken := top.l.sections[sectionResources][LevelResourceGroupSymbol]; taken {
+	if other, taken := top.l.sections[sectionResources][symbol]; taken {
 		return nil, refuse(plugincondition.ErrPluginOutputNameCollision,
-			fmt.Sprintf("the fragment of %q declares a resource under the symbolic name %s (at JSON pointer %s), which a subscription-scope template gives the nested deployment holding its resource-group content; rename the resource",
-				other.contributor, LevelResourceGroupSymbol, other.pointer))
+			fmt.Sprintf("the fragment of %q declares a resource under the symbolic name %s (at JSON pointer %s), which a %s-scope template gives the nested deployment holding its %s content; rename the resource",
+				other.contributor, symbol, other.pointer, scopeWords(boundary), scopeWords(content)))
 	}
 	properties := map[string]any{
 		"mode":                        "Incremental",
@@ -215,22 +249,95 @@ func nestResourceGroupLevel(top *levelBuild, nested []read) ([]renderctx.Diagnos
 		properties["parameters"] = passed
 	}
 	body := map[string]any{
-		"type":          deploymentsResourceType,
-		"apiVersion":    DeploymentsAPIVersion,
-		"name":          LevelHistoryName(ScopeResourceGroup),
-		"resourceGroup": ArmLiteral(group),
-		"properties":    properties,
+		"type":       deploymentsResourceType,
+		"apiVersion": DeploymentsAPIVersion,
+		"name":       LevelHistoryName(content),
+		"properties": properties,
 	}
-	if depends := groupResources(top.l.sections[sectionResources], group); len(depends) > 0 {
+	if subscription != "" {
+		body["subscriptionId"] = ArmLiteral(subscription)
+	}
+	if content == ScopeSubscription {
+		body["location"] = "[deployment().location]"
+	}
+	if group != "" {
+		body["resourceGroup"] = ArmLiteral(group)
+	}
+	var depends []any
+	if content == ScopeResourceGroup {
+		switch boundary {
+		case ScopeSubscription:
+			depends = groupResources(top.l.sections[sectionResources], group)
+		case ScopeManagementGroup:
+			if above, ok := top.levels[LevelSubscriptionSymbol]; ok && above.subscription == subscription &&
+				len(groupResources(above.inner.l.sections[sectionResources], group)) > 0 {
+				depends = []any{LevelSubscriptionSymbol}
+			}
+		}
+	}
+	if len(depends) > 0 {
 		body["dependsOn"] = depends
 	}
-	top.l.put(sectionResources, LevelResourceGroupSymbol, &levelEntry{body: body, pointer: "/" + sectionResources + "/" + LevelResourceGroupSymbol})
-	wave := nested[0].wave
+	top.l.put(sectionResources, symbol, &levelEntry{body: body, pointer: "/" + sectionResources + "/" + symbol})
+	level := nestedLevel{inner: inner, subscription: subscription, first: nested[0].wave, last: nested[0].wave}
 	for _, r := range nested[1:] {
-		wave = min(wave, r.wave)
+		level.first = min(level.first, r.wave)
+		level.last = max(level.last, r.wave)
 	}
-	top.waves[LevelResourceGroupSymbol] = wave
+	top.levels[symbol] = level
+	top.waves[symbol] = level.first
 	return diags, nil
+}
+
+// checkLevelOrder halts wrapping ErrPluginCannotExpressInput where the wave order
+// cannot be written onto the nested deployments of a template. It runs before
+// the waves are applied to the top level.
+//
+// A nested deployment takes the earliest wave of its contributors, and each
+// resource of a wave depends on the resources of the preceding populated wave.
+// A nested deployment that depends on a resource of a later wave than its own,
+// the one that declares the resource group it deploys into, would depend on that
+// resource and be depended on by it, a cycle ARM rejects at deploy. A resource of
+// a wave strictly between the earliest and the latest wave of a nested
+// deployment's contributors cannot be ordered both after the content of the
+// earliest wave and before the content of the latest, which the deployment holds
+// as one unit.
+func checkLevelOrder(top *levelBuild) error {
+	resources := top.l.sections[sectionResources]
+	for _, symbol := range sortedKeys(top.levels) {
+		level := top.levels[symbol]
+		body, _ := resources[symbol].body.(map[string]any)
+		depends, _ := body["dependsOn"].([]any)
+		for _, d := range depends {
+			dependency, _ := d.(string)
+			if top.waves[dependency] > level.first {
+				return refuse(plugincondition.ErrPluginCannotExpressInput,
+					fmt.Sprintf("the nested deployment %s depends on %s, which declares the resource group it deploys into, and %s is in wave %d while the content of %s starts in wave %d; the wave order would make each depend on the other, which ARM rejects, so put the contributors of %s in an earlier wave, no later than wave %d",
+						symbol, describeResource(resources, dependency), dependency, top.waves[dependency], symbol, level.first, dependency, level.first))
+			}
+		}
+		for _, other := range sortedKeys(resources) {
+			if other == symbol || isExisting(resources[other].body) {
+				continue
+			}
+			if w := top.waves[other]; w > level.first && w < level.last {
+				who := describeResource(resources, other)
+				return refuse(plugincondition.ErrPluginCannotExpressInput,
+					fmt.Sprintf("the nested deployment %s holds the content of waves %d to %d and is ordered as one unit in wave %d, and %s is in wave %d, between them; the order of the waves cannot be written, so move that resource to wave %d or earlier, or to wave %d or later, or put the contributors of %s in one wave",
+						symbol, level.first, level.last, level.first, who, w, level.first, level.last, symbol))
+			}
+		}
+	}
+	return nil
+}
+
+// describeResource names the top-level resource symbol, with the contributor
+// that wrote it where one did.
+func describeResource(resources map[string]*levelEntry, symbol string) string {
+	if owner := resources[symbol].contributor; owner != "" {
+		return fmt.Sprintf("%s of %q", symbol, owner)
+	}
+	return symbol
 }
 
 // resourceGroupsType is the resource type of a resource group, matched without
