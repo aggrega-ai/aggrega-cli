@@ -1,0 +1,120 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: ex-ledger
+  version: 0.1.0
+  description: "Draft Recipe realizing imported/component/ex-ledger on terraform with one resource of the type ex_ledger, imported from a source in the terraform-schema format."
+spec:
+  # This Recipe realizes imported/component/ex-ledger with one resource of the type ex_ledger. It reads the keys below, each with its type, its rule and the first sentence of the vendor's description; any other key under infra.overrides halts the build naming it.
+  # infra.overrides.alert: array; override: writable, set under infra.overrides in the vendor's spelling
+  # The vendor schema gives no description of alert.
+  # infra.overrides.capacity: number; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] How many entries fit.
+  # infra.overrides.enabled: boolean; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Whether the ledger accepts entries.
+  # values.identifier: string; identity: the resource's own name or identifier
+  # [vendor schema text] The ledger's identifier.
+  # infra.overrides.label: object; override: writable, set under infra.overrides in the vendor's spelling
+  # The vendor schema gives no description of label.
+  # values.ledger: string; identity: the resource's own name or identifier
+  # [vendor schema text] The ledger's own label.
+  # infra.overrides.legacy_mode: boolean; override: writable, set under infra.overrides in the vendor's spelling; deprecated
+  # [vendor schema text] Retired switch.
+  # infra.overrides.limits: object; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Rate limits.
+  # values.name: string, required; identity: the resource's own name or identifier
+  # [vendor schema text] The ledger's name.
+  # infra.overrides.one_time: string; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Used once.
+  # infra.overrides.pair: array; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] A fixed pair.
+  # features.password: string; secret: delivered by an attachment on its featuresSchema slot
+  # [vendor schema text] The ledger's password.
+  # infra.overrides.payload: any; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Any value.
+  # infra.retention: array, required; required: the vendor schema requires it
+  # [vendor schema text] How long entries stay.
+  # infra.overrides.rows: array; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Rows of cells.
+  # infra.overrides.settings: array; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Nested settings.
+  # infra.overrides.tags: object; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Labels on the ledger.
+  # infra.overrides.window: object; override: writable, set under infra.overrides in the vendor's spelling
+  # The vendor schema gives no description of window.
+  # infra.overrides.zones: array; override: writable, set under infra.overrides in the vendor's spelling
+  # [vendor schema text] Where the ledger is kept.
+  # module/main.tf.json beside this Recipe declares the resource as a Terraform module, with one variable for each key above and one output for each attribute the provides below publish; valuesMapping sets each variable whose key holds a value, and a variable left unset stays null, leaving its argument unset.
+  # A pull admits this Recipe once aggrega pin has recorded the digest of module/main.tf.json in the entity.lock beside it: run aggrega pin on this Recipe after drafting it and after each change to the module.
+  capability: terraform
+  implements: imported/component/ex-ledger:0.1.0
+  source: ./module
+  provides:
+    # Each value is the module's output of that name, which the root configuration resolves where it declares the module; the String Pipe pipes it as written into a consumer's context.
+    arn: "${module.{{ .context.instance_id }}.arn}"
+  assertions:
+    # Halts naming any key under infra.overrides this Recipe does not read.
+    overrides_this_recipe_reads: |
+      {{- $o := optional .infra "overrides" dict -}}
+      {{- range $k, $v := $o -}}
+      {{- if not (has $k (list "alert" "capacity" "enabled" "label" "legacy_mode" "limits" "one_time" "pair" "payload" "rows" "settings" "tags" "window" "zones")) -}}
+      {{- fail (printf "infra.overrides.%s is not a setting this Recipe reads: it reads %s from infra.overrides; remove infra.overrides.%s from the Release" $k "alert, capacity, enabled, label, legacy_mode, limits, one_time, pair, payload, rows, settings, tags, window and zones" $k) -}}
+      {{- end -}}
+      {{- end -}}
+  valuesMapping: |
+    {{- if (hasKey (optional .infra "overrides" dict) "alert") }}
+    alert: {{ toJson (index .infra "overrides" "alert") }}
+    {{- end }}
+    {{- if (hasKey (optional .infra "overrides" dict) "capacity") }}
+    capacity: {{ toJson (index .infra "overrides" "capacity") }}
+    {{- end }}
+    {{- if (hasKey (optional .infra "overrides" dict) "enabled") }}
+    enabled: {{ toJson (index .infra "overrides" "enabled") }}
+    {{- end }}
+    {{- if (hasKey .values "identifier") }}
+    identifier: {{ toJson (index .values "identifier") }}
+    {{- end }}
+    {{- if (hasKey (optional .infra "overrides" dict) "label") }}
+    label: {{ toJson (index .infra "overrides" "label") }}
+    {{- end }}
+    {{- if (hasKey .values "ledger") }}
+    ledger: {{ toJson (index .values "ledger") }}
+    {{- end }}
+    {{- if (hasKey (optional .infra "overrides" dict) "legacy_mode") }}
+    legacy_mode: {{ toJson (index .infra "overrides" "legacy_mode") }}
+    {{- end }}
+    {{- if (hasKey (optional .infra "overrides" dict) "limits") }}
+    limits: {{ toJson (index .infra "overrides" "limits") }}
+    {{- end }}
+    name: {{ toJson (index .values "name") }}
+    {{- if (hasKey (optional .infra "overrides" dict) "one_time") }}
+    one_time: {{ toJson (index .infra "overrides" "one_time") }}
+    {{- end }}
+    {{- if (hasKey (optional .infra "overrides" dict) "pair") }}
+    pair: {{ toJson (index .infra "overrides" "pair") }}
+    {{- end }}
+    {{- with (optional . "features" dict).password }}
+    {{- if not (hasKey (optional (default dict $.context.inject) "env" dict) .values.key) }}
+    {{- fail "the attachment on the featuresSchema slot password delivers no value on the env inject mechanism under the key its values name, and the module variable password takes the value delivered there: attach to the slot password a secret Feature delivering its value on env, such as core/secret-value" }}
+    {{- end }}
+    password: {{ toJson (index (optional (default dict $.context.inject) "env" dict) .values.key) }}
+    {{- end }}
+    {{- if (hasKey (optional .infra "overrides" dict) "payload") }}
+    payload: {{ toJson (index .infra "overrides" "payload") }}
+    {{- end }}
+    retention: {{ $out1 := list }}{{ range $item1 := (index .infra "retention") }}{{ $in2 := $item1 }}{{ $out2 := dict }}{{ if hasKey $in2 "archive" }}{{ $in3 := (index $in2 "archive") }}{{ $out3 := dict }}{{ if hasKey $in3 "target" }}{{ $_ := set $out3 "target" (index $in3 "target") }}{{ end }}{{ $_ := set $out2 "archive" $out3 }}{{ end }}{{ if hasKey $in2 "days" }}{{ $_ := set $out2 "days" (index $in2 "days") }}{{ end }}{{ $out1 = append $out1 $out2 }}{{ end }}{{ toJson $out1 }}
+    {{- if (hasKey (optional .infra "overrides" dict) "rows") }}
+    rows: {{ toJson (index .infra "overrides" "rows") }}
+    {{- end }}
+    {{- if (hasKey (optional .infra "overrides" dict) "settings") }}
+    settings: {{ toJson (index .infra "overrides" "settings") }}
+    {{- end }}
+    {{- if (hasKey (optional .infra "overrides" dict) "tags") }}
+    tags: {{ toJson (index .infra "overrides" "tags") }}
+    {{- end }}
+    {{- if (hasKey (optional .infra "overrides" dict) "window") }}
+    window: {{ toJson (index .infra "overrides" "window") }}
+    {{- end }}
+    {{- if (hasKey (optional .infra "overrides" dict) "zones") }}
+    zones: {{ toJson (index .infra "overrides" "zones") }}
+    {{- end }}

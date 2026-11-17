@@ -247,9 +247,20 @@ func (l *lifter) attribute(name string, path []string, raw json.RawMessage) *sch
 	}
 	p.Description = schemadraft.FirstParagraph(a.Description)
 	p.Required = a.Required || (p.Block != nil && p.Block.MinItems > 0)
-	p.ReadOnly = a.Computed && !a.Optional && !a.Required
+	p.ReadOnly = a.Computed && !a.Optional && !a.Required || legacyID(path, a.Optional, a.Computed)
 	p.Sensitive, p.WriteOnly, p.Deprecated = a.Sensitive, a.WriteOnly, a.Deprecated
 	return p
+}
+
+// legacyIDAttribute names the resource identifier a provider built on the
+// Terraform plugin SDK declares at the top level of every resource, optional
+// and computed, and refuses in configuration ("Invalid or unknown key").
+const legacyIDAttribute = "id"
+
+// legacyID reports whether the attribute at path, optional and computed as
+// given, is that identifier: read back, since no configuration sets it.
+func legacyID(path []string, optional, computed bool) bool {
+	return len(path) == 1 && path[0] == legacyIDAttribute && optional && computed
 }
 
 // nestedType lifts the attribute name at path whose type is a nested type of
@@ -267,7 +278,11 @@ func (l *lifter) nestedType(name string, path []string, raw json.RawMessage) *sc
 	}
 	block, _ := json.Marshal(map[string]json.RawMessage{"attributes": n.Attributes})
 	props, _ := l.block(block, path)
-	return l.nest(&schemadraft.Property{Name: name, Path: path}, n.Mode, n.MinItems, n.MaxItems, props)
+	p := l.nest(&schemadraft.Property{Name: name, Path: path}, n.Mode, n.MinItems, n.MaxItems, props)
+	if p.Block != nil {
+		p.Block.Attribute = true
+	}
+	return p
 }
 
 // blockType lifts the nested block name at path from its entry raw, which gives
@@ -290,6 +305,8 @@ func (l *lifter) blockType(name string, path []string, raw json.RawMessage) *sch
 		}
 		_ = json.Unmarshal(b.Block, &described) // only the description is read; the cut subtree is not lifted
 		p.Description = schemadraft.FirstParagraph(described.Description)
+		// A cut block stays known as a block, which Terraform sets as one.
+		p.Block = &schemadraft.Block{Nesting: b.Mode, MinItems: b.MinItems, MaxItems: b.MaxItems}
 		return cut(p)
 	}
 	props, description := l.block(b.Block, path)
@@ -299,8 +316,9 @@ func (l *lifter) blockType(name string, path []string, raw json.RawMessage) *sch
 
 // nest shapes p, a block or a nested type holding props, by its nesting mode: a
 // list or a set is an array of objects, a single or a group an object, a map an
-// open object whose members the draft does not carry. A bound above zero on the
-// item count makes p required.
+// open object whose members the Component does not describe, the object each
+// key holds kept as its Items for the module setting it. A bound above zero on
+// the item count makes p required.
 func (l *lifter) nest(p *schemadraft.Property, mode string, lo, hi int, props []*schemadraft.Property) *schemadraft.Property {
 	p.Block = &schemadraft.Block{Nesting: mode, MinItems: lo, MaxItems: hi}
 	p.Required = lo > 0
@@ -313,6 +331,8 @@ func (l *lifter) nest(p *schemadraft.Property, mode string, lo, hi int, props []
 		p.Kinds, p.Properties = []schemadraft.Kind{schemadraft.KindObject}, props
 	case nestingMap:
 		p.Kinds, p.Open = []schemadraft.Kind{schemadraft.KindObject}, true
+		p.Items = &schemadraft.Property{Name: p.Name, Path: p.Path, Kinds: []schemadraft.Kind{schemadraft.KindObject},
+			Properties: props}
 		p.Dropped = append(p.Dropped, "nesting_mode map: the draft carries a map of blocks as an open object, "+
 			"without the members of its blocks")
 	default:

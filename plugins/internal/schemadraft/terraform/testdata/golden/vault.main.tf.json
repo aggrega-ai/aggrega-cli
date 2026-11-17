@@ -1,0 +1,71 @@
+{
+  "output": {
+    "arn": {
+      "value": "${vault_store.this.arn}"
+    },
+    "endpoint": {
+      "value": "${vault_store.this.endpoint}"
+    }
+  },
+  "resource": {
+    "vault_store": {
+      "this": {
+        "capacity": "${var.capacity}",
+        "dynamic": {
+          "retention": {
+            "content": {
+              "days": "${try(it1.value.days, null)}",
+              "dynamic": {
+                "archive": {
+                  "content": {
+                    "target": "${try(it2.value.target, null)}"
+                  },
+                  "for_each": "${try(it1.value.archive, null)[*]}",
+                  "iterator": "it2"
+                }
+              }
+            },
+            "for_each": "${var.retention[*]}",
+            "iterator": "it1"
+          },
+          "window": {
+            "content": {
+              "start": "${try(it1.value.start, null)}"
+            },
+            "for_each": "${var.window[*]}",
+            "iterator": "it1"
+          }
+        },
+        "name": "${var.name}",
+        "password": "${var.password}"
+      }
+    }
+  },
+  "terraform": {
+    "required_providers": {
+      "vault": {
+        "source": "example/vault"
+      }
+    }
+  },
+  "variable": {
+    "capacity": {
+      "default": null,
+      "type": "number"
+    },
+    "name": {
+      "type": "string"
+    },
+    "password": {
+      "sensitive": true,
+      "type": "string"
+    },
+    "retention": {
+      "type": "any"
+    },
+    "window": {
+      "default": null,
+      "type": "any"
+    }
+  }
+}

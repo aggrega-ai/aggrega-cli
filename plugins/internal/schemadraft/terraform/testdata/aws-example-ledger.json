@@ -1,0 +1,22 @@
+{
+  "format_version": "1.0",
+  "provider_schemas": {
+    "registry.terraform.io/hashicorp/aws": {
+      "resource_schemas": {
+        "aws_example_ledger": {
+          "version": 0,
+          "block": {
+            "description": "A ledger the example service keeps, written for this test.",
+            "description_kind": "plain",
+            "attributes": {
+              "identifier": {"type": "string", "required": true, "description": "The ledger's own identifier."},
+              "name": {"type": "string", "optional": true, "description": "A display name for the ledger."},
+              "subnet_group": {"type": "string", "required": true, "description": "The subnet group the ledger is placed in."},
+              "kms_key_id": {"type": "string", "optional": true, "description": "The key that encrypts the ledger."}
+            }
+          }
+        }
+      }
+    }
+  }
+}

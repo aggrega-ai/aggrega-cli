@@ -23,8 +23,8 @@ const (
 // after the type's last word; a secret is a sensitive attribute that can be
 // written, delivered on a featuresSchema slot. Where two providers carry one
 // type name and one is the other's beta sibling, the non-beta provider is
-// drafted from. Its writer is set beside it, where the Recipe's Terraform is
-// written, so Write stays nil here.
+// drafted from. Its writer, Write, drafts each resource as a local module
+// beside its Recipe.
 var Format = schemadraft.Format{
 	Name:       formatName,
 	Capability: capability,
@@ -40,6 +40,7 @@ var Format = schemadraft.Format{
 		SecretSlots: true,
 	},
 	Category: category,
+	Write:    Write,
 }
 
 // placements are the attributes each provider type, with the -beta suffix of

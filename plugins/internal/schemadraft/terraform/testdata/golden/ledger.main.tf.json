@@ -1,0 +1,155 @@
+{
+  "output": {
+    "arn": {
+      "value": "${ex_ledger.this.arn}"
+    }
+  },
+  "resource": {
+    "ex_ledger": {
+      "this": {
+        "capacity": "${var.capacity}",
+        "dynamic": {
+          "alert": {
+            "content": {
+              "channel": "${try(it1.value.channel, null)}"
+            },
+            "for_each": "${var.alert[*]}",
+            "iterator": "it1"
+          },
+          "label": {
+            "content": {
+              "value": "${try(it1.value.value, null)}"
+            },
+            "for_each": "${merge(var.label)}",
+            "iterator": "it1",
+            "labels": [
+              "${it1.key}"
+            ]
+          },
+          "retention": {
+            "content": {
+              "days": "${try(it1.value.days, null)}",
+              "dynamic": {
+                "archive": {
+                  "content": {
+                    "target": "${try(it2.value.target, null)}"
+                  },
+                  "for_each": "${try(it1.value.archive, null)[*]}",
+                  "iterator": "it2"
+                }
+              }
+            },
+            "for_each": "${var.retention[*]}",
+            "iterator": "it1"
+          },
+          "window": {
+            "content": {
+              "start": "${try(it1.value.start, null)}"
+            },
+            "for_each": "${var.window[*]}",
+            "iterator": "it1"
+          }
+        },
+        "enabled": "${var.enabled}",
+        "identifier": "${var.identifier}",
+        "ledger": "${var.ledger}",
+        "legacy_mode": "${var.legacy_mode}",
+        "limits": "${var.limits}",
+        "name": "${var.name}",
+        "one_time": "${var.one_time}",
+        "pair": "${var.pair}",
+        "password": "${var.password}",
+        "payload": "${var.payload}",
+        "provider": "ledgers",
+        "rows": "${var.rows}",
+        "settings": "${var.settings}",
+        "tags": "${var.tags}",
+        "zones": "${var.zones}"
+      }
+    }
+  },
+  "terraform": {
+    "required_providers": {
+      "ledgers": {
+        "source": "example/ledgers"
+      }
+    }
+  },
+  "variable": {
+    "alert": {
+      "default": null,
+      "type": "any"
+    },
+    "capacity": {
+      "default": null,
+      "type": "number"
+    },
+    "enabled": {
+      "default": null,
+      "type": "bool"
+    },
+    "identifier": {
+      "default": null,
+      "type": "string"
+    },
+    "label": {
+      "default": null,
+      "type": "any"
+    },
+    "ledger": {
+      "default": null,
+      "type": "string"
+    },
+    "legacy_mode": {
+      "default": null,
+      "type": "bool"
+    },
+    "limits": {
+      "default": null,
+      "type": "any"
+    },
+    "name": {
+      "type": "string"
+    },
+    "one_time": {
+      "default": null,
+      "type": "string"
+    },
+    "pair": {
+      "default": null,
+      "type": "any"
+    },
+    "password": {
+      "default": null,
+      "sensitive": true,
+      "type": "string"
+    },
+    "payload": {
+      "default": null,
+      "type": "any"
+    },
+    "retention": {
+      "type": "any"
+    },
+    "rows": {
+      "default": null,
+      "type": "list(list(string))"
+    },
+    "settings": {
+      "default": null,
+      "type": "any"
+    },
+    "tags": {
+      "default": null,
+      "type": "any"
+    },
+    "window": {
+      "default": null,
+      "type": "any"
+    },
+    "zones": {
+      "default": null,
+      "type": "list(string)"
+    }
+  }
+}

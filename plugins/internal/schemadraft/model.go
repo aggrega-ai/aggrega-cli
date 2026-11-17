@@ -19,12 +19,17 @@ const (
 	KindAny     Kind = "any"
 )
 
-// Block describes how a Terraform nested block repeats: its nesting mode
-// (single, list, set, map or group) and the bounds on its item count.
+// Block describes how a Terraform nested block, or an attribute of a nested
+// type, repeats: its nesting mode (single, list, set, map or group) and the
+// bounds on its item count.
 type Block struct {
 	Nesting  string
 	MinItems int
 	MaxItems int
+	// Attribute is set for an attribute of a nested type, which Terraform
+	// sets as an argument, and clear for a nested block, which it sets as a
+	// block.
+	Attribute bool
 }
 
 // ProviderAddress is the registry address of a Terraform provider. Version is
@@ -53,7 +58,8 @@ type Property struct {
 	Min, Max             *json.Number
 	MinLength, MaxLength *int
 
-	// Items is the element property of an array.
+	// Items is the element property of an array, and of a Terraform map of
+	// blocks the block each key holds.
 	Items *Property
 	// Properties are the members of an object, sorted by Name.
 	Properties []*Property

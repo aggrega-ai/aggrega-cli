@@ -138,8 +138,8 @@ func TestTerraformFormat(t *testing.T) {
 	if f.Name != "terraform-schema" || f.Capability != "terraform" || f.Syntax != "json" || !f.CountOnly || f.FoldCase {
 		t.Errorf("the format is %+v", f)
 	}
-	if f.Write != nil {
-		t.Errorf("the reader sets a writer")
+	if f.Write == nil {
+		t.Errorf("the format has no writer")
 	}
 	if !f.Rules.SecretSlots {
 		t.Errorf("a secret is not delivered on a slot")
