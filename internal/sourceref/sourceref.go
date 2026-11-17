@@ -59,6 +59,7 @@
 package sourceref
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -377,4 +378,23 @@ func withReference(source any, ref string) any {
 	default:
 		return source
 	}
+}
+
+// StringFields returns the text each key of a structured source writes, as
+// authored: a string as it is, any other value as its default text, a nil value
+// skipped. It is the one stringification of a source's keys, so every reader of
+// them is handed what the author typed.
+func StringFields(fields map[string]any) map[string]string {
+	out := make(map[string]string, len(fields))
+	for key, value := range fields {
+		if value == nil {
+			continue
+		}
+		if text, isString := value.(string); isString {
+			out[key] = text
+		} else {
+			out[key] = fmt.Sprint(value)
+		}
+	}
+	return out
 }

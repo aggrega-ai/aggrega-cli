@@ -472,3 +472,11 @@ func TestNeedsFetchAsksAboutTheTransportNotTheShape(t *testing.T) {
 		})
 	}
 }
+
+func TestStringFields(t *testing.T) {
+	t.Parallel()
+	got := StringFields(map[string]any{"url": "oci://r/m", "depth": 3, "gone": nil})
+	if len(got) != 2 || got["url"] != "oci://r/m" || got["depth"] != "3" {
+		t.Errorf("StringFields = %v; want url and depth as text, nil skipped", got)
+	}
+}

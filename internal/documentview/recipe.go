@@ -255,18 +255,7 @@ func authoredSourceFields(src any) map[string]string {
 	if !ok {
 		return nil
 	}
-	fields := make(map[string]string, len(structured))
-	for key, value := range structured {
-		if value == nil {
-			continue
-		}
-		text, isString := value.(string)
-		if !isString {
-			text = fmt.Sprint(value)
-		}
-		fields[key] = text
-	}
-	return fields
+	return sourceref.StringFields(structured)
 }
 
 // RecipeValuesMappingDeclared reports whether the presented Recipe declares a

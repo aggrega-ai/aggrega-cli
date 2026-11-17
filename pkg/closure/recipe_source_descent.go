@@ -474,7 +474,7 @@ func buildSpecFromMap(s map[string]any, values, infra map[string]any, locals typ
 		Infra:  infra,
 		Locals: map[string]any{},
 	}
-	authored := mapStringValues(s)
+	authored := sourceref.StringFields(s)
 	reads := sourceLocalsReads(authored, locals, recipeURI)
 	unevaluated, err := resolveLocals(locals, ctx, recipeURI, reads)
 	if err != nil {
@@ -511,22 +511,6 @@ func buildSpecFromMap(s map[string]any, values, infra map[string]any, locals typ
 			recipeURI, spec.Kind, ErrSourceTemplateAtLockTime())
 	}
 	return spec, nil
-}
-
-// mapStringValues returns a flat view of the structured source map
-// where every value is a string. Non-string values are stringified
-// via fmt.Sprint; complex shapes (nested maps, lists) are not
-// expected at spec.source's leaf fields.
-func mapStringValues(s map[string]any) map[string]string {
-	out := make(map[string]string, len(s))
-	for k, v := range s {
-		if str, ok := v.(string); ok {
-			out[k] = str
-		} else if v != nil {
-			out[k] = fmt.Sprint(v)
-		}
-	}
-	return out
 }
 
 // templateContext is the {.values, .infra, .locals} substrate
