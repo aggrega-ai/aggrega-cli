@@ -698,16 +698,11 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 type catalogEntityView struct {
 	cat    *catalog.Catalog
 	lookup resolver.CatalogLookup
-	// libraries is the catalog's libraries one version per name, as a bare
-	// reference selects each (catalog.Catalog.DefaultLibraries), taken once for
-	// every kind the resolution tries.
-	libraries catalog.LibrarySet
 }
 
-// newCatalogEntityView is the adapter over cat, its lookup and its libraries
-// taken once.
+// newCatalogEntityView is the adapter over cat and its lookup.
 func newCatalogEntityView(cat *catalog.Catalog) catalogEntityView {
-	return catalogEntityView{cat: cat, lookup: cat.CatalogLookup(), libraries: cat.DefaultLibraries()}
+	return catalogEntityView{cat: cat, lookup: cat.CatalogLookup()}
 }
 
 func (v catalogEntityView) Component(uri string) (types.Component, bool) {
@@ -734,26 +729,23 @@ func (v catalogEntityView) AggregateLookup() resolver.AggregateLookup {
 	return v.cat.AggregateLookup()
 }
 
-// SchemaLibrary, MappingLibrary, WorkloadLibrary and ArtifactLibrary read a
-// library by name, at the one version a bare reference to that name selects.
+// SchemaLibrary, MappingLibrary, WorkloadLibrary and ArtifactLibrary read the
+// library a reference selects among the versions the catalog holds: a bare name
+// reads the highest, and a name with a version the version that floor selects.
 func (v catalogEntityView) SchemaLibrary(uri string) (types.SchemaLibrary, bool) {
-	lib, ok := v.libraries.Schemas[uri]
-	return lib, ok
+	return v.cat.SchemaLibrary(uri)
 }
 
 func (v catalogEntityView) MappingLibrary(uri string) (types.MappingLibrary, bool) {
-	lib, ok := v.libraries.Mappings[uri]
-	return lib, ok
+	return v.cat.MappingLibrary(uri)
 }
 
 func (v catalogEntityView) WorkloadLibrary(uri string) (types.WorkloadLibrary, bool) {
-	lib, ok := v.libraries.Workloads[uri]
-	return lib, ok
+	return v.cat.WorkloadLibrary(uri)
 }
 
 func (v catalogEntityView) ArtifactLibrary(uri string) (types.ArtifactLibrary, bool) {
-	lib, ok := v.libraries.Artifacts[uri]
-	return lib, ok
+	return v.cat.ArtifactLibrary(uri)
 }
 
 // LocalEntityPath reports no authored document, for any kind.

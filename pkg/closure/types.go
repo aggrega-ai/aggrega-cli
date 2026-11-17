@@ -378,6 +378,17 @@ type ResolvedLibrary struct {
 	Consumers      []LibraryConsumer
 }
 
+// Reference returns the library reference naming lib at the version it resolved
+// to, `<URI>:<ResolvedVersion>`, or the bare URI where it resolved to no version.
+// A catalog read of that reference selects the copy held at exactly that version
+// wherever one is held.
+func (lib ResolvedLibrary) Reference() string {
+	if lib.ResolvedVersion == "" {
+		return lib.URI
+	}
+	return lib.URI + ":" + lib.ResolvedVersion
+}
+
 // LibraryConsumer records a single catalog-entity → library
 // reference edge. Mirrors the lockfile package's LibraryConsumer
 // wire shape so the lockfile writer can copy field-for-field.

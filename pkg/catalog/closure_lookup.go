@@ -767,8 +767,16 @@ func (l *catalogLookup) lookupExternal(uri, entityKind string) (closure.Resoluti
 // then the registry. The axis selects the local-catalog reader and names the kind
 // the registry tier fetches under; nothing else differs between the axes, so the
 // cascade is written once here rather than copied per axis.
+//
+// The catalog tier answers with the copy the reference selects among the versions
+// it holds. A reference whose name it holds at no version the reference admits is
+// a miss there, and the cache and registry tiers are asked as for any other miss;
+// only when they miss as well does the resolution carry the catalog tier's
+// unsatisfiable-version condition (Resolution.UnsatisfiedPin), so a registry that
+// serves the version asked for still answers it.
 func (l *catalogLookup) ResolveLibrary(ctx context.Context, axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
-	if res, entries, ok := l.tier1Library(axis, uri); ok {
+	res, entries, ok, unsatisfied := l.tier1Library(axis, uri)
+	if ok {
 		return closure.LibraryResolution{Resolution: res, Entries: entries}, nil
 	}
 	fetchURI := l.pinnedFetchURI(axis.Kind, uri)
@@ -784,6 +792,9 @@ func (l *catalogLookup) ResolveLibrary(ctx context.Context, axis closure.Library
 	}
 	if err := l.pinHeldNowhere(axis.Kind, uri, fetchURI, res); err != nil {
 		return closure.LibraryResolution{}, err
+	}
+	if res.NotFound {
+		res.UnsatisfiedPin = unsatisfied
 	}
 	res, err = l.honorPinDigest(axis.Kind, uri, res)
 	return closure.LibraryResolution{Resolution: res}, err
@@ -1148,44 +1159,51 @@ func (l *catalogLookup) tier1RungsFor(entityKind string) []tier1Rung {
 	return rungs
 }
 
-// tier1Library resolves a library from the locally-authored catalog on any axis.
-// The version a reference asserts is a floor for selection, so an explicit one in
-// the URI wins over the library's own metadata version.
+// tier1Library resolves a library from the locally-authored catalog on any axis:
+// the copy the reference selects among the versions the catalog holds under its
+// name (selectLibraryVersion), reported at that copy's own version with the digest
+// of that copy's own bytes. A bare reference selects the highest version, and a
+// reference carrying a version reads it as a floor, so the version reported may be
+// later than the one the reference names.
 //
-// An axis the local catalog holds no map for resolves as a miss rather than an
-// error: a library that is not authored locally is exactly what the cache and
-// registry tiers below exist to serve.
-func (l *catalogLookup) tier1Library(axis closure.LibraryAxis, uri string) (closure.Resolution, map[string]struct{}, bool) {
-	name := schemaLibraryNameFromURI(uri)
-	key, metaVersion, entries, ok := l.localLibrary(axis, name)
+// A reference the catalog does not answer is a miss. Where the catalog holds the
+// name but no version the floor admits, the error returned is the selection's
+// unsatisfiable-version condition, for the resolution to report once every other
+// tier has missed too; it is nil for any other miss. An axis the local catalog
+// holds no map for resolves as a miss rather than an error: a library that is not
+// authored locally is exactly what the cache and registry tiers below exist to
+// serve.
+func (l *catalogLookup) tier1Library(axis closure.LibraryAxis, uri string) (closure.Resolution, map[string]struct{}, bool, error) {
+	key, version, entries, ok, err := l.localLibrary(axis, uri)
 	if !ok {
-		return closure.Resolution{}, nil, false
-	}
-	resolved := metaVersion
-	if _, v, hasV := resolver.SplitVersionedURI(uri); hasV && v != "" {
-		resolved = v
+		if errors.Is(err, ErrUnsatisfiableEntityVersion()) {
+			return closure.Resolution{}, nil, false, err
+		}
+		return closure.Resolution{}, nil, false, nil
 	}
 	// A library's row records the digest of its bytes (isLibraryKind): the bytes
 	// of the copy read, under the identity it is indexed by.
 	d := contentDigest(l.catalog.entityBytes[entityBytesKey(axis.Kind, key)])
-	return l.tier1Resolution(axis.Kind, key, resolved, d), entries, true
+	return l.tier1Resolution(axis.Kind, key, version, d), entries, true, nil
 }
 
 // localLibrary reads one library out of the locally-authored catalog, returning
 // the identity it is indexed under, its version and the set of entry names it
-// publishes. Of the versions the catalog holds under name, it reads the one a
-// bare reference selects (selectLibraryVersion).
+// publishes. Of the versions the catalog holds under the library's name, it reads
+// the one the reference uri selects (selectLibrary); err is the selection's own
+// account of a reference it does not answer.
 //
 // This is the one place an axis is bound to the catalog map and the spec section
 // that hold it — which map and which section is new information per axis, not a
 // copy of another axis's — so it is stated here once instead of at every tier.
-func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, name string) (string, string, map[string]struct{}, bool) {
+func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, uri string) (string, string, map[string]struct{}, bool, error) {
+	ref := catalogLibraryReference(uri)
 	entries := map[string]struct{}{}
 	switch axis.Kind {
 	case "SchemaLibrary":
-		lib, key, found := selectLibrary(l.catalog.SchemaLibraryVersions, name, schemaLibraryMeta)
+		lib, key, found, err := selectLibrary(l.catalog.SchemaLibraryVersions, ref, schemaLibraryMeta)
 		if !found {
-			return "", "", nil, false
+			return "", "", nil, false, err
 		}
 		for n := range lib.Spec.Schemas.All() {
 			entries[n] = struct{}{}
@@ -1195,36 +1213,36 @@ func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, name string) (str
 		for n := range lib.Spec.Templates.All() {
 			entries[n] = struct{}{}
 		}
-		return key, lib.Metadata.Version, entries, true
+		return key, lib.Metadata.Version, entries, true, nil
 	case "MappingLibrary":
-		lib, key, found := selectLibrary(l.catalog.MappingLibraryVersions, name, mappingLibraryMeta)
+		lib, key, found, err := selectLibrary(l.catalog.MappingLibraryVersions, ref, mappingLibraryMeta)
 		if !found {
-			return "", "", nil, false
+			return "", "", nil, false, err
 		}
 		for n := range lib.Spec.Mappings.All() {
 			entries[n] = struct{}{}
 		}
-		return key, lib.Metadata.Version, entries, true
+		return key, lib.Metadata.Version, entries, true, nil
 	case "WorkloadLibrary":
-		lib, key, found := selectLibrary(l.catalog.WorkloadLibraryVersions, name, workloadLibraryMeta)
+		lib, key, found, err := selectLibrary(l.catalog.WorkloadLibraryVersions, ref, workloadLibraryMeta)
 		if !found {
-			return "", "", nil, false
+			return "", "", nil, false, err
 		}
 		for n := range lib.Spec.Workloads.All() {
 			entries[n] = struct{}{}
 		}
-		return key, lib.Metadata.Version, entries, true
+		return key, lib.Metadata.Version, entries, true, nil
 	case "ArtifactLibrary":
-		lib, key, found := selectLibrary(l.catalog.ArtifactLibraryVersions, name, artifactLibraryMeta)
+		lib, key, found, err := selectLibrary(l.catalog.ArtifactLibraryVersions, ref, artifactLibraryMeta)
 		if !found {
-			return "", "", nil, false
+			return "", "", nil, false, err
 		}
 		for n := range lib.Spec.Artifacts.All() {
 			entries[n] = struct{}{}
 		}
-		return key, lib.Metadata.Version, entries, true
+		return key, lib.Metadata.Version, entries, true, nil
 	}
-	return "", "", nil, false
+	return "", "", nil, false, nil
 }
 
 // catalogDirectoryCopies returns the entries this catalog holds from a catalog
@@ -1255,12 +1273,11 @@ func (c *Catalog) catalogDirectoryCopies(kind, uri string) []catalogDirectoryCop
 			entries = append(entries, entry{catalogKind, key, false})
 		}
 	}
-	name := schemaLibraryNameFromURI(uri)
 	for _, axis := range closure.LibraryAxes() {
 		if axis.Kind != kind {
 			continue
 		}
-		if key, _, _, ok := lookup.localLibrary(axis, name); ok {
+		if key, _, _, ok, _ := lookup.localLibrary(axis, uri); ok {
 			entries = append(entries, entry{axis.Kind, key, true})
 		}
 	}
@@ -1958,8 +1975,8 @@ func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (clo
 		// + cached identity is the body's metadata.version, matching the build-side
 		// tier-1 derivation so a tag != metadata.version publish does not drift. A
 		// floored reference keeps the floor as the pin — the consumer asked for that
-		// version, and minimum-version selection (which overrides ResolvedVersion to
-		// the floor) and the cache key must agree.
+		// version, the registry served the tag it names, and the cache key and the
+		// version the walk records must agree.
 		pinnedVersion := resolvedVersion
 		if !hasFloor {
 			mv, verr := entityMetadataVersion(result.Bytes)
@@ -2379,6 +2396,17 @@ func EntityNameFromURI(uri string) string {
 func lookupNameFromURI(uri string) string {
 	base, _, _ := resolver.SplitVersionedURI(uri)
 	return base
+}
+
+// catalogLibraryReference returns the reference a library URI makes among the libraries
+// a catalog holds: the library's name, read as schemaLibraryNameFromURI reads it,
+// with the version the URI carries, which the library selection reads as a floor.
+func catalogLibraryReference(uri string) string {
+	name := schemaLibraryNameFromURI(uri)
+	if _, version, ok := resolver.SplitVersionedURI(uri); ok && version != "" {
+		return name + ":" + version
+	}
+	return name
 }
 
 // schemaLibraryNameFromURI returns the library-identifier portion

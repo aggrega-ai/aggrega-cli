@@ -2789,7 +2789,7 @@ func (c *Catalog) aggregateSource(key string) (string, bool) {
 // every other reference to those kinds is — exact, caret, or unversioned, to the
 // highest satisfying version — so a bare name answers with the highest version's
 // bytes and a version-pinned one with that version's. A library reference is
-// resolved by the library selection (selectLibraryVersion): a bare name answers
+// resolved by the library selection (selectLibrary): a bare name answers
 // with the version a bare reference selects, a versioned one with the version its
 // floor selects. For a Recipe or FeatureRecipe the reference is the
 // capability-scoped identity the entity is indexed under.
@@ -2819,13 +2819,13 @@ func (c *Catalog) indexKeyFor(kind, reference string) (string, bool) {
 	case "Plugin":
 		key, ok, _ = c.resolvePluginKey(reference)
 	case "SchemaLibrary":
-		key, ok, _ = selectLibraryVersion(c.SchemaLibraryVersions, reference, schemaLibraryMeta)
+		_, key, ok, _ = selectLibrary(c.SchemaLibraryVersions, reference, schemaLibraryMeta)
 	case "MappingLibrary":
-		key, ok, _ = selectLibraryVersion(c.MappingLibraryVersions, reference, mappingLibraryMeta)
+		_, key, ok, _ = selectLibrary(c.MappingLibraryVersions, reference, mappingLibraryMeta)
 	case "WorkloadLibrary":
-		key, ok, _ = selectLibraryVersion(c.WorkloadLibraryVersions, reference, workloadLibraryMeta)
+		_, key, ok, _ = selectLibrary(c.WorkloadLibraryVersions, reference, workloadLibraryMeta)
 	case "ArtifactLibrary":
-		key, ok, _ = selectLibraryVersion(c.ArtifactLibraryVersions, reference, artifactLibraryMeta)
+		_, key, ok, _ = selectLibrary(c.ArtifactLibraryVersions, reference, artifactLibraryMeta)
 	default:
 		return reference, true
 	}

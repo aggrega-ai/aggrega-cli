@@ -3279,11 +3279,14 @@ func (l *LazyLookup) ClosureRecipeLoader() closure.RecipeLoader {
 	return l.recipeCatalog().ClosureRecipeLoader()
 }
 
-// SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactLibrary resolve a
-// library by its name over the lazily-walked (Tier-1 + pinned Tier-2) library
-// sets, for the closure-library discovery's transitive body access. Any version
-// the URI carries is set aside: of the versions held under the name, the one a
-// bare reference selects is read. Returns ok=false when the library is absent.
+// SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactLibrary read one
+// library by reference over the lazily-walked (Tier-1 + pinned Tier-2) library
+// sets — for the closure-library discovery's transitive body access and for a
+// by-reference read such as an inspection or a hover. Of the versions held under
+// the library's name, the reference selects one as written (selectLibrary): a bare
+// name reads the highest, and a name with a version reads the version that floor
+// selects. Returns ok=false when the name is not held, or held at no version the
+// floor admits.
 func (l *LazyLookup) SchemaLibrary(uri string) (types.SchemaLibrary, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -3320,59 +3323,61 @@ func (l *LazyLookup) defaultSchemaLibraries() map[string]types.SchemaLibrary {
 // the lock: each builds the enumeration its kind lives in, then reads it.
 func (l *LazyLookup) schemaLibraryLocked(uri string) (types.SchemaLibrary, bool) {
 	_ = l.buildSchemaLibraries()
-	lib, _, ok := selectLibrary(l.schemaLibraryVersions, lookupNameFromURI(uri), schemaLibraryMeta)
+	lib, _, ok, _ := selectLibrary(l.schemaLibraryVersions, uri, schemaLibraryMeta)
 	return lib, ok
 }
 
 func (l *LazyLookup) mappingLibraryLocked(uri string) (types.MappingLibrary, bool) {
 	l.buildRecipeIndex()
-	lib, _, ok := selectLibrary(l.mappingLibraryVersions, lookupNameFromURI(uri), mappingLibraryMeta)
+	lib, _, ok, _ := selectLibrary(l.mappingLibraryVersions, uri, mappingLibraryMeta)
 	return lib, ok
 }
 
 func (l *LazyLookup) workloadLibraryLocked(uri string) (types.WorkloadLibrary, bool) {
 	l.buildRecipeIndex()
-	lib, _, ok := selectLibrary(l.workloadLibraryVersions, lookupNameFromURI(uri), workloadLibraryMeta)
+	lib, _, ok, _ := selectLibrary(l.workloadLibraryVersions, uri, workloadLibraryMeta)
 	return lib, ok
 }
 
 func (l *LazyLookup) artifactLibraryLocked(uri string) (types.ArtifactLibrary, bool) {
 	l.buildRecipeIndex()
-	lib, _, ok := selectLibrary(l.artifactLibraryVersions, lookupNameFromURI(uri), artifactLibraryMeta)
+	lib, _, ok, _ := selectLibrary(l.artifactLibraryVersions, uri, artifactLibraryMeta)
 	return lib, ok
 }
 
-// LibraryName returns the declared name of an in-closure library on the given
-// axis, so a caller that treats the axes alike can resolve one without naming
-// which axis it is holding.
+// LibraryName returns the declared name of the library a reference selects on the
+// given axis (the per-kind reads above), so a caller that treats the axes alike can
+// resolve one without naming which axis it is holding.
 func (l *LazyLookup) LibraryName(axis closure.LibraryAxis, uri string) (string, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.libraryNameLocked(axis, uri)
+	name, _, ok := l.libraryLocked(axis, uri)
+	return name, ok
 }
 
-// libraryNameLocked is LibraryName for a caller already holding the lock.
+// libraryLocked reads, on axis, the library the reference uri selects, reporting
+// its declared name and version, for a caller already holding the lock.
 //
 // This is the single place the axis set is bound to the per-kind reads above. A
 // caller that instead reached for those reads directly would have to name each
 // axis, and naming them is exactly how a caller comes to cover some and not
 // others.
-func (l *LazyLookup) libraryNameLocked(axis closure.LibraryAxis, uri string) (string, bool) {
+func (l *LazyLookup) libraryLocked(axis closure.LibraryAxis, uri string) (name, version string, ok bool) {
 	switch axis.Kind {
 	case "SchemaLibrary":
 		lib, ok := l.schemaLibraryLocked(uri)
-		return lib.Metadata.Name, ok
+		return lib.Metadata.Name, lib.Metadata.Version, ok
 	case "MappingLibrary":
 		lib, ok := l.mappingLibraryLocked(uri)
-		return lib.Metadata.Name, ok
+		return lib.Metadata.Name, lib.Metadata.Version, ok
 	case "WorkloadLibrary":
 		lib, ok := l.workloadLibraryLocked(uri)
-		return lib.Metadata.Name, ok
+		return lib.Metadata.Name, lib.Metadata.Version, ok
 	case "ArtifactLibrary":
 		lib, ok := l.artifactLibraryLocked(uri)
-		return lib.Metadata.Name, ok
+		return lib.Metadata.Name, lib.Metadata.Version, ok
 	}
-	return "", false
+	return "", "", false
 }
 
 // HoldResolvedLibrary makes a library that a dependency resolution has just
@@ -3385,20 +3390,24 @@ func (l *LazyLookup) libraryNameLocked(axis closure.LibraryAxis, uri string) (st
 // library served by a registry is never discovered, while the same chain resolves
 // from a catalog directory.
 //
-// It does nothing where the view already holds the library, and nothing where a
-// pin already names it: a lockfile's pin is what a build holds the library to,
-// and it is never replaced by the resolution's. Otherwise the view's pins gain the
-// library's pin — the projection the closure's pins use for it (libraryPin) — and
-// the one pinned slot is folded through the same reading as every other pin
-// (foldPinnedSlot), verified against that pin. A slot that does not verify is not
-// folded, and the library stays unreadable, as it would under a lockfile's pin.
+// It does nothing where the view already holds the library at the version the
+// resolution recorded, and nothing where a pin already names it: a lockfile's pin
+// is what a build holds the library to, and it is never replaced by the
+// resolution's. The view holding the library's name at another version does not
+// stop the hold. Otherwise the view's pins gain the library's pin — the projection
+// the closure's pins use for it (libraryPin) — and the one pinned slot is folded
+// through the same reading as every other pin (foldPinnedSlot), verified against
+// that pin. A slot that does not verify is not folded, and the library stays
+// unreadable, as it would under a lockfile's pin; a slot of a name a catalog
+// directory owns is recorded as the pinned duplicate it is, and is not folded
+// either.
 //
 // The pin set is replaced rather than written into, because SetPins keeps the
 // caller's map and that map may be shared beyond this view.
 func (l *LazyLookup) HoldResolvedLibrary(axis closure.LibraryAxis, lib closure.ResolvedLibrary) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if _, held := l.libraryNameLocked(axis, lib.URI); held {
+	if _, version, held := l.libraryLocked(axis, lib.Reference()); held && (lib.ResolvedVersion == "" || version == lib.ResolvedVersion) {
 		return
 	}
 	key := PinKey{Kind: axis.Kind, URI: lib.URI}

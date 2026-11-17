@@ -40,15 +40,47 @@ func (c *Catalog) defaultSchemaLibraries() map[string]types.SchemaLibrary {
 	return defaultLibrarySelection(c.SchemaLibraryVersions, schemaLibraryMeta)
 }
 
+// SchemaLibrary returns the SchemaLibrary a reference selects among the versions
+// this catalog holds: a bare name reads the highest version, and a name with a
+// version reads the version that floor selects. ok is false where the catalog
+// holds the name at no version, or at none the floor admits.
+func (c *Catalog) SchemaLibrary(ref string) (types.SchemaLibrary, bool) {
+	lib, _, ok, _ := selectLibrary(c.SchemaLibraryVersions, ref, schemaLibraryMeta)
+	return lib, ok
+}
+
+// MappingLibrary is SchemaLibrary for a MappingLibrary.
+func (c *Catalog) MappingLibrary(ref string) (types.MappingLibrary, bool) {
+	lib, _, ok, _ := selectLibrary(c.MappingLibraryVersions, ref, mappingLibraryMeta)
+	return lib, ok
+}
+
+// WorkloadLibrary is SchemaLibrary for a WorkloadLibrary.
+func (c *Catalog) WorkloadLibrary(ref string) (types.WorkloadLibrary, bool) {
+	lib, _, ok, _ := selectLibrary(c.WorkloadLibraryVersions, ref, workloadLibraryMeta)
+	return lib, ok
+}
+
+// ArtifactLibrary is SchemaLibrary for an ArtifactLibrary.
+func (c *Catalog) ArtifactLibrary(ref string) (types.ArtifactLibrary, bool) {
+	lib, _, ok, _ := selectLibrary(c.ArtifactLibraryVersions, ref, artifactLibraryMeta)
+	return lib, ok
+}
+
 // selectLibrary returns the library ref selects among the versions index holds
-// (selectLibraryVersion), with the identity it is indexed under. A miss, and a
-// reference no held version satisfies, both report ok false.
-func selectLibrary[V any](index map[string]V, ref string, meta func(V) (string, string)) (lib V, key string, ok bool) {
-	key, ok, err := selectLibraryVersion(index, ref, meta)
+// (selectLibraryVersion), with the identity it is indexed under, applying the
+// selection to the reference as given. It is the one by-reference read of a
+// library: the catalog tier of a dependency resolution, the per-kind reads of
+// both catalog backings and the by-reference byte read (Catalog.EntityBytes) all
+// read through it. A miss, and a reference no held version satisfies, both report
+// ok false; err is the selection's account of the second (or of a floor that is no
+// version), and nil for a plain miss.
+func selectLibrary[V any](index map[string]V, ref string, meta func(V) (string, string)) (lib V, key string, ok bool, err error) {
+	key, ok, err = selectLibraryVersion(index, ref, meta)
 	if !ok || err != nil {
-		return lib, "", false
+		return lib, "", false, err
 	}
-	return index[key], key, true
+	return index[key], key, true, nil
 }
 
 // defaultLibrarySelection derives a name-keyed map from an identity-keyed index:

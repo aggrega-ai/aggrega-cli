@@ -6,13 +6,18 @@ package closure_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
+	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
@@ -46,6 +51,10 @@ func (f *fakeLookup) ResolveAggregate(ctx context.Context, uri string) (closure.
 // mirroring the interface it stands in for. An axis the fixture declares no map
 // for resolves as not-found, which is the honest answer for an axis no test
 // populated.
+//
+// A library is found by its bare name, and a reference naming a version is
+// answered at exactly that version, as a registry answers a tag it is asked for;
+// a bare reference is answered at the version the fixture records.
 func (f *fakeLookup) ResolveLibrary(ctx context.Context, axis closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
 	byAxis := map[string]map[string]closure.LibraryResolution{
 		"SchemaLibraries":   f.schemaLibs,
@@ -54,14 +63,16 @@ func (f *fakeLookup) ResolveLibrary(ctx context.Context, axis closure.LibraryAxi
 		"ArtifactLibraries": f.artifactsLibs,
 	}
 	if res, ok := byAxis[axis.Axis][fakeBaseName(uri)]; ok {
+		if base := fakeBaseName(uri); base != uri {
+			res.ResolvedVersion = uri[len(base)+1:]
+		}
 		return res, nil
 	}
 	return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil
 }
 
-// fakeBaseName strips an optional `:version` so the mock resolves a versioned
-// library URI by its bare name, mirroring the production lookup's version-agnostic
-// schemaLibraryNameFromURI.
+// fakeBaseName strips an optional `:version` so the mock finds a versioned
+// library URI by its bare name.
 func fakeBaseName(uri string) string {
 	if i := strings.LastIndex(uri, ":"); i >= 0 {
 		return uri[:i]
@@ -289,6 +300,213 @@ func TestMVSResolvesLibraryVersionConflictsToMaxVersion(t *testing.T) {
 	if len(lib.Consumers) != 2 {
 		t.Errorf("consumers: %d; want 2", len(lib.Consumers))
 	}
+}
+
+// tableLibraryLookup answers each library reference it is asked from a table keyed
+// by the reference exactly as asked, and counts how often each is asked. A
+// reference the table does not hold is not found. It resolves no entity.
+type tableLibraryLookup struct {
+	answers map[string]closure.Resolution
+	asked   map[string]int
+}
+
+func (f *tableLibraryLookup) ResolveCatalogEntity(context.Context, string, string) (closure.Resolution, error) {
+	return closure.Resolution{NotFound: true}, nil
+}
+
+func (f *tableLibraryLookup) ResolveAggregate(context.Context, string) (closure.Resolution, error) {
+	return closure.Resolution{NotFound: true}, nil
+}
+
+func (f *tableLibraryLookup) ResolvePlugin(context.Context, string, string) (closure.Resolution, error) {
+	return closure.Resolution{NotFound: true}, nil
+}
+
+func (f *tableLibraryLookup) ResolveLibrary(_ context.Context, _ closure.LibraryAxis, uri string) (closure.LibraryResolution, error) {
+	f.asked[uri]++
+	res, ok := f.answers[uri]
+	if !ok {
+		return closure.LibraryResolution{Resolution: closure.Resolution{NotFound: true}}, nil
+	}
+	return closure.LibraryResolution{Resolution: res}, nil
+}
+
+// TestResolveLibrariesKeepsLookupVersion: the dependency resolution records the
+// version the lookup reports for a library — the copy a floor selected, which may
+// be later than the floor — and falls back to the version the floors select only
+// where the lookup reports none. A later round of the discovery that still selects
+// the library keeps the lookup's first answer and does not ask again, even though
+// that answer's version is not the floor it was asked at.
+func TestResolveLibrariesKeepsLookupVersion(t *testing.T) {
+	t.Parallel()
+	const consumer = "helm/app:1.0.0"
+	rows := []struct {
+		name    string
+		answers map[string]closure.Resolution
+		bodies  map[string]string
+		// want is Lib's recorded version and resolution path.
+		want, wantPath string
+	}{
+		{
+			name: "a floor the lookup answers with a later version",
+			answers: map[string]closure.Resolution{
+				"Lib:1.1.0": {ResolvedVersion: "1.2.0", Digest: "sha256:lib-1.2.0", ResolutionPath: closure.ResolutionPathCatalog},
+			},
+			want: "1.2.0", wantPath: closure.ResolutionPathCatalog,
+		},
+		{
+			name: "a floor the lookup answers with no version",
+			answers: map[string]closure.Resolution{
+				"Lib:1.1.0": {Digest: "sha256:lib", ResolutionPath: closure.ResolutionPathCatalog},
+			},
+			want: "1.1.0", wantPath: closure.ResolutionPathCatalog,
+		},
+		{
+			name: "later rounds that still select the answered version",
+			answers: map[string]closure.Resolution{
+				"Lib:1.1.0": {ResolvedVersion: "1.2.0", Digest: "sha256:lib-1.2.0", ManifestDigest: "sha256:manifest-lib",
+					ResolutionPath: closure.ResolutionPathRegistry},
+				"Other": {ResolvedVersion: "1.0.0", Digest: "sha256:other", ResolutionPath: closure.ResolutionPathCatalog},
+			},
+			// Lib's body reaches Other, whose body asks for Lib again at the same floor.
+			bodies: map[string]string{
+				"Lib":   "$import: Other#/mappings/Web\n",
+				"Other": "$import: Lib:1.1.0#/mappings/Web\n",
+			},
+			want: "1.2.0", wantPath: closure.ResolutionPathRegistry,
+		},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			lookup := &tableLibraryLookup{answers: row.answers, asked: map[string]int{}}
+			body := func(lib closure.ResolvedLibrary) ([]string, bool, error) {
+				b, ok := row.bodies[lib.URI]
+				return []string{b}, ok, nil
+			}
+			var c closure.Closure
+			err := c.DiscoverTemplateLibraries(context.Background(), closure.LibraryAxisNamed("MappingLibraries"), lookup,
+				[]closure.TemplateConsumer{{URI: consumer, Kind: closure.KindRecipe, Reference: "Lib:1.1.0#/mappings/Web"}}, body)
+			if err != nil {
+				t.Fatalf("discovery: %v", err)
+			}
+			var lib closure.ResolvedLibrary
+			for _, l := range c.MappingLibraries {
+				if l.URI == "Lib" {
+					lib = l
+				}
+			}
+			if lib.ResolvedVersion != row.want || lib.ResolutionPath != row.wantPath {
+				t.Errorf("Lib is recorded at %q from %q; want %q from %q", lib.ResolvedVersion, lib.ResolutionPath, row.want, row.wantPath)
+			}
+			if asked := lookup.asked["Lib:1.1.0"] + lookup.asked["Lib:1.2.0"] + lookup.asked["Lib"]; asked != 1 {
+				t.Errorf("Lib was asked of the lookup %d times (%v); want once", asked, lookup.asked)
+			}
+		})
+	}
+}
+
+// TestResolveLibrariesOneVersionPerName drives the dependency resolution of one
+// Release over a catalog directory holding Lib at 1.0.0 and 1.1.0 and Lib2 at
+// 1.0.0, 1.1.0 and 1.2.0, through the catalog's own lookup and the discovery a
+// pull and a build run.
+//
+// On the mapping axis Lib is reached from one Recipe bare and from another with
+// the floor 1.0.0, so the floors select 1.0.0 and the closure holds Lib once, at
+// 1.0.0. Lib 1.0.0's own body imports Lib2 with the floor 1.1.0 (Lib 1.1.0's
+// imports it at 1.2.0), so Lib2 is held once, at 1.1.0. A Component's schema
+// references Lib2 bare; that reference names the SchemaLibrary Lib2, a library of
+// another kind selected on the schema axis by its own consumers alone, so it is
+// held there once, at the highest version. Every row records the digest of the
+// file it was read from.
+func TestResolveLibrariesOneVersionPerName(t *testing.T) {
+	t.Parallel()
+	ws := t.TempDir()
+	dir := filepath.Join(ws, "catalog")
+	files := map[string]string{
+		"lib-1.0.0.yaml":          mappingLibraryDoc("Lib", "1.0.0", "X", "$import: Lib2:1.1.0#/mappings/Y"),
+		"lib-1.1.0.yaml":          mappingLibraryDoc("Lib", "1.1.0", "X", "$import: Lib2:1.2.0#/mappings/Y"),
+		"lib2-1.0.0.yaml":         mappingLibraryDoc("Lib2", "1.0.0", "Y", "level: 0"),
+		"lib2-1.1.0.yaml":         mappingLibraryDoc("Lib2", "1.1.0", "Y", "level: 1"),
+		"lib2-1.2.0.yaml":         mappingLibraryDoc("Lib2", "1.2.0", "Y", "level: 2"),
+		"schemas-lib2-1.0.0.yaml": schemaLibraryDoc("Lib2", "1.0.0"),
+		"schemas-lib2-1.1.0.yaml": schemaLibraryDoc("Lib2", "1.1.0"),
+		"schemas-lib2-1.2.0.yaml": schemaLibraryDoc("Lib2", "1.2.0"),
+		"recipe-a.yaml":           importingRecipeDoc("recipe-a", "Lib#/mappings/X"),
+		"recipe-b.yaml":           importingRecipeDoc("recipe-b", "Lib:1.0.0#/mappings/X"),
+		"component-c.yaml": `apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: core/c
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  schema:
+    values:
+      size:
+        $ref: "Lib2#/schemas/Y"
+`,
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	view := catalog.NewLazyLookup(ws, ".aggrega/cache", []string{dir}, nil)
+	cl := closure.Closure{Entities: []closure.ResolvedRef{
+		{URI: "helm/recipe-a:1.0.0", KindHint: closure.KindRecipe},
+		{URI: "helm/recipe-b:1.0.0", KindHint: closure.KindRecipe},
+		{URI: "core/c:1.0.0", KindHint: closure.KindComponent},
+	}}
+	lookup := view.ClosureLookup(nil, ws, ".aggrega/cache", nil, nil, nil)
+	if err := closure.AugmentClosure(context.Background(), &cl, view, lookup); err != nil {
+		t.Fatalf("AugmentClosure: %v", err)
+	}
+
+	rows := func(libs []closure.ResolvedLibrary) []string {
+		var out []string
+		for _, l := range libs {
+			out = append(out, l.URI+" "+l.ResolvedVersion+" "+l.Digest)
+		}
+		return out
+	}
+	digestOf := func(file string) string { return digest.ContentDigest([]byte(files[file])) }
+	if got, want := rows(cl.MappingLibraries), []string{
+		"Lib 1.0.0 " + digestOf("lib-1.0.0.yaml"),
+		"Lib2 1.1.0 " + digestOf("lib2-1.1.0.yaml"),
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("mapping libraries:\n  got:  %v\n  want: %v", got, want)
+	}
+	if got, want := rows(cl.SchemaLibraries), []string{
+		"Lib2 1.2.0 " + digestOf("schemas-lib2-1.2.0.yaml"),
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("schema libraries:\n  got:  %v\n  want: %v", got, want)
+	}
+}
+
+// mappingLibraryDoc is a MappingLibrary declaring name at version with one entry.
+func mappingLibraryDoc(name, version, entry, body string) string {
+	return fmt.Sprintf("apiVersion: aggrega.ai/v1beta1\nkind: MappingLibrary\nmetadata:\n  name: %s\n  version: %s\nspec:\n  mappings:\n    %s: |\n      %s\n",
+		name, version, entry, body)
+}
+
+// schemaLibraryDoc is a SchemaLibrary declaring name at version with the one
+// schema Y, whose default names the version so each version's bytes differ.
+func schemaLibraryDoc(name, version string) string {
+	return fmt.Sprintf("apiVersion: aggrega.ai/v1beta1\nkind: SchemaLibrary\nmetadata:\n  name: %s\n  version: %s\nspec:\n  schemas:\n    Y:\n      level: { type: string, default: %q }\n",
+		name, version, version)
+}
+
+// importingRecipeDoc is a helm Recipe named name at 1.0.0 whose values mapping
+// imports reference.
+func importingRecipeDoc(name, reference string) string {
+	return fmt.Sprintf("apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: %s\n  version: \"1.0.0\"\nspec:\n  capability: helm\n  implements: core/c\n  source: ./chart\n  valuesMapping:\n    $import: %s\n",
+		name, reference)
 }
 
 // TestSchemaRefDiscoveryRecordsIdentityFormOnly asserts the discovery walk

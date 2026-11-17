@@ -740,8 +740,11 @@ func entityNotFound(uri, referencedFrom string, unsatisfiedPin error) error {
 // that resolution and is not asked of the lookup again. Asking again would answer
 // from the cache entry the first answer wrote, so a library this run fetched from a
 // registry would be reported as read from the cache, and the pull-time signature
-// verification, which reads that report, would pass it by. A new requirement that
-// moves the selected version still re-resolves it at the new one.
+// verification, which reads that report, would pass it by. The seed records each
+// consumer of a resolved library at the version the lookup reported, which may be
+// later than the floor it was asked at, so a later round selects that version
+// again unless a new requirement moves the selection above it; that requirement
+// re-resolves the library at the new floor.
 //
 // A lookup that can read ahead (RegistryPrefetcher) is first probed with the
 // libraries in that same order, as resolveEntities probes its references.
@@ -775,17 +778,32 @@ func (s *walkState) resolveLibraries(ctx context.Context, axis LibraryAxis, look
 			return fmt.Errorf("resolve: resolve library %q: %w", uri, err)
 		}
 		if res.NotFound {
-			return fmt.Errorf("%w: library %q", ErrUnresolvableURI(), uri)
+			return libraryNotFound(uri, resolveURI, res.UnsatisfiedPin)
 		}
-		// Trust the lookup-reported ResolvedVersion when callers
-		// supplied no explicit version pin; otherwise prefer the
-		// MVS-selected version when consumers had opinions.
-		if selected != "" {
+		// The version recorded is the one the lookup reports: the copy it read,
+		// which a floor may have selected above the floor itself. The selected
+		// floor stands in only for a lookup that reports no version.
+		if res.ResolvedVersion == "" {
 			res.ResolvedVersion = selected
 		}
 		lib.resolution = &res
 	}
 	return nil
+}
+
+// libraryNotFound is the failure the walk reports for the library recorded under
+// uri that no lookup tier answered when asked for resolveURI.
+//
+// unsatisfiedPin is the condition the lookup reported for a library it holds under
+// that name at versions the request's floor does not admit only (see
+// [Resolution.UnsatisfiedPin]), and it is reported in place of the not-found
+// condition, naming the request with its floor, for the reason an entity's is:
+// the name is right and only the version is not.
+func libraryNotFound(uri, resolveURI string, unsatisfiedPin error) error {
+	if unsatisfiedPin != nil {
+		return fmt.Errorf("%w: library %q", unsatisfiedPin, resolveURI)
+	}
+	return fmt.Errorf("%w: library %q", ErrUnresolvableURI(), uri)
 }
 
 // libraryRequest is what resolveLibraries asks the lookup for the library recorded

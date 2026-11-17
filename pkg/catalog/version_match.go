@@ -14,21 +14,24 @@ import (
 
 // ErrUnsatisfiableEntityVersion is a recoverable sentinel: a catalog reference
 // names a base entity (Component, Feature, Aggregate, Plugin, Recipe or
-// FeatureRecipe) that exists in the catalog, but no available version satisfies
-// the reference's version constraint — an exact version that is absent, or a
-// caret range that matches nothing. It is distinct from a plain miss (the base
-// name itself is absent), which the lookups report as not-found. Recoverable so
-// the serve daemon can surface it as a diagnostic without aborting; the CLI build
+// FeatureRecipe) or a library (SchemaLibrary, MappingLibrary, WorkloadLibrary or
+// ArtifactLibrary) that exists in the catalog, but no available version satisfies
+// the reference's version constraint — an exact version that is absent, a caret
+// range that matches nothing, or a library's version floor that no held version
+// of the floor's major meets. It is distinct from a plain miss (the base name
+// itself is absent), which the lookups report as not-found. Recoverable so the
+// serve daemon can surface it as a diagnostic without aborting; the CLI build
 // joins it into a loud halt.
 //
 // Every kind reaches it through the same selection, so an unsatisfiable version
 // pin behaves alike wherever it is written: a version typo on a Manifest recipe
 // mapping halts exactly as the same typo on a component type does. Where a
-// Release's dependency closure is resolved, the walk reports it for a reference
-// every tier missed whose name the local catalog holds at other versions only, and
-// an extends link whose parent the catalog holds at other versions only reports
-// it too, both in the extends resolution over the closure and in the ancestry
-// reading the mapping-consistency gate performs. The accessors whose shape
+// Release's dependency closure is resolved, the walk reports it for a reference —
+// an entity's or a library's — every tier missed whose name the local catalog
+// holds at other versions only, and an extends link whose parent the catalog
+// holds at other versions only reports it too, both in the extends resolution
+// over the closure and in the ancestry reading the mapping-consistency gate
+// performs. The accessors whose shape
 // carries no error channel report it as a miss, and where the catalog was loaded
 // eagerly the resolution-completeness pass turns that miss into the loud halt.
 func ErrUnsatisfiableEntityVersion() error { return errUnsatisfiableEntityVersion }
