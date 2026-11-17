@@ -89,10 +89,11 @@ func TestLoad_AllEntityTypes(t *testing.T) {
 
 // TestLoad_SchemaLibrary verifies the catalog walker recognises
 // SchemaLibrary entries (kind: SchemaLibrary) and indexes them by
-// metadata.name. The walker treats SchemaLibrary like any other catalog
-// entity kind — the recursive WalkDir reaches library.yaml at whatever
-// depth it sits and the index key is metadata.name rather than a path
-// segment, so the fixture below need not reproduce the authoring layout
+// `<metadata.name>:<metadata.version>`. The walker treats SchemaLibrary like
+// any other catalog entity kind — the recursive WalkDir reaches library.yaml
+// at whatever depth it sits and the index key is the library's name and
+// version rather than a path segment, so the fixture below need not
+// reproduce the authoring layout
 // (schemalibrary/<name>/<version>/library.yaml — a library kind carries
 // no publisher segment). This test verifies the kind dispatch + map
 // indexing.
@@ -141,7 +142,7 @@ spec:
 
 // TestLoad_MappingLibrary verifies the catalog walker recognises
 // MappingLibrary entries (kind: MappingLibrary) and indexes them by
-// metadata.name. The authoring layout is
+// `<metadata.name>:<metadata.version>`. The authoring layout is
 // mappinglibrary/<name>/<version>/library.yaml — a library kind carries
 // no publisher segment — and the recursive WalkDir reaches library.yaml
 // at whatever depth it sits, so the fixture's own path is incidental to

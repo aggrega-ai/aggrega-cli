@@ -114,8 +114,12 @@ func TestClosureLibraries(t *testing.T) {
 // does not hold gets no library for it, rather than another version of the name.
 func TestClosureLibrariesOmitsAnUnheldVersion(t *testing.T) {
 	t.Parallel()
+	kinds := libraryKindCases()
 	for i, axis := range closureAxisCases() {
-		k := libraryKindCases()[i]
+		k := kinds[i]
+		if k.kind != axis.kind {
+			t.Fatalf("case tables disagree on kind order: %s vs %s", k.kind, axis.kind)
+		}
 		t.Run(axis.kind, func(t *testing.T) {
 			t.Parallel()
 			ws := t.TempDir()
