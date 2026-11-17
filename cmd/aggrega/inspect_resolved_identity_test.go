@@ -45,7 +45,7 @@ func resolvedEntityOracle(t *testing.T, catalogDir, name string) compilerops.Ent
 	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
 		t.Fatalf("oracle resolve extends: %v", extErrs[0])
 	}
-	e, ok := compilerops.ResolveEntity(catalogEntityView{cat: cat, lookup: cat.CatalogLookup()}, name)
+	e, ok := compilerops.ResolveEntity(newCatalogEntityView(cat), name)
 	if !ok {
 		t.Fatalf("the oracle resolved nothing for %q, so nothing can be asserted about it", name)
 	}

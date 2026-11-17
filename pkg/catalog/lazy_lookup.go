@@ -85,33 +85,34 @@ import (
 // A caller passing none has the conventional directory read as the workspace's own.
 func NewLazyLookup(workspaceRoot, cacheDir string, catalogDirs []string, puller OCIPuller, named ...string) *LazyLookup {
 	return &LazyLookup{
-		workspaceRoot:       workspaceRoot,
-		cacheDir:            cacheDir,
-		catalogDirs:         catalogDirs,
-		puller:              puller,
-		namedDirs:           named,
-		components:          map[string]types.Component{},
-		features:            map[string]types.Feature{},
-		componentsResolving: map[string]types.Component{},
-		featuresResolving:   map[string]types.Feature{},
-		schemaLibraries:     map[string]types.SchemaLibrary{},
-		componentMisses:     map[string]struct{}{},
-		featureMisses:       map[string]struct{}{},
-		componentIndex:      map[string]indexedDocument{},
-		featureIndex:        map[string]indexedDocument{},
-		recipes:             map[string]types.Recipe{},
-		featureRecipes:      map[string]types.FeatureRecipe{},
-		aggregates:          map[string]types.Aggregate{},
-		mappingLibraries:    map[string]types.MappingLibrary{},
-		workloadLibraries:   map[string]types.WorkloadLibrary{},
-		artifactLibraries:   map[string]types.ArtifactLibrary{},
-		plugins:             map[string]types.Plugin{},
-		recipeSkips:         map[string]error{},
-		announced:           map[string]struct{}{},
-		schemaAdvisorySeen:  map[string]struct{}{},
-		entityBytes:         map[string][]byte{},
-		origins:             map[string]entityOrigin{},
-		recordedPins:        recipepin.Lookup{},
+		workspaceRoot:           workspaceRoot,
+		cacheDir:                cacheDir,
+		catalogDirs:             catalogDirs,
+		puller:                  puller,
+		namedDirs:               named,
+		components:              map[string]types.Component{},
+		features:                map[string]types.Feature{},
+		componentsResolving:     map[string]types.Component{},
+		featuresResolving:       map[string]types.Feature{},
+		schemaLibraryVersions:   map[string]types.SchemaLibrary{},
+		componentMisses:         map[string]struct{}{},
+		featureMisses:           map[string]struct{}{},
+		componentIndex:          map[string]indexedDocument{},
+		featureIndex:            map[string]indexedDocument{},
+		recipes:                 map[string]types.Recipe{},
+		featureRecipes:          map[string]types.FeatureRecipe{},
+		aggregates:              map[string]types.Aggregate{},
+		mappingLibraryVersions:  map[string]types.MappingLibrary{},
+		workloadLibraryVersions: map[string]types.WorkloadLibrary{},
+		artifactLibraryVersions: map[string]types.ArtifactLibrary{},
+		plugins:                 map[string]types.Plugin{},
+		recipeSkips:             map[string]error{},
+		announced:               map[string]struct{}{},
+		schemaAdvisorySeen:      map[string]struct{}{},
+		entityBytes:             map[string][]byte{},
+		origins:                 map[string]entityOrigin{},
+		shellClaims:             map[string]int{},
+		recordedPins:            recipepin.Lookup{},
 	}
 }
 
@@ -380,10 +381,10 @@ func (l *LazyLookup) AsCatalogLookupContext(ctx context.Context) resolver.Catalo
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	// Resolve the SchemaLibrary set (once, cached) so cross-document $ref expansion
-	// sees the same libraries the eager backing does. Best-effort here: a library
-	// that fails validation is surfaced by buildSchemaLibraries' returned error to a
-	// caller that observes it; AsCatalogLookup discards that error and exposes the
-	// resolvable set.
+	// sees the same libraries the eager backing does, one version per name as a
+	// bare reference selects it. Best-effort here: a library that fails validation
+	// is surfaced by buildSchemaLibraries' returned error to a caller that observes
+	// it; AsCatalogLookup discards that error and exposes the resolvable set.
 	_ = l.buildSchemaLibraries()
 	return resolver.CatalogLookup{
 		Component: func(uri string) (types.Component, bool) {
@@ -392,7 +393,7 @@ func (l *LazyLookup) AsCatalogLookupContext(ctx context.Context) resolver.Catalo
 		Feature: func(uri string) (types.Feature, bool) {
 			return l.FeatureContext(ctx, uri)
 		},
-		SchemaLibraries: l.schemaLibraries,
+		SchemaLibraries: l.defaultSchemaLibraries(),
 		// EffectiveSchema serves the composed (parent+child) schema for an
 		// extends-ing FEATURE, keyed by metadata.name — populated by
 		// ResolveClosureExtends. Returns (_, false) for a non-extends Feature, a
@@ -586,7 +587,7 @@ func (l *LazyLookup) Reset() {
 	l.componentIndexBuilt = false
 	l.featureIndex = map[string]indexedDocument{}
 	l.featureIndexBuilt = false
-	l.schemaLibraries = map[string]types.SchemaLibrary{}
+	l.schemaLibraryVersions = map[string]types.SchemaLibrary{}
 	l.schemaLibrariesBuilt = false
 	l.effectiveSchemas = nil
 	l.closureNarrowings = nil
@@ -594,9 +595,9 @@ func (l *LazyLookup) Reset() {
 	l.recipes = map[string]types.Recipe{}
 	l.featureRecipes = map[string]types.FeatureRecipe{}
 	l.aggregates = map[string]types.Aggregate{}
-	l.mappingLibraries = map[string]types.MappingLibrary{}
-	l.workloadLibraries = map[string]types.WorkloadLibrary{}
-	l.artifactLibraries = map[string]types.ArtifactLibrary{}
+	l.mappingLibraryVersions = map[string]types.MappingLibrary{}
+	l.workloadLibraryVersions = map[string]types.WorkloadLibrary{}
+	l.artifactLibraryVersions = map[string]types.ArtifactLibrary{}
 	l.plugins = map[string]types.Plugin{}
 	l.recipeSkips = map[string]error{}
 	l.recipeIndexBuilt = false
@@ -608,6 +609,7 @@ func (l *LazyLookup) Reset() {
 	l.schemaAdvisorySeen = map[string]struct{}{}
 	l.entityBytes = map[string][]byte{}
 	l.origins = map[string]entityOrigin{}
+	l.shellClaims = map[string]int{}
 	l.recordedPins = recipepin.Lookup{}
 	l.unwrittenLocks = nil
 }
@@ -723,11 +725,12 @@ type LazyLookup struct {
 	// SchemaLibraries resolved by the lazy backing itself (buildSchemaLibraries),
 	// not copied from an eager *Catalog. Cross-library schema `$ref` resolution
 	// needs the whole library set at compile time, so the set is walked + parsed +
-	// validated as a unit (not per-URI on demand) on first need and cached here.
+	// validated as a unit (not per-URI on demand) on first need and cached here,
+	// keyed by identity (metadata.name:version) so every version held coexists.
 	// schemaLibrariesBuilt guards the one-time walk; Reset clears both so a changed
 	// workspace re-walks.
-	schemaLibraries      map[string]types.SchemaLibrary
-	schemaLibrariesBuilt bool
+	schemaLibraryVersions map[string]types.SchemaLibrary
+	schemaLibrariesBuilt  bool
 
 	// effectiveSchemas holds the composed (parent+child) schema for each
 	// extends-ing closure FEATURE, keyed by metadata.name — the build-path
@@ -779,19 +782,20 @@ type LazyLookup struct {
 
 	// Recipe / FeatureRecipe / Aggregate sets enumerated TOLERANTLY from the
 	// catalog directories on first need (buildRecipeIndex). Recipes are keyed by
-	// identity (provider/name:version), the same key the eager catalog uses, so
-	// the re-homed matcher resolves identically. A recipe/FR/aggregate whose body
+	// identity (provider/name:version) and the libraries by identity
+	// (metadata.name:version), the same keys the eager catalog uses, so the
+	// re-homed matcher resolves identically. A recipe/FR/aggregate whose body
 	// won't parse (or whose identity collides) is SKIPPED with a warning and a
 	// recorded reason rather than aborting the walk — so a broken UNUSED recipe is
 	// invisible to a resolution that doesn't need it (the blast-radius fix). The
 	// eager catalog, by contrast, fails the whole walk on the first broken recipe.
-	recipes           map[string]types.Recipe
-	featureRecipes    map[string]types.FeatureRecipe
-	aggregates        map[string]types.Aggregate
-	mappingLibraries  map[string]types.MappingLibrary
-	workloadLibraries map[string]types.WorkloadLibrary
-	artifactLibraries map[string]types.ArtifactLibrary
-	plugins           map[string]types.Plugin // keyed by identity (metadata.name:version), like the eager catalog
+	recipes                 map[string]types.Recipe
+	featureRecipes          map[string]types.FeatureRecipe
+	aggregates              map[string]types.Aggregate
+	mappingLibraryVersions  map[string]types.MappingLibrary
+	workloadLibraryVersions map[string]types.WorkloadLibrary
+	artifactLibraryVersions map[string]types.ArtifactLibrary
+	plugins                 map[string]types.Plugin // keyed by identity (metadata.name:version), like the eager catalog
 	// recipeSkips records every catalog file this backing refused, keyed by file
 	// path, with the reason. It spans more kinds than its name suggests: recipe,
 	// FeatureRecipe, Aggregate, mapping / workload / artifacts / schema library,
@@ -850,13 +854,15 @@ type LazyLookup struct {
 	schemaAdvisories   []renderer.Diagnostic
 	schemaAdvisorySeen map[string]struct{}
 
-	// shellClaims records, for each identity the recipe-shell enumeration placed,
-	// the position in catalogDirs of the directory whose file claimed it, or
-	// noCatalogDirectory for a pinned cache slot. It is what tells a later file
-	// declaring the same identity apart as a shadow — claimed by an earlier catalog
-	// directory, an intended first-win override — or as a refusal: two files of one
-	// directory, or a pinned slot, claiming one identity. It is keyed like origins
-	// and rebuilt by the walk that writes it.
+	// shellClaims records, for each identity the recipe-shell enumeration and the
+	// SchemaLibrary walk placed, the position in catalogDirs of the directory whose
+	// file claimed it, or noCatalogDirectory for a pinned cache slot. It is what
+	// tells a later file declaring the same identity apart as a shadow — claimed by
+	// an earlier catalog directory, an intended first-win override — or as a
+	// refusal: two files of one directory, or a pinned slot, claiming one identity.
+	// For a library it also says which source owns the library's name, which is the
+	// source of every version placed under it (claimShellLibrary). It is keyed like
+	// origins, and SetPins and Reset drop it with the enumerations that write it.
 	shellClaims map[string]int
 
 	// origins is the one record of where each enumerated entity was read from,
@@ -869,7 +875,7 @@ type LazyLookup struct {
 	// and it covers every kind those folds admit: Recipe and FeatureRecipe keyed by
 	// capability-scoped identity, Plugin by its versioned coordinate, Aggregate by
 	// name:version, and the schema, mapping, workload and artifacts libraries by
-	// bare name — each under the key its kind's index uses.
+	// name:version — each under the key its kind's index uses.
 	//
 	// Every provenance answer this backing gives is derived from it, and none has an
 	// index of its own: whether an author owns a document for the entity (the pin
@@ -902,9 +908,9 @@ type LazyLookup struct {
 
 	// entityBytes retains the RAW authored bytes of every enumerated /
 	// resolved entity, keyed by entityBytesKey(kind, index key) — the same key
-	// the eager catalog uses: name:version for a Component, Feature or
-	// Aggregate, coordinate:version for a Plugin, the capability-scoped identity
-	// for a Recipe or FeatureRecipe, and the bare name for a library. The closure
+	// the eager catalog uses: name:version for a Component, Feature, Aggregate or
+	// library, coordinate:version for a Plugin, and the capability-scoped identity
+	// for a Recipe or FeatureRecipe. The closure
 	// lookup (ClosureLookup) hashes these to produce the content digest the
 	// lockfile pins, so a serve drift verify compares the SAME digest a
 	// build/pull computed (digest fidelity: the bytes hashed are the bytes of the
@@ -961,21 +967,23 @@ func (l *LazyLookup) SetPins(pins Pins) {
 	l.schemaLibrariesBuilt = false
 	l.recipeIndexBuilt = false
 	l.recipeCat = nil
-	l.schemaLibraries = map[string]types.SchemaLibrary{}
+	l.schemaLibraryVersions = map[string]types.SchemaLibrary{}
 	l.effectiveSchemas = nil
 	l.closureNarrowings = nil
 	l.recipes = map[string]types.Recipe{}
 	l.featureRecipes = map[string]types.FeatureRecipe{}
 	l.aggregates = map[string]types.Aggregate{}
-	l.mappingLibraries = map[string]types.MappingLibrary{}
-	l.workloadLibraries = map[string]types.WorkloadLibrary{}
-	l.artifactLibraries = map[string]types.ArtifactLibrary{}
+	l.mappingLibraryVersions = map[string]types.MappingLibrary{}
+	l.workloadLibraryVersions = map[string]types.WorkloadLibrary{}
+	l.artifactLibraryVersions = map[string]types.ArtifactLibrary{}
 	l.plugins = map[string]types.Plugin{}
 	l.recipeSkips = map[string]error{}
-	// The record of where each entity came from is rebuilt with the enumeration
-	// that writes it: an entry placed from a slot depends on the pins, and the
-	// catalog-directory entries are rewritten identically by the walks that re-run.
+	// The record of where each entity came from, and of which source claimed it,
+	// is rebuilt with the enumeration that writes it: an entry placed from a slot
+	// depends on the pins, and the catalog-directory entries are rewritten
+	// identically by the walks that re-run.
 	l.origins = map[string]entityOrigin{}
+	l.shellClaims = map[string]int{}
 }
 
 // VerifyPinnedIntegrity is the BUILD's loud integrity gate: it reads every pinned
@@ -2076,15 +2084,22 @@ func (l *LazyLookup) findWhatYouCan() catalogWalk {
 
 // buildSchemaLibraries walks the catalog directories once, parses + validates every
 // SchemaLibrary through the shared per-entity resolve (parseSchemaLibraryEntity),
-// and caches them in l.schemaLibraries. SchemaLibraries are consumed as a complete
-// set for cross-document $ref expansion, so the whole set is resolved as a unit
-// here (not per-URI on demand). Idempotent via schemaLibrariesBuilt.
+// and caches them in l.schemaLibraryVersions, keyed by identity. SchemaLibraries are
+// consumed as a complete set for cross-document $ref expansion, so the whole set is
+// resolved as a unit here (not per-URI on demand). Idempotent via
+// schemaLibrariesBuilt.
+//
+// Each library is claimed through claimShellLibrary, the claim every library kind
+// shares: the versions one directory holds coexist, the first directory holding a
+// library name owns it and a later directory's copy is announced as shadowed, and
+// the same identity twice in one directory is recorded as the load's refusal.
 //
 // The artifact cache is stepped over (SkipDirIfArtifactCache). A cached library
 // enters through the pinned Tier-2 fold below, where its digest and manifest are
-// checked; reading it here instead would take it on trust, and — because this
-// walk keys on the bare name and the fold below is first-win — would let an
-// unpinned cache slot claim the name before the verified one is ever consulted.
+// checked; reading it here instead would take it on trust, and — because a
+// catalog directory owns every library name it holds and the fold below finds the
+// name owned — would let an unpinned cache slot claim the name before the verified
+// one is ever consulted.
 //
 // Returns the first validation error encountered, in catalog-walk order — the same
 // rejection the eager catalog.Load surfaces, so the lazy backing does not silently
@@ -2101,7 +2116,7 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 	defer l.outsideProbe("SchemaLibrary")()
 	var firstErr error
 	w := l.findWhatYouCan()
-	for _, dir := range l.catalogDirs {
+	for position, dir := range l.catalogDirs {
 		_ = w.walk(dir, func(path string) error {
 			data, rerr := os.ReadFile(path)
 			if rerr != nil {
@@ -2126,9 +2141,8 @@ func (l *LazyLookup) buildSchemaLibraries() error {
 				l.recordRefusal(path, refusalOr(loadRefusal(l.workspaceRoot, data, path), perr))
 				return nil
 			}
-			l.schemaLibraries[lib.Metadata.Name] = lib
-			l.retainEntityBytes(entityBytesKey("SchemaLibrary", lib.Metadata.Name), data)
-			l.origins[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = authoredOrigin(path)
+			claimShellLibrary(l, l.schemaLibraryVersions, "SchemaLibrary", lib, schemaLibraryMeta, path, data, data,
+				authoredOrigin(path), position)
 			return nil
 		})
 	}
@@ -2227,10 +2241,10 @@ func (l *LazyLookup) localPathFor(kind, scope, name, version string) (string, bo
 		return l.origins[entityBytesKey(kind, entityIndexKey(types.PluginCoordinate(scope, name), version))].authoredDocument()
 	case "MappingLibrary", "WorkloadLibrary", "ArtifactLibrary":
 		l.buildRecipeIndex()
-		return l.origins[entityBytesKey(kind, name)].authoredDocument()
+		return l.origins[entityBytesKey(kind, entityIndexKey(name, version))].authoredDocument()
 	case "SchemaLibrary":
 		_ = l.buildSchemaLibraries()
-		return l.origins[entityBytesKey(kind, name)].authoredDocument()
+		return l.origins[entityBytesKey(kind, entityIndexKey(name, version))].authoredDocument()
 	}
 	return "", false
 }
@@ -2238,8 +2252,8 @@ func (l *LazyLookup) localPathFor(kind, scope, name, version string) (string, bo
 // buildRecipeIndex walks the catalog directories once and TOLERANTLY enumerates
 // every recipe-shell kind — the set foldRecipeShellEntity dispatches on — into
 // the hot maps, keyed exactly as the eager catalog keys them (recipes/FRs by
-// provider/name:version, Plugins and aggregates by name:version, libraries by
-// metadata.name). A file that
+// provider/name:version, Plugins, aggregates and libraries by name:version). A
+// file that
 // won't parse — or whose recipe/FR identity
 // collides with one already indexed — is skipped with a one-line notice
 // and a recorded reason; it never aborts the walk. This is the robustness crux:
@@ -2286,7 +2300,6 @@ func (l *LazyLookup) buildRecipeIndex() {
 	}
 	l.recipeIndexBuilt = true
 	defer l.outsideProbe("recipe shell")()
-	l.shellClaims = map[string]int{}
 	// The links leading out of a directory's root are recorded here rather than by
 	// the two index walks, because every catalog file passes through this walk; the
 	// first one met, in the stack's order and the walk's, is the one CheckLinks
@@ -2332,9 +2345,11 @@ func (l *LazyLookup) buildRecipeIndex() {
 
 // foldRecipeShellEntity parses one enumerated recipe-shell entity (Recipe,
 // FeatureRecipe, Aggregate, MappingLibrary, WorkloadLibrary, ArtifactLibrary, or Plugin) and folds it into the hot
-// maps, keyed exactly as the eager catalog keys it, first-wins on a name/identity
-// collision (a later duplicate is skipped, and announced as a shadow or recorded
-// as a refusal — see recordShellDuplicate). parseData is the YAML to
+// maps, keyed exactly as the eager catalog keys it, first-wins on an identity
+// collision — on a name collision for a library, whose name the first source
+// holding it owns (claimShellLibrary) — with a later duplicate skipped, and
+// announced as a shadow or recorded as a refusal (see recordShellDuplicate).
+// parseData is the YAML to
 // parse; rawBytes is retained as entityBytes for digest fidelity — identical to
 // parseData for a Tier-1 catalog file, the whole tar.gz bundle for a Tier-2 recipe
 // cache slot; src labels the source for skip diagnostics. The single fold path
@@ -2455,42 +2470,24 @@ func (l *LazyLookup) foldRecipeShellEntity(kind string, parseData, rawBytes []by
 			l.recordParseRefusal(src, parseData, local, perr)
 			return
 		}
-		claimShellIdentity(l, l.mappingLibraries, "MappingLibrary", e.Metadata.Name, e, src, parseData, dir,
-			func() {
-				l.retainEntityBytes(entityBytesKey("MappingLibrary", e.Metadata.Name), rawBytes)
-				l.origins[entityBytesKey("MappingLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
-			},
-			func() error {
-				return fmt.Errorf("duplicate mapping library name %q; this file is shadowed", e.Metadata.Name)
-			})
+		claimShellLibrary(l, l.mappingLibraryVersions, "MappingLibrary", e, mappingLibraryMeta, src, parseData, rawBytes,
+			foldedOrigin(src, slot, "", manifestDigest), dir)
 	case "WorkloadLibrary":
 		e, perr := parseWorkloadLibraryEntity(parseData, src)
 		if perr != nil {
 			l.recordParseRefusal(src, parseData, local, perr)
 			return
 		}
-		claimShellIdentity(l, l.workloadLibraries, "WorkloadLibrary", e.Metadata.Name, e, src, parseData, dir,
-			func() {
-				l.retainEntityBytes(entityBytesKey("WorkloadLibrary", e.Metadata.Name), rawBytes)
-				l.origins[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
-			},
-			func() error {
-				return fmt.Errorf("duplicate workload library name %q; this file is shadowed", e.Metadata.Name)
-			})
+		claimShellLibrary(l, l.workloadLibraryVersions, "WorkloadLibrary", e, workloadLibraryMeta, src, parseData, rawBytes,
+			foldedOrigin(src, slot, "", manifestDigest), dir)
 	case "ArtifactLibrary":
 		e, perr := parseArtifactLibraryEntity(parseData, src)
 		if perr != nil {
 			l.recordParseRefusal(src, parseData, local, perr)
 			return
 		}
-		claimShellIdentity(l, l.artifactLibraries, "ArtifactLibrary", e.Metadata.Name, e, src, parseData, dir,
-			func() {
-				l.retainEntityBytes(entityBytesKey("ArtifactLibrary", e.Metadata.Name), rawBytes)
-				l.origins[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
-			},
-			func() error {
-				return fmt.Errorf("duplicate artifact library name %q; this file is shadowed", e.Metadata.Name)
-			})
+		claimShellLibrary(l, l.artifactLibraryVersions, "ArtifactLibrary", e, artifactLibraryMeta, src, parseData, rawBytes,
+			foldedOrigin(src, slot, "", manifestDigest), dir)
 	case "Plugin":
 		e, perr := parsePluginEntity(parseData, src)
 		if perr != nil {
@@ -2526,10 +2523,67 @@ func claimShellIdentity[V any](l *LazyLookup, claimed map[string]V, kind, key st
 		func() { l.recordShellDuplicate(src, data, dir, claim, duplicate()) })
 }
 
+// claimShellLibrary is claimShellIdentity for a library, whose identity is its
+// name and version and whose precedence across sources is by name. The sources are
+// the catalog directories in their listed order, then the pinned content cache, and
+// the first of them to place any version of a library name owns the name.
+//
+// A library whose name a different source owns is not placed, whatever its
+// version: it is handed to recordShellDuplicate as a duplicate of the copy that
+// source holds — under the same identity where it holds one — so a later catalog
+// directory's copy is announced as shadowed and a pinned slot's is recorded as a
+// refusal, as a duplicate identity is. A library whose name no source owns yet, or
+// whose name its own source owns, is claimed under its identity through
+// claimShellIdentity: the versions one source holds coexist, and the same identity
+// twice in one source is that source's duplicate. The library claimed keeps rawBytes
+// as its bytes and origin as the record of where it was read from.
+//
+// value's name and version are read through meta. data is the document the
+// library was parsed from, and src and dir are as foldRecipeShellEntity takes them.
+func claimShellLibrary[V any](l *LazyLookup, claimed map[string]V, kind string, value V, meta func(V) (string, string),
+	src string, data, rawBytes []byte, origin entityOrigin, dir int) {
+	name, version := meta(value)
+	key := entityIndexKey(name, version)
+	duplicate := func() error {
+		label := strings.ToLower(strings.TrimSuffix(kind, "Library")) + " library"
+		return fmt.Errorf("duplicate %s name %q; this file's %q is shadowed", label, name, key)
+	}
+	if held, ok := heldLibraryCopy(claimed, key, name, meta); ok {
+		if claim := entityBytesKey(kind, held); l.shellClaims[claim] != dir {
+			l.recordShellDuplicate(src, data, dir, claim, duplicate())
+			return
+		}
+	}
+	claimShellIdentity(l, claimed, kind, key, value, src, data, dir,
+		func() {
+			l.retainEntityBytes(entityBytesKey(kind, key), rawBytes)
+			l.origins[entityBytesKey(kind, key)] = origin
+		},
+		duplicate)
+}
+
+// heldLibraryCopy returns the key of a copy of the library name that claimed
+// holds: key itself where claimed holds it, and otherwise the lowest key held under
+// name, so the answer never depends on map order. It reports false where claimed
+// holds no version of name.
+func heldLibraryCopy[V any](claimed map[string]V, key, name string, meta func(V) (string, string)) (string, bool) {
+	if _, ok := claimed[key]; ok {
+		return key, true
+	}
+	held, found := "", false
+	for k, v := range claimed {
+		if n, _ := meta(v); n == name && (!found || k < held) {
+			held, found = k, true
+		}
+	}
+	return held, found
+}
+
 // recordShellDuplicate reports the file src, whose document data declares an
-// identity the enumeration had already placed under claim. dir is the position of
-// that file's catalog directory, noCatalogDirectory for a pinned cache slot, and
-// shellClaims says which directory placed the identity.
+// identity the enumeration had already placed under claim — or, for a library, a
+// name another source owns, claim being that source's copy (claimShellLibrary).
+// dir is the position of that file's catalog directory, noCatalogDirectory for a
+// pinned cache slot, and shellClaims says which directory placed the identity.
 //
 // Where an EARLIER catalog directory placed the identity, the file is shadowed:
 // catalog directories are a first-win precedence stack, so the override is one
@@ -2740,23 +2794,21 @@ func contentAnchor(workspaceRoot, cacheDir, src, slot string, rawBytes []byte) (
 }
 
 // foldPinnedSchemaLibrary folds one lockfile-pinned SchemaLibrary cache slot into
-// l.schemaLibraries, first-wins (a Tier-1 library of the same name already present
-// is kept). Mirrors the SchemaLibrary arm of buildSchemaLibraries' Tier-1 walk; the
-// raw bytes are retained for digest fidelity, and the library placed is recorded as
-// read from slot under the label src, held to the manifest manifestDigest names, so
-// it is answered as cache-served rather than as authored in a catalog directory.
+// l.schemaLibraryVersions through the claim every library kind shares
+// (claimShellLibrary), as the pinned cache: a library name a catalog directory
+// holds stays that directory's, and the slot is recorded as a pinned duplicate.
+// Mirrors the SchemaLibrary arm of buildSchemaLibraries' Tier-1 walk; the raw bytes
+// are retained for digest fidelity, and the library placed is recorded as read from
+// slot under the label src, held to the manifest manifestDigest names, so it is
+// answered as cache-served rather than as authored in a catalog directory.
 func (l *LazyLookup) foldPinnedSchemaLibrary(parseData, rawBytes []byte, src, slot, manifestDigest string) {
 	lib, perr := parseSchemaLibraryEntity(parseData, src)
 	if perr != nil {
 		l.recordRefusal(src, perr)
 		return
 	}
-	if _, dup := l.schemaLibraries[lib.Metadata.Name]; dup {
-		return
-	}
-	l.schemaLibraries[lib.Metadata.Name] = lib
-	l.retainEntityBytes(entityBytesKey("SchemaLibrary", lib.Metadata.Name), rawBytes)
-	l.origins[entityBytesKey("SchemaLibrary", lib.Metadata.Name)] = foldedOrigin(src, slot, "", manifestDigest)
+	claimShellLibrary(l, l.schemaLibraryVersions, "SchemaLibrary", lib, schemaLibraryMeta, src, parseData, rawBytes,
+		foldedOrigin(src, slot, "", manifestDigest), noCatalogDirectory)
 }
 
 // recordRecipeSkip emits the one-line tolerance warning and records the reason.
@@ -2823,15 +2875,15 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 	l.buildRecipeIndex()
 	_ = l.buildSchemaLibraries()
 	l.recipeCat = &Catalog{
-		Recipes:           l.recipes,
-		FeatureRecipes:    l.featureRecipes,
-		Aggregates:        l.aggregates,
-		SchemaLibraries:   l.schemaLibraries,
-		MappingLibraries:  l.mappingLibraries,
-		WorkloadLibraries: l.workloadLibraries,
-		ArtifactLibraries: l.artifactLibraries,
-		Plugins:           l.plugins,
-		entityBytes:       l.entityBytes,
+		Recipes:                 l.recipes,
+		FeatureRecipes:          l.featureRecipes,
+		Aggregates:              l.aggregates,
+		SchemaLibraryVersions:   l.schemaLibraryVersions,
+		MappingLibraryVersions:  l.mappingLibraryVersions,
+		WorkloadLibraryVersions: l.workloadLibraryVersions,
+		ArtifactLibraryVersions: l.artifactLibraryVersions,
+		Plugins:                 l.plugins,
+		entityBytes:             l.entityBytes,
 		// The one record of where each enumerated entity came from, under the same
 		// kind-namespaced identity the eager load claims each entity under — so the
 		// shell answers "which file declared this entity", "what are its content
@@ -2861,19 +2913,21 @@ func (l *LazyLookup) recipeCatalog() *Catalog {
 	return l.recipeCat
 }
 
-// MappingLibraries returns the tolerantly-enumerated MappingLibrary set, for the
-// daemon pipeline's MappingLibraries input (the closure/bridged mapping libraries
-// the renderer's $import resolution consumes). Triggers the recipe-shell
-// enumeration on first call.
+// MappingLibraries returns the tolerantly-enumerated MappingLibrary set, keyed by
+// bare name with one version per name — the one a bare reference selects — for
+// the daemon pipeline's MappingLibraries input (the closure/bridged mapping
+// libraries the renderer's $import resolution consumes). Triggers the
+// recipe-shell enumeration on first call.
 func (l *LazyLookup) MappingLibraries() map[string]types.MappingLibrary {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.buildRecipeIndex()
-	return l.mappingLibraries
+	return defaultLibrarySelection(l.mappingLibraryVersions, mappingLibraryMeta)
 }
 
-// WorkloadLibraries returns the WorkloadLibrary set, keyed by bare name, for the
-// pipeline's WorkloadLibraries input (the set the renderer's workload
+// WorkloadLibraries returns the WorkloadLibrary set, keyed by bare name with one
+// version per name — the one a bare reference selects — for the pipeline's
+// WorkloadLibraries input (the set the renderer's workload
 // `$import: <Library>#/workloads/<entry>` resolution consumes). The set is the
 // local catalog directories plus every lockfile-pinned remote WorkloadLibrary
 // bridged in from the Tier-2 cache, so a remote workload import resolves through
@@ -2882,11 +2936,12 @@ func (l *LazyLookup) WorkloadLibraries() map[string]types.WorkloadLibrary {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.buildRecipeIndex()
-	return l.workloadLibraries
+	return defaultLibrarySelection(l.workloadLibraryVersions, workloadLibraryMeta)
 }
 
-// ArtifactLibraries returns the ArtifactLibrary set, keyed by bare name, for the
-// pipeline's ArtifactLibraries input (the set the renderer's artifacts
+// ArtifactLibraries returns the ArtifactLibrary set, keyed by bare name with one
+// version per name — the one a bare reference selects — for the pipeline's
+// ArtifactLibraries input (the set the renderer's artifacts
 // `artifacts.<name>: { $import: <Library>#/artifacts/<entry> }` resolution consumes).
 // The set is the local catalog directories plus every lockfile-pinned remote
 // ArtifactLibrary bridged in from the Tier-2 cache, so a remote artifacts import
@@ -2896,7 +2951,7 @@ func (l *LazyLookup) ArtifactLibraries() map[string]types.ArtifactLibrary {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.buildRecipeIndex()
-	return l.artifactLibraries
+	return defaultLibrarySelection(l.artifactLibraryVersions, artifactLibraryMeta)
 }
 
 // RecordedPins returns the content pins in force for every pin-bearing entity
@@ -3224,10 +3279,11 @@ func (l *LazyLookup) ClosureRecipeLoader() closure.RecipeLoader {
 	return l.recipeCatalog().ClosureRecipeLoader()
 }
 
-// SchemaLibrary / MappingLibrary / WorkloadLibrary resolve a library by its
-// bare-name URI over the lazily-walked (Tier-1 + pinned Tier-2) library sets, for
-// the closure-library discovery's transitive body access. Returns ok=false when
-// the library is absent.
+// SchemaLibrary / MappingLibrary / WorkloadLibrary / ArtifactLibrary resolve a
+// library by its name over the lazily-walked (Tier-1 + pinned Tier-2) library
+// sets, for the closure-library discovery's transitive body access. Any version
+// the URI carries is set aside: of the versions held under the name, the one a
+// bare reference selects is read. Returns ok=false when the library is absent.
 func (l *LazyLookup) SchemaLibrary(uri string) (types.SchemaLibrary, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -3252,30 +3308,37 @@ func (l *LazyLookup) ArtifactLibrary(uri string) (types.ArtifactLibrary, bool) {
 	return l.artifactLibraryLocked(uri)
 }
 
+// defaultSchemaLibraries is the SchemaLibrary set this view has built, one version
+// per name — the one a bare reference selects — for a reader that takes a
+// name-keyed set. The caller holds the lock and has built the set.
+func (l *LazyLookup) defaultSchemaLibraries() map[string]types.SchemaLibrary {
+	return defaultLibrarySelection(l.schemaLibraryVersions, schemaLibraryMeta)
+}
+
 // schemaLibraryLocked, mappingLibraryLocked, workloadLibraryLocked and
 // artifactLibraryLocked are the per-kind reads above for a caller already holding
 // the lock: each builds the enumeration its kind lives in, then reads it.
 func (l *LazyLookup) schemaLibraryLocked(uri string) (types.SchemaLibrary, bool) {
 	_ = l.buildSchemaLibraries()
-	lib, ok := l.schemaLibraries[uri]
+	lib, _, ok := selectLibrary(l.schemaLibraryVersions, lookupNameFromURI(uri), schemaLibraryMeta)
 	return lib, ok
 }
 
 func (l *LazyLookup) mappingLibraryLocked(uri string) (types.MappingLibrary, bool) {
 	l.buildRecipeIndex()
-	lib, ok := l.mappingLibraries[uri]
+	lib, _, ok := selectLibrary(l.mappingLibraryVersions, lookupNameFromURI(uri), mappingLibraryMeta)
 	return lib, ok
 }
 
 func (l *LazyLookup) workloadLibraryLocked(uri string) (types.WorkloadLibrary, bool) {
 	l.buildRecipeIndex()
-	lib, ok := l.workloadLibraries[uri]
+	lib, _, ok := selectLibrary(l.workloadLibraryVersions, lookupNameFromURI(uri), workloadLibraryMeta)
 	return lib, ok
 }
 
 func (l *LazyLookup) artifactLibraryLocked(uri string) (types.ArtifactLibrary, bool) {
 	l.buildRecipeIndex()
-	lib, ok := l.artifactLibraries[uri]
+	lib, _, ok := selectLibrary(l.artifactLibraryVersions, lookupNameFromURI(uri), artifactLibraryMeta)
 	return lib, ok
 }
 
@@ -3460,7 +3523,7 @@ func (l *LazyLookup) ValidateClosureScopedPillars(ctx context.Context, cl closur
 	// see from the file it is reported against: the library sits in the artifact
 	// cache with nothing vouching for it, so it was never read. Name it, and name
 	// the command that fixes it.
-	return ValidateClosurePillars(comps, compSrc, feats, featSrc, l.schemaLibraries, func() string {
+	return ValidateClosurePillars(comps, compSrc, feats, featSrc, l.defaultSchemaLibraries(), func() string {
 		return cachedLibraryRemedy(remedyLockfilePinned, l.unverifiedCachedSchemaLibraries())
 	})
 }
@@ -3545,6 +3608,7 @@ func (l *LazyLookup) unverifiedCachedSchemaLibraries() []string {
 	}
 	var names []string
 	seen := map[string]bool{}
+	resolved := l.defaultSchemaLibraries()
 	_ = pathscope.WalkDir(entities, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || d.Name() != "library.yaml" {
 			return nil
@@ -3563,7 +3627,7 @@ func (l *LazyLookup) unverifiedCachedSchemaLibraries() []string {
 		if hdr.Kind != "SchemaLibrary" || hdr.Metadata.Name == "" {
 			return nil
 		}
-		if _, resolved := l.schemaLibraries[hdr.Metadata.Name]; resolved {
+		if _, held := resolved[hdr.Metadata.Name]; held {
 			return nil
 		}
 		if !seen[hdr.Metadata.Name] {
@@ -3785,8 +3849,9 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 	l.closureNarrowings = nil
 	// The closure's library set is the cross-document $ref context the schema
 	// merge composes against — the same set the eager whole-catalog path feeds
-	// CompileSchemaForMerge.
+	// CompileSchemaForMerge, one version per name as a bare reference selects it.
 	_ = l.buildSchemaLibraries()
+	schemaLibraries := l.defaultSchemaLibraries()
 
 	compLookup := func(uri string) (types.Component, bool) {
 		return l.extendsParentComponent(ctx, uri)
@@ -3808,7 +3873,7 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 		return validator.CatalogEntry{
 			URI:        feat.Metadata.Name,
 			Extends:    feat.Spec.Extends,
-			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, l.schemaLibraries),
+			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, schemaLibraries),
 		}, true
 	}
 	storeEffective := func(name string, composition *validator.ExtendsComposition) {
@@ -3908,7 +3973,7 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 			rootEntry := validator.CatalogEntry{
 				URI:        feat.Metadata.Name,
 				Extends:    feat.Spec.Extends,
-				JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, l.schemaLibraries),
+				JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, schemaLibraries),
 			}
 			inh := validator.ResolveFeatureSchemaChain(rootEntry, featEntryLookup)
 			if len(inh.Errors) > 0 {

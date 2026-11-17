@@ -33,7 +33,7 @@ import (
 // collected as a Component with the Components, one collected as a Feature with
 // the Features, so an entity of another kind sharing a name reaches neither — and
 // delegates to ValidateClosurePillars against the catalog's SchemaLibraries (local +
-// bridged).
+// bridged), one version per name as DefaultLibraries reads them.
 //
 // A closure entity whose schema `$ref` names a library absent from the catalog —
 // a broken library skipped at tolerant load, or a genuinely missing one — fails
@@ -67,7 +67,7 @@ func (c *Catalog) ValidateClosureScopedPillars(cl closure.Closure) error {
 	// No remedy provider: the eager catalog does not retain the artifact cache
 	// location, and its own walk has always stepped over the cache, so a library
 	// missing here was never cache-reachable in the first place.
-	return ValidateClosurePillars(comps, compSrc, feats, featSrc, c.SchemaLibraries, nil)
+	return ValidateClosurePillars(comps, compSrc, feats, featSrc, c.defaultSchemaLibraries(), nil)
 }
 
 // ResolveClosureExtends resolves the extends chain for ONLY the Components and
@@ -1157,7 +1157,7 @@ func (l *catalogLookup) tier1RungsFor(entityKind string) []tier1Rung {
 // registry tiers below exist to serve.
 func (l *catalogLookup) tier1Library(axis closure.LibraryAxis, uri string) (closure.Resolution, map[string]struct{}, bool) {
 	name := schemaLibraryNameFromURI(uri)
-	metaName, metaVersion, entries, ok := l.localLibrary(axis, name)
+	key, metaVersion, entries, ok := l.localLibrary(axis, name)
 	if !ok {
 		return closure.Resolution{}, nil, false
 	}
@@ -1165,22 +1165,25 @@ func (l *catalogLookup) tier1Library(axis closure.LibraryAxis, uri string) (clos
 	if _, v, hasV := resolver.SplitVersionedURI(uri); hasV && v != "" {
 		resolved = v
 	}
-	// A library's row records the digest of its bytes (isLibraryKind).
-	d := contentDigest(l.catalog.entityBytes[entityBytesKey(axis.Kind, metaName)])
-	return l.tier1Resolution(axis.Kind, metaName, resolved, d), entries, true
+	// A library's row records the digest of its bytes (isLibraryKind): the bytes
+	// of the copy read, under the identity it is indexed by.
+	d := contentDigest(l.catalog.entityBytes[entityBytesKey(axis.Kind, key)])
+	return l.tier1Resolution(axis.Kind, key, resolved, d), entries, true
 }
 
-// localLibrary reads one library out of the locally-authored catalog, returning its
-// identity and the set of entry names it publishes.
+// localLibrary reads one library out of the locally-authored catalog, returning
+// the identity it is indexed under, its version and the set of entry names it
+// publishes. Of the versions the catalog holds under name, it reads the one a
+// bare reference selects (selectLibraryVersion).
 //
 // This is the one place an axis is bound to the catalog map and the spec section
 // that hold it — which map and which section is new information per axis, not a
 // copy of another axis's — so it is stated here once instead of at every tier.
-func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, name string) (metaName, metaVersion string, entries map[string]struct{}, ok bool) {
-	entries = map[string]struct{}{}
+func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, name string) (string, string, map[string]struct{}, bool) {
+	entries := map[string]struct{}{}
 	switch axis.Kind {
 	case "SchemaLibrary":
-		lib, found := l.catalog.SchemaLibraries[name]
+		lib, key, found := selectLibrary(l.catalog.SchemaLibraryVersions, name, schemaLibraryMeta)
 		if !found {
 			return "", "", nil, false
 		}
@@ -1192,34 +1195,34 @@ func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, name string) (met
 		for n := range lib.Spec.Templates.All() {
 			entries[n] = struct{}{}
 		}
-		return lib.Metadata.Name, lib.Metadata.Version, entries, true
+		return key, lib.Metadata.Version, entries, true
 	case "MappingLibrary":
-		lib, found := l.catalog.MappingLibraries[name]
+		lib, key, found := selectLibrary(l.catalog.MappingLibraryVersions, name, mappingLibraryMeta)
 		if !found {
 			return "", "", nil, false
 		}
 		for n := range lib.Spec.Mappings.All() {
 			entries[n] = struct{}{}
 		}
-		return lib.Metadata.Name, lib.Metadata.Version, entries, true
+		return key, lib.Metadata.Version, entries, true
 	case "WorkloadLibrary":
-		lib, found := l.catalog.WorkloadLibraries[name]
+		lib, key, found := selectLibrary(l.catalog.WorkloadLibraryVersions, name, workloadLibraryMeta)
 		if !found {
 			return "", "", nil, false
 		}
 		for n := range lib.Spec.Workloads.All() {
 			entries[n] = struct{}{}
 		}
-		return lib.Metadata.Name, lib.Metadata.Version, entries, true
+		return key, lib.Metadata.Version, entries, true
 	case "ArtifactLibrary":
-		lib, found := l.catalog.ArtifactLibraries[name]
+		lib, key, found := selectLibrary(l.catalog.ArtifactLibraryVersions, name, artifactLibraryMeta)
 		if !found {
 			return "", "", nil, false
 		}
 		for n := range lib.Spec.Artifacts.All() {
 			entries[n] = struct{}{}
 		}
-		return lib.Metadata.Name, lib.Metadata.Version, entries, true
+		return key, lib.Metadata.Version, entries, true
 	}
 	return "", "", nil, false
 }
@@ -1257,8 +1260,8 @@ func (c *Catalog) catalogDirectoryCopies(kind, uri string) []catalogDirectoryCop
 		if axis.Kind != kind {
 			continue
 		}
-		if metaName, _, _, ok := lookup.localLibrary(axis, name); ok {
-			entries = append(entries, entry{axis.Kind, metaName, true})
+		if key, _, _, ok := lookup.localLibrary(axis, name); ok {
+			entries = append(entries, entry{axis.Kind, key, true})
 		}
 	}
 	var copies []catalogDirectoryCopy

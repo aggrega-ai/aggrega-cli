@@ -63,9 +63,10 @@ func escapeContext(ctx *compileCtx) *compileCtx {
 type CompileOption func(*compileCtx)
 
 // WithSchemaLibraries supplies the SchemaLibraries map the compactform
-// expander consults when resolving cross-document $ref URIs. The map is
-// the catalog's Catalog.SchemaLibraries (keyed by metadata.name). Absent
-// this option, cross-document $ref expansion is disabled.
+// expander consults when resolving cross-document $ref URIs, keyed by
+// metadata.name with one version per name — a catalog's selection of its
+// SchemaLibraries. Absent this option, cross-document $ref expansion is
+// disabled.
 func WithSchemaLibraries(libs map[string]types.SchemaLibrary) CompileOption {
 	return func(ctx *compileCtx) {
 		ctx.libraries = libs

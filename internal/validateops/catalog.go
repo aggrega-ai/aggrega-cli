@@ -416,10 +416,10 @@ func VerifyNoOCILocationCollision(cat *catalog.Catalog) error {
 	for _, e := range cat.FeatureRecipes {
 		add("FeatureRecipe", e.Spec.Capability, e.Metadata.Name)
 	}
-	for _, e := range cat.SchemaLibraries {
+	for _, e := range cat.SchemaLibraryVersions {
 		add("SchemaLibrary", "", e.Metadata.Name)
 	}
-	for _, e := range cat.MappingLibraries {
+	for _, e := range cat.MappingLibraryVersions {
 		add("MappingLibrary", "", e.Metadata.Name)
 	}
 

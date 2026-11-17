@@ -241,8 +241,9 @@ func expandSchemaLibraryRef(
 	}
 
 	// Library lookup — the bare-name library portion maps directly to
-	// metadata.name (the catalog's Catalog.SchemaLibraries map key, which is
-	// version-agnostic; the version is supplied by the lockfile).
+	// metadata.name, the key of the name-keyed SchemaLibrary map the caller
+	// supplies, which holds one version per name; which version is the caller's
+	// selection.
 	lib, found := libraries[parsed.library]
 	if !found {
 		return nil, "", "", &CompileError{

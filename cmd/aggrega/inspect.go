@@ -617,7 +617,7 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 	// With --release the account is the one the workspace gives for that Release,
 	// which names its entry under workspace.releases rather than the workspace's
 	// list, since that entry is what the lookup read.
-	match, found := compilerops.ResolveEntity(catalogEntityView{cat: cat, lookup: cat.CatalogLookup()}, identifier)
+	match, found := compilerops.ResolveEntity(newCatalogEntityView(cat), identifier)
 	if !found {
 		return fmt.Errorf("%q matched no catalog entity of any kind%s", identifier,
 			compilerops.LocalCatalogAdvice(rw.LocalCatalogAdviceNote(opts.release), nil, identifier, ""))
@@ -698,6 +698,16 @@ func inspectCatalogEntity(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 type catalogEntityView struct {
 	cat    *catalog.Catalog
 	lookup resolver.CatalogLookup
+	// libraries is the catalog's libraries one version per name, as a bare
+	// reference selects each (catalog.Catalog.DefaultLibraries), taken once for
+	// every kind the resolution tries.
+	libraries catalog.LibrarySet
+}
+
+// newCatalogEntityView is the adapter over cat, its lookup and its libraries
+// taken once.
+func newCatalogEntityView(cat *catalog.Catalog) catalogEntityView {
+	return catalogEntityView{cat: cat, lookup: cat.CatalogLookup(), libraries: cat.DefaultLibraries()}
 }
 
 func (v catalogEntityView) Component(uri string) (types.Component, bool) {
@@ -724,23 +734,25 @@ func (v catalogEntityView) AggregateLookup() resolver.AggregateLookup {
 	return v.cat.AggregateLookup()
 }
 
+// SchemaLibrary, MappingLibrary, WorkloadLibrary and ArtifactLibrary read a
+// library by name, at the one version a bare reference to that name selects.
 func (v catalogEntityView) SchemaLibrary(uri string) (types.SchemaLibrary, bool) {
-	lib, ok := v.cat.SchemaLibraries[uri]
+	lib, ok := v.libraries.Schemas[uri]
 	return lib, ok
 }
 
 func (v catalogEntityView) MappingLibrary(uri string) (types.MappingLibrary, bool) {
-	lib, ok := v.cat.MappingLibraries[uri]
+	lib, ok := v.libraries.Mappings[uri]
 	return lib, ok
 }
 
 func (v catalogEntityView) WorkloadLibrary(uri string) (types.WorkloadLibrary, bool) {
-	lib, ok := v.cat.WorkloadLibraries[uri]
+	lib, ok := v.libraries.Workloads[uri]
 	return lib, ok
 }
 
 func (v catalogEntityView) ArtifactLibrary(uri string) (types.ArtifactLibrary, bool) {
-	lib, ok := v.cat.ArtifactLibraries[uri]
+	lib, ok := v.libraries.Artifacts[uri]
 	return lib, ok
 }
 

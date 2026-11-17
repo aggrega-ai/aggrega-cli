@@ -41,21 +41,22 @@ import (
 // pkg/catalog import dependencies and lets each consumer evolve its data
 // needs without forcing the map layout to change.
 //
-// Components, Features, Aggregates and Plugins index by name:version, so every
-// version a catalog holds coexists and a reference selects among them through
-// selectEntityVersion; Recipes and FeatureRecipes index by capability-scoped
-// identity, and libraries by name.
+// Components, Features, Aggregates, Plugins and the four library kinds index by
+// name:version, so every version a catalog holds coexists and a reference
+// selects among them (selectEntityVersion for an entity, selectLibraryVersion
+// for a library); Recipes and FeatureRecipes index by capability-scoped identity.
+// A reader that wants one library per name takes DefaultLibraries.
 type Catalog struct {
-	Components        map[string]types.Component       // keyed by identity (metadata.name:version)
-	Features          map[string]types.Feature         // keyed by identity (metadata.name:version)
-	Recipes           map[string]types.Recipe          // keyed by identity (provider/name:version)
-	FeatureRecipes    map[string]types.FeatureRecipe   // keyed by identity (provider/name:version)
-	Aggregates        map[string]types.Aggregate       // keyed by identity (metadata.name:version)
-	SchemaLibraries   map[string]types.SchemaLibrary   // keyed by metadata.name (PascalCase library identifier)
-	MappingLibraries  map[string]types.MappingLibrary  // keyed by metadata.name (PascalCase library identifier)
-	WorkloadLibraries map[string]types.WorkloadLibrary // keyed by metadata.name (PascalCase library identifier)
-	ArtifactLibraries map[string]types.ArtifactLibrary // keyed by metadata.name (PascalCase library identifier)
-	Plugins           map[string]types.Plugin          // keyed by identity (pluginType/name:version)
+	Components              map[string]types.Component       // keyed by identity (metadata.name:version)
+	Features                map[string]types.Feature         // keyed by identity (metadata.name:version)
+	Recipes                 map[string]types.Recipe          // keyed by identity (provider/name:version)
+	FeatureRecipes          map[string]types.FeatureRecipe   // keyed by identity (provider/name:version)
+	Aggregates              map[string]types.Aggregate       // keyed by identity (metadata.name:version)
+	SchemaLibraryVersions   map[string]types.SchemaLibrary   // keyed by identity (metadata.name:version)
+	MappingLibraryVersions  map[string]types.MappingLibrary  // keyed by identity (metadata.name:version)
+	WorkloadLibraryVersions map[string]types.WorkloadLibrary // keyed by identity (metadata.name:version)
+	ArtifactLibraryVersions map[string]types.ArtifactLibrary // keyed by identity (metadata.name:version)
+	Plugins                 map[string]types.Plugin          // keyed by identity (pluginType/name:version)
 
 	// componentSources / featureSources / pluginSources
 	// track the file path each entity was loaded from. Populated by the
@@ -545,25 +546,25 @@ func loadAllPassOneImpl(workspaceRoot, cacheDir string, named []string, tolerant
 // so they share one initialisation.
 func newPassOneCatalog(workspaceRoot string) *Catalog {
 	return &Catalog{
-		workspaceRoot:     workspaceRoot,
-		Components:        make(map[string]types.Component),
-		Features:          make(map[string]types.Feature),
-		Recipes:           make(map[string]types.Recipe),
-		FeatureRecipes:    make(map[string]types.FeatureRecipe),
-		Aggregates:        make(map[string]types.Aggregate),
-		SchemaLibraries:   make(map[string]types.SchemaLibrary),
-		MappingLibraries:  make(map[string]types.MappingLibrary),
-		WorkloadLibraries: make(map[string]types.WorkloadLibrary),
-		ArtifactLibraries: make(map[string]types.ArtifactLibrary),
-		Plugins:           make(map[string]types.Plugin),
-		componentSources:  make(map[string]string),
-		featureSources:    make(map[string]string),
-		pluginSources:     make(map[string]string),
-		pluginRoots:       make(map[string]string),
-		aggregateSources:  make(map[string]string),
-		entityBytes:       make(map[string][]byte),
-		pathByIdentity:    make(map[string]string),
-		recordedPins:      make(recipepin.Lookup),
+		workspaceRoot:           workspaceRoot,
+		Components:              make(map[string]types.Component),
+		Features:                make(map[string]types.Feature),
+		Recipes:                 make(map[string]types.Recipe),
+		FeatureRecipes:          make(map[string]types.FeatureRecipe),
+		Aggregates:              make(map[string]types.Aggregate),
+		SchemaLibraryVersions:   make(map[string]types.SchemaLibrary),
+		MappingLibraryVersions:  make(map[string]types.MappingLibrary),
+		WorkloadLibraryVersions: make(map[string]types.WorkloadLibrary),
+		ArtifactLibraryVersions: make(map[string]types.ArtifactLibrary),
+		Plugins:                 make(map[string]types.Plugin),
+		componentSources:        make(map[string]string),
+		featureSources:          make(map[string]string),
+		pluginSources:           make(map[string]string),
+		pluginRoots:             make(map[string]string),
+		aggregateSources:        make(map[string]string),
+		entityBytes:             make(map[string][]byte),
+		pathByIdentity:          make(map[string]string),
+		recordedPins:            make(recipepin.Lookup),
 	}
 }
 
@@ -680,11 +681,14 @@ func SkipDirIfArtifactCache(workspaceRoot, path, cacheDir string) error {
 // catalog with FIRST-WIN precedence: an identity acc already holds (from an
 // earlier-listed directory) wins, and perDir's occurrence is recorded as a
 // ShadowedEntity rather than overwriting. A not-yet-seen identity is inserted
-// with its side-table entries (source path, raw bytes). Iteration is in sorted
-// identity order per kind so the resolved set and the Shadows list are a pure,
-// deterministic function of directory order — preserving byte-identical output.
-// readRoot is the root the directory perDirRoot holds a read beneath it to, which a
-// winning Plugin entity carries for the .wasm read beside it.
+// with its side-table entries (source path, raw bytes). A library's precedence is
+// decided by its name rather than its identity (mergeLibraryKind), so a library
+// name an earlier directory holds at any version shadows every version perDir
+// holds of it. Iteration is in sorted identity order per kind so the resolved set
+// and the Shadows list are a pure, deterministic function of directory order —
+// preserving byte-identical output. readRoot is the root the directory perDirRoot
+// holds a read beneath it to, which a winning Plugin entity carries for the .wasm
+// read beside it.
 func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot, readRoot string, winnerDir map[string]string) {
 	// Every kind's retained bytes are keyed by the same index key as its typed
 	// map, so the winning identity carries its own bytes and never another
@@ -714,22 +718,10 @@ func (acc *Catalog) mergeFrom(perDir *Catalog, perDirRoot, readRoot string, winn
 		bk := entityBytesKey("Aggregate", k)
 		acc.entityBytes[bk] = perDir.entityBytes[bk]
 	})
-	mergeKind(acc, "SchemaLibrary", acc.SchemaLibraries, perDir.SchemaLibraries, perDir, perDirRoot, winnerDir, func(k string) {
-		bk := entityBytesKey("SchemaLibrary", k)
-		acc.entityBytes[bk] = perDir.entityBytes[bk]
-	})
-	mergeKind(acc, "MappingLibrary", acc.MappingLibraries, perDir.MappingLibraries, perDir, perDirRoot, winnerDir, func(k string) {
-		bk := entityBytesKey("MappingLibrary", k)
-		acc.entityBytes[bk] = perDir.entityBytes[bk]
-	})
-	mergeKind(acc, "WorkloadLibrary", acc.WorkloadLibraries, perDir.WorkloadLibraries, perDir, perDirRoot, winnerDir, func(k string) {
-		bk := entityBytesKey("WorkloadLibrary", k)
-		acc.entityBytes[bk] = perDir.entityBytes[bk]
-	})
-	mergeKind(acc, "ArtifactLibrary", acc.ArtifactLibraries, perDir.ArtifactLibraries, perDir, perDirRoot, winnerDir, func(k string) {
-		bk := entityBytesKey("ArtifactLibrary", k)
-		acc.entityBytes[bk] = perDir.entityBytes[bk]
-	})
+	mergeLibraryKind(acc, "SchemaLibrary", acc.SchemaLibraryVersions, perDir.SchemaLibraryVersions, schemaLibraryMeta, perDir, perDirRoot, winnerDir)
+	mergeLibraryKind(acc, "MappingLibrary", acc.MappingLibraryVersions, perDir.MappingLibraryVersions, mappingLibraryMeta, perDir, perDirRoot, winnerDir)
+	mergeLibraryKind(acc, "WorkloadLibrary", acc.WorkloadLibraryVersions, perDir.WorkloadLibraryVersions, workloadLibraryMeta, perDir, perDirRoot, winnerDir)
+	mergeLibraryKind(acc, "ArtifactLibrary", acc.ArtifactLibraryVersions, perDir.ArtifactLibraryVersions, artifactLibraryMeta, perDir, perDirRoot, winnerDir)
 	// The Plugin source side-table feeds the pillar-validation
 	// spec.provider.workloadSchema compile gate so its error messages name the
 	// offending file.
@@ -790,14 +782,77 @@ func mergeKind[T any](
 	}
 }
 
+// mergeLibraryKind merges one library kind from src into dst with first-win
+// precedence by library name: the directories of a stack are sources, and the
+// first source holding any version of a name owns the name. A name dst does not
+// hold yet is placed with every version src holds of it, each under its own
+// identity, so the versions of one directory coexist. A name dst already holds was
+// placed by an earlier directory, and each version src holds of it is shadowed,
+// whatever that version is: it is recorded as a ShadowedEntity under its own
+// identity, naming as the winner the copy of the same identity where the earlier
+// directory holds one, and otherwise the copy a bare reference to the name reads.
+// The decision is foldFirstWin's, taken over names; names and the versions under
+// each are visited in sorted order so the Shadows list is deterministic.
+func mergeLibraryKind[T any](
+	acc *Catalog,
+	kind string,
+	dst, src map[string]T,
+	meta func(T) (string, string),
+	perDir *Catalog,
+	perDirRoot string,
+	winnerDir map[string]string,
+) {
+	held := map[string]struct{}{}
+	for _, v := range dst {
+		name, _ := meta(v)
+		held[name] = struct{}{}
+	}
+	versionsOf := map[string][]string{}
+	for _, key := range sortedMapKeys(src) {
+		name, _ := meta(src[key])
+		versionsOf[name] = append(versionsOf[name], key)
+	}
+	for _, name := range sortedMapKeys(versionsOf) {
+		keys := versionsOf[name]
+		foldFirstWin(held, name, struct{}{},
+			func() {
+				for _, key := range keys {
+					fk := kind + ":" + key
+					dst[key] = src[key]
+					acc.pathByIdentity[fk] = perDir.pathByIdentity[fk]
+					winnerDir[fk] = perDirRoot
+					bk := entityBytesKey(kind, key)
+					acc.entityBytes[bk] = perDir.entityBytes[bk]
+				}
+			},
+			func() {
+				for _, key := range keys {
+					winner := key
+					if _, same := dst[key]; !same {
+						winner, _, _ = selectLibraryVersion(dst, name, meta)
+					}
+					wk, fk := kind+":"+winner, kind+":"+key
+					acc.Shadows = append(acc.Shadows, ShadowedEntity{
+						Kind:         kind,
+						Identity:     key,
+						WinnerDir:    winnerDir[wk],
+						WinnerPath:   acc.pathByIdentity[wk],
+						ShadowedDir:  perDirRoot,
+						ShadowedPath: perDir.pathByIdentity[fk],
+					})
+				}
+			})
+	}
+}
+
 // foldFirstWin is the single source of the "which occurrence of a duplicated
 // identity resolves" decision across every catalog loading strategy. The FIRST
 // occurrence of an identity claims it; a later occurrence is a shadow. The eager
-// whole-catalog merge (mergeKind), the lazy recipe-shell enumeration
-// (foldRecipeShellEntity), and the lazy Component/Feature index walk
-// (walkAndIndex) all fold through this primitive, so the three strategies cannot
-// drift on which duplicate wins. Strategies vary only in the value type V and the
-// onWin / onShadow callbacks, never in the decision.
+// whole-catalog merge (mergeKind, and mergeLibraryKind over library names), the
+// lazy recipe-shell enumeration (foldRecipeShellEntity), and the lazy
+// Component/Feature index walk (walkAndIndex) all fold through this primitive, so
+// the three strategies cannot drift on which duplicate wins. Strategies vary only
+// in the value type V and the onWin / onShadow callbacks, never in the decision.
 //
 // claimed is the identity→value map being populated. When identity is already
 // present, onShadow (if non-nil) runs and the function returns false without
@@ -912,6 +967,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 	// same catalog would otherwise report every pillar-overlap advisory twice.
 	c.pillarLintWarnings = nil
 	var validationErrors []error
+	schemaLibraries := c.defaultSchemaLibraries()
 
 	componentNames := make([]string, 0, len(c.Components))
 	for name := range c.Components {
@@ -926,7 +982,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 			c.componentSources[name],
 			comp.Spec.Extends,
 			&comp.Spec.Schema,
-			c.SchemaLibraries,
+			schemaLibraries,
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
@@ -937,7 +993,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 			comp.Spec.Extends,
 			&comp.Spec.Schema,
 			comp.Spec.UsesSchema,
-			c.SchemaLibraries,
+			schemaLibraries,
 		)...)
 		c.pillarLintWarnings = append(c.pillarLintWarnings, validator.ValidateSchemaPillarOverlap(
 			"Component",
@@ -960,7 +1016,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 			c.featureSources[name],
 			feat.Spec.Extends,
 			&feat.Spec.Schema,
-			c.SchemaLibraries,
+			schemaLibraries,
 		); err != nil {
 			validationErrors = append(validationErrors, err)
 		}
@@ -971,7 +1027,7 @@ func (c *Catalog) validateSchemaPillarsPass() error {
 			feat.Spec.Extends,
 			&feat.Spec.Schema,
 			feat.Spec.UsesSchema,
-			c.SchemaLibraries,
+			schemaLibraries,
 		)...)
 		c.pillarLintWarnings = append(c.pillarLintWarnings, validator.ValidateSchemaPillarOverlap(
 			"Feature",
@@ -1301,11 +1357,12 @@ func (c *Catalog) indexKind(kind string, data []byte, path string) error {
 		if err != nil {
 			return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: path}, "load SchemaLibrary")
 		}
-		if err := c.claimIdentity("SchemaLibrary:"+e.Metadata.Name, fmt.Sprintf("SchemaLibrary identity %q", e.Metadata.Name), path); err != nil {
+		lkey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		if err := c.claimIdentity("SchemaLibrary:"+lkey, fmt.Sprintf("SchemaLibrary identity %q", lkey), path); err != nil {
 			return err
 		}
-		c.SchemaLibraries[e.Metadata.Name] = e
-		c.entityBytes[entityBytesKey("SchemaLibrary", e.Metadata.Name)] = data
+		c.SchemaLibraryVersions[lkey] = e
+		c.entityBytes[entityBytesKey("SchemaLibrary", lkey)] = data
 	case "MappingLibrary":
 		// parseMappingLibraryEntity is the shared per-entity resolve so the eager
 		// and lazy backings cannot drift. It self-wraps its failures into the final
@@ -1321,11 +1378,12 @@ func (c *Catalog) indexKind(kind string, data []byte, path string) error {
 		if err != nil {
 			return err
 		}
-		if err := c.claimIdentity("MappingLibrary:"+e.Metadata.Name, fmt.Sprintf("MappingLibrary identity %q", e.Metadata.Name), path); err != nil {
+		lkey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		if err := c.claimIdentity("MappingLibrary:"+lkey, fmt.Sprintf("MappingLibrary identity %q", lkey), path); err != nil {
 			return err
 		}
-		c.MappingLibraries[e.Metadata.Name] = e
-		c.entityBytes[entityBytesKey("MappingLibrary", e.Metadata.Name)] = data
+		c.MappingLibraryVersions[lkey] = e
+		c.entityBytes[entityBytesKey("MappingLibrary", lkey)] = data
 	case "WorkloadLibrary":
 		// parseWorkloadLibraryEntity is the shared per-entity resolve so the eager
 		// and lazy backings cannot drift; it self-wraps its failures, so the bare
@@ -1340,11 +1398,12 @@ func (c *Catalog) indexKind(kind string, data []byte, path string) error {
 		if err != nil {
 			return err
 		}
-		if err := c.claimIdentity("WorkloadLibrary:"+e.Metadata.Name, fmt.Sprintf("WorkloadLibrary identity %q", e.Metadata.Name), path); err != nil {
+		lkey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		if err := c.claimIdentity("WorkloadLibrary:"+lkey, fmt.Sprintf("WorkloadLibrary identity %q", lkey), path); err != nil {
 			return err
 		}
-		c.WorkloadLibraries[e.Metadata.Name] = e
-		c.entityBytes[entityBytesKey("WorkloadLibrary", e.Metadata.Name)] = data
+		c.WorkloadLibraryVersions[lkey] = e
+		c.entityBytes[entityBytesKey("WorkloadLibrary", lkey)] = data
 	case "ArtifactLibrary":
 		// parseArtifactLibraryEntity is the shared per-entity resolve so the eager
 		// and lazy backings cannot drift; it self-wraps its failures, so the bare
@@ -1358,11 +1417,12 @@ func (c *Catalog) indexKind(kind string, data []byte, path string) error {
 		if err != nil {
 			return err
 		}
-		if err := c.claimIdentity("ArtifactLibrary:"+e.Metadata.Name, fmt.Sprintf("ArtifactLibrary identity %q", e.Metadata.Name), path); err != nil {
+		lkey := entityIndexKey(e.Metadata.Name, e.Metadata.Version)
+		if err := c.claimIdentity("ArtifactLibrary:"+lkey, fmt.Sprintf("ArtifactLibrary identity %q", lkey), path); err != nil {
 			return err
 		}
-		c.ArtifactLibraries[e.Metadata.Name] = e
-		c.entityBytes[entityBytesKey("ArtifactLibrary", e.Metadata.Name)] = data
+		c.ArtifactLibraryVersions[lkey] = e
+		c.entityBytes[entityBytesKey("ArtifactLibrary", lkey)] = data
 	case "Plugin":
 		// parsePluginEntity is the shared per-entity resolve so the eager and lazy
 		// backings cannot drift. Sharing the scan is what gives the lazy backing
@@ -2283,6 +2343,7 @@ func (c *Catalog) resolveAllExtendsFrom(parents extendsParents) []*validator.Val
 	c.narrowingWarnings = nil
 
 	var errs []*validator.ValidationError
+	schemaLibraries := c.defaultSchemaLibraries()
 
 	compLookup := func(uri string) (types.Component, bool) {
 		key, ok, _ := c.resolveComponentKey(uri)
@@ -2312,7 +2373,7 @@ func (c *Catalog) resolveAllExtendsFrom(parents extendsParents) []*validator.Val
 		return validator.CatalogEntry{
 			URI:        feat.Metadata.Name,
 			Extends:    feat.Spec.Extends,
-			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, c.SchemaLibraries),
+			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, schemaLibraries),
 		}, true
 	}
 	storeEffective := func(uri string, composition *validator.ExtendsComposition) {
@@ -2386,7 +2447,7 @@ func (c *Catalog) resolveAllExtendsFrom(parents extendsParents) []*validator.Val
 		rootEntry := validator.CatalogEntry{
 			URI:        feat.Metadata.Name,
 			Extends:    feat.Spec.Extends,
-			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, c.SchemaLibraries),
+			JSONSchema: validator.CompileSchemaForMerge(feat.Spec.Schema, schemaLibraries),
 		}
 		inh := validator.ResolveFeatureSchemaChain(rootEntry, featEntryLookup)
 		if len(inh.Errors) > 0 {
@@ -2549,7 +2610,7 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 	return resolver.CatalogLookup{
 		Component:       c.componentOfType,
 		Feature:         c.featureOfType,
-		SchemaLibraries: c.SchemaLibraries,
+		SchemaLibraries: c.defaultSchemaLibraries(),
 		EffectiveSchema: func(typeURI string) (compactform.Schema, bool) {
 			// Resolve as a Component then a Feature — both kinds compose extends
 			// schemas (stored by ResolveAllExtends), so an extends-ing Feature's
@@ -2727,9 +2788,11 @@ func (c *Catalog) aggregateSource(key string) (string, bool) {
 // For a Component, Feature, Aggregate or Plugin the reference is resolved the way
 // every other reference to those kinds is — exact, caret, or unversioned, to the
 // highest satisfying version — so a bare name answers with the highest version's
-// bytes and a version-pinned one with that version's. For every other kind the
-// reference is the identity the entity is indexed under: a Recipe's or
-// FeatureRecipe's capability-scoped identity, or a library's name.
+// bytes and a version-pinned one with that version's. A library reference is
+// resolved by the library selection (selectLibraryVersion): a bare name answers
+// with the version a bare reference selects, a versioned one with the version its
+// floor selects. For a Recipe or FeatureRecipe the reference is the
+// capability-scoped identity the entity is indexed under.
 func (c *Catalog) EntityBytes(kind, reference string) ([]byte, bool) {
 	key, ok := c.indexKeyFor(kind, reference)
 	if !ok {
@@ -2740,9 +2803,9 @@ func (c *Catalog) EntityBytes(kind, reference string) ([]byte, bool) {
 }
 
 // indexKeyFor returns the key the entity reference resolves to in its kind's
-// index: the version select's answer for the kinds indexed per version, and the
-// reference itself for the kinds indexed by an identity the reference already
-// spells out.
+// index: the version select's answer for the kinds a reference selects a version
+// of, and the reference itself for the kinds indexed by an identity the reference
+// already spells out.
 func (c *Catalog) indexKeyFor(kind, reference string) (string, bool) {
 	var key string
 	var ok bool
@@ -2755,6 +2818,14 @@ func (c *Catalog) indexKeyFor(kind, reference string) (string, bool) {
 		key, ok, _ = c.resolveAggregateKey(reference)
 	case "Plugin":
 		key, ok, _ = c.resolvePluginKey(reference)
+	case "SchemaLibrary":
+		key, ok, _ = selectLibraryVersion(c.SchemaLibraryVersions, reference, schemaLibraryMeta)
+	case "MappingLibrary":
+		key, ok, _ = selectLibraryVersion(c.MappingLibraryVersions, reference, mappingLibraryMeta)
+	case "WorkloadLibrary":
+		key, ok, _ = selectLibraryVersion(c.WorkloadLibraryVersions, reference, workloadLibraryMeta)
+	case "ArtifactLibrary":
+		key, ok, _ = selectLibraryVersion(c.ArtifactLibraryVersions, reference, artifactLibraryMeta)
 	default:
 		return reference, true
 	}

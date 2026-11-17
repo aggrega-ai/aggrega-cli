@@ -182,6 +182,7 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 	// unsupplied configuration, and a fixture that ran against no configuration at
 	// all would be running a different composition from the build it stands in for.
 	wsCfg := workspaceconfig.Default()
+	libraries := cat.DefaultLibraries()
 	return &loadedWorkspace{
 		inputs: pipeline.Inputs{
 			Release:           rel,
@@ -191,9 +192,9 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 			// Supplied as a build supplies it, so a finding about what the fixture's
 			// Release wrote names that file here as it does on every other surface.
 			ReleasePath:       in.ReleasePath,
-			MappingLibraries:  cat.MappingLibraries,
-			WorkloadLibraries: cat.WorkloadLibraries,
-			ArtifactLibraries: cat.ArtifactLibraries,
+			MappingLibraries:  libraries.Mappings,
+			WorkloadLibraries: libraries.Workloads,
+			ArtifactLibraries: libraries.Artifacts,
 			// The pins the fixture's own catalog load recorded, so a fixture whose
 			// entity carries a lock beside it drives the same comparison a build
 			// does rather than a quieter one.

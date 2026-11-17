@@ -53,6 +53,7 @@ func ProjectCatalog(cat *catalog.Catalog) *abi.CatalogProjection {
 	}
 
 	lookup := cat.CatalogLookup()
+	schemaLibraries := cat.DefaultLibraries().Schemas
 	comps := make([]abi.CatalogComponent, 0, len(names))
 	for _, name := range slices.Sorted(maps.Keys(names)) {
 		comp, ok := lookup.Component(name)
@@ -64,7 +65,7 @@ func ProjectCatalog(cat *catalog.Catalog) *abi.CatalogProjection {
 				comp = resolved
 			}
 		}
-		comps = append(comps, projectComponent(comp, cat.SchemaLibraries))
+		comps = append(comps, projectComponent(comp, schemaLibraries))
 	}
 	if len(comps) == 0 {
 		return nil
