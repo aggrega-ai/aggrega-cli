@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-two-deployment
+  version: "1.0.0"
+  description: >
+    A datastore and an application that reads its host through an injection.
+    A Release places the two in separate boundaries, each assembled into a
+    template of its own.
+spec:
+  components:
+    store:
+      type: example/datastore/store
+    app:
+      type: example/compute/consumer
+      uses:
+        database:
+          primary:
+            target: store
+            inject:
+              env:
+                - in: DB_HOST
+                  from: host

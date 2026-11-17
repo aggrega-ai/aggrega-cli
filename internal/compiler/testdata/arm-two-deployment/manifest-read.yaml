@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: arm-two-deployment-read-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        example/datastore/store:1.0.0: arm-link-store:1.0.0
+        example/compute/consumer:1.0.0: arm-link-consumer-read:1.0.0

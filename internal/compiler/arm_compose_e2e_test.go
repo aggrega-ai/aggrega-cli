@@ -22,6 +22,7 @@ import (
 
 	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -201,5 +202,52 @@ func TestArmCrossDeploymentLinkHaltsOnTheProducersOwnOutput(t *testing.T) {
 	}
 	if strings.Contains(msg, "fullyQualifiedDomainName") {
 		t.Errorf("the halt quotes the host expression: %s", msg)
+	}
+}
+
+// TestArmComposeAcrossDeployments builds an application that writes the
+// delivered host inside literal text, with the datastore in another boundary and
+// so another template. In both placements, the producer sharing the application's
+// resource group and the producer's boundary declaring its own, the text is
+// written as a format() expression whose argument is the read of the producing
+// deployment's output.
+func TestArmComposeAcrossDeployments(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		placement, release, read string
+	}{
+		{"the same resource group", "release-compose.yaml", armLinkSameGroupRead(armLinkDataDeployment, "store__host")},
+		{"a declared placement", "release-compose-declared.yaml", armLinkDeclaredRead(armLinkDataDeployment, "store__host")},
+	} {
+		t.Run(tc.placement, func(t *testing.T) {
+			in := armLinkInput(tc.release)
+			result := pipelinetest.Build(t, in)
+			consumer, raw := findArmTemplate(t, result.Artifacts, "dist/web/")
+			want := "[format('postgres://{0}:5432', " + tc.read + ")]"
+			if got := armConsumerSetting(t, consumer, "App", "connection"); got != want {
+				t.Errorf("the connection setting is %#v, want %q\n--- template ---\n%s", got, want, raw)
+			}
+			pipelinetest.AssertDeterministic(t, in)
+		})
+	}
+}
+
+// TestArmStrippedBracketsHaltAcrossABoundary builds an application that strips the
+// brackets off the host it reads off a connection into another template. Across
+// the link the host reaches the template as a placeholder the provider rewrites,
+// so a template that changes the value rather than copying it would disagree with
+// the real value, and the build halts naming the template, the key and the
+// connection.
+func TestArmStrippedBracketsHaltAcrossABoundary(t *testing.T) {
+	t.Parallel()
+	msg := armAssertHaltsTwice(t, armLinkInput("release-strip.yaml"), renderer.ErrCrossBoundaryLinkValueNotCopied())
+	for _, want := range []string{
+		"a template does more than copy a value it reads off a cross-boundary link",
+		`template "artifacts[arm-link-consumer-strip/consumer.yaml]"`,
+		`provides key "host" that component "app" reads off its connection "primary" on socket "database" to component "store"`,
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the halt does not say %q: %s", want, msg)
+		}
 	}
 }

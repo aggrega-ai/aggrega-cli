@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-link-store
+  version: 1.0.0
+  description: >
+    A datastore written as an ARM fragment that writes no output of its own, so
+    a link carrying its host to another template writes the output it reads.
+spec:
+  capability: arm
+  implements: example/datastore/store:1.0.0
+  locals:
+    symbol: '{{ .values.symbol }}'
+  provides:
+    host: "[reference('{{ .locals.symbol }}').fullyQualifiedDomainName]"
+    port: "5432"
+  artifacts:
+    store.yaml: |
+      resources:
+        {{ .locals.symbol }}:
+          type: Microsoft.DBforPostgreSQL/flexibleServers
+          apiVersion: "2024-08-01"
+          name: "{{ .context.instance_id }}"
+          location: "[resourceGroup().location]"
+          sku:
+            name: "{{ .infra.sku }}"
+          properties:
+            version: "16"
