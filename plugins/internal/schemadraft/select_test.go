@@ -105,3 +105,33 @@ func TestSelectKeepsRequestOrderAndCallsResolve(t *testing.T) {
 		t.Fatalf("got %+v, %+v", got, ds)
 	}
 }
+
+func TestSelectNamesTheSourceWhereOneIsKnown(t *testing.T) {
+	oneFile := refsOf("AWS::SNS::Topic", "AWS::SQS::Queue")
+	_, ds := Select(oneFile, []Request{{Type: "AWS::SQS::Qeue"}}, false, false, nil)
+	if d := onlyCode(t, ds, codeResourceTypeNotFound); d.SourceRef != "f.json" || !strings.Contains(d.Message, `"AWS::SQS::Qeue"`) {
+		t.Errorf("not found in one file: %+v", d)
+	}
+	_, ds = Select(oneFile, nil, false, false, nil)
+	if d := onlyCode(t, ds, codeResourceTypeNotNamed); d.SourceRef != "f.json" {
+		t.Errorf("not named in one file: %+v", d)
+	}
+	_, ds = Select(oneFile, []Request{{Type: "AWS::SQS::Queue", APIVersion: "2020-01-01"}}, false, false, nil)
+	if d := onlyCode(t, ds, codeResourceTypeNotFound); d.SourceRef != "f.json" {
+		t.Errorf("another apiVersion in one file: %+v", d)
+	}
+
+	twoFiles := []TypeRef{{Name: "AWS::SNS::Topic", Source: "a.json"}, {Name: "AWS::SQS::Queue", Source: "b.json"}}
+	_, ds = Select(twoFiles, []Request{{Type: "AWS::SQS::Qeue"}}, false, false, nil)
+	if d := onlyCode(t, ds, codeResourceTypeNotFound); d.SourceRef != "" {
+		t.Errorf("not found in two files names %q", d.SourceRef)
+	}
+	_, ds = Select(twoFiles, nil, false, false, nil)
+	if d := onlyCode(t, ds, codeResourceTypeNotNamed); d.SourceRef != "" {
+		t.Errorf("not named in two files names %q", d.SourceRef)
+	}
+	_, ds = Select(twoFiles, []Request{{Type: "AWS::SQS::Queue", APIVersion: "2020-01-01"}}, false, false, nil)
+	if d := onlyCode(t, ds, codeResourceTypeNotFound); d.SourceRef != "b.json" {
+		t.Errorf("another apiVersion of a type one file holds names %q", d.SourceRef)
+	}
+}

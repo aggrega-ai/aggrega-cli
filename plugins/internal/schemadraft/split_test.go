@@ -228,3 +228,40 @@ func onlyWarning(t *testing.T, ds []aggrega.Diagnostic) aggrega.Diagnostic {
 	}
 	return ds[0]
 }
+
+func TestSplitProvidesAreNeverRequired(t *testing.T) {
+	arn := prop("Arn", KindString)
+	arn.ReadOnly, arn.Required = true, true
+	endpoint := prop("Endpoint", KindObject)
+	address := member(endpoint.Path, "Address", KindString)
+	address.ReadOnly, address.Required = true, true
+	endpoint.Properties = []*Property{address}
+	nested := testRules
+	nested.NestedProvides = true
+	placed, _ := Split(typeOf(arn, endpoint), nested)
+	for _, vendor := range []string{"Arn", "Endpoint.Address"} {
+		if got := placedAs(t, placed, vendor); got.Pillar != PillarProvides || got.Required {
+			t.Errorf("%s placed %+v, want a provides key not required", vendor, got)
+		}
+	}
+	d := ComponentFor("imported/component/thing", typeOf(arn, endpoint), placed, "test", nested)
+	for _, n := range d.Provides {
+		if n.Required {
+			t.Errorf("the Component requires its provides key %s", n.Name)
+		}
+	}
+}
+
+func TestSplitNamesBothPropertiesOfOneKey(t *testing.T) {
+	size, upper := prop("Size", KindInteger), prop("SIZE", KindInteger)
+	size.Required, upper.Required = true, true
+	placed, _ := Split(typeOf(size, upper), testRules)
+	if got := placedAs(t, placed, "Size"); got.Key != "size" || got.Renamed != "" {
+		t.Errorf("Size placed %+v", got)
+	}
+	got := placedAs(t, placed, "SIZE")
+	if want := "SIZE is written size_2, since Size takes size"; got.Key != "size_2" || got.Renamed != want ||
+		!strings.HasSuffix(got.Rule, want) {
+		t.Errorf("SIZE placed %+v, want renamed %q", got, want)
+	}
+}

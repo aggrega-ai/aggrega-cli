@@ -16,7 +16,8 @@ const maxNearest = 5
 
 // Select chooses the types to draft from refs, the types the sources hold, as
 // reqs asks, in request order. With no request and one type it chooses that
-// type. It halts with resource-type-not-named where several types are held and
+// type; with no request and no type it chooses none and reports nothing. It
+// halts with resource-type-not-named where several types are held and
 // none is requested (countOnly gives the count and the setting to write in
 // place of the list), with resource-type-not-found where a request names no
 // held type or, for an apiVersion, one the file does not hold, and with what
@@ -33,7 +34,7 @@ func Select(refs []TypeRef, reqs []Request, foldCase, countOnly bool,
 		case len(names) == 1:
 			return pick(refs, names[0], "", foldCase, resolve)
 		}
-		return nil, []aggrega.Diagnostic{resourceTypeNotNamed(names, countOnly)}
+		return nil, []aggrega.Diagnostic{resourceTypeNotNamed(names, countOnly, commonSource(refs))}
 	}
 	var out []Selected
 	var diags []aggrega.Diagnostic
@@ -41,7 +42,7 @@ func Select(refs []TypeRef, reqs []Request, foldCase, countOnly bool,
 	for _, req := range reqs {
 		matches := matching(refs, req.Type, foldCase)
 		if len(matches) == 0 {
-			diags = append(diags, resourceTypeNotFound(req.Type, nearest(refs, req.Type)))
+			diags = append(diags, resourceTypeNotFound(req.Type, nearest(refs, req.Type), commonSource(refs)))
 			halted = true
 			continue
 		}
@@ -59,7 +60,7 @@ func Select(refs []TypeRef, reqs []Request, foldCase, countOnly bool,
 						held = append(held, m.APIVersion)
 					}
 				}
-				diags = append(diags, resourceTypeVersionNotFound(req.Type, req.APIVersion, held))
+				diags = append(diags, resourceTypeVersionNotFound(req.Type, req.APIVersion, held, commonSource(matches)))
 				halted = true
 				continue
 			}
@@ -120,6 +121,20 @@ func matching(refs []TypeRef, name string, foldCase bool) []TypeRef {
 		}
 	}
 	return out
+}
+
+// commonSource returns the source every ref of refs was read from, empty where
+// they were read from several or there are none.
+func commonSource(refs []TypeRef) string {
+	if len(refs) == 0 {
+		return ""
+	}
+	for _, r := range refs[1:] {
+		if r.Source != refs[0].Source {
+			return ""
+		}
+	}
+	return refs[0].Source
 }
 
 // distinctNames returns the names refs carry, each once, in source order.

@@ -17,6 +17,14 @@ const (
 	codeResourceTypeNotFound    = "resource-type-not-found"
 )
 
+// The codes of the diagnostics an import raises once a type is selected.
+const (
+	codeResourceSchemaUnreadable = "resource-schema-unreadable"
+	codeComponentExists          = "component-exists"
+	codeComponentDraftedNew      = "component-drafted-new"
+	codeProvidesUnmapped         = "provides-unmapped"
+)
+
 // resourceTypesUnreadable halts on a resource_types value, or an entry of it,
 // the setting does not take.
 func resourceTypesUnreadable(read []byte, why string) *aggrega.Diagnostic {
@@ -31,30 +39,33 @@ func resourceTypesUnreadable(read []byte, why string) *aggrega.Diagnostic {
 
 // resourceTypeNotNamed halts where the sources hold several types and the
 // setting names none. With countOnly the message gives the count and where to
-// write the list; otherwise it lists the types.
-func resourceTypeNotNamed(names []string, countOnly bool) aggrega.Diagnostic {
+// write the list; otherwise it lists the types. source names the one source
+// holding them all, empty where several do.
+func resourceTypeNotNamed(names []string, countOnly bool, source string) aggrega.Diagnostic {
 	msg := fmt.Sprintf("the sources hold %d resource types and the resource_types setting names none: write the "+
 		"types to draft in it, one of %s", len(names), strings.Join(names, ", "))
 	if countOnly {
 		msg = fmt.Sprintf("the sources hold %d resource types and the resource_types setting names none: write the "+
 			"types to draft in it", len(names))
 	}
-	return aggrega.Diagnostic{Severity: "halt", Code: codeResourceTypeNotNamed, Message: msg}
+	return aggrega.Diagnostic{Severity: "halt", Code: codeResourceTypeNotNamed, Message: msg, SourceRef: source}
 }
 
 // resourceTypeNotFound halts on a requested type the sources do not hold,
-// naming the nearest names they do.
-func resourceTypeNotFound(requested string, nearest []string) aggrega.Diagnostic {
+// naming the nearest names they do. source names the one source the import
+// reads types from, empty where it reads several.
+func resourceTypeNotFound(requested string, nearest []string, source string) aggrega.Diagnostic {
 	msg := fmt.Sprintf("the resource type %q is not in the sources", requested)
 	if len(nearest) > 0 {
 		msg += "; the nearest names are " + strings.Join(nearest, ", ")
 	}
-	return aggrega.Diagnostic{Severity: "halt", Code: codeResourceTypeNotFound, Message: msg, SourceRef: requested}
+	return aggrega.Diagnostic{Severity: "halt", Code: codeResourceTypeNotFound, Message: msg, SourceRef: source}
 }
 
 // resourceTypeVersionNotFound halts on a requested apiVersion other than the
-// one the file holds for the type.
-func resourceTypeVersionNotFound(requested, version string, held []string) aggrega.Diagnostic {
+// one the file holds for the type. source names the one source holding the
+// type, empty where several do.
+func resourceTypeVersionNotFound(requested, version string, held []string, source string) aggrega.Diagnostic {
 	have := "the file holds no apiVersion for it"
 	if len(held) > 0 {
 		have = "the file holds apiVersion " + strings.Join(held, ", ")
@@ -64,6 +75,6 @@ func resourceTypeVersionNotFound(requested, version string, held []string) aggre
 		Code:     codeResourceTypeNotFound,
 		Message: fmt.Sprintf("the resource type %q has no apiVersion %q in the sources: %s; request that version or "+
 			"write the type without one", requested, version, have),
-		SourceRef: requested,
+		SourceRef: source,
 	}
 }

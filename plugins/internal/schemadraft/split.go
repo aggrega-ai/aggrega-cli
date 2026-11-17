@@ -50,7 +50,13 @@ type Placed struct {
 	// Rule is composed text naming the rule that placed the property, and
 	// where they hold, that it is replaced on change, that it is deprecated
 	// and why its key carries a numeric suffix.
-	Rule     string
+	Rule string
+	// Renamed is the composed text naming the property and the one holding the
+	// key its name gives, where its key carries the kit's numeric suffix; Rule
+	// carries it too. It is empty otherwise.
+	Renamed string
+	// Required is set for a key a draft requires. A provides key is never
+	// required, since it is published rather than read.
 	Required bool
 }
 
@@ -104,11 +110,12 @@ const (
 //  6. every other writable property, in infra.overrides under its vendor name.
 //
 // An object every member of which is read back is read back. Placement and
-// identity are required where the vendor requires them. A create-only property
+// identity are required where the vendor requires them; a provides key is
+// never required, whatever the vendor says of it. A create-only property
 // outside identity is marked replaced on change, a deprecated one deprecated.
 // Keys are taken in the vendor's order, each pillar its own space, infra's
 // holding overrides already; a name reaching a taken key takes the kit's
-// numeric suffix and its rule names both.
+// numeric suffix, and its rule and its Renamed name both.
 //
 // It returns the constraint-dropped warnings of carrying each key it types — in
 // values, infra and provides — into its pillar, and for an override one for
@@ -166,7 +173,7 @@ func (s *splitter) readBack(p *Property, names []string) {
 	case p.Sensitive:
 		s.placed = append(s.placed, Placed{Property: p, Pillar: PillarWithheld, Key: vendor, Rule: ruleWithheld})
 	case scalar(p):
-		s.keyed(p, vendor, PillarProvides, s.provides, ruleProvides, p.Required)
+		s.keyed(p, vendor, PillarProvides, s.provides, ruleProvides, false)
 	case s.r.NestedProvides && kindAlone(p, KindObject) && !p.Open && p.Cut == "" && len(p.Properties) > 0:
 		for _, m := range p.Properties {
 			s.readBack(m, append(names[:len(names):len(names)], m.Name))
@@ -197,7 +204,8 @@ func (s *splitter) nestedReadBack(p *Property, names []string) {
 func (s *splitter) keyed(p *Property, vendor string, pillar Pillar, space *keySpace, rule string, required bool) {
 	key, renamed := space.take(vendor)
 	rule = noted(rule, p.CreateOnly && pillar != PillarValues, p.Deprecated, renamed)
-	s.placed = append(s.placed, Placed{Property: p, Pillar: pillar, Key: key, Rule: rule, Required: required})
+	s.placed = append(s.placed, Placed{Property: p, Pillar: pillar, Key: key, Rule: rule, Renamed: renamed,
+		Required: required})
 	if pillar != PillarSecret {
 		_, d := Carry(p, key)
 		s.diags = append(s.diags, d...)

@@ -1,0 +1,35 @@
+{
+  "types": [
+    {
+      "name": "Sample::Store::Queue",
+      "description": "A queue the sample format describes. It holds messages for a reader.",
+      "identifier": "Url",
+      "properties": [
+        {"name": "QueueName", "kind": "string", "required": true, "createOnly": true,
+         "description": "The name of the queue. Written for this test."},
+        {"name": "Region", "kind": "string", "required": true, "description": "Where the queue is placed."},
+        {"name": "RetentionDays", "kind": "integer", "required": true,
+         "description": "How long a message is kept. Counted in whole days."},
+        {"name": "DelaySeconds", "kind": "integer", "createOnly": true,
+         "description": "How long a message waits. It applies to every message."},
+        {"name": "Labels", "kind": "object", "open": true},
+        {"name": "OldMode", "kind": "boolean", "deprecated": true, "description": "A mode kept for older readers."},
+        {"name": "AccessToken", "kind": "string", "sensitive": true, "description": "The token a client presents."},
+        {"name": "Arn", "kind": "string", "readOnly": true, "description": "The queue's resource name."},
+        {"name": "Url", "kind": "string", "readOnly": true, "description": "The queue's address."},
+        {"name": "Stats", "kind": "object", "readOnly": true, "open": true},
+        {"name": "Signature", "kind": "string", "readOnly": true, "sensitive": true}
+      ]
+    },
+    {
+      "name": "Sample::Store::Bucket",
+      "properties": [
+        {"name": "BucketName", "kind": "string", "required": true},
+        {"name": "Size", "kind": "integer", "required": true},
+        {"name": "SIZE", "kind": "integer", "required": true},
+        {"name": "Versioning", "kind": "boolean"},
+        {"name": "Arn", "kind": "string", "readOnly": true}
+      ]
+    }
+  ]
+}
