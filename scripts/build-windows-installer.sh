@@ -67,6 +67,11 @@
 # them from packaging/windows/ itself, and bringing them through this
 # conversion too is outside it, which exists for the license page alone.
 #
+# The install also places the third-party notices file this repository holds,
+# THIRD-PARTY-NOTICES.txt, in the install folder under that name. No page shows
+# it, so it is installed byte for byte, with no line-ending or code-page
+# change; one that is missing, not a file, or empty is refused, naming it.
+#
 # Usage:
 #   scripts/build-windows-installer.sh parts --version <version> --aggrega <aggrega.exe> --output-dir <dir>
 #   scripts/build-windows-installer.sh installer --version <version> --aggrega <aggrega.exe> \
@@ -288,6 +293,19 @@ prepare_license() {
   say "license page: $license with Windows line endings, which is LICENSE once they are set aside, SHA-256 $(sha256_of "$LICENSE_PAGE")"
 }
 
+# prepare_notices: copy this repository's THIRD-PARTY-NOTICES.txt, byte for
+# byte, to NOTICES_PAGE in the temporary directory the container sees, for the
+# install to place beside aggrega.exe.
+prepare_notices() {
+  local notices="$CLI_ROOT/THIRD-PARTY-NOTICES.txt"
+  [ -e "$notices" ] || refuse "$notices is missing, and the installer places it beside aggrega.exe"
+  [ -f "$notices" ] || refuse "$notices is not a file, and the installer places it beside aggrega.exe"
+  [ -s "$notices" ] || refuse "$notices is empty, and the installer places it beside aggrega.exe"
+  NOTICES_PAGE="$WORK/input/THIRD-PARTY-NOTICES.txt"
+  cp -- "$notices" "$NOTICES_PAGE"
+  say "third-party notices: $notices, unchanged, SHA-256 $(sha256_of "$NOTICES_PAGE")"
+}
+
 # compile <aggrega.exe> <plugin dir> <installer>: compile the script, every
 # path given being one the container sees.
 compile() {
@@ -295,7 +313,7 @@ compile() {
   in_image "$MAKENSIS" -V2 -WX -NOCONFIG \
     "-DVERSION=$VERSION" "-DVI_VERSION=$VI_VERSION" \
     "-DAGGREGA_EXE=$exe" "-DPLUGIN_DIR=$plugin_dir" \
-    "-DLICENSE_FILE=$LICENSE_PAGE" \
+    "-DLICENSE_FILE=$LICENSE_PAGE" "-DNOTICES_FILE=$NOTICES_PAGE" \
     "-DFINALIZER=$SCRIPT_DIR/build-windows-installer.sh" \
     "-DOUTFILE=$out" "$NSI" > "$log" 2>&1 || rc=$?
   cat "$log"
@@ -381,11 +399,12 @@ PULLED_IMAGE=0
 WORK="$(mktemp -d "$TEMP_ROOT/aggrega-installer.XXXXXX")"
 WORK="$(cd "$WORK" && pwd -P)"
 trap clean_up EXIT
-# The license page's text and the binary go into the temporary directory, which
-# the container sees; the license is read first, so a LICENSE refused stops the
-# build before anything is fetched.
+# The license page's text, the notices and the binary go into the temporary
+# directory, which the container sees; the license and the notices are read
+# first, so one refused stops the build before anything is fetched.
 mkdir -p "$WORK/input"
 prepare_license
+prepare_notices
 prepare_tools
 say "version $VERSION, version resource $VI_VERSION, aggrega.exe $AGGREGA_EXE, SHA-256 $(sha256_of "$AGGREGA_EXE")"
 cp -- "$AGGREGA_EXE" "$WORK/input/aggrega.exe"

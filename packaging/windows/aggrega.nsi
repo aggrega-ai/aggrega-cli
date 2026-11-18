@@ -15,9 +15,10 @@
 ; finish page, showing what this install did with the PATH and finish.txt's
 ; next steps. The welcome and finish pages are NSIS's license page too, with no
 ; acceptance control. The install places the license beside aggrega.exe as
-; LICENSE. It registers an uninstaller in the user's list of installed apps,
-; which removes aggrega.exe, LICENSE, the PATH entry and itself, after a
-; confirmation page. Run again, by the same release or a later one, it offers
+; LICENSE, and the third-party notices file as THIRD-PARTY-NOTICES.txt. It
+; registers an uninstaller in the user's list of installed apps, which removes
+; aggrega.exe, LICENSE, THIRD-PARTY-NOTICES.txt, the PATH entry and itself,
+; after a confirmation page. Run again, by the same release or a later one, it offers
 ; the folder it installed into last and installs over what is there. /S
 ; installs with no window and no question, into that folder or the default one
 ; and with the PATH entry, and uninstall.exe /S uninstalls the same way.
@@ -48,6 +49,8 @@
 ;   PLUGIN_DIR   the folder holding EnVar.dll, the plug-in built for x86-unicode
 ;   LICENSE_FILE the license page's text, which the install places as LICENSE:
 ;                the repository's LICENSE with Windows line endings
+;   NOTICES_FILE the third-party notices, which the install places as
+;                THIRD-PARTY-NOTICES.txt: the repository's file, unchanged
 ;   FINALIZER    the script makensis runs on the uninstaller it generates
 ;   OUTFILE      the installer to write
 
@@ -183,6 +186,12 @@ Section "Aggrega" SecAggrega
   ${EndIf}
 
   ClearErrors
+  File "/oname=THIRD-PARTY-NOTICES.txt" "${NOTICES_FILE}"
+  ${If} ${Errors}
+    !insertmacro STOP "$INSTDIR\THIRD-PARTY-NOTICES.txt could not be replaced."
+  ${EndIf}
+
+  ClearErrors
   WriteUninstaller "$INSTDIR\uninstall.exe"
   ${If} ${Errors}
     !insertmacro STOP "$INSTDIR\uninstall.exe could not be written."
@@ -234,7 +243,7 @@ Section "-Register"
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-  !insertmacro MUI_DESCRIPTION_TEXT ${SecAggrega} "aggrega.exe, and the uninstaller that removes it."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecAggrega} "aggrega.exe, its license and third-party notices, and the uninstaller that removes it."
   !insertmacro MUI_DESCRIPTION_TEXT ${SecPath} "Adds the install folder to your user PATH, so a new terminal runs aggrega by name. Cleared, aggrega is run by its full path."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
@@ -295,6 +304,7 @@ Section "Uninstall"
 
   Delete "$INSTDIR\EnVar.dll"
   Delete "$INSTDIR\LICENSE"
+  Delete "$INSTDIR\THIRD-PARTY-NOTICES.txt"
   Delete "$INSTDIR\uninstall.exe"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
   ; The folder goes only when nothing else is left in it.
