@@ -202,10 +202,9 @@ while IFS=$'\x1f' read -r socket name sourcePath toolchain extraRoots embed dir;
       ;;
     rust)
       roots=("$sourcePath")
-      if [ -n "${extraRoots:-}" ]; then
-        IFS=',' read -ra extra <<< "$extraRoots"
-        roots+=("${extra[@]}")
-      fi
+      while IFS= read -r extra; do
+        roots+=("$extra")
+      done < <(core_plugin_extra_roots "${extraRoots:-}")
       check_rust_guest "$name" "$dir" "${roots[@]}"
       ;;
     *)

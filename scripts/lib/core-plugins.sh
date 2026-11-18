@@ -83,6 +83,13 @@
 #     exit 1, when a guest or an overlay is missing, when the generation fails,
 #     or when the entity it wrote is not the row's plugin.
 #
+#   core_plugin_extra_roots FIELD
+#     Prints each source root named in FIELD, a row's extraRoots field, one per
+#     line: the field is split at commas, each root has its leading and trailing
+#     whitespace trimmed, and an empty entry is dropped, so an empty field prints
+#     nothing. It is the one split of that field; a caller reads the roots through
+#     it and never splits the field itself.
+#
 #   core_plugin_rust_toolchain SOURCEPATH
 #     Prints the toolchain the rust guest at SOURCEPATH pins: the channel its
 #     rust-toolchain.toml names. The guest build compiles the guest with that
@@ -204,6 +211,18 @@ core_plugin_generate_unembedded() {
   done <<< "$rows"
   rm -rf "$tmp"
   return 0
+}
+
+core_plugin_extra_roots() {
+  printf '%s\n' "$1" | awk -F, '
+    {
+      for (i = 1; i <= NF; i++) {
+        root = $i
+        gsub(/^[ \t]+|[ \t]+$/, "", root)
+        if (root != "") print root
+      }
+    }
+  '
 }
 
 core_plugin_rust_toolchain() {
