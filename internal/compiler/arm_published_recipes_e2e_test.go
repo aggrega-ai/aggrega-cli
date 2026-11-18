@@ -37,7 +37,7 @@ import (
 // armPublishedDir is the fixture workspace: an Aggregate per case, one Manifest
 // mapping the arm Recipes and the Key Vault secret FeatureRecipe, and a Release
 // per case.
-const armPublishedDir = "testdata/arm-published-slice"
+const armPublishedDir = "testdata/arm-published"
 
 // armPublishedHub names a path inside the sibling catalog.
 func armPublishedHub(p string) string { return flowEscapeHub + "/" + p }
@@ -123,13 +123,13 @@ func armResource(t *testing.T, resources map[string]any, symbol string) map[stri
 	return body
 }
 
-// TestArmFragmentSliceEntitiesBuild builds the API Management Recipe with and
+// TestArmFragmentEntitiesBuild builds the API Management Recipe with and
 // without a provider key and reads what it wrote. With the key attached through
 // the Key Vault secret FeatureRecipe, the template writes a named value the
 // instance reads from that secret and the backend sends it; without, it writes
 // neither and the policy authenticates with the instance's managed identity. The
 // instance itself is declared as an existing resource and never deployed.
-func TestArmFragmentSliceEntitiesBuild(t *testing.T) {
+func TestArmFragmentEntitiesBuild(t *testing.T) {
 	t.Parallel()
 
 	t.Run("provider key by Key Vault reference", func(t *testing.T) {

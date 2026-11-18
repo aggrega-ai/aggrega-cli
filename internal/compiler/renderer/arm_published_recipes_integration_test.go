@@ -300,12 +300,12 @@ func TestRenderAll_ArmPublishedRecipesAreAllCovered(t *testing.T) {
 	}
 }
 
-// TestArmSlicePinsTelemetryOff holds that every nested deployment a published
+// TestArmPublishedRecipesPinTelemetryOff holds that every nested deployment a published
 // Recipe renders passes enableTelemetry false to its module, which would
 // otherwise deploy a resource that reports the module and its version to
 // Microsoft. The fixture declares the parameter true by default, so a Recipe that
 // left it out would render a template that turned telemetry on.
-func TestArmSlicePinsTelemetryOff(t *testing.T) {
+func TestArmPublishedRecipesPinTelemetryOff(t *testing.T) {
 	t.Parallel()
 	wasmtest.SkipWithoutSiblings(t, "../../../../aggrega-hub/aggrega-catalog")
 
