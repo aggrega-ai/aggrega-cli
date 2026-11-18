@@ -4,6 +4,7 @@
 package renderer_test
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"os"
@@ -50,6 +51,8 @@ type armPublishedCase struct {
 	// password attaches core/referenced-secret on the password slot, realized by
 	// the published Key Vault secret FeatureRecipe.
 	password bool
+	// node names the component the Recipe renders; the empty string is "api".
+	node string
 }
 
 // armPublishedCases lists every arm Recipe that sources an Azure Verified Modules
@@ -173,6 +176,7 @@ func armPublishedPassword(t *testing.T, input *renderer.RendererInput) func(stri
 func renderArmPublished(t *testing.T, c armPublishedCase) (map[string]renderer.AssembledFile, error) {
 	t.Helper()
 	recipe := armPublishedRecipe(t, c)
+	node := cmp.Or(c.node, "api")
 	componentType, _, _ := strings.Cut(recipe.Spec.Implements, ":")
 
 	root := t.TempDir()
@@ -180,14 +184,14 @@ func renderArmPublished(t *testing.T, c armPublishedCase) (map[string]renderer.A
 	digest := integrationDigest(blob)
 	seedIntegrationCacheSlot(t, root, "git-repository", armSourcedURL, armSourcedCommit, blob, digest)
 
-	input := integrationInput(t, root, componentType, "api", "arm", digest, armSourcedURL, armSourcedCommit)
+	input := integrationInput(t, root, componentType, node, "arm", digest, armSourcedURL, armSourcedCommit)
 	row := &input.Lockfile.SourceArtifacts[0]
 	row.Kind = "git-repository"
 	row.Mediatype = "application/gzip"
 	row.ReferencedBy[0].RequestedRef = armSourcedRef
 	input.GraphView = derivedKeyGraphFacts{}
-	input.Graph.Spec.ValuesMapping.Set("api", json.RawMessage(c.values))
-	input.Graph.Spec.InfraMapping.Set("api", json.RawMessage(c.infra))
+	input.Graph.Spec.ValuesMapping.Set(node, json.RawMessage(c.values))
+	input.Graph.Spec.InfraMapping.Set(node, json.RawMessage(c.infra))
 
 	lookup := renderer.RecipeLookup{
 		Recipe: func(_, typeURI string) (*types.Recipe, bool) {
@@ -344,4 +348,46 @@ func TestArmPublishedRecipesPinTelemetryOff(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestRenderAll_ArmRedisInstanceNameLimit holds the instance-name rule of the
+// Azure Managed Redis Recipe: the service checks the name together with the
+// region's name against 63 characters, so a name of 45 characters is refused
+// and one of 44 renders.
+func TestRenderAll_ArmRedisInstanceNameLimit(t *testing.T) {
+	t.Parallel()
+	wasmtest.SkipWithoutSiblings(t, "../../../../aggrega-hub/aggrega-catalog")
+
+	var base armPublishedCase
+	for _, c := range armPublishedCases() {
+		if c.recipe == "redis-azure-managed" {
+			base = c
+		}
+	}
+	if base.recipe == "" {
+		t.Fatal("armPublishedCases has no case for redis-azure-managed")
+	}
+
+	t.Run("45 characters is refused", func(t *testing.T) {
+		t.Parallel()
+		c := base
+		c.node = strings.Repeat("a", 45)
+		_, err := renderArmPublished(t, c)
+		if err == nil {
+			t.Fatal("a 45-character instance name rendered, want it refused")
+		}
+		chain := cerrors.CauseChain(err)
+		t.Logf("refusal: %s", chain)
+		if !strings.Contains(chain, "an instance name holds up to 44 letters, digits and hyphens") {
+			t.Fatalf("the refusal does not name the 44-character limit: %s", chain)
+		}
+	})
+	t.Run("44 characters renders", func(t *testing.T) {
+		t.Parallel()
+		c := base
+		c.node = strings.Repeat("a", 44)
+		if _, err := renderArmPublished(t, c); err != nil {
+			t.Fatalf("a 44-character instance name was refused: %s", cerrors.CauseChain(err))
+		}
+	})
 }
