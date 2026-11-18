@@ -193,6 +193,24 @@ func TestComposeRecognisesTheBareListFunction(t *testing.T) {
 	}
 }
 
+// managementGroupResourceId is documented on the resource function page, so a
+// call to it inside literal text is a value written there.
+func TestComposeRecognisesManagementGroupResourceId(t *testing.T) {
+	t.Parallel()
+	l := levelOf(t, contribution{"orders-api", appEnv("policy=[managementGroupResourceId('Microsoft.Authorization/policyDefinitions', 'audit')]")})
+	diags, err := l.composeLiterals()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "[format('policy={0}', managementGroupResourceId('Microsoft.Authorization/policyDefinitions', 'audit'))]"
+	if got := at(t, l, "/resources/App/properties/env/0/value"); got != want {
+		t.Errorf("got %v\nwant %s", got, want)
+	}
+	if len(diags) != 1 {
+		t.Errorf("want one diagnostic, got %v", diags)
+	}
+}
+
 func TestComposeRefusesAPlaceholderInsideAnExpression(t *testing.T) {
 	t.Parallel()
 	placeholder := rendercore.CrossBoundaryLinkSentinel("orders-api", "payments-db", "db", "fqdn")

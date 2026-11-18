@@ -49,8 +49,9 @@ func refuse(condition func() error, message string) error {
 // ReadFragment reads one artifact entry, YAML or JSON, as the sections of an ARM
 // template. Every top-level key is accounted for by topLevelSections: carried,
 // checked, refused, or reported through the returned diagnostics. A string ARM
-// reads as an expression must parse, and a resource's symbolic name must be one
-// ARM admits.
+// reads as an expression must parse, outside the template a nested deployment
+// carries (checkSectionStrings), and a resource's symbolic name must be one ARM
+// admits.
 func ReadFragment(content []byte) (Fragment, []renderctx.Diagnostic, error) {
 	var root yaml.Node
 	if err := yaml.Unmarshal(content, &root); err != nil {
@@ -95,7 +96,7 @@ func ReadFragment(content []byte) (Fragment, []renderctx.Diagnostic, error) {
 			return Fragment{}, nil, refuse(plugincondition.ErrPluginCannotExpressInput,
 				fmt.Sprintf("the fragment writes %s, which changes the apiVersion of every resource the template holds; remove %s and write the apiVersion on each resource", key, key))
 		default:
-			if err := checkStrings(value, "/"+escapePointer(key)); err != nil {
+			if err := checkSectionStrings(key, value); err != nil {
 				return Fragment{}, nil, err
 			}
 			entries, err := readSection(key, disp, value)
@@ -274,6 +275,46 @@ func checkStrings(v any, pointer string) error {
 	case []any:
 		for i, e := range x {
 			if err := checkStrings(e, fmt.Sprintf("%s/%d", pointer, i)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkSectionStrings runs checkStrings over the section key, passing over the
+// template a nested deployment resource carries in properties.template: that
+// template is one of its own, evaluated in its own scope, and is carried as it
+// was written. The rest of the nested deployment, its parameters included, is
+// checked.
+func checkSectionStrings(key string, value any) error {
+	resources, isObject := value.(map[string]any)
+	if key != sectionResources || !isObject {
+		return checkStrings(value, "/"+escapePointer(key))
+	}
+	for _, symbol := range sortedKeys(resources) {
+		pointer := "/" + sectionResources + "/" + escapePointer(symbol)
+		body, isObject := resources[symbol].(map[string]any)
+		properties, hasProperties := body["properties"].(map[string]any)
+		if !isObject || !isDeployment(body) || !hasProperties {
+			if err := checkStrings(resources[symbol], pointer); err != nil {
+				return err
+			}
+			continue
+		}
+		for _, k := range sortedKeys(body) {
+			if k == "properties" {
+				continue
+			}
+			if err := checkStrings(body[k], pointer+"/"+escapePointer(k)); err != nil {
+				return err
+			}
+		}
+		for _, k := range sortedKeys(properties) {
+			if k == "template" {
+				continue
+			}
+			if err := checkStrings(properties[k], pointer+"/properties/"+escapePointer(k)); err != nil {
 				return err
 			}
 		}

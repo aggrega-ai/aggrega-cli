@@ -22,8 +22,10 @@ func lowerSorted(names []string) []string {
 // statement of the same set functions.go holds. The list below was transcribed
 // by hand from the template function reference pages (array, CIDR, comparison,
 // date, template-value, lambda, logical, numeric, object, resource, scope and string
-// functions); keeping it separate means a mistake in either copy shows up as a
-// difference rather than agreeing with itself. The list* family (list itself and
+// functions), each page's own sections rather than the overview's lists, and
+// from the zone functions of the Bicep resource function reference; keeping it
+// separate means a mistake in either copy shows up as a difference rather than
+// agreeing with itself. The list* family (list itself and
 // every name beginning with list) is matched by prefix and is not enumerated;
 // TestTemplateFunctionListFamily states it. lambda and lambdaVariables appear
 // only in the reference pages' examples and fail is not documented there; all
@@ -51,8 +53,8 @@ func TestTemplateFunctionSetIsTheDocumentedList(t *testing.T) {
 		// object
 		"createObject", "items", "json", "null", "objectKeys", "shallowMerge",
 		// resource
-		"extensionResourceId", "pickZones", "providers", "reference", "references", "resourceId",
-		"roleDefinitions", "subscriptionResourceId", "tenantResourceId",
+		"extensionResourceId", "managementGroupResourceId", "pickZones", "providers", "reference", "references",
+		"resourceId", "roleDefinitions", "subscriptionResourceId", "tenantResourceId",
 		// scope
 		"managementGroup", "resourceGroup", "subscription", "tenant",
 		// string
@@ -61,6 +63,9 @@ func TestTemplateFunctionSetIsTheDocumentedList(t *testing.T) {
 		"toLower", "toUpper", "trim", "uniqueString", "uri", "uriComponent", "uriComponentToString",
 		// called by the pinned module, not documented as functions of their own
 		"fail", "lambda", "lambdaVariables",
+		// documented by the Bicep resource function reference, which compiles each
+		// to the template function of the same name
+		"toLogicalZone", "toLogicalZones", "toPhysicalZone", "toPhysicalZones",
 	}
 	want := dedupe(lowerSorted(documented))
 	got := dedupe(lowerSorted(templateFunctions))

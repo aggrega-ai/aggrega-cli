@@ -68,6 +68,8 @@ func TestReadFragmentRefuses(t *testing.T) {
 		{"bracketed word", "variables:\n  v: \"[prod]\"\n", notRep, []string{"arm-provider:", "/variables/v", "[["}},
 		{"value inside an expression", "variables:\n  v: \"[concat('x', [reference('Db').outputs.h.value])]\"\n", notRep,
 			[]string{"arm-provider:", "/variables/v", "inside an expression", "literal text"}},
+		{"bracketed word in a nested deployment's parameters", nestedDeploymentFragment("properties:\n      parameters:\n        tier:\n          value: \"[prod]\"\n"), notRep,
+			[]string{"arm-provider:", "/resources/Store/properties/parameters/tier/value", "[["}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -82,6 +84,32 @@ func TestReadFragmentRefuses(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// nestedDeploymentFragment is a fragment holding one nested deployment, Store,
+// with properties written as given, indented under the resource.
+func nestedDeploymentFragment(properties string) string {
+	return "resources:\n  Store:\n    type: Microsoft.Resources/deployments\n    apiVersion: '2025-04-01'\n    name: store\n    " + properties
+}
+
+// TestReadFragmentCarriesANestedTemplateAsWritten holds that the template a
+// nested deployment carries, such as a sourced template the provider wrapped, is
+// not read for expressions: it is a template of its own, evaluated in its own
+// scope, and reaches the assembled template byte for byte.
+func TestReadFragmentCarriesANestedTemplateAsWritten(t *testing.T) {
+	t.Parallel()
+	content := nestedDeploymentFragment("properties:\n      mode: Incremental\n      template:\n        variables:\n          label: \"[prod]\"\n")
+	frag, _, err := ReadFragment([]byte(content))
+	if err != nil {
+		t.Fatalf("ReadFragment: %v", err)
+	}
+	store, _ := frag.Sections[sectionResources]["Store"].(map[string]any)
+	properties, _ := store["properties"].(map[string]any)
+	template, _ := properties["template"].(map[string]any)
+	variables, _ := template["variables"].(map[string]any)
+	if variables["label"] != "[prod]" {
+		t.Errorf("label = %v, want the text as written", variables["label"])
 	}
 }
 
