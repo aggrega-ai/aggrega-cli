@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/thirdparty"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 )
 
@@ -426,5 +427,61 @@ func TestVersionJSONIsIndented(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// runVersionCmd executes the version command with args and returns its stdout and
+// the error it ended with.
+func runVersionCmd(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	var out bytes.Buffer
+	c := newVersionCmd()
+	c.SetOut(&out)
+	c.SetErr(&bytes.Buffer{})
+	c.SilenceUsage = true
+	c.SilenceErrors = true
+	c.SetArgs(args)
+	err := c.Execute()
+	return out.String(), err
+}
+
+// TestVersionLicensesPrintsEmbeddedNotices pins --licenses to the embedded text,
+// unchanged, and --licenses -o text to the same output.
+func TestVersionLicensesPrintsEmbeddedNotices(t *testing.T) {
+	for _, args := range [][]string{{"--licenses"}, {"--licenses", "-o", "text"}} {
+		got, err := runVersionCmd(t, args...)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		if got != thirdparty.Notices() {
+			t.Errorf("%v: output differs from thirdparty.Notices()", args)
+		}
+	}
+}
+
+// TestVersionLicensesRefusesCombinedFlags pins the refusal of --licenses with
+// -o json and with --verbose, each naming both flags.
+func TestVersionLicensesRefusesCombinedFlags(t *testing.T) {
+	cases := []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"--licenses", "-o", "json"}, []string{"--licenses", "-o json"}},
+		{[]string{"--licenses", "--output", "json"}, []string{"--licenses", "-o json"}},
+		{[]string{"--licenses", "--verbose"}, []string{"--licenses", "--verbose"}},
+	}
+	for _, tc := range cases {
+		got, err := runVersionCmd(t, tc.args...)
+		if err == nil {
+			t.Fatalf("%v: no error", tc.args)
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(err.Error(), w) {
+				t.Errorf("%v: error %q does not name %q", tc.args, err, w)
+			}
+		}
+		if got != "" {
+			t.Errorf("%v: wrote output despite the refusal: %q", tc.args, got)
+		}
 	}
 }

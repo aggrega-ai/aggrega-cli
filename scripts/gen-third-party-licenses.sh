@@ -10,6 +10,14 @@
 #   THIRD-PARTY.spdx           an SPDX 2.3 tag-value SBOM: one package entry per
 #                              dependency, carrying the per-package copyright and
 #                              the SPDX license identifier
+#   THIRD-PARTY-NOTICES.txt    the plain-text notices the binary prints with
+#                              `aggrega version --licenses`: per dependency its
+#                              name, version, license, copyright lines and what it
+#                              is compiled into, then each license text once. A
+#                              byte-identical copy is written to
+#                              internal/thirdparty/THIRD-PARTY-NOTICES.txt, the
+#                              package that embeds it (a go:embed pattern cannot
+#                              reach above its package).
 #   THIRD-PARTY-LICENSES.md    a thin index table (component, version, ecosystem,
 #                              SPDX id, link into LICENSES/) — no inline bodies
 #
@@ -103,6 +111,8 @@ source "$SCRIPT_DIR/lib/core-plugins.sh"
 source "$SCRIPT_DIR/lib/third-party-inputs.sh"
 CLI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 INDEX="$CLI_DIR/THIRD-PARTY-LICENSES.md"
+NOTICES="$CLI_DIR/THIRD-PARTY-NOTICES.txt"
+NOTICES_EMBED="$CLI_DIR/internal/thirdparty/THIRD-PARTY-NOTICES.txt"
 SBOM="$CLI_DIR/THIRD-PARTY.spdx"
 LICDIR="$CLI_DIR/LICENSES"
 WORK="$(mktemp -d)"
@@ -575,6 +585,7 @@ used_by() {
 : > "$WORK/sbom-pkgs.txt"
 : > "$WORK/rels.txt"
 : > "$WORK/index-rows.txt"
+: > "$WORK/notices-pkgs.txt"
 : > "$WORK/go-findings.txt"
 : > "$WORK/rust-findings.txt"
 
@@ -630,6 +641,19 @@ emit_pkg() {
 		printf 'PackageComment: <text>Compiled into: %s</text>\n' "$usedby"
 		printf 'FilesAnalyzed: false\n'
 	} >> "$WORK/sbom-pkgs.txt"
+
+	# Notices block: what the binary prints for this dependency.
+	{
+		printf '\n%s %s\n' "$name" "$ver"
+		printf '  License: %s\n' "$concluded"
+		printf '  Compiled into: %s\n' "$usedby"
+		if [ -n "$copyr" ]; then
+			printf '  Copyright:\n'
+			printf '%s\n' "$copyr" | sed 's/^/    /'
+		else
+			printf '  Copyright: none is stated in the package\n'
+		fi
+	} >> "$WORK/notices-pkgs.txt"
 
 	printf 'Relationship: SPDXRef-DOCUMENT DESCRIBES %s\n' "$id" >> "$WORK/rels.txt"
 
@@ -780,6 +804,36 @@ mv "$WORK/LICENSES" "$LICDIR"
 	cat "$WORK/rels.txt"
 } > "$SBOM"
 
+# --- notices (plain text, embedded in the binary) ----------------------------
+
+# Built beside the other work files and moved into place with its embedded copy.
+{
+	printf 'Third-party notices for the aggrega binary\n\n'
+	printf 'This file lists every third-party dependency compiled into the aggrega binary:\n'
+	printf 'the host (cli-host) and each embedded guest, named <socket>/<name> (%s).\n' "$embedded_labels"
+	printf 'It is generated from the dependency set the binary is built from; do not edit it.\n\n'
+	printf 'Each dependency below names its version, its license, the copyright lines found in\n'
+	printf 'its package and what it is compiled into. The text of each license follows once,\n'
+	printf 'under its SPDX identifier.\n\n'
+	printf '================================================================\n'
+	printf 'Dependencies\n'
+	printf '================================================================\n'
+	cat "$WORK/notices-pkgs.txt"
+	printf '\n================================================================\n'
+	printf 'License texts\n'
+	printf '================================================================\n'
+	while read -r id; do
+		[ -n "$id" ] || continue
+		printf '\n--- %s ---\n\n' "$id"
+		cat "$LICDIR/$id.txt"
+	done < "$WORK/ids.txt"
+} > "$WORK/notices.txt"
+mkdir -p "$(dirname "$NOTICES_EMBED")"
+cp "$WORK/notices.txt" "$NOTICES_EMBED.new"
+cp "$WORK/notices.txt" "$NOTICES.new"
+mv "$NOTICES_EMBED.new" "$NOTICES_EMBED"
+mv "$NOTICES.new" "$NOTICES"
+
 # --- thin index -------------------------------------------------------------
 
 go_count="$(wc -l < "$WORK/go-union.txt" | tr -d ' ')"
@@ -860,6 +914,7 @@ rust_forbidden="$(wc -l < "$WORK/rust-findings.txt" | tr -d ' ')"
 	echo "gen-third-party-licenses: wrote"
 	echo "  $INDEX"
 	echo "  $SBOM"
+	echo "  $NOTICES (and $NOTICES_EMBED)"
 	echo "  $LICDIR/ ($lic_count license files)"
 	echo "  Go third-party modules : $go_count"
 	echo "  Rust third-party crates: $rust_count"

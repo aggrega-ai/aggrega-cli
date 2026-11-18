@@ -11,8 +11,14 @@
 # digest, for both scripts). This check recomputes the digest and compares. It
 # only hashes: no go list, no cargo, no network.
 #
-# Exit 0 when the recorded digest is the computed one; exit 1 when it differs,
-# naming both digests, the inputs read and the command that regenerates; exit 2
+# It also holds the embedded copy of the notices,
+# internal/thirdparty/THIRD-PARTY-NOTICES.txt, to the root THIRD-PARTY-NOTICES.txt
+# it is copied from: the notices are outputs of the generator, not inputs, so the
+# digest does not cover them.
+#
+# Exit 0 when the recorded digest is the computed one and the notices copy matches;
+# exit 1 when the digest differs, naming both digests, the inputs read and the
+# command that regenerates, or when the two notices files differ, naming both; exit 2
 # when the check could not run (the SBOM is missing or records no digest, an
 # input or the core-plugin list is unreadable), which is never reported as
 # current.
@@ -49,8 +55,26 @@ computed="$(third_party_inputs_digest)" || {
 }
 labels="$(third_party_input_labels)" || exit 2
 
+NOTICES="THIRD-PARTY-NOTICES.txt"
+NOTICES_COPY="internal/thirdparty/THIRD-PARTY-NOTICES.txt"
+for f in "$NOTICES" "$NOTICES_COPY"; do
+  if [ ! -f "$f" ]; then
+    echo "check-third-party-licenses: $f is missing; generate it from the module root with: $REGEN" >&2
+    exit 2
+  fi
+done
+
+rc=0
+if ! cmp -s "$NOTICES" "$NOTICES_COPY"; then
+  {
+    echo "check-third-party-licenses: $NOTICES_COPY differs from $NOTICES."
+    echo "  regenerate both from the module root with: $REGEN"
+  } >&2
+  rc=1
+fi
+
 if [ "$recorded" = "$computed" ]; then
-  exit 0
+  exit "$rc"
 fi
 
 {

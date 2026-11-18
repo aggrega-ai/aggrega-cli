@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/thirdparty"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
@@ -23,8 +24,9 @@ import (
 // command so two invocations in one process cannot observe each other's flag
 // values.
 type versionFlags struct {
-	output  string
-	verbose bool
+	output   string
+	verbose  bool
+	licenses bool
 }
 
 // version is the release version stamped at build time via
@@ -71,6 +73,12 @@ under a header naming the count and their shared version. With
 --verbose -o json, the JSON object gains an embeddedPlugins array
 carrying the same detail.
 
+With --licenses, the output is the third-party notices of everything
+compiled into the binary: the host and each embedded guest, every
+dependency with its version, licence and copyright lines, then each
+licence text once. It is printed as plain text, so --licenses cannot be
+combined with -o json or --verbose.
+
 Version strings are v-less (1.0.0, not v1.0.0), homogeneous with the
 version form catalog entities use. Tagged release builds report the
 release version, a build stamped with a version reports that version,
@@ -82,11 +90,22 @@ which marks an unreleased build.`,
 			if err != nil {
 				return err
 			}
+			if opts.licenses {
+				if format == "json" {
+					return fmt.Errorf("--licenses prints plain text and cannot be combined with -o json (--output json)")
+				}
+				if opts.verbose {
+					return fmt.Errorf("--licenses prints the notices only and cannot be combined with --verbose")
+				}
+				_, err := io.WriteString(cmd.OutOrStdout(), thirdparty.Notices())
+				return err
+			}
 			return runVersion(cmd.OutOrStdout(), format == "json", opts.verbose)
 		},
 	}
 	c.Flags().StringVarP(&opts.output, "output", "o", "text", "Output format: text|json.")
 	c.Flags().BoolVar(&opts.verbose, "verbose", false, "include the embedded-plugin set in the output")
+	c.Flags().BoolVar(&opts.licenses, "licenses", false, "print the third-party notices of everything compiled into the binary")
 	return c
 }
 
