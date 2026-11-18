@@ -321,6 +321,13 @@ else
   ok "embedded guests regenerated"
 fi
 
+# The committed third-party attribution records a digest of the inputs it is
+# generated from; a stale one stops the build (exit 1 stale, 2 could not run).
+# The check only hashes, so it needs no network and no toolchain.
+step "check third-party attribution is current"
+bash scripts/check-third-party-licenses.sh
+ok "third-party attribution is current"
+
 # Read-only consistency check: every declared embedded plugin has an authored
 # overlay and a built artifact. It reads the aggrega-hub sibling and never
 # writes there. Skipped with a note when that sibling is absent (a

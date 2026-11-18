@@ -54,6 +54,11 @@
 #     declared expression stays in the SBOM, and LICENSES/ and the index carry
 #     the concluded ids. A license-exception id after WITH is not a license id.
 #
+# Staleness:
+#   THIRD-PARTY.spdx records, in its DocumentComment, `Inputs digest: sha256:<hex>`
+#   over the inputs this script reads (defined in scripts/lib/third-party-inputs.sh);
+#   scripts/check-third-party-licenses.sh recomputes it and fails when it differs.
+#
 # Loud failures (exit 1; no output file is written or replaced):
 #   - a `go list` that fails, naming its packages;
 #   - a Rust row with no Cargo.lock, or a toolchain that is neither go nor rust;
@@ -94,6 +99,8 @@ export LC_ALL=C
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/core-plugins.sh
 source "$SCRIPT_DIR/lib/core-plugins.sh"
+# shellcheck source=lib/third-party-inputs.sh
+source "$SCRIPT_DIR/lib/third-party-inputs.sh"
 CLI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 INDEX="$CLI_DIR/THIRD-PARTY-LICENSES.md"
 SBOM="$CLI_DIR/THIRD-PARTY.spdx"
@@ -469,6 +476,10 @@ add_src() {
 # Captured before it is read, so a refusal stops the script.
 rows="$(core_plugin_rows)" || exit 1
 
+# The digest of everything this run reads to decide the attribution, recorded in
+# the SBOM so scripts/check-third-party-licenses.sh can tell when it is stale.
+inputs_digest="$(third_party_inputs_digest)" || exit 1
+
 mkdir -p "$WORK/sets"
 : > "$WORK/go-sets.list"     # "<label><TAB><file>" per Go set, host first
 : > "$WORK/rust-sets.list"   # "<label><TAB><file>" per Rust guest
@@ -763,7 +774,7 @@ mv "$WORK/LICENSES" "$LICDIR"
 	printf 'DocumentNamespace: https://aggrega.ai/spdx/aggrega-cli-third-party\n'
 	printf 'Creator: Tool: gen-third-party-licenses.sh\n'
 	printf 'Created: %s\n' "$FIXED_TS"
-	printf 'DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly guests it embeds: %s). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory.</text>\n' "$embedded_labels"
+	printf 'DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly guests it embeds: %s). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. %s%s.</text>\n' "$embedded_labels" "$THIRD_PARTY_DIGEST_PREFIX" "$inputs_digest"
 	cat "$WORK/sbom-pkgs.txt"
 	printf '\n'
 	cat "$WORK/rels.txt"
