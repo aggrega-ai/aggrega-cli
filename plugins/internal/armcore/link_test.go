@@ -1234,22 +1234,80 @@ func TestLinkPublishComponentAcrossLevels(t *testing.T) {
 	})
 }
 
-func TestLinkPublishWithoutProvenanceWritesTheTopLevel(t *testing.T) {
+func TestLinkPublishWithoutProvenanceFollowsWhatTheLevelsDeclare(t *testing.T) {
 	t.Parallel()
 	edge := testLink()
 	edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: string(ScopeSubscription)}
 	plain := map[string]any{"type": "Microsoft.DBforPostgreSQL/flexibleServers", "apiVersion": "2024-08-01", "name": "payments-db"}
-	files := wideProducerFiles(t, ScopeSubscription, map[string]any{sectionResources: map[string]any{
-		"Db":                     plain,
-		LevelResourceGroupSymbol: nestedDeployment(levelTemplate(ScopeResourceGroup, nil)),
-	}})
-	out, err := LinkPublish(edge, files)
-	if err != nil {
-		t.Fatalf("LinkPublish: %v", err)
-	}
-	got := templateOf(t, applied(t, files, out.Patches))
-	if _, ok := got[sectionOutputs].(map[string]any)[hostOutput]; !ok {
-		t.Errorf("the top level has no %s: %s", hostOutput, mustJSON(t, got[sectionOutputs]))
+
+	t.Run("the top level serves when it declares what the value reads", func(t *testing.T) {
+		t.Parallel()
+		files := wideProducerFiles(t, ScopeSubscription, map[string]any{sectionResources: map[string]any{
+			"Db":                     plain,
+			LevelResourceGroupSymbol: nestedDeployment(levelTemplate(ScopeResourceGroup, nil)),
+		}})
+		out, err := LinkPublish(edge, files)
+		if err != nil {
+			t.Fatalf("LinkPublish: %v", err)
+		}
+		got := templateOf(t, applied(t, files, out.Patches))
+		want := map[string]any{hostOutput: outputBody("[string(reference('Db').properties.fullyQualifiedDomainName)]")}
+		if !jsonEqual(got[sectionOutputs], want) {
+			t.Errorf("top-level outputs = %s, want %s", mustJSON(t, got[sectionOutputs]), mustJSON(t, want))
+		}
+	})
+
+	t.Run("a component whose only resource is existing is served by the level that declares it", func(t *testing.T) {
+		t.Parallel()
+		existing := map[string]any{"type": "Microsoft.KeyVault/vaults", "apiVersion": "2023-07-01", "name": "payments-kv", "existing": true}
+		level := levelTemplate(ScopeResourceGroup, map[string]any{sectionResources: map[string]any{"Kv": existing}})
+		files := wideProducerFiles(t, ScopeSubscription, map[string]any{sectionResources: map[string]any{
+			LevelResourceGroupSymbol: nestedDeployment(level),
+		}})
+		edge := providing(edge, "host", "[reference('Kv').properties.vaultUri]")
+		out, err := LinkPublish(edge, files)
+		if err != nil {
+			t.Fatalf("LinkPublish: %v", err)
+		}
+		got := templateOf(t, applied(t, files, out.Patches))
+		properties := got[sectionResources].(map[string]any)[LevelResourceGroupSymbol].(map[string]any)["properties"].(map[string]any)
+		inner := properties["template"].(map[string]any)
+		wantInner := map[string]any{hostOutput: outputBody("[string(reference('Kv').properties.vaultUri)]")}
+		if !jsonEqual(inner[sectionOutputs], wantInner) {
+			t.Errorf("the level's outputs = %s, want %s", mustJSON(t, inner[sectionOutputs]), mustJSON(t, wantInner))
+		}
+		wantTop := map[string]any{hostOutput: outputBody("[reference('" + LevelResourceGroupSymbol + "').outputs." + hostOutput + ".value]")}
+		if !jsonEqual(got[sectionOutputs], wantTop) {
+			t.Errorf("top-level outputs = %s, want %s", mustJSON(t, got[sectionOutputs]), mustJSON(t, wantTop))
+		}
+	})
+
+	t.Run("a value reading what no level declares halts", func(t *testing.T) {
+		t.Parallel()
+		files := wideProducerFiles(t, ScopeSubscription, map[string]any{sectionResources: map[string]any{
+			LevelResourceGroupSymbol: nestedDeployment(levelTemplate(ScopeResourceGroup, nil)),
+		}})
+		edge := providing(edge, "host", "[reference('Kv').properties.vaultUri]")
+		_, err := LinkPublish(edge, files)
+		wantCondition(t, err, plugincondition.ErrPluginRequiredInputUnresolved())
+		for _, want := range []string{`"host"`, `"payments-db"`, `"Kv"`, "the top level"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the halt does not say %q: %v", want, err)
+			}
+		}
+	})
+}
+
+func TestLinkPublishHolderLevelMustDeclareWhatTheValueReads(t *testing.T) {
+	t.Parallel()
+	edge := providing(testLink(), "host", "[reference('Missing').properties.x]")
+	edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: string(ScopeSubscription)}
+	_, err := LinkPublish(edge, nestedProducer(t, ScopeSubscription, LevelResourceGroupSymbol, nil))
+	wantCondition(t, err, plugincondition.ErrPluginRequiredInputUnresolved())
+	for _, want := range []string{`"host"`, `"payments-db"`, `"Missing"`, LevelResourceGroupSymbol} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not say %q: %v", want, err)
+		}
 	}
 }
 

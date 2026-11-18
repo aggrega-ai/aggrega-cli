@@ -817,13 +817,19 @@ func levelHolds(l linkedLevel, componentID string) bool {
 }
 
 // producerLevelFor returns the level an expression of the producing component is
-// evaluated in: the level whose resources carry the component's identity in
-// their provenance. Literal text (n nil), and a component none of whose
-// resources carries its identity, are served by the top level. A component whose
-// resources sit in more than one level is served by the one level that declares
-// every resource the expression names (symbolsRead); where the expression names
-// none, or no single level declares them all, the halt wraps
-// ErrPluginCannotExpressInput, naming the component, the key and the levels.
+// evaluated in. Literal text (n nil) is served by the top level. The candidates
+// are the levels whose resources carry the component's identity in their
+// provenance, or every level when none does (a component whose resources are
+// all declared existing: true, or that declares none, is stamped nowhere). The
+// level is the candidate whose declarations satisfy every name the expression
+// reads (readsDeclared, the check an assembled level's expressions pass). A
+// single candidate that does not satisfy them halts wrapping
+// ErrPluginRequiredInputUnresolved, naming the component, the key and the level;
+// among levels none of which holds the identity, the first that satisfies them
+// serves, the top level before the nested ones. Where the identity sits in more
+// than one level and not exactly one of them satisfies the expression, the halt
+// wraps ErrPluginCannotExpressInput, naming the component, the key and the
+// levels.
 func producerLevelFor(edge rendercore.LinkEdge, levels []linkedLevel, key string, n armexpr.Node) (linkedLevel, error) {
 	if n == nil {
 		return levels[0], nil
@@ -835,57 +841,70 @@ func producerLevelFor(edge rendercore.LinkEdge, levels []linkedLevel, key string
 			holders = append(holders, l)
 		}
 	}
-	switch len(holders) {
-	case 0:
-		return levels[0], nil
-	case 1:
-		return holders[0], nil
+	candidates := holders
+	if len(candidates) == 0 {
+		candidates = levels
 	}
-	read := symbolsRead(n)
 	var fits []linkedLevel
-	for _, l := range holders {
-		resources, _ := l.template[sectionResources].(map[string]any)
-		all := len(read) > 0
-		for _, symbol := range read {
-			if _, ok := resources[symbol]; !ok {
-				all = false
-			}
-		}
-		if all {
+	var first error
+	for _, l := range candidates {
+		err := readsDeclared(edge, l, key, n)
+		if err == nil {
 			fits = append(fits, l)
+		} else if first == nil {
+			first = err
 		}
 	}
-	if len(fits) == 1 {
+	switch {
+	case len(holders) > 1:
+		if len(fits) == 1 {
+			return fits[0], nil
+		}
+		names := make([]string, len(holders))
+		for i, l := range holders {
+			names[i] = levelName(l)
+		}
+		return linkedLevel{}, refuse(plugincondition.ErrPluginCannotExpressInput,
+			fmt.Sprintf("the resources of component %q sit in more than one level of the template of boundary %q (%s), and the expression of its provides key %q does not name resources of exactly one of them, so the level a link reads it from cannot be decided; write the expression over resources declared in one level, or deploy the component's resources at one scope",
+				edge.Target.Node, edge.Target.Boundary, strings.Join(names, ", "), key))
+	case len(fits) > 0:
 		return fits[0], nil
 	}
-	names := make([]string, len(holders))
-	for i, l := range holders {
-		names[i] = "the top level"
-		if l.symbol != "" {
-			names[i] = l.symbol
-		}
-	}
-	return linkedLevel{}, refuse(plugincondition.ErrPluginCannotExpressInput,
-		fmt.Sprintf("the resources of component %q sit in more than one level of the template of boundary %q (%s), and the expression of its provides key %q does not name resources of exactly one of them, so the level a link reads it from cannot be decided; write the expression over resources declared in one level, or deploy the component's resources at one scope",
-			edge.Target.Node, edge.Target.Boundary, strings.Join(names, ", "), key))
+	return linkedLevel{}, first
 }
 
-// symbolsRead returns the symbolic names an expression reads resources by: the
-// text first argument of each call to reference, references, resourceInfo or a
-// list function that is not a resource ID.
-func symbolsRead(n armexpr.Node) []string {
-	var out []string
+// levelName names a level as a halt does.
+func levelName(l linkedLevel) string {
+	if l.symbol == "" {
+		return "the top level"
+	}
+	return l.symbol
+}
+
+// readsDeclared checks the expression n of provides key against what the level
+// declares, as the assembly checks every expression of a level (declarations.check):
+// a symbolic name, parameter or variable it names must be declared in the level.
+// A fault halts wrapping ErrPluginRequiredInputUnresolved, naming the component,
+// the key and the level.
+func readsDeclared(edge rendercore.LinkEdge, l linkedLevel, key string, n armexpr.Node) error {
+	declared := templateLevel(l.template, l.prefix).declared()
+	at := site{
+		section: sectionOutputs,
+		entry:   &levelEntry{pointer: l.prefix + "/" + sectionOutputs + "/" + escapePointer(OutputName(edge.Target.Node, key)), contributor: edge.Target.Node},
+		path:    []string{"value"},
+	}
+	var fault error
 	armexpr.Walk(n, func(node armexpr.Node) bool {
-		c, ok := node.(armexpr.Call)
-		if !ok || c.Namespace != "" || !isSymbolReferenceCall(strings.ToLower(c.Name)) {
-			return true
+		if c, ok := node.(armexpr.Call); ok && c.Namespace == "" && fault == nil {
+			fault = declared.check(at, c)
 		}
-		if arg, literal := firstTextArgument(c); literal && !strings.HasPrefix(arg, "/") {
-			out = append(out, arg)
-		}
-		return true
+		return fault == nil
 	})
-	return out
+	if fault != nil {
+		return fmt.Errorf("arm-provider: provides key %q of component %q is written as an output of %s of the template of boundary %q, which does not declare what it reads: %w",
+			key, edge.Target.Node, levelName(l), edge.Target.Boundary, fault)
+	}
+	return nil
 }
 
 // outputWrites collects the outputs a publish adds, by the level they are added
