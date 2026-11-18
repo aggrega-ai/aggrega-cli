@@ -485,7 +485,9 @@ func TestTheImportToolOffersADirectoryNoImporterRecognisesWhatCanHelpIt(t *testi
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("create the directory source: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "flow.json"), readImportFixture(t, langflowFixture), 0o644); err != nil {
+	// The file's name matches no file pattern an importer declares, so no importer
+	// reads it and no parser is asked for.
+	if err := os.WriteFile(filepath.Join(dir, "flow.export"), readImportFixture(t, langflowFixture), 0o644); err != nil {
 		t.Fatalf("seed the directory source: %v", err)
 	}
 	before := treeUnder(t, root)

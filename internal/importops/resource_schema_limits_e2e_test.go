@@ -26,7 +26,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
 // minimumExportBytes is the smallest export the case imports.
@@ -43,6 +46,29 @@ func runtimeOf(t *testing.T, what string, entity []byte) types.PluginRuntime {
 		t.Fatalf("the entity of %s records no runtime limits", what)
 	}
 	return *p.Spec.Runtime
+}
+
+// withEmbeddedLimits is the cascade's resolution with the limits an embedded
+// plugin's entity records attached to its module, as the command's own
+// resolution attaches them: the parser the binary carries then runs under the
+// limits its entity states, not the platform default.
+func withEmbeddedLimits(t *testing.T, cascade *recordingCascade) PluginBytesResolver {
+	t.Helper()
+	return func(rw *workspaceconfig.ResolvedWorkspace, uri string,
+		colocated map[string]pluginpath.ColocatedDir) (pluginpath.ResolvedPlugin, error) {
+		resolved, err := cascade.resolve(rw, uri, colocated)
+		if err != nil {
+			return resolved, err
+		}
+		if raw, ok := embedded.LookupEntity(uri); ok {
+			var entity types.Plugin
+			if err := yaml.Unmarshal(raw, &entity); err != nil {
+				t.Fatalf("read the embedded entity of %s: %v", uri, err)
+			}
+			resolved.Limits = resolver.PluginRuntimeLimits(entity)
+		}
+		return resolved, nil
+	}
 }
 
 // TestTerraformSchemaImportLargeExportWithinLimits imports an export of 1,200
@@ -109,6 +135,11 @@ func TestTerraformSchemaImportLargeExportWithinLimits(t *testing.T) {
 			if err := os.WriteFile(source, export, 0o644); err != nil {
 				t.Fatalf("write the export: %v", err)
 			}
+			// An empty catalog folder: the workspace then names one, so nothing is
+			// fetched, and the JSON parser is the binary's own.
+			if err := os.MkdirAll(filepath.Join(wsDir, workspaceconfig.ConventionalCatalogDir), 0o755); err != nil {
+				t.Fatalf("create the catalog folder: %v", err)
+			}
 			importopstest.WriteOfflineConfiguration(t, wsDir, importopstest.Attachment{
 				URI:      entity.Coordinate() + ":" + entity.Metadata.Version,
 				Settings: map[string]any{"resource_types": []any{requested}},
@@ -120,7 +151,7 @@ func TestTerraformSchemaImportLargeExportWithinLimits(t *testing.T) {
 				SourceName:    "export.json",
 				Format:        format,
 				Delivery:      authoredcontent.DeliveryFor(true),
-				ResolvePlugin: cascade.resolve,
+				ResolvePlugin: withEmbeddedLimits(t, cascade),
 			})
 			if err != nil {
 				t.Fatalf("the import was refused: %v", err)
