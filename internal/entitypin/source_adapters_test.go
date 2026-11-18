@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio s.r.l.
 
-package main
+package entitypin
 
 import (
 	"slices"
@@ -11,17 +11,17 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 )
 
-// TestShippedSourceAdaptersRegistered guards the production wiring: the default
-// dispatcher has an adapter registered for exactly the source kinds this program
-// declares it serves. The adapters self-register on import via
-// source_adapters.go's blank imports.
+// TestShippedSourceAdaptersRegistered guards the production wiring: in a program
+// that links SourceResolver, the default dispatcher has an adapter registered for
+// exactly the source kinds the program declares it serves. The adapters
+// self-register on import via source_adapters.go's blank imports.
 //
 // Both directions are held. A served kind with no adapter is a source an authored
 // Recipe is admitted with and nothing can fetch, which the dispatcher reports as a
 // fault in how the program was assembled; a registered adapter for a kind the
 // served set omits is one the document check refuses before it could ever be
-// dispatched to. Either way the served declaration and the binary disagree, and
-// this is where that is caught rather than at a pull.
+// dispatched to. Either way the served declaration and every program that resolves
+// a source disagree, and this is where that is caught rather than at a pull.
 //
 // An adapter registered for a kind the served set omits fails here.
 func TestShippedSourceAdaptersRegistered(t *testing.T) {
