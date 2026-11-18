@@ -91,4 +91,3 @@ func TestArmBoundaryFeatureTakesTheBoundarysScope(t *testing.T) {
 		t.Errorf("the resource-group level holds %v, want %v", got, want)
 	}
 }
-
