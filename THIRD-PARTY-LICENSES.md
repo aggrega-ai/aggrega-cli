@@ -58,7 +58,7 @@ best-effort. For Rust crates it is read verbatim from the crate's `Cargo.toml`
 | Ecosystem | Third-party dependencies |
 | --- | --- |
 | Go | 163 |
-| Rust | 221 |
+| Rust | 219 |
 | TypeScript | 0 |
 
 Distinct licenses: 12 (see `LICENSES/`).
@@ -231,8 +231,6 @@ Distinct licenses: 12 (see `LICENSES/`).
 | `sigs.k8s.io/structured-merge-diff/v6` | `v6.4.2` | go | cli-host, provider/helm | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `sigs.k8s.io/yaml` | `v1.6.0` | go | cli-host, provider/helm | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `adler2` | `2.0.1` | rust | governance/rego | `0BSD OR MIT OR Apache-2.0` | [0BSD](LICENSES/0BSD.txt), [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
-| `aggrega-abi` | `0.9.0` | rust | linter/publishing, governance/rego, governance/cel | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
-| `aggrega-pdk-rust` | `0.9.0` | rust | linter/publishing, governance/rego, governance/cel | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `ahash` | `0.8.12` | rust | governance/rego | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `aho-corasick` | `1.1.4` | rust | linter/publishing | `Unlicense OR MIT` | [MIT](LICENSES/MIT.txt), [Unlicense](LICENSES/Unlicense.txt) |
 | `aho-corasick` | `1.1.5` | rust | governance/rego, governance/cel | `Unlicense OR MIT` | [MIT](LICENSES/MIT.txt), [Unlicense](LICENSES/Unlicense.txt) |

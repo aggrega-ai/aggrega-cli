@@ -32,8 +32,11 @@
 #   - Rust crates come from parsing the Cargo.lock in each embedded Rust row's
 #     source directory; only crates with a crates.io registry source are
 #     third-party, and each entry is labelled with the guests that pull it in.
-#   - First-party modules/crates (the github.com/aggrega-ai/* Go modules and the
-#     in-workspace Rust crates) are excluded — they are our own Apache-2.0 code.
+#   - First-party code is excluded, as our own Apache-2.0 code: the
+#     github.com/aggrega-ai/* Go modules; the in-workspace Rust path crates; and
+#     every registry Rust crate whose Cargo.toml `repository` field starts with
+#     https://github.com/aggrega-ai/ (the crates published from Aggrega's own
+#     repositories). One function, is_first_party_crate, holds the crate rule.
 #
 # License resolution (from local caches only):
 #   - Go:   the module's LICENSE/COPYING/NOTICE files under its module-cache dir
@@ -43,15 +46,29 @@
 #           `license` field (authoritative); the license body comes from the
 #           crate's LICENSE/COPYING/NOTICE files in the cargo registry source
 #           cache (every registry/src/* directory of CARGO_HOME is searched).
-#   - A Go module or Rust crate whose source directory or license file cannot be
-#     found stops the script, exit 1, naming each; no output is written.
+#           A crate that ships no license file is attributed through the
+#           canonical body of the SPDX id it declares, with copyright
+#           NOASSERTION; the stderr summary counts those crates.
+#   - A flat Rust expression `A OR B OR ...` concludes the alternatives that are
+#     not GPL-family licenses (a licensee may take any one alternative); the
+#     declared expression stays in the SBOM, and LICENSES/ and the index carry
+#     the concluded ids. A license-exception id after WITH is not a license id.
+#
+# Loud failures (exit 1, nothing written):
+#   - a `go list` that fails, naming its packages;
+#   - a Rust row with no Cargo.lock, or a toolchain that is neither go nor rust;
+#   - a Go module with no license file; a Rust crate with no source directory
+#     in any registry, or with neither a license file nor a license field —
+#     each named;
+#   - a referenced SPDX id with neither a template nor an on-disk source file.
 #
 # License-body deduplication and attribution:
 #   - Each unique SPDX id contributes exactly one file under LICENSES/. Bodies
 #     are deduplicated: a license shared by many dependencies is stored once.
 #   - For license families whose raw file embeds a per-package copyright line
-#     (MIT, ISC, BSD-2-Clause, BSD-3-Clause, zlib), LICENSES/ holds the canonical
-#     template body with a placeholder copyright. The real per-package copyright
+#     (MIT, ISC, BSD-2-Clause, BSD-3-Clause, zlib, 0BSD, MIT-0), and for
+#     BSL-1.0, LICENSES/ holds the canonical template body with a placeholder
+#     copyright. The real per-package copyright
 #     is never dropped — it is recorded in the SBOM's PackageCopyrightText for
 #     every dependency.
 #   - For the remaining licenses the canonical body is copied verbatim from the
@@ -516,6 +533,21 @@ fi
 # every cargo registry source directory (each ends in /)
 mapfile -t CARGO_REGS < <(ls -d "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/ 2>/dev/null || true)
 
+# is_first_party_crate <name> <version> : exit 0 when the crate's Cargo.toml
+# `repository` field names Aggrega's own repositories. A crate with no source
+# directory cannot be classified and is not first-party here; the license
+# resolution below then stops the script naming it.
+is_first_party_crate() {
+	local reg toml
+	for reg in "${CARGO_REGS[@]}"; do
+		toml="$reg$1-$2/Cargo.toml"
+		[ -f "$toml" ] || continue
+		grep -Eq '^repository[[:space:]]*=[[:space:]]*"https://github\.com/aggrega-ai/' "$toml" && return 0
+		return 1
+	done
+	return 1
+}
+
 # used_by <sets-list> <line> : the labels of the sets holding <line>, joined by ", ".
 used_by() {
 	local label file out=""
@@ -598,6 +630,14 @@ emit_pkg() {
 		"$name" "$ver" "$eco" "$usedby" "$disp" "$(index_links "$disp")" \
 		>> "$WORK/index-rows.txt"
 }
+
+# Rust crates published from Aggrega's own repositories are first-party.
+: > "$WORK/rust-third.txt"
+while read -r name ver; do
+	[ -n "$name" ] || continue
+	is_first_party_crate "$name" "$ver" || printf '%s %s\n' "$name" "$ver" >> "$WORK/rust-third.txt"
+done < "$WORK/rust.txt"
+mv "$WORK/rust-third.txt" "$WORK/rust.txt"
 
 # --- Go dependencies --------------------------------------------------------
 

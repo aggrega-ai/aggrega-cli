@@ -1844,28 +1844,6 @@ ExternalRef: PACKAGE-MANAGER purl pkg:cargo/adler2@2.0.1
 PackageComment: <text>Compiled into: governance/rego</text>
 FilesAnalyzed: false
 
-PackageName: aggrega-abi
-SPDXID: SPDXRef-Package-rust-aggrega-abi-0.9.0
-PackageVersion: 0.9.0
-PackageDownloadLocation: https://static.crates.io/crates/aggrega-abi/aggrega-abi-0.9.0.crate
-PackageLicenseConcluded: Apache-2.0
-PackageLicenseDeclared: Apache-2.0
-PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:cargo/aggrega-abi@0.9.0
-PackageComment: <text>Compiled into: linter/publishing, governance/rego, governance/cel</text>
-FilesAnalyzed: false
-
-PackageName: aggrega-pdk-rust
-SPDXID: SPDXRef-Package-rust-aggrega-pdk-rust-0.9.0
-PackageVersion: 0.9.0
-PackageDownloadLocation: https://static.crates.io/crates/aggrega-pdk-rust/aggrega-pdk-rust-0.9.0.crate
-PackageLicenseConcluded: Apache-2.0
-PackageLicenseDeclared: Apache-2.0
-PackageCopyrightText: NOASSERTION
-ExternalRef: PACKAGE-MANAGER purl pkg:cargo/aggrega-pdk-rust@0.9.0
-PackageComment: <text>Compiled into: linter/publishing, governance/rego, governance/cel</text>
-FilesAnalyzed: false
-
 PackageName: ahash
 SPDXID: SPDXRef-Package-rust-ahash-0.8.12
 PackageVersion: 0.8.12
@@ -4470,8 +4448,6 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-randfill
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-structured-merge-diff-v6-v6.4.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-sigs.k8s.io-yaml-v1.6.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-adler2-2.0.1
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-aggrega-abi-0.9.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-aggrega-pdk-rust-0.9.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-ahash-0.8.12
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-aho-corasick-1.1.4
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-aho-corasick-1.1.5
