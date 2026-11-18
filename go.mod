@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/aggrega-ai/aggrega-abi/go v0.9.1
-	github.com/aggrega-ai/aggrega-pdk/go v0.9.1
+	github.com/aggrega-ai/aggrega-pdk/go v0.9.2
 	github.com/aggrega-ai/aggrega-schemas v0.13.1
 	github.com/awslabs/goformation/v7 v7.14.9
 	github.com/evanphx/json-patch v5.9.11+incompatible
