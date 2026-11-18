@@ -40,11 +40,12 @@
 #   - Rust crates come from parsing the Cargo.lock in each embedded Rust row's
 #     source directory; only crates with a crates.io registry source are
 #     third-party, and each entry is labelled with the guests that pull it in.
-#   - First-party code is excluded, as our own Apache-2.0 code: the
-#     github.com/aggrega-ai/* Go modules; the in-workspace Rust path crates; and
-#     every registry Rust crate whose Cargo.toml `repository` field starts with
-#     https://github.com/aggrega-ai/ (the crates published from Aggrega's own
-#     repositories). One function, is_first_party_crate, holds the crate rule.
+#   - First-party code is excluded, as our own Apache-2.0 code: the Go modules
+#     under github.com/aggrega-ai/, the Rust crates whose name starts with
+#     aggrega-, and the in-workspace Rust path crates. The Go prefix and the
+#     crate prefix are defined once, in scripts/lib/third-party-inputs.sh, which
+#     the digest of the inputs uses too, so a first-party version pin never makes
+#     the attribution stale.
 #
 # License resolution (from local caches only):
 #   - Go:   the module's LICENSE/COPYING/NOTICE files under its module-cache dir
@@ -127,7 +128,7 @@ cd "$CLI_DIR"
 
 # module_set <listargs...> : emit unique "path|version|dir" for modules reached
 # by `go list -deps` of the given packages, excluding the standard library and
-# first-party (github.com/aggrega-ai/*) modules.
+# first-party modules (THIRD_PARTY_FIRST_PARTY_GO_PREFIX).
 # A failing `go list` stops the script, naming the packages.
 module_set() {
 	local out
@@ -137,7 +138,7 @@ module_set() {
 	fi
 	printf '%s\n' "$out" \
 		| { grep -v '^$' || true; } \
-		| { grep -v '^github.com/aggrega-ai/' || true; } \
+		| awk -v p="$THIRD_PARTY_FIRST_PARTY_GO_PREFIX" 'index($0, p) != 1' \
 		| sort -u
 }
 
@@ -554,21 +555,6 @@ fi
 # every cargo registry source directory (each ends in /)
 mapfile -t CARGO_REGS < <(ls -d "${CARGO_HOME:-$HOME/.cargo}"/registry/src/*/ 2>/dev/null || true)
 
-# is_first_party_crate <name> <version> : exit 0 when the crate's Cargo.toml
-# `repository` field names Aggrega's own repositories. A crate with no source
-# directory cannot be classified and is not first-party here; the license
-# resolution below then stops the script naming it.
-is_first_party_crate() {
-	local reg toml
-	for reg in "${CARGO_REGS[@]}"; do
-		toml="$reg$1-$2/Cargo.toml"
-		[ -f "$toml" ] || continue
-		grep -Eq '^repository[[:space:]]*=[[:space:]]*"https://github\.com/aggrega-ai/' "$toml" && return 0
-		return 1
-	done
-	return 1
-}
-
 # used_by <sets-list> <line> : the labels of the sets holding <line>, joined by ", ".
 used_by() {
 	local label file out=""
@@ -666,11 +652,11 @@ emit_pkg() {
 		>> "$WORK/index-rows.txt"
 }
 
-# Rust crates published from Aggrega's own repositories are first-party.
+# Crates named like Aggrega's own (the shared first-party rule) are first-party.
 : > "$WORK/rust-third.txt"
 while read -r name ver; do
 	[ -n "$name" ] || continue
-	is_first_party_crate "$name" "$ver" || printf '%s %s\n' "$name" "$ver" >> "$WORK/rust-third.txt"
+	third_party_is_first_party_crate "$name" || printf '%s %s\n' "$name" "$ver" >> "$WORK/rust-third.txt"
 done < "$WORK/rust.txt"
 mv "$WORK/rust-third.txt" "$WORK/rust.txt"
 
