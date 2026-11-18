@@ -1,6 +1,6 @@
 module github.com/aggrega-ai/aggrega-cli
 
-go 1.26.0
+go 1.26.11
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0

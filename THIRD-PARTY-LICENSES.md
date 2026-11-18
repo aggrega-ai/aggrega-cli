@@ -75,7 +75,7 @@ Distinct licenses: 12 (see `LICENSES/`).
 
 | Component | Version | Ecosystem | Compiled into | SPDX | License text |
 | --- | --- | --- | --- | --- | --- |
-| `Go standard library` | `go1.26.0` | go | aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
+| `Go standard library` | `go1.26.11` | go | aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `Rust standard library` | `1.85.1` | rust | linter/publishing | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `Rust standard library` | `1.98.1` | rust | governance/rego, governance/cel | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `wasi-libc` | `161b3195fc2558d2b1ba3eb9ffae3b2b47407623` | c | governance/rego, governance/cel | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |

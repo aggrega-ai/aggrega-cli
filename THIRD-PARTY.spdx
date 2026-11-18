@@ -5,16 +5,16 @@ DocumentName: aggrega-cli-third-party
 DocumentNamespace: https://aggrega.ai/spdx/aggrega-cli-third-party
 Creator: Tool: gen-third-party-licenses.sh
 Created: 1970-01-01T00:00:00Z
-DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly plugins it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:a915cf576e0715c995c84fe5c7861b9467a75976bbacb6dcbedc2614ad8248b6.</text>
+DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly plugins it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:ee19d33f2ac586a4cb833806999f97c4149bbf451717cb82b5e531cfae8c2798.</text>
 
 PackageName: Go standard library
-SPDXID: SPDXRef-Package-go-Go-standard-library-go1.26.0
-PackageVersion: go1.26.0
+SPDXID: SPDXRef-Package-go-Go-standard-library-go1.26.11
+PackageVersion: go1.26.11
 PackageDownloadLocation: https://go.dev/dl/
 PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:golang/stdlib@go1.26.0
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/stdlib@go1.26.11
 PackageComment: <text>Compiled into: aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger</text>
 FilesAnalyzed: false
 
@@ -4474,7 +4474,7 @@ ExternalRef: PACKAGE-MANAGER purl pkg:cargo/zmij@1.0.23
 PackageComment: <text>Compiled into: governance/rego, governance/cel</text>
 FilesAnalyzed: false
 
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-Go-standard-library-go1.26.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-Go-standard-library-go1.26.11
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-Rust-standard-library-1.85.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-Rust-standard-library-1.98.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-c-wasi-libc-161b3195fc2558d2b1ba3eb9ffae3b2b47407623

@@ -12,7 +12,7 @@ each license follows once, under its SPDX identifier.
 Dependencies
 ================================================================
 
-Go standard library go1.26.0
+Go standard library go1.26.11
   License: BSD-3-Clause
   Compiled into: aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger
   Copyright:
