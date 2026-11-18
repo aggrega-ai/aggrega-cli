@@ -4,6 +4,7 @@
 package thirdparty
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -20,13 +21,8 @@ func TestNoticesNamesEmbeddedDependencies(t *testing.T) {
 			t.Errorf("Notices() does not contain %q", want)
 		}
 	}
-	hasCel := false
-	for _, line := range strings.Split(got, "\n") {
-		if strings.HasPrefix(line, "cel ") {
-			hasCel = true
-		}
-	}
-	if !hasCel {
-		t.Error("Notices() has no line naming the cel crate")
+	// A dependency block opens with its own "<name> <version>" line.
+	if !regexp.MustCompile(`(?m)^cel [0-9]+\.[0-9]+\.[0-9]+\S*$`).MatchString(got) {
+		t.Error("Notices() has no dependency block named cel")
 	}
 }

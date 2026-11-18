@@ -462,23 +462,23 @@ func TestVersionLicensesPrintsEmbeddedNotices(t *testing.T) {
 // TestVersionLicensesRefusesCombinedFlags pins the refusal of --licenses with
 // -o json and with --verbose, each naming both flags.
 func TestVersionLicensesRefusesCombinedFlags(t *testing.T) {
+	const jsonMsg = "--licenses prints plain text and cannot be combined with -o json (--output json)"
+	const verboseMsg = "--licenses prints the notices only and cannot be combined with --verbose"
 	cases := []struct {
 		args []string
-		want []string
+		want string
 	}{
-		{[]string{"--licenses", "-o", "json"}, []string{"--licenses", "-o json"}},
-		{[]string{"--licenses", "--output", "json"}, []string{"--licenses", "-o json"}},
-		{[]string{"--licenses", "--verbose"}, []string{"--licenses", "--verbose"}},
+		{[]string{"--licenses", "-o", "json"}, jsonMsg},
+		{[]string{"--licenses", "--output", "json"}, jsonMsg},
+		{[]string{"--licenses", "--verbose"}, verboseMsg},
 	}
 	for _, tc := range cases {
 		got, err := runVersionCmd(t, tc.args...)
 		if err == nil {
 			t.Fatalf("%v: no error", tc.args)
 		}
-		for _, w := range tc.want {
-			if !strings.Contains(err.Error(), w) {
-				t.Errorf("%v: error %q does not name %q", tc.args, err, w)
-			}
+		if err.Error() != tc.want {
+			t.Errorf("%v: error = %q; want %q", tc.args, err.Error(), tc.want)
 		}
 		if got != "" {
 			t.Errorf("%v: wrote output despite the refusal: %q", tc.args, got)
