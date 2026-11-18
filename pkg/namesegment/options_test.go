@@ -301,8 +301,9 @@ func TestReadSegmentRefusesWhatTheEncodingWouldNotWrite(t *testing.T) {
 
 // TestNewEncodingRefusesAnUnsoundOption asserts the constructor refuses a
 // last-character alphabet that would leave an escape ending a segment outside it,
-// and a reserved-name predicate the rewrite could never clear, and accepts the
-// sound pair the other assertions are made with.
+// a first-character alphabet that refuses the opener every escape opens with, and
+// a reserved-name predicate the rewrite could never clear, and accepts the sound
+// options the other assertions are made with.
 func TestNewEncodingRefusesAnUnsoundOption(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -317,6 +318,10 @@ func TestNewEncodingRefusesAnUnsoundOption(t *testing.T) {
 			namesegment.AdmitsLast(func(r rune) bool { return r != 'e' })}, true},
 		{"a reserved predicate holding for a segment opening with the opener", []namesegment.Option{
 			namesegment.Reserved(func(s string) bool { return strings.HasPrefix(s, "+") })}, true},
+		{"a first alphabet admitting the opener", []namesegment.Option{
+			namesegment.AdmitsFirst(notDigit)}, false},
+		{"a first alphabet refusing the opener", []namesegment.Option{
+			namesegment.AdmitsFirst(func(r rune) bool { return r != '+' })}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			refused, message := optionRefusal(tc.options...)

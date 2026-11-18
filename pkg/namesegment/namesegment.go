@@ -138,8 +138,10 @@ type Option func(*Encoding)
 // It is for a target that refuses a name opening with a character it accepts
 // anywhere else, such as a resource name that must open with a letter. The escape
 // opens with the encoding's opener, so the segment it writes opens with the opener
-// rather than with the character first refused. first has to be a pure function of
-// its argument.
+// rather than with the character first refused. [NewEncoding] refuses a first
+// alphabet that does not admit the opener, because a segment opening with an
+// escape would otherwise still open with a character the target refuses there.
+// first has to be a pure function of its argument.
 func AdmitsFirst(first func(rune) bool) Option {
 	return func(e *Encoding) { e.admitsFirst = first }
 }
@@ -241,6 +243,11 @@ func NewEncoding(opener rune, admits func(rune) bool, options ...Option) *Encodi
 	}
 	for _, option := range options {
 		option(e)
+	}
+	if e.admitsFirst != nil && !e.admitsFirst(e.opener) {
+		panic(fmt.Sprintf("namesegment: the first-character alphabet does not admit %q, which every escape "+
+			"opens with, so a segment whose first character is written as an escape would still open with a "+
+			"character that alphabet refuses", e.opener))
 	}
 	if e.admitsLast != nil {
 		for _, r := range escapeEndings() {
