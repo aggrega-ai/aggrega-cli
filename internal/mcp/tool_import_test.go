@@ -486,7 +486,8 @@ func TestTheImportToolOffersADirectoryNoImporterRecognisesWhatCanHelpIt(t *testi
 		t.Fatalf("create the directory source: %v", err)
 	}
 	// The file's name matches no file pattern an importer declares, so no importer
-	// reads it and no parser is asked for.
+	// reads it and no parser is asked for. A .json file no importer claims is held to
+	// the same refusal where recognition is exercised (TestSchemaImportersRecognisedAndNotCrossMatched).
 	if err := os.WriteFile(filepath.Join(dir, "flow.export"), readImportFixture(t, langflowFixture), 0o644); err != nil {
 		t.Fatalf("seed the directory source: %v", err)
 	}
