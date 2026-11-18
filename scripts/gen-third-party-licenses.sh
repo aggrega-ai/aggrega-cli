@@ -54,7 +54,7 @@
 #     declared expression stays in the SBOM, and LICENSES/ and the index carry
 #     the concluded ids. A license-exception id after WITH is not a license id.
 #
-# Loud failures (exit 1, nothing written):
+# Loud failures (exit 1; no output file is written or replaced):
 #   - a `go list` that fails, naming its packages;
 #   - a Rust row with no Cargo.lock, or a toolchain that is neither go nor rust;
 #   - a Go module with no license file; a Rust crate with no source directory
@@ -687,7 +687,7 @@ while read -r name ver; do
 
 	declared="NOASSERTION"
 	if [ -f "$cdir/Cargo.toml" ]; then
-		declared="$(grep -m1 '^license = ' "$cdir/Cargo.toml" | sed -E 's/^license = "(.*)"$/\1/')"
+		declared="$({ grep -m1 '^license = ' "$cdir/Cargo.toml" || true; } | sed -E 's/^license = "(.*)"$/\1/')"
 		[ -n "$declared" ] || declared="NOASSERTION"
 	fi
 
@@ -723,13 +723,14 @@ fi
 
 sort -u "$WORK/ids-raw.txt" | grep -v '^$' > "$WORK/ids.txt"
 
-rm -rf "$LICDIR"
-mkdir -p "$LICDIR"
+# Built beside the other work files and moved into place only once every
+# referenced id has a body, so a failure leaves LICENSES/ as it was.
+mkdir -p "$WORK/LICENSES"
 
 missing=""
 while read -r id; do
 	[ -n "$id" ] || continue
-	out="$LICDIR/$id.txt"
+	out="$WORK/LICENSES/$id.txt"
 	if is_templated "$id"; then
 		template_body "$id" > "$out"
 	else
@@ -748,6 +749,9 @@ if [ -n "$missing" ]; then
 	echo "  (a referenced SPDX id has neither a template nor an on-disk source file)" >&2
 	exit 1
 fi
+
+rm -rf "$LICDIR"
+mv "$WORK/LICENSES" "$LICDIR"
 
 # --- SBOM (SPDX 2.3 tag-value) ----------------------------------------------
 
@@ -782,7 +786,7 @@ Shipped artifacts covered:
 
 HEADER
 	cat "$WORK/covered.md"
-	cat <<'HEADER'
+	cat <<'HEADER' | sed "s/HEADER_TEMPLATED/${TEMPLATED// /, }/"
 
 **These files are generated. Do not edit them by hand.** Regenerate with:
 
@@ -796,8 +800,8 @@ Attribution is split across three artifacts, in a REUSE/SPDX-style layout:
 
 - `LICENSES/<SPDX>.txt` — the full text of each distinct license, stored once
   per SPDX identifier. For license families that embed a per-package copyright
-  line (MIT, ISC, BSD, zlib) the stored body is the canonical template; the
-  real per-package copyright is recorded in the SBOM below.
+  line (HEADER_TEMPLATED) the stored body is the canonical
+  template; the real per-package copyright is recorded in the SBOM below.
 - `THIRD-PARTY.spdx` — a machine-readable SPDX 2.3 SBOM with one entry per
   dependency: name, version, SPDX license identifier, per-package copyright, and
   package locator.

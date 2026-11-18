@@ -35,8 +35,8 @@ Attribution is split across three artifacts, in a REUSE/SPDX-style layout:
 
 - `LICENSES/<SPDX>.txt` — the full text of each distinct license, stored once
   per SPDX identifier. For license families that embed a per-package copyright
-  line (MIT, ISC, BSD, zlib) the stored body is the canonical template; the
-  real per-package copyright is recorded in the SBOM below.
+  line (MIT, ISC, BSD-2-Clause, BSD-3-Clause, Zlib, 0BSD, MIT-0, BSL-1.0) the stored body is the canonical
+  template; the real per-package copyright is recorded in the SBOM below.
 - `THIRD-PARTY.spdx` — a machine-readable SPDX 2.3 SBOM with one entry per
   dependency: name, version, SPDX license identifier, per-package copyright, and
   package locator.
