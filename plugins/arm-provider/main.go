@@ -20,10 +20,12 @@
 // parameters the node's values bind. ARM synthesizes no workloads, so a workload
 // projection is an orchestrator dispatch error that halts loudly.
 //
-// assemble_boundary folds every contribution of a dispatch group into one resource
-// group scope template, written as arm-template.json. render_node declares the
-// symbolic names and the output names each node's fragments carry, so the host
-// halts the build where two nodes claim one name. All ARM domain logic lives in the
+// assemble_boundary folds every contribution of a dispatch group into one
+// template, written as arm-template.json, at the scope the boundary deploys at:
+// a resource group, a subscription or a management group, with the content
+// written for a narrower scope nested in a level of its own. render_node
+// declares the symbolic names and the output names each node's fragments carry,
+// so the host halts the build where two nodes claim one name. All ARM domain logic lives in the
 // armcore package the guest calls, so the Wasm host stays agnostic to ARM
 // semantics.
 //
@@ -92,7 +94,7 @@ func descriptor() aggrega.PluginDescriptor {
 				Name:         "assemble_boundary",
 				InputPattern: "b",
 				Stability:    "experimental",
-				Description:  "merges the per-node ARM template fragments at one dispatch group into a single template at the scope the boundary deploys at, nesting resource group content in a level of its own at subscription scope, ordering the merged resources by the declared wave",
+				Description:  "merges the per-node ARM template fragments at one dispatch group into a single template at the scope the boundary deploys at (resource group, subscription or management group), nesting the content written for a narrower scope in a level of its own, ordering the merged resources by the declared wave",
 			},
 			{
 				Name:         "link_publish",

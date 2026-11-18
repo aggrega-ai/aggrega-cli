@@ -16,9 +16,11 @@ import (
 // TemplateFileName is the file an assembled ARM template is written to.
 const TemplateFileName = "arm-template.json"
 
-// KeySpaceSymbolicNames is the key space the symbolic names of resources and
-// level deployments are declared in, so a name two nodes both declare halts the
-// build.
+// KeySpaceSymbolicNames is the key space the symbolic names of the resources a
+// node's fragments carry are declared in, so a name two nodes both declare halts
+// the build. The symbolic names of the level deployments the assembly adds,
+// LevelResourceGroupSymbol and LevelSubscriptionSymbol, are not declared there:
+// a top-level resource holding one halts when the level is added (nestLevel).
 const KeySpaceSymbolicNames = "symbolic-names"
 
 // KeySpaceOutputNames is the key space the output names are declared in, so a
