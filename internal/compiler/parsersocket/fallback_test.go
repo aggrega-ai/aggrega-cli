@@ -18,7 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // parserAnswer is what a stand-in parser resolution answers for every syntax,
@@ -127,7 +127,7 @@ func TestTheBinarysParserServesOnlyWhereTheCatalogServesNone(t *testing.T) {
 // where the binary embeds no entity: the claim is about the set a release ships,
 // and a run that never saw it proves nothing.
 func TestTheBinarysParsersAreTheOnesItEmbeds(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	if len(embedded.EntityURIs()) == 0 {
 		t.Fatal("this binary embeds no plugin entity, so nothing here can show its parsers being served: build it " +

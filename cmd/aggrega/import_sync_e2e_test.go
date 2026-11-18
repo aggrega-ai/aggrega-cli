@@ -23,7 +23,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/importops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // syncSources writes the Langflow fixture into root as it was first imported,
@@ -132,7 +132,7 @@ func readRooted(t *testing.T, root, rel string) string {
 // --sync --dry-run branch (cmd/aggrega/import.go) and the drifted dry run exits 0,
 // which this reddens.
 func TestImportSyncThroughTheCommand(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)
@@ -234,7 +234,7 @@ func TestImportSyncThroughTheCommand(t *testing.T) {
 // Aggregate and the same record, the answer's drift names the carried flow, a dry
 // run writes nothing, and a conflict is refused naming the part.
 func TestTheImportToolSyncsAsTheCommandDoes(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	withCLIRegistrations(t, nil)
 	isolateMachineConfiguration(t)
 	root, _ := catalogFolderWorkspace(t, true)

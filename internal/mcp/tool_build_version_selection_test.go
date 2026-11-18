@@ -21,7 +21,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // versionSelectionWorkspace writes a workspace whose catalog directory holds a
@@ -215,7 +215,7 @@ var buildToolVersionForms = []struct {
 // at its own document's row digest — the pin the build it then renders against has to
 // agree with, or the fill refuses to write it.
 func TestBuildToolSelectsTheVersionTheRuleSelects(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	for _, f := range buildToolVersionForms {
 		for _, fill := range []bool{false, true} {
 			name := f.id + "/render"

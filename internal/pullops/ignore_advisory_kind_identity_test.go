@@ -15,7 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // TestTheIgnoreAdvisoryReadsEachEntityAsTheKindItWasCollectedAs drives the pull's
@@ -56,7 +56,7 @@ func TestTheIgnoreAdvisoryReadsEachEntityAsTheKindItWasCollectedAs(t *testing.T)
 	}
 	// The view is built over the catalog as written: it enumerates its directories
 	// once, on its first read.
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	view := catalog.NewLazyLookup(ws, "", []string{cat}, nil)
 	if _, ok, err := view.ServingProvider("helm", nil); err != nil || !ok {
 		if err != nil {

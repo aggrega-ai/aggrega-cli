@@ -26,7 +26,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // egressAttachingWorkspace declares an isolated workspace whose conventional
@@ -62,7 +62,7 @@ const egressAttachmentBlock = "      features:\n" +
 // `s.AttachEgressAllowlist = false` before `return s`: the shared expectation
 // carries no attachment and this test fails before any surface is driven.
 func TestEveryImportSurfaceAttachesTheOutboundOnlyFeatureAlike(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)

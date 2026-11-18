@@ -26,7 +26,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // googleADKApplicationFixture is the committed application the surfaces import:
@@ -102,7 +102,7 @@ func sharedGoogleADKImport(t *testing.T) importops.Result {
 // recognises the application, so the shared operation is refused asking for the
 // format and the case fails before any surface is compared.
 func TestAGoogleADKApplicationIsDraftedAlikeAtEverySurface(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)

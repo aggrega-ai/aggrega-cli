@@ -14,7 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // The test in this file drives what an author meets who pins the provider a
@@ -128,7 +128,7 @@ func renderedProviderVersion(t *testing.T, root string) string {
 // version satisfies is refused as the pin it is — which it can be only because
 // the Recipe was found under its bare name.
 func TestAPinnedCapabilityKeepsTheRecipesName(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	// Each step compiles a workspace of its own, so no lockfile one step wrote is
 	// read by the next.

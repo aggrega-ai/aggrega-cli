@@ -15,7 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // layFetchedSlot writes body into the cache slot the lockfile's pin for uri at
@@ -66,7 +66,7 @@ func layFetchedSlotOfKind(t *testing.T, root, kind, mediaType, uri, version stri
 //
 // The workspace is offline, so a miss is answered by nothing but the cache.
 func TestARemovedCatalogEntityMeetsItsCacheSlotAlikeInPullVerifyAndBuild(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	rows := []struct {
 		name string

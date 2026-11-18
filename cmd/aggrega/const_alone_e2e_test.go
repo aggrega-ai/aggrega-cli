@@ -13,7 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // The test in this file drives a compact-form schema whose property is written
@@ -105,7 +105,7 @@ spec:
 // must pull and build, and a different value, which must halt as a value failing
 // its schema and never as a schema that could not be compiled.
 func TestAConstWrittenAloneHoldsItsValue(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	for _, tc := range []struct {
 		name, declaration, equal, other string

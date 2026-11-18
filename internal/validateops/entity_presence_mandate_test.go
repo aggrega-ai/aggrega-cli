@@ -14,7 +14,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/analyzer"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // mandatingComponent is the probe Component declaring the given annotations,
@@ -68,7 +68,7 @@ func writeMandatingCatalog(t *testing.T, annotations ...string) (string, string)
 // a malformed declaration raises — beside an evaluable mandate as well, which is
 // declined there exactly as it is alone.
 func TestValidateRecipeDeclinesAPresenceMandateAndStillRefusesAMalformedOne(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	monitoring := types.RequiredAttachmentTypeAnnotationPrefix + "monitoring: core/prometheus-exporter"
 	audit := types.RequiredAttachmentTypeAnnotationPrefix + "audit: core/audit-logging"

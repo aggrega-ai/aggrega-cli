@@ -12,7 +12,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // TestAPinnedSocketEntityTheBinaryCarriesResolvesFromTheBinaryOverItsCachedCopy holds
@@ -113,7 +113,7 @@ func TestAPinnedSocketEntityTheBinaryCarriesResolvesFromTheBinaryOverItsCachedCo
 // cannot import, and returns the document as well.
 func embeddedGovernanceEntity(t *testing.T) (identity, version string, raw []byte) {
 	t.Helper()
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	embeds, _ := embeddedPluginEntities()
 	for _, p := range embeds {
 		if plugintype.Type(p.Metadata.PluginType) != plugintype.Governance || p.Metadata.Version == "" {

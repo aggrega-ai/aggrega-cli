@@ -33,7 +33,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/validateops"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // realExportsDir is where the committed real exports sit, relative to this
@@ -225,7 +225,7 @@ func importRealExport(t *testing.T, rw *workspaceconfig.ResolvedWorkspace, rel s
 // one it runs is lost — the path list moves — or if anything the import reports
 // depends on more than the input bytes.
 func TestImportDraftsRealLangflowAndFlowiseExports(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 
 	for _, ex := range realExports {
@@ -368,7 +368,7 @@ func draftedDocumentNamed(t *testing.T, res Result, name string) draftedDocument
 // lists then gain each note's draft; the other two leave it passing, since they
 // change what a drafted document carries rather than which documents are drafted.
 func TestTheReferenceImporterReadsTheShapesRealExportsCarry(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 
 	components := func(d draftedDocument) []string { return slices.Sorted(maps.Keys(d.Spec.Components)) }
@@ -597,7 +597,7 @@ func draftedTargets(t *testing.T, rel string) map[string]string {
 // with the chat model's slots reading [credential maxTokens] and its maxTokens no
 // longer a value.
 func TestTheReferenceImporterDraftsACredentialFromTheSourceFormatsOwnMarker(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 
 	type valueField struct{ document, field string }
@@ -719,7 +719,7 @@ func TestTheReferenceImporterDraftsACredentialFromTheSourceFormatsOwnMarker(t *t
 // parser and the Flowise retriever tool fail validation as well, with the compact
 // form's unknown-keyword refusal.
 func TestEveryDocumentDraftedFromARealExportValidates(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 
 	for _, ex := range realExports {

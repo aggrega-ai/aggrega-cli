@@ -32,7 +32,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // parserlessWorkspace resolves a scratch workspace whose catalog folder holds the
@@ -99,7 +99,7 @@ var binaryYAMLParser = fmt.Sprintf("parser/yaml from %s", pluginpath.TierEmbed)
 // naming the json syntax no parser serves, and the named rows halt with the
 // importer's could-not-parse diagnostic.
 func TestAWorkspaceHoldingNoParserImportsThroughTheBinarysParser(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 
 	for _, src := range catalogFolderSources {
@@ -165,7 +165,7 @@ func TestAWorkspaceHoldingNoParserImportsThroughTheBinarysParser(t *testing.T) {
 // to the catalog view alone, and the import is refused before any importer runs,
 // naming the json syntax no parser serves.
 func TestAWorkspaceHoldingNothingRecognisesAndImportsALoneFileThroughACoreImporter(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	// Not parallel: it seeds the process-wide carried set and the modules the
 	// binary is read as carrying.
 	src := catalogFolderSources[0]
@@ -231,7 +231,7 @@ func TestAWorkspaceHoldingNothingRecognisesAndImportsALoneFileThroughACoreImport
 // (internal/compiler/parsersocket/fallback.go), ask the binary before the catalog, and both
 // rows fail: the source is recognised and drafted as Langflow, through parser/json.
 func TestAWorkspacesOwnParserIsTheOneAnImportReadsThrough(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	src := catalogFolderSources[0]
 

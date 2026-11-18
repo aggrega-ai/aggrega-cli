@@ -13,7 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/recipepin"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // TestTheIgnoreAdvisoryNamesBothPluginsWhereTheirRulesDiffer drives the pull's
@@ -44,7 +44,7 @@ func TestTheIgnoreAdvisoryNamesBothPluginsWhereTheirRulesDiffer(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	view := catalog.NewLazyLookup(ws, "", []string{cat}, nil)
 	served, ok, err := view.ServingProvider("helm", nil)
 	if err != nil {
@@ -117,7 +117,7 @@ func TestTheIgnoreAdvisoryNamesTheRecordedPluginByItsName(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	view := catalog.NewLazyLookup(ws, "", []string{cat}, nil)
 	served, ok, err := view.ServingProvider("terraform", nil)
 	if err != nil {

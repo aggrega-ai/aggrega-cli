@@ -17,7 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // carriedImporterEntity is an importer entity named name at version advertising
@@ -437,7 +437,7 @@ func assertRecognitionReads(t *testing.T, view *Catalog, want []string) {
 // It runs over the set the build carries, and fails rather than passing over an
 // empty one where the build carries no importer.
 func TestOnlyTheImportsViewServesTheImportersTheBinaryCarries(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	var carried []types.Plugin
 	digests := map[string]string{}
 	for _, p := range embedded.PublishedPlugins() {

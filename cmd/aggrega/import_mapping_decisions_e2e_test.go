@@ -41,7 +41,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // decisionLineCasesFile is the case manifest the mapping-decision line is held to
@@ -270,7 +270,7 @@ func strictDecode(t *testing.T, what string, raw []byte, v any) {
 // the session's result literal (internal/serve/import.go) — and that surface's
 // subtest alone reddens.
 func TestTheMappingDecisionsReachEverySurfaceAlike(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)
@@ -509,7 +509,7 @@ const keptInTheFlow = "kept in the flow core/ai-agent/langflow carries, with no 
 // case manifest's "no choice recorded" shape, held on both sides of the language
 // boundary.
 func TestANodeTheFlowKeepsReadsAsNoChoiceOnEverySurface(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)

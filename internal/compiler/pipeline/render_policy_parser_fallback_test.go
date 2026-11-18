@@ -17,7 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // TestARenderVerdictParseFallsBackToTheBinarysParser drives the render-verdict
@@ -40,7 +40,7 @@ import (
 // bind the resolver to the catalog's lookup alone, and the first row fails,
 // refused with no parser plugin advertising "parse:hcl".
 func TestARenderVerdictParseFallsBackToTheBinarysParser(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	if len(embedded.EntityURIs()) == 0 {
 		t.Fatal("this binary embeds no plugin entity, so nothing here can show its parsers being served: build it " +

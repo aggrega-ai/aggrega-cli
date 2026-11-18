@@ -36,9 +36,9 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/apiversion"
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog/snapshottest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
@@ -1047,7 +1047,7 @@ func publishedParserJSON(t *testing.T) []byte {
 // socket the whole view rather than foldersFirstParsers: the import is refused as
 // a syntax more than one parser advertises.
 func TestLayeredCatalogFolderParserServesBeforePublished(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	src := catalogFolderSources[0]
 	tree := filepath.Join(t.TempDir(), "catalog")

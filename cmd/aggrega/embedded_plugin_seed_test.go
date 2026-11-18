@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 )
 
 // Provider-plugin seeding for build and render fixtures.
@@ -45,7 +45,7 @@ import (
 // embedded artifacts gated out.
 func embeddedPluginEntityYAML(t *testing.T, uri string) []byte {
 	t.Helper()
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	raw, ok := embedded.LookupEntity(uri)
 	if !ok {
 		t.Fatalf("the binary embeds no plugin entity for %q; available: %v", uri, embedded.EntityURIs())

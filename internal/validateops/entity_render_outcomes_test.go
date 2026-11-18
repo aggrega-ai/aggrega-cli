@@ -14,7 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // probeComponent declares three infra fields the probe Recipe reads or could:
@@ -124,7 +124,7 @@ func writeProbeCatalog(t *testing.T, recipe string) (string, string) {
 // matched by that condition too, with errors.Is, so the row cannot pass on a
 // different fault that happens to share wording.
 func TestValidateRecipeRenderOutcomes(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	cases := []struct {
 		name  string
 		image string

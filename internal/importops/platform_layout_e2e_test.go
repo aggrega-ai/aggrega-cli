@@ -39,7 +39,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // flowFixture is one committed Langflow or Flowise source and what the default
@@ -334,7 +334,7 @@ var uuidOfAPlatform = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]
 //   - every node keeps a decision: a part's says where it is wired, and every
 //     other node's chooses nothing and says the platform's flow keeps it.
 func TestEveryLangflowAndFlowiseFixtureIsDraftedAsThePlatformCarryingIt(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	for _, fx := range flowFixtures {
 		t.Run(fx.golden, func(t *testing.T) {
@@ -441,7 +441,7 @@ func TestEveryLangflowAndFlowiseFixtureIsDraftedAsThePlatformCarryingIt(t *testi
 // socket takes is reported and stays in the flow, as is each embedding model the
 // model socket's single connection does not reach.
 func TestAPartIsWiredToTheSocketItsComponentSatisfies(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	overrides := map[string]any{"mapping_overrides": map[string]any{"flowise": map[string]any{
 		"httpRequest": map[string]any{"component": "acme/ai-tool/web-fetch", "category": "ai-tool"},
@@ -495,7 +495,7 @@ func TestAPartIsWiredToTheSocketItsComponentSatisfies(t *testing.T) {
 // no Component; a change to what that layout drafts moves them, and the moved
 // goldens are reviewed as the change they are.
 func TestTheNodesLayoutDraftsEveryFixtureAsItsGolden(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	for _, fx := range flowFixtures {
 		t.Run(fx.golden, func(t *testing.T) {
@@ -548,7 +548,7 @@ func TestTheNodesLayoutDraftsEveryFixtureAsItsGolden(t *testing.T) {
 // handed no settings, once handed layout: platform — and requires the two to
 // return the same drafts, decisions and diagnostics, byte for byte.
 func TestAnAttachmentSettingNoLayoutDraftsWhatLayoutPlatformDrafts(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	for _, fx := range flowFixtures {
 		t.Run(fx.golden, func(t *testing.T) {
@@ -577,7 +577,7 @@ func TestAnAttachmentSettingNoLayoutDraftsWhatLayoutPlatformDrafts(t *testing.T)
 // committed Langflow and Flowise source twice under the default layout, over the
 // platform catalog, and requires byte-identical results.
 func TestThePlatformDraftOfEveryFixtureIsByteIdenticalAcrossRuns(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	for _, fx := range flowFixtures {
 		t.Run(fx.golden, func(t *testing.T) {
@@ -1131,7 +1131,7 @@ var (
 //     `"queryParams": queryParameters` and the row of searchApi: the row
 //     flowise-query-parameters.json fails, no warning naming its fields.
 func TestTheEmptyCredentialsSettingDecidesWhatAnExportCarries(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	for _, src := range plantedSources(t) {
 		for _, setting := range []string{"absent", "none", "marked", "all"} {

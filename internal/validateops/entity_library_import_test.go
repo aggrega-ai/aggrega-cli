@@ -13,7 +13,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // probeArtifactLibrary is an ArtifactLibrary carrying one bundle of one file,
@@ -94,7 +94,7 @@ func artifactImport(library string) string {
 // of these Recipes reads what a build of one cannot supply, so no stop is set
 // aside as not attempted.
 func TestValidateRecipeRendersWhatItImportsFromTheCatalogsLibraries(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	inlineWorkload, _ := buildOfOneRecipe("{{ .infra.image }}:{{ .infra.tag }}", false, false)
 	cases := []struct {
 		name   string

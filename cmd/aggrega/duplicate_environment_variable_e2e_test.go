@@ -17,7 +17,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // The test in this file drives what an author meets who gives one container one
@@ -321,7 +321,7 @@ func composeWebEnvironment(t *testing.T, root string) []*yaml.Node {
 // are the controls: the same name, written both ways in one template, built
 // because only one of the two renders.
 func TestDuplicateEnvironmentVariableThroughTheBuild(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 
 	for _, provider := range []string{"helm", "compose"} {

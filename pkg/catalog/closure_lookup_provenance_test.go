@@ -18,7 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // The subjects of the provenance table. Each is an entity a closure walk resolves
@@ -434,7 +434,7 @@ func writeCachedPluginArtifact(t *testing.T, ws, cacheDir, artifactURI string, w
 // carrying none otherwise fails it.
 func provenanceEmbeddedProvider(t *testing.T) (identity, version string) {
 	t.Helper()
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	for _, uri := range embedded.EntityURIs() {
 		raw, ok := embedded.LookupEntity(uri)
 		if !ok {

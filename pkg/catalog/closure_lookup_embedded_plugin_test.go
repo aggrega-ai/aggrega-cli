@@ -17,7 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/plugintype"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // countingMissPuller records every fetch attempt and always reports a miss. It is
@@ -40,7 +40,7 @@ func (p *countingMissPuller) RegistryPrefix() string { return "hub.aggrega.ai" }
 // skips; a binary carrying none otherwise fails it.
 func embeddedProviderIdentity(t *testing.T) (identity, version string) {
 	t.Helper()
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	for _, uri := range embedded.EntityURIs() {
 		raw, ok := embedded.LookupEntity(uri)
 		if !ok {
@@ -66,7 +66,7 @@ func embeddedProviderIdentity(t *testing.T) (identity, version string) {
 // provider helper does.
 func embeddedOutputShapingIdentity(t *testing.T) (identity, version string) {
 	t.Helper()
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	for _, uri := range embedded.EntityURIs() {
 		raw, ok := embedded.LookupEntity(uri)
 		if !ok {

@@ -60,6 +60,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/siblingrepo"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmfixture"
 )
 
@@ -742,8 +743,8 @@ func pluginSourceDir(moduleRoot, name string) string {
 // fails t, since neither is a partial checkout.
 func kitCheckoutDir(t *testing.T, moduleRoot, lang, socket string) (string, error) {
 	t.Helper()
-	kit, err := siblingRepoDir(moduleRoot, "aggrega-pdk")
-	if isSiblingAbsent(err) {
+	kit, err := siblingrepo.Dir(moduleRoot, "aggrega-pdk")
+	if siblingrepo.IsAbsent(err) {
 		return "", fmt.Errorf("%s", siblingSkipMessage("aggrega-pdk", filepath.Join(lang, "examples", socket), err))
 	}
 	if err != nil {

@@ -29,7 +29,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/docsbundle/docsbundletest"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // relativeRootExample is the example the scaffold call writes, under the name a
@@ -189,7 +189,7 @@ func stringField(t *testing.T, answer toolAnswer, field string) string {
 //
 // Not parallel: it moves the process working directory and the home it reads.
 func TestAStepFolderNamedRelativeToTheLaunchRootIsBuiltInPlace(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	isolateCLIEnvironment(t)
 	cwd, err := os.Getwd()
 	if err != nil {

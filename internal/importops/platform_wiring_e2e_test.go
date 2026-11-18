@@ -40,7 +40,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // mcpTool is a Component carrying the labels the standard library gives
@@ -335,7 +335,7 @@ func assertCarriedOnlyInTheFlow(t *testing.T, planted []string, source []byte, r
 //     fails, the arguments named in no warning and, under marked, the planted
 //     argument in the drafted aggregate.yaml.
 func TestAnMCPServerAFlowNamesIsWiredByNameItsAddressWrittenEmptyAsWiring(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	source := mcpSource(t)
 	// The export's Language Model node is the flow's model, wired to the model
@@ -540,7 +540,7 @@ func TestAnMCPServerAFlowNamesIsWiredByNameItsAddressWrittenEmptyAsWiring(t *tes
 // `case server.name == "":` with `case server.name == "\x00":`, rebuilt into the
 // importer fixture: both rows fail, the node wired to the tools socket.
 func TestTheMCPToolsNodeOfARealExportNamingNoServerIsReportedAndNeverWired(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	const (
 		node   = "MCPTools-beHVJ"
@@ -639,7 +639,7 @@ func inlineMCPToolsNode(id string) map[string]any {
 // the line setting the Refuse field to refuseOf, rebuilt into the importer
 // fixture: both rows fail, both nodes wired to the tools socket.
 func TestALangflowNodeThatIsNoMCPToolsNodeIsNeverWiredToTheToolsSocket(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	vectorTool := partComponent("acme/ai-tool/vector-search", "    component.aggrega.ai/type: function\n"+
 		"    component.aggrega.ai/category: ai-tool\n    tool.aggrega.ai/transport: http\n"+
@@ -748,7 +748,7 @@ func TestALangflowNodeThatIsNoMCPToolsNodeIsNeverWiredToTheToolsSocket(t *testin
 //     `basepath != nil && false`: the Flowise model row fails, the planted Base
 //     Path in the drafted aggregate.yaml.
 func TestEachPartWiredToAPlatformReadsItsConnectionOrIsReported(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	const (
 		openAIBase = "https://planted-openai-base.example/v1"
@@ -949,7 +949,7 @@ func otherProviderReason(target, provider string) string {
 //     `{field: "api_base_url", variable: named("OPENAI_BASE_URL"), address: true},`:
 //     the Nvidia Remix row fails, its api_base not written with the variable.
 func TestALangflowModelOfSeveralProvidersReadsItsConnectionWhereItRunsOnOpenAI(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	const plantedKey = "sk-plantedANTHROPICkeyVALUE0123456789ab"
 	named := func(template map[string]any, field, variable string) {
@@ -1110,7 +1110,7 @@ func nodeCopy(t *testing.T, flow map[string]any, id, as string) map[string]any {
 // the case fails, the Embedding Model copy reported as reaching the part other
 // than through the connection.
 func TestALangflowModelLeftInTheFlowIsReportedAsItsProviderAndFieldsReachIt(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	flow := decoded(t, readRealExport(t, langflowSelectingProject))
 	same := nodeCopy(t, flow, selectingNodeID, "LanguageModelComponent-lm2")
@@ -1191,7 +1191,7 @@ func TestALangflowModelLeftInTheFlowIsReportedAsItsProviderAndFieldsReachIt(t *t
 //     variable {` with `value == "never" {`: the Langflow row fails, the embedding
 //     model naming the variable reported as reaching an address of its own.
 func TestAPlatformsModelSocketDrawsOneConnection(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	const embeddingAddress = "https://planted-embeddings.example/v1"
 	held := func(platform, ref, typ, holderRef, holderKey, how string) string {
@@ -1298,7 +1298,7 @@ func TestAPlatformsModelSocketDrawsOneConnection(t *testing.T) {
 // `text, returns := lineFeedsFor(string(scrubbed))` with
 // `text, returns := string(scrubbed), 0`: the case fails, the flow not carried.
 func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	export := readRealExport(t, langflowPromptingProject)
 	crlf := []byte(strings.ReplaceAll(string(export), "\n", "\r\n"))
@@ -1379,7 +1379,7 @@ func TestAFlowWrittenWithCarriageReturnsIsCarriedAsTheExportReads(t *testing.T) 
 //     the chatflow row under marked fails, the planted arguments in the drafted
 //     aggregate.yaml.
 func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsCarriedOrEmptiedAsTheSettingSays(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	const (
 		address = "https://flowise-mcp.internal.example/mcp?token=sk-plantedFWurl0123456789"
@@ -1572,7 +1572,7 @@ func TestTheServerConfigurationOfAFlowiseCustomMCPToolIsCarriedOrEmptiedAsTheSet
 //     `for _, f := range ownHeaders[typ] {` with
 //     `for _, f := range ownHeaders[typ+"-"] {`: the Langflow rows fail.
 func TestWhatANodeWouldSendOverItsConnectionIsWrittenEmptyAsWiring(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	const (
 		wiredCred      = "planted-wired-credential-id-0123456789"

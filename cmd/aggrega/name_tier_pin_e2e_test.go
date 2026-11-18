@@ -14,7 +14,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // The test in this file drives what a user who overrides one instance's
@@ -168,7 +168,7 @@ spec:
 // build and the verifying pull over the fixture above, then removes each
 // name-tier row in turn.
 func TestARealizationChosenByInstanceNameIsPinnedAndVerified(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	root := t.TempDir()
 	catalogDir, rel := nameTierFixture(t, root)

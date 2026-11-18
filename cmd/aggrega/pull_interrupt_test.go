@@ -16,7 +16,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // This is the question the whole cancellation effort started from, asked at the one
@@ -95,7 +95,7 @@ func pullProbeCommand(t *testing.T, entered chan struct{}) *cobra.Command {
 // instead of the one the command body inherited, and the pull's fetch parks exactly
 // as the control does, leaving parkedStoppedPullFetch on the stack.
 func TestAStopRequestEndsThePullsWork(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	if role := os.Getenv(stopProbeEnv); role != "" {
 		runPullStopProbeChild(t, role)
 		return

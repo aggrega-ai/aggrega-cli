@@ -15,7 +15,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // The test in this file drives what a user who puts an attachment on a connection
@@ -222,7 +222,7 @@ spec:
 // connection attachment's Feature row in turn, then changes one Feature after the
 // pull.
 func TestAFeatureAConnectionAttachmentNamesIsPinnedAndVerified(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	root := t.TempDir()
 	catalogDir, rel := connectionPinFixture(t, root)

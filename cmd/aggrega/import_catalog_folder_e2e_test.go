@@ -38,7 +38,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // catalogFolderImportSources are the committed agent-flow fixtures each surface is
@@ -302,7 +302,7 @@ func runImportAtTheRoot(t *testing.T, root string, args ...string) (code int, st
 // refused naming a plugin no source holds — and the command is refused the same
 // way.
 func TestImportCommandRunsAnImporterFromTheCatalogFolderItsEntitySitsIn(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	// Not parallel, rows included: captureStderr swaps process-global os.Stderr,
 	// and the environment is set for the whole test.
 	withCLIRegistrations(t, nil)
@@ -505,7 +505,7 @@ func TestImportCommandHaltsWhenTheImportersModuleIsNotBesideItsEntity(t *testing
 // command builds (cmd/aggrega/mcp.go) and the call is refused for want of the
 // plugin resolution an importer is loaded through, and nothing is drafted.
 func TestTheAssistantImportToolRunsAnImporterFromTheCatalogFolder(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	// Not parallel: the environment is set for the whole test.
 	withCLIRegistrations(t, nil)
 	isolateMachineConfiguration(t)
@@ -540,7 +540,7 @@ func TestTheAssistantImportToolRunsAnImporterFromTheCatalogFolder(t *testing.T) 
 // runServe builds (cmd/aggrega/serve.go) and the request is refused because the
 // daemon was started without a plugin resolver, and nothing is drafted.
 func TestTheSessionImportMethodRunsAnImporterFromTheCatalogFolder(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	// Not parallel: the environment is set for the whole test.
 	withCLIRegistrations(t, nil)
 	isolateMachineConfiguration(t)

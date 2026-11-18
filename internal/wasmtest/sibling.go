@@ -4,15 +4,12 @@
 package wasmtest
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/tools/projectionparity"
+	"github.com/aggrega-ai/aggrega-cli/internal/siblingrepo"
 )
 
 // SiblingPath returns the absolute path of elem inside the repository named repo
@@ -72,47 +69,14 @@ func siblingOf(moduleRoot, p string) (repo, elem string, ok bool) {
 	return repo, elem, true
 }
 
-// siblingAbsentError is the error siblingRepoDir returns when the repository is
-// not checked out beside this one, the one case a test skips on. Its text is the
-// reason alone.
-type siblingAbsentError struct{ reason string }
-
-func (e *siblingAbsentError) Error() string { return e.reason }
-
-// isSiblingAbsent reports whether err says the repository is not checked out.
-func isSiblingAbsent(err error) bool {
-	var absent *siblingAbsentError
-	return errors.As(err, &absent)
-}
-
-// siblingRepoDir returns the directory of the repository repo beside moduleRoot.
-// When it is not checked out there — no such directory, or an empty one, which
-// is what a declared but uninitialised checkout leaves behind — the error is a
-// *siblingAbsentError. Any other failure to list the directory is returned as it
-// is: the path is there and cannot be read, which is not an absent checkout.
-func siblingRepoDir(moduleRoot, repo string) (string, error) {
-	dir := filepath.Join(filepath.Dir(moduleRoot), repo)
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return dir, &siblingAbsentError{reason: err.Error()}
-	}
-	if err != nil {
-		return dir, err
-	}
-	if len(entries) == 0 {
-		return dir, &siblingAbsentError{reason: dir + " is empty"}
-	}
-	return dir, nil
-}
-
 // requireSiblingRepo returns the directory of the repository repo beside
 // moduleRoot for a test reading elem from it. It skips t when the repository is
 // not checked out and fails t when its path is there and cannot be read.
 func requireSiblingRepo(t testing.TB, moduleRoot, repo, elem string) string {
 	t.Helper()
-	dir, err := siblingRepoDir(moduleRoot, repo)
+	dir, err := siblingrepo.Dir(moduleRoot, repo)
 	switch {
-	case isSiblingAbsent(err):
+	case siblingrepo.IsAbsent(err):
 		t.Skipf("%s", siblingSkipMessage(repo, elem, err))
 	case err != nil:
 		t.Fatalf("%s is beside this repository at %s but cannot be read as a checkout: %v", repo, dir, err)
@@ -121,7 +85,7 @@ func requireSiblingRepo(t testing.TB, moduleRoot, repo, elem string) string {
 }
 
 // siblingSkipMessage is the skip message for a test reading elem from the
-// companion repository repo, which siblingRepoDir found missing with err.
+// companion repository repo, which siblingrepo.Dir found missing with err.
 func siblingSkipMessage(repo, elem string, err error) string {
 	what := repo
 	if elem != "" {
@@ -129,68 +93,4 @@ func siblingSkipMessage(repo, elem string, err error) string {
 	}
 	return fmt.Sprintf("%s is not checked out beside this repository (%v); this test reads %s, so check out %s "+
 		"beside this repository to run it", repo, err, what, repo)
-}
-
-// embeddedEntityDir is the directory, relative to the module root, the generated
-// Plugin entities of the embedded core plugins are written to and embedded from.
-const embeddedEntityDir = "internal/wasm/embedded/plugins"
-
-// RequireEmbeddedEntities skips t when this checkout holds no generated Plugin
-// entity for the core plugins the binary embeds and aggrega-hub is not checked
-// out beside this repository. The entities are generated from the plugin
-// overlays aggrega-hub carries, by scripts/gen-embedded-plugin-entities.sh, so a
-// checkout without aggrega-hub builds a binary embedding the core plugins'
-// guests but none of their entities, and a test reading what the binary resolves
-// through them has nothing to read.
-//
-// Only the absence of aggrega-hub skips. With aggrega-hub checked out and no
-// entity generated, t fails, naming the script that generates them.
-//
-// It reads the module root from the working directory the test binary started
-// in, so a test may call it after changing its working directory.
-func RequireEmbeddedEntities(t testing.TB) {
-	t.Helper()
-	if startModuleRootErr != nil {
-		t.Fatalf("resolve this module's root from the directory the tests started in: %v", startModuleRootErr)
-	}
-	requireEmbeddedEntities(t, startModuleRoot)
-}
-
-// startModuleRoot is the root of the module holding the package under test,
-// resolved from the working directory the test binary started in, before any
-// test could change it.
-var startModuleRoot, startModuleRootErr = moduleRootAtStart()
-
-func moduleRootAtStart() (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	root, _, err := projectionparity.ModuleRoot(cwd)
-	return root, err
-}
-
-// requireEmbeddedEntities is RequireEmbeddedEntities for the module at moduleRoot.
-func requireEmbeddedEntities(t testing.TB, moduleRoot string) {
-	t.Helper()
-	entities, err := filepath.Glob(filepath.Join(moduleRoot, embeddedEntityDir, "*.plugin.yaml"))
-	if err != nil {
-		t.Fatalf("list the generated embedded plugin entities: %v", err)
-	}
-	if len(entities) > 0 {
-		return
-	}
-	dir, err := siblingRepoDir(moduleRoot, "aggrega-hub")
-	switch {
-	case isSiblingAbsent(err):
-		t.Skipf("this checkout holds no generated plugin entity under %s, and aggrega-hub, whose plugin "+
-			"overlays they are generated from, is not checked out beside this repository (%v); this test reads "+
-			"what the binary resolves through those entities, so check out aggrega-hub beside this repository and "+
-			"run scripts/gen-embedded-plugin-entities.sh to run it", embeddedEntityDir, err)
-	case err != nil:
-		t.Fatalf("aggrega-hub is beside this repository at %s but cannot be read as a checkout: %v", dir, err)
-	default:
-		t.Fatalf("this checkout holds no generated plugin entity under %s, though aggrega-hub is checked out "+
-			"beside it: generate them with scripts/gen-embedded-plugin-entities.sh, then rebuild", embeddedEntityDir)
-	}
 }

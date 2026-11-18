@@ -44,8 +44,8 @@ import (
 	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/authoredcontent"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/entitykind"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -229,7 +229,7 @@ func writeOlderRecord(t *testing.T, dir string) recordEntry {
 // of its own entry alone, dropping every other: the MCP import's record holds
 // one entry, and the case reddens.
 func TestRecordFormatsTwoImportsKeepTheirEntries(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	rw := recordFormatsWorkspace(t, decisionsOnly)
 	dir := draftsDir(rw)
@@ -327,7 +327,7 @@ func TestRecordFormatsTwoImportsKeepTheirEntries(t *testing.T) {
 // 🔴 PLANTED DEFECT: have the import's record drop the entry naming no format
 // (internal/importops/import.go): the older entry is gone, and the case reddens.
 func TestRecordFormatsOlderRecordKeptByPlainImport(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	rw := recordFormatsWorkspace(t, decisionsOnly)
 	dir := draftsDir(rw)
@@ -360,7 +360,7 @@ func TestRecordFormatsOlderRecordKeptByPlainImport(t *testing.T) {
 // (internal/importops/import.go): the entry reads back with none, and the case
 // reddens.
 func TestRecordFormatsOlderRecordTakenOverBySyncThatListsIt(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	rw := recordFormatsWorkspace(t, decisionsOnly)
 	dir := draftsDir(rw)
@@ -399,7 +399,7 @@ func TestRecordFormatsOlderRecordTakenOverBySyncThatListsIt(t *testing.T) {
 // it lists (internal/importops/import.go): the sync removes the MCP drafts as
 // dropped by the source, and the case reddens.
 func TestRecordFormatsOlderRecordRefusedBySyncThatDoesNot(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	rw := recordFormatsWorkspace(t, decisionsOnly)
 	dir := draftsDir(rw)
@@ -444,7 +444,7 @@ func TestRecordFormatsOlderRecordRefusedBySyncThatDoesNot(t *testing.T) {
 // checkDraftPlaces (internal/importops/import.go): both refusals name no format,
 // and the case reddens.
 func TestRecordFormatsPathOfAnotherFormatRefuses(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	rw := recordFormatsWorkspace(t, nil)
 	dir := draftsDir(rw)
@@ -509,7 +509,7 @@ func TestRecordFormatsPathOfAnotherFormatRefuses(t *testing.T) {
 // format over a record of several entries (internal/importops/import.go): the
 // refused sync reads it once, and the case reddens.
 func TestRecordFormatsSyncWithoutFormatOverSeveralEntries(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	rw := recordFormatsWorkspace(t, decisionsOnly)
 	dir := draftsDir(rw)
 	compose := writeFormatSource(t, "compose.yaml", composeSourceBody(t))
@@ -577,7 +577,7 @@ func TestRecordFormatsSyncWithoutFormatOverSeveralEntries(t *testing.T) {
 // (internal/importops/import.go): the import warns of nothing, and the case
 // reddens.
 func TestRecordFormatsUnreadableRecord(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	rw := recordFormatsWorkspace(t, decisionsOnly)
 	dir := draftsDir(rw)
@@ -689,7 +689,7 @@ func TestRecordFormatsOlderRecordLendsAPlainImportOnlyItsPin(t *testing.T) {
 // owned whole anew whatever is on disk: the sync writes over the second
 // import's file, and the case reddens.
 func TestRecordFormatsSharedOrdinaryPathConflictsOnSync(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	rw := recordFormatsWorkspaceSetting(t, map[string]map[string]any{"compose": decisionsOnly, "mcp": decisionsOnly})
 	dir := draftsDir(rw)

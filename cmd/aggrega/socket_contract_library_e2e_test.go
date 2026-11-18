@@ -15,7 +15,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // The tests in this file drive a SchemaLibrary that only a dependency socket's
@@ -168,7 +168,7 @@ func pullSocketWorkspace(t *testing.T, root, catalogDir, releasePath string) err
 // applies the referenced entry to the edge's values — a value the entry admits
 // builds, one it refuses halts naming the edge field.
 func TestPull_ALibraryOnlyASocketContractReferencesIsPinned(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	const contract = `tls: { $ref: "ProbeLib#/schemas/Tls" }`
 

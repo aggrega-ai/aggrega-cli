@@ -17,7 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // The fixtures and the tests in this file drive what a user meets whose Feature
@@ -376,7 +376,7 @@ func assertChainPinned(t *testing.T, lockPath string, row libraryChainRow) {
 // passes; and a second pull fetches nothing, reports every library as reused from
 // the cache, and rewrites nothing.
 func TestALibraryReachedThroughAnotherResolvesFromARegistryAtAnyDepth(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	for _, row := range libraryChainRows {
 		t.Run(row.name, func(t *testing.T) {

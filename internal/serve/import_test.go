@@ -17,7 +17,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // importFixture is a Server over a scratch workspace with the machine-wide layer
@@ -146,7 +146,7 @@ func TestImportReadsASourceTheAuthorSelectedOutsideTheWorkspace(t *testing.T) {
 // `if true || !e.IsDirectory() {`, so a directory is answered in the file's words:
 // the directory row reddens.
 func TestImportOffersADirectoryNoImporterRecognisesWhatCanHelpIt(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	srv := importReadableFixture(t)
 	seam, err := importops.BuildSeam(srv.resolvedWorkspace, srv.resolveImportPlugin)

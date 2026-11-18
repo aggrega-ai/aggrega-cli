@@ -33,7 +33,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // lockedBuffer keeps what is written to it, safe for the concurrent writes a
@@ -235,7 +235,7 @@ spec:
 // other left, and each drives one aggrega/build request through the dispatch
 // rather than calling the handler — the count is about what a client gets.
 func TestBuildAutoPullRendersTheReleaseOnce(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	// The surface under assertion is each server's own error stream, which this
 	// test points at a buffer for the duration of one request.
 	marker := unsupportedFieldMarker(t, "compose", "replicas")

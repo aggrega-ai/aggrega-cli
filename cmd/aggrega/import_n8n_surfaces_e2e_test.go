@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // n8nAgentWorkflow is the committed n8n workflow the surfaces import: an AI agent
@@ -35,7 +35,7 @@ const n8nAgentWorkflow = "../../internal/importops/testdata/n8n/agent-workflow.j
 // recognises the workflow, so the shared operation is refused asking for the
 // format and the case fails before any surface is compared.
 func TestAnN8nWorkflowIsDraftedAlikeAtEverySurface(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	// Not parallel: captureStderr swaps process-global os.Stderr, and the
 	// environment is set for the whole test.
 	withCLIRegistrations(t, nil)

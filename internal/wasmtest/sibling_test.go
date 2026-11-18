@@ -4,14 +4,14 @@
 package wasmtest
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/siblingrepo"
 )
 
 // TestSiblingOfNamesTheCompanionRepositoryAPathReaches lays a module checkout
@@ -47,39 +47,24 @@ func TestSiblingOfNamesTheCompanionRepositoryAPathReaches(t *testing.T) {
 	}
 }
 
-// TestSiblingRepoDirTellsAPresentCheckoutFromAMissingOne lays a module checkout
-// beside a populated companion repository, an empty directory (what a declared
-// but uninitialised checkout leaves) and no directory at all, and checks that
-// only the populated one is present, and that the skip message for a missing one
+// TestSiblingSkipMessageNamesWhatIsMissing lays a module checkout beside an empty
+// directory (what a declared but uninitialised checkout leaves) and no directory
+// at all, and checks that the skip message for a missing companion repository
 // names the repository, where it was looked for and what the test reads.
-//
-// 🔴 PLANTED DEFECT: in siblingRepoDir (sibling.go), drop the empty-directory
-// check: the empty directory reads as a present checkout, and the case fails on
-// it.
-func TestSiblingRepoDirTellsAPresentCheckoutFromAMissingOne(t *testing.T) {
+func TestSiblingSkipMessageNamesWhatIsMissing(t *testing.T) {
 	t.Parallel()
 	parent := t.TempDir()
 	moduleRoot := filepath.Join(parent, "cli")
-	for _, dir := range []string{moduleRoot, filepath.Join(parent, "populated"), filepath.Join(parent, "empty")} {
+	for _, dir := range []string{moduleRoot, filepath.Join(parent, "empty")} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(parent, "populated", "README.md"), []byte("x"), 0o644); err != nil {
-		t.Fatalf("populate: %v", err)
-	}
-
-	if dir, err := siblingRepoDir(moduleRoot, "populated"); err != nil || dir != filepath.Join(parent, "populated") {
-		t.Errorf("siblingRepoDir(populated) = (%s, %v), want (%s, nil)", dir, err, filepath.Join(parent, "populated"))
-	}
 	for _, repo := range []string{"empty", "absent"} {
-		_, err := siblingRepoDir(moduleRoot, repo)
-		if err == nil {
-			t.Errorf("siblingRepoDir(%s) found a checkout; want it missing", repo)
+		_, err := siblingrepo.Dir(moduleRoot, repo)
+		if !siblingrepo.IsAbsent(err) {
+			t.Errorf("siblingrepo.Dir(%s) = %v; want an absent checkout", repo, err)
 			continue
-		}
-		if !isSiblingAbsent(err) {
-			t.Errorf("siblingRepoDir(%s) = %v; want an absent checkout", repo, err)
 		}
 		msg := siblingSkipMessage(repo, filepath.Join("catalog", "x.yaml"), err)
 		for _, want := range []string{repo + " is not checked out beside this repository",
@@ -111,13 +96,12 @@ func (r *recordingTB) Fatalf(format string, args ...any) {
 }
 
 // TestASiblingPathThatIsAFileFailsRatherThanSkips lays a regular file where a
-// companion repository's checkout would be and checks that siblingRepoDir does
-// not read it as an absent checkout, and that requireSiblingRepo fails the test
+// companion repository's checkout would be and checks that requireSiblingRepo fails the test
 // naming the path rather than skipping it.
 //
-// 🔴 PLANTED DEFECT: in siblingRepoDir (sibling.go), return every listing error as
-// a *siblingAbsentError: the file reads as an absent checkout, the helper skips, and
-// the case fails on it.
+// 🔴 PLANTED DEFECT: in requireSiblingRepo (sibling.go), skip on every listing
+// error: the file reads as an absent checkout, the helper skips, and the case fails
+// on it.
 func TestASiblingPathThatIsAFileFailsRatherThanSkips(t *testing.T) {
 	t.Parallel()
 	parent := t.TempDir()
@@ -128,11 +112,6 @@ func TestASiblingPathThatIsAFileFailsRatherThanSkips(t *testing.T) {
 	file := filepath.Join(parent, "hub")
 	if err := os.WriteFile(file, []byte("not a checkout"), 0o644); err != nil {
 		t.Fatalf("write %s: %v", file, err)
-	}
-
-	_, err := siblingRepoDir(moduleRoot, "hub")
-	if !errors.Is(err, syscall.ENOTDIR) || isSiblingAbsent(err) {
-		t.Fatalf("siblingRepoDir over a file = %v; want a not-a-directory error that is not an absent checkout", err)
 	}
 
 	rec := &recordingTB{TB: t}
@@ -147,55 +126,5 @@ func TestASiblingPathThatIsAFileFailsRatherThanSkips(t *testing.T) {
 	}
 	if !strings.Contains(rec.failed, "hub is beside this repository at "+file+" but cannot be read as a checkout") {
 		t.Errorf("a file at the sibling path failed with %q; want it named as a checkout that cannot be read", rec.failed)
-	}
-}
-
-// TestEmbeddedEntitiesSkipOnlyWithoutAggregaHub lays out a module holding no
-// generated embedded plugin entity and checks requireEmbeddedEntities in each
-// state of the aggrega-hub checkout beside it: absent skips naming aggrega-hub,
-// present fails naming the generator, and a generated entity lets the test run.
-//
-// 🔴 PLANTED DEFECT: in requireEmbeddedEntities (sibling.go), skip whenever no
-// entity is generated: the present-checkout case skips instead of failing, and
-// this test fails on it.
-func TestEmbeddedEntitiesSkipOnlyWithoutAggregaHub(t *testing.T) {
-	t.Parallel()
-	run := func(moduleRoot string) *recordingTB {
-		rec := &recordingTB{TB: t}
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			requireEmbeddedEntities(rec, moduleRoot)
-		}()
-		<-done
-		return rec
-	}
-	parent := t.TempDir()
-	moduleRoot := filepath.Join(parent, "cli")
-	entityDir := filepath.Join(moduleRoot, filepath.FromSlash(embeddedEntityDir))
-	if err := os.MkdirAll(entityDir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", entityDir, err)
-	}
-
-	rec := run(moduleRoot)
-	if !strings.Contains(rec.skipped, "aggrega-hub, whose plugin overlays they are generated from, is not checked out") || rec.failed != "" {
-		t.Errorf("no entity and no aggrega-hub: skipped %q, failed %q; want a skip naming aggrega-hub", rec.skipped, rec.failed)
-	}
-
-	hub := filepath.Join(parent, "aggrega-hub")
-	if err := os.MkdirAll(filepath.Join(hub, "plugin-overlays"), 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", hub, err)
-	}
-	rec = run(moduleRoot)
-	if rec.skipped != "" || !strings.Contains(rec.failed, "generate them with scripts/gen-embedded-plugin-entities.sh") {
-		t.Errorf("no entity, aggrega-hub present: skipped %q, failed %q; want a failure naming the generator", rec.skipped, rec.failed)
-	}
-
-	if err := os.WriteFile(filepath.Join(entityDir, "helm.plugin.yaml"), []byte("kind: Plugin\n"), 0o644); err != nil {
-		t.Fatalf("write entity: %v", err)
-	}
-	rec = run(moduleRoot)
-	if rec.skipped != "" || rec.failed != "" {
-		t.Errorf("a generated entity: skipped %q, failed %q; want the test to run", rec.skipped, rec.failed)
 	}
 }

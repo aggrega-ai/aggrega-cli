@@ -32,7 +32,7 @@ import (
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // langflowExport is a committed Langflow export, relative to this package.
@@ -128,7 +128,7 @@ func flagExamples(formats []string) string {
 // `if declaresFilePatterns(importer) {`, so the offered formats stop being read off
 // the declarations: the directory row reddens on the formats it offers.
 func TestADirectoryNoImporterRecognisesIsOfferedWhatCanHelpIt(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	rw := aWorkspaceWithAnEmptyCatalogFolder(t)
 	readers, advertised := formatsDeclaringFilePatterns(t, rw)

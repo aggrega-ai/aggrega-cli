@@ -12,7 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
+	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
 )
 
 // The graph request's failure path.
@@ -150,7 +150,7 @@ func sameView(a, b []Diagnostic) bool {
 // layer must both name, the second by the entry planted below on the layer and on
 // the reader's screen, which only a republication takes away.
 func TestGraphRefusalRepublishesTheLayerFromWhatTheRunReached(t *testing.T) {
-	wasmtest.RequireEmbeddedEntities(t)
+	embeddedentities.Require(t)
 	t.Parallel()
 	ws, releaseRel := advisoryGraphWorkspace(t)
 
