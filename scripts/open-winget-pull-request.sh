@@ -34,10 +34,19 @@
 # organization's fork as the head of a pull request.
 #
 # With AGGREGA_WINGET_PULL_REQUEST unset or anything but true, a real publish
-# opens nothing and says the gate is off. A dry run opens nothing whatever the
-# variable is, and reads no token: it prints the fork, the branch, the files'
-# paths and the title the pull request would have, and what the variable would
-# do on a real publish. Neither reaches the network.
+# opens nothing and says the gate is off. A dry run opens nothing, pushes nothing
+# and syncs nothing, whatever the variable is: it prints the fork, the branch,
+# the files' paths and the title the pull request would have, and what the
+# variable would do on a real publish. It then checks the token, whatever the
+# variable is, with one read-only request to GitHub's API (so a dry run with a
+# token set reaches the network): GitHub must accept the token, and it must be
+# a personal access token (classic) carrying the public_repo scope, which GitHub
+# reports in the X-OAuth-Scopes header of its answer; a fine-grained or App
+# token carries no such header and is refused. The dry run names the account and
+# the scopes the token carries. With no token set, a dry run refuses when the
+# variable is true, since a real publish would have none to push with, and
+# otherwise says no token is set and passes. A real publish with the gate on
+# runs the same check before it syncs anything.
 #
 # Usage:
 #   scripts/open-winget-pull-request.sh --pack <manifest-folder>
@@ -62,13 +71,15 @@
 #
 # Programs: bash, git 2.31 or later (it reads the token from GIT_CONFIG_COUNT),
 # gh, base64, mktemp and the shell's own utilities; the network on a real
-# publish with the gate on, and on no other path.
+# publish with the gate on, and on a dry run with a token set; on no other path.
 #
 # Exits 0 when the pull request is opened, on a dry run, when the gate is off,
 # and when winget-pkgs already holds the version; 1, naming what it refused or
 # what failed, when the manifest is not three files carrying one identifier and
-# the given version, the tag is not v<version>, no token is set, the fork already
-# has the branch, or a step against GitHub fails; 2 on a usage error.
+# the given version, the tag is not v<version>, no token is set where one is
+# needed, GitHub does not accept the token or the token is not a personal access
+# token (classic) with the public_repo scope, the fork already has the branch, or
+# a step against GitHub fails; 2 on a usage error.
 set -euo pipefail
 # The manifest's files are listed in one order on every machine.
 export LC_ALL=C
@@ -88,7 +99,7 @@ refuse() { printf 'open-winget-pull-request: %s\n' "$*" >&2; exit 1; }
 NAME_PATTERN='^[A-Za-z0-9][A-Za-z0-9._-]*\.yaml$'
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  sed -n '2,/^# has the branch, or a step against GitHub fails; 2 on a usage error\.$/p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,/^# a step against GitHub fails; 2 on a usage error\.$/p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -189,11 +200,43 @@ OWNER="${FORK%%/*}"
 TITLE_NEW="New package: $ID version $VERSION"
 TITLE_UPDATE="Update: $ID to $VERSION"
 GATE="${AGGREGA_WINGET_PULL_REQUEST-}"
+TOKEN="${WINGET_PULL_REQUEST_TOKEN-}"
 if [ -z "$GATE" ]; then
   gate_state="unset"
 else
   gate_state="'$GATE'"
 fi
+
+# check_token — asks GitHub, with one request, whose token WINGET_PULL_REQUEST_TOKEN
+# is and which scopes it carries, and refuses unless GitHub accepts it and it is
+# a personal access token (classic) with the public_repo scope. It sets
+# ACCOUNT_ID, LOGIN and SCOPES. gh reads the token from GH_TOKEN; nothing else
+# here holds one, and only the scope names and the login are ever printed.
+check_token() {
+  local response headers scope found=false
+  export GH_TOKEN="$TOKEN"
+  if ! response="$(gh api --include user --jq '"\(.id) \(.login)"')"; then
+    refuse "GitHub did not accept the token in WINGET_PULL_REQUEST_TOKEN; nothing was opened"
+  fi
+  response="${response//$'\r'/}"
+  # The headers end at the first blank line; the filtered body is the last line.
+  headers="$(printf '%s\n' "$response" | awk 'NF == 0 { exit } { print }')"
+  account="$(printf '%s\n' "$response" | awk 'blank && NF { line = $0 } NF == 0 { blank = 1 } END { print line }')"
+  ACCOUNT_ID="${account%% *}" LOGIN="${account#* }"
+  [ -n "$ACCOUNT_ID" ] && [ -n "$LOGIN" ] && [ "$ACCOUNT_ID" != "$account" ] || refuse "GitHub named no account for the token; nothing was opened"
+  if ! printf '%s\n' "$headers" | awk -F: 'tolower($1) == "x-oauth-scopes" { found = 1 } END { exit !found }'; then
+    refuse "the token in WINGET_PULL_REQUEST_TOKEN carries no X-OAuth-Scopes header, so it is not a personal access token (classic); the winget pull request needs a personal access token (classic) with the public_repo scope, of an account that may push to $FORK; nothing was opened"
+  fi
+  SCOPES="$(printf '%s\n' "$headers" | awk -F: 'tolower($1) == "x-oauth-scopes" { sub(/^[^:]*:[ \t]*/, ""); print; exit }')"
+  local -a listed
+  IFS=, read -r -a listed <<<"$SCOPES"
+  for scope in "${listed[@]}"; do
+    scope="${scope#"${scope%%[![:space:]]*}"}"
+    scope="${scope%"${scope##*[![:space:]]}"}"
+    [ "$scope" = "public_repo" ] && found=true
+  done
+  [ "$found" = "true" ] || refuse "the token in WINGET_PULL_REQUEST_TOKEN lacks the public_repo scope: it carries the scopes: ${SCOPES:-none}; the winget pull request needs a personal access token (classic) with the public_repo scope; nothing was opened"
+}
 
 if [ "$DRY" = "true" ]; then
   say "dry run: would sync the $UPSTREAM_BRANCH branch of the fork https://github.com/$FORK with that of https://github.com/$UPSTREAM, push the branch $BRANCH to the fork, and open a pull request from $OWNER:$BRANCH onto the $UPSTREAM_BRANCH branch of $UPSTREAM, adding:"
@@ -209,6 +252,14 @@ if [ "$DRY" = "true" ]; then
   else
     say "dry run: the repository variable AGGREGA_WINGET_PULL_REQUEST is $gate_state, not true, so a real publish opens nothing; nothing is opened on a dry run"
   fi
+  if [ -n "$TOKEN" ]; then
+    check_token
+    say "dry run: GitHub accepts the token in WINGET_PULL_REQUEST_TOKEN: the account $LOGIN, with the scopes: $SCOPES"
+  elif [ "$GATE" = "true" ]; then
+    refuse "dry run: the repository variable AGGREGA_WINGET_PULL_REQUEST is true but WINGET_PULL_REQUEST_TOKEN is empty, so a real publish could push nothing to $FORK or open anything on $UPSTREAM; nothing was opened"
+  else
+    say "dry run: no token is set in WINGET_PULL_REQUEST_TOKEN, so the token is not checked"
+  fi
   exit 0
 fi
 
@@ -218,18 +269,11 @@ if [ "$GATE" != "true" ]; then
 fi
 
 [ "$TAG" = "v$VERSION" ] || refuse "the release tag is '$TAG', but the manifest carries the version $VERSION; nothing was opened"
-TOKEN="${WINGET_PULL_REQUEST_TOKEN-}"
 [ -n "$TOKEN" ] || refuse "the gate is on but WINGET_PULL_REQUEST_TOKEN is empty, so nothing can be pushed to $FORK or opened on $UPSTREAM; nothing was opened"
 probe="$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=wingetpullrequest.probe GIT_CONFIG_VALUE_0=read git config --get wingetpullrequest.probe || true)"
 [ "$probe" = read ] || refuse "this machine's $(git --version) does not read configuration from GIT_CONFIG_COUNT, which is how the token reaches git without being written to disk; git 2.31 or later does. Nothing was opened."
 
-# gh reads the token from GH_TOKEN; nothing else here holds one.
-export GH_TOKEN="$TOKEN"
-if ! account="$(gh api user --jq '"\(.id) \(.login)"')"; then
-  refuse "GitHub did not accept the token in WINGET_PULL_REQUEST_TOKEN; nothing was opened"
-fi
-ACCOUNT_ID="${account%% *}" LOGIN="${account#* }"
-[ -n "$ACCOUNT_ID" ] && [ -n "$LOGIN" ] && [ "$ACCOUNT_ID" != "$account" ] || refuse "GitHub named no account for the token; nothing was opened"
+check_token
 
 auth="$(printf '%s:%s' "$LOGIN" "$TOKEN" | base64 -w0)"
 echo "::add-mask::$auth"

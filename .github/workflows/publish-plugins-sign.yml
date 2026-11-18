@@ -75,9 +75,9 @@ name: Publish and sign core plugins
 #                        every signature carrying an RFC 3161 timestamp, and
 #                        hands them on, each set with a SHA-256 list of it, as
 #                        windows-binaries-signed and
-#                        windows-installer-parts-signed, on every run but a manual dry
-#                        run launched from a ref the signing identity is taken
-#                        not to admit, which skips it. It runs on the runner the
+#                        windows-installer-parts-signed, on every run but one
+#                        on which registry-credential decides to skip the
+#                        signing, as described below. It runs on the runner the
 #                        AGGREGA_RUNNER label names, after the build, and reads
 #                        the five from the hand-over folder once they match its
 #                        list. It may mint the OIDC token, which it exchanges
@@ -99,10 +99,12 @@ name: Publish and sign core plugins
 #                        signed. It does
 #                        not confine the signing identity to itself: no claim of
 #                        the OIDC token names the job that minted it, so Azure
-#                        accepts the token of any job of this workflow on a ref
-#                        it admits, and sign-and-publish, which may mint the
-#                        token for its Sigstore signatures, could exchange one
-#                        too.
+#                        accepts the token of any job of this workflow that
+#                        presents the subject its credentials trust — every
+#                        job naming the release environment that may mint the
+#                        token presents it — and sign-and-publish, which may
+#                        mint the token for its Sigstore signatures, could
+#                        exchange one too.
 #   windows-installer    Builds the Windows installer,
 #                        aggrega-<version>-windows-amd64-setup.exe as the
 #                        release attaches it, with makensis, from the default
@@ -200,8 +202,8 @@ name: Publish and sign core plugins
 #                        publish-package-channels, and prints the winget
 #                        manifest's three files and hands them on to
 #                        open-winget-pull-request.
-#   record-published     After a real publish only — on a dry run it is skipped —
-#                        records what sign-and-publish published on aggrega-hub's
+#   record-published     After a real publish, records what sign-and-publish
+#                        published on aggrega-hub's
 #                        published branch: each plugin's reference, version and
 #                        digest, read from the push's own output by aggrega-hub's
 #                        row reader, and the generated core plugin entities, read
@@ -213,11 +215,14 @@ name: Publish and sign core plugins
 #                        beside the run's own read-only token is a GitHub App
 #                        installation token for aggrega-hub alone, asking for its
 #                        contents alone, minted here by GitHub's own
-#                        create-github-app-token action; it holds no registry
+#                        create-github-app-token action, which revokes it when
+#                        the job ends; it holds no registry
 #                        password, no release token and no permission to mint an
 #                        OIDC token, and runs no action but checkout and that one.
 #                        The token reaches the writer's git commands through their
-#                        environment and is never written to disk.
+#                        environment and is never written to disk. On a dry run
+#                        it mints the token, which proves the App's client ID and
+#                        private key, uses it for nothing and does nothing else.
 #   publish-skills       Once sign-and-publish has succeeded, for a tag with
 #                        no pre-release suffix, publishes the
 #                        skills built into the aggrega binary, and the plugin
@@ -230,14 +235,16 @@ name: Publish and sign core plugins
 #                        tree, tags it with the release tag, and pushes both
 #                        together as a fast-forward, never forcing: a tag already
 #                        there is left as it is when it names the same tree and
-#                        refused when it names another. On a dry run it prints the
+#                        refused when it names another. On a dry run it mints
+#                        its token, as below, uses it for nothing, prints the
 #                        tree it would publish and pushes nothing. It runs on a
 #                        GitHub-hosted runner and needs nothing from the hand-over
 #                        folder. Its one credential beside the run's own read-only
 #                        token is a GitHub App installation token for
 #                        aggrega-skills alone, asking for its contents alone,
-#                        minted only on a real publish by GitHub's own
-#                        create-github-app-token action; it runs no action but
+#                        minted on a dry run too by GitHub's own
+#                        create-github-app-token action, which revokes it when
+#                        the job ends; it runs no action but
 #                        checkout and that one, and no program but git and the
 #                        shell's own utilities. The token reaches git through its
 #                        environment and is never written to disk.
@@ -250,14 +257,16 @@ name: Publish and sign core plugins
 #                        each as one commit on that repository's main branch,
 #                        pushed as a fast-forward and never forced. A file
 #                        already there unchanged is left as it is, and so is one
-#                        naming a later release. On a dry run it prints both
+#                        naming a later release. On a dry run it mints its
+#                        token, as below, uses it for nothing, prints both
 #                        files and where each would go, and pushes nothing. It
 #                        runs on a GitHub-hosted runner, checks nothing out and
 #                        needs nothing from the hand-over folder. Its one
 #                        credential is a GitHub App installation token for those
 #                        two repositories alone, asking for their contents
-#                        alone, minted only on a real publish by GitHub's own
-#                        create-github-app-token action; it runs no action but
+#                        alone, minted on a dry run too by GitHub's own
+#                        create-github-app-token action, which revokes it when
+#                        the job ends; it runs no action but
 #                        that one, and no program but git and the shell's own
 #                        utilities. The token reaches git through its
 #                        environment and is never written to disk.
@@ -279,7 +288,9 @@ name: Publish and sign core plugins
 #                        the gate is off. On a dry run it prints the fork, the
 #                        branch, the files' paths and the title of the pull
 #                        request it would open, and opens nothing, whatever the
-#                        variable is. It runs on a GitHub-hosted runner, checks
+#                        variable is, and checks the token: GitHub must accept
+#                        it, and it must carry the public_repo scope. It runs on
+#                        a GitHub-hosted runner, checks
 #                        out this repository at the commit the build job built
 #                        for that script and needs nothing from the hand-over
 #                        folder. Its one credential beside the run's own
@@ -429,12 +440,13 @@ name: Publish and sign core plugins
 # wrote, its signature check not applicable, and passes when every other check
 # does, and sign-and-publish releases those binaries unsigned, saying so in the
 # release notes and in the run's summary; the Windows binaries are signed as
-# ever. On a manual dry run from a ref the signing identity
-# is taken not to admit, nothing is signed: windows-smoke and macos-smoke run the unsigned
+# ever. On a decision to skip the signing, which no run the release
+# environment admits reaches (see the refs below), nothing is signed:
+# windows-smoke and macos-smoke run the unsigned
 # binaries the build wrote, windows-smoke the installer windows-installer built from
 # them too, through the same script, which reports the
 # signature check not applicable rather than passed, and sign-and-publish, which
-# waits for sign-windows and sign-macos, is skipped with them, so such a run prints no publish
+# waits for sign-windows and sign-macos, is skipped with them, so the run prints no publish
 # plan. They need nothing the build needs — no
 # sibling repository, no toolchain, no secret, no network beyond their own
 # loopback address, save the Windows run's download of a pinned WinGet CLI from
@@ -486,7 +498,8 @@ name: Publish and sign core plugins
 # request on microsoft/winget-pkgs. A real publish of a pre-release makes
 # record-published's write alone: the three jobs after it are skipped.
 #
-# The manual-dispatch entry defaults to a dry run. It checks the credential,
+# A manual dispatch, from the main branch or a v* tag (the refs the release
+# environment admits), defaults to a dry run. It checks the credential,
 # builds everything a real run builds — the tooling image and the Windows
 # installer included — signs the
 # Windows binaries and the installer, and signs the macOS binaries and submits
@@ -494,42 +507,78 @@ name: Publish and sign core plugins
 # signature checks
 # are proven before a tag exists, runs the Windows, macOS and ARM Linux smoke jobs in full,
 # and then, once they have passed, sign-and-publish loads and checks the image's
-# two archives and prints what it would push, publish, sign and release, doing none of it,
-# record-published is skipped, publish-skills prints the tree it would
+# two archives and prints what it would push, publish, sign and release, doing none of it.
+# record-published, publish-skills and publish-package-channels each mint their
+# App's token, which proves that App's client ID and private key, and use it
+# for nothing, the action that minted it revoking it when the job ends;
+# record-published does nothing else, publish-skills prints the tree it would
 # publish to aggrega-skills, publish-package-channels prints the formula and
 # the manifest it would commit, pushing nothing, and open-winget-pull-request
 # prints the pull request it would open on microsoft/winget-pkgs and what
-# AGGREGA_WINGET_PULL_REQUEST would make of it, opening nothing and reading no
-# token — save for a tag carrying a pre-release suffix, for which those three
+# AGGREGA_WINGET_PULL_REQUEST would make of it, opening nothing, and checks its
+# token: GitHub must accept it, and it must carry the public_repo scope; with
+# no token set, it refuses when that variable is true and otherwise says so
+# and passes — save for a tag carrying a pre-release suffix, for which
+# publish-skills, publish-package-channels and open-winget-pull-request
 # are skipped, as on a real run, so the dry run shows the run graph the real
 # run would; last, notarization-check reads
 # Apple's answer to the submission as on a real run, which publishes nothing.
 #
-# Which refs may sign is decided by the signing identity's federated
-# credentials in Azure. The refs this workflow takes them to admit — the main
-# branch and every tag — are written once, in .github/scripts/windows-signing.sh.
-# A dry run launched from any other ref signs nothing: sign-windows,
+# The release credentials are held by the GitHub environment named release,
+# which these jobs name: registry-credential, sign-windows, sign-windows-installer,
+# sign-macos, sign-and-publish, record-published, publish-skills,
+# publish-package-channels, open-winget-pull-request and notarization-check.
+# Its branch and tag rule admits the main branch and the tags matching v*. On
+# a run from any other ref, registry-credential, the run's first job, fails
+# before any step of it runs, and every other job is skipped but clean-up,
+# which names no environment and holds no secret: nothing is checked out,
+# built, signed or published.
+# The environment's secrets reach only the jobs that name it, whatever any
+# other job runs; the list of settings below says which are the environment's.
+# Every job naming it that may mint the OIDC token — sign-windows,
+# sign-windows-installer and sign-and-publish — presents the subject
+# repo:aggrega-ai/aggrega-cli:environment:release, which names the environment
+# in place of the ref, and that is the subject one of the Windows signing
+# identity's federated credentials trusts: sign-and-publish's token is
+# accepted too, as sign-windows' entry above says. Fulcio takes the identity
+# of sign-and-publish's Sigstore certificates from the workflow's path and
+# ref, not from that subject.
+#
+# Which refs sign is decided by the release environment's branch and tag
+# rule: every job of this workflow that may mint the OIDC token names the
+# environment and presents its subject, which names no ref, so the signing
+# identity's federated credentials in Azure decide that the environment may
+# sign, and the environment decides from which refs. Whether a run signs is
+# decided in registry-credential by the event, the dry_run input and the ref,
+# before anything is built or signed, and never by a signing that failed:
+# sign, or skip for a manual dry run from a ref outside those
+# .github/scripts/windows-signing.sh takes the identity to admit, written once
+# there — the main branch and every tag. Every ref that list leaves out is one
+# the release environment does not admit, and registry-credential names the
+# environment, so no run the environment admits reaches skip: every run that
+# reaches the decision signs. On a decision to skip, sign-windows,
 # sign-windows-installer and sign-macos are skipped, windows-installer builds the installer
 # from the unsigned files the build wrote,
 # windows-smoke runs the unsigned binaries and that installer, macos-smoke the
 # unsigned macOS binaries, each signature check
-# not applicable, and sign-and-publish is skipped with sign-windows. That skip
-# is decided in registry-credential by the event, the dry_run input and the ref,
-# before anything is built or signed, and never by a signing that failed; the
-# same job refuses it on a tag push and on a dispatch that is not a dry run,
-# which always sign, so on those a ref the credentials do not admit fails in
-# sign-windows, naming the ref. The macOS signing follows that one decision,
+# not applicable, and sign-and-publish is skipped with sign-windows. The same
+# job refuses skip on a tag push and on a dispatch that is not a dry run,
+# which always sign, so on those a token the identity's credentials do not
+# accept fails in sign-windows, naming the ref. The macOS signing follows that one decision,
 # and is switched on by the repository variable AGGREGA_MACOS_SIGNING: on a
 # decision to sign, the macOS binaries are signed when it is true, and
 # otherwise released unsigned, which registry-credential prints and writes to
 # the run's summary; on a decision to skip, they are not signed whatever it
-# is. Apple's credentials are not bound to a ref, so the refs a dry run signs
-# from are the ones written for Windows, and a run that signs the macOS
+# is. Apple's credentials are not bound to a ref: they reach sign-macos as
+# secrets of the release environment, so the macOS binaries are signed from
+# the refs that environment admits, and a run that signs the macOS
 # binaries and lacks an Apple setting fails in sign-macos, naming each one
 # missing.
 #
-# Settings, by name:
-#   variables  CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
+# Settings, by name, each where it lives: in the repository's settings, or in
+# the release environment's, which only the jobs naming the environment read.
+#   repository variables
+#              CLI_PUBLISH_REGISTRY      the registry to publish to, as its host
 #              REGISTRY_USERNAME         the registry username
 #              AGGREGA_RUNNER            the label of the self-hosted runner
 #                                        sources, build, sign-windows,
@@ -592,36 +641,48 @@ name: Publish and sign core plugins
 #                                        winget-pkgs' validation downloads the
 #                                        installer from the address the
 #                                        manifest names
-#   secrets    REGISTRY_PASSWORD         the registry password
-#                                        (registry-credential and
-#                                        sign-and-publish only)
+#   repository secrets
 #              SUBMODULE_APP_CLIENT_ID   the organization App that reads the
 #              SUBMODULE_APP_PRIVATE_KEY private aggrega-hub repository (sources
 #                                        only, handed to the action that mints
 #                                        the read token and to nothing else)
-#              HUB_PUBLISHED_APP_CLIENT_ID   the App installed on aggrega-hub
-#              HUB_PUBLISHED_APP_PRIVATE_KEY alone, with its contents' write
-#                                        permission, that writes its published
-#                                        branch (record-published only, handed
-#                                        to the action that mints the write
-#                                        token and to nothing else)
-#              SKILLS_PUBLISH_APP_CLIENT_ID   the App installed on
-#              SKILLS_PUBLISH_APP_PRIVATE_KEY aggrega-skills alone, with its
+#   release-environment variables
+#              HUB_PUBLISHED_APP_CLIENT_ID
+#                                        the client ID of the App installed on
+#                                        aggrega-hub alone, with its contents'
+#                                        write permission, that writes its
+#                                        published branch (record-published
+#                                        only)
+#              SKILLS_PUBLISH_APP_CLIENT_ID
+#                                        the client ID of the App installed on
+#                                        aggrega-skills alone, with its
 #                                        contents' write permission, that
 #                                        publishes the skills there
-#                                        (publish-skills only, on a real
-#                                        publish, handed to the action that
-#                                        mints the write token and to nothing
-#                                        else)
-#              PACKAGE_CHANNELS_APP_CLIENT_ID   the App installed on
-#              PACKAGE_CHANNELS_APP_PRIVATE_KEY aggrega-ai/homebrew-tap and
+#                                        (publish-skills only)
+#              PACKAGE_CHANNELS_APP_CLIENT_ID
+#                                        the client ID of the App installed on
+#                                        aggrega-ai/homebrew-tap and
 #                                        aggrega-ai/scoop-bucket alone, with
 #                                        their contents' write permission, that
 #                                        commits the formula and the manifest
-#                                        there (publish-package-channels only,
-#                                        on a real publish, handed to the action
-#                                        that mints the write token and to
-#                                        nothing else)
+#                                        there (publish-package-channels only;
+#                                        each client ID is an identifier, not
+#                                        a secret)
+#   release-environment secrets
+#              REGISTRY_PASSWORD         the registry password
+#                                        (registry-credential and
+#                                        sign-and-publish only)
+#              HUB_PUBLISHED_APP_PRIVATE_KEY
+#              SKILLS_PUBLISH_APP_PRIVATE_KEY
+#              PACKAGE_CHANNELS_APP_PRIVATE_KEY
+#                                        the private keys of those Apps,
+#                                        each read by the one job that reads
+#                                        its App's client ID and handed, with
+#                                        that client ID, to the action that
+#                                        mints the write token, on a dry run
+#                                        too, and to nothing else; the step
+#                                        before that action refuses, naming it,
+#                                        a client ID or key that is not set
 #              APPLE_DEVELOPER_ID_CERTIFICATE
 #                                        the Developer ID Application identity,
 #                                        its certificate and private key, as a
@@ -652,7 +713,8 @@ name: Publish and sign core plugins
 #                                        the organization neither owns nor is a
 #                                        member of (open-winget-pull-request
 #                                        only, read on a real publish with
-#                                        AGGREGA_WINGET_PULL_REQUEST true, and
+#                                        AGGREGA_WINGET_PULL_REQUEST true and
+#                                        checked on a dry run, and
 #                                        reaching gh and git through their
 #                                        environment alone)
 #
@@ -664,13 +726,15 @@ name: Publish and sign core plugins
 #      in GitHub's Settings, Developer settings, Personal access tokens, Tokens
 #      (classic), with an expiry, renewing it before it expires; the
 #      organization's policy must not restrict personal access tokens (classic);
-#   3. store it as the repository secret WINGET_PULL_REQUEST_TOKEN;
+#   3. store it as the secret WINGET_PULL_REQUEST_TOKEN of the release
+#      environment;
 #   4. with the account that created it, sign Microsoft's Contributor License
 #      Agreement, https://cla.opensource.microsoft.com, which winget-pkgs' pull
 #      request template asks every author to have signed: that account is the
 #      author of each pull request the release opens;
 #   5. set the repository variable AGGREGA_WINGET_PULL_REQUEST to true.
-# A manual dry run then prints the pull request a real publish would open.
+# A manual dry run then prints the pull request a real publish would open and
+# checks the token.
 
 on:
   # A release tag is the trigger and the human gate: a person decides the version
@@ -684,7 +748,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Check the stored registry credential, build everything a release carries (the tooling image and the extension package included), generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release. From a ref other than main or a tag, the Windows and macOS binaries are not signed: the Windows and macOS smoke jobs run them unsigned and no plan is printed."
+        description: "Check the stored registry credential, build everything a release carries (the tooling image and the extension package included), generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release; the jobs a pre-release tag does not skip mint each App's token, using it for nothing, and check the winget token. Dispatch it from main or a v* tag, the refs the release environment admits: from any other ref nothing is checked out, built, signed or published."
         required: false
         default: true
         type: boolean
@@ -747,8 +811,12 @@ jobs:
     # one request, and it holds the registry password in a job that runs no
     # third-party code. It is the run's first job, so it is also where a run with
     # no runner for the local jobs stops, and where the run decides whether it
-    # signs the Windows binaries, and the macOS ones.
+    # signs the Windows binaries, and the macOS ones. It names the release
+    # environment, so on a run from a ref that environment does not admit it
+    # fails before any of its steps runs, and every other job but clean-up is
+    # skipped.
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: read
 
@@ -794,8 +862,10 @@ jobs:
         # From the event, the dry_run input and the ref alone, before anything
         # is built or signed: sign on every run but a manual dry run launched
         # from a ref the signing identity is taken not to admit, which is skip.
-        # The refs it is taken to admit are written once, in the script. On
-        # skip, sign-windows and sign-macos are skipped and windows-smoke and
+        # The refs it is taken to admit are written once, in the script; every
+        # ref it leaves out is one the release environment, which this job
+        # names, does not admit, so no run that reaches this step decides skip.
+        # On skip, sign-windows and sign-macos are skipped and windows-smoke and
         # macos-smoke run the unsigned binaries the build wrote; no signing has
         # happened yet, so a signing that failed can never be what decided it.
         # The script speaks of the Windows binaries; the step after the guard
@@ -2115,9 +2185,9 @@ jobs:
     # Authenticode, so that Windows names their publisher, Cognitio S.r.l., and
     # can tell that nothing changed them since. It runs on every trigger, a dry run's included,
     # so the signing and the Windows smoke run's check of it are proven before a
-    # tag exists — on every run but a manual dry run launched from a ref the
-    # signing identity is taken not to admit, which registry-credential decides
-    # before anything is built, and on which this job is skipped. Its if: reads
+    # tag exists — on every run but one on which registry-credential decides,
+    # before anything is built, to skip the signing, and on which this job is
+    # skipped. Its if: reads
     # that decision and nothing else: a signing that failed cannot skip it, and
     # on a run that publishes no ref can either. windows-installer, windows-smoke
     # and sign-and-publish all wait for it.
@@ -2126,11 +2196,13 @@ jobs:
     # the exchange of the run's OIDC token for the token that signs, and jsign
     # under the Java runtime it fetches, each held to the SHA-256 it pins — is
     # scripts/sign-windows-files.sh, which says how; sign-windows-installer
-    # signs the installer through the same script. Which refs of which workflow
-    # may make that exchange is decided by
-    # the identity's federated credentials in Azure; the refs a dry run takes
-    # them to admit are stated once, in .github/scripts/windows-signing.sh, and
-    # read only to decide whether a dry run signs.
+    # signs the installer through the same script. The identity's federated
+    # credentials in Azure decide which subjects may make that exchange, and
+    # this job presents the release environment's, which names no ref, so the
+    # environment's branch and tag rule decides which refs sign. The refs the
+    # signing decision takes the identity to admit are stated once, in
+    # .github/scripts/windows-signing.sh, and read only to decide whether a dry
+    # run signs.
     # Everything that runs in this job can reach those tokens, so what runs is
     # kept to the shell's own utilities, curl, GitHub's own checkout and artifact
     # upload, and jsign under its own Java runtime, so no Java the machine
@@ -2162,6 +2234,7 @@ jobs:
     needs: [registry-credential, build]
     if: ${{ needs.registry-credential.outputs.signing != 'skip' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
+    environment: release
     timeout-minutes: 30
     permissions:
       contents: read
@@ -2474,6 +2547,7 @@ jobs:
     needs: [registry-credential, build, windows-installer]
     if: ${{ needs.registry-credential.outputs.signing != 'skip' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
+    environment: release
     timeout-minutes: 30
     permissions:
       contents: read
@@ -2596,8 +2670,8 @@ jobs:
     #
     # It runs on every trigger, a dry run's included, on the decision
     # registry-credential makes for the macOS binaries, macos_signing, and on no
-    # other: skipped on a manual dry run launched from a ref the Windows signing
-    # decision does not sign from, skipped whenever the repository variable
+    # other: skipped on a decision to skip the Windows signing, skipped
+    # whenever the repository variable
     # AGGREGA_MACOS_SIGNING is not true, when the release ships the binaries
     # unsigned, and run everywhere else. Run, it first refuses, naming each, any
     # Apple setting that is not set, so a run meant to sign never leaves the
@@ -2647,6 +2721,7 @@ jobs:
     # macos-15 names GitHub's hosted Apple silicon image, the one macos-smoke's
     # darwin/arm64 run uses.
     runs-on: macos-15
+    environment: release
     timeout-minutes: 90
     permissions: {}
     # notary_submission_id: the ID Apple's notary service gave the submission
@@ -2684,7 +2759,7 @@ jobs:
             for setting in "${missing[@]}"; do
               echo "sign-macos: $setting is not set" >&2
             done
-            echo "sign-macos: this run signs and notarizes the macOS binaries and cannot without the ${#missing[@]} setting(s) above: set each in the repository's settings; or unset the repository variable AGGREGA_MACOS_SIGNING, and the release ships the macOS binaries unsigned, saying so; or, for a dry run, start it from a ref the release does not sign from" >&2
+            echo "sign-macos: this run signs and notarizes the macOS binaries and cannot without the ${#missing[@]} setting(s) above: set each secret as a secret of the release environment and each variable as a repository variable; or unset the repository variable AGGREGA_MACOS_SIGNING, and the release ships the macOS binaries unsigned, saying so" >&2
             exit 1
           fi
           echo "sign-macos: the three Apple secrets and the notary key's two identifiers are set"
@@ -3039,9 +3114,9 @@ jobs:
     # place of the default for that alone, and names every other job it needs
     # as having succeeded, so it never starts beside one that did not.
     # sign-windows and sign-macos are
-    # skipped on a manual dry run from a ref the signing identity is taken not to
-    # admit, and this job is skipped with them there, so the unsigned binaries
-    # windows-smoke and macos-smoke run on such a run never reach it. The smoke
+    # skipped on a decision to skip the signing, and this job is skipped with
+    # them there, so the unsigned binaries windows-smoke and macos-smoke run on
+    # that decision never reach it. The smoke
     # jobs' own if: lets each run when its signing was skipped so, and decides
     # that job alone: this job's needs name sign-windows and sign-macos
     # themselves. While macOS signing is off — the decision unsigned —
@@ -3075,6 +3150,7 @@ jobs:
     # The runner the build ran on, with no hosted fallback: this job reads the
     # release inputs from the hand-over folder on that machine's disk.
     runs-on: ${{ vars.AGGREGA_RUNNER }}
+    environment: release
     permissions:
       contents: write
       id-token: write
@@ -3918,10 +3994,14 @@ jobs:
     # generated and published, at aggrega-catalog/plugin, the path they occupy on
     # the main branch.
     #
-    # It runs after a real publish only, and only once sign-and-publish has
-    # succeeded: a dry run publishes nothing, so this job is skipped and nothing
-    # is written. A job of its own, so the token that writes aggrega-hub shares
-    # a job with no other credential but the run's own token, which here reads
+    # It runs once sign-and-publish has succeeded, on a dry run too. A dry run
+    # publishes nothing, so on it this job runs only the refusal of an App
+    # setting that is not set and the mint of its token, which proves the
+    # App's client ID and private key: it reads nothing from the hand-over
+    # folder, writes nothing and uses the token for nothing. Every other step's
+    # if: holds it to a real publish. A job of its own, so the token that
+    # writes aggrega-hub shares a job with no other credential but the run's
+    # own token, which here reads
     # this repository and nothing more: no registry password, no release token,
     # no permission to mint an OIDC token. It runs no action but checkout and
     # GitHub's own create-github-app-token, and no program but the shell's own
@@ -3938,9 +4018,9 @@ jobs:
     if: >-
       ${{ !cancelled()
       && needs.build.result == 'success'
-      && needs.sign-and-publish.result == 'success'
-      && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)) }}
+      && needs.sign-and-publish.result == 'success' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
+    environment: release
     timeout-minutes: 15
     permissions:
       contents: read
@@ -3952,6 +4032,7 @@ jobs:
         # held that folder to its list. The rows this job records are written in
         # a directory of this run's own, RECORD_DIR, made empty here, which the
         # last step removes.
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         run: |
           set -euo pipefail
           [ -n "$RELEASE_HANDOVER" ] || { echo "record-published: RELEASE_HANDOVER is empty" >&2; exit 1; }
@@ -3962,6 +4043,7 @@ jobs:
 
       - name: Check out the CLI at the commit the build job built
         # For the smoke library's list check only.
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         uses: actions/checkout@v5
         with:
           path: aggrega-cli
@@ -3977,6 +4059,7 @@ jobs:
         # the ones the build job generated and sign-and-publish published. A
         # folder that is not here, or anything in it that is neither a file nor
         # a directory, is refused.
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         run: |
           set -euo pipefail
           if [ ! -d "$HANDOVER" ] || [ ! -O "$HANDOVER" ] || [ ! -f "$HANDOVER/SHA256SUMS" ]; then
@@ -3987,17 +4070,41 @@ jobs:
           smoke_require_bash
           smoke_check_tree_sums "$HANDOVER"
 
+      - name: Refuse an App setting that is not set
+        # Before the token is minted, on a dry run too: the App's client ID and
+        # its private key must both be set, and each that is not is named. The
+        # key reaches this step only as whether it is set, never as its value.
+        env:
+          HUB_PUBLISHED_APP_CLIENT_ID: ${{ vars.HUB_PUBLISHED_APP_CLIENT_ID }}
+          PRIVATE_KEY_SET: ${{ secrets.HUB_PUBLISHED_APP_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "$HUB_PUBLISHED_APP_CLIENT_ID" ] || missing+=("the variable HUB_PUBLISHED_APP_CLIENT_ID")
+          [ "$PRIVATE_KEY_SET" = true ] || missing+=("the secret HUB_PUBLISHED_APP_PRIVATE_KEY")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            for setting in "${missing[@]}"; do
+              echo "record-published: $setting is not set" >&2
+            done
+            echo "record-published: the token that writes aggrega-hub cannot be minted without the ${#missing[@]} setting(s) above: the App's client ID is read as a variable of the release environment, and its private key as a secret of it" >&2
+            exit 1
+          fi
+          echo "record-published: the App's client ID and private key are set"
+
       - name: Mint the token that writes aggrega-hub
         # A GitHub App installation token for aggrega-hub alone, asking for
         # write access to its contents and nothing else; the App is installed
         # on aggrega-hub alone, and a ruleset there admits only it and
         # aggrega-hub's own workflows as writers of the published branch. The
-        # App's secrets are handed to this action and to no step, and an
-        # installation token expires an hour after it is minted.
+        # App's private key is handed to this action alone, the step before
+        # reading only whether it is set, and the action revokes the token when
+        # the job ends; an installation token expires an hour after it is
+        # minted. On a dry run too, where minting it proves the App's client ID
+        # and private key, and nothing uses it.
         id: hub-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.HUB_PUBLISHED_APP_CLIENT_ID }}
+          client-id: ${{ vars.HUB_PUBLISHED_APP_CLIENT_ID }}
           private-key: ${{ secrets.HUB_PUBLISHED_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: aggrega-hub
@@ -4007,6 +4114,7 @@ jobs:
         # For its writer, scripts/record-published.sh, and the branch library
         # that writer and this job's row reader share. The checkout keeps no
         # token: the write below hands it to git through the environment.
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         uses: actions/checkout@v5
         with:
           repository: aggrega-ai/aggrega-hub
@@ -4035,6 +4143,7 @@ jobs:
         # (GIT_CONFIG_COUNT), so it is never placed on a command line or written
         # to the checkout's configuration; a git too old to read that is
         # refused, naming its version, before anything is written.
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         env:
           HUB_TOKEN: ${{ steps.hub-token.outputs.token }}
           APP_SLUG: ${{ steps.hub-token.outputs.app-slug }}
@@ -4083,10 +4192,10 @@ jobs:
             --message "chore(catalog): record the core plugins aggrega-cli $TAG published"
 
       - name: Remove this job's directory
-        # Whatever the steps above did, so the rows this job wrote are not left
-        # on the persistent runner. The hand-over folder is clean-up's to
-        # remove.
-        if: ${{ always() && env.RECORD_DIR != '' }}
+        # Whatever the steps above did, on a real publish, so the rows this job
+        # wrote are not left on the persistent runner. The hand-over folder is
+        # clean-up's to remove.
+        if: ${{ always() && env.RECORD_DIR != '' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)) }}
         run: |
           chmod -R u+w -- "$RECORD_DIR" 2>/dev/null || true
           rm -rf -- "$RECORD_DIR"
@@ -4104,8 +4213,10 @@ jobs:
     # are published with it: git add -A takes them, as diff -r compares them.
     #
     # It runs once sign-and-publish has succeeded, on a dry run too: a dry run
-    # prints the tree it would publish and mints no token, reads nothing from
-    # aggrega-skills and pushes nothing. When the tag carries a pre-release
+    # mints the token, which proves the App's client ID and private key, and
+    # uses it for nothing, the publishing step printing the tree it would
+    # publish and exiting before it reads the token; nothing is read from
+    # aggrega-skills and nothing is pushed. When the tag carries a pre-release
     # suffix, a dry run's included, it is skipped: aggrega-skills takes final
     # releases alone, and sign-and-publish's prerelease output, which its if:
     # reads, says the tag is a pre-release. Any other tag that is not a release
@@ -4122,6 +4233,7 @@ jobs:
     needs: [build, sign-and-publish]
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' && needs.sign-and-publish.outputs.prerelease != 'true' }}
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 10
     permissions:
       contents: read
@@ -4135,17 +4247,40 @@ jobs:
           ref: ${{ needs.build.outputs.commit }}
           persist-credentials: false
 
+      - name: Refuse an App setting that is not set
+        # Before the token is minted, on a dry run too: the App's client ID and
+        # its private key must both be set, and each that is not is named. The
+        # key reaches this step only as whether it is set, never as its value.
+        env:
+          SKILLS_PUBLISH_APP_CLIENT_ID: ${{ vars.SKILLS_PUBLISH_APP_CLIENT_ID }}
+          PRIVATE_KEY_SET: ${{ secrets.SKILLS_PUBLISH_APP_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "$SKILLS_PUBLISH_APP_CLIENT_ID" ] || missing+=("the variable SKILLS_PUBLISH_APP_CLIENT_ID")
+          [ "$PRIVATE_KEY_SET" = true ] || missing+=("the secret SKILLS_PUBLISH_APP_PRIVATE_KEY")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            for setting in "${missing[@]}"; do
+              echo "publish-skills: $setting is not set" >&2
+            done
+            echo "publish-skills: the token that writes aggrega-skills cannot be minted without the ${#missing[@]} setting(s) above: the App's client ID is read as a variable of the release environment, and its private key as a secret of it" >&2
+            exit 1
+          fi
+          echo "publish-skills: the App's client ID and private key are set"
+
       - name: Mint the token that writes aggrega-skills
-        # On a real publish only. A GitHub App installation token for
-        # aggrega-skills alone, asking for write access to its contents and
-        # nothing else; the App is installed on aggrega-skills alone. The App's
-        # secrets are handed to this action and to no step, and an installation
-        # token expires an hour after it is minted.
-        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+        # On a dry run too, where minting it proves the App's client ID and
+        # private key, and the step below exits before it reads the token. A
+        # GitHub App installation token for aggrega-skills alone, asking for
+        # write access to its contents and nothing else; the App is installed
+        # on aggrega-skills alone. The App's private key is handed to this
+        # action alone, the step before reading only whether it is set, and the
+        # action revokes the token when the job ends; an installation token
+        # expires an hour after it is minted.
         id: skills-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.SKILLS_PUBLISH_APP_CLIENT_ID }}
+          client-id: ${{ vars.SKILLS_PUBLISH_APP_CLIENT_ID }}
           private-key: ${{ secrets.SKILLS_PUBLISH_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: aggrega-skills
@@ -4288,8 +4423,10 @@ jobs:
     # publishing an earlier tag again never takes a channel back to it.
     #
     # It runs once sign-and-publish has succeeded, on a dry run too: a dry run
-    # prints both files and where each would go, mints no token, reads nothing
-    # from either repository and pushes nothing. When the tag carries a
+    # mints the token, which proves the App's client ID and private key, and
+    # uses it for nothing, the commit step printing both files and where each
+    # would go and exiting before it reads the token; nothing is read from
+    # either repository and nothing is pushed. When the tag carries a
     # pre-release suffix, a dry run's included, it is skipped: the tap and the
     # bucket take final releases alone, and sign-and-publish's prerelease
     # output, which its if: reads, says the tag is a pre-release. Any other tag
@@ -4309,22 +4446,46 @@ jobs:
     needs: [sign-and-publish]
     if: ${{ !cancelled() && needs.sign-and-publish.result == 'success' && needs.sign-and-publish.outputs.prerelease != 'true' }}
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 10
     permissions:
       contents: read
 
     steps:
+      - name: Refuse an App setting that is not set
+        # Before the token is minted, on a dry run too: the App's client ID and
+        # its private key must both be set, and each that is not is named. The
+        # key reaches this step only as whether it is set, never as its value.
+        env:
+          PACKAGE_CHANNELS_APP_CLIENT_ID: ${{ vars.PACKAGE_CHANNELS_APP_CLIENT_ID }}
+          PRIVATE_KEY_SET: ${{ secrets.PACKAGE_CHANNELS_APP_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "$PACKAGE_CHANNELS_APP_CLIENT_ID" ] || missing+=("the variable PACKAGE_CHANNELS_APP_CLIENT_ID")
+          [ "$PRIVATE_KEY_SET" = true ] || missing+=("the secret PACKAGE_CHANNELS_APP_PRIVATE_KEY")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            for setting in "${missing[@]}"; do
+              echo "publish-package-channels: $setting is not set" >&2
+            done
+            echo "publish-package-channels: the token that writes the tap and the bucket cannot be minted without the ${#missing[@]} setting(s) above: the App's client ID is read as a variable of the release environment, and its private key as a secret of it" >&2
+            exit 1
+          fi
+          echo "publish-package-channels: the App's client ID and private key are set"
+
       - name: Mint the token that writes the tap and the bucket
-        # On a real publish only. A GitHub App installation token for the tap
-        # and the bucket alone, asking for write access to their contents and
-        # nothing else; the App is installed on those two repositories alone.
-        # The App's secrets are handed to this action and to no step, and an
+        # On a dry run too, where minting it proves the App's client ID and
+        # private key, and the step below exits before it reads the token. A
+        # GitHub App installation token for the tap and the bucket alone,
+        # asking for write access to their contents and nothing else; the App
+        # is installed on those two repositories alone. The App's private key
+        # is handed to this action alone, the step before reading only whether
+        # it is set, and the action revokes the token when the job ends; an
         # installation token expires an hour after it is minted.
-        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         id: channels-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.PACKAGE_CHANNELS_APP_CLIENT_ID }}
+          client-id: ${{ vars.PACKAGE_CHANNELS_APP_CLIENT_ID }}
           private-key: ${{ secrets.PACKAGE_CHANNELS_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ env.HOMEBREW_TAP_REPOSITORY }},${{ env.SCOOP_BUCKET_REPOSITORY }}
@@ -4470,11 +4631,16 @@ jobs:
     # variable AGGREGA_WINGET_PULL_REQUEST exactly true it opens the pull
     # request; with the variable anything else, unset included, it opens
     # nothing and says the gate is off; on a dry run it prints the pull request
-    # it would open and opens nothing, whatever the variable is. Only the first
-    # path reads the token or reaches the network. When the tag carries a
-    # pre-release suffix, a dry run's included, it is skipped, whatever the
-    # variable is: winget takes final releases alone, and sign-and-publish's
-    # prerelease output, which its if: reads, says the tag is a pre-release.
+    # it would open and opens nothing, whatever the variable is, and checks the
+    # token with one read-only request to GitHub's API: GitHub must accept it,
+    # and it must be a personal access token (classic) carrying the public_repo
+    # scope. With no token set, a dry run refuses when the variable is true and
+    # otherwise says so and passes. The first path runs the same check before
+    # it syncs anything; the second reads no token and reaches no network.
+    # When the tag carries a pre-release suffix, a dry run's included, it is
+    # skipped, whatever the variable is: winget takes final releases alone,
+    # and sign-and-publish's prerelease output, which its if: reads, says the
+    # tag is a pre-release.
     # On a real publish the script still refuses any other version that is not
     # MAJOR.MINOR.PATCH. A job of its own, on a GitHub-hosted runner, so the
     # token that writes the fork shares a job with no other credential but the
@@ -4489,6 +4655,7 @@ jobs:
     needs: [build, sign-and-publish]
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' && needs.sign-and-publish.outputs.prerelease != 'true' }}
     runs-on: ubuntu-latest
+    environment: release
     timeout-minutes: 15
     permissions:
       contents: read
@@ -4622,14 +4789,14 @@ jobs:
     # here publishes nothing. On a dry run naming smoke_binaries_from it runs
     # the binaries smoke-binaries fetched instead, and fails whatever they do.
     #
-    # On a manual dry run from a ref the signing identity is taken not to admit,
-    # registry-credential decides that nothing is signed and sign-windows and
+    # On a decision to skip the signing, which registry-credential makes before
+    # anything is built, nothing is signed and sign-windows and
     # sign-windows-installer are
     # skipped: this job then runs the unsigned binaries the build wrote, staged
     # in its inputs, and the installer windows-installer built from them, every
     # check reporting its verdict, the signature checks
     # reported not applicable rather than passed, and fails whatever the others
-    # do. sign-and-publish is skipped on such a run, since it needs sign-windows
+    # do. sign-and-publish is skipped on that decision, since it needs sign-windows
     # itself, so those binaries go no further.
     #
     # The if: takes the place of the default, which would skip this job whenever
@@ -4803,12 +4970,12 @@ jobs:
     # reads only this repository. sign-and-publish waits for both targets, so a
     # failure on either publishes nothing.
     #
-    # On a manual dry run from a ref the signing identity is taken not to admit,
-    # registry-credential decides that nothing is signed and sign-macos is
+    # On a decision to skip the signing, which registry-credential makes before
+    # anything is built, nothing is signed and sign-macos is
     # skipped: this job then runs the unsigned binaries the build wrote, staged
     # in its inputs, every check reporting its verdict, the signature check
     # reported not applicable rather than passed, and fails whatever the others
-    # do. sign-and-publish is skipped on such a run, since it needs sign-macos
+    # do. sign-and-publish is skipped on that decision, since it needs sign-macos
     # itself, so those binaries go no further.
     #
     # While macOS signing is off — registry-credential's macOS decision
@@ -5086,6 +5253,7 @@ jobs:
     # macos-15 names GitHub's hosted Apple silicon image, the one sign-macos
     # runs on.
     runs-on: macos-15
+    environment: release
     timeout-minutes: 10
     permissions: {}
     env:
