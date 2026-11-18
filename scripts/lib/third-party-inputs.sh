@@ -22,9 +22,10 @@
 #
 # First-party code is Aggrega's own and is not attributed, so its version pins
 # are not inputs: this file is the one definition of what is first-party, for
-# the digest and for the generator, which reads the two prefixes below. A Go
+# the digest and for the generator, which reads the definitions below. A Go
 # module is first-party when its path starts with THIRD_PARTY_FIRST_PARTY_GO_PREFIX;
-# a crate is when its name starts with THIRD_PARTY_FIRST_PARTY_CRATE_PREFIX.
+# a crate is when its name is one of THIRD_PARTY_FIRST_PARTY_CRATES (crates.io has
+# no namespaces, so the names are exact, not a prefix).
 #
 # The digest is sha256:<64 hex> over a serialization with one line per input:
 # its label (a path, or `row` and the four row fields), a tab, and the sha256 of
@@ -36,7 +37,10 @@
 #
 #   THIRD_PARTY_DIGEST_PREFIX   the phrase that introduces the digest in the SBOM
 #   THIRD_PARTY_FIRST_PARTY_GO_PREFIX     path prefix of a first-party Go module
-#   THIRD_PARTY_FIRST_PARTY_CRATE_PREFIX  name prefix of a first-party crate
+#   THIRD_PARTY_FIRST_PARTY_CRATES        the exact names of the first-party crates
+#   THIRD_PARTY_HOST_TARGETS              the os/arch targets the release builds
+#                                         the host binary for
+#   THIRD_PARTY_GO_ENV                    the environment every `go list` runs in
 #
 #   third_party_is_first_party_crate NAME
 #     Exit 0 when the crate NAME is first-party.
@@ -56,11 +60,27 @@
 THIRD_PARTY_DIGEST_PREFIX="Inputs digest: "
 
 THIRD_PARTY_FIRST_PARTY_GO_PREFIX="github.com/aggrega-ai/"
-THIRD_PARTY_FIRST_PARTY_CRATE_PREFIX="aggrega-"
+THIRD_PARTY_FIRST_PARTY_CRATES="aggrega-abi aggrega-pdk-rust"
+
+# The os/arch targets the release builds the host binary (./cmd/aggrega) for. The
+# generator attributes the union of the packages `go list -deps` reaches for each,
+# since a target-specific dependency (a Windows console helper, say) is compiled
+# only into that target's binary. This is a deliberate copy of the targets the
+# release workflow (.github/workflows/publish-plugins-sign.yml: the native
+# Linux build and each `build.sh --target` step) builds: the workflow cannot be
+# read from here, because this file is sourced by scripts that run without it,
+# and a script that parsed workflow steps would break on any rewording. Keep the
+# two in step when a target is added or removed.
+THIRD_PARTY_HOST_TARGETS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
+
+# Every `go list` runs in this environment, so the dependency set is the
+# release's whichever machine generates it: no workspace file maps a module onto
+# a sibling checkout, the module graph is read as committed, and cgo is off.
+THIRD_PARTY_GO_ENV="GOWORK=off GOFLAGS=-mod=readonly CGO_ENABLED=0"
 
 third_party_is_first_party_crate() {
-  case "$1" in
-    "$THIRD_PARTY_FIRST_PARTY_CRATE_PREFIX"*) return 0 ;;
+  case " $THIRD_PARTY_FIRST_PARTY_CRATES " in
+    *" $1 "*) return 0 ;;
   esac
   return 1
 }
@@ -96,15 +116,17 @@ _third_party_go_lines() {
 
 # _third_party_lock_lines FILE: a Cargo.lock without its first-party [[package]]
 # blocks and without first-party entries in the other blocks' dependencies lists
-# (an entry is `"name",` or `"name version",`, one per line). A block ends at the
+# (an entry is `"name",` or `"name version",`, one per line; the name is matched
+# exactly). A block ends at the
 # next table header, [[...]] or [...], so a table after a first-party block is kept.
 _third_party_lock_lines() {
-  awk -v p="$THIRD_PARTY_FIRST_PARTY_CRATE_PREFIX" '
+  awk -v list="$THIRD_PARTY_FIRST_PARTY_CRATES" '
+    function fp(n) { return index(" " list " ", " " n " ") > 0 }
     function flush() { if (n > 0 && !skip) printf "%s", buf; buf = ""; n = 0; skip = 0 }
     /^\[/ { flush() }
     {
-      if ($0 ~ /^name = "/) { nm = $0; sub(/^name = "/, "", nm); sub(/".*/, "", nm); if (index(nm, p) == 1) skip = 1 }
-      if ($0 ~ /^ "/) { e = $0; sub(/^ "/, "", e); if (index(e, p) == 1) next }
+      if ($0 ~ /^name = "/) { nm = $0; sub(/^name = "/, "", nm); sub(/".*/, "", nm); if (fp(nm)) skip = 1 }
+      if ($0 ~ /^ "/) { e = $0; sub(/^ "/, "", e); sub(/[" ].*/, "", e); if (fp(e)) next }
       buf = buf $0 "\n"; n++
     }
     END { flush() }' "$1"

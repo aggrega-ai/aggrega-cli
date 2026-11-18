@@ -22,7 +22,9 @@
 #                              SPDX id, link into LICENSES/) — no inline bodies
 #
 # Shipped artifacts covered:
-#   - the Go host binary            (./cmd/aggrega)
+#   - the Go host binary            (./cmd/aggrega), for every target the release
+#                                   builds it for (THIRD_PARTY_HOST_TARGETS)
+#   - the Go standard library, compiled into the host and every Go plugin
 #   - every guest the binary embeds, as the core-plugin list names them: the
 #     rows whose embed column is empty (read through core_plugin_rows in
 #     scripts/lib/core-plugins.sh), each as <socket>/<name>. A row the binary
@@ -33,17 +35,22 @@
 # (go-licenses, cargo-license, cargo-about, license-checker) is required.
 #
 # Enumeration:
-#   - Go modules come from `go list -deps` over the host and, per embedded Go
-#     row, (GOOS=wasip1 GOARCH=wasm) that guest's package; the sets are unioned
-#     and each entry is labelled with the host and/or the guests that pull it in.
+#   - Go modules come from `go list -deps` over the host, once per release target
+#     (THIRD_PARTY_HOST_TARGETS), and, per embedded Go row, (GOOS=wasip1
+#     GOARCH=wasm) that guest's package; the sets are unioned and each entry is
+#     labelled with the host and/or the guests that pull it in. Every `go list`
+#     runs in THIRD_PARTY_GO_ENV, so the sets do not depend on the machine.
 #     A `go list` that fails stops the script.
+#   - The Go standard library is one entry: its version from go.mod's toolchain
+#     directive (else its go directive), BSD-3-Clause, copyright lines from the
+#     LICENSE file of the Go root.
 #   - Rust crates come from parsing the Cargo.lock in each embedded Rust row's
 #     source directory; only crates with a crates.io registry source are
 #     third-party, and each entry is labelled with the guests that pull it in.
 #   - First-party code is excluded, as our own Apache-2.0 code: the Go modules
-#     under github.com/aggrega-ai/, the Rust crates whose name starts with
-#     aggrega-, and the in-workspace Rust path crates. The Go prefix and the
-#     crate prefix are defined once, in scripts/lib/third-party-inputs.sh, which
+#     under github.com/aggrega-ai/, the Rust crates named in
+#     THIRD_PARTY_FIRST_PARTY_CRATES, and the in-workspace Rust path crates. The
+#     Go prefix and the crate names are defined once, in scripts/lib/third-party-inputs.sh, which
 #     the digest of the inputs uses too, so a first-party version pin never makes
 #     the attribution stale.
 #
@@ -80,9 +87,9 @@
 #   - Each unique SPDX id contributes exactly one file under LICENSES/. Bodies
 #     are deduplicated: a license shared by many dependencies is stored once.
 #   - For license families whose raw file embeds a per-package copyright line
-#     (MIT, ISC, BSD-2-Clause, BSD-3-Clause, zlib, 0BSD, MIT-0), and for
-#     BSL-1.0, LICENSES/ holds the canonical template body with a placeholder
-#     copyright. The real per-package copyright
+#     (MIT, ISC, BSD-2-Clause, BSD-3-Clause, zlib, 0BSD, MIT-0), LICENSES/ holds
+#     the canonical template body with a placeholder copyright; BSL-1.0, which
+#     has none, is stored canonical too. The real per-package copyright
 #     is never dropped — it is recorded in the SBOM's PackageCopyrightText for
 #     every dependency.
 #   - For the remaining licenses the canonical body is copied verbatim from the
@@ -127,12 +134,13 @@ cd "$CLI_DIR"
 # --- helpers ----------------------------------------------------------------
 
 # module_set <listargs...> : emit unique "path|version|dir" for modules reached
-# by `go list -deps` of the given packages, excluding the standard library and
-# first-party modules (THIRD_PARTY_FIRST_PARTY_GO_PREFIX).
+# by `go list -deps` of the given packages (in THIRD_PARTY_GO_ENV, with GOOS and
+# GOARCH as the caller sets them), excluding the standard library and first-party
+# modules (THIRD_PARTY_FIRST_PARTY_GO_PREFIX).
 # A failing `go list` stops the script, naming the packages.
 module_set() {
 	local out
-	if ! out="$(go list -deps -f '{{with .Module}}{{.Path}}|{{.Version}}|{{.Dir}}{{end}}' "$@")"; then
+	if ! out="$(env $THIRD_PARTY_GO_ENV go list -deps -f '{{with .Module}}{{.Path}}|{{.Version}}|{{.Dir}}{{end}}' "$@")"; then
 		echo "gen-third-party-licenses: ERROR: go list failed for: $*" >&2
 		exit 1
 	fi
@@ -494,6 +502,7 @@ inputs_digest="$(third_party_inputs_digest)" || exit 1
 mkdir -p "$WORK/sets"
 : > "$WORK/go-sets.list"     # "<label><TAB><file>" per Go set, host first
 : > "$WORK/rust-sets.list"   # "<label><TAB><file>" per Rust guest
+: > "$WORK/rust-src.list"    # "<label><TAB><source dir>" per Rust guest
 : > "$WORK/covered.md"       # the index's list of what is covered
 : > "$WORK/failures.txt"     # every dependency with no resolvable license text
 : > "$WORK/rust-nofile.txt"  # crates shipping no license file; the Cargo.toml license field stands
@@ -502,9 +511,15 @@ n=0
 
 # --- Go enumeration ---------------------------------------------------------
 
-module_set ./cmd/aggrega > "$WORK/sets/host.txt"
-printf 'cli-host\t%s\n' "$WORK/sets/host.txt" >> "$WORK/go-sets.list"
-printf -- '- the Go host binary (`cmd/aggrega`)\n' >> "$WORK/covered.md"
+# The host set is the union over every release target.
+: > "$WORK/sets/host-all.txt"
+for target in $THIRD_PARTY_HOST_TARGETS; do
+	GOOS="${target%/*}" GOARCH="${target#*/}" module_set ./cmd/aggrega >> "$WORK/sets/host-all.txt"
+done
+sort -u "$WORK/sets/host-all.txt" > "$WORK/sets/host.txt"
+printf 'aggrega\t%s\n' "$WORK/sets/host.txt" >> "$WORK/go-sets.list"
+printf -- '- the Go host binary (`cmd/aggrega`), for %s\n' "${THIRD_PARTY_HOST_TARGETS// /, }" >> "$WORK/covered.md"
+printf -- '- the Go standard library, compiled into the host binary and every Go plugin below\n' >> "$WORK/covered.md"
 
 while IFS=$'\x1f' read -r socket name src toolchain extra embed dir; do
 	[ -n "$socket" ] || continue
@@ -517,7 +532,7 @@ while IFS=$'\x1f' read -r socket name src toolchain extra embed dir; do
 	go)
 		GOOS=wasip1 GOARCH=wasm module_set "./$src" > "$WORK/sets/$n.txt"
 		printf '%s\t%s\n' "$label" "$WORK/sets/$n.txt" >> "$WORK/go-sets.list"
-		printf -- '- `%s`, a Go WebAssembly guest (`%s`), embedded into the host binary\n' "$label" "$src" >> "$WORK/covered.md"
+		printf -- '- `%s`, a Go WebAssembly plugin (`%s`), embedded into the host binary\n' "$label" "$src" >> "$WORK/covered.md"
 		;;
 	rust)
 		lock="$src/Cargo.lock"
@@ -536,7 +551,8 @@ while IFS=$'\x1f' read -r socket name src toolchain extra embed dir; do
 			END           { if (src && name && ver) print name, ver }
 		' "$lock" | sort -u > "$WORK/sets/$n.txt"
 		printf '%s\t%s\n' "$label" "$WORK/sets/$n.txt" >> "$WORK/rust-sets.list"
-		printf -- '- `%s`, a Rust WebAssembly guest (`%s`), embedded into the host binary\n' "$label" "$src" >> "$WORK/covered.md"
+		printf '%s\t%s\n' "$label" "$src" >> "$WORK/rust-src.list"
+		printf -- '- `%s`, a Rust WebAssembly plugin (`%s`), embedded into the host binary\n' "$label" "$src" >> "$WORK/covered.md"
 		;;
 	*)
 		echo "gen-third-party-licenses: ERROR: $label names the toolchain \"$toolchain\", not go or rust" >&2
@@ -561,6 +577,17 @@ used_by() {
 	while IFS=$'\t' read -r label file; do
 		if grep -Fxq -- "$2" "$file"; then out="${out:+$out, }$label"; fi
 	done < "$1"
+	printf '%s' "$out"
+}
+
+# fetch_dirs <labels> : the source directories of the Rust guests named in the
+# ", "-joined <labels>, space-joined.
+fetch_dirs() {
+	local label out=""
+	while IFS= read -r label; do
+		[ -n "$label" ] || continue
+		out="${out:+$out }$(awk -F'\t' -v l="$label" '$1 == l { print $2; exit }' "$WORK/rust-src.list")"
+	done < <(printf '%s' "$1" | sed 's/, /\n/g')
 	printf '%s' "$out"
 }
 
@@ -637,8 +664,17 @@ emit_pkg() {
 			printf '  Copyright:\n'
 			printf '%s\n' "$copyr" | sed 's/^/    /'
 		else
-			printf '  Copyright: none is stated in the package\n'
+			printf '  Copyright: none is stated in its license or notice files\n'
 		fi
+		for f in "${files[@]}"; do
+			[ -f "$f" ] || continue
+			case "$(basename "$f" | tr '[:lower:]' '[:upper:]')" in
+			NOTICE*)
+				printf '  Notice:\n'
+				sed 's/\r$//; s/^\(.\)/    \1/' "$f"
+				;;
+			esac
+		done
 	} >> "$WORK/notices-pkgs.txt"
 
 	printf 'Relationship: SPDXRef-DOCUMENT DESCRIBES %s\n' "$id" >> "$WORK/rels.txt"
@@ -659,6 +695,23 @@ while read -r name ver; do
 	third_party_is_first_party_crate "$name" || printf '%s %s\n' "$name" "$ver" >> "$WORK/rust-third.txt"
 done < "$WORK/rust.txt"
 mv "$WORK/rust-third.txt" "$WORK/rust.txt"
+
+# --- Go standard library -----------------------------------------------------
+
+# One entry: the toolchain that compiles the host and every Go plugin. Its
+# version is go.mod's toolchain directive, else its go directive; its license
+# and copyright lines are the LICENSE file at the Go root.
+go_std_ver="$(awk '$1 == "toolchain" { print $2; exit }' go.mod)"
+[ -n "$go_std_ver" ] || go_std_ver="$(awk '$1 == "go" { print $2; exit }' go.mod)"
+go_std_ver="go${go_std_ver#go}"
+go_root="$(env $THIRD_PARTY_GO_ENV go env GOROOT)"
+if [ ! -f "$go_root/LICENSE" ]; then
+	echo "gen-third-party-licenses: ERROR: the Go standard library has no LICENSE file under $go_root" >&2
+	exit 1
+fi
+go_std_usedby="$(awk -F'\t' '{ printf "%s%s", (NR > 1 ? ", " : ""), $1 }' "$WORK/go-sets.list")"
+emit_pkg "go" "Go standard library" "$go_std_ver" "NOASSERTION" "BSD-3-Clause" \
+	"https://go.dev/dl/" "pkg:golang/stdlib@$go_std_ver" "$go_std_usedby" "$go_root/LICENSE"
 
 # --- Go dependencies --------------------------------------------------------
 
@@ -703,7 +756,7 @@ while read -r name ver; do
 		if [ -d "$reg$name-$ver" ]; then cdir="$reg$name-$ver"; break; fi
 	done
 	if [ -z "$cdir" ]; then
-		printf 'Rust crate %s-%s: no source directory in any cargo registry under %s\n' "$name" "$ver" "${CARGO_HOME:-$HOME/.cargo}" >> "$WORK/failures.txt"
+		printf 'Rust crate %s-%s: no source directory in any cargo registry under %s; run `cargo fetch --locked` in %s\n' "$name" "$ver" "${CARGO_HOME:-$HOME/.cargo}" "$(fetch_dirs "$(used_by "$WORK/rust-sets.list" "$name $ver")")" >> "$WORK/failures.txt"
 	fi
 
 	declared="NOASSERTION"
@@ -784,7 +837,7 @@ mv "$WORK/LICENSES" "$LICDIR"
 	printf 'DocumentNamespace: https://aggrega.ai/spdx/aggrega-cli-third-party\n'
 	printf 'Creator: Tool: gen-third-party-licenses.sh\n'
 	printf 'Created: %s\n' "$FIXED_TS"
-	printf 'DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly guests it embeds: %s). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. %s%s.</text>\n' "$embedded_labels" "$THIRD_PARTY_DIGEST_PREFIX" "$inputs_digest"
+	printf 'DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly plugins it embeds: %s). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. %s%s.</text>\n' "$embedded_labels" "$THIRD_PARTY_DIGEST_PREFIX" "$inputs_digest"
 	cat "$WORK/sbom-pkgs.txt"
 	printf '\n'
 	cat "$WORK/rels.txt"
@@ -796,10 +849,10 @@ mv "$WORK/LICENSES" "$LICDIR"
 {
 	printf 'Third-party notices for the aggrega binary\n\n'
 	printf 'This file lists every third-party dependency compiled into the aggrega binary:\n'
-	printf 'the host (cli-host) and each embedded guest, named <socket>/<name> (%s).\n' "$embedded_labels"
+	printf 'the host (aggrega) and each embedded plugin, named <socket>/<name> (%s).\n' "$embedded_labels"
 	printf 'It is generated from the dependency set the binary is built from; do not edit it.\n\n'
 	printf 'Each dependency below names its version, its license, the copyright lines found in\n'
-	printf 'its package and what it is compiled into. The text of each license follows once,\n'
+	printf 'its package, any notice file it ships and what it is compiled into. The text of\neach license follows once,\n'
 	printf 'under its SPDX identifier.\n\n'
 	printf '================================================================\n'
 	printf 'Dependencies\n'
@@ -822,7 +875,7 @@ mv "$NOTICES.new" "$NOTICES"
 
 # --- thin index -------------------------------------------------------------
 
-go_count="$(wc -l < "$WORK/go-union.txt" | tr -d ' ')"
+go_count="$(( $(wc -l < "$WORK/go-union.txt" | tr -d ' ') + 1 ))"
 rust_count="$(wc -l < "$WORK/rust.txt" | tr -d ' ')"
 lic_count="$(wc -l < "$WORK/ids.txt" | tr -d ' ')"
 
@@ -837,7 +890,11 @@ Shipped artifacts covered:
 
 HEADER
 	cat "$WORK/covered.md"
-	cat <<'HEADER' | sed "s/HEADER_TEMPLATED/${TEMPLATED// /, }/"
+	templated_text=""
+	for t in $TEMPLATED; do
+		[ "$t" = "BSL-1.0" ] || templated_text="${templated_text:+$templated_text, }$t"
+	done
+	cat <<'HEADER' | sed -e "s/HEADER_TEMPLATED/$templated_text/" -e "s|TARGETS_PLACEHOLDER|${THIRD_PARTY_HOST_TARGETS// /, }|"
 
 **These files are generated. Do not edit them by hand.** Regenerate with:
 
@@ -847,23 +904,29 @@ HEADER
 
 run from the `aggrega-cli` module root.
 
-Attribution is split across three artifacts, in a REUSE/SPDX-style layout:
+Attribution is split across four artifacts, in a REUSE/SPDX-style layout:
 
 - `LICENSES/<SPDX>.txt` — the full text of each distinct license, stored once
   per SPDX identifier. For license families that embed a per-package copyright
   line (HEADER_TEMPLATED) the stored body is the canonical
-  template; the real per-package copyright is recorded in the SBOM below.
+  template with a placeholder copyright line; the real per-package copyright is
+  recorded in the SBOM and in the notices below.
 - `THIRD-PARTY.spdx` — a machine-readable SPDX 2.3 SBOM with one entry per
   dependency: name, version, SPDX license identifier, per-package copyright, and
   package locator.
+- `THIRD-PARTY-NOTICES.txt` — the plain-text notices `aggrega version --licenses`
+  prints: per dependency its version, license, copyright lines, any notice file
+  it ships and what it is compiled into, then each license text once.
 - this file — a human-readable index linking each dependency to its license
   text.
 
-The generator enumerates the actual compiled dependency set (`go list -deps`
-for Go, each guest's `Cargo.lock` for Rust), resolves each license from the local module and
-registry caches, and emits all three artifacts deterministically (stable sort,
-fixed SBOM timestamp; two runs are byte-identical). First-party Aggrega modules
-and crates are excluded.
+The generator enumerates the dependency set from two sources: for Go, the
+packages `go list -deps` reaches from `cmd/aggrega` for each of the release's
+targets (TARGETS_PLACEHOLDER) and from each embedded Go plugin; for Rust, every
+crate in each embedded plugin's `Cargo.lock`. It resolves each license from the
+local module and registry caches, and emits all four artifacts deterministically
+(stable sort, fixed SBOM timestamp; two runs are byte-identical). First-party
+Aggrega modules and crates are excluded.
 
 For Go modules the SPDX identifier is classified from the license text and is
 best-effort. For Rust crates it is read verbatim from the crate's `Cargo.toml`

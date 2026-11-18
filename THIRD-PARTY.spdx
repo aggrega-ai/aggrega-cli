@@ -5,7 +5,18 @@ DocumentName: aggrega-cli-third-party
 DocumentNamespace: https://aggrega.ai/spdx/aggrega-cli-third-party
 Creator: Tool: gen-third-party-licenses.sh
 Created: 1970-01-01T00:00:00Z
-DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly guests it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:ed843a02cac14006283c66970c1c3c51d0a2b8c3970cb30401a105dd077c18e5.</text>
+DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly plugins it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:709cc2a52aa1200157640129554b9b2ec39c4e1526c282b5a01a26b7cd77282a.</text>
+
+PackageName: Go standard library
+SPDXID: SPDXRef-Package-go-Go-standard-library-go1.26.0
+PackageVersion: go1.26.0
+PackageDownloadLocation: https://go.dev/dl/
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/stdlib@go1.26.0
+PackageComment: <text>Compiled into: aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger</text>
+FilesAnalyzed: false
 
 PackageName: dario.cat/mergo
 SPDXID: SPDXRef-Package-go-dario.cat-mergo-v1.0.1
@@ -16,7 +27,18 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2013 Dario Castañé. All rights reserved.
 Copyright (c) 2012 The Go Authors. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/dario.cat/mergo@v1.0.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
+FilesAnalyzed: false
+
+PackageName: github.com/Azure/go-ansiterm
+SPDXID: SPDXRef-Package-go-github.com-Azure-go-ansiterm-v0.0.0-20250102033503-faa5f7b0171c
+PackageVersion: v0.0.0-20250102033503-faa5f7b0171c
+PackageDownloadLocation: https://proxy.golang.org/github.com/!azure/go-ansiterm/@v/v0.0.0-20250102033503-faa5f7b0171c.zip
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: <text>Copyright (c) 2015 Microsoft Corporation</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/Azure/go-ansiterm@v0.0.0-20250102033503-faa5f7b0171c
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/BurntSushi/toml
@@ -38,7 +60,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/Masterminds/goutils@v1.1.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/Masterminds/semver/v3
@@ -49,7 +71,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (C) 2014-2019, Matt Butcher and Matt Farina</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/Masterminds/semver/v3@v3.5.0
-PackageComment: <text>Compiled into: cli-host, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/Masterminds/sprig/v3
@@ -60,7 +82,18 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (C) 2013-2020 Masterminds</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/Masterminds/sprig/v3@v3.3.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
+FilesAnalyzed: false
+
+PackageName: github.com/Microsoft/go-winio
+SPDXID: SPDXRef-Package-go-github.com-Microsoft-go-winio-v0.6.2
+PackageVersion: v0.6.2
+PackageDownloadLocation: https://proxy.golang.org/github.com/!microsoft/go-winio/@v/v0.6.2.zip
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: <text>Copyright (c) 2015 Microsoft</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/Microsoft/go-winio@v0.6.2
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/ProtonMail/go-crypto
@@ -71,7 +104,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2009 The Go Authors. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/ProtonMail/go-crypto@v1.4.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/agext/levenshtein
@@ -106,7 +139,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014-2020 Alex Saskevich</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/asaskevich/govalidator@v0.0.0-20230301143203-a9d515a09cc2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/awslabs/goformation/v7
@@ -128,7 +161,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014 Benedikt Lang <github at benediktlang.de></text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/blang/semver/v4@v4.0.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/blang/semver
@@ -139,7 +172,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014 Benedikt Lang <github at benediktlang.de></text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/blang/semver@v3.5.1+incompatible
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/cenkalti/backoff/v5
@@ -150,7 +183,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014 Cenk Altı</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/cenkalti/backoff/v5@v5.0.3
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/cespare/xxhash/v2
@@ -161,7 +194,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2016 Caleb Spare</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/cespare/xxhash/v2@v2.3.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/cloudflare/circl
@@ -173,7 +206,7 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2019 Cloudflare. All rights reserved.
 Copyright (c) 2009 The Go Authors. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/cloudflare/circl@v1.6.3
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/coreos/go-oidc/v3
@@ -184,7 +217,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2014 CoreOS, Inc</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/coreos/go-oidc/v3@v3.17.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/cyberphone/json-canonicalization
@@ -195,7 +228,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2018 Anders Rundgren</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/cyberphone/json-canonicalization@v0.0.0-20241213102144-19d51d7fe467
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/cyphar/filepath-securejoin
@@ -207,7 +240,7 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (C) 2014-2015 Docker Inc & Go Authors. All rights reserved.
 Copyright (C) 2017-2024 SUSE LLC. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/cyphar/filepath-securejoin@v0.7.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/davecgh/go-spew
@@ -218,7 +251,7 @@ PackageLicenseConcluded: ISC
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2012-2016 Dave Collins <dave@davec.name></text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/davecgh/go-spew@v1.1.2-0.20180830191138-d8f796af33cc
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/digitorus/pkcs7
@@ -229,7 +262,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015 Andrew Smith</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/digitorus/pkcs7@v0.0.0-20230818184609-3a137a874352
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/digitorus/timestamp
@@ -240,7 +273,7 @@ PackageLicenseConcluded: BSD-2-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2017, Digitorus B.V.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/digitorus/timestamp@v0.0.0-20231217203849-220c5c2851b7
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/dylibso/observe-sdk/go
@@ -251,7 +284,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2023-present Dylibso, Inc.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/dylibso/observe-sdk/go@v0.0.0-20240819160327-2d926c5d788a
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/emicklei/go-restful/v3
@@ -262,7 +295,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2012,2013 Ernest Micklei</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/emicklei/go-restful/v3@v3.13.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/emirpasic/gods
@@ -274,7 +307,7 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015, Emir Pasic
 Copyright (c) 2017 Benjamin Scher Purcell <benjapurcell@gmail.com></text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/emirpasic/gods@v1.18.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/evanphx/json-patch
@@ -285,7 +318,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014, Evan Phoenix</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/evanphx/json-patch@v5.9.11+incompatible
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/extism/go-pdk
@@ -307,7 +340,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2023, Extism</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/extism/go-sdk@v1.7.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/fxamacker/cbor/v2
@@ -318,7 +351,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2019-present Faye Amacker</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/fxamacker/cbor/v2@v2.9.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-errors/errors
@@ -329,7 +362,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015 Conrad Irwin <conrad@bugsnag.com></text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-errors/errors@v1.5.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-git/gcfg
@@ -340,7 +373,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2012 Péter Surányi. Portions Copyright (c) 2009 The Go</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-git/gcfg@v1.5.1-0.20230307220236-3a3c6141e376
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-git/go-billy/v5
@@ -351,7 +384,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2017 Sourced Technologies S.L.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-git/go-billy/v5@v5.9.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-git/go-git/v5
@@ -362,7 +395,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2018 Sourced Technologies, S.L.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-git/go-git/v5@v5.19.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-jose/go-jose/v4
@@ -373,7 +406,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-jose/go-jose/v4@v4.1.4
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-logr/logr
@@ -384,7 +417,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-logr/logr@v1.4.4
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-logr/stdr
@@ -395,7 +428,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-logr/stdr@v1.2.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/analysis
@@ -406,7 +439,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/analysis@v0.25.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/errors
@@ -417,7 +450,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/errors@v0.22.7
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/jsonpointer
@@ -431,7 +464,7 @@ PackageCopyrightText: <text>Copyright 2015-2025 go-swagger maintainers
 // SPDX-FileCopyrightText: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
 Copyright 2013 sigu-399 ( https://github.com/sigu-399 )</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/jsonpointer@v1.0.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/jsonreference
@@ -445,7 +478,7 @@ PackageCopyrightText: <text>Copyright 2015-2025 go-swagger maintainers
 // SPDX-FileCopyrightText: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
 Copyright 2013 sigu-399 ( https://github.com/sigu-399 )</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/jsonreference@v1.0.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/loads
@@ -456,7 +489,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/loads@v0.23.3
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/runtime/server-middleware
@@ -467,7 +500,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/runtime/server-middleware@v0.30.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/runtime
@@ -481,7 +514,7 @@ PackageCopyrightText: <text>Copyright 2015-2025 go-swagger maintainers
 // SPDX-FileCopyrightText: Copyright (c) 2014 Naoya Inada <naoina@kuune.org>
 Copyright (c) 2014 Naoya Inada <naoina@kuune.org></text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/runtime@v0.32.3
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/spec
@@ -492,7 +525,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>// SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/spec@v0.22.5
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/strfmt
@@ -503,7 +536,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/strfmt@v0.26.3
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/cmdutils
@@ -514,7 +547,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/cmdutils@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/conv
@@ -525,7 +558,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/conv@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/fileutils
@@ -536,7 +569,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/fileutils@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/jsonname
@@ -547,7 +580,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/jsonname@v0.26.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/jsonutils
@@ -558,7 +591,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/jsonutils@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/loading
@@ -569,7 +602,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/loading@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/mangling
@@ -580,7 +613,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/mangling@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/netutils
@@ -591,7 +624,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/netutils@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/pools
@@ -602,7 +635,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/pools@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/stringutils
@@ -613,7 +646,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/stringutils@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/typeutils
@@ -624,7 +657,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/typeutils@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag/yamlutils
@@ -635,7 +668,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag/yamlutils@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/swag
@@ -646,7 +679,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/swag@v0.27.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-openapi/validate
@@ -657,7 +690,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-openapi/validate@v0.25.3
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/go-viper/mapstructure/v2
@@ -668,7 +701,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2013 Mitchell Hashimoto</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/go-viper/mapstructure/v2@v2.5.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/gobwas/glob
@@ -679,7 +712,19 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2016 Sergey Kamardin</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/gobwas/glob@v0.2.3
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
+FilesAnalyzed: false
+
+PackageName: github.com/gofrs/flock
+SPDXID: SPDXRef-Package-go-github.com-gofrs-flock-v0.13.0
+PackageVersion: v0.13.0
+PackageDownloadLocation: https://proxy.golang.org/github.com/gofrs/flock/@v/v0.13.0.zip
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: <text>Copyright (c) 2018-2025, The Gofrs
+Copyright (c) 2015-2020, Tim Heckman</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/gofrs/flock@v0.13.0
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/golang/groupcache
@@ -690,7 +735,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/golang/groupcache@v0.0.0-20241129210726-2c02b8208cf8
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/google/btree
@@ -701,7 +746,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/google/btree@v1.1.3
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/google/certificate-transparency-go
@@ -712,7 +757,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/google/certificate-transparency-go@v1.3.3
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/google/gnostic-models
@@ -723,7 +768,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/google/gnostic-models@v0.7.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/google/go-containerregistry
@@ -734,7 +779,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/google/go-containerregistry@v0.21.6
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/google/jsonschema-go
@@ -745,7 +790,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2025 JSON Schema Go Project Authors</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/google/jsonschema-go@v0.4.3
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/google/uuid
@@ -756,7 +801,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2009,2014 Google Inc. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/google/uuid@v1.6.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/grpc-ecosystem/grpc-gateway/v2
@@ -767,7 +812,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015, Gengo, Inc.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/grpc-ecosystem/grpc-gateway/v2@v2.29.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/hashicorp/go-cleanhttp
@@ -778,7 +823,7 @@ PackageLicenseConcluded: MPL-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/hashicorp/go-cleanhttp@v0.5.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/hashicorp/go-retryablehttp
@@ -789,7 +834,7 @@ PackageLicenseConcluded: MPL-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015 HashiCorp, Inc.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/hashicorp/go-retryablehttp@v0.7.8
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/hashicorp/hcl/v2
@@ -811,7 +856,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015 Huan Du</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/huandu/xstrings@v1.5.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/ianlancetaylor/demangle
@@ -822,7 +867,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015 The Go Authors. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/ianlancetaylor/demangle@v0.0.0-20240805132620-81f5be970eca
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/in-toto/attestation
@@ -833,7 +878,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2021 in-toto Developers</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/in-toto/attestation@v1.2.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/in-toto/in-toto-golang
@@ -844,7 +889,18 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2018 New York University</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/in-toto/in-toto-golang@v0.11.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
+FilesAnalyzed: false
+
+PackageName: github.com/inconshreveable/mousetrap
+SPDXID: SPDXRef-Package-go-github.com-inconshreveable-mousetrap-v1.1.0
+PackageVersion: v1.1.0
+PackageDownloadLocation: https://proxy.golang.org/github.com/inconshreveable/mousetrap/@v/v1.1.0.zip
+PackageLicenseConcluded: Apache-2.0
+PackageLicenseDeclared: NOASSERTION
+PackageCopyrightText: <text>Copyright 2022 Alan Shreve (@inconshreveable)</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/inconshreveable/mousetrap@v1.1.0
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/jbenet/go-context
@@ -855,7 +911,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014 Juan Batiz-Benet</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/jbenet/go-context@v0.0.0-20150711004518-d14ea06fba99
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/jedisct1/go-minisign
@@ -866,7 +922,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2018-2021 Frank Denis</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/jedisct1/go-minisign@v0.0.0-20211028175153-1c139d1cc84b
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/json-iterator/go
@@ -877,7 +933,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2016 json-iterator</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/json-iterator/go@v1.1.12
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/kevinburke/ssh_config
@@ -889,7 +945,7 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2017 Kevin Burke.
 Copyright (c) 2013 - 2017 Thomas Pelletier, Eric Anderton</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/kevinburke/ssh_config@v1.2.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/klauspost/cpuid/v2
@@ -900,7 +956,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015 Klaus Post</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/klauspost/cpuid/v2@v2.3.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/liggitt/tabwriter
@@ -911,7 +967,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2009 The Go Authors. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/liggitt/tabwriter@v0.0.0-20181228230101-89fcab3d43de
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/mitchellh/copystructure
@@ -922,7 +978,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014 Mitchell Hashimoto</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/mitchellh/copystructure@v1.2.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/mitchellh/go-wordwrap
@@ -944,7 +1000,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2013 Mitchell Hashimoto</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/mitchellh/reflectwalk@v1.0.2
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/moby/term
@@ -955,7 +1011,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2013-2018 Docker, Inc.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/moby/term@v0.5.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/modern-go/concurrent
@@ -966,7 +1022,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/modern-go/concurrent@v0.0.0-20180306012644-bacd9c7ef1dd
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/modern-go/reflect2
@@ -977,7 +1033,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/modern-go/reflect2@v1.0.3-0.20250322232337-35a7c28c31ee
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/monochromegane/go-gitignore
@@ -988,7 +1044,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) [2015] [go-gitignore]</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/monochromegane/go-gitignore@v0.0.0-20200626010858-205db1a8cc00
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/munnerz/goautoneg
@@ -999,7 +1055,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2011, Open Knowledge Foundation Ltd.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/munnerz/goautoneg@v0.0.0-20191010083416-a7dc8b61c822
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/oklog/ulid/v2
@@ -1010,7 +1066,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/oklog/ulid/v2@v2.1.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/opencontainers/go-digest
@@ -1022,7 +1078,7 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2019, 2020 OCI Contributors
 Copyright 2016 Docker, Inc.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/opencontainers/go-digest@v1.0.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/opencontainers/image-spec
@@ -1033,7 +1089,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2016 The Linux Foundation.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/opencontainers/image-spec@v1.1.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/peterbourgon/diskv
@@ -1044,7 +1100,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2011-2012 Peter Bourgon</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/peterbourgon/diskv@v2.0.1+incompatible
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/pjbgf/sha1cd
@@ -1055,7 +1111,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2023 pjbgf</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/pjbgf/sha1cd@v0.6.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/pkg/browser
@@ -1066,7 +1122,7 @@ PackageLicenseConcluded: BSD-2-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014, Dave Cheney <dave@cheney.net></text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/pkg/browser@v0.0.0-20240102092130-5ac0b6a4141c
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/pkg/errors
@@ -1077,7 +1133,7 @@ PackageLicenseConcluded: BSD-2-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015, Dave Cheney <dave@cheney.net></text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/pkg/errors@v0.9.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/santhosh-tekuri/jsonschema/v6
@@ -1088,7 +1144,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/santhosh-tekuri/jsonschema/v6@v6.0.3
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/sassoftware/relic
@@ -1099,7 +1155,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/sassoftware/relic@v7.2.1+incompatible
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/secure-systems-lab/go-securesystemslib
@@ -1110,7 +1166,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2021 NYU Secure Systems Lab</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/secure-systems-lab/go-securesystemslib@v0.11.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/sergi/go-diff
@@ -1121,7 +1177,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2012-2016 The go-diff Authors. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/sergi/go-diff@v1.4.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/shibumi/go-pathspec
@@ -1132,7 +1188,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/shibumi/go-pathspec@v1.3.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/shopspring/decimal
@@ -1144,7 +1200,7 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2015 Spring, Inc.
 Copyright (c) 2013 Oguz Bilgic</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/shopspring/decimal@v1.4.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/sigstore/protobuf-specs
@@ -1155,7 +1211,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/sigstore/protobuf-specs@v0.5.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/sigstore/rekor-tiles/v2
@@ -1166,7 +1222,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/sigstore/rekor-tiles/v2@v2.2.2-0.20260601073857-5d098a2b6443
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/sigstore/rekor
@@ -1177,7 +1233,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/sigstore/rekor@v1.5.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/sigstore/sigstore-go
@@ -1188,7 +1244,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/sigstore/sigstore-go@v1.2.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/sigstore/sigstore
@@ -1199,7 +1255,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/sigstore/sigstore@v1.10.8
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/sigstore/timestamp-authority/v2
@@ -1210,7 +1266,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/sigstore/timestamp-authority/v2@v2.1.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/skeema/knownhosts
@@ -1221,7 +1277,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2025 Skeema LLC and the Skeema Knownhosts authors</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/skeema/knownhosts@v1.3.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/spf13/cast
@@ -1232,7 +1288,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014 Steve Francia</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/spf13/cast@v1.10.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/spf13/cobra
@@ -1243,7 +1299,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/spf13/cobra@v1.10.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/spf13/pflag
@@ -1255,7 +1311,7 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2012 Alex Ogier. All rights reserved.
 Copyright (c) 2012 The Go Authors. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/spf13/pflag@v1.0.10
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/tetratelabs/wabin
@@ -1266,7 +1322,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2020-2022 wazero authors</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/tetratelabs/wabin@v0.0.0-20230304001439-f6f874872834
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/tetratelabs/wazero
@@ -1277,7 +1333,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2020-2023 wazero authors</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/tetratelabs/wazero@v1.12.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/theupdateframework/go-tuf/v2
@@ -1290,7 +1346,7 @@ PackageCopyrightText: <text>Copyright 2024 The Update Framework Authors
 limitations under the License.Copyright 2024 The Update Framework Authors
 Copyright 2024 The Apache Software Foundation</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/theupdateframework/go-tuf/v2@v2.4.2-0.20260407074541-7e8f69f906ef
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/theupdateframework/go-tuf
@@ -1301,7 +1357,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014-2020 Prime Directive, Inc. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/theupdateframework/go-tuf@v0.7.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/transparency-dev/formats
@@ -1312,7 +1368,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/transparency-dev/formats@v0.1.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/transparency-dev/merkle
@@ -1323,7 +1379,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/transparency-dev/merkle@v0.0.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/x448/float16
@@ -1334,7 +1390,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2019 Montgomery Edwards⁴⁴⁸ and Faye Amacker</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/x448/float16@v0.8.4
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: github.com/xanzy/ssh-agent
@@ -1345,7 +1401,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/xanzy/ssh-agent@v0.3.3
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/xlab/treeprint
@@ -1356,7 +1412,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright © 2016 Maxim Kupriianov <max@kc.vc></text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/xlab/treeprint@v1.2.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/youmark/pkcs8
@@ -1367,7 +1423,7 @@ PackageLicenseConcluded: MIT
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014 youmark</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/github.com/youmark/pkcs8@v0.0.0-20240726163527-a2c0da244d78
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: github.com/zclconf/go-cty
@@ -1389,7 +1445,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/auto/sdk@v1.2.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: go.opentelemetry.io/otel/metric
@@ -1400,7 +1456,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/otel/metric@v1.45.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: go.opentelemetry.io/otel/trace
@@ -1411,7 +1467,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/otel/trace@v1.45.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: go.opentelemetry.io/otel
@@ -1422,7 +1478,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/otel@v1.45.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: go.opentelemetry.io/proto/otlp
@@ -1433,7 +1489,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.opentelemetry.io/proto/otlp@v1.11.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: go.yaml.in/yaml/v2
@@ -1445,7 +1501,7 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2006 Kirill Simonov
 Copyright 2011-2016 Canonical Ltd.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.yaml.in/yaml/v2@v2.4.4
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: go.yaml.in/yaml/v3
@@ -1459,7 +1515,7 @@ Copyright (c) 2006-2011 Kirill Simonov
 Copyright (c) 2011-2019 Canonical Ltd
 Copyright 2011-2016 Canonical Ltd.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/go.yaml.in/yaml/v3@v3.0.5
-PackageComment: <text>Compiled into: cli-host, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/crypto
@@ -1470,7 +1526,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/crypto@v0.58.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/mod
@@ -1481,7 +1537,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/mod@v0.41.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/net
@@ -1492,7 +1548,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/net@v0.60.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/oauth2
@@ -1503,7 +1559,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/oauth2@v0.36.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/sync
@@ -1514,7 +1570,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/sync@v0.24.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/sys
@@ -1525,7 +1581,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/sys@v0.49.0
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/term
@@ -1536,7 +1592,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/term@v0.47.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/text
@@ -1547,7 +1603,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/text@v0.43.0
-PackageComment: <text>Compiled into: cli-host, provider/helm, provider/terraform, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm, provider/terraform, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger</text>
 FilesAnalyzed: false
 
 PackageName: golang.org/x/time
@@ -1558,7 +1614,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/golang.org/x/time@v0.15.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: google.golang.org/genproto/googleapis/api
@@ -1569,7 +1625,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/genproto/googleapis/api@v0.0.0-20260803160001-6ac0973c030d
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: google.golang.org/genproto/googleapis/rpc
@@ -1580,7 +1636,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/genproto/googleapis/rpc@v0.0.0-20260803160001-6ac0973c030d
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: google.golang.org/grpc
@@ -1591,7 +1647,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2014 gRPC authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/grpc@v1.83.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: google.golang.org/protobuf
@@ -1602,7 +1658,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2018 The Go Authors. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/google.golang.org/protobuf@v1.36.12
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: gopkg.in/evanphx/json-patch.v4
@@ -1613,7 +1669,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2014, Evan Phoenix</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/gopkg.in/evanphx/json-patch.v4@v4.13.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: gopkg.in/inf.v0
@@ -1624,7 +1680,7 @@ PackageLicenseConcluded: BSD-3-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2012 Péter Surányi. Portions Copyright (c) 2009 The Go</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/gopkg.in/inf.v0@v0.9.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: gopkg.in/warnings.v0
@@ -1635,7 +1691,7 @@ PackageLicenseConcluded: BSD-2-Clause
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2016 Péter Surányi.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/gopkg.in/warnings.v0@v0.1.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: gopkg.in/yaml.v3
@@ -1649,7 +1705,7 @@ Copyright (c) 2006-2011 Kirill Simonov
 Copyright (c) 2011-2019 Canonical Ltd
 Copyright 2011-2016 Canonical Ltd.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/gopkg.in/yaml.v3@v3.0.1
-PackageComment: <text>Compiled into: cli-host, provider/cloudformation</text>
+PackageComment: <text>Compiled into: aggrega, provider/cloudformation</text>
 FilesAnalyzed: false
 
 PackageName: helm.sh/helm/v4
@@ -1660,7 +1716,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2016 The Kubernetes Authors All Rights Reserved</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/helm.sh/helm/v4@v4.3.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/apiextensions-apiserver
@@ -1671,7 +1727,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/apiextensions-apiserver@v0.37.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/apimachinery
@@ -1682,7 +1738,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/apimachinery@v0.37.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/api
@@ -1693,7 +1749,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/api@v0.37.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/cli-runtime
@@ -1704,7 +1760,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/cli-runtime@v0.37.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/client-go
@@ -1715,7 +1771,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/client-go@v0.37.1
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/klog/v2
@@ -1726,7 +1782,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/klog/v2@v2.140.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/kube-openapi
@@ -1737,7 +1793,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: k8s.io/utils
@@ -1748,7 +1804,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/k8s.io/utils@v0.0.0-20260626114624-be93311217bd
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: oras.land/oras-go/v2
@@ -1759,7 +1815,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2021 ORAS Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/oras.land/oras-go/v2@v2.6.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: sigs.k8s.io/json
@@ -1770,7 +1826,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright (c) 2009 The Go Authors. All rights reserved.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/json@v0.0.0-20250730193827-2d320260d730
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: sigs.k8s.io/kustomize/api
@@ -1781,7 +1837,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/kustomize/api@v0.21.1
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: sigs.k8s.io/kustomize/kyaml
@@ -1792,7 +1848,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/kustomize/kyaml@v0.21.2
-PackageComment: <text>Compiled into: cli-host</text>
+PackageComment: <text>Compiled into: aggrega</text>
 FilesAnalyzed: false
 
 PackageName: sigs.k8s.io/randfill
@@ -1804,7 +1860,7 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2014 The gofuzz Authors
 Copyright 2025 The Kubernetes Authors</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/randfill@v1.0.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: sigs.k8s.io/structured-merge-diff/v6
@@ -1815,7 +1871,7 @@ PackageLicenseConcluded: Apache-2.0
 PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: NOASSERTION
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/structured-merge-diff/v6@v6.4.2
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: sigs.k8s.io/yaml
@@ -1830,7 +1886,7 @@ Copyright (c) 2006-2010 Kirill Simonov
 Copyright (c) 2006-2011 Kirill Simonov
 Copyright (c) 2011-2019 Canonical Ltd</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/sigs.k8s.io/yaml@v1.6.0
-PackageComment: <text>Compiled into: cli-host, provider/helm</text>
+PackageComment: <text>Compiled into: aggrega, provider/helm</text>
 FilesAnalyzed: false
 
 PackageName: adler2
@@ -4284,11 +4340,14 @@ ExternalRef: PACKAGE-MANAGER purl pkg:cargo/zmij@1.0.23
 PackageComment: <text>Compiled into: governance/rego, governance/cel</text>
 FilesAnalyzed: false
 
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-Go-standard-library-go1.26.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-dario.cat-mergo-v1.0.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Azure-go-ansiterm-v0.0.0-20250102033503-faa5f7b0171c
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-BurntSushi-toml-v1.6.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Masterminds-goutils-v1.1.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Masterminds-semver-v3-v3.5.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Masterminds-sprig-v3-v3.3.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Microsoft-go-winio-v0.6.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-ProtonMail-go-crypto-v1.4.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-agext-levenshtein-v1.2.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-apparentlymart-go-textseg-v15-v15.0.0
@@ -4344,6 +4403,7 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openap
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-openapi-validate-v0.25.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-go-viper-mapstructure-v2-v2.5.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-gobwas-glob-v0.2.3
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-gofrs-flock-v0.13.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-golang-groupcache-v0.0.0-20241129210726-2c02b8208cf8
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-google-btree-v1.1.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-google-certificate-transparency-go-v1.3.3
@@ -4359,6 +4419,7 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-huandu-xs
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-ianlancetaylor-demangle-v0.0.0-20240805132620-81f5be970eca
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-in-toto-attestation-v1.2.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-in-toto-in-toto-golang-v0.11.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-inconshreveable-mousetrap-v1.1.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-jbenet-go-context-v0.0.0-20150711004518-d14ea06fba99
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-jedisct1-go-minisign-v0.0.0-20211028175153-1c139d1cc84b
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-json-iterator-go-v1.1.12

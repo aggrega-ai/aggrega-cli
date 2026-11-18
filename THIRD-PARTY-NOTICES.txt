@@ -1,23 +1,36 @@
 Third-party notices for the aggrega binary
 
 This file lists every third-party dependency compiled into the aggrega binary:
-the host (cli-host) and each embedded guest, named <socket>/<name> (provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel).
+the host (aggrega) and each embedded plugin, named <socket>/<name> (provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel).
 It is generated from the dependency set the binary is built from; do not edit it.
 
 Each dependency below names its version, its license, the copyright lines found in
-its package and what it is compiled into. The text of each license follows once,
+its package, any notice file it ships and what it is compiled into. The text of
+each license follows once,
 under its SPDX identifier.
 
 ================================================================
 Dependencies
 ================================================================
 
+Go standard library go1.26.0
+  License: BSD-3-Clause
+  Compiled into: aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger
+  Copyright:
+    Copyright 2009 The Go Authors.
+
 dario.cat/mergo v1.0.1
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2013 Dario Castañé. All rights reserved.
     Copyright (c) 2012 The Go Authors. All rights reserved.
+
+github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c
+  License: MIT
+  Compiled into: aggrega
+  Copyright:
+    Copyright (c) 2015 Microsoft Corporation
 
 github.com/BurntSushi/toml v1.6.0
   License: MIT
@@ -27,24 +40,30 @@ github.com/BurntSushi/toml v1.6.0
 
 github.com/Masterminds/goutils v1.1.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/Masterminds/semver/v3 v3.5.0
   License: MIT
-  Compiled into: cli-host, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm
+  Compiled into: aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm
   Copyright:
     Copyright (C) 2014-2019, Matt Butcher and Matt Farina
 
 github.com/Masterminds/sprig/v3 v3.3.0
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (C) 2013-2020 Masterminds
 
+github.com/Microsoft/go-winio v0.6.2
+  License: MIT
+  Compiled into: aggrega
+  Copyright:
+    Copyright (c) 2015 Microsoft
+
 github.com/ProtonMail/go-crypto v1.4.1
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2009 The Go Authors. All rights reserved.
 
@@ -53,6 +72,12 @@ github.com/agext/levenshtein v1.2.1
   Compiled into: provider/terraform, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger
   Copyright:
     Copyright 2016 ALRUX Inc.
+  Notice:
+    Alrux Go EXTensions (AGExt) - package levenshtein
+    Copyright 2016 ALRUX Inc.
+
+    This product includes software developed at ALRUX Inc.
+    (http://www.alrux.com/).
 
 github.com/apparentlymart/go-textseg/v15 v15.0.0
   License: Apache-2.0
@@ -64,7 +89,7 @@ github.com/apparentlymart/go-textseg/v15 v15.0.0
 
 github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2014-2020 Alex Saskevich
 
@@ -73,97 +98,106 @@ github.com/awslabs/goformation/v7 v7.14.9
   Compiled into: provider/cloudformation
   Copyright:
     Copyright 2011-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+  Notice:
+    GoFormation
+    Copyright 2011-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved. 
 
 github.com/blang/semver/v4 v4.0.0
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2014 Benedikt Lang <github at benediktlang.de>
 
 github.com/blang/semver v3.5.1+incompatible
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2014 Benedikt Lang <github at benediktlang.de>
 
 github.com/cenkalti/backoff/v5 v5.0.3
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2014 Cenk Altı
 
 github.com/cespare/xxhash/v2 v2.3.0
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2016 Caleb Spare
 
 github.com/cloudflare/circl v1.6.3
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2019 Cloudflare. All rights reserved.
     Copyright (c) 2009 The Go Authors. All rights reserved.
 
 github.com/coreos/go-oidc/v3 v3.17.0
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2014 CoreOS, Inc
+  Notice:
+    CoreOS Project
+    Copyright 2014 CoreOS, Inc
+
+    This product includes software developed at CoreOS, Inc.
+    (http://www.coreos.com/).
 
 github.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2018 Anders Rundgren
 
 github.com/cyphar/filepath-securejoin v0.7.0
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (C) 2014-2015 Docker Inc & Go Authors. All rights reserved.
     Copyright (C) 2017-2024 SUSE LLC. All rights reserved.
 
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
   License: ISC
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2012-2016 Dave Collins <dave@davec.name>
 
 github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2015 Andrew Smith
 
 github.com/digitorus/timestamp v0.0.0-20231217203849-220c5c2851b7
   License: BSD-2-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2017, Digitorus B.V.
 
 github.com/dylibso/observe-sdk/go v0.0.0-20240819160327-2d926c5d788a
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2023-present Dylibso, Inc.
 
 github.com/emicklei/go-restful/v3 v3.13.0
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2012,2013 Ernest Micklei
 
 github.com/emirpasic/gods v1.18.1
   License: BSD-2-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2015, Emir Pasic
     Copyright (c) 2017 Benjamin Scher Purcell <benjapurcell@gmail.com>
 
 github.com/evanphx/json-patch v5.9.11+incompatible
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2014, Evan Phoenix
 
@@ -175,246 +209,379 @@ github.com/extism/go-pdk v1.1.3
 
 github.com/extism/go-sdk v1.7.1
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2023, Extism
 
 github.com/fxamacker/cbor/v2 v2.9.1
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2019-present Faye Amacker
 
 github.com/go-errors/errors v1.5.1
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2015 Conrad Irwin <conrad@bugsnag.com>
 
 github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2012 Péter Surányi. Portions Copyright (c) 2009 The Go
 
 github.com/go-git/go-billy/v5 v5.9.0
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2017 Sourced Technologies S.L.
 
 github.com/go-git/go-git/v5 v5.19.1
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2018 Sourced Technologies, S.L.
 
 github.com/go-jose/go-jose/v4 v4.1.4
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/go-logr/logr v1.4.4
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-logr/stdr v1.2.2
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/analysis v0.25.2
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/errors v0.22.7
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/jsonpointer v1.0.0
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright 2015-2025 go-swagger maintainers
     // SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
     // SPDX-FileCopyrightText: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
     Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
+  Notice:
+    Copyright 2015-2025 go-swagger maintainers
+
+    // SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
+    // SPDX-License-Identifier: Apache-2.0
+
+    This software library, github.com/go-openapi/jsonpointer, includes software developed
+    by the go-swagger and go-openapi maintainers ("go-swagger maintainers").
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this software except in compliance with the License.
+
+    You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0.
+
+    This software is copied from, derived from, and inspired by other original software products.
+    It ships with copies of other software which license terms are recalled below.
+
+    The original software was authored on 25-02-2013 by sigu-399 (https://github.com/sigu-399, sigu.399@gmail.com).
+
+    github.com/sigu-399/jsonpointer
+    ===========================
+
+    // SPDX-FileCopyrightText: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
+    // SPDX-License-Identifier: Apache-2.0
+
+    Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
 
 github.com/go-openapi/jsonreference v1.0.0
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright 2015-2025 go-swagger maintainers
     // SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
     // SPDX-FileCopyrightText: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
     Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
+  Notice:
+    Copyright 2015-2025 go-swagger maintainers
+
+    // SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
+    // SPDX-License-Identifier: Apache-2.0
+
+    This software library, github.com/go-openapi/jsonreference, includes software developed
+    by the go-swagger and go-openapi maintainers ("go-swagger maintainers").
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this software except in compliance with the License.
+
+    You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0.
+
+    This software is copied from, derived from, and inspired by other original software products.
+    It ships with copies of other software which license terms are recalled below.
+
+    The original software was authored on 25-02-2013 by sigu-399 (https://github.com/sigu-399, sigu.399@gmail.com).
+
+    github.com/sigh-399/jsonreference
+    ===========================
+
+    // SPDX-FileCopyrightText: Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
+    // SPDX-License-Identifier: Apache-2.0
+
+    Copyright 2013 sigu-399 ( https://github.com/sigu-399 )
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
 
 github.com/go-openapi/loads v0.23.3
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/runtime/server-middleware v0.30.0
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/runtime v0.32.3
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2015-2025 go-swagger maintainers
     // SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
     // SPDX-FileCopyrightText: Copyright (c) 2014 Naoya Inada <naoina@kuune.org>
     Copyright (c) 2014 Naoya Inada <naoina@kuune.org>
+  Notice:
+    Copyright 2015-2025 go-swagger maintainers
+
+    // SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
+    // SPDX-License-Identifier: Apache-2.0
+
+    This software library, github.com/go-openapi/jsonpointer, includes software developed
+    by the go-swagger and go-openapi maintainers ("go-swagger maintainers").
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this software except in compliance with the License.
+
+    You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0.
+
+    This software is copied from, derived from, and inspired by other original software products.
+    It ships with copies of other software which license terms are recalled below.
+
+    The original software was authored in 2014 by Naoya Inada <naoina@kuune.org>
+
+    https://github.com/naoina/denco
+    ===========================
+
+    // SPDX-FileCopyrightText: Copyright (c) 2014 Naoya Inada <naoina@kuune.org>
+    // SPDX-License-Identifier: MIT
+
+    Copyright (c) 2014 Naoya Inada <naoina@kuune.org>
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+    THE SOFTWARE.
 
 github.com/go-openapi/spec v0.22.5
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     // SPDX-FileCopyrightText: Copyright 2015-2025 go-swagger maintainers
 
 github.com/go-openapi/strfmt v0.26.3
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/cmdutils v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/conv v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/fileutils v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/jsonname v0.26.0
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/jsonutils v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/loading v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/mangling v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/netutils v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/pools v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/stringutils v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/typeutils v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag/yamlutils v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/swag v0.27.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/go-openapi/validate v0.25.3
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/go-viper/mapstructure/v2 v2.5.0
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2013 Mitchell Hashimoto
 
 github.com/gobwas/glob v0.2.3
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2016 Sergey Kamardin
 
+github.com/gofrs/flock v0.13.0
+  License: BSD-3-Clause
+  Compiled into: aggrega
+  Copyright:
+    Copyright (c) 2018-2025, The Gofrs
+    Copyright (c) 2015-2020, Tim Heckman
+
 github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/google/btree v1.1.3
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/google/certificate-transparency-go v1.3.3
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/google/gnostic-models v0.7.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/google/go-containerregistry v0.21.6
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/google/jsonschema-go v0.4.3
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2025 JSON Schema Go Project Authors
 
 github.com/google/uuid v1.6.0
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2009,2014 Google Inc. All rights reserved.
 
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2015, Gengo, Inc.
 
 github.com/hashicorp/go-cleanhttp v0.5.2
   License: MPL-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/hashicorp/go-retryablehttp v0.7.8
   License: MPL-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2015 HashiCorp, Inc.
 
@@ -426,68 +593,74 @@ github.com/hashicorp/hcl/v2 v2.24.0
 
 github.com/huandu/xstrings v1.5.0
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2015 Huan Du
 
 github.com/ianlancetaylor/demangle v0.0.0-20240805132620-81f5be970eca
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2015 The Go Authors. All rights reserved.
 
 github.com/in-toto/attestation v1.2.0
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2021 in-toto Developers
 
 github.com/in-toto/in-toto-golang v0.11.0
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2018 New York University
 
+github.com/inconshreveable/mousetrap v1.1.0
+  License: Apache-2.0
+  Compiled into: aggrega
+  Copyright:
+    Copyright 2022 Alan Shreve (@inconshreveable)
+
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2014 Juan Batiz-Benet
 
 github.com/jedisct1/go-minisign v0.0.0-20211028175153-1c139d1cc84b
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2018-2021 Frank Denis
 
 github.com/json-iterator/go v1.1.12
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2016 json-iterator
 
 github.com/kevinburke/ssh_config v1.2.0
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2017 Kevin Burke.
     Copyright (c) 2013 - 2017 Thomas Pelletier, Eric Anderton
 
 github.com/klauspost/cpuid/v2 v2.3.0
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2015 Klaus Post
 
 github.com/liggitt/tabwriter v0.0.0-20181228230101-89fcab3d43de
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2009 The Go Authors. All rights reserved.
 
 github.com/mitchellh/copystructure v1.2.0
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2014 Mitchell Hashimoto
 
@@ -499,224 +672,251 @@ github.com/mitchellh/go-wordwrap v1.0.1
 
 github.com/mitchellh/reflectwalk v1.0.2
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2013 Mitchell Hashimoto
 
 github.com/moby/term v0.5.2
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2013-2018 Docker, Inc.
 
 github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) [2015] [go-gitignore]
 
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2011, Open Knowledge Foundation Ltd.
 
 github.com/oklog/ulid/v2 v2.1.1
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/opencontainers/go-digest v1.0.0
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2019, 2020 OCI Contributors
     Copyright 2016 Docker, Inc.
 
 github.com/opencontainers/image-spec v1.1.1
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2016 The Linux Foundation.
 
 github.com/peterbourgon/diskv v2.0.1+incompatible
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2011-2012 Peter Bourgon
 
 github.com/pjbgf/sha1cd v0.6.0
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2023 pjbgf
 
 github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
   License: BSD-2-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2014, Dave Cheney <dave@cheney.net>
 
 github.com/pkg/errors v0.9.1
   License: BSD-2-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2015, Dave Cheney <dave@cheney.net>
 
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 github.com/sassoftware/relic v7.2.1+incompatible
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/secure-systems-lab/go-securesystemslib v0.11.0
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2021 NYU Secure Systems Lab
 
 github.com/sergi/go-diff v1.4.0
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2012-2016 The go-diff Authors. All rights reserved.
 
 github.com/shibumi/go-pathspec v1.3.0
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/shopspring/decimal v1.4.0
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2015 Spring, Inc.
     Copyright (c) 2013 Oguz Bilgic
 
 github.com/sigstore/protobuf-specs v0.5.1
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/sigstore/rekor-tiles/v2 v2.2.2-0.20260601073857-5d098a2b6443
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/sigstore/rekor v1.5.2
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/sigstore/sigstore-go v1.2.1
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/sigstore/sigstore v1.10.8
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/sigstore/timestamp-authority/v2 v2.1.2
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/skeema/knownhosts v1.3.1
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2025 Skeema LLC and the Skeema Knownhosts authors
+  Notice:
+    Copyright 2025 Skeema LLC and the Skeema Knownhosts authors
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
 
 github.com/spf13/cast v1.10.0
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2014 Steve Francia
 
 github.com/spf13/cobra v1.10.2
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/spf13/pflag v1.0.10
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2012 Alex Ogier. All rights reserved.
     Copyright (c) 2012 The Go Authors. All rights reserved.
 
 github.com/tetratelabs/wabin v0.0.0-20230304001439-f6f874872834
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2020-2022 wazero authors
 
 github.com/tetratelabs/wazero v1.12.0
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
+    Copyright 2020-2023 wazero authors
+  Notice:
+    wazero
     Copyright 2020-2023 wazero authors
 
 github.com/theupdateframework/go-tuf/v2 v2.4.2-0.20260407074541-7e8f69f906ef
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2024 The Update Framework Authors
     limitations under the License.Copyright 2024 The Update Framework Authors
     Copyright 2024 The Apache Software Foundation
+  Notice:
+    Copyright 2024 The Update Framework Authors
+
+    Apache 2.0 License
+    Copyright 2024 The Apache Software Foundation
+
+    This product includes software developed at
+    The Apache Software Foundation (/).
+
+    SPDX-License-Identifier: Apache-2.0
 
 github.com/theupdateframework/go-tuf v0.7.0
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2014-2020 Prime Directive, Inc. All rights reserved.
 
 github.com/transparency-dev/formats v0.1.1
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/transparency-dev/merkle v0.0.2
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/x448/float16 v0.8.4
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2019 Montgomery Edwards⁴⁴⁸ and Faye Amacker
 
 github.com/xanzy/ssh-agent v0.3.3
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 github.com/xlab/treeprint v1.2.0
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright © 2016 Maxim Kupriianov <max@kc.vc>
 
 github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78
   License: MIT
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2014 youmark
 
@@ -728,234 +928,315 @@ github.com/zclconf/go-cty v1.16.3
 
 go.opentelemetry.io/auto/sdk v1.2.1
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 go.opentelemetry.io/otel/metric v1.45.0
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2009 The Go Authors.
 
 go.opentelemetry.io/otel/trace v1.45.0
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2009 The Go Authors.
 
 go.opentelemetry.io/otel v1.45.0
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2009 The Go Authors.
 
 go.opentelemetry.io/proto/otlp v1.11.0
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 go.yaml.in/yaml/v2 v2.4.4
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2006 Kirill Simonov
     Copyright 2011-2016 Canonical Ltd.
+  Notice:
+    Copyright 2011-2016 Canonical Ltd.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
 
 go.yaml.in/yaml/v3 v3.0.5
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger
+  Compiled into: aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger
   Copyright:
     Copyright (c) 2006-2010 Kirill Simonov
     Copyright (c) 2006-2011 Kirill Simonov
     Copyright (c) 2011-2019 Canonical Ltd
     Copyright 2011-2016 Canonical Ltd.
+  Notice:
+    Copyright 2011-2016 Canonical Ltd.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
 
 golang.org/x/crypto v0.58.0
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright 2009 The Go Authors.
 
 golang.org/x/mod v0.41.0
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2009 The Go Authors.
 
 golang.org/x/net v0.60.0
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright 2009 The Go Authors.
 
 golang.org/x/oauth2 v0.36.0
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright 2009 The Go Authors.
 
 golang.org/x/sync v0.24.0
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2009 The Go Authors.
 
 golang.org/x/sys v0.49.0
   License: BSD-3-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2009 The Go Authors.
 
 golang.org/x/term v0.47.0
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright 2009 The Go Authors.
 
 golang.org/x/text v0.43.0
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm, provider/terraform, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger
+  Compiled into: aggrega, provider/helm, provider/terraform, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger
   Copyright:
     Copyright 2009 The Go Authors.
 
 golang.org/x/time v0.15.0
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright 2009 The Go Authors.
 
 google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 google.golang.org/grpc v1.83.1
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2014 gRPC authors.
+  Notice:
+    Copyright 2014 gRPC authors.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
 
 google.golang.org/protobuf v1.36.12
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2018 The Go Authors. All rights reserved.
 
 gopkg.in/evanphx/json-patch.v4 v4.13.0
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2014, Evan Phoenix
 
 gopkg.in/inf.v0 v0.9.1
   License: BSD-3-Clause
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2012 Péter Surányi. Portions Copyright (c) 2009 The Go
 
 gopkg.in/warnings.v0 v0.1.2
   License: BSD-2-Clause
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright (c) 2016 Péter Surányi.
 
 gopkg.in/yaml.v3 v3.0.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/cloudformation
+  Compiled into: aggrega, provider/cloudformation
   Copyright:
     Copyright (c) 2006-2010 Kirill Simonov
     Copyright (c) 2006-2011 Kirill Simonov
     Copyright (c) 2011-2019 Canonical Ltd
     Copyright 2011-2016 Canonical Ltd.
+  Notice:
+    Copyright 2011-2016 Canonical Ltd.
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
 
 helm.sh/helm/v4 v4.3.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright 2016 The Kubernetes Authors All Rights Reserved
 
 k8s.io/apiextensions-apiserver v0.37.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 k8s.io/apimachinery v0.37.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 k8s.io/api v0.37.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 k8s.io/cli-runtime v0.37.1
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 k8s.io/client-go v0.37.1
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 k8s.io/klog/v2 v2.140.0
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 k8s.io/utils v0.0.0-20260626114624-be93311217bd
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 oras.land/oras-go/v2 v2.6.2
   License: Apache-2.0
-  Compiled into: cli-host
+  Compiled into: aggrega
   Copyright:
     Copyright 2021 ORAS Authors.
 
 sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2009 The Go Authors. All rights reserved.
 
 sigs.k8s.io/kustomize/api v0.21.1
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 sigs.k8s.io/kustomize/kyaml v0.21.2
   License: Apache-2.0
-  Compiled into: cli-host
-  Copyright: none is stated in the package
+  Compiled into: aggrega
+  Copyright: none is stated in its license or notice files
 
 sigs.k8s.io/randfill v1.0.0
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright 2014 The gofuzz Authors
     Copyright 2025 The Kubernetes Authors
+  Notice:
+    When donating the randfill project to the CNCF, we could not reach all the
+    gofuzz contributors to sign the CNCF CLA. As such, according to the CNCF rules
+    to donate a repository, we must add a NOTICE referencing section 7 of the CLA
+    with a list of developers who could not be reached.
+
+    `7. Should You wish to submit work that is not Your original creation, You may
+    submit it to the Foundation separately from any Contribution, identifying the
+    complete details of its source and of any license or other restriction
+    (including, but not limited to, related patents, trademarks, and license
+    agreements) of which you are personally aware, and conspicuously marking the
+    work as "Submitted on behalf of a third-party: [named here]".`
+
+    Submitted on behalf of a third-party: @dnephin (Daniel Nephin)
+    Submitted on behalf of a third-party: @AlekSi (Alexey Palazhchenko)
+    Submitted on behalf of a third-party: @bbigras (Bruno Bigras)
+    Submitted on behalf of a third-party: @samirkut (Samir)
+    Submitted on behalf of a third-party: @posener (Eyal Posener)
+    Submitted on behalf of a third-party: @Ashikpaul (Ashik Paul)
+    Submitted on behalf of a third-party: @kwongtailau (Kwongtai)
+    Submitted on behalf of a third-party: @ericcornelissen (Eric Cornelissen)
+    Submitted on behalf of a third-party: @eclipseo (Robert-André Mauchin)
+    Submitted on behalf of a third-party: @yanzhoupan (Andrew Pan)
+    Submitted on behalf of a third-party: @STRRL (Zhiqiang ZHOU)
+    Submitted on behalf of a third-party: @disconnect3d (Disconnect3d)
 
 sigs.k8s.io/structured-merge-diff/v6 v6.4.2
   License: Apache-2.0
-  Compiled into: cli-host, provider/helm
-  Copyright: none is stated in the package
+  Compiled into: aggrega, provider/helm
+  Copyright: none is stated in its license or notice files
 
 sigs.k8s.io/yaml v1.6.0
   License: MIT
-  Compiled into: cli-host, provider/helm
+  Compiled into: aggrega, provider/helm
   Copyright:
     Copyright (c) 2014 Sam Ghods
     Copyright (c) 2012 The Go Authors. All rights reserved.
@@ -990,7 +1271,7 @@ aho-corasick 1.1.5
 allocator-api2 0.2.21
   License: MIT OR Apache-2.0
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 android_system_properties 0.1.6
   License: MIT OR Apache-2.0
@@ -1008,12 +1289,12 @@ antlr4rust 0.5.2
 anyhow 1.0.102
   License: MIT OR Apache-2.0
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 anyhow 1.0.104
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 autocfg 1.5.0
   License: Apache-2.0 OR MIT
@@ -1036,7 +1317,7 @@ base64 0.22.1
 better_any 0.2.1
   License: MIT OR Apache-2.0
   Compiled into: governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 bit-set 0.8.0
   License: Apache-2.0 OR MIT
@@ -1119,7 +1400,7 @@ cc 1.4.4
 cel 0.14.3
   License: MIT
   Compiled into: governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 cfg-if 1.0.4
   License: MIT OR Apache-2.0
@@ -1181,7 +1462,7 @@ data-encoding 2.11.1
 displaydoc 0.2.7
   License: MIT OR Apache-2.0
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 either 1.16.0
   License: MIT OR Apache-2.0
@@ -1222,32 +1503,32 @@ equivalent 1.0.2
 extism-convert 1.21.0
   License: BSD-3-Clause
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 extism-convert 1.30.0
   License: BSD-3-Clause
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 extism-convert-macros 1.21.0
   License: BSD-3-Clause
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 extism-convert-macros 1.30.0
   License: BSD-3-Clause
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 extism-manifest 1.21.0
   License: BSD-3-Clause
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 extism-manifest 1.30.0
   License: BSD-3-Clause
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 extism-pdk 1.4.1
   License: BSD-3-Clause
@@ -1458,7 +1739,7 @@ itertools 0.14.0
 itoa 1.0.18
   License: MIT OR Apache-2.0
   Compiled into: linter/publishing, governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 js-sys 0.3.104
   License: MIT OR Apache-2.0
@@ -1475,7 +1756,7 @@ jsonschema 0.46.10
 jsonschema-regex 0.46.10
   License: MIT
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 lazy_static 1.5.0
   License: MIT OR Apache-2.0
@@ -1636,7 +1917,7 @@ num-traits 0.2.19
 once_cell 1.21.4
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 outref 0.5.2
   License: MIT
@@ -1659,7 +1940,7 @@ parking_lot_core 0.9.12
 pastey 0.2.3
   License: MIT OR Apache-2.0
   Compiled into: governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 percent-encoding 2.3.2
   License: MIT OR Apache-2.0
@@ -1682,7 +1963,7 @@ phf_shared 0.12.1
 pin-project-lite 0.2.17
   License: Apache-2.0 OR MIT
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 postcard 1.1.3
   License: MIT OR Apache-2.0
@@ -1700,7 +1981,7 @@ potential_utf 0.1.6
 proc-macro-crate 3.5.0
   License: MIT OR Apache-2.0
   Compiled into: linter/publishing, governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 proc-macro-utils 0.10.0
   License: MIT OR Apache-2.0
@@ -1711,52 +1992,52 @@ proc-macro-utils 0.10.0
 proc-macro2 1.0.106
   License: MIT OR Apache-2.0
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 proc-macro2 1.0.107
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 prost 0.14.3
   License: Apache-2.0
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 prost 0.14.4
   License: Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 prost-derive 0.14.3
   License: Apache-2.0
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 prost-derive 0.14.4
   License: Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 quote 1.0.45
   License: MIT OR Apache-2.0
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 quote 1.0.47
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 r-efi 5.3.0
   License: MIT OR Apache-2.0
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 r-efi 6.0.0
   License: MIT OR Apache-2.0
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 rand 0.10.2
   License: MIT OR Apache-2.0
@@ -1780,12 +2061,12 @@ redox_syscall 0.5.18
 ref-cast 1.0.27
   License: MIT OR Apache-2.0
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 ref-cast-impl 1.0.27
   License: MIT OR Apache-2.0
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 referencing 0.46.10
   License: MIT
@@ -1851,12 +2132,12 @@ rmp-serde 1.3.1
 rustversion 1.0.23
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 ryu 1.0.23
   License: Apache-2.0 OR BSL-1.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 scopeguard 1.2.0
   License: MIT OR Apache-2.0
@@ -1867,52 +2148,52 @@ scopeguard 1.2.0
 semver 1.0.28
   License: MIT OR Apache-2.0
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 serde 1.0.228
   License: MIT OR Apache-2.0
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 serde 1.0.229
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 serde_core 1.0.228
   License: MIT OR Apache-2.0
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 serde_core 1.0.229
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 serde_derive 1.0.228
   License: MIT OR Apache-2.0
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 serde_derive 1.0.229
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 serde_json 1.0.149
   License: MIT OR Apache-2.0
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 serde_json 1.0.151
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 serde_yaml 0.9.34+deprecated
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 shlex 2.0.1
   License: MIT OR Apache-2.0
@@ -1967,17 +2248,17 @@ stable_deref_trait 1.2.1
 syn 2.0.117
   License: MIT OR Apache-2.0
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 syn 2.0.119
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 syn 3.0.3
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 synstructure 0.13.2
   License: MIT
@@ -1994,12 +2275,12 @@ tar 0.4.46
 thiserror 2.0.20
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 thiserror-impl 2.0.20
   License: MIT OR Apache-2.0
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 tinystr 0.8.4
   License: Unicode-3.0
@@ -2047,7 +2328,7 @@ typed-arena 2.0.2
 unicode-general-category 1.1.0
   License: Apache-2.0
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 unicode-ident 1.0.24
   License: (MIT OR Apache-2.0) AND Unicode-3.0
@@ -2058,7 +2339,7 @@ unicode-ident 1.0.24
 unsafe-libyaml 0.2.11
   License: MIT
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 url 2.5.8
   License: MIT OR Apache-2.0
@@ -2069,7 +2350,7 @@ url 2.5.8
 utf8_iter 1.0.4
   License: Apache-2.0 OR MIT
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 uuid 1.24.1
   License: Apache-2.0 OR MIT
@@ -2088,7 +2369,7 @@ uuid 1.25.0
 uuid-simd 0.8.0
   License: MIT
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 version_check 0.9.5
   License: MIT/Apache-2.0
@@ -2099,12 +2380,12 @@ version_check 0.9.5
 vsimd 0.8.0
   License: MIT
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 wasip2 1.0.4+wasi-0.2.12
   License: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 wasm-bindgen 0.2.127
   License: MIT OR Apache-2.0
@@ -2169,17 +2450,17 @@ windows-strings 0.5.1
 winnow 1.0.3
   License: MIT
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 winnow 1.0.4
   License: MIT
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 wit-bindgen 0.57.1
   License: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
   Compiled into: governance/rego
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 writeable 0.6.4
   License: Unicode-3.0
@@ -2254,12 +2535,12 @@ zerovec-derive 0.11.6
 zmij 1.0.21
   License: MIT
   Compiled into: linter/publishing
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 zmij 1.0.23
   License: MIT
   Compiled into: governance/rego, governance/cel
-  Copyright: none is stated in the package
+  Copyright: none is stated in its license or notice files
 
 ================================================================
 License texts

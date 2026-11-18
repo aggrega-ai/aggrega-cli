@@ -6,10 +6,15 @@
 #
 # scripts/gen-third-party-licenses.sh records, in the DocumentComment of
 # THIRD-PARTY.spdx, a digest of its inputs: go.mod, go.sum, the Cargo.lock of
-# each embedded Rust guest, the embedded rows of the core-plugin list, and the
+# each embedded Rust plugin, the embedded rows of the core-plugin list, and the
 # generator itself (scripts/lib/third-party-inputs.sh defines the set and the
 # digest, for both scripts). This check recomputes the digest and compares. It
 # only hashes: no go list, no cargo, no network.
+#
+# Its limit: because it only hashes those files, a change in which packages the
+# binary or a plugin imports, with no change in go.mod, go.sum, a lockfile, the
+# rows or the generator, is not seen. Such a change leaves this check passing
+# until the attribution is regenerated.
 #
 # It also holds the embedded copy of the notices,
 # internal/thirdparty/THIRD-PARTY-NOTICES.txt, to the root THIRD-PARTY-NOTICES.txt
@@ -20,8 +25,8 @@
 # exit 1 when the digest differs, naming both digests, the inputs read and the
 # command that regenerates, or when the two notices files differ, naming both; exit 2
 # when the check could not run (the SBOM is missing or records no digest, an
-# input or the core-plugin list is unreadable), which is never reported as
-# current.
+# input or the core-plugin list is unreadable, sha256sum is missing or an input's
+# hash is not 64 hex digits), which is never reported as current.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -36,12 +41,22 @@ if [ ! -f "$SBOM" ]; then
   exit 2
 fi
 
+if ! command -v sha256sum >/dev/null 2>&1; then
+  echo "check-third-party-licenses: sha256sum is not installed, so the digest cannot be computed" >&2
+  exit 2
+fi
+
+# is_digest VALUE: VALUE is sha256: followed by exactly 64 hex digits.
+is_digest() {
+  printf '%s\n' "$1" | awk '{ ok = ($0 ~ /^sha256:[0-9a-f]+$/ && length($0) == 71) } END { exit !ok }'
+}
+
 recorded="$(awk -v p="$THIRD_PARTY_DIGEST_PREFIX" '
   /^DocumentComment:/ {
     i = index($0, p)
     if (i > 0) {
       s = substr($0, i + length(p))
-      if (match(s, /^sha256:[0-9a-f]{64}/)) { print substr(s, 1, RLENGTH); exit }
+      if (match(s, /^sha256:[0-9a-f]+/) && RLENGTH == 71) { print substr(s, 1, RLENGTH); exit }
     }
   }' "$SBOM")"
 if [ -z "$recorded" ]; then
@@ -49,11 +64,22 @@ if [ -z "$recorded" ]; then
   exit 2
 fi
 
-computed="$(third_party_inputs_digest)" || {
+lines="$(third_party_input_lines)" || {
   echo "check-third-party-licenses: could not read the inputs the digest covers" >&2
   exit 2
 }
-labels="$(third_party_input_labels)" || exit 2
+bad="$(printf '%s\n' "$lines" | awk -F'\t' '!($2 ~ /^[0-9a-f]+$/ && length($2) == 64) { print $1 }')"
+if [ -n "$bad" ]; then
+  echo "check-third-party-licenses: the hash of an input is not 64 hex digits, so the digest cannot be computed; inputs:" >&2
+  printf '%s\n' "$bad" | sed 's/^/  /' >&2
+  exit 2
+fi
+computed="$(third_party_inputs_digest)" || exit 2
+if ! is_digest "$computed"; then
+  echo "check-third-party-licenses: the computed digest is not sha256: and 64 hex digits" >&2
+  exit 2
+fi
+labels="$(printf '%s\n' "$lines" | awk -F'\t' '{ print $1 }')"
 
 NOTICES="THIRD-PARTY-NOTICES.txt"
 NOTICES_COPY="internal/thirdparty/THIRD-PARTY-NOTICES.txt"
