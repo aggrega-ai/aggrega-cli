@@ -1315,6 +1315,25 @@ jobs:
           set -euo pipefail
           aggrega-cli/scripts/check-version-single-source.sh
 
+      - name: Check that the third-party attribution is current
+        # The third-party notices the binary prints, and the licence texts,
+        # SBOM and index beside them, are generated from the Go module graph,
+        # the embedded Rust plugins' lockfiles, the embedded rows of the
+        # core-plugin list and the generator itself, and the generator records a
+        # digest of those inputs. A release must not ship notices that describe
+        # a dependency set other than the one it builds. The check refuses,
+        # naming both digests and the command that regenerates, when the
+        # recorded digest is not the one the tree gives, or when the notices
+        # embedded in the binary differ from the committed file. It sits after
+        # the checkout of the commit the sources job recorded, so it judges the
+        # tree this run builds, and before the build, so stale notices halt the
+        # run before anything is stamped. It only hashes files of the CLI tree,
+        # with no toolchain and no network, so it needs nothing the later steps
+        # install. It runs on a dry run too.
+        run: |
+          set -euo pipefail
+          aggrega-cli/scripts/check-third-party-licenses.sh
+
       - name: Set up Go
         # Pin the toolchain to the (tag-pinned) module's declared version and
         # cache modules so the guest and binary build does not re-download the
