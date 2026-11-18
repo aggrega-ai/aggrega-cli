@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: arm-boundary-feature-scope
+  version: "1.0.0"
+  description: >
+    Two datastores in one boundary deployed at subscription scope, with a
+    boundary-wide settings attachment. The attachment is part of the boundary, so
+    its content is assembled at the scope the boundary's annotations name.
+spec:
+  components:
+    alpha:
+      type: example/datastore/store
+      values:
+        symbol: Alpha
+    beta:
+      type: example/datastore/store
+      values:
+        symbol: Beta

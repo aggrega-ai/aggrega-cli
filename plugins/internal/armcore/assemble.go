@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -32,8 +33,57 @@ type Contribution struct {
 	// populated wave.
 	SyncWave int
 	// Annotations are the node's merged annotations. Assemble reads
-	// AnnotationDeploymentScope and AnnotationResourceGroup from them.
+	// AnnotationDeploymentScope, AnnotationSubscription and
+	// AnnotationResourceGroup from them (placementAnnotations).
 	Annotations map[string]string
+}
+
+// placementAnnotations are the annotations Assemble reads to place a
+// contribution's content: the scope its template deploys at, and the
+// subscription and resource group its nested content deploys to.
+var placementAnnotations = []string{AnnotationDeploymentScope, AnnotationSubscription, AnnotationResourceGroup}
+
+// belongsToNoComponent reports whether a contribution carries no annotations and
+// is named by a name basis other than its node id, as the contribution of a
+// Feature attached to a whole boundary is: it belongs to no component, so no
+// component's annotations reach it. A component's own contribution is named by
+// its node id.
+func belongsToNoComponent(c Contribution) bool {
+	return len(c.Annotations) == 0 && c.NameBasis != "" && c.NameBasis != c.NodeID
+}
+
+// withBoundaryPlacement returns contribs with each contribution that belongs to
+// no component (belongsToNoComponent) given every placement annotation the other
+// contributions all resolve to one value, so a boundary-wide Feature's content
+// is assembled at its boundary's scope and placed where its boundary's
+// components are. An annotation the others resolve to different values, or
+// leave absent, is not given. contribs itself is not changed.
+func withBoundaryPlacement(contribs []Contribution) []Contribution {
+	given := map[string]string{}
+	for _, key := range placementAnnotations {
+		value, agreed := "", true
+		for _, c := range contribs {
+			if belongsToNoComponent(c) {
+				continue
+			}
+			v := c.Annotations[key]
+			if v == "" || (value != "" && v != value) {
+				agreed = false
+				break
+			}
+			value = v
+		}
+		if agreed && value != "" {
+			given[key] = value
+		}
+	}
+	out := slices.Clone(contribs)
+	for i := range out {
+		if belongsToNoComponent(out[i]) && len(given) > 0 {
+			out[i].Annotations = maps.Clone(given)
+		}
+	}
+	return out
 }
 
 // ContributorIdentity returns the identity a contribution is named by: its name
@@ -56,7 +106,9 @@ var mergedSections = []string{sectionDefinitions, sectionParameters, sectionVari
 // as arm-template.json, at the scope its boundary deploys at.
 //
 // The scope is the one every contribution's AnnotationDeploymentScope resolves
-// to (boundaryScopeOf): a resource group where none names one. A fragment
+// to (boundaryScopeOf): a resource group where none names one. A contribution
+// that belongs to no component, a boundary-wide Feature's, first takes the
+// placement annotations the others agree on (withBoundaryPlacement). A fragment
 // written for a wider scope than its boundary's, by its $schema, halts wrapping
 // ErrPluginCannotExpressInput.
 //
@@ -67,8 +119,8 @@ var mergedSections = []string{sectionDefinitions, sectionParameters, sectionVari
 // subscription scope the resource group content, in LevelResourceGroupSymbol,
 // and at management group scope the subscription content, in
 // LevelSubscriptionSymbol, and the resource group content, in
-// LevelResourceGroupSymbol, side by side. A wave order a nested deployment
-// cannot carry halts (checkLevelOrder).
+// LevelResourceGroupSymbol, side by side. The wave order is written onto the
+// nested deployments, and an order they cannot carry halts (orderLevels).
 //
 // Within a level, resources merge by symbolic name; parameters, variables,
 // definitions, functions and metadata keys merge by the name written; each
@@ -89,6 +141,7 @@ var mergedSections = []string{sectionDefinitions, sectionParameters, sectionVari
 // members sorted by name; a section no fragment wrote is not written, and
 // resources always is. The output is a function of the input alone.
 func Assemble(contribs []Contribution) (rendercore.AssembleBoundaryOutput, error) {
+	contribs = withBoundaryPlacement(contribs)
 	scope, err := boundaryScopeOf(contribs)
 	if err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
@@ -135,7 +188,7 @@ func Assemble(contribs []Contribution) (rendercore.AssembleBoundaryOutput, error
 		}
 		diags = append(diags, levelDiags...)
 	}
-	if err := checkLevelOrder(top); err != nil {
+	if err := orderLevels(top); err != nil {
 		return rendercore.AssembleBoundaryOutput{}, err
 	}
 	if err := applyWaveOrdering(top.l.sections[sectionResources], top.waves); err != nil {

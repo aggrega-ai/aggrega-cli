@@ -156,6 +156,53 @@ func TestBoundaryScope(t *testing.T) {
 	})
 }
 
+// boundaryFeature is the contribution of a Feature attached to a whole boundary,
+// as the assembly receives it: no annotations of its own, and a name basis that
+// is not its node id.
+func boundaryFeature(fragment string) Contribution {
+	return Contribution{NodeID: "boundary-feature-marker", NameBasis: "bfr--stack--settings", Files: [][]byte{[]byte(fragment)}, Paths: []string{"arm.yaml"}}
+}
+
+func TestScopeBoundaryFeatureTakesItsBoundarysPlacement(t *testing.T) {
+	t.Parallel()
+	m, _ := assembled(t,
+		subscriptionBoundary(contributes("group", 0, groupFragment(levelGroup))),
+		subscriptionBoundary(contributes("payments-db", 0, storage("Db"))),
+		boundaryFeature(storage("Settings")),
+	)
+	if m[sectionSchema] != SchemaSubscription {
+		t.Errorf("$schema = %v, want the subscription schema", m[sectionSchema])
+	}
+	if got := levelDeploymentOf(t, m)["resourceGroup"]; got != levelGroup {
+		t.Errorf("the level deploys into %v, want %s", got, levelGroup)
+	}
+	if got, want := keysOf(levelTemplateOf(t, m)[sectionResources]), []string{"Db", "Settings"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("level resources = %v, want %v", got, want)
+	}
+
+	t.Run("its resource group content alone takes the boundary's resource group", func(t *testing.T) {
+		t.Parallel()
+		m, _ := assembled(t,
+			subscriptionBoundary(contributes("group", 0, groupFragment(levelGroup))),
+			boundaryFeature(storage("Settings")),
+		)
+		if got := levelDeploymentOf(t, m)["resourceGroup"]; got != levelGroup {
+			t.Errorf("the level deploys into %v, want %s", got, levelGroup)
+		}
+	})
+
+	t.Run("a component carrying no annotations still resolves resource-group scope", func(t *testing.T) {
+		t.Parallel()
+		_, err := Assemble([]Contribution{
+			subscriptionBoundary(contributes("payments-db", 0, storage("Db"))),
+			contributes("orders-api", 0, storage("Api")),
+		})
+		if !errors.Is(err, plugincondition.ErrPluginRequiredInputUnresolved()) {
+			t.Fatalf("err = %v, want a required input unresolved", err)
+		}
+	})
+}
+
 func TestScopeSubscriptionNestsResourceGroupContent(t *testing.T) {
 	t.Parallel()
 	m, _ := assembled(t,
@@ -289,6 +336,101 @@ func TestScopeParametersPassThroughToTheLevel(t *testing.T) {
 		}
 		if strings.Contains(err.Error(), "large") || strings.Contains(err.Error(), "small") {
 			t.Errorf("message %q quotes a value", err)
+		}
+	})
+}
+
+// typedParameterFragment is a resource group fragment whose parameter size is
+// typed by a definition that references a second one, beside a definition no
+// parameter references.
+const typedParameterFragment = `definitions:
+  tier:
+    type: string
+    allowedValues: [small, large]
+  sizes:
+    type: object
+    properties:
+      tier:
+        $ref: '#/definitions/tier'
+  unused:
+    type: int
+parameters:
+  size:
+    $ref: '#/definitions/sizes'
+resources:
+  Db:
+    type: Microsoft.Storage/storageAccounts
+    apiVersion: '2023-01-01'
+    name: db
+`
+
+func TestScopeMovedParametersCarryTheirDefinitions(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		name     string
+		boundary func(Contribution) Contribution
+	}{
+		{"subscription", subscriptionBoundary},
+		{"management group", managementGroupBoundary},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			m, _ := assembled(t, c.boundary(contributes("payments-db", 0, typedParameterFragment)))
+			if got, want := keysOf(m[sectionDefinitions]), []string{"sizes", "tier"}; !reflect.DeepEqual(got, want) {
+				t.Errorf("top-level definitions = %v, want %v", got, want)
+			}
+			if got, want := keysOf(m[sectionParameters]), []string{"size"}; !reflect.DeepEqual(got, want) {
+				t.Errorf("top-level parameters = %v, want %v", got, want)
+			}
+			inner := levelTemplateOf(t, m)
+			if got, want := keysOf(inner[sectionDefinitions]), []string{"sizes", "tier", "unused"}; !reflect.DeepEqual(got, want) {
+				t.Errorf("level definitions = %v, want %v", got, want)
+			}
+			topDefinitions, _ := m[sectionDefinitions].(map[string]any)
+			innerDefinitions, _ := inner[sectionDefinitions].(map[string]any)
+			if !reflect.DeepEqual(topDefinitions["sizes"], innerDefinitions["sizes"]) {
+				t.Errorf("the carried definition differs from the level's")
+			}
+		})
+	}
+
+	t.Run("a definition the top level declares with another body halts", func(t *testing.T) {
+		t.Parallel()
+		top := subscriptionSchemaLine + "definitions:\n  tier:\n    type: int\n"
+		_, err := Assemble([]Contribution{
+			subscriptionBoundary(contributes("group", 0, top)),
+			subscriptionBoundary(contributes("payments-db", 0, typedParameterFragment)),
+		})
+		if !errors.Is(err, plugincondition.ErrPluginOutputNameCollision()) {
+			t.Fatalf("err = %v, want an output name collision", err)
+		}
+		for _, want := range []string{"arm-provider:", "in definitions,", `"tier"`, `"group"`, `"payments-db"`} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("message %q does not contain %q", err, want)
+			}
+		}
+	})
+
+	t.Run("a default calling a function of the level halts", func(t *testing.T) {
+		t.Parallel()
+		calls := `functions:
+  - namespace: naming
+    members:
+      prefix:
+        output: {type: string, value: db}
+parameters:
+  label:
+    type: string
+    defaultValue: "[naming.prefix()]"
+` + storage("Db")
+		_, err := Assemble([]Contribution{subscriptionBoundary(contributes("payments-db", 0, calls))})
+		if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
+			t.Fatalf("err = %v, want cannot express input", err)
+		}
+		for _, want := range []string{"arm-provider:", `"label"`, `"payments-db"`, "naming.prefix", LevelResourceGroupSymbol, "/parameters/label/defaultValue"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("message %q does not contain %q", err, want)
+			}
 		}
 	})
 }
@@ -790,13 +932,125 @@ func TestScopeWaveBetweenALevelsWavesHalts(t *testing.T) {
 		}
 	}
 
-	// A top-level wave at either end of the level's span is ordered.
-	for _, wave := range []int{0, 2} {
-		assembled(t,
+	// A top-level resource in the level's latest wave waits for the level, and one
+	// in its earliest wave is waited for by the level, so the level's later
+	// content follows it.
+	m, _ := assembled(t,
+		subscriptionBoundary(contributes("payments-db", 0, storage("Db"))),
+		subscriptionBoundary(contributes("orders-api", 2, storage("Api"))),
+		subscriptionBoundary(contributes("group", 2, groupFragment("other-rg"))),
+	)
+	group := m[sectionResources].(map[string]any)["Group"].(map[string]any)
+	if got, want := group["dependsOn"], []any{LevelResourceGroupSymbol}; !reflect.DeepEqual(got, want) {
+		t.Errorf("a resource in the level's latest wave: Group dependsOn = %v, want %v", got, want)
+	}
+	m, _ = assembled(t,
+		subscriptionBoundary(contributes("payments-db", 0, storage("Db"))),
+		subscriptionBoundary(contributes("orders-api", 2, storage("Api"))),
+		subscriptionBoundary(contributes("group", 0, groupFragment("other-rg"))),
+	)
+	if got, want := levelDeploymentOf(t, m)["dependsOn"], []any{"Group"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("a resource in the level's earliest wave: level dependsOn = %v, want %v", got, want)
+	}
+}
+
+// landingFragment is a subscription fragment declaring one resource under the
+// symbolic name Landing.
+var landingFragment = subscriptionSchemaLine + storage("Landing")
+
+func TestScopeLevelSpanningWavesWaitsForItsEarliestWave(t *testing.T) {
+	t.Parallel()
+	t.Run("a resource in the earliest wave is depended on once, beside the group", func(t *testing.T) {
+		t.Parallel()
+		m, _ := assembled(t,
+			subscriptionBoundary(contributes("group", 0, groupFragment(levelGroup))),
+			subscriptionBoundary(contributes("landing", 0, landingFragment)),
 			subscriptionBoundary(contributes("payments-db", 0, storage("Db"))),
-			subscriptionBoundary(contributes("orders-api", 2, storage("Api"))),
-			subscriptionBoundary(contributes("group", wave, groupFragment("other-rg"))),
+			subscriptionBoundary(contributes("orders-api", 1, storage("Api"))),
 		)
+		if got, want := levelDeploymentOf(t, m)["dependsOn"], []any{"Group", "Landing"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("level dependsOn = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("a resource declared existing is not depended on", func(t *testing.T) {
+		t.Parallel()
+		existing := subscriptionSchemaLine + "resources:\n  Known:\n    type: Microsoft.Resources/resourceGroups\n    apiVersion: '2024-03-01'\n    name: other-rg\n    existing: true\n"
+		m, _ := assembled(t,
+			subscriptionBoundary(contributes("group", 0, existing)),
+			subscriptionBoundary(contributes("payments-db", 0, storage("Db"))),
+			subscriptionBoundary(contributes("orders-api", 1, storage("Api"))),
+		)
+		if got, present := levelDeploymentOf(t, m)["dependsOn"]; present {
+			t.Errorf("level dependsOn = %v, want none", got)
+		}
+	})
+
+	t.Run("the subscription level waits for a resource group level in its earliest wave", func(t *testing.T) {
+		t.Parallel()
+		m, _ := assembled(t,
+			managementGroupBoundary(contributes("group", 0, groupFragment("other-rg"))),
+			managementGroupBoundary(contributes("landing", 1, landingFragment)),
+			managementGroupBoundary(contributes("payments-db", 0, storage("Db"))),
+		)
+		if got, want := nestedDeploymentOf(t, m, LevelSubscriptionSymbol)["dependsOn"], []any{LevelResourceGroupSymbol}; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s dependsOn = %v, want %v", LevelSubscriptionSymbol, got, want)
+		}
+		if got, present := nestedDeploymentOf(t, m, LevelResourceGroupSymbol)["dependsOn"]; present {
+			t.Errorf("%s dependsOn = %v, want none", LevelResourceGroupSymbol, got)
+		}
+	})
+
+	t.Run("the resource group level waits for a subscription level in its earliest wave", func(t *testing.T) {
+		t.Parallel()
+		m, _ := assembled(t,
+			managementGroupBoundary(contributes("policy", 0, managementGroupSchemaLine+storage("Policy"))),
+			managementGroupBoundary(contributes("group", 0, groupFragment("other-rg"))),
+			managementGroupBoundary(contributes("payments-db", 0, storage("Db"))),
+			managementGroupBoundary(contributes("orders-api", 1, storage("Api"))),
+		)
+		if got, want := nestedDeploymentOf(t, m, LevelResourceGroupSymbol)["dependsOn"], []any{"Policy", LevelSubscriptionSymbol}; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s dependsOn = %v, want %v", LevelResourceGroupSymbol, got, want)
+		}
+	})
+}
+
+func TestScopeLevelsWaitingForEachOtherHalt(t *testing.T) {
+	t.Parallel()
+	_, err := Assemble([]Contribution{
+		managementGroupBoundary(contributes("group", 0, groupFragment("other-rg"))),
+		managementGroupBoundary(contributes("landing", 1, landingFragment)),
+		managementGroupBoundary(contributes("payments-db", 0, storage("Db"))),
+		managementGroupBoundary(contributes("orders-api", 1, storage("Api"))),
+	})
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
+		t.Fatalf("err = %v, want cannot express input", err)
+	}
+	for _, want := range []string{"arm-provider:", LevelResourceGroupSymbol, LevelSubscriptionSymbol, "wave 0", "wave 1", "one wave"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q does not contain %q", err, want)
+		}
+	}
+}
+
+func TestScopeLevelDependingOnALevelReachingALaterWaveHalts(t *testing.T) {
+	t.Parallel()
+	// The subscription level declares the resource group the resource group level
+	// deploys into, and holds content of wave 1; the resource group level's
+	// content is in wave 0, so deploying the subscription level first would put
+	// wave 1 before wave 0.
+	_, err := Assemble([]Contribution{
+		managementGroupBoundary(contributes("group", 0, groupFragment(levelGroup))),
+		managementGroupBoundary(contributes("landing", 1, landingFragment)),
+		managementGroupBoundary(contributes("payments-db", 0, storage("Db"))),
+	})
+	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) {
+		t.Fatalf("err = %v, want cannot express input", err)
+	}
+	for _, want := range []string{"arm-provider:", LevelResourceGroupSymbol, LevelSubscriptionSymbol, "wave 0", "wave 1", "earlier wave"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("message %q does not contain %q", err, want)
+		}
 	}
 }
 

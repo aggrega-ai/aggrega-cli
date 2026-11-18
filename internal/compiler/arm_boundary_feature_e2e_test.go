@@ -63,3 +63,32 @@ func TestArmBoundaryFeatureRendersOnce(t *testing.T) {
 func TestArmBoundaryFeatureBuildIsDeterministic(t *testing.T) {
 	pipelinetest.AssertDeterministic(t, armInput(armBoundaryFeatureRelease))
 }
+
+const armBoundaryFeatureScopeRelease = "testdata/arm-boundary-feature-scope/release.yaml"
+
+// TestArmBoundaryFeatureTakesTheBoundarysScope builds a boundary deployed at
+// subscription scope that carries a boundary-wide attachment. The attachment is
+// part of the boundary, so its resource-group content lands in the nested level
+// that holds the components' own, at the scope and in the resource group the
+// boundary's annotations name.
+func TestArmBoundaryFeatureTakesTheBoundarysScope(t *testing.T) {
+	t.Parallel()
+	result := pipelinetest.Build(t, armInput(armBoundaryFeatureScopeRelease))
+	template, raw := findArmTemplate(t, result.Artifacts, "dist/stack/")
+	t.Logf("assembled template:\n%s", raw)
+
+	if schema, _ := template["$schema"].(string); !strings.Contains(schema, "subscriptionDeploymentTemplate") {
+		t.Errorf("$schema = %q, want the subscription template schema", schema)
+	}
+	level := armResourceBody(t, template, "_resourceGroup")
+	if level["resourceGroup"] != "orders-rg" {
+		t.Errorf("_resourceGroup deploys into %v, want orders-rg", level["resourceGroup"])
+	}
+	properties, _ := level["properties"].(map[string]any)
+	inner, _ := properties["template"].(map[string]any)
+	resources, _ := inner["resources"].(map[string]any)
+	if got, want := sortedAnyKeys(resources), []string{"Alpha", "Beta", "StackSettings"}; !equalStringSlice(got, want) {
+		t.Errorf("the resource-group level holds %v, want %v", got, want)
+	}
+}
+

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: arm-boundary-feature-scope-manifest
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        example/datastore/store:1.0.0: arm-store:1.0.0
+    features:
+      type:
+        example/shared-settings:1.0.0: arm-shared-settings:1.0.0

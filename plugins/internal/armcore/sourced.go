@@ -213,24 +213,13 @@ func RenderSourced(n SourcedNode) (fragment []byte, symbol string, omitted []int
 		return nil, "", nil, err
 	}
 
-	properties := map[string]any{
-		"mode":                        "Incremental",
-		"expressionEvaluationOptions": map[string]any{"scope": "inner"},
-		"template":                    template,
-	}
+	var parameters map[string]any
 	if n.ValuesMapped {
-		parameters, err := bindParameters(n, template)
-		if err != nil {
+		if parameters, err = bindParameters(n, template); err != nil {
 			return nil, "", nil, err
 		}
-		properties["parameters"] = parameters
 	}
-	resource := map[string]any{
-		"type":       deploymentsResourceType,
-		"apiVersion": DeploymentsAPIVersion,
-		"name":       NestedDeploymentHistoryName(symbol),
-		"properties": properties,
-	}
+	resource := nestedDeploymentBody(NestedDeploymentHistoryName(symbol), template, parameters)
 	if scope != ScopeResourceGroup {
 		resource["location"] = "[deployment().location]"
 	}
@@ -248,4 +237,25 @@ func RenderSourced(n SourcedNode) (fragment []byte, symbol string, omitted []int
 		return nil, "", nil, err
 	}
 	return fragment, symbol, omitted, nil
+}
+
+// nestedDeploymentBody returns the body of a nested deployment resource under
+// the deployment name name: the deployments apiVersion, template deployed
+// incrementally and evaluated in its own scope, and parameters passed to it
+// where parameters is not nil.
+func nestedDeploymentBody(name string, template, parameters map[string]any) map[string]any {
+	properties := map[string]any{
+		"mode":                        "Incremental",
+		"expressionEvaluationOptions": map[string]any{"scope": "inner"},
+		"template":                    template,
+	}
+	if parameters != nil {
+		properties["parameters"] = parameters
+	}
+	return map[string]any{
+		"type":       deploymentsResourceType,
+		"apiVersion": DeploymentsAPIVersion,
+		"name":       name,
+		"properties": properties,
+	}
 }

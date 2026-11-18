@@ -5,10 +5,12 @@ package armcore
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore/armexpr"
 )
 
 // BoundaryScope returns the scope a boundary deploys at, read from the merged
@@ -183,7 +185,12 @@ type nestedLevel struct {
 // Each parameter the level declares is declared at the top level too, under the
 // same name and with the same body, and passed to the level as
 // {"value": "[parameters('<name>')]"}; a name the top level already declares
-// with another body halts as any collision does. A resource group level depends
+// with another body halts as any collision does. Every definition such a
+// parameter references through a $ref of the form #/definitions/<name>, and
+// every definition those reference in turn, is declared at the top level too on
+// the same terms (carryDefinitions). A parameter whose defaultValue calls a
+// user-defined function halts (refuseLevelFunctionDefault): the functions stay in
+// the level. A resource group level depends
 // on each resource of type Microsoft.Resources/resourceGroups, matched without
 // regard to case and not declared existing: true, whose name is exactly that
 // resource group's: of the top level in a subscription-scope template, and in a
@@ -229,10 +236,16 @@ func nestLevel(top *levelBuild, boundary, content Scope, nested []read) ([]rende
 	passed := map[string]any{}
 	for _, name := range sortedKeys(parameters) {
 		e := parameters[name]
+		if err := refuseLevelFunctionDefault(symbol, content, name, e); err != nil {
+			return nil, err
+		}
 		if err := top.insert(sectionParameters, name, &levelEntry{body: e.body, contributor: e.contributor, pointer: e.pointer}); err != nil {
 			return nil, err
 		}
 		passed[name] = map[string]any{"value": "[parameters(" + StringLiteral(name) + ")]"}
+	}
+	if err := carryDefinitions(top, inner, parameters); err != nil {
+		return nil, err
 	}
 
 	if other, taken := top.l.sections[sectionResources][symbol]; taken {
@@ -240,20 +253,10 @@ func nestLevel(top *levelBuild, boundary, content Scope, nested []read) ([]rende
 			fmt.Sprintf("the fragment of %q declares a resource under the symbolic name %s (at JSON pointer %s), which a %s-scope template gives the nested deployment holding its %s content; rename the resource",
 				other.contributor, symbol, other.pointer, scopeWords(boundary), scopeWords(content)))
 	}
-	properties := map[string]any{
-		"mode":                        "Incremental",
-		"expressionEvaluationOptions": map[string]any{"scope": "inner"},
-		"template":                    template,
+	if len(passed) == 0 {
+		passed = nil
 	}
-	if len(passed) > 0 {
-		properties["parameters"] = passed
-	}
-	body := map[string]any{
-		"type":       deploymentsResourceType,
-		"apiVersion": DeploymentsAPIVersion,
-		"name":       LevelHistoryName(content),
-		"properties": properties,
-	}
+	body := nestedDeploymentBody(LevelHistoryName(content), template, passed)
 	if subscription != "" {
 		body["subscriptionId"] = ArmLiteral(subscription)
 	}
@@ -289,27 +292,155 @@ func nestLevel(top *levelBuild, boundary, content Scope, nested []read) ([]rende
 	return diags, nil
 }
 
-// checkLevelOrder halts wrapping ErrPluginCannotExpressInput where the wave order
-// cannot be written onto the nested deployments of a template. It runs before
-// the waves are applied to the top level.
+// definitionRefPrefix opens a $ref to a definition of the same template.
+const definitionRefPrefix = "#/definitions/"
+
+// carryDefinitions declares at the top level each definition of the level that
+// a parameter in parameters references through a $ref, followed through the
+// definitions it reaches in turn, with the body and the contributor the level
+// holds it under. A definition the top level declares with another body halts
+// as any collision does (insert). A $ref naming a definition the level does not
+// declare is passed over: the level's own template carries it as written.
+func carryDefinitions(top, inner *levelBuild, parameters map[string]*levelEntry) error {
+	definitions := inner.l.sections[sectionDefinitions]
+	carried := map[string]bool{}
+	var pending []string
+	reach := func(body any) {
+		for _, name := range definitionRefs(body) {
+			spelled := name
+			if _, declared := definitions[spelled]; !declared {
+				spelled = inner.folded[sectionDefinitions][strings.ToLower(name)]
+			}
+			if _, declared := definitions[spelled]; declared && !carried[spelled] {
+				carried[spelled] = true
+				pending = append(pending, spelled)
+			}
+		}
+	}
+	for _, name := range sortedKeys(parameters) {
+		reach(parameters[name].body)
+	}
+	for len(pending) > 0 {
+		name := pending[0]
+		pending = pending[1:]
+		reach(definitions[name].body)
+	}
+	for _, name := range sortedKeys(carried) {
+		e := definitions[name]
+		if err := top.insert(sectionDefinitions, name, &levelEntry{body: e.body, contributor: e.contributor, pointer: e.pointer}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// definitionRefs returns, sorted, the definition names the $ref members inside
+// v name, each unescaped from its JSON pointer token.
+func definitionRefs(v any) []string {
+	found := map[string]bool{}
+	var walk func(any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			if ref, ok := x["$ref"].(string); ok && strings.HasPrefix(ref, definitionRefPrefix) {
+				token := strings.TrimPrefix(ref, definitionRefPrefix)
+				found[strings.ReplaceAll(strings.ReplaceAll(token, "~1", "/"), "~0", "~")] = true
+			}
+			for _, k := range sortedKeys(x) {
+				walk(x[k])
+			}
+		case []any:
+			for _, item := range x {
+				walk(item)
+			}
+		}
+	}
+	walk(v)
+	return sortedKeys(found)
+}
+
+// refuseLevelFunctionDefault halts wrapping ErrPluginCannotExpressInput where
+// the defaultValue of the parameter name, which the nested deployment symbol
+// holding content written for a scope declares and which is declared at the top
+// level too, calls a user-defined function. The top level declares no function
+// of the level, so the default could not be evaluated there; the halt names the
+// parameter, the function, the contributor and the nested deployment.
+func refuseLevelFunctionDefault(symbol string, content Scope, name string, e *levelEntry) error {
+	body, _ := e.body.(map[string]any)
+	var called string
+	var walk func(any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case string:
+			if called != "" || !armexpr.IsExpression(x) {
+				return
+			}
+			n, err := armexpr.Parse(x)
+			if err != nil {
+				return
+			}
+			armexpr.Walk(n, func(node armexpr.Node) bool {
+				if c, ok := node.(armexpr.Call); ok && c.Namespace != "" && called == "" {
+					called = c.Namespace + "." + c.Name
+				}
+				return called == ""
+			})
+		case map[string]any:
+			for _, k := range sortedKeys(x) {
+				walk(x[k])
+			}
+		case []any:
+			for _, item := range x {
+				walk(item)
+			}
+		}
+	}
+	walk(body[paramDefault])
+	if called == "" {
+		return nil
+	}
+	return refuse(plugincondition.ErrPluginCannotExpressInput,
+		fmt.Sprintf("the parameter %q of the fragment of %q (at JSON pointer %s/%s) is declared at the top level too, to be passed to the nested deployment %s that holds the %s content, and its defaultValue calls the user-defined function %s, which only %s declares; remove the default and supply the value when deploying, or compute it in a variable of the %s content",
+			name, e.contributor, e.pointer, paramDefault, symbol, scopeWords(content), called, symbol, scopeWords(content)))
+}
+
+// orderLevels writes the wave order onto the nested deployments of a template,
+// and halts wrapping ErrPluginCannotExpressInput where it cannot be written. It
+// runs before the waves are applied to the top level.
 //
-// A nested deployment takes the earliest wave of its contributors, and each
-// resource of a wave depends on the resources of the preceding populated wave.
-// A nested deployment that depends on a resource of a later wave than its own,
-// the one that declares the resource group it deploys into, would depend on that
-// resource and be depended on by it, a cycle ARM rejects at deploy. A resource of
-// a wave strictly between the earliest and the latest wave of a nested
-// deployment's contributors cannot be ordered both after the content of the
-// earliest wave and before the content of the latest, which the deployment holds
-// as one unit.
-func checkLevelOrder(top *levelBuild) error {
+// At the top level a nested deployment is one unit in the earliest wave of its
+// contributors, holding the content of every wave up to its latest, and each
+// resource of a wave depends on the resources of the preceding populated wave
+// (applyWaveOrdering). So:
+//
+//   - A nested deployment that depends on a unit whose content reaches a later
+//     wave than the deployment's earliest halts: the resource declaring the
+//     resource group it deploys into would depend on it and be depended on by
+//     it, and the subscription level holding that resource would deploy its
+//     later content before the deployment's earlier content.
+//   - A top-level unit in a wave strictly between the earliest and the latest
+//     wave of a nested deployment's contributors halts: it cannot be ordered both
+//     after the content of the earliest wave and before the content of the
+//     latest.
+//   - A top-level unit in the earliest wave of a nested deployment that holds the
+//     content of a later wave too is added to the deployment's dependsOn, after
+//     the dependencies it already lists, so that later content follows it. No
+//     top-level resource can name a nested deployment, so the added dependency on
+//     a resource closes no cycle; two nested deployments that would each have to
+//     be added to the other's dependsOn halt, naming both.
+func orderLevels(top *levelBuild) error {
 	resources := top.l.sections[sectionResources]
 	for _, symbol := range sortedKeys(top.levels) {
 		level := top.levels[symbol]
-		body, _ := resources[symbol].body.(map[string]any)
-		depends, _ := body["dependsOn"].([]any)
-		for _, d := range depends {
-			dependency, _ := d.(string)
+		for _, dependency := range levelDependencies(resources[symbol]) {
+			if other, nested := top.levels[dependency]; nested {
+				if other.last > level.first {
+					return refuse(plugincondition.ErrPluginCannotExpressInput,
+						fmt.Sprintf("the nested deployment %s depends on %s, which declares the resource group it deploys into, and the content of %s reaches wave %d while the content of %s starts in wave %d; deploying %s first would put its wave %d content before the wave %d content, so put the contributors of %s in an earlier wave, no later than wave %d, or the contributors of %s in wave %d or later",
+							symbol, dependency, dependency, other.last, symbol, level.first, dependency, other.last, level.first, dependency, level.first, symbol, other.last))
+				}
+				continue
+			}
 			if top.waves[dependency] > level.first {
 				return refuse(plugincondition.ErrPluginCannotExpressInput,
 					fmt.Sprintf("the nested deployment %s depends on %s, which declares the resource group it deploys into, and %s is in wave %d while the content of %s starts in wave %d; the wave order would make each depend on the other, which ARM rejects, so put the contributors of %s in an earlier wave, no later than wave %d",
@@ -328,7 +459,54 @@ func checkLevelOrder(top *levelBuild) error {
 			}
 		}
 	}
+
+	added := map[string][]any{}
+	for _, symbol := range sortedKeys(top.levels) {
+		level := top.levels[symbol]
+		if level.first == level.last {
+			continue
+		}
+		depends := levelDependencies(resources[symbol])
+		for _, other := range sortedKeys(resources) {
+			if other == symbol || isExisting(resources[other].body) || top.waves[other] != level.first || slices.Contains(depends, other) {
+				continue
+			}
+			added[symbol] = append(added[symbol], other)
+		}
+	}
+	for _, symbol := range sortedKeys(added) {
+		for _, other := range added[symbol] {
+			name := other.(string)
+			if name > symbol && slices.Contains(added[name], any(symbol)) {
+				first, second := top.levels[symbol], top.levels[name]
+				return refuse(plugincondition.ErrPluginCannotExpressInput,
+					fmt.Sprintf("the nested deployments %s and %s both hold content of wave %d and of a later wave (%s up to wave %d, %s up to wave %d), so each would have to wait for the wave %d content of the other, which ARM rejects as a cycle; put the contributors of one of them in one wave, or start one of them in the wave the other ends in",
+						symbol, name, first.first, symbol, first.last, name, second.last, first.first))
+			}
+		}
+	}
+	for _, symbol := range sortedKeys(added) {
+		body, _ := resources[symbol].body.(map[string]any)
+		out := clone(body)
+		existing, _ := body["dependsOn"].([]any)
+		out["dependsOn"] = append(slices.Clone(existing), added[symbol]...)
+		resources[symbol].body = out
+	}
 	return nil
+}
+
+// levelDependencies returns the symbolic names a nested deployment's dependsOn
+// lists, as nestLevel wrote it.
+func levelDependencies(e *levelEntry) []string {
+	body, _ := e.body.(map[string]any)
+	depends, _ := body["dependsOn"].([]any)
+	out := make([]string, 0, len(depends))
+	for _, d := range depends {
+		if name, ok := d.(string); ok {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // describeResource names the top-level resource symbol, with the contributor
