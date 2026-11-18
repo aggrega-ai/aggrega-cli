@@ -76,9 +76,9 @@ name: Publish and sign core plugins
 #                        every signature carrying an RFC 3161 timestamp, and
 #                        hands them on, each set with a SHA-256 list of it, as
 #                        windows-binaries-signed and
-#                        windows-installer-parts-signed, on every run but a manual dry
-#                        run launched from a ref the signing identity is taken
-#                        not to admit, which skips it. It runs on the runner the
+#                        windows-installer-parts-signed, on every run but one
+#                        on which registry-credential decides to skip the
+#                        signing, as described below. It runs on the runner the
 #                        AGGREGA_RUNNER label names, after the build, and reads
 #                        the five from the hand-over folder once they match its
 #                        list. It may mint the OIDC token, which it exchanges
@@ -101,10 +101,11 @@ name: Publish and sign core plugins
 #                        not confine the signing identity to itself: no claim of
 #                        the OIDC token names the job that minted it, so Azure
 #                        accepts the token of any job of this workflow that
-#                        presents the subject its credentials trust, which
-#                        every job naming the release environment presents,
-#                        and sign-and-publish, which may mint the token for its
-#                        Sigstore signatures, could exchange one too.
+#                        presents the subject its credentials trust — every
+#                        job naming the release environment that may mint the
+#                        token presents it — and sign-and-publish, which may
+#                        mint the token for its Sigstore signatures, could
+#                        exchange one too.
 #   windows-installer    Builds the Windows installer,
 #                        aggrega-<version>-windows-amd64-setup.exe as the
 #                        release attaches it, with makensis, from the default
@@ -440,14 +441,13 @@ name: Publish and sign core plugins
 # wrote, its signature check not applicable, and passes when every other check
 # does, and sign-and-publish releases those binaries unsigned, saying so in the
 # release notes and in the run's summary; the Windows binaries are signed as
-# ever. Should registry-credential decide to skip the signing — its decision
-# for a manual dry run from a ref the signing identity is taken not to admit,
-# one no run the release environment admits reaches (see the refs below) —
-# nothing is signed: windows-smoke and macos-smoke run the unsigned
+# ever. On a decision to skip the signing, which no run the release
+# environment admits reaches (see the refs below), nothing is signed:
+# windows-smoke and macos-smoke run the unsigned
 # binaries the build wrote, windows-smoke the installer windows-installer built from
 # them too, through the same script, which reports the
 # signature check not applicable rather than passed, and sign-and-publish, which
-# waits for sign-windows and sign-macos, is skipped with them, so such a run prints no publish
+# waits for sign-windows and sign-macos, is skipped with them, so the run prints no publish
 # plan. They need nothing the build needs — no
 # sibling repository, no toolchain, no secret, no network beyond their own
 # loopback address, save the Windows run's download of a pinned WinGet CLI from
@@ -499,9 +499,8 @@ name: Publish and sign core plugins
 # request on microsoft/winget-pkgs. A real publish of a pre-release makes
 # record-published's write alone: the three jobs after it are skipped.
 #
-# The manual-dispatch entry defaults to a dry run, dispatched from the main
-# branch or a v* tag, the refs the release environment admits. It checks
-# the credential,
+# A manual dispatch, from the main branch or a v* tag (the refs the release
+# environment admits), defaults to a dry run. It checks the credential,
 # builds everything a real run builds — the tooling image and the Windows
 # installer included — signs the
 # Windows binaries and the installer, and signs the macOS binaries and submits
@@ -530,9 +529,11 @@ name: Publish and sign core plugins
 # which these jobs name: registry-credential, sign-windows, sign-windows-installer,
 # sign-macos, sign-and-publish, record-published, publish-skills,
 # publish-package-channels, open-winget-pull-request and notarization-check.
-# Its branch and tag rule admits the main branch and the tags matching v*: a run
-# from any other ref stops in registry-credential, the run's first job, which
-# fails before any step of it runs, so nothing is checked out, built or signed.
+# Its branch and tag rule admits the main branch and the tags matching v*. On
+# a run from any other ref, registry-credential, the run's first job, fails
+# before any step of it runs, and every other job is skipped but clean-up,
+# which names no environment and holds no secret: nothing is checked out,
+# built, signed or published.
 # The environment's secrets reach only the jobs that name it, whatever any
 # other job runs; the list of settings below says which are the environment's.
 # Every job naming it that may mint the OIDC token — sign-windows,
@@ -544,31 +545,34 @@ name: Publish and sign core plugins
 # of sign-and-publish's Sigstore certificates from the workflow's path and
 # ref, not from that subject.
 #
-# Which refs may sign is decided by the signing identity's federated
-# credentials in Azure. The refs this workflow takes them to admit — the main
-# branch and every tag — are written once, in .github/scripts/windows-signing.sh.
-# The decision made from them, for a dry run launched from any other ref, is to
-# sign nothing: sign-windows,
+# Which refs sign is decided by the release environment's branch and tag
+# rule: every job of this workflow that may mint the OIDC token names the
+# environment and presents its subject, which names no ref, so the signing
+# identity's federated credentials in Azure decide that the environment may
+# sign, and the environment decides from which refs. Whether a run signs is
+# decided in registry-credential by the event, the dry_run input and the ref,
+# before anything is built or signed, and never by a signing that failed:
+# sign, or skip for a manual dry run from a ref outside those
+# .github/scripts/windows-signing.sh takes the identity to admit, written once
+# there — the main branch and every tag. Every ref that list leaves out is one
+# the release environment does not admit, and registry-credential names the
+# environment, so no run the environment admits reaches skip: every run that
+# reaches the decision signs. On a decision to skip, sign-windows,
 # sign-windows-installer and sign-macos are skipped, windows-installer builds the installer
 # from the unsigned files the build wrote,
 # windows-smoke runs the unsigned binaries and that installer, macos-smoke the
 # unsigned macOS binaries, each signature check
-# not applicable, and sign-and-publish is skipped with sign-windows. That skip
-# is decided in registry-credential by the event, the dry_run input and the ref,
-# before anything is built or signed, and never by a signing that failed; the
-# same job refuses it on a tag push and on a dispatch that is not a dry run,
+# not applicable, and sign-and-publish is skipped with sign-windows. The same
+# job refuses skip on a tag push and on a dispatch that is not a dry run,
 # which always sign, so on those a token the identity's credentials do not
-# accept fails in sign-windows, naming the ref. Every ref windows-signing.sh
-# leaves out is one the release environment does not admit, and registry-credential names
-# the environment, so a run from such a ref stops before the decision is made:
-# no run the environment admits reaches skip, and every run that reaches the
-# decision signs. The macOS signing follows that one decision,
+# accept fails in sign-windows, naming the ref. The macOS signing follows that one decision,
 # and is switched on by the repository variable AGGREGA_MACOS_SIGNING: on a
 # decision to sign, the macOS binaries are signed when it is true, and
 # otherwise released unsigned, which registry-credential prints and writes to
 # the run's summary; on a decision to skip, they are not signed whatever it
-# is. Apple's credentials are not bound to a ref, so the refs a dry run signs
-# from are the ones written for Windows, and a run that signs the macOS
+# is. Apple's credentials are not bound to a ref: they reach sign-macos as
+# secrets of the release environment, so the macOS binaries are signed from
+# the refs that environment admits, and a run that signs the macOS
 # binaries and lacks an Apple setting fails in sign-macos, naming each one
 # missing.
 #
@@ -745,7 +749,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Check the stored registry credential, build everything a release carries (the tooling image and the extension package included), generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release; the token of each App that publishes is minted and used for nothing, and the winget token is checked. Dispatch it from main or a v* tag, the refs the release environment admits: from any other ref the run stops in its first job."
+        description: "Check the stored registry credential, build everything a release carries (the tooling image and the extension package included), generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release; the jobs a pre-release tag does not skip mint each App's token, using it for nothing, and check the winget token. Dispatch it from main or a v* tag, the refs the release environment admits: from any other ref nothing is checked out, built, signed or published."
         required: false
         default: true
         type: boolean
@@ -808,9 +812,10 @@ jobs:
     # one request, and it holds the registry password in a job that runs no
     # third-party code. It is the run's first job, so it is also where a run with
     # no runner for the local jobs stops, and where the run decides whether it
-    # signs the Windows binaries, and the macOS ones. Naming the release
-    # environment, it is where a run from a ref that environment does not admit
-    # stops, before any of its steps runs.
+    # signs the Windows binaries, and the macOS ones. It names the release
+    # environment, so on a run from a ref that environment does not admit it
+    # fails before any of its steps runs, and every other job but clean-up is
+    # skipped.
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -858,8 +863,10 @@ jobs:
         # From the event, the dry_run input and the ref alone, before anything
         # is built or signed: sign on every run but a manual dry run launched
         # from a ref the signing identity is taken not to admit, which is skip.
-        # The refs it is taken to admit are written once, in the script. On
-        # skip, sign-windows and sign-macos are skipped and windows-smoke and
+        # The refs it is taken to admit are written once, in the script; every
+        # ref it leaves out is one the release environment, which this job
+        # names, does not admit, so no run that reaches this step decides skip.
+        # On skip, sign-windows and sign-macos are skipped and windows-smoke and
         # macos-smoke run the unsigned binaries the build wrote; no signing has
         # happened yet, so a signing that failed can never be what decided it.
         # The script speaks of the Windows binaries; the step after the guard
@@ -2266,9 +2273,9 @@ jobs:
     # Authenticode, so that Windows names their publisher, Cognitio S.r.l., and
     # can tell that nothing changed them since. It runs on every trigger, a dry run's included,
     # so the signing and the Windows smoke run's check of it are proven before a
-    # tag exists — on every run but a manual dry run launched from a ref the
-    # signing identity is taken not to admit, which registry-credential decides
-    # before anything is built, and on which this job is skipped. Its if: reads
+    # tag exists — on every run but one on which registry-credential decides,
+    # before anything is built, to skip the signing, and on which this job is
+    # skipped. Its if: reads
     # that decision and nothing else: a signing that failed cannot skip it, and
     # on a run that publishes no ref can either. windows-installer, windows-smoke
     # and sign-and-publish all wait for it.
@@ -2277,11 +2284,13 @@ jobs:
     # the exchange of the run's OIDC token for the token that signs, and jsign
     # under the Java runtime it fetches, each held to the SHA-256 it pins — is
     # scripts/sign-windows-files.sh, which says how; sign-windows-installer
-    # signs the installer through the same script. Which refs of which workflow
-    # may make that exchange is decided by
-    # the identity's federated credentials in Azure; the refs a dry run takes
-    # them to admit are stated once, in .github/scripts/windows-signing.sh, and
-    # read only to decide whether a dry run signs.
+    # signs the installer through the same script. The identity's federated
+    # credentials in Azure decide which subjects may make that exchange, and
+    # this job presents the release environment's, which names no ref, so the
+    # environment's branch and tag rule decides which refs sign. The refs the
+    # signing decision takes the identity to admit are stated once, in
+    # .github/scripts/windows-signing.sh, and read only to decide whether a dry
+    # run signs.
     # Everything that runs in this job can reach those tokens, so what runs is
     # kept to the shell's own utilities, curl, GitHub's own checkout and artifact
     # upload, and jsign under its own Java runtime, so no Java the machine
@@ -2749,8 +2758,8 @@ jobs:
     #
     # It runs on every trigger, a dry run's included, on the decision
     # registry-credential makes for the macOS binaries, macos_signing, and on no
-    # other: skipped on a manual dry run launched from a ref the Windows signing
-    # decision does not sign from, skipped whenever the repository variable
+    # other: skipped on a decision to skip the Windows signing, skipped
+    # whenever the repository variable
     # AGGREGA_MACOS_SIGNING is not true, when the release ships the binaries
     # unsigned, and run everywhere else. Run, it first refuses, naming each, any
     # Apple setting that is not set, so a run meant to sign never leaves the
@@ -3193,9 +3202,9 @@ jobs:
     # place of the default for that alone, and names every other job it needs
     # as having succeeded, so it never starts beside one that did not.
     # sign-windows and sign-macos are
-    # skipped on a manual dry run from a ref the signing identity is taken not to
-    # admit, and this job is skipped with them there, so the unsigned binaries
-    # windows-smoke and macos-smoke run on such a run never reach it. The smoke
+    # skipped on a decision to skip the signing, and this job is skipped with
+    # them there, so the unsigned binaries windows-smoke and macos-smoke run on
+    # that decision never reach it. The smoke
     # jobs' own if: lets each run when its signing was skipped so, and decides
     # that job alone: this job's needs name sign-windows and sign-macos
     # themselves. While macOS signing is off — the decision unsigned —
@@ -4868,14 +4877,14 @@ jobs:
     # here publishes nothing. On a dry run naming smoke_binaries_from it runs
     # the binaries smoke-binaries fetched instead, and fails whatever they do.
     #
-    # On a manual dry run from a ref the signing identity is taken not to admit,
-    # registry-credential decides that nothing is signed and sign-windows and
+    # On a decision to skip the signing, which registry-credential makes before
+    # anything is built, nothing is signed and sign-windows and
     # sign-windows-installer are
     # skipped: this job then runs the unsigned binaries the build wrote, staged
     # in its inputs, and the installer windows-installer built from them, every
     # check reporting its verdict, the signature checks
     # reported not applicable rather than passed, and fails whatever the others
-    # do. sign-and-publish is skipped on such a run, since it needs sign-windows
+    # do. sign-and-publish is skipped on that decision, since it needs sign-windows
     # itself, so those binaries go no further.
     #
     # The if: takes the place of the default, which would skip this job whenever
@@ -5049,12 +5058,12 @@ jobs:
     # reads only this repository. sign-and-publish waits for both targets, so a
     # failure on either publishes nothing.
     #
-    # On a manual dry run from a ref the signing identity is taken not to admit,
-    # registry-credential decides that nothing is signed and sign-macos is
+    # On a decision to skip the signing, which registry-credential makes before
+    # anything is built, nothing is signed and sign-macos is
     # skipped: this job then runs the unsigned binaries the build wrote, staged
     # in its inputs, every check reporting its verdict, the signature check
     # reported not applicable rather than passed, and fails whatever the others
-    # do. sign-and-publish is skipped on such a run, since it needs sign-macos
+    # do. sign-and-publish is skipped on that decision, since it needs sign-macos
     # itself, so those binaries go no further.
     #
     # While macOS signing is off — registry-credential's macOS decision
