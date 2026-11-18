@@ -65,19 +65,43 @@ third_party_is_first_party_crate() {
   return 1
 }
 
-# _third_party_go_lines FILE: FILE (go.mod or go.sum) without the lines that
-# name a first-party module.
+# _third_party_go_lines FILE: go.mod or go.sum without the lines whose module
+# path starts with THIRD_PARTY_FIRST_PARTY_GO_PREFIX. In go.sum that is the first
+# field. In go.mod it is the `module` line's path, the first field inside a
+# require or exclude block, the field after require or exclude on a one-line
+# directive, and a replace line only when both the path it replaces and the path
+# it points at are first-party. A path elsewhere in a line (a comment, say) does
+# not make the line first-party.
 _third_party_go_lines() {
-  awk -v p="$THIRD_PARTY_FIRST_PARTY_GO_PREFIX" 'index($0, p) == 0' "$1"
+  case "$1" in
+    *go.sum) awk -v p="$THIRD_PARTY_FIRST_PARTY_GO_PREFIX" 'index($1, p) != 1' "$1" ;;
+    *) awk -v p="$THIRD_PARTY_FIRST_PARTY_GO_PREFIX" '
+      function fp(s) { return index(s, p) == 1 }
+      function newpath(   i) { for (i = 1; i <= NF; i++) if ($i == "=>") return $(i + 1); return "" }
+      {
+        drop = 0
+        if (block != "") {
+          if ($1 == ")") { block = "" }
+          else if (block == "replace") { drop = fp($1) && fp(newpath()) }
+          else { drop = fp($1) }
+        } else if ($1 == "module") { drop = fp($2) }
+        else if (($1 == "require" || $1 == "exclude") && $2 == "(") { block = $1 }
+        else if ($1 == "replace" && $2 == "(") { block = "replace" }
+        else if ($1 == "require" || $1 == "exclude") { drop = fp($2) }
+        else if ($1 == "replace") { drop = fp($2) && fp(newpath()) }
+        if (!drop) print
+      }' "$1" ;;
+  esac
 }
 
 # _third_party_lock_lines FILE: a Cargo.lock without its first-party [[package]]
 # blocks and without first-party entries in the other blocks' dependencies lists
-# (an entry is `"name",` or `"name version",`, one per line).
+# (an entry is `"name",` or `"name version",`, one per line). A block ends at the
+# next table header, [[...]] or [...], so a table after a first-party block is kept.
 _third_party_lock_lines() {
   awk -v p="$THIRD_PARTY_FIRST_PARTY_CRATE_PREFIX" '
     function flush() { if (n > 0 && !skip) printf "%s", buf; buf = ""; n = 0; skip = 0 }
-    /^\[\[package\]\]/ { flush() }
+    /^\[/ { flush() }
     {
       if ($0 ~ /^name = "/) { nm = $0; sub(/^name = "/, "", nm); sub(/".*/, "", nm); if (index(nm, p) == 1) skip = 1 }
       if ($0 ~ /^ "/) { e = $0; sub(/^ "/, "", e); if (index(e, p) == 1) next }
@@ -91,7 +115,7 @@ _third_party_sha256() {
 }
 
 third_party_input_lines() {
-  local root="$CORE_PLUGIN_MODULE_ROOT" rows socket name src toolchain extra embed dir f lock
+  local root="$CORE_PLUGIN_MODULE_ROOT" rows socket name src toolchain extra embed dir f lock body
   rows="$(core_plugin_rows)" || return 1
   for f in go.mod go.sum scripts/gen-third-party-licenses.sh scripts/lib/third-party-inputs.sh; do
     if [ ! -f "$root/$f" ]; then
@@ -99,7 +123,9 @@ third_party_input_lines() {
       return 1
     fi
     case "$f" in
-      go.mod|go.sum) printf '%s\t%s\n' "$f" "$(_third_party_go_lines "$root/$f" | _third_party_sha256)" ;;
+      go.mod|go.sum)
+        body="$(_third_party_go_lines "$root/$f")" || return 1
+        printf '%s\t%s\n' "$f" "$(printf '%s\n' "$body" | _third_party_sha256)" ;;
       *) printf '%s\t%s\n' "$f" "$(_third_party_sha256 < "$root/$f")" ;;
     esac
   done
@@ -114,7 +140,8 @@ third_party_input_lines() {
         echo "third-party-inputs: the input $lock is missing (looked in $root)" >&2
         return 1
       fi
-      printf '%s\t%s\n' "$lock" "$(_third_party_lock_lines "$root/$lock" | _third_party_sha256)"
+      body="$(_third_party_lock_lines "$root/$lock")" || return 1
+      printf '%s\t%s\n' "$lock" "$(printf '%s\n' "$body" | _third_party_sha256)"
     fi
   done <<< "$rows"
 }
