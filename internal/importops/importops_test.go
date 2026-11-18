@@ -307,6 +307,17 @@ func TestSelectFormat(t *testing.T) {
 	workflowKind := []byte("kind: Workflow\nname: Assistant\nmodel:\n  id: gpt-4.1-mini\n")
 	lowerKind := []byte("kind: prompt\nname: Assistant\nmodel:\n  id: gpt-4.1-mini\n")
 	modelString := []byte("kind: Prompt\nname: Assistant\nmodel: gpt-4.1-mini\n")
+	// A CloudFormation provider schema, a describe-type output, a schema whose
+	// properties is a list, a Terraform providers schema export, an export
+	// without its provider_schemas, a Bicep types file and one whose first entry
+	// states no $type.
+	cfnSchema := []byte(`{"typeName":"AWS::Example::Ledger","properties":{}}`)
+	cfnDescribeType := []byte(`{"TypeName":"AWS::Example::Ledger","Schema":"{}"}`)
+	cfnListProperties := []byte(`{"typeName":"AWS::Example::Ledger","properties":[]}`)
+	tfExport := []byte(`{"format_version":"1.0","provider_schemas":{}}`)
+	tfNoProviders := []byte(`{"format_version":"1.0"}`)
+	armTypes := []byte(`[{"$type":"StringType"},{"$type":"ObjectType","name":"Microsoft.Example/vaults"}]`)
+	armNoType := []byte(`[{"name":"Microsoft.Example/vaults"}]`)
 
 	cases := []struct {
 		name     string
@@ -425,6 +436,25 @@ func TestSelectFormat(t *testing.T) {
 			content: modelString, wantErr: true},
 		{name: "explicit agent-framework wins over a Compose file", explicit: "agent-framework",
 			source: "compose.yaml", content: composeFile, want: "agent-framework"},
+		{name: "a CloudFormation provider schema, under any .json name", source: "ledger.json", content: cfnSchema,
+			want: "cloudformation-schema"},
+		{name: "a CloudFormation describe-type output", source: "describe-ledger.json", content: cfnDescribeType,
+			want: "cloudformation-schema"},
+		{name: "a CloudFormation schema whose properties is a list is refused", source: "ledger.json",
+			content: cfnListProperties, wantErr: true},
+		{name: "a CloudFormation schema under another extension is refused", source: "ledger.txt", content: cfnSchema,
+			wantErr: true},
+		{name: "a Terraform providers schema export", source: "schema.json", content: tfExport,
+			want: "terraform-schema"},
+		{name: "a Terraform export holding no provider_schemas is refused", source: "schema.json",
+			content: tfNoProviders, wantErr: true},
+		{name: "a Bicep types.json", source: "storage/types.json", content: armTypes, want: "arm-schema"},
+		{name: "a Bicep types file under another name is refused", source: "storage.json", content: armTypes,
+			wantErr: true},
+		{name: "a types.json whose first entry states no $type is refused", source: "types.json", content: armNoType,
+			wantErr: true},
+		{name: "explicit terraform-schema wins over a Compose file", explicit: "terraform-schema",
+			source: "compose.yaml", content: composeFile, want: "terraform-schema"},
 	}
 
 	for _, tc := range cases {
@@ -442,7 +472,7 @@ func TestSelectFormat(t *testing.T) {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
 				}
 				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify", "crewai", "langgraph", "google-adk",
-					"agent-framework"}; !slices.Equal(undetected.Formats(), want) {
+					"agent-framework", "cloudformation-schema", "terraform-schema", "arm-schema"}; !slices.Equal(undetected.Formats(), want) {
 					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
 						undetected.Formats(), want)
 				}
@@ -456,6 +486,85 @@ func TestSelectFormat(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSchemaImportersRecognisedAndNotCrossMatched holds the resource-schema
+// importers' signatures to the committed schema fixtures and to every other
+// format's committed source. Each fixture is recognised as its own format — a
+// CloudFormation provider schema and a describe-type output, the directory that
+// holds them, a Terraform export and a Bicep types.json — and each source of
+// another format is recognised as its own and as no schema format, so no
+// signature reaches a source it was not written for.
+func TestSchemaImportersRecognisedAndNotCrossMatched(t *testing.T) {
+	seam := referenceDetectionSeam(t)
+	const schemas = "../../plugins/internal/schemadraft/"
+	read := func(path string) []byte {
+		t.Helper()
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read the fixture %s: %v", path, err)
+		}
+		return body
+	}
+
+	for _, tc := range []struct{ name, source, fixture, want string }{
+		{"a CloudFormation provider schema", "ledger.json", schemas + "cloudformation/testdata/ledger.json", "cloudformation-schema"},
+		{"a CloudFormation describe-type output", "ledger-describe-type.json",
+			schemas + "cloudformation/testdata/ledger-describe-type.json", "cloudformation-schema"},
+		{"a CloudFormation module's schema", "module-schema.json",
+			schemas + "cloudformation/testdata/module-schema.json", "cloudformation-schema"},
+		{"a Terraform providers schema export", "ledger.json", schemas + "terraform/testdata/ledger.json", "terraform-schema"},
+		{"a Terraform export of one AWS type", "schema.json", schemas + "terraform/testdata/aws-example-ledger.json",
+			"terraform-schema"},
+		{"a Bicep types.json", "types.json", schemas + "arm/testdata/vault.json", "arm-schema"},
+		{"a Bicep types.json of several scopes", "types.json", schemas + "arm/testdata/scopes.json", "arm-schema"},
+		{"a Compose file", "compose.yaml", "testdata/compose/compose-for-agents/langgraph.compose.yaml", "compose"},
+		{"a Langflow export", "flow.json", "../compiler/importersocket/testdata/langflow-flow.json", "langflow"},
+		{"a Flowise export", "flow.json", "../compiler/importersocket/testdata/flowise-flow.json", "flowise"},
+		{"an n8n workflow", "agent-workflow.json", "testdata/n8n/agent-workflow.json", "n8n"},
+		{"a Claude Desktop MCP configuration", "claude_desktop_config.json", "testdata/mcp/claude_desktop_config.json", "mcp"},
+		{"an MCP registry server description", "registry-npm.server.json", "testdata/mcp/registry-npm.server.json", "mcp"},
+		{"a Dify application", "workflow.yml", "testdata/dify/authored/workflow.yml", "dify"},
+		{"a CrewAI crew", "crew.jsonc", "testdata/crewai/jsonc/crew.jsonc", "crewai"},
+		{"a LangGraph configuration", "langgraph.json", "testdata/langgraph/python/langgraph.json", "langgraph"},
+		{"a Google ADK root agent", "root_agent.yaml", "testdata/google-adk/tutor/root_agent.yaml", "google-adk"},
+		{"an Agent Framework declarative agent", "learn.agent.yaml", "testdata/agent-framework/learn-agent.yaml",
+			"agent-framework"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := SelectFormat(context.Background(), "", fileSource(t, tc.source, read(tc.fixture)), seam)
+			if err != nil {
+				t.Fatalf("SelectFormat(%q, %s): %v", tc.source, tc.fixture, err)
+			}
+			if got != tc.want {
+				t.Errorf("SelectFormat(%q, %s) = %q; want %q", tc.source, tc.fixture, got, tc.want)
+			}
+		})
+	}
+
+	t.Run("a directory of CloudFormation schemas", func(t *testing.T) {
+		dir := t.TempDir()
+		for _, name := range []string{"ledger.json", "ledger-describe-type.json"} {
+			body := read(schemas + "cloudformation/testdata/" + name)
+			if err := os.WriteFile(filepath.Join(dir, name), body, 0o644); err != nil {
+				t.Fatalf("write %s: %v", name, err)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("not a schema\n"), 0o644); err != nil {
+			t.Fatalf("write notes.txt: %v", err)
+		}
+		src, err := readSource(dir, filepath.Base(dir), "")
+		if err != nil {
+			t.Fatalf("read the directory: %v", err)
+		}
+		got, err := SelectFormat(context.Background(), "", src, seam)
+		if err != nil {
+			t.Fatalf("SelectFormat over the directory: %v", err)
+		}
+		if got != "cloudformation-schema" {
+			t.Errorf("SelectFormat over the directory = %q; want cloudformation-schema", got)
+		}
+	})
 }
 
 // TestUndetectedFormatMessageNamesTheTerminalRemedy pins the sentence the

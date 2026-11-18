@@ -51,3 +51,6 @@ importer	crewai	./plugins/crewai-importer	go		no
 importer	langgraph	./plugins/langgraph-importer	go		no
 importer	google-adk	./plugins/google-adk-importer	go		no
 importer	agent-framework	./plugins/agent-framework-importer	go		no
+importer	cloudformation-schema	./plugins/cloudformation-schema-importer	go		no
+importer	terraform-schema	./plugins/terraform-schema-importer	go		no
+importer	arm-schema	./plugins/arm-schema-importer	go		no

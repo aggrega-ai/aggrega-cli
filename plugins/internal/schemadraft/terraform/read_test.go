@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest/exportgen"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft/terraform/exportgen"
 	"github.com/aggrega-ai/aggrega-cli/plugins/parsercore"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )

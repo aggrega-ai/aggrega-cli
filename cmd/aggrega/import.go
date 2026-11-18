@@ -361,7 +361,16 @@ file is ever read, and the configuration a sub_agents entry names is read only
 where the importer's with.sources hands it. The Agent Framework importer
 recognizes a declarative agent, under any name, by Prompt at its kind and an
 object at its model, read as YAML; it names no file, so a directory is never
-handed to it, and a declarative agent is imported as a file of its own. A directory is
+handed to it, and a declarative agent is imported as a file of its own. The
+CloudFormation, Terraform and Azure Resource Manager schema importers draft no
+Aggregate: they draft a Component and a Recipe for each resource type the
+importer's resource_types setting names, or for the one type a source holds, and
+they are read as JSON. The cloudformation-schema importer recognizes a
+resource type's provider schema, in any .json file, by typeName and properties,
+and the output of describe-type by TypeName and Schema; the terraform-schema
+importer recognizes the export of terraform providers schema -json, in any .json
+file, by format_version and provider_schemas; the arm-schema importer recognizes
+a Bicep types.json by its first entry's $type. A directory is
 recognized the same way over the files it holds: each signature is tried against the files
 its file names match, and a signature that names no file applies to none of
 them. If no signature matches, import stops, asks for --format and names the
@@ -519,7 +528,7 @@ source the write would refuse is refused here too.`,
 			return nil
 		},
 	}
-	c.Flags().StringVar(&opts.format, "format", "", "Name the source format explicitly, overriding detection by the importers' signatures (for example langflow, flowise, n8n, mcp, compose, dify, crewai, langgraph, google-adk or agent-framework)")
+	c.Flags().StringVar(&opts.format, "format", "", "Name the source format explicitly, overriding detection by the importers' signatures (for example langflow, flowise, n8n, mcp, compose, dify, crewai, langgraph, google-adk, agent-framework, cloudformation-schema, terraform-schema or arm-schema)")
 	c.Flags().StringVar(&opts.target, "target", "", "Draft a Manifest for this provider capability — the word a Recipe's spec.capability binds to, for example compose or helm — mapping each component type and feature type the drafts need to the Recipe or feature recipe of that capability the workspace's catalog offers for it, the one there is or, among several, the one named after the type, and point the drafted Release at it. A capability no Recipe in the catalog binds to is refused before the importer runs. Without it no Manifest is drafted, except that --sync reuses the target the earlier import was given.")
 	c.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Do everything except write: hand back the drafted files as content, naming the file each is for, and create or modify nothing. Every other behaviour is the write's, the importer run included. Without it the drafts are written to disk.")
 	c.Flags().StringVar(&opts.outputDir, "output-dir", "", "Directory the drafted files are written under. A relative path resolves against the directory you run the command in, and a drive named bare on Windows, such as D:, is the current directory on that drive. Without it the drafts are written beneath the root of the workspace the run resolved.")

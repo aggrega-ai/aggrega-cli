@@ -18,9 +18,9 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest/exportgen"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft/terraform/exportgen"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )

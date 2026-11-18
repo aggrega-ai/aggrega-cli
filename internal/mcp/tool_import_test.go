@@ -48,7 +48,9 @@ func importDemoEchoBody(format string) string {
 // configuration, an MCP registry server description, a Compose application, a
 // Dify application, a CrewAI crew written as JSON with comments, a LangGraph
 // application's configuration, a Google ADK application's root agent
-// configuration and an Agent Framework declarative agent, as the committed source fixtures carry them. They are read from the compiler's
+// configuration, an Agent Framework declarative agent, a CloudFormation resource
+// type's schema, a Terraform providers schema export and a Bicep types file, as
+// the committed source fixtures carry them. They are read from the compiler's
 // own fixtures rather than written out here: what these cases drive is
 // recognition of an exported shape, and a shape invented in this file would be
 // recognised by construction.
@@ -64,6 +66,9 @@ const (
 	langgraphFixture      = "../importops/testdata/langgraph/python/langgraph.json"
 	googleADKFixture      = "../importops/testdata/google-adk/tutor/root_agent.yaml"
 	agentFrameworkFixture = "../importops/testdata/agent-framework/learn-agent.yaml"
+	cloudFormationFixture = "../../plugins/internal/schemadraft/cloudformation/testdata/ledger.json"
+	terraformFixture      = "../../plugins/internal/schemadraft/terraform/testdata/ledger.json"
+	bicepTypesFixture     = "../../plugins/internal/schemadraft/arm/testdata/vault.json"
 )
 
 // importWorkspaceConfig is the configuration every fixture workspace here

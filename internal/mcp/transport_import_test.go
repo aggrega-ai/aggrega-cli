@@ -423,6 +423,12 @@ func TestShapeDetectionReachesTheImportToolOverAListener(t *testing.T) {
 			readImportFixture(t, googleADKFixture), "google-adk"},
 		{"an Agent Framework declarative agent, told by its kind and its model", "learn.agent.yaml",
 			readImportFixture(t, agentFrameworkFixture), "agent-framework"},
+		{"a CloudFormation resource type's schema, told by its type name and its properties", "ledger.json",
+			readImportFixture(t, cloudFormationFixture), "cloudformation-schema"},
+		{"a Terraform providers schema export, told by its format version and its provider schemas", "schema.json",
+			readImportFixture(t, terraformFixture), "terraform-schema"},
+		{"a Bicep types file, told by its name and its first entry's type", "types.json",
+			readImportFixture(t, bicepTypesFixture), "arm-schema"},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			f := newScopeGridFixture(t, false)
