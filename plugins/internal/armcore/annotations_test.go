@@ -13,31 +13,42 @@ func TestPlacementAnnotations(t *testing.T) {
 		want        placement
 	}{
 		{"absent", nil, placement{
-			subscription:  "subscription().subscriptionId",
-			resourceGroup: "resourceGroup().name",
+			subscription:    "subscription().subscriptionId",
+			resourceGroup:   "resourceGroup().name",
+			managementGroup: "managementGroup().name",
 		}},
 		{"empty", map[string]string{AnnotationSubscription: "", AnnotationResourceGroup: ""}, placement{
-			subscription:  "subscription().subscriptionId",
-			resourceGroup: "resourceGroup().name",
+			subscription:    "subscription().subscriptionId",
+			resourceGroup:   "resourceGroup().name",
+			managementGroup: "managementGroup().name",
 		}},
 		{"both given", map[string]string{
 			AnnotationSubscription:  "00000000-0000-0000-0000-000000000001",
 			AnnotationResourceGroup: "rg-payments",
 		}, placement{
-			subscription:  "'00000000-0000-0000-0000-000000000001'",
-			resourceGroup: "'rg-payments'",
+			subscription:    "'00000000-0000-0000-0000-000000000001'",
+			resourceGroup:   "'rg-payments'",
+			managementGroup: "managementGroup().name",
 		}},
 		{"subscription only", map[string]string{AnnotationSubscription: "sub-a"}, placement{
-			subscription:  "'sub-a'",
-			resourceGroup: "resourceGroup().name",
+			subscription:    "'sub-a'",
+			resourceGroup:   "resourceGroup().name",
+			managementGroup: "managementGroup().name",
 		}},
 		{"resource group only, with a quote", map[string]string{AnnotationResourceGroup: "rg-o'brien"}, placement{
-			subscription:  "subscription().subscriptionId",
-			resourceGroup: StringLiteral("rg-o'brien"),
+			subscription:    "subscription().subscriptionId",
+			resourceGroup:   StringLiteral("rg-o'brien"),
+			managementGroup: "managementGroup().name",
 		}},
-		{"other annotations are not read", map[string]string{AnnotationManagementGroup: "mg", "aggrega.ai/aws-region": "eu-west-1"}, placement{
-			subscription:  "subscription().subscriptionId",
-			resourceGroup: "resourceGroup().name",
+		{"management group given", map[string]string{AnnotationManagementGroup: "mg-platform"}, placement{
+			subscription:    "subscription().subscriptionId",
+			resourceGroup:   "resourceGroup().name",
+			managementGroup: "'mg-platform'",
+		}},
+		{"unrelated annotations are not read", map[string]string{"aggrega.ai/aws-region": "eu-west-1"}, placement{
+			subscription:    "subscription().subscriptionId",
+			resourceGroup:   "resourceGroup().name",
+			managementGroup: "managementGroup().name",
 		}},
 	}
 	for _, c := range cases {

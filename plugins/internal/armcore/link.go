@@ -32,31 +32,54 @@ const (
 // its name.
 const deploymentIDFormat = "/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Resources/deployments/{2}"
 
+// subscriptionDeploymentIDFormat is the format() string that builds the resource
+// ID of a deployment to a subscription from its subscription and its name.
+const subscriptionDeploymentIDFormat = "/subscriptions/{0}/providers/Microsoft.Resources/deployments/{1}"
+
+// managementGroupDeploymentIDFormat is the format() string that builds the
+// resource ID of a deployment to a management group from its management group
+// and its name.
+const managementGroupDeploymentIDFormat = "/providers/Microsoft.Management/managementGroups/{0}/providers/Microsoft.Resources/deployments/{1}"
+
+// provenanceComponentIDKey is the key of the component identity within the
+// provenance block stamped on each resource a component deploys.
+const provenanceComponentIDKey = "aggrega.ai/component-id"
+
 // LinkPublish produces the producer side of a uses edge between two arm
 // boundaries, each deployed as its own template: the outputs the consumer reads,
-// and the name the producing template is deployed under.
+// and the name the producing template is deployed under. The producer's boundary
+// deploys at resource-group, subscription or management-group scope.
 //
 // The consumer reads a provides key through an output when the edge injects it,
 // or when the consumer's templates read it off the edge and its text is an ARM
 // expression, which names what only the producing template declares (linkKeys).
 // For each such key, in sorted order, the output OutputName(edge.Target.Node,
-// key) is added at the top level of the producing template: a string output whose
-// value is the expression passed through string(), so every value crosses as
-// text, or the literal text as written. A template that writes no outputs gains
-// the outputs member. An output already there with that body is reused, so many
-// consumers read one output; with another body it halts wrapping
+// key) is added to the producing template: a string output whose value is the
+// expression passed through string(), so every value crosses as text, or the
+// literal text as written. A template that writes no outputs gains the outputs
+// member. An output already there with that body is reused, so many consumers
+// read one output; with another body it halts wrapping
 // ErrPluginOutputNameCollision. An expression that reads a secret (a list
-// function, or a securestring or secureObject parameter of the producing template,
-// IsSecretExpression) halts wrapping ErrPluginValueNotRepresentable: another
-// deployment's read of it would store it in that deployment's history. A key
-// whose provides text is literal text splicing a complete template call
-// (refuseSplicedCalls) halts wrapping ErrPluginValueNotRepresentable too: across
-// the link that text would arrive as text, never evaluated. The
-// template with the outputs added is checked against the limits ARM sets
-// (CheckLimits), which halts past 64 outputs.
+// function, or a securestring or secureObject parameter of the level the
+// expression is evaluated in, IsSecretExpression) halts wrapping
+// ErrPluginValueNotRepresentable: another deployment's read of it would store it
+// in that deployment's history. A key whose provides text is literal text
+// splicing a complete template call (refuseSplicedCalls) halts wrapping
+// ErrPluginValueNotRepresentable too: across the link that text would arrive as
+// text, never evaluated. Each template written to is checked against the limits
+// ARM sets (CheckLimits), which halts past 64 outputs.
 //
-// A producer whose boundary deploys at a scope wider than a resource group halts
-// wrapping ErrPluginCannotExpressInput (refuseWiderProducer).
+// An expression is evaluated in the level of the template that holds the
+// producing component's resources, found by the component identity each resource
+// carries in its provenance (producerLevelFor). The output of a key whose
+// expression is evaluated in the top level is written there. In a subscription-
+// or management-group-scope template the component's resources can sit in a
+// nested level (nestedLevelsOf); the output is then written in that level's
+// template, and the top level gains an output of the same name that reads it,
+// [reference('<level symbol>').outputs.<name>.value], because the consumer reads
+// only the top level. Literal text is written at the top level. A component whose
+// resources sit in more than one level halts wrapping ErrPluginCannotExpressInput
+// when the resources its expression reads do not belong to exactly one of them.
 //
 // The producing template records DeploymentName(edge.Target.Release,
 // edge.Target.Boundary) in its metadata under DeploymentNameMetadataKey, gaining
@@ -64,7 +87,7 @@ const deploymentIDFormat = "/subscriptions/{0}/resourceGroups/{1}/providers/Micr
 // halts wrapping ErrPluginOutputNameCollision. The returned handle carries the
 // deployment name and the output name of each key read through an output.
 func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFile) (rendercore.LinkPublishOutput, error) {
-	if err := refuseWiderProducer(edge); err != nil {
+	if _, err := scopeAnnotation(edge.TargetAnnotations, edge.Target.Node); err != nil {
 		return rendercore.LinkPublishOutput{}, err
 	}
 	keys, err := linkKeysOf(edge)
@@ -75,11 +98,11 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 	if err != nil {
 		return rendercore.LinkPublishOutput{}, err
 	}
-	name, err := DeploymentName(edge.Target.Release, edge.Target.Boundary)
+	scope, err := scopeOfSchema(template[sectionSchema])
 	if err != nil {
 		return rendercore.LinkPublishOutput{}, err
 	}
-	outputs, hasOutputs, err := sectionObject(template, sectionOutputs, edge.Target.Boundary)
+	name, err := DeploymentName(edge.Target.Release, edge.Target.Boundary)
 	if err != nil {
 		return rendercore.LinkPublishOutput{}, err
 	}
@@ -90,28 +113,34 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 	if err := refuseSplicedCalls(edge, keys, template); err != nil {
 		return rendercore.LinkPublishOutput{}, err
 	}
-	secure := secureParameters(template)
 
+	levels := producerLevels(template, scope)
 	handle := map[string]string{handleDeploymentName: name}
-	added := map[string]any{}
+	writes := newOutputWrites(edge)
 	for _, key := range keys.referenced {
 		text, _ := edge.Provides.Get(key)
-		value, err := outputValue(edge, key, text, secure)
+		n, err := parseProvided(edge, key, text)
 		if err != nil {
 			return rendercore.LinkPublishOutput{}, err
 		}
-		output := map[string]any{"type": "string", "value": value}
+		holder, err := producerLevelFor(edge, levels, key, n)
+		if err != nil {
+			return rendercore.LinkPublishOutput{}, err
+		}
+		value, err := outputValue(edge, key, text, n, secureParameters(holder.template))
+		if err != nil {
+			return rendercore.LinkPublishOutput{}, err
+		}
 		outputName := OutputName(edge.Target.Node, key)
 		handle[handleOutputNamePrefix+key] = outputName
-		existing, present := outputs[outputName]
-		if !present {
-			added[outputName] = output
-			continue
+		if err := writes.add(holder, key, outputName, outputBody(value)); err != nil {
+			return rendercore.LinkPublishOutput{}, err
 		}
-		if !reflect.DeepEqual(existing, output) {
-			return rendercore.LinkPublishOutput{}, refuse(plugincondition.ErrPluginOutputNameCollision,
-				fmt.Sprintf("in the template of boundary %q, the output %q holds a different body than the one a link writes there for provides key %q of component %q; the fragment of %q writes an output %q, which lands under that name, so rename that output, or remove it and let the link write the output every reader of the key uses",
-					edge.Target.Boundary, outputName, key, edge.Target.Node, edge.Target.Node, key))
+		if holder.symbol != "" {
+			reexposed := "[reference(" + StringLiteral(holder.symbol) + ").outputs." + outputName + ".value]"
+			if err := writes.add(levels[0], key, outputName, outputBody(reexposed)); err != nil {
+				return rendercore.LinkPublishOutput{}, err
+			}
 		}
 	}
 	recorded, recordedName := metadata[DeploymentNameMetadataKey]
@@ -123,18 +152,24 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 
 	patched := clone(template)
 	var ops []frp.JSONPatchOp
-	if len(added) > 0 {
-		merged := clone(outputs)
-		for _, outputName := range sortedKeys(added) {
-			merged[outputName] = added[outputName]
-			if hasOutputs {
-				ops = append(ops, addOp("/"+sectionOutputs+"/"+escapePointer(outputName), added[outputName]))
-			}
+	for _, l := range levels[1:] {
+		added := writes.added[l.symbol]
+		if len(added) == 0 {
+			continue
 		}
-		if !hasOutputs {
-			ops = append(ops, addOp("/"+sectionOutputs, added))
+		levelOps, err := writes.apply(l, added)
+		if err != nil {
+			return rendercore.LinkPublishOutput{}, err
 		}
-		patched[sectionOutputs] = merged
+		ops = append(ops, levelOps...)
+	}
+	if added := writes.added[""]; len(added) > 0 {
+		levelOps, err := writes.apply(levels[0], added)
+		if err != nil {
+			return rendercore.LinkPublishOutput{}, err
+		}
+		ops = append(ops, levelOps...)
+		patched[sectionOutputs] = writes.merged(levels[0].template, added)
 	}
 	if !recordedName {
 		merged := clone(metadata)
@@ -169,9 +204,12 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 // A key read through an output (linkKeys) is read from the producing template's
 // deployment by its resource ID: reference(<ID>, DeploymentsAPIVersion).outputs.
 // <output>.value, where the ID is the deployments resource ID built with format()
-// from the producer's subscription and resource group (placementOf, over the
-// producer's annotations) and the deployment name the handle carries, and the
-// output is the one the handle names for the key. A placeholder that is the whole
+// from the deployment name the handle carries and the producer's placement
+// (placementOf, over the producer's annotations), and the output is the one the
+// handle names for the key. The ID follows the scope the producer's boundary
+// deploys at: a deployment to a resource group is named by its subscription and
+// resource group, one to a subscription by its subscription, one to a management
+// group by its management group. A placeholder that is the whole
 // string becomes that read as an expression; a placeholder that is a string
 // argument of an expression, which is where the assembly writes one held in
 // literal text, a format() argument, becomes the read itself, and the expression
@@ -184,13 +222,18 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 // The consuming template's top level is read at the scope its $schema names.
 // Its nested levels (nestedLevelsOf) are read too, each at the scope it deploys
 // at: the pointers of their strings run through the nested deployments. ARM
-// evaluates resourceGroup() only in a template deployed to a resource group, and
-// subscription() only in one deployed to a subscription or a resource group, so
-// a read at a wider scope from a producer whose boundary names no resource group,
-// or at management group scope none subscription, halts wrapping
-// ErrPluginRequiredInputUnresolved, naming AnnotationResourceGroup or
-// AnnotationSubscription. A producer whose boundary deploys at a scope
-// wider than a resource group halts as LinkPublish does.
+// evaluates resourceGroup() only in a template deployed to a resource group,
+// subscription() only in one deployed to a subscription or a resource group, and
+// managementGroup() only in one deployed to a management group. A read whose
+// producer's boundary names the place the ID needs, as the annotations name it,
+// is written with it; one that does not takes the consumer's own, and where the
+// level has none to take it halts wrapping ErrPluginRequiredInputUnresolved,
+// naming the annotation to set: AnnotationResourceGroup for a producer at
+// resource-group scope read below resource-group scope, AnnotationSubscription
+// for a producer at resource-group or subscription scope read at management-group
+// scope, and AnnotationManagementGroup for a producer at management-group scope
+// read below management-group scope. A scope annotation that names no deployment
+// scope halts as BoundaryScope does.
 //
 // A key read off the edge whose text is literal is written back in place of its
 // placeholder: a whole string as ArmLiteral writes the text ARM reads from it, a
@@ -203,7 +246,8 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 // that edge's resolve, and a key whose placeholder the consumer did not write
 // contributes nothing.
 func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFiles []rendercore.RenderedFile) (rendercore.LinkResolveOutput, error) {
-	if err := refuseWiderProducer(edge); err != nil {
+	producer, err := producerOf(edge)
+	if err != nil {
 		return rendercore.LinkResolveOutput{}, err
 	}
 	keys, err := linkKeysOf(edge)
@@ -218,14 +262,14 @@ func LinkResolve(edge rendercore.LinkEdge, handle map[string]string, consumerFil
 	if err != nil {
 		return rendercore.LinkResolveOutput{}, err
 	}
-	values, order, err := resolvedValues(edge, handle, keys)
+	values, order, err := resolvedValues(edge, handle, keys, producer)
 	if err != nil {
 		return rendercore.LinkResolveOutput{}, err
 	}
 	var ops []frp.JSONPatchOp
 	visit := func(at Scope) visitFunc {
 		return func(s site, text string) (string, error) {
-			resolved, err := resolveString(edge, s, text, values, order, at)
+			resolved, err := resolveString(edge, s, text, values, order, at, producer)
 			if err != nil {
 				return "", err
 			}
@@ -352,13 +396,12 @@ func refuseSplicedCalls(edge rendercore.LinkEdge, keys linkKeys, template map[st
 	return nil
 }
 
-// outputValue returns the value of the output a provides key is read through:
-// an expression passed through string(), written canonically, or the literal
-// text as written. An expression that does not parse, or that reads a secret,
-// halts wrapping ErrPluginValueNotRepresentable.
-func outputValue(edge rendercore.LinkEdge, key, text string, secure map[string]bool) (string, error) {
+// parseProvided parses the provides text of a key when ARM reads it as an
+// expression, and returns nil for literal text. An expression that does not
+// parse halts wrapping ErrPluginValueNotRepresentable.
+func parseProvided(edge rendercore.LinkEdge, key, text string) (armexpr.Node, error) {
 	if !armexpr.IsExpression(text) {
-		return text, nil
+		return nil, nil
 	}
 	n, err := armexpr.Parse(text)
 	if err != nil {
@@ -367,9 +410,20 @@ func outputValue(edge rendercore.LinkEdge, key, text string, secure map[string]b
 		if errors.As(err, &se) {
 			reason, offset = se.Reason, se.Offset
 		}
-		return "", refuse(plugincondition.ErrPluginValueNotRepresentable,
+		return nil, refuse(plugincondition.ErrPluginValueNotRepresentable,
 			fmt.Sprintf("provides key %q of component %q is read by ARM as an expression but does not parse (offset %d: %s); correct the expression in the provides of its Recipe, or write [[ at its start to keep it literal text",
 				key, edge.Target.Node, offset, reason))
+	}
+	return n, nil
+}
+
+// outputValue returns the value of the output a provides key is read through:
+// the expression n passed through string(), written canonically, or the literal
+// text as written where n is nil. An expression that reads a secret halts
+// wrapping ErrPluginValueNotRepresentable.
+func outputValue(edge rendercore.LinkEdge, key, text string, n armexpr.Node, secure map[string]bool) (string, error) {
+	if n == nil {
+		return text, nil
 	}
 	if IsSecretExpression(n, secure) {
 		return "", refuse(plugincondition.ErrPluginValueNotRepresentable,
@@ -410,7 +464,7 @@ type linkedValue struct {
 // keys read through an output, sorted, then the literal keys. A field the
 // handle lacks for a key read through an output halts wrapping
 // ErrPluginRequiredInputUnresolved.
-func resolvedValues(edge rendercore.LinkEdge, handle map[string]string, keys linkKeys) (map[string]linkedValue, []string, error) {
+func resolvedValues(edge rendercore.LinkEdge, handle map[string]string, keys linkKeys, producer producer) (map[string]linkedValue, []string, error) {
 	values := map[string]linkedValue{}
 	var order []string
 	missing := func(field string) error {
@@ -418,7 +472,6 @@ func resolvedValues(edge rendercore.LinkEdge, handle map[string]string, keys lin
 			fmt.Sprintf("the identity published for the link from component %q to component %q on socket %q carries no %s; the link is resolved against the identity its publish returns",
 				edge.Source.Node, edge.Target.Node, edge.Socket, field))
 	}
-	at := placementOf(edge.TargetAnnotations)
 	for _, key := range keys.referenced {
 		deployment, ok := handle[handleDeploymentName]
 		if !ok || deployment == "" {
@@ -428,9 +481,8 @@ func resolvedValues(edge rendercore.LinkEdge, handle map[string]string, keys lin
 		if !ok || output == "" {
 			return nil, nil, missing(handleOutputNamePrefix + key)
 		}
-		read, err := armexpr.Parse(fmt.Sprintf("[reference(format(%s, %s, %s, %s), %s).outputs.%s.value]",
-			StringLiteral(deploymentIDFormat), at.subscription, at.resourceGroup, StringLiteral(deployment),
-			StringLiteral(DeploymentsAPIVersion), output))
+		read, err := armexpr.Parse(fmt.Sprintf("[reference(%s, %s).outputs.%s.value]",
+			producer.deploymentID(deployment), StringLiteral(DeploymentsAPIVersion), output))
 		if err != nil {
 			return nil, nil, refuse(plugincondition.ErrPluginValueNotRepresentable,
 				fmt.Sprintf("the identity published for the link from component %q to component %q on socket %q gives under %q an output name ARM cannot read after .outputs; the link is resolved against the identity its publish returns, whose output names are lowercase letters, digits and underscores",
@@ -451,7 +503,7 @@ func resolvedValues(edge rendercore.LinkEdge, handle map[string]string, keys lin
 // resolveString returns text with every placeholder of the link in it resolved,
 // or text unchanged where it holds none. at is the scope of the level text sits
 // in.
-func resolveString(edge rendercore.LinkEdge, s site, text string, values map[string]linkedValue, order []string, at Scope) (string, error) {
+func resolveString(edge rendercore.LinkEdge, s site, text string, values map[string]linkedValue, order []string, at Scope, producer producer) (string, error) {
 	if !strings.Contains(text, rendercore.CrossBoundaryLinkSentinelPrefix) {
 		return text, nil
 	}
@@ -459,7 +511,7 @@ func resolveString(edge rendercore.LinkEdge, s site, text string, values map[str
 		if v.read == nil {
 			return ArmLiteral(v.literal), nil
 		}
-		if err := readableAt(edge, s, v.key, at); err != nil {
+		if err := readableAt(edge, s, v.key, at, producer); err != nil {
 			return "", err
 		}
 		return armexpr.Expression(v.read), nil
@@ -489,7 +541,7 @@ func resolveString(edge rendercore.LinkEdge, s site, text string, values map[str
 			return text, nil
 		}
 		if readKey != "" {
-			if err := readableAt(edge, s, readKey, at); err != nil {
+			if err := readableAt(edge, s, readKey, at, producer); err != nil {
 				return "", err
 			}
 		}
@@ -516,23 +568,65 @@ func resolveString(edge rendercore.LinkEdge, s site, text string, values map[str
 	return text, nil
 }
 
+// producer is where the producing template of a link is deployed: the scope its
+// boundary deploys at and the placement its annotations give.
+type producer struct {
+	scope Scope
+	place placement
+}
+
+// producerOf reads the producer of an edge from the annotations of its target
+// boundary. A scope value that names no deployment scope halts as BoundaryScope
+// does.
+func producerOf(edge rendercore.LinkEdge) (producer, error) {
+	scope, err := scopeAnnotation(edge.TargetAnnotations, edge.Target.Node)
+	if err != nil {
+		return producer{}, err
+	}
+	return producer{scope: scope, place: placementOf(edge.TargetAnnotations)}, nil
+}
+
+// deploymentID returns the ARM expression of the resource ID of the producer's
+// deployment named deployment: format() over the deployments ID of the scope the
+// producer deploys at, and the subscription, resource group or management group
+// the placement names.
+func (p producer) deploymentID(deployment string) string {
+	name := StringLiteral(deployment)
+	switch p.scope {
+	case ScopeSubscription:
+		return fmt.Sprintf("format(%s, %s, %s)", StringLiteral(subscriptionDeploymentIDFormat), p.place.subscription, name)
+	case ScopeManagementGroup:
+		return fmt.Sprintf("format(%s, %s, %s)", StringLiteral(managementGroupDeploymentIDFormat), p.place.managementGroup, name)
+	}
+	return fmt.Sprintf("format(%s, %s, %s, %s)", StringLiteral(deploymentIDFormat), p.place.subscription, p.place.resourceGroup, name)
+}
+
 // readableAt halts where a value read from another deployment cannot be read at
 // site s of a level at scope at: outside the places ARM evaluates reference(),
-// and at a scope wider than a resource group when the read names the
-// consumer's own resource group.
-func readableAt(edge rendercore.LinkEdge, s site, key string, at Scope) error {
+// and where the read names the consumer's own subscription, resource group or
+// management group in a level that has none to take. Which of the three the
+// read names follows the scope the producer deploys at.
+func readableAt(edge rendercore.LinkEdge, s site, key string, at Scope, p producer) error {
 	if !s.readsRuntimeState() {
 		return readOutsideRuntimeState(edge, s, key)
 	}
-	if at == ScopeManagementGroup && placementOf(edge.TargetAnnotations).readsOwnSubscription() {
+	missing := func(noun, annotation string) error {
 		return refuse(plugincondition.ErrPluginRequiredInputUnresolved,
-			fmt.Sprintf("at JSON pointer %s in the template of boundary %q, the value of provides key %q of component %q is read from another deployment at %s scope, where the template has no subscription of its own to take as the producer's; annotate the boundary of %q with %s",
-				s.pointer(), edge.Source.Boundary, key, edge.Target.Node, scopeWords(at), edge.Target.Node, AnnotationSubscription))
+			fmt.Sprintf("at JSON pointer %s in the template of boundary %q, the value of provides key %q of component %q is read from another deployment at %s scope, where the template has no %s of its own to take as the producer's; annotate the boundary of %q with %s",
+				s.pointer(), edge.Source.Boundary, key, edge.Target.Node, scopeWords(at), noun, edge.Target.Node, annotation))
 	}
-	if at != ScopeResourceGroup && placementOf(edge.TargetAnnotations).readsOwnResourceGroup() {
-		return refuse(plugincondition.ErrPluginRequiredInputUnresolved,
-			fmt.Sprintf("at JSON pointer %s in the template of boundary %q, the value of provides key %q of component %q is read from another deployment at %s scope, where the template has no resource group of its own to take as the producer's; annotate the boundary of %q with %s",
-				s.pointer(), edge.Source.Boundary, key, edge.Target.Node, scopeWords(at), edge.Target.Node, AnnotationResourceGroup))
+	switch p.scope {
+	case ScopeManagementGroup:
+		if at != ScopeManagementGroup && p.place.readsOwnManagementGroup() {
+			return missing("management group", AnnotationManagementGroup)
+		}
+		return nil
+	}
+	if at == ScopeManagementGroup && p.place.readsOwnSubscription() {
+		return missing("subscription", AnnotationSubscription)
+	}
+	if p.scope == ScopeResourceGroup && at != ScopeResourceGroup && p.place.readsOwnResourceGroup() {
+		return missing("resource group", AnnotationResourceGroup)
 	}
 	return nil
 }
@@ -656,12 +750,15 @@ func templateLevel(template map[string]any, prefix string) *level {
 	return l
 }
 
-// linkedLevel is a nested level of an assembled template: the template of a
-// nested deployment, its JSON pointer, and the scope the level is deployed at.
+// linkedLevel is a level of an assembled template: the top level, or the
+// template of a nested deployment. prefix is the JSON pointer of the template
+// in the file, scope the scope the level is deployed at and symbol the symbolic
+// name of the nested deployment that holds it, empty for the top level.
 type linkedLevel struct {
 	template map[string]any
 	prefix   string
 	scope    Scope
+	symbol   string
 }
 
 // nestedLevelsOf returns the nested levels an assembled template at scope holds,
@@ -693,22 +790,183 @@ func nestedLevelsOf(template map[string]any, scope Scope) []linkedLevel {
 		if symbol == LevelSubscriptionSymbol {
 			at = ScopeSubscription
 		}
-		out = append(out, linkedLevel{template: inner, prefix: "/" + sectionResources + "/" + symbol + "/properties/template", scope: at})
+		out = append(out, linkedLevel{template: inner, prefix: "/" + sectionResources + "/" + symbol + "/properties/template", scope: at, symbol: symbol})
 	}
 	return out
 }
 
-// refuseWiderProducer halts wrapping ErrPluginCannotExpressInput when the
-// producer's boundary deploys at a scope wider than a resource group, as its
-// AnnotationDeploymentScope names: a link reads the producer's deployment by the
-// resource ID of a deployment to a resource group. A value that names no scope
-// halts as BoundaryScope does.
-func refuseWiderProducer(edge rendercore.LinkEdge) error {
-	scope, err := scopeAnnotation(edge.TargetAnnotations, edge.Target.Node)
-	if err != nil || scope == ScopeResourceGroup {
+// producerLevels returns the levels of an assembled producer template at scope:
+// the top level first, then its nested levels (nestedLevelsOf).
+func producerLevels(template map[string]any, scope Scope) []linkedLevel {
+	return append([]linkedLevel{{template: template, scope: scope}}, nestedLevelsOf(template, scope)...)
+}
+
+// levelHolds reports whether a resource of the level carries, in its provenance,
+// the component identity componentID.
+func levelHolds(l linkedLevel, componentID string) bool {
+	resources, _ := l.template[sectionResources].(map[string]any)
+	for _, symbol := range sortedKeys(resources) {
+		body, _ := resources[symbol].(map[string]any)
+		metadata, _ := body[sectionMetadata].(map[string]any)
+		block, _ := metadata[ProvenanceMetadataKey].(map[string]any)
+		if id, _ := block[provenanceComponentIDKey].(string); id == componentID {
+			return true
+		}
+	}
+	return false
+}
+
+// producerLevelFor returns the level an expression of the producing component is
+// evaluated in: the level whose resources carry the component's identity in
+// their provenance. Literal text (n nil), and a component none of whose
+// resources carries its identity, are served by the top level. A component whose
+// resources sit in more than one level is served by the one level that declares
+// every resource the expression names (symbolsRead); where the expression names
+// none, or no single level declares them all, the halt wraps
+// ErrPluginCannotExpressInput, naming the component, the key and the levels.
+func producerLevelFor(edge rendercore.LinkEdge, levels []linkedLevel, key string, n armexpr.Node) (linkedLevel, error) {
+	if n == nil {
+		return levels[0], nil
+	}
+	id := rendercore.ProvenanceComponentID(rendercore.NodeRenderContext{NodeID: edge.Target.Node})
+	var holders []linkedLevel
+	for _, l := range levels {
+		if levelHolds(l, id) {
+			holders = append(holders, l)
+		}
+	}
+	switch len(holders) {
+	case 0:
+		return levels[0], nil
+	case 1:
+		return holders[0], nil
+	}
+	read := symbolsRead(n)
+	var fits []linkedLevel
+	for _, l := range holders {
+		resources, _ := l.template[sectionResources].(map[string]any)
+		all := len(read) > 0
+		for _, symbol := range read {
+			if _, ok := resources[symbol]; !ok {
+				all = false
+			}
+		}
+		if all {
+			fits = append(fits, l)
+		}
+	}
+	if len(fits) == 1 {
+		return fits[0], nil
+	}
+	names := make([]string, len(holders))
+	for i, l := range holders {
+		names[i] = "the top level"
+		if l.symbol != "" {
+			names[i] = l.symbol
+		}
+	}
+	return linkedLevel{}, refuse(plugincondition.ErrPluginCannotExpressInput,
+		fmt.Sprintf("the resources of component %q sit in more than one level of the template of boundary %q (%s), and the expression of its provides key %q does not name resources of exactly one of them, so the level a link reads it from cannot be decided; write the expression over resources declared in one level, or deploy the component's resources at one scope",
+			edge.Target.Node, edge.Target.Boundary, strings.Join(names, ", "), key))
+}
+
+// symbolsRead returns the symbolic names an expression reads resources by: the
+// text first argument of each call to reference, references, resourceInfo or a
+// list function that is not a resource ID.
+func symbolsRead(n armexpr.Node) []string {
+	var out []string
+	armexpr.Walk(n, func(node armexpr.Node) bool {
+		c, ok := node.(armexpr.Call)
+		if !ok || c.Namespace != "" || !isSymbolReferenceCall(strings.ToLower(c.Name)) {
+			return true
+		}
+		if arg, literal := firstTextArgument(c); literal && !strings.HasPrefix(arg, "/") {
+			out = append(out, arg)
+		}
+		return true
+	})
+	return out
+}
+
+// outputWrites collects the outputs a publish adds, by the level they are added
+// to: the nested deployment's symbol, or "" for the top level.
+type outputWrites struct {
+	edge  rendercore.LinkEdge
+	added map[string]map[string]any
+}
+
+func newOutputWrites(edge rendercore.LinkEdge) *outputWrites {
+	return &outputWrites{edge: edge, added: map[string]map[string]any{}}
+}
+
+// add records the output name with body for the level. An output the level
+// already writes with that body is reused and recorded nowhere; one with another
+// body halts wrapping ErrPluginOutputNameCollision.
+func (w *outputWrites) add(l linkedLevel, key, name string, body map[string]any) error {
+	existing, _, err := sectionObject(l.template, sectionOutputs, w.edge.Target.Boundary)
+	if err != nil {
 		return err
 	}
-	return refuse(plugincondition.ErrPluginCannotExpressInput,
-		fmt.Sprintf("arm links to a producer deployed at resource-group scope; this producer's boundary deploys at %s scope, so the link from component %q to component %q on socket %q, whose producer is in boundary %q, cannot be wired; place component %q in a boundary deployed at resource-group scope",
-			scopeWords(scope), edge.Source.Node, edge.Target.Node, edge.Socket, edge.Target.Boundary, edge.Target.Node))
+	if current, present := existing[name]; present {
+		if reflect.DeepEqual(current, body) {
+			return nil
+		}
+		where := ""
+		if l.symbol != "" {
+			where = fmt.Sprintf(" (its nested deployment %s)", l.symbol)
+		}
+		return refuse(plugincondition.ErrPluginOutputNameCollision,
+			fmt.Sprintf("in the template of boundary %q%s, the output %q holds a different body than the one a link writes there for provides key %q of component %q; the fragment of %q writes an output %q, which lands under that name, so rename that output, or remove it and let the link write the output every reader of the key uses",
+				w.edge.Target.Boundary, where, name, key, w.edge.Target.Node, w.edge.Target.Node, key))
+	}
+	if w.added[l.symbol] == nil {
+		w.added[l.symbol] = map[string]any{}
+	}
+	w.added[l.symbol][name] = body
+	return nil
+}
+
+// merged returns the outputs of the level's template with added written in.
+func (w *outputWrites) merged(template map[string]any, added map[string]any) map[string]any {
+	existing, _ := template[sectionOutputs].(map[string]any)
+	out := clone(existing)
+	for _, name := range sortedKeys(added) {
+		out[name] = added[name]
+	}
+	return out
+}
+
+// apply returns the operations that add outputs to the level, in sorted order,
+// and checks a nested level, with them added, against the limits ARM sets on one
+// template; the top level is checked with the whole template.
+func (w *outputWrites) apply(l linkedLevel, added map[string]any) ([]frp.JSONPatchOp, error) {
+	_, has, err := sectionObject(l.template, sectionOutputs, w.edge.Target.Boundary)
+	if err != nil {
+		return nil, err
+	}
+	var ops []frp.JSONPatchOp
+	if has {
+		for _, name := range sortedKeys(added) {
+			ops = append(ops, addOp(l.prefix+"/"+sectionOutputs+"/"+escapePointer(name), added[name]))
+		}
+	} else {
+		ops = append(ops, addOp(l.prefix+"/"+sectionOutputs, added))
+	}
+	if l.symbol != "" {
+		patched := clone(l.template)
+		patched[sectionOutputs] = w.merged(l.template, added)
+		encoded, err := encodeTemplate(patched)
+		if err != nil {
+			return nil, err
+		}
+		if err := CheckLimits(patched, encoded); err != nil {
+			return nil, err
+		}
+	}
+	return ops, nil
+}
+
+// outputBody is the body of a string output carrying value.
+func outputBody(value string) map[string]any {
+	return map[string]any{"type": "string", "value": value}
 }

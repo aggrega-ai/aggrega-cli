@@ -20,6 +20,7 @@
 package compiler_test
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -341,50 +342,128 @@ func TestArmManagementGroupScopeSubscriptionAbsentHalts(t *testing.T) {
 	}
 }
 
-// TestArmLinkToAManagementGroupScopeProducerIsRefused builds a datastore in a
-// boundary deployed at management group scope and an application in another
-// boundary that reads its host. A link reads a producer deployed at resource
-// group scope, so the build halts naming the link.
-func TestArmLinkToAManagementGroupScopeProducerIsRefused(t *testing.T) {
-	t.Parallel()
-	msg := armAssertHaltsTwice(t, armScopeLinkInput("release-link-producer-management-group.yaml"), plugincondition.ErrPluginCannotExpressInput())
-	for _, want := range []string{
-		"arm-provider:",
-		"arm links to a producer deployed at resource-group scope; this producer's boundary deploys at management-group scope",
-		`component "app"`, `component "store"`, `socket "database"`,
-	} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("the halt does not say %q: %s", want, msg)
+// armWideRead is the expression a consuming template writes to read an output of
+// the producing template at a scope wider than a resource group: the resource ID
+// of its Microsoft.Resources entry built from idFormat, the given argument
+// expressions and the name it is recorded under.
+func armWideRead(idFormat, argument, recorded, output string) string {
+	return fmt.Sprintf("[reference(format('%s', %s, '%s'), '2025-04-01').outputs.%s.value]", idFormat, argument, recorded, output)
+}
+
+const (
+	armSubscriptionIDFormat    = "/subscriptions/{0}/providers/Microsoft.Resources/deployments/{1}"
+	armManagementGroupIDFormat = "/providers/Microsoft.Management/managementGroups/{0}/providers/Microsoft.Resources/deployments/{1}"
+	armHostValue               = "[string(reference('Store').fullyQualifiedDomainName)]"
+)
+
+// armAssertWideLink builds a Release whose datastore sits in a boundary deployed
+// at a scope wider than a resource group and whose application, in a boundary of
+// its own, reads the datastore's host. The application's template reads it by the
+// ID wantRead; the datastore's top level writes the host output as wantTop, and,
+// when level names a nested deployment of that template, the level writes it as
+// wantLevel.
+func armAssertWideLink(t *testing.T, release, recorded, wantRead, level, wantTop, wantLevel string) {
+	t.Helper()
+	in := armScopeLinkInput(release)
+	result := pipelinetest.Build(t, in)
+	armNoLinkPlaceholder(t, result.Artifacts)
+
+	producer, producerRaw := findArmTemplate(t, result.Artifacts, "dist/data/")
+	consumer, consumerRaw := findArmTemplate(t, result.Artifacts, "dist/web/")
+	t.Logf("producing template:\n%s", producerRaw)
+	t.Logf("consuming template:\n%s", consumerRaw)
+
+	armAssertDeploymentName(t, producer, recorded)
+	armWantOutput(t, "the datastore's top level", producer, wantTop)
+	if level != "" {
+		properties, _ := armResourceBody(t, producer, level)["properties"].(map[string]any)
+		inner, _ := properties["template"].(map[string]any)
+		if inner == nil {
+			t.Fatalf("the level %s carries no template", level)
 		}
+		armWantOutput(t, "the level "+level, inner, wantLevel)
 	}
-	for _, banned := range []string{"yet", "not available", "orders-data", "orders-sub", "orders-mg"} {
-		if strings.Contains(msg, banned) {
-			t.Errorf("the halt says %q: %s", banned, msg)
-		}
+	if got := armConsumerSetting(t, consumer, "App", "databaseHost"); got != wantRead {
+		t.Errorf("the application's databaseHost is %#v, want %q", got, wantRead)
+	}
+	pipelinetest.AssertDeterministic(t, in)
+}
+
+// armWantOutput asserts the template writes the host as a string output named
+// store__host holding value, and no other output.
+func armWantOutput(t *testing.T, where string, template map[string]any, value string) {
+	t.Helper()
+	outputs := armLinkOutputs(t, template)
+	if names := armLinkOutputNames(t, template); len(names) != 1 || names[0] != "store__host" {
+		t.Fatalf("%s writes the outputs %v, want exactly store__host", where, names)
+	}
+	out, _ := outputs["store__host"].(map[string]any)
+	if out["type"] != "string" || out["value"] != value {
+		t.Errorf("%s writes store__host as %v, want a string output holding %q", where, out, value)
 	}
 }
 
-// TestArmLinkToASubscriptionScopeProducerIsRefused builds a datastore in a
-// boundary deployed at subscription scope and an application in another
-// boundary that reads its host. A link reads a producer deployed at resource
-// group scope, so the build halts naming the link.
-func TestArmLinkToASubscriptionScopeProducerIsRefused(t *testing.T) {
+// TestArmLinkToASubscriptionScopeProducer builds a datastore written for a
+// subscription in a boundary deployed at subscription scope, and an application
+// in a boundary deployed at resource-group scope that reads its host. The
+// datastore's template writes the output at its top level, and the application
+// reads it from the entry the subscription it shares holds.
+func TestArmLinkToASubscriptionScopeProducer(t *testing.T) {
 	t.Parallel()
-	msg := armAssertHaltsTwice(t, armScopeLinkInput("release-link-producer.yaml"), plugincondition.ErrPluginCannotExpressInput())
-	for _, want := range []string{
-		"arm-provider:",
-		"arm links to a producer deployed at resource-group scope; this producer's boundary deploys at subscription scope",
-		`component "app"`, `component "store"`, `socket "database"`,
-	} {
-		if !strings.Contains(msg, want) {
-			t.Errorf("the halt does not say %q: %s", want, msg)
-		}
-	}
-	for _, banned := range []string{"yet", "not available", "orders-data"} {
-		if strings.Contains(msg, banned) {
-			t.Errorf("the halt says %q: %s", banned, msg)
-		}
-	}
+	const recorded = "aggrega--arm-scope-link-subscription-top--dist-zsdata-zsarm"
+	armAssertWideLink(t, "release-link-subscription-top.yaml", recorded,
+		armWideRead(armSubscriptionIDFormat, "subscription().subscriptionId", recorded, "store__host"),
+		"", "[string(reference('Store').provisioningState)]", "")
+}
+
+// TestArmLinkToAManagementGroupScopeProducer builds a datastore written for a
+// management group in a boundary deployed at management-group scope, which names
+// its management group, and an application that reads its host. The application
+// reads the output from the entry the named management group holds.
+func TestArmLinkToAManagementGroupScopeProducer(t *testing.T) {
+	t.Parallel()
+	const recorded = "aggrega--arm-scope-link-management-group-top--dist-zsdata-zsarm"
+	armAssertWideLink(t, "release-link-management-group-top.yaml", recorded,
+		armWideRead(armManagementGroupIDFormat, "'orders-mg'", recorded, "store__host"),
+		"", "[string(reference('Store').policyType)]", "")
+}
+
+// TestArmLinkToAProducerInTheResourceGroupLevelOfASubscriptionTemplate builds a
+// datastore written for a resource group in a boundary deployed at subscription
+// scope, so it sits in the resource group level. The level writes the host
+// output, and the top level re-exposes it for the application, which reads the
+// subscription's entry.
+func TestArmLinkToAProducerInTheResourceGroupLevelOfASubscriptionTemplate(t *testing.T) {
+	t.Parallel()
+	const recorded = "aggrega--arm-scope-link-producer--dist-zsdata-zsarm"
+	armAssertWideLink(t, "release-link-producer.yaml", recorded,
+		armWideRead(armSubscriptionIDFormat, "subscription().subscriptionId", recorded, "store__host"),
+		armLevelSymbol, "[reference('_resourceGroup').outputs.store__host.value]", armHostValue)
+}
+
+// TestArmLinkToAProducerInTheResourceGroupLevelOfAManagementGroupTemplate builds
+// a datastore written for a resource group in a boundary deployed at
+// management-group scope, so it sits in the resource group level directly under
+// the management group. The application reads the management group's entry.
+func TestArmLinkToAProducerInTheResourceGroupLevelOfAManagementGroupTemplate(t *testing.T) {
+	t.Parallel()
+	const recorded = "aggrega--arm-scope-link-mg-producer--dist-zsdata-zsarm"
+	armAssertWideLink(t, "release-link-producer-management-group.yaml", recorded,
+		armWideRead(armManagementGroupIDFormat, "'orders-mg'", recorded, "store__host"),
+		armLevelSymbol, "[reference('_resourceGroup').outputs.store__host.value]", armHostValue)
+}
+
+// TestArmLinkToAProducerInTheSubscriptionLevelOfAManagementGroupTemplate builds a
+// datastore written for a subscription in a boundary deployed at management-group
+// scope, so it sits in the subscription level. The level writes the host output,
+// the top level re-exposes it, and the application reads the management group's
+// entry.
+func TestArmLinkToAProducerInTheSubscriptionLevelOfAManagementGroupTemplate(t *testing.T) {
+	t.Parallel()
+	const recorded = "aggrega--arm-scope-link-subscription-level--dist-zsdata-zsarm"
+	armAssertWideLink(t, "release-link-subscription-level.yaml", recorded,
+		armWideRead(armManagementGroupIDFormat, "'orders-mg'", recorded, "store__host"),
+		armSubscriptionLevel, "[reference('_subscription').outputs.store__host.value]", "[string(reference('Store').provisioningState)]")
 }
 
 // TestArmLinkIntoTheResourceGroupLevel builds the application in a boundary

@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-link-store-management-group
+  version: 1.0.0
+  description: >
+    A datastore stand-in written as a fragment of a template deployed to a
+    management group, which its $schema declares, that writes no output of its
+    own, so a link carrying its host to another template writes the output it
+    reads.
+spec:
+  capability: arm
+  implements: example/datastore/store:1.0.0
+  locals:
+    symbol: '{{ .values.symbol }}'
+  provides:
+    host: "[reference('{{ .locals.symbol }}').policyType]"
+    port: "5432"
+  artifacts:
+    store.yaml: |
+      $schema: https://schema.management.azure.com/schemas/2019-08-01/managementGroupDeploymentTemplate.json#
+      resources:
+        {{ .locals.symbol }}:
+          type: Microsoft.Authorization/policyDefinitions
+          apiVersion: "2023-04-01"
+          name: "{{ .context.instance_id }}"
+          properties:
+            policyType: Custom
+            mode: All

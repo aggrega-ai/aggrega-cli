@@ -226,17 +226,12 @@ func opsOf(t *testing.T, patches []rendercore.LinkPatch) []frp.JSONPatchOp {
 	return ops
 }
 
-// stringOutput is the body of a string output carrying value.
-func stringOutput(value string) map[string]any {
-	return map[string]any{"type": "string", "value": value}
-}
-
 func TestLinkPublishAddsAStringOutput(t *testing.T) {
 	t.Parallel()
 	edge := injecting(testLink(), "DB_HOST", "host", "DB_PORT", "port")
 	wantOutputs := map[string]any{
-		hostOutput:            stringOutput("[string(reference('Db').properties.fullyQualifiedDomainName)]"),
-		"payments_zhdb__port": stringOutput("5432"),
+		hostOutput:            outputBody("[string(reference('Db').properties.fullyQualifiedDomainName)]"),
+		"payments_zhdb__port": outputBody("5432"),
 	}
 	wantHandle := map[string]string{
 		"deploymentName":  linkedDeployment,
@@ -266,7 +261,7 @@ func TestLinkPublishAddsAStringOutput(t *testing.T) {
 
 	t.Run("a template with outputs gains one member per key", func(t *testing.T) {
 		t.Parallel()
-		authored := stringOutput("[reference('Db').properties.version]")
+		authored := outputBody("[reference('Db').properties.version]")
 		files := producerFiles(t, map[string]any{sectionOutputs: map[string]any{"payments_zhdb__version": authored}})
 		out, err := LinkPublish(edge, files)
 		if err != nil {
@@ -326,7 +321,7 @@ func TestLinkPublishConflictingOutputHalts(t *testing.T) {
 	t.Parallel()
 	// The datastore's fragment writes its own output host, which lands under the
 	// name the link writes the host under, with the expression as written.
-	files := producerFiles(t, map[string]any{sectionOutputs: map[string]any{hostOutput: stringOutput(hostExpression)}})
+	files := producerFiles(t, map[string]any{sectionOutputs: map[string]any{hostOutput: outputBody(hostExpression)}})
 	_, err := LinkPublish(testLink(), files)
 	wantCondition(t, err, plugincondition.ErrPluginOutputNameCollision(), "fullyQualifiedDomainName")
 	for _, want := range []string{hostOutput, `"host"`, `"payments-db"`, `"stack-a/arm"`} {
@@ -341,7 +336,7 @@ func TestLinkPublishOutputCapHalts(t *testing.T) {
 	outputs := func(n int) map[string]any {
 		m := map[string]any{}
 		for i := 0; i < n; i++ {
-			m[fmt.Sprintf("other__o%d", i)] = stringOutput("x")
+			m[fmt.Sprintf("other__o%d", i)] = outputBody("x")
 		}
 		return m
 	}
@@ -457,7 +452,7 @@ func TestLinkPublishLiteralReadKeyAddsNoOutput(t *testing.T) {
 		t.Fatalf("LinkPublish: %v", err)
 	}
 	outputs := templateOf(t, applied(t, files, out.Patches))[sectionOutputs]
-	if !jsonEqual(outputs, map[string]any{hostOutput: stringOutput("[string(reference('Db').properties.fullyQualifiedDomainName)]")}) {
+	if !jsonEqual(outputs, map[string]any{hostOutput: outputBody("[string(reference('Db').properties.fullyQualifiedDomainName)]")}) {
 		t.Errorf("outputs = %s, want only the host", mustJSON(t, outputs))
 	}
 }
@@ -526,7 +521,7 @@ func TestLinkResolveWholePlaceholder(t *testing.T) {
 			edge.SourceAnnotations = map[string]string{AnnotationSubscription: "consumer-sub", AnnotationResourceGroup: "consumer-rg"}
 			files := consumerFiles(t,
 				map[string]any{"settings": map[string]any{"host": placeholder("host")}}, nil,
-				map[string]any{sectionOutputs: map[string]any{"orders_zhapi__dbhost": stringOutput(placeholder("host"))}})
+				map[string]any{sectionOutputs: map[string]any{"orders_zhapi__dbhost": outputBody(placeholder("host"))}})
 			out, err := LinkResolve(edge, published(t, edge), files)
 			if err != nil {
 				t.Fatalf("LinkResolve: %v", err)
@@ -868,47 +863,394 @@ func TestLinkResolveReadKeyAbsentFromProvidesHalts(t *testing.T) {
 	}
 }
 
-func TestLinkResolveRefusesAProducerDeployedAtAWiderScope(t *testing.T) {
+// wideRead is the read of the host output the resolve writes for a producer
+// whose deployment resource ID is built by format() from idFormat and the given
+// argument expressions.
+func wideRead(idFormat string, args ...string) string {
+	return "[reference(format('" + idFormat + "', " + strings.Join(args, ", ") + ", 'aggrega--orders--stack-a-zsarm'), '2025-04-01').outputs.payments_zhdb__host.value]"
+}
+
+const (
+	subscriptionIDFormat    = "/subscriptions/{0}/providers/Microsoft.Resources/deployments/{1}"
+	managementGroupIDFormat = "/providers/Microsoft.Management/managementGroups/{0}/providers/Microsoft.Resources/deployments/{1}"
+)
+
+// wideHandle is the identity a publish of testLink returns.
+func wideHandle() map[string]string {
+	return map[string]string{handleDeploymentName: linkedDeployment, handleOutputNamePrefix + "host": hostOutput}
+}
+
+// managementGroupTopFiles assembles a consumer at management-group scope whose
+// own top level reads the host.
+func managementGroupTopFiles(t *testing.T) []rendercore.RenderedFile {
+	t.Helper()
+	policy := managementGroupSchemaLine + "resources:\n  Policy:\n    type: Microsoft.Authorization/policyDefinitions\n    apiVersion: '2023-04-01'\n    name: policy\n    properties:\n      description: " + placeholder("host") + "\n"
+	out, err := Assemble([]Contribution{managementGroupBoundary(contributes("policy", 0, policy))})
+	if err != nil {
+		t.Fatalf("Assemble: %v", err)
+	}
+	return out.Files
+}
+
+func TestLinkResolveWritesTheIDOfAProducerAtAWiderScope(t *testing.T) {
 	t.Parallel()
+	const descriptionPointer = "/resources/Policy/properties/description"
+	resourceGroupConsumer := func(t *testing.T) []rendercore.RenderedFile {
+		return consumerFiles(t, map[string]any{"settings": map[string]any{"host": placeholder("host")}}, nil, nil)
+	}
+	settingsPointer := "/resources/App/properties/settings/host"
 	for _, c := range []struct {
-		scope, words string
+		name        string
+		annotations map[string]string
+		consumer    func(*testing.T) []rendercore.RenderedFile
+		pointer     string
+		want        string
 	}{
-		{"subscription", "subscription scope"},
-		{"managementGroup", "management-group scope"},
+		{"a subscription producer names its subscription",
+			map[string]string{AnnotationDeploymentScope: "subscription", AnnotationSubscription: "sub-payments"},
+			resourceGroupConsumer, settingsPointer, wideRead(subscriptionIDFormat, "'sub-payments'")},
+		{"a subscription producer defaults to the consumer's subscription and needs no resource group",
+			map[string]string{AnnotationDeploymentScope: "subscription"},
+			resourceGroupConsumer, settingsPointer, wideRead(subscriptionIDFormat, "subscription().subscriptionId")},
+		{"a management-group producer names its management group",
+			map[string]string{AnnotationDeploymentScope: "managementGroup", AnnotationManagementGroup: "mg-payments"},
+			resourceGroupConsumer, settingsPointer, wideRead(managementGroupIDFormat, "'mg-payments'")},
+		{"a management-group producer defaults to the consumer's own at management-group scope",
+			map[string]string{AnnotationDeploymentScope: "managementGroup"},
+			managementGroupTopFiles, descriptionPointer, wideRead(managementGroupIDFormat, "managementGroup().name")},
+		{"a subscription producer is named by a management-group consumer",
+			map[string]string{AnnotationDeploymentScope: "subscription", AnnotationSubscription: "sub-payments"},
+			managementGroupTopFiles, descriptionPointer, wideRead(subscriptionIDFormat, "'sub-payments'")},
 	} {
-		t.Run(c.scope, func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			edge := testLink()
-			edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: c.scope, AnnotationResourceGroup: "rg-payments"}
-			_, publishErr := LinkPublish(edge, producerFiles(t, nil))
-			files := consumerFiles(t, map[string]any{"settings": map[string]any{"host": placeholder("host")}}, nil, nil)
-			_, resolveErr := LinkResolve(edge, map[string]string{handleDeploymentName: linkedDeployment, handleOutputNamePrefix + "host": hostOutput}, files)
-			for side, err := range map[string]error{"publish": publishErr, "resolve": resolveErr} {
-				wantCondition(t, err, plugincondition.ErrPluginCannotExpressInput(), "rg-payments")
-				for _, want := range []string{
-					"arm links to a producer deployed at resource-group scope; this producer's boundary deploys at " + c.words,
-					`"orders-api"`, `"payments-db"`, `"database"`, `"stack-a/arm"`,
-				} {
-					if !strings.Contains(err.Error(), want) {
-						t.Errorf("%s: the halt does not say %q: %v", side, want, err)
-					}
-				}
-				for _, banned := range []string{"yet", "not available"} {
-					if strings.Contains(err.Error(), banned) {
-						t.Errorf("%s: the halt says %q: %v", side, banned, err)
-					}
+			edge.TargetAnnotations = c.annotations
+			files := c.consumer(t)
+			out, err := LinkResolve(edge, wideHandle(), files)
+			if err != nil {
+				t.Fatalf("LinkResolve: %v", err)
+			}
+			ops := opsOf(t, out.Patches)
+			if len(ops) != 1 || ops[0].Op != "replace" || ops[0].Path != c.pointer || ops[0].Value != c.want {
+				t.Fatalf("operations = %+v\nwant replace %s = %s", ops, c.pointer, c.want)
+			}
+		})
+	}
+}
+
+func TestLinkResolveManagementGroupDefaultUnavailableHalts(t *testing.T) {
+	t.Parallel()
+	edge := testLink()
+	edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: "managementGroup"}
+	for _, c := range []struct {
+		name  string
+		files func(*testing.T) []rendercore.RenderedFile
+		scope string
+	}{
+		{"at resource-group scope", func(t *testing.T) []rendercore.RenderedFile {
+			return consumerFiles(t, map[string]any{"settings": map[string]any{"host": placeholder("host")}}, nil, nil)
+		}, "resource-group scope"},
+		{"in the resource group level of a subscription template", func(t *testing.T) []rendercore.RenderedFile {
+			return subscriptionConsumerFiles(t, "")
+		}, "resource-group scope"},
+		{"in the subscription level of a management-group template", managementGroupConsumerFiles, "subscription scope"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := LinkResolve(edge, wideHandle(), c.files(t))
+			wantCondition(t, err, plugincondition.ErrPluginRequiredInputUnresolved())
+			for _, want := range []string{AnnotationManagementGroup, `"host"`, `"payments-db"`, c.scope} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the halt does not say %q: %v", want, err)
 				}
 			}
 		})
 	}
-	t.Run("a resource group producer is linked", func(t *testing.T) {
+	t.Run("the annotation resolves it", func(t *testing.T) {
 		t.Parallel()
-		edge := testLink()
-		edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: "resourceGroup"}
-		if _, err := LinkPublish(edge, producerFiles(t, nil)); err != nil {
-			t.Errorf("LinkPublish: %v", err)
+		edge := edge
+		edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: "managementGroup", AnnotationManagementGroup: "mg-payments"}
+		if _, err := LinkResolve(edge, wideHandle(), managementGroupConsumerFiles(t)); err != nil {
+			t.Errorf("LinkResolve: %v", err)
 		}
 	})
+}
+
+func TestLinkResolveSubscriptionProducerAtManagementGroupScopeNeedsItsSubscription(t *testing.T) {
+	t.Parallel()
+	edge := testLink()
+	edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: "subscription"}
+	_, err := LinkResolve(edge, wideHandle(), managementGroupTopFiles(t))
+	wantCondition(t, err, plugincondition.ErrPluginRequiredInputUnresolved())
+	for _, want := range []string{AnnotationSubscription, "management-group scope", `"payments-db"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not say %q: %v", want, err)
+		}
+	}
+}
+
+func TestLinkResolveAndPublishUnknownScopeHalts(t *testing.T) {
+	t.Parallel()
+	edge := testLink()
+	edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: "tenant"}
+	_, publishErr := LinkPublish(edge, producerFiles(t, nil))
+	files := consumerFiles(t, map[string]any{"settings": map[string]any{"host": placeholder("host")}}, nil, nil)
+	_, resolveErr := LinkResolve(edge, wideHandle(), files)
+	for side, err := range map[string]error{"publish": publishErr, "resolve": resolveErr} {
+		wantCondition(t, err, plugincondition.ErrPluginRequiredInputUnresolved(), "tenant")
+		if !strings.Contains(err.Error(), AnnotationDeploymentScope) {
+			t.Errorf("%s: the halt does not name %s: %v", side, AnnotationDeploymentScope, err)
+		}
+	}
+}
+
+// stampedResource is a resource body carrying the provenance of component.
+func stampedResource(component string, body map[string]any) map[string]any {
+	out := clone(body)
+	out["metadata"] = map[string]any{ProvenanceMetadataKey: map[string]any{"aggrega.ai/component-id": component}}
+	return out
+}
+
+// dbResource is the datastore resource of a producer, stamped as the provider
+// stamps it.
+func dbResource(component string) map[string]any {
+	return stampedResource(component, map[string]any{
+		"type": "Microsoft.DBforPostgreSQL/flexibleServers", "apiVersion": "2024-08-01", "name": "payments-db",
+		"properties": map[string]any{"version": "16"},
+	})
+}
+
+// nestedDeployment is a nested deployment resource whose template is inner.
+func nestedDeployment(inner map[string]any) map[string]any {
+	return map[string]any{
+		"type": "Microsoft.Resources/deployments", "apiVersion": "2025-04-01", "name": "level",
+		"properties": map[string]any{"mode": "Incremental", "template": inner},
+	}
+}
+
+// levelTemplate is a template at scope holding the given sections.
+func levelTemplate(scope Scope, sections map[string]any) map[string]any {
+	out := map[string]any{sectionSchema: schemaOf(scope), sectionLanguageVersion: LanguageVersion, sectionContentVersion: ContentVersion}
+	for k, v := range sections {
+		out[k] = v
+	}
+	return out
+}
+
+// wideProducerFiles encodes a producer template at scope.
+func wideProducerFiles(t *testing.T, scope Scope, sections map[string]any) []rendercore.RenderedFile {
+	t.Helper()
+	content, err := encodeTemplate(levelTemplate(scope, sections))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return []rendercore.RenderedFile{{Path: TemplateFileName, Content: content}}
+}
+
+func TestLinkPublishAtAWiderScopeWritesTheOutputAtTheTopLevel(t *testing.T) {
+	t.Parallel()
+	for _, scope := range []Scope{ScopeSubscription, ScopeManagementGroup} {
+		t.Run(string(scope), func(t *testing.T) {
+			t.Parallel()
+			edge := testLink()
+			edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: string(scope)}
+			files := wideProducerFiles(t, scope, map[string]any{sectionResources: map[string]any{"Db": dbResource("payments-db")}})
+			out, err := LinkPublish(edge, files)
+			if err != nil {
+				t.Fatalf("LinkPublish: %v", err)
+			}
+			got := templateOf(t, applied(t, files, out.Patches))
+			want := map[string]any{hostOutput: outputBody("[string(reference('Db').properties.fullyQualifiedDomainName)]")}
+			if !jsonEqual(got[sectionOutputs], want) {
+				t.Errorf("outputs = %s, want %s", mustJSON(t, got[sectionOutputs]), mustJSON(t, want))
+			}
+			if out.Handle[handleDeploymentName] != linkedDeployment {
+				t.Errorf("handle = %v", out.Handle)
+			}
+		})
+	}
+}
+
+// nestedProducer is a producer template at scope whose datastore sits in the
+// nested level under symbol, beside a top-level resource of another component.
+func nestedProducer(t *testing.T, scope Scope, symbol string, inner map[string]any) []rendercore.RenderedFile {
+	t.Helper()
+	level := levelTemplate(ScopeResourceGroup, map[string]any{sectionResources: map[string]any{"Db": dbResource("payments-db")}})
+	if symbol == LevelSubscriptionSymbol {
+		level = levelTemplate(ScopeSubscription, map[string]any{sectionResources: map[string]any{"Db": dbResource("payments-db")}})
+	}
+	for k, v := range inner {
+		level[k] = v
+	}
+	return wideProducerFiles(t, scope, map[string]any{sectionResources: map[string]any{
+		"Other": stampedResource("other-component", map[string]any{"type": "Microsoft.Resources/resourceGroups", "apiVersion": "2024-03-01", "name": "other"}),
+		symbol:  nestedDeployment(level),
+	}})
+}
+
+var nestedProducerCases = []struct {
+	name   string
+	scope  Scope
+	symbol string
+}{
+	{"a resource group level of a subscription template", ScopeSubscription, LevelResourceGroupSymbol},
+	{"a resource group level of a management-group template", ScopeManagementGroup, LevelResourceGroupSymbol},
+	{"a subscription level of a management-group template", ScopeManagementGroup, LevelSubscriptionSymbol},
+}
+
+func TestLinkPublishReExposesAProducerInANestedLevel(t *testing.T) {
+	t.Parallel()
+	for _, c := range nestedProducerCases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			edge := injecting(testLink(), "DB_HOST", "host", "DB_PORT", "port")
+			edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: string(c.scope)}
+			files := nestedProducer(t, c.scope, c.symbol, nil)
+			out, err := LinkPublish(edge, files)
+			if err != nil {
+				t.Fatalf("LinkPublish: %v", err)
+			}
+			innerOutputs := "/resources/" + c.symbol + "/properties/template/outputs"
+			var paths []string
+			for _, op := range opsOf(t, out.Patches) {
+				paths = append(paths, op.Path)
+			}
+			if !strings.Contains(strings.Join(paths, " "), innerOutputs) {
+				t.Errorf("no operation adds the level's outputs at %s: %v", innerOutputs, paths)
+			}
+			got := templateOf(t, applied(t, files, out.Patches))
+			resources := got[sectionResources].(map[string]any)
+			properties := resources[c.symbol].(map[string]any)["properties"].(map[string]any)
+			inner := properties["template"].(map[string]any)
+			wantInner := map[string]any{hostOutput: outputBody("[string(reference('Db').properties.fullyQualifiedDomainName)]")}
+			if !jsonEqual(inner[sectionOutputs], wantInner) {
+				t.Errorf("the level's outputs = %s, want %s", mustJSON(t, inner[sectionOutputs]), mustJSON(t, wantInner))
+			}
+			wantTop := map[string]any{
+				hostOutput:            outputBody("[reference('" + c.symbol + "').outputs." + hostOutput + ".value]"),
+				"payments_zhdb__port": outputBody("5432"),
+			}
+			if !jsonEqual(got[sectionOutputs], wantTop) {
+				t.Errorf("top-level outputs = %s, want %s", mustJSON(t, got[sectionOutputs]), mustJSON(t, wantTop))
+			}
+
+			// A second consumer of the same key reuses both outputs.
+			again, err := LinkPublish(edge, applied(t, files, out.Patches))
+			if err != nil {
+				t.Fatalf("second LinkPublish: %v", err)
+			}
+			for _, op := range opsOf(t, again.Patches) {
+				if strings.Contains(op.Path, "outputs") {
+					t.Errorf("the second publish writes %s %s; both outputs are reused", op.Op, op.Path)
+				}
+			}
+		})
+	}
+}
+
+func TestLinkPublishNestedLevelOutputWithAnotherBodyHalts(t *testing.T) {
+	t.Parallel()
+	edge := testLink()
+	edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: string(ScopeSubscription)}
+	files := nestedProducer(t, ScopeSubscription, LevelResourceGroupSymbol, map[string]any{
+		sectionOutputs: map[string]any{hostOutput: outputBody("[reference('Db').properties.version]")},
+	})
+	_, err := LinkPublish(edge, files)
+	wantCondition(t, err, plugincondition.ErrPluginOutputNameCollision())
+	for _, want := range []string{hostOutput, `"payments-db"`, LevelResourceGroupSymbol} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the halt does not say %q: %v", want, err)
+		}
+	}
+}
+
+func TestLinkPublishNestedLevelSecretHalts(t *testing.T) {
+	t.Parallel()
+	edge := providing(testLink(), "host", "[parameters('adminPassword')]")
+	edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: string(ScopeSubscription)}
+	files := nestedProducer(t, ScopeSubscription, LevelResourceGroupSymbol, map[string]any{
+		sectionParameters: map[string]any{"adminPassword": map[string]any{"type": "securestring"}},
+	})
+	_, err := LinkPublish(edge, files)
+	wantCondition(t, err, plugincondition.ErrPluginValueNotRepresentable())
+	if !strings.Contains(err.Error(), `"host"`) {
+		t.Errorf("the halt does not name the key: %v", err)
+	}
+}
+
+func TestLinkPublishNestedLevelOutputCapHalts(t *testing.T) {
+	t.Parallel()
+	edge := testLink()
+	edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: string(ScopeSubscription)}
+	outputs := map[string]any{}
+	for i := 0; i < maxOutputs; i++ {
+		outputs[fmt.Sprintf("filler%d", i)] = outputBody("x")
+	}
+	files := nestedProducer(t, ScopeSubscription, LevelResourceGroupSymbol, map[string]any{sectionOutputs: outputs})
+	_, err := LinkPublish(edge, files)
+	wantCondition(t, err, plugincondition.ErrPluginCannotExpressInput())
+	if !strings.Contains(err.Error(), "outputs") {
+		t.Errorf("the halt does not name the measure: %v", err)
+	}
+}
+
+func TestLinkPublishComponentAcrossLevels(t *testing.T) {
+	t.Parallel()
+	// The component's datastore sits in the resource group level and a second
+	// resource of it at the top level.
+	level := levelTemplate(ScopeResourceGroup, map[string]any{sectionResources: map[string]any{"Db": dbResource("payments-db")}})
+	files := wideProducerFiles(t, ScopeSubscription, map[string]any{sectionResources: map[string]any{
+		"Group":                  dbResource("payments-db"),
+		LevelResourceGroupSymbol: nestedDeployment(level),
+	}})
+	annotations := map[string]string{AnnotationDeploymentScope: string(ScopeSubscription)}
+
+	t.Run("the level is the one the expression's references resolve in", func(t *testing.T) {
+		t.Parallel()
+		edge := providing(testLink(), "host", "[reference('Group').version]")
+		edge.TargetAnnotations = annotations
+		out, err := LinkPublish(edge, files)
+		if err != nil {
+			t.Fatalf("LinkPublish: %v", err)
+		}
+		got := templateOf(t, applied(t, files, out.Patches))
+		want := map[string]any{hostOutput: outputBody("[string(reference('Group').version)]")}
+		if !jsonEqual(got[sectionOutputs], want) {
+			t.Errorf("outputs = %s, want %s", mustJSON(t, got[sectionOutputs]), mustJSON(t, want))
+		}
+	})
+	t.Run("an expression naming no resource halts naming the component and the levels", func(t *testing.T) {
+		t.Parallel()
+		edge := providing(testLink(), "host", "[concat('a', 'b')]")
+		edge.TargetAnnotations = annotations
+		_, err := LinkPublish(edge, files)
+		wantCondition(t, err, plugincondition.ErrPluginCannotExpressInput(), "'a'")
+		for _, want := range []string{`"payments-db"`, `"host"`, LevelResourceGroupSymbol, "top level"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the halt does not say %q: %v", want, err)
+			}
+		}
+	})
+}
+
+func TestLinkPublishWithoutProvenanceWritesTheTopLevel(t *testing.T) {
+	t.Parallel()
+	edge := testLink()
+	edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: string(ScopeSubscription)}
+	plain := map[string]any{"type": "Microsoft.DBforPostgreSQL/flexibleServers", "apiVersion": "2024-08-01", "name": "payments-db"}
+	files := wideProducerFiles(t, ScopeSubscription, map[string]any{sectionResources: map[string]any{
+		"Db":                     plain,
+		LevelResourceGroupSymbol: nestedDeployment(levelTemplate(ScopeResourceGroup, nil)),
+	}})
+	out, err := LinkPublish(edge, files)
+	if err != nil {
+		t.Fatalf("LinkPublish: %v", err)
+	}
+	got := templateOf(t, applied(t, files, out.Patches))
+	if _, ok := got[sectionOutputs].(map[string]any)[hostOutput]; !ok {
+		t.Errorf("the top level has no %s: %s", hostOutput, mustJSON(t, got[sectionOutputs]))
+	}
 }
 
 // subscriptionConsumerFiles assembles the consumer at subscription scope: its

@@ -4,7 +4,7 @@
 apiVersion: aggrega.ai/v1beta1
 kind: Release
 metadata:
-  name: arm-scope-link-producer-management-group
+  name: arm-scope-link-mg-producer
   environment: production
   version: "1.0.0"
 spec:

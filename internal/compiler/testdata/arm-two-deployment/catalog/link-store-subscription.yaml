@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: arm-link-store-subscription
+  version: 1.0.0
+  description: >
+    A datastore stand-in written as a fragment of a template deployed to a
+    subscription, which its $schema declares, that writes no output of its own,
+    so a link carrying its host to another template writes the output it reads.
+spec:
+  capability: arm
+  implements: example/datastore/store:1.0.0
+  locals:
+    symbol: '{{ .values.symbol }}'
+  provides:
+    host: "[reference('{{ .locals.symbol }}').provisioningState]"
+    port: "5432"
+  artifacts:
+    store.yaml: |
+      $schema: https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#
+      resources:
+        {{ .locals.symbol }}:
+          type: Microsoft.Resources/resourceGroups
+          apiVersion: "2024-03-01"
+          name: "{{ .context.instance_id }}"
+          location: "[deployment().location]"
