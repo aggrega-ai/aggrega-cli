@@ -5,7 +5,7 @@ DocumentName: aggrega-cli-third-party
 DocumentNamespace: https://aggrega.ai/spdx/aggrega-cli-third-party
 Creator: Tool: gen-third-party-licenses.sh
 Created: 1970-01-01T00:00:00Z
-DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly guests it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:657f3dd05c8e152a29b5a9bc2828bbc94ca9ef728941ecdf51edfc74adf7e4bb.</text>
+DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly guests it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:28041a558737d2820948cdcc001dc7bbb01dc3aeafe77e57eb7b645ba281edc1.</text>
 
 PackageName: dario.cat/mergo
 SPDXID: SPDXRef-Package-go-dario.cat-mergo-v1.0.1
