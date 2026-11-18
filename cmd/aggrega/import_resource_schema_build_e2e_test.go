@@ -296,7 +296,9 @@ func checkTerraformLedger(t *testing.T, root string) {
 }
 
 func checkArmVault(t *testing.T, root string) {
-	template := readJSON(t, filepath.Join(root, "dist/stack/arm/"+"arm-template.json"))
+	// The file name deliberately duplicates armcore.TemplateFileName, which this
+	// package cannot import.
+	template := readJSON(t, filepath.Join(root, "dist/stack/arm/arm-template.json"))
 	vault := objectAt(t, template, "resources", "Vault")
 	if vault["type"] != "Microsoft.Example/vaults" || vault["apiVersion"] != "2025-01-01" {
 		t.Errorf("the resource is %v at %v", vault["type"], vault["apiVersion"])

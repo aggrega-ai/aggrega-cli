@@ -20,9 +20,9 @@ import (
 var SchemaImporters = []string{"importer/cloudformation-schema", "importer/terraform-schema", "importer/arm-schema"}
 
 // CarrySchemaImporters makes the binary under test carry the resource-schema
-// importers as a release does: each one's Plugin entity as this build generated
-// it, and the digest of the module built here from the repository's sources,
-// which is the module the import then accepts and runs. It fails the test where
+// importers: each one's Plugin entity as this build generated it, and the digest
+// of the module built here from the repository's sources, which is served from
+// the binary's embedded tier and is the module the import then accepts and runs. It fails the test where
 // the build carries no entity for one of them.
 //
 // The carried set is process-wide, so a test calling this must not be parallel;

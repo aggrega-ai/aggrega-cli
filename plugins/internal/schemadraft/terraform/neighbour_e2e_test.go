@@ -137,15 +137,15 @@ func layDraftedRecipe(t *testing.T, catalog, name, implements string, m Module) 
 // the store's module with its own argument alone.
 func TestDraftedTerraformResourceReceivesNeighbourValue(t *testing.T) {
 	embeddedentities.Require(t)
-	address := address(terraformHost, "example", "store", "1.0.0")
+	addr := address(terraformHost, "example", "store", "1.0.0")
 	bucket := prop(kString, "bucket")
 	bucket.Required = true
 	endpoint := prop(kString, "endpoint")
 	endpoint.ReadOnly = true
-	store := moduleOf("store_bucket", address, []schemadraft.Input{in(bucket, schemadraft.PillarValues, "bucket", true)},
+	store := moduleOf("store_bucket", addr, []schemadraft.Input{in(bucket, schemadraft.PillarValues, "bucket", true)},
 		schemadraft.Provide{Key: "endpoint", Attribute: []string{"endpoint"}})
 	store.Type.Properties = append(store.Type.Properties, endpoint)
-	consumer := moduleOf("reporting_api", address, []schemadraft.Input{
+	consumer := moduleOf("reporting_api", addr, []schemadraft.Input{
 		injected(prop(kString, "store_endpoint"), "env", "STORE_ENDPOINT", true)})
 
 	root := t.TempDir()

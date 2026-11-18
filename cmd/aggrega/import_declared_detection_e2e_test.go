@@ -32,6 +32,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/embeddedentities"
+	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
 )
 
 // everyAgentFlowFixture is every Langflow, Flowise and n8n export committed in
@@ -309,9 +310,12 @@ func TestASourceTwoFormatsRecogniseIsRefusedNamingBoth(t *testing.T) {
 // TestASourceNoImporterRecognisesIsRefusedNamingTheAdvertisedFormats holds a source
 // no signature matches to the unrecognised refusal at every surface, offering the
 // formats the catalog's importers advertise — read off the catalog, in the order
-// it lists them — as the ones to name.
+// of the entities' index keys across the workspace's catalog folders and the
+// importers the binary carries — as the ones to name. The carried set is emptied
+// so the list comes from the folder's importers alone, whatever the build carries.
 func TestASourceNoImporterRecognisesIsRefusedNamingTheAdvertisedFormats(t *testing.T) {
 	embeddedentities.Require(t)
+	t.Cleanup(embedded.SeedPublishedForTest(nil))
 	withCLIRegistrations(t, nil)
 	isolateMachineConfiguration(t)
 	root, _ := catalogFolderWorkspace(t, true)

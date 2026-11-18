@@ -22,8 +22,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest"
 	"github.com/aggrega-ai/aggrega-cli/internal/importops/importopstest/exportgen"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm/embedded"
-	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
-	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -91,9 +89,7 @@ func TestTheJSONParserTheImportResolvesRunsUnderItsEntitysLimits(t *testing.T) {
 //
 // The carried set is process-wide, so the case is not parallel.
 func TestTerraformSchemaImportLargeExportWithinLimits(t *testing.T) {
-	embeddedentities.Require(t)
-	withCLIRegistrations(t, nil)
-	isolateFromThisMachine(t)
+	carrySchemaImportersIsolated(t)
 	const uri = "importer/terraform-schema"
 
 	var carriedEntity []byte
@@ -108,18 +104,6 @@ func TestTerraformSchemaImportLargeExportWithinLimits(t *testing.T) {
 	if got := runtimeOf(t, uri, carriedEntity); got.MaxMemoryPages != 8192 || got.TimeoutMs != 150000 {
 		t.Fatalf("%s carries %d pages and %d ms; the case holds it to 8192 pages and 150000 ms",
 			uri, got.MaxMemoryPages, got.TimeoutMs)
-	}
-
-	module, err := os.ReadFile(wasmtest.EnsureFixtureBuilt(t, "terraform-schema-importer.wasm"))
-	if err != nil {
-		t.Fatalf("read the importer's module: %v", err)
-	}
-	t.Cleanup(embedded.SeedForTest(uri, module))
-	t.Cleanup(embedded.SeedPublishedForTest([]embedded.PublishedPlugin{
-		{URI: uri, Entity: carriedEntity, Digest: digest.ContentDigest(module)}}))
-	var entity types.Plugin
-	if err := yaml.Unmarshal(carriedEntity, &entity); err != nil {
-		t.Fatalf("read the carried entity: %v", err)
 	}
 
 	export := exportgen.Generate(exportgen.Spec{Providers: []string{"registry.terraform.io/example/big"},
@@ -140,10 +124,8 @@ func TestTerraformSchemaImportLargeExportWithinLimits(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(root, workspaceconfig.ConventionalCatalogDir), 0o755); err != nil {
 				t.Fatalf("create the catalog folder: %v", err)
 			}
-			importopstest.WriteOfflineConfiguration(t, root, importopstest.Attachment{
-				URI:      entity.Coordinate() + ":" + entity.Metadata.Version,
-				Settings: map[string]any{"resource_types": []any{"big_resource_0007"}},
-			})
+			importopstest.WriteOfflineConfiguration(t, root, importopstest.SchemaImporterAttachment(t, uri,
+				map[string]any{"resource_types": []any{"big_resource_0007"}}))
 			seedSource(t, root, "export.json", export)
 
 			code, stdout, commentary, process := runImportAtTheRoot(t, root, append([]string{filepath.Join(root, "export.json")}, args...)...)
