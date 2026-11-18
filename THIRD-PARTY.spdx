@@ -5,7 +5,7 @@ DocumentName: aggrega-cli-third-party
 DocumentNamespace: https://aggrega.ai/spdx/aggrega-cli-third-party
 Creator: Tool: gen-third-party-licenses.sh
 Created: 1970-01-01T00:00:00Z
-DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly plugins it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:709cc2a52aa1200157640129554b9b2ec39c4e1526c282b5a01a26b7cd77282a.</text>
+DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly plugins it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:a915cf576e0715c995c84fe5c7861b9467a75976bbacb6dcbedc2614ad8248b6.</text>
 
 PackageName: Go standard library
 SPDXID: SPDXRef-Package-go-Go-standard-library-go1.26.0
@@ -16,6 +16,140 @@ PackageLicenseDeclared: NOASSERTION
 PackageCopyrightText: <text>Copyright 2009 The Go Authors.</text>
 ExternalRef: PACKAGE-MANAGER purl pkg:golang/stdlib@go1.26.0
 PackageComment: <text>Compiled into: aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger</text>
+FilesAnalyzed: false
+
+PackageName: Rust standard library
+SPDXID: SPDXRef-Package-rust-Rust-standard-library-1.85.1
+PackageVersion: 1.85.1
+PackageDownloadLocation: https://github.com/rust-lang/rust/tree/1.85.1/library
+PackageLicenseConcluded: MIT OR Apache-2.0
+PackageLicenseDeclared: MIT OR Apache-2.0
+PackageCopyrightText: <text>Copyright (c) 2003-2019 University of Illinois at Urbana-Champaign.
+Copyright (C) 2008-2010 Tachyon Technologies.
+Copyright © 1991-2024 Unicode, Inc.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:generic/rust-standard-library@1.85.1
+PackageComment: <text>Compiled into: linter/publishing</text>
+FilesAnalyzed: false
+
+PackageName: Rust standard library
+SPDXID: SPDXRef-Package-rust-Rust-standard-library-1.98.1
+PackageVersion: 1.98.1
+PackageDownloadLocation: https://github.com/rust-lang/rust/tree/1.98.1/library
+PackageLicenseConcluded: MIT OR Apache-2.0
+PackageLicenseDeclared: MIT OR Apache-2.0
+PackageCopyrightText: <text>It is Copyright (c) The Rust Project Contributors.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:generic/rust-standard-library@1.98.1
+PackageComment: <text>Compiled into: governance/rego, governance/cel</text>
+FilesAnalyzed: false
+
+PackageName: wasi-libc
+SPDXID: SPDXRef-Package-c-wasi-libc-161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+PackageVersion: 161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+PackageDownloadLocation: https://github.com/WebAssembly/wasi-libc/tree/161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+PackageLicenseConcluded: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+PackageLicenseDeclared: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+PackageCopyrightText: NOASSERTION
+ExternalRef: PACKAGE-MANAGER purl pkg:github/webassembly/wasi-libc@161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+PackageComment: <text>Compiled into: governance/rego, governance/cel. the libc of the wasm32-wasip1 target of Rust 1.98.1, built from wasi-sdk-33</text>
+FilesAnalyzed: false
+
+PackageName: musl (in wasi-libc)
+SPDXID: SPDXRef-Package-c-musl--in-wasi-libc--161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+PackageVersion: 161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+PackageDownloadLocation: https://github.com/WebAssembly/wasi-libc/tree/161b3195fc2558d2b1ba3eb9ffae3b2b47407623/libc-top-half/musl
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: MIT
+PackageCopyrightText: <text>Copyright © 2005-2020 Rich Felker, et al.
+src/regex/tre*) is Copyright © 2001-2008 Ville Laurikari and licensed
+Copyright © 1993,2004 Sun Microsystems or
+Copyright © 2003-2011 David Schultz or
+Copyright © 2003-2009 Steven G. Kargl or
+Copyright © 2003-2009 Bruce D. Evans or
+Copyright © 2008 Stephen L. Moshier or
+Copyright © 2017-2018 Arm Limited
+The ARM memcpy code (src/string/arm/memcpy.S) is Copyright © 2008
+Copyright © 1999-2019, Arm Limited.
+Copyright © 1994 David Burren. It is licensed under a BSD license.
+The smoothsort implementation (src/stdlib/qsort.c) is Copyright © 2011</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:github/webassembly/wasi-libc@161b3195fc2558d2b1ba3eb9ffae3b2b47407623#libc-top-half/musl
+PackageComment: <text>Compiled into: governance/rego, governance/cel. part of wasi-libc 161b3195fc2558d2b1ba3eb9ffae3b2b47407623; the libc of the wasm32-wasip1 target of Rust 1.98.1, built from wasi-sdk-33</text>
+FilesAnalyzed: false
+
+PackageName: cloudlibc (in wasi-libc)
+SPDXID: SPDXRef-Package-c-cloudlibc--in-wasi-libc--161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+PackageVersion: 161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+PackageDownloadLocation: https://github.com/WebAssembly/wasi-libc/tree/161b3195fc2558d2b1ba3eb9ffae3b2b47407623/libc-bottom-half/cloudlibc
+PackageLicenseConcluded: BSD-2-Clause
+PackageLicenseDeclared: BSD-2-Clause
+PackageCopyrightText: <text>Copyright (c) 2015-2017 Nuxi (https://nuxi.nl/) and contributors.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:github/webassembly/wasi-libc@161b3195fc2558d2b1ba3eb9ffae3b2b47407623#libc-bottom-half/cloudlibc
+PackageComment: <text>Compiled into: governance/rego, governance/cel. part of wasi-libc 161b3195fc2558d2b1ba3eb9ffae3b2b47407623; the libc of the wasm32-wasip1 target of Rust 1.98.1, built from wasi-sdk-33</text>
+FilesAnalyzed: false
+
+PackageName: musl-fts (in wasi-libc)
+SPDXID: SPDXRef-Package-c-musl-fts--in-wasi-libc--161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+PackageVersion: 161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+PackageDownloadLocation: https://github.com/WebAssembly/wasi-libc/tree/161b3195fc2558d2b1ba3eb9ffae3b2b47407623/fts/musl-fts
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: BSD-3-Clause
+PackageCopyrightText: <text>Copyright (c) 1989, 1993</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:github/webassembly/wasi-libc@161b3195fc2558d2b1ba3eb9ffae3b2b47407623#fts/musl-fts
+PackageComment: <text>Compiled into: governance/rego, governance/cel. part of wasi-libc 161b3195fc2558d2b1ba3eb9ffae3b2b47407623; the libc of the wasm32-wasip1 target of Rust 1.98.1, built from wasi-sdk-33</text>
+FilesAnalyzed: false
+
+PackageName: wasi-libc
+SPDXID: SPDXRef-Package-c-wasi-libc-574b88da481569b65a237cb80daf9a2d5aeaf82d
+PackageVersion: 574b88da481569b65a237cb80daf9a2d5aeaf82d
+PackageDownloadLocation: https://github.com/WebAssembly/wasi-libc/tree/574b88da481569b65a237cb80daf9a2d5aeaf82d
+PackageLicenseConcluded: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+PackageLicenseDeclared: Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+PackageCopyrightText: NOASSERTION
+ExternalRef: PACKAGE-MANAGER purl pkg:github/webassembly/wasi-libc@574b88da481569b65a237cb80daf9a2d5aeaf82d
+PackageComment: <text>Compiled into: linter/publishing. the libc of the wasm32-wasip1 target of Rust 1.85.1, built from wasi-sdk-25</text>
+FilesAnalyzed: false
+
+PackageName: musl (in wasi-libc)
+SPDXID: SPDXRef-Package-c-musl--in-wasi-libc--574b88da481569b65a237cb80daf9a2d5aeaf82d
+PackageVersion: 574b88da481569b65a237cb80daf9a2d5aeaf82d
+PackageDownloadLocation: https://github.com/WebAssembly/wasi-libc/tree/574b88da481569b65a237cb80daf9a2d5aeaf82d/libc-top-half/musl
+PackageLicenseConcluded: MIT
+PackageLicenseDeclared: MIT
+PackageCopyrightText: <text>Copyright © 2005-2020 Rich Felker, et al.
+src/regex/tre*) is Copyright © 2001-2008 Ville Laurikari and licensed
+Copyright © 1993,2004 Sun Microsystems or
+Copyright © 2003-2011 David Schultz or
+Copyright © 2003-2009 Steven G. Kargl or
+Copyright © 2003-2009 Bruce D. Evans or
+Copyright © 2008 Stephen L. Moshier or
+Copyright © 2017-2018 Arm Limited
+The ARM memcpy code (src/string/arm/memcpy.S) is Copyright © 2008
+Copyright © 1999-2019, Arm Limited.
+Copyright © 1994 David Burren. It is licensed under a BSD license.
+The smoothsort implementation (src/stdlib/qsort.c) is Copyright © 2011</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:github/webassembly/wasi-libc@574b88da481569b65a237cb80daf9a2d5aeaf82d#libc-top-half/musl
+PackageComment: <text>Compiled into: linter/publishing. part of wasi-libc 574b88da481569b65a237cb80daf9a2d5aeaf82d; the libc of the wasm32-wasip1 target of Rust 1.85.1, built from wasi-sdk-25</text>
+FilesAnalyzed: false
+
+PackageName: cloudlibc (in wasi-libc)
+SPDXID: SPDXRef-Package-c-cloudlibc--in-wasi-libc--574b88da481569b65a237cb80daf9a2d5aeaf82d
+PackageVersion: 574b88da481569b65a237cb80daf9a2d5aeaf82d
+PackageDownloadLocation: https://github.com/WebAssembly/wasi-libc/tree/574b88da481569b65a237cb80daf9a2d5aeaf82d/libc-bottom-half/cloudlibc
+PackageLicenseConcluded: BSD-2-Clause
+PackageLicenseDeclared: BSD-2-Clause
+PackageCopyrightText: <text>Copyright (c) 2015-2017 Nuxi (https://nuxi.nl/) and contributors.</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:github/webassembly/wasi-libc@574b88da481569b65a237cb80daf9a2d5aeaf82d#libc-bottom-half/cloudlibc
+PackageComment: <text>Compiled into: linter/publishing. part of wasi-libc 574b88da481569b65a237cb80daf9a2d5aeaf82d; the libc of the wasm32-wasip1 target of Rust 1.85.1, built from wasi-sdk-25</text>
+FilesAnalyzed: false
+
+PackageName: musl-fts (in wasi-libc)
+SPDXID: SPDXRef-Package-c-musl-fts--in-wasi-libc--574b88da481569b65a237cb80daf9a2d5aeaf82d
+PackageVersion: 574b88da481569b65a237cb80daf9a2d5aeaf82d
+PackageDownloadLocation: https://github.com/WebAssembly/wasi-libc/tree/574b88da481569b65a237cb80daf9a2d5aeaf82d/fts/musl-fts
+PackageLicenseConcluded: BSD-3-Clause
+PackageLicenseDeclared: BSD-3-Clause
+PackageCopyrightText: <text>Copyright (c) 1989, 1993</text>
+ExternalRef: PACKAGE-MANAGER purl pkg:github/webassembly/wasi-libc@574b88da481569b65a237cb80daf9a2d5aeaf82d#fts/musl-fts
+PackageComment: <text>Compiled into: linter/publishing. part of wasi-libc 574b88da481569b65a237cb80daf9a2d5aeaf82d; the libc of the wasm32-wasip1 target of Rust 1.85.1, built from wasi-sdk-25</text>
 FilesAnalyzed: false
 
 PackageName: dario.cat/mergo
@@ -4341,6 +4475,16 @@ PackageComment: <text>Compiled into: governance/rego, governance/cel</text>
 FilesAnalyzed: false
 
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-Go-standard-library-go1.26.0
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-Rust-standard-library-1.85.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-Rust-standard-library-1.98.1
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-c-wasi-libc-161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-c-musl--in-wasi-libc--161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-c-cloudlibc--in-wasi-libc--161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-c-musl-fts--in-wasi-libc--161b3195fc2558d2b1ba3eb9ffae3b2b47407623
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-c-wasi-libc-574b88da481569b65a237cb80daf9a2d5aeaf82d
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-c-musl--in-wasi-libc--574b88da481569b65a237cb80daf9a2d5aeaf82d
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-c-cloudlibc--in-wasi-libc--574b88da481569b65a237cb80daf9a2d5aeaf82d
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-c-musl-fts--in-wasi-libc--574b88da481569b65a237cb80daf9a2d5aeaf82d
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-dario.cat-mergo-v1.0.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-Azure-go-ansiterm-v0.0.0-20250102033503-faa5f7b0171c
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-go-github.com-BurntSushi-toml-v1.6.0

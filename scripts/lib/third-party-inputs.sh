@@ -13,6 +13,12 @@
 #                              its first-party [[package]] blocks and without the
 #                              first-party entries of the other blocks'
 #                              `dependencies` lists
+#   <source>/rust-toolchain.toml
+#                              one per embedded Rust row, in list order: the
+#                              channel decides which Rust standard library and
+#                              wasi-libc texts are attributed
+#   third-party/toolchain/     every file under it, in path order: the pinned
+#                              texts of those toolchain components
 #   the embedded rows          socket, name, source path and toolchain of every
 #                              row the binary embeds, in list order; a row that
 #                              is not embedded is not an input, so adding one
@@ -137,7 +143,7 @@ _third_party_sha256() {
 }
 
 third_party_input_lines() {
-  local root="$CORE_PLUGIN_MODULE_ROOT" rows socket name src toolchain extra embed dir f lock body
+  local root="$CORE_PLUGIN_MODULE_ROOT" rows socket name src toolchain extra embed dir f lock body pin has_rust=""
   rows="$(core_plugin_rows)" || return 1
   for f in go.mod go.sum scripts/gen-third-party-licenses.sh scripts/lib/third-party-inputs.sh; do
     if [ ! -f "$root/$f" ]; then
@@ -164,8 +170,24 @@ third_party_input_lines() {
       fi
       body="$(_third_party_lock_lines "$root/$lock")" || return 1
       printf '%s\t%s\n' "$lock" "$(printf '%s\n' "$body" | _third_party_sha256)"
+      pin="${src#./}/rust-toolchain.toml"
+      if [ ! -f "$root/$pin" ]; then
+        echo "third-party-inputs: the input $pin is missing (looked in $root)" >&2
+        return 1
+      fi
+      printf '%s\t%s\n' "$pin" "$(_third_party_sha256 < "$root/$pin")"
+      has_rust=yes
     fi
   done <<< "$rows"
+  if [ -n "$has_rust" ]; then
+    if [ ! -d "$root/third-party/toolchain" ]; then
+      echo "third-party-inputs: the input directory third-party/toolchain is missing (looked in $root)" >&2
+      return 1
+    fi
+    while IFS= read -r f; do
+      printf '%s\t%s\n' "${f#"$root"/}" "$(_third_party_sha256 < "$f")"
+    done < <(find "$root/third-party/toolchain" -type f | LC_ALL=C sort)
+  fi
 }
 
 third_party_inputs_digest() {

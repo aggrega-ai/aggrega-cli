@@ -7,6 +7,7 @@ Shipped artifacts covered:
 
 - the Go host binary (`cmd/aggrega`), for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64
 - the Go standard library, compiled into the host binary and every Go plugin below
+- the Rust standard library and wasi-libc, compiled into every Rust plugin below
 - `provider/helm`, a Go WebAssembly plugin (`plugins/helm-provider`), embedded into the host binary
 - `provider/compose`, a Go WebAssembly plugin (`plugins/compose-provider`), embedded into the host binary
 - `provider/helm-chart`, a Go WebAssembly plugin (`plugins/helmchart-provider`), embedded into the host binary
@@ -75,6 +76,16 @@ Distinct licenses: 12 (see `LICENSES/`).
 | Component | Version | Ecosystem | Compiled into | SPDX | License text |
 | --- | --- | --- | --- | --- | --- |
 | `Go standard library` | `go1.26.0` | go | aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
+| `Rust standard library` | `1.85.1` | rust | linter/publishing | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
+| `Rust standard library` | `1.98.1` | rust | governance/rego, governance/cel | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
+| `wasi-libc` | `161b3195fc2558d2b1ba3eb9ffae3b2b47407623` | c | governance/rego, governance/cel | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
+| `musl (in wasi-libc)` | `161b3195fc2558d2b1ba3eb9ffae3b2b47407623` | c | governance/rego, governance/cel | `MIT` | [MIT](LICENSES/MIT.txt) |
+| `cloudlibc (in wasi-libc)` | `161b3195fc2558d2b1ba3eb9ffae3b2b47407623` | c | governance/rego, governance/cel | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
+| `musl-fts (in wasi-libc)` | `161b3195fc2558d2b1ba3eb9ffae3b2b47407623` | c | governance/rego, governance/cel | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
+| `wasi-libc` | `574b88da481569b65a237cb80daf9a2d5aeaf82d` | c | linter/publishing | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
+| `musl (in wasi-libc)` | `574b88da481569b65a237cb80daf9a2d5aeaf82d` | c | linter/publishing | `MIT` | [MIT](LICENSES/MIT.txt) |
+| `cloudlibc (in wasi-libc)` | `574b88da481569b65a237cb80daf9a2d5aeaf82d` | c | linter/publishing | `BSD-2-Clause` | [BSD-2-Clause](LICENSES/BSD-2-Clause.txt) |
+| `musl-fts (in wasi-libc)` | `574b88da481569b65a237cb80daf9a2d5aeaf82d` | c | linter/publishing | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `dario.cat/mergo` | `v1.0.1` | go | aggrega, provider/helm | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
 | `github.com/Azure/go-ansiterm` | `v0.0.0-20250102033503-faa5f7b0171c` | go | aggrega | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `github.com/BurntSushi/toml` | `v1.6.0` | go | provider/helm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger | `MIT` | [MIT](LICENSES/MIT.txt) |

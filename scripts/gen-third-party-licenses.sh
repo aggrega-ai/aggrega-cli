@@ -25,6 +25,9 @@
 #   - the Go host binary            (./cmd/aggrega), for every target the release
 #                                   builds it for (THIRD_PARTY_HOST_TARGETS)
 #   - the Go standard library, compiled into the host and every Go plugin
+#   - for the embedded Rust guests, what their wasm32-wasip1 builds link in from
+#     the toolchain: the Rust standard library and wasi-libc (with the third-party
+#     works it carries), one entry per toolchain channel and per wasi-libc commit
 #   - every guest the binary embeds, as the core-plugin list names them: the
 #     rows whose embed column is empty (read through core_plugin_rows in
 #     scripts/lib/core-plugins.sh), each as <socket>/<name>. A row the binary
@@ -44,6 +47,16 @@
 #   - The Go standard library is one entry: its version from go.mod's toolchain
 #     directive (else its go directive), BSD-3-Clause, copyright lines from the
 #     LICENSE file of the Go root.
+#   - The Rust standard library entries are one per distinct channel a guest's
+#     rust-toolchain.toml names: MIT OR Apache-2.0, with the Rust project's
+#     COPYRIGHT file at that release tag as copyright source and notice. The
+#     wasi-libc entries are one per distinct wasi-libc commit the channels' Rust
+#     releases build their libc from: its LICENSE is the notice; musl, cloudlibc
+#     and musl-fts, which the default build links, are entries of their own, each
+#     with its own license file as copyright source. dlmalloc (CC0-1.0, which asks
+#     for no attribution) and emmalloc (not linked by default) are not listed.
+#     All of it is read from the pinned texts under third-party/toolchain/
+#     (fetched by scripts/fetch-toolchain-notices.sh), never from the network.
 #   - Rust crates come from parsing the Cargo.lock in each embedded Rust row's
 #     source directory; only crates with a crates.io registry source are
 #     third-party, and each entry is labelled with the guests that pull it in.
@@ -81,6 +94,9 @@
 #   - a Go module with no license file; a Rust crate with no source directory
 #     in any registry, or with neither a license file nor a license field —
 #     each named;
+#   - a Rust channel with no row in third-party/toolchain/toolchains.tsv, or a
+#     pinned text missing under third-party/toolchain/, naming the channel and
+#     the command that fetches it;
 #   - a referenced SPDX id with neither a template nor an on-disk source file.
 #
 # License-body deduplication and attribution:
@@ -503,6 +519,7 @@ mkdir -p "$WORK/sets"
 : > "$WORK/go-sets.list"     # "<label><TAB><file>" per Go set, host first
 : > "$WORK/rust-sets.list"   # "<label><TAB><file>" per Rust guest
 : > "$WORK/rust-src.list"    # "<label><TAB><source dir>" per Rust guest
+: > "$WORK/rust-channels.list"  # "<channel><TAB><label>" per Rust guest
 : > "$WORK/covered.md"       # the index's list of what is covered
 : > "$WORK/failures.txt"     # every dependency with no resolvable license text
 : > "$WORK/rust-nofile.txt"  # crates shipping no license file; the Cargo.toml license field stands
@@ -520,6 +537,9 @@ sort -u "$WORK/sets/host-all.txt" > "$WORK/sets/host.txt"
 printf 'aggrega\t%s\n' "$WORK/sets/host.txt" >> "$WORK/go-sets.list"
 printf -- '- the Go host binary (`cmd/aggrega`), for %s\n' "${THIRD_PARTY_HOST_TARGETS// /, }" >> "$WORK/covered.md"
 printf -- '- the Go standard library, compiled into the host binary and every Go plugin below\n' >> "$WORK/covered.md"
+if [ "$(awk -F'\x1f' '$4 == "rust" && $6 == "yes"' <<< "$rows" | wc -l)" -gt 0 ]; then
+	printf -- '- the Rust standard library and wasi-libc, compiled into every Rust plugin below\n' >> "$WORK/covered.md"
+fi
 
 while IFS=$'\x1f' read -r socket name src toolchain extra embed dir; do
 	[ -n "$socket" ] || continue
@@ -552,6 +572,7 @@ while IFS=$'\x1f' read -r socket name src toolchain extra embed dir; do
 		' "$lock" | sort -u > "$WORK/sets/$n.txt"
 		printf '%s\t%s\n' "$label" "$WORK/sets/$n.txt" >> "$WORK/rust-sets.list"
 		printf '%s\t%s\n' "$label" "$src" >> "$WORK/rust-src.list"
+		printf '%s\t%s\n' "$(core_plugin_rust_toolchain "$src")" "$label" >> "$WORK/rust-channels.list"
 		printf -- '- `%s`, a Rust WebAssembly plugin (`%s`), embedded into the host binary\n' "$label" "$src" >> "$WORK/covered.md"
 		;;
 	*)
@@ -613,7 +634,17 @@ index_links() {
 	printf '%s' "${out:-—}"
 }
 
+EMIT_NOTICES=()
+
 # emit_pkg <ecosystem> <name> <version> <declared> <concluded> <download> <purl> <usedby> <license-files...>
+#
+# Three optional globals, which the caller sets before the call and clears after:
+#   EMIT_NOTICES  an array of files reproduced as the entry's Notice, besides any
+#                 license-file named NOTICE*
+#   EMIT_NOTE     one line of context printed with the entry and kept in the SBOM
+#   EMIT_NO_SRC   when set, the files are not offered as the canonical body of the
+#                 SPDX id they resemble (a text that combines several licenses
+#                 is not that license's body)
 emit_pkg() {
 	local eco="$1" name="$2" ver="$3" declared="$4" concluded="$5" dl="$6" purl="$7" usedby="$8"
 	shift 8
@@ -627,6 +658,7 @@ emit_pkg() {
 	local f fid
 	for f in "${files[@]}"; do
 		[ -f "$f" ] || continue
+		[ -z "${EMIT_NO_SRC:-}" ] || continue
 		fid="$(file_id "$f")"
 		[ "$fid" != "UNKNOWN" ] && add_src "$fid" "$f"
 	done
@@ -651,7 +683,7 @@ emit_pkg() {
 			printf 'PackageCopyrightText: NOASSERTION\n'
 		fi
 		printf 'ExternalRef: PACKAGE-MANAGER purl %s\n' "$purl"
-		printf 'PackageComment: <text>Compiled into: %s</text>\n' "$usedby"
+		printf 'PackageComment: <text>Compiled into: %s%s</text>\n' "$usedby" "${EMIT_NOTE:+. $EMIT_NOTE}"
 		printf 'FilesAnalyzed: false\n'
 	} >> "$WORK/sbom-pkgs.txt"
 
@@ -660,6 +692,7 @@ emit_pkg() {
 		printf '\n%s %s\n' "$name" "$ver"
 		printf '  License: %s\n' "$concluded"
 		printf '  Compiled into: %s\n' "$usedby"
+		[ -z "${EMIT_NOTE:-}" ] || printf '  Note: %s\n' "$EMIT_NOTE"
 		if [ -n "$copyr" ]; then
 			printf '  Copyright:\n'
 			printf '%s\n' "$copyr" | sed 's/^/    /'
@@ -675,6 +708,12 @@ emit_pkg() {
 				;;
 			esac
 		done
+		if [ "${#EMIT_NOTICES[@]}" -gt 0 ]; then
+			for f in "${EMIT_NOTICES[@]}"; do
+				printf '  Notice:\n'
+				sed 's/\r$//; s/^\(.\)/    \1/' "$f"
+			done
+		fi
 	} >> "$WORK/notices-pkgs.txt"
 
 	printf 'Relationship: SPDXRef-DOCUMENT DESCRIBES %s\n' "$id" >> "$WORK/rels.txt"
@@ -712,6 +751,72 @@ fi
 go_std_usedby="$(awk -F'\t' '{ printf "%s%s", (NR > 1 ? ", " : ""), $1 }' "$WORK/go-sets.list")"
 emit_pkg "go" "Go standard library" "$go_std_ver" "NOASSERTION" "BSD-3-Clause" \
 	"https://go.dev/dl/" "pkg:golang/stdlib@$go_std_ver" "$go_std_usedby" "$go_root/LICENSE"
+
+# --- Rust standard library and wasi-libc ------------------------------------
+
+# What each embedded Rust guest's wasm32-wasip1 build links in from its
+# toolchain. One standard-library entry per channel a guest pins, and one
+# wasi-libc entry (with the works it carries that the default build links) per
+# commit the channels' Rust releases build their libc from. The texts are the
+# pinned copies under third-party/toolchain/, so this stays offline.
+TOOLCHAIN_DIR="third-party/toolchain"
+
+# toolchain_missing <channel> <what> : stop, naming the channel and the fetch command.
+toolchain_missing() {
+	echo "gen-third-party-licenses: ERROR: Rust $1: $2 (nothing written); fetch it with: bash scripts/fetch-toolchain-notices.sh $1" >&2
+	exit 1
+}
+
+: > "$WORK/wasi-libc.list"   # "<commit><TAB><wasi-sdk><TAB><channel><TAB><labels>" per channel
+if [ -s "$WORK/rust-channels.list" ]; then
+	while read -r channel; do
+		[ -n "$channel" ] || continue
+		usedby="$(awk -F'\t' -v c="$channel" '$1 == c { printf "%s%s", (n++ ? ", " : ""), $2 }' "$WORK/rust-channels.list")"
+		row="$(awk -F'\t' -v c="$channel" '$1 == c { print $2 "\t" $3; exit }' "$TOOLCHAIN_DIR/toolchains.tsv" 2>/dev/null || true)"
+		[ -n "$row" ] || toolchain_missing "$channel" "$TOOLCHAIN_DIR/toolchains.tsv has no row for it"
+		sdk="${row%%$'\t'*}"
+		commit="${row#*$'\t'}"
+		rust_copyright="$TOOLCHAIN_DIR/rust-$channel/COPYRIGHT"
+		[ -f "$rust_copyright" ] || toolchain_missing "$channel" "$rust_copyright is missing"
+		for f in LICENSE LICENSE-MIT LICENSE-APACHE-LLVM libc-top-half/musl/COPYRIGHT \
+			libc-bottom-half/cloudlibc/LICENSE fts/musl-fts/COPYING; do
+			[ -f "$TOOLCHAIN_DIR/wasi-libc-$commit/$f" ] || toolchain_missing "$channel" "$TOOLCHAIN_DIR/wasi-libc-$commit/$f is missing"
+		done
+		EMIT_NO_SRC=1
+		EMIT_NOTICES=("$rust_copyright")
+		emit_pkg "rust" "Rust standard library" "$channel" "MIT OR Apache-2.0" "MIT OR Apache-2.0" \
+			"https://github.com/rust-lang/rust/tree/$channel/library" "pkg:generic/rust-standard-library@$channel" \
+			"$usedby" "$rust_copyright"
+		EMIT_NOTICES=(); unset EMIT_NO_SRC
+		printf '%s\t%s\t%s\t%s\n' "$commit" "$sdk" "$channel" "$usedby" >> "$WORK/wasi-libc.list"
+	done < <(cut -f1 "$WORK/rust-channels.list" | sort -uV)
+
+	while read -r commit; do
+		[ -n "$commit" ] || continue
+		sdk="$(awk -F'\t' -v c="$commit" '$1 == c { print $2; exit }' "$WORK/wasi-libc.list")"
+		channels="$(awk -F'\t' -v c="$commit" '$1 == c { printf "%s%s", (n++ ? ", " : ""), $3 }' "$WORK/wasi-libc.list")"
+		usedby="$(awk -F'\t' -v c="$commit" '$1 == c { printf "%s%s", (n++ ? ", " : ""), $4 }' "$WORK/wasi-libc.list")"
+		wl="$TOOLCHAIN_DIR/wasi-libc-$commit"
+		wl_url="https://github.com/WebAssembly/wasi-libc/tree/$commit"
+		wl_purl="pkg:github/webassembly/wasi-libc@$commit"
+		note="the libc of the wasm32-wasip1 target of Rust $channels, built from $sdk"
+		EMIT_NO_SRC=1
+		EMIT_NOTE="$note"
+		EMIT_NOTICES=("$wl/LICENSE")
+		emit_pkg "c" "wasi-libc" "$commit" "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" \
+			"Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT" "$wl_url" "$wl_purl" "$usedby" "$wl/LICENSE"
+		EMIT_NOTE="part of wasi-libc $commit; $note"
+		EMIT_NOTICES=("$wl/libc-top-half/musl/COPYRIGHT")
+		emit_pkg "c" "musl (in wasi-libc)" "$commit" "MIT" "MIT" "$wl_url/libc-top-half/musl" \
+			"$wl_purl#libc-top-half/musl" "$usedby" "$wl/libc-top-half/musl/COPYRIGHT"
+		EMIT_NOTICES=()
+		emit_pkg "c" "cloudlibc (in wasi-libc)" "$commit" "BSD-2-Clause" "BSD-2-Clause" "$wl_url/libc-bottom-half/cloudlibc" \
+			"$wl_purl#libc-bottom-half/cloudlibc" "$usedby" "$wl/libc-bottom-half/cloudlibc/LICENSE"
+		emit_pkg "c" "musl-fts (in wasi-libc)" "$commit" "BSD-3-Clause" "BSD-3-Clause" "$wl_url/fts/musl-fts" \
+			"$wl_purl#fts/musl-fts" "$usedby" "$wl/fts/musl-fts/COPYING"
+		EMIT_NOTICES=(); unset EMIT_NOTE EMIT_NO_SRC
+	done < <(cut -f1 "$WORK/wasi-libc.list" | sort -u)
+fi
 
 # --- Go dependencies --------------------------------------------------------
 
@@ -852,8 +957,8 @@ mv "$WORK/LICENSES" "$LICDIR"
 	printf 'the host (aggrega) and each embedded plugin, named <socket>/<name> (%s).\n' "$embedded_labels"
 	printf 'It is generated from the dependency set the binary is built from; do not edit it.\n\n'
 	printf 'Each dependency below names its version, its license, the copyright lines found in\n'
-	printf 'its package, any notice file it ships and what it is compiled into. The text of\neach license follows once,\n'
-	printf 'under its SPDX identifier.\n\n'
+	printf 'its package, any notice file it ships and what it is compiled into. The text of\n'
+	printf 'each license follows once, under its SPDX identifier.\n\n'
 	printf '================================================================\n'
 	printf 'Dependencies\n'
 	printf '================================================================\n'

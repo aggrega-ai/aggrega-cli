@@ -1,0 +1,10 @@
+# One row per Rust channel an embedded plugin pins, tab-separated:
+#   channel      the release named in the plugin's rust-toolchain.toml; also the tag of
+#                rust-lang/rust that rust-<channel>/COPYRIGHT is read from
+#   wasi-sdk     the wasi-sdk release the Rust release builds its WASI targets with, read from
+#                src/ci/docker/host-x86_64/dist-various-2/Dockerfile at that tag
+#   wasi-libc    the commit of wasi-libc that release pins as src/wasi-libc, read through the
+#                GitHub contents API; wasi-libc-<commit>/ holds its license files
+# Written by scripts/fetch-toolchain-notices.sh.
+1.85.1	wasi-sdk-25	574b88da481569b65a237cb80daf9a2d5aeaf82d
+1.98.1	wasi-sdk-33	161b3195fc2558d2b1ba3eb9ffae3b2b47407623
