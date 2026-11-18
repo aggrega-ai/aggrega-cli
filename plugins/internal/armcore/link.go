@@ -41,10 +41,6 @@ const subscriptionDeploymentIDFormat = "/subscriptions/{0}/providers/Microsoft.R
 // and its name.
 const managementGroupDeploymentIDFormat = "/providers/Microsoft.Management/managementGroups/{0}/providers/Microsoft.Resources/deployments/{1}"
 
-// provenanceComponentIDKey is the key of the component identity within the
-// provenance block stamped on each resource a component deploys.
-const provenanceComponentIDKey = "aggrega.ai/component-id"
-
 // LinkPublish produces the producer side of a uses edge between two arm
 // boundaries, each deployed as its own template: the outputs the consumer reads,
 // and the name the producing template is deployed under. The producer's boundary
@@ -228,12 +224,13 @@ func LinkPublish(edge rendercore.LinkEdge, producerFiles []rendercore.RenderedFi
 // producer's boundary names the place the ID needs, as the annotations name it,
 // is written with it; one that does not takes the consumer's own, and where the
 // level has none to take it halts wrapping ErrPluginRequiredInputUnresolved,
-// naming the annotation to set: AnnotationResourceGroup for a producer at
-// resource-group scope read below resource-group scope, AnnotationSubscription
-// for a producer at resource-group or subscription scope read at management-group
-// scope, and AnnotationManagementGroup for a producer at management-group scope
-// read below management-group scope. A scope annotation that names no deployment
-// scope halts as BoundaryScope does.
+// naming the annotation to set: AnnotationResourceGroup for a read at
+// subscription or management-group scope of a producer at resource-group scope,
+// AnnotationSubscription for a read at management-group scope of a producer at
+// resource-group or subscription scope, and AnnotationManagementGroup for a read
+// at resource-group or subscription scope of a producer at management-group
+// scope. A scope annotation that names no deployment scope halts as BoundaryScope
+// does.
 //
 // A key read off the edge whose text is literal is written back in place of its
 // placeholder: a whole string as ArmLiteral writes the text ARM reads from it, a
@@ -809,7 +806,7 @@ func levelHolds(l linkedLevel, componentID string) bool {
 		body, _ := resources[symbol].(map[string]any)
 		metadata, _ := body[sectionMetadata].(map[string]any)
 		block, _ := metadata[ProvenanceMetadataKey].(map[string]any)
-		if id, _ := block[provenanceComponentIDKey].(string); id == componentID {
+		if id, _ := block[rendercore.ProvenanceComponentIDKey].(string); id == componentID {
 			return true
 		}
 	}
@@ -819,11 +816,16 @@ func levelHolds(l linkedLevel, componentID string) bool {
 // producerLevelFor returns the level an expression of the producing component is
 // evaluated in. Literal text (n nil) is served by the top level. The candidates
 // are the levels whose resources carry the component's identity in their
-// provenance, or every level when none does (a component whose resources are
-// all declared existing: true, or that declares none, is stamped nowhere). The
-// level is the candidate whose declarations satisfy every name the expression
-// reads (readsDeclared, the check an assembled level's expressions pass). A
-// single candidate that does not satisfy them halts wrapping
+// provenance, built from the edge's target node as the stamp builds it
+// (rendercore.ProvenanceComponentID): the target of a uses edge is a component,
+// whose own resources are stamped with that identity, while a FeatureRecipe
+// attachment's resources carry the attachment's identity and are not the
+// component's. Every level is a candidate when none holds the identity (a
+// component whose resources are all declared existing: true, or that declares
+// none, is stamped nowhere). The level is the candidate whose declarations
+// satisfy every name the expression reads (readsDeclared, the check an
+// assembled level's expressions pass). A single candidate that does not satisfy
+// them halts wrapping
 // ErrPluginRequiredInputUnresolved, naming the component, the key and the level;
 // among levels none of which holds the identity, the first that satisfies them
 // serves, the top level before the nested ones. Where the identity sits in more
@@ -901,8 +903,12 @@ func readsDeclared(edge rendercore.LinkEdge, l linkedLevel, key string, n armexp
 		return fault == nil
 	})
 	if fault != nil {
-		return fmt.Errorf("arm-provider: provides key %q of component %q is written as an output of %s of the template of boundary %q, which does not declare what it reads: %w",
-			key, edge.Target.Node, levelName(l), edge.Target.Boundary, fault)
+		// The fault opens at the site of the output the link would write, which no
+		// fragment holds, so its sentence is kept from the name it gives onward.
+		reason := strings.TrimPrefix(messageOf(fault), "arm-provider: "+at.named()+", ")
+		return refuse(plugincondition.ErrPluginRequiredInputUnresolved,
+			fmt.Sprintf("provides key %q of component %q is written as an output of %s of the template of boundary %q, which does not declare what the key's expression reads: %s",
+				key, edge.Target.Node, levelName(l), edge.Target.Boundary, reason))
 	}
 	return nil
 }

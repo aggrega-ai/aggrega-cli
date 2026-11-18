@@ -12,17 +12,24 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/labels"
 )
 
-// ProvenanceMetadataKey is the key a resource's Metadata attribute carries the
-// build provenance under.
+// ProvenanceMetadataKey is the key a template resource's own metadata carries the
+// build provenance under, for a target whose resources hold such a member: a
+// CloudFormation resource's Metadata attribute and an ARM template resource's
+// metadata object.
 //
-// It is one key rather than the provenance entries written flat, because the
-// Metadata attribute is a shared space: the template language reserves its own
-// names there (the AWS:: family) and other tools write their own, so a block
-// under one reserved-prefix key collides with none of them and a merge into an
-// author's own Metadata touches exactly one name. The `aggrega.ai/` prefix is the
-// reserved platform-injection keyspace, which is what makes the key unavailable
-// to an author and therefore safe to claim.
+// It is one key rather than the provenance entries written flat, because that
+// member is a shared space: a template language may reserve names of its own
+// there (CloudFormation reserves the AWS:: family) and other tools write their
+// own, so a block under one reserved-prefix key collides with none of them and a
+// merge into an author's own metadata touches exactly one name. The
+// `aggrega.ai/` prefix is the reserved platform-injection keyspace, which is what
+// makes the key unavailable to an author and therefore safe to claim.
 const ProvenanceMetadataKey = "aggrega.ai/provenance"
+
+// ProvenanceComponentIDKey is the provenance key the component identity
+// ([ProvenanceComponentID]) is recorded under, in the labels
+// [BuildAggregaProvenanceLabels] builds and in every set folded from them.
+const ProvenanceComponentIDKey = "aggrega.ai/component-id"
 
 // ProvenanceComponentID returns the Kubernetes-safe component identity for a
 // node — what a resource this node emits BELONGS to. That is the value
@@ -234,8 +241,8 @@ func fitProvenanceLabelValue(v string) string {
 func BuildAggregaProvenanceLabels(nodeCtx NodeRenderContext) map[string]string {
 	componentID := ProvenanceComponentID(nodeCtx)
 	out := map[string]string{
-		"app.kubernetes.io/name":  componentID,
-		"aggrega.ai/component-id": componentID,
+		"app.kubernetes.io/name": componentID,
+		ProvenanceComponentIDKey: componentID,
 	}
 	for _, e := range fittedProvenanceEntries(nodeCtx) {
 		if e.value == "" {

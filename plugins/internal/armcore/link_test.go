@@ -1008,7 +1008,7 @@ func TestLinkResolveAndPublishUnknownScopeHalts(t *testing.T) {
 // stampedResource is a resource body carrying the provenance of component.
 func stampedResource(component string, body map[string]any) map[string]any {
 	out := clone(body)
-	out["metadata"] = map[string]any{ProvenanceMetadataKey: map[string]any{"aggrega.ai/component-id": component}}
+	out["metadata"] = map[string]any{ProvenanceMetadataKey: map[string]any{rendercore.ProvenanceComponentIDKey: component}}
 	return out
 }
 
@@ -1298,16 +1298,52 @@ func TestLinkPublishWithoutProvenanceFollowsWhatTheLevelsDeclare(t *testing.T) {
 	})
 }
 
+// TestLinkPublishFindsTheComponentsLevelBesideAnAttachment holds that the level
+// a link reads a component's value from is the one holding the resources
+// stamped with the component's own identity. A FeatureRecipe attachment's
+// resources are stamped with the attachment's identity, which differs from the
+// node id, so a level holding only those does not serve although it declares
+// what the value reads.
+func TestLinkPublishFindsTheComponentsLevelBesideAnAttachment(t *testing.T) {
+	t.Parallel()
+	stamp := func(nodeCtx rendercore.NodeRenderContext, body map[string]any) map[string]any {
+		fragment := map[string]any{sectionResources: map[string]any{"Db": body}}
+		StampProvenance(fragment, rendercore.FoldProvenanceSet(rendercore.BuildAggregaProvenanceLabels(nodeCtx), nil))
+		return fragment[sectionResources].(map[string]any)["Db"].(map[string]any)
+	}
+	component := rendercore.NodeRenderContext{NodeID: "payments-db"}
+	attachment := rendercore.NodeRenderContext{NodeID: "payments-db", LabelComponentID: "payments-db--key-vault-secret"}
+	db := map[string]any{"type": "Microsoft.DBforPostgreSQL/flexibleServers", "apiVersion": "2024-08-01", "name": "payments-db", "properties": map[string]any{"version": "16"}}
+	level := levelTemplate(ScopeResourceGroup, map[string]any{sectionResources: map[string]any{"Db": stamp(component, db)}})
+	files := wideProducerFiles(t, ScopeSubscription, map[string]any{sectionResources: map[string]any{
+		"Db":                     stamp(attachment, db),
+		LevelResourceGroupSymbol: nestedDeployment(level),
+	}})
+	edge := testLink()
+	edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: string(ScopeSubscription)}
+	out, err := LinkPublish(edge, files)
+	if err != nil {
+		t.Fatalf("LinkPublish: %v", err)
+	}
+	got := templateOf(t, applied(t, files, out.Patches))
+	wantTop := map[string]any{hostOutput: outputBody("[reference('" + LevelResourceGroupSymbol + "').outputs." + hostOutput + ".value]")}
+	if !jsonEqual(got[sectionOutputs], wantTop) {
+		t.Errorf("top-level outputs = %s, want %s: the value is read from the level holding the component's own resources", mustJSON(t, got[sectionOutputs]), mustJSON(t, wantTop))
+	}
+}
+
 func TestLinkPublishHolderLevelMustDeclareWhatTheValueReads(t *testing.T) {
 	t.Parallel()
 	edge := providing(testLink(), "host", "[reference('Missing').properties.x]")
 	edge.TargetAnnotations = map[string]string{AnnotationDeploymentScope: string(ScopeSubscription)}
 	_, err := LinkPublish(edge, nestedProducer(t, ScopeSubscription, LevelResourceGroupSymbol, nil))
 	wantCondition(t, err, plugincondition.ErrPluginRequiredInputUnresolved())
-	for _, want := range []string{`"host"`, `"payments-db"`, `"Missing"`, LevelResourceGroupSymbol} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the halt does not say %q: %v", want, err)
-		}
+	// One sentence, naming the key, the component and the level, and no pointer
+	// into a fragment, since the output it would point at is written by the link.
+	want := `arm-provider: provides key "host" of component "payments-db" is written as an output of ` + LevelResourceGroupSymbol +
+		` of the template of boundary "stack-a/arm", which does not declare what the key's expression reads: reference names the resource "Missing", which no resource in this template declares by that symbolic name; correct the name (symbolic names are case-sensitive), declare the resource in this template, or name a resource deployed elsewhere by its resource ID`
+	if got := messageOf(err); got != want {
+		t.Errorf("message =\n%s\nwant\n%s", got, want)
 	}
 }
 
