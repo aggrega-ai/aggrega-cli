@@ -211,7 +211,7 @@ func injectOutsideProperties(r schemadraft.Resource) []aggrega.Diagnostic {
 			continue
 		}
 		out = append(out, aggrega.Diagnostic{
-			Severity: "halt",
+			Severity: aggrega.SeverityHalt,
 			Code:     schemadraft.CodeResourceTypeRefused,
 			Message: fmt.Sprintf("the input %s of %s@%s is read from context.inject.%s.%s, and ARM evaluates a "+
 				"reference to another resource only in a resource's properties: read %s from values or infra instead",

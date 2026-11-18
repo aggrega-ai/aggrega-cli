@@ -366,7 +366,7 @@ func typePrefix(name string) string {
 // versionUnconstrained warns that m requires its provider at no version.
 func versionUnconstrained(m Module) aggrega.Diagnostic {
 	return aggrega.Diagnostic{
-		Severity: "warn",
+		Severity: aggrega.SeverityWarn,
 		Code:     codeProviderVersionUnconstrained,
 		Message: fmt.Sprintf("no version of the provider %s is known, so the module drafted for %s requires it "+
 			"without a version constraint: set terraform.required_providers.%s.version in the %s beside the "+

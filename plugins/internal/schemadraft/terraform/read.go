@@ -432,7 +432,7 @@ func describePath(path []string) string {
 // providers schema -json: lack names the member it lacks.
 func unreadable(source, lack string) *aggrega.Diagnostic {
 	return &aggrega.Diagnostic{
-		Severity: "halt",
+		Severity: aggrega.SeverityHalt,
 		Code:     schemadraft.CodeResourceSchemaUnreadable,
 		Message: fmt.Sprintf("the source %q is not a Terraform providers schema export: %s; import the output of "+
 			"terraform providers schema -json or tofu providers schema -json, which holds a format_version string "+
@@ -445,7 +445,7 @@ func unreadable(source, lack string) *aggrega.Diagnostic {
 // cannot read, for why.
 func unreadableSchema(ref schemadraft.TypeRef, why string) *aggrega.Diagnostic {
 	return &aggrega.Diagnostic{
-		Severity: "halt",
+		Severity: aggrega.SeverityHalt,
 		Code:     schemadraft.CodeResourceSchemaUnreadable,
 		Message: fmt.Sprintf("the source %q holds a schema of %s the import cannot read: %s; export the schema again "+
 			"with terraform providers schema -json or tofu providers schema -json", ref.Source, ref.Name, why),

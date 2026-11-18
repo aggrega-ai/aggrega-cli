@@ -224,7 +224,7 @@ func cutDropped(path, cut string) aggrega.Diagnostic {
 // constraintDropped warns that the property at path does not carry what, and why.
 func constraintDropped(path, what, why string) aggrega.Diagnostic {
 	return aggrega.Diagnostic{
-		Severity:  "warn",
+		Severity:  aggrega.SeverityWarn,
 		Code:      codeConstraintDropped,
 		Message:   fmt.Sprintf("the property %q does not carry %s: %s", path, what, why),
 		SourceRef: path,

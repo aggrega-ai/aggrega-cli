@@ -44,7 +44,7 @@ const (
 // the setting does not take.
 func resourceTypesUnreadable(read []byte, why string) *aggrega.Diagnostic {
 	return &aggrega.Diagnostic{
-		Severity: "halt",
+		Severity: aggrega.SeverityHalt,
 		Code:     codeResourceTypesUnreadable,
 		Message: fmt.Sprintf("the resource_types setting holds %s, which it cannot read: %s; write a list of type names "+
 			"or of objects with a type and a component, so the import drafts the types you name",
@@ -63,7 +63,7 @@ func resourceTypeNotNamed(names []string, countOnly bool, source string) aggrega
 		msg = fmt.Sprintf("the sources hold %d resource types and the resource_types setting names none: write the "+
 			"types to draft in it", len(names))
 	}
-	return aggrega.Diagnostic{Severity: "halt", Code: codeResourceTypeNotNamed, Message: msg, SourceRef: source}
+	return aggrega.Diagnostic{Severity: aggrega.SeverityHalt, Code: codeResourceTypeNotNamed, Message: msg, SourceRef: source}
 }
 
 // resourceTypeNotFound halts on a requested type the sources do not hold,
@@ -74,7 +74,7 @@ func resourceTypeNotFound(requested string, nearest []string, source string) agg
 	if len(nearest) > 0 {
 		msg += "; the nearest names are " + strings.Join(nearest, ", ")
 	}
-	return aggrega.Diagnostic{Severity: "halt", Code: codeResourceTypeNotFound, Message: msg, SourceRef: source}
+	return aggrega.Diagnostic{Severity: aggrega.SeverityHalt, Code: codeResourceTypeNotFound, Message: msg, SourceRef: source}
 }
 
 // resourceTypeVersionNotFound halts on a requested apiVersion other than the
@@ -86,7 +86,7 @@ func resourceTypeVersionNotFound(requested, version string, held []string, sourc
 		have = "the file holds apiVersion " + strings.Join(held, ", ")
 	}
 	return aggrega.Diagnostic{
-		Severity: "halt",
+		Severity: aggrega.SeverityHalt,
 		Code:     codeResourceTypeNotFound,
 		Message: fmt.Sprintf("the resource type %q has no apiVersion %q in the sources: %s; request that version or "+
 			"write the type without one", requested, version, have),
@@ -98,7 +98,7 @@ func resourceTypeVersionNotFound(requested, version string, held []string, sourc
 // none of which the import can prefer: fix says how to export it from one alone.
 func ResourceTypeAmbiguous(name string, providers []string, fix string) aggrega.Diagnostic {
 	return aggrega.Diagnostic{
-		Severity: "halt",
+		Severity: aggrega.SeverityHalt,
 		Code:     CodeResourceTypeAmbiguous,
 		Message: fmt.Sprintf("the resource type %q is carried by %s, and the import cannot tell which to draft: %s",
 			name, strings.Join(providers, ", "), fix),
@@ -109,7 +109,7 @@ func ResourceTypeAmbiguous(name string, providers []string, fix string) aggrega.
 // its beta sibling passed, is drafted from chosen.
 func BetaProviderPassedOver(name, chosen, passed string) aggrega.Diagnostic {
 	return aggrega.Diagnostic{
-		Severity: "info",
+		Severity: aggrega.SeverityInfo,
 		Code:     CodeBetaProviderPassedOver,
 		Message: fmt.Sprintf("the resource type %q is carried by %s and by its beta sibling %s: drafted from %s",
 			name, chosen, passed, chosen),

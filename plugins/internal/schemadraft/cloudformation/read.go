@@ -146,7 +146,7 @@ func lift(ref schemadraft.TypeRef) (*schemadraft.Type, []aggrega.Diagnostic) {
 	top := members(ref.Body)
 	if why := refusal(ref.Name, top); why != "" {
 		return nil, []aggrega.Diagnostic{{
-			Severity: "halt",
+			Severity: aggrega.SeverityHalt,
 			Code:     schemadraft.CodeResourceTypeRefused,
 			Message: fmt.Sprintf("the source %q describes %s, %s: import the schema of a resource type", ref.Source,
 				ref.Name, why),
@@ -593,7 +593,7 @@ func members(raw json.RawMessage) map[string]json.RawMessage {
 // format reads: lack names the member it lacks.
 func unreadable(source, lack string) *aggrega.Diagnostic {
 	return &aggrega.Diagnostic{
-		Severity: "halt",
+		Severity: aggrega.SeverityHalt,
 		Code:     schemadraft.CodeResourceSchemaUnreadable,
 		Message: fmt.Sprintf("the source %q is not a CloudFormation resource schema: %s; import a provider "+
 			"schema, which holds a typeName string and a properties object, or the output of aws cloudformation "+
@@ -607,7 +607,7 @@ func unreadable(source, lack string) *aggrega.Diagnostic {
 // the reader cannot read, for why.
 func unreadableSchema(ref schemadraft.TypeRef, why string) *aggrega.Diagnostic {
 	return &aggrega.Diagnostic{
-		Severity: "halt",
+		Severity: aggrega.SeverityHalt,
 		Code:     schemadraft.CodeResourceSchemaUnreadable,
 		Message: fmt.Sprintf("the source %q holds a provider schema of %s the import cannot read: %s; correct the "+
 			"schema, or import the one CloudFormation publishes for the type", ref.Source, ref.Name, why),

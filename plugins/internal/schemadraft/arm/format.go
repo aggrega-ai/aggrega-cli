@@ -163,7 +163,7 @@ func refuse(t *schemadraft.Type) *aggrega.Diagnostic {
 		why += "; import a type writable at one of the scopes the provider deploys at"
 	}
 	return &aggrega.Diagnostic{
-		Severity:  "halt",
+		Severity:  aggrega.SeverityHalt,
 		Code:      schemadraft.CodeResourceTypeRefused,
 		Message:   fmt.Sprintf("the resource type %s@%s %s", t.Name, t.APIVersion, why),
 		SourceRef: t.Source,

@@ -784,7 +784,7 @@ func describePath(path []string) string {
 // lack names the member it lacks.
 func unreadable(source, lack string) *aggrega.Diagnostic {
 	return &aggrega.Diagnostic{
-		Severity: "halt",
+		Severity: aggrega.SeverityHalt,
 		Code:     schemadraft.CodeResourceSchemaUnreadable,
 		Message: fmt.Sprintf("the source %q is not a Bicep type file: %s; import a types.json from "+
 			"Azure/bicep-types-az, a list of types whose first entry holds a $type string and whose resource types "+
@@ -797,7 +797,7 @@ func unreadable(source, lack string) *aggrega.Diagnostic {
 // reader cannot read, for why.
 func unreadableType(ref schemadraft.TypeRef, why string) *aggrega.Diagnostic {
 	return &aggrega.Diagnostic{
-		Severity: "halt",
+		Severity: aggrega.SeverityHalt,
 		Code:     schemadraft.CodeResourceSchemaUnreadable,
 		Message: fmt.Sprintf("the source %q holds a Bicep type file whose resource type %s@%s the import cannot "+
 			"read: %s; correct the file, or import the types.json Azure/bicep-types-az publishes for the type's "+

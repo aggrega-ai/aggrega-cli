@@ -105,7 +105,7 @@ func resolveOne(matches []TypeRef, component string,
 
 func hasHalt(ds []aggrega.Diagnostic) bool {
 	for _, d := range ds {
-		if d.Severity == "halt" {
+		if d.Severity == aggrega.SeverityHalt {
 			return true
 		}
 	}

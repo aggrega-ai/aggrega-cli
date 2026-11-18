@@ -526,7 +526,7 @@ func draftedPath(d importer.CatalogDraft) string {
 // other than the draft of t would give it.
 func componentExists(name string, held, drafted []string, t *Type) aggrega.Diagnostic {
 	return aggrega.Diagnostic{
-		Severity: "halt",
+		Severity: aggrega.SeverityHalt,
 		Code:     codeComponentExists,
 		Message: fmt.Sprintf("the catalog holds the Component %s with the values keys %s, and the draft of %s would "+
 			"give it the values keys %s: write {type: %s, component: <namespace>/<category>/<name>} in "+
@@ -540,7 +540,7 @@ func componentExists(name string, held, drafted []string, t *Type) aggrega.Diagn
 // twoRequestsDraftOnePath halts on two requests drafting one path.
 func twoRequestsDraftOnePath(earlier, later, path string) aggrega.Diagnostic {
 	return aggrega.Diagnostic{
-		Severity: "halt",
+		Severity: aggrega.SeverityHalt,
 		Code:     codeComponentExists,
 		Message: fmt.Sprintf("%s and %s both draft %s: give one of them another component in resource_types",
 			earlier, later, path),
@@ -550,7 +550,7 @@ func twoRequestsDraftOnePath(earlier, later, path string) aggrega.Diagnostic {
 // noBody halts on a type its format lifted no body for.
 func noBody(ref TypeRef) aggrega.Diagnostic {
 	return aggrega.Diagnostic{
-		Severity:  "halt",
+		Severity:  aggrega.SeverityHalt,
 		Code:      CodeResourceSchemaUnreadable,
 		Message:   fmt.Sprintf("the source holds no body the format reads for the resource type %s", ref.Name),
 		SourceRef: ref.Source,

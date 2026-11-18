@@ -123,7 +123,7 @@ func providesUnmapped(component string, t *Type, u Unmapped) aggrega.Diagnostic 
 		offer = "map it to an attribute " + typeName(t) + " reads back, one of " + strings.Join(u.Candidates, ", ")
 	}
 	return aggrega.Diagnostic{
-		Severity: "warn",
+		Severity: aggrega.SeverityWarn,
 		Code:     codeProvidesUnmapped,
 		Message: fmt.Sprintf("the Component %s provides %s, and no attribute %s reads back carries its name, so the "+
 			"drafted Recipe's provides.%s halts the build until it is mapped: %s", component, u.Key, typeName(t),
@@ -136,7 +136,7 @@ func providesUnmapped(component string, t *Type, u Unmapped) aggrega.Diagnostic 
 // one the catalog the import reads does not hold, so it is drafted new.
 func componentDraftedNew(component string, t *Type) aggrega.Diagnostic {
 	return aggrega.Diagnostic{
-		Severity: "warn",
+		Severity: aggrega.SeverityWarn,
 		Code:     codeComponentDraftedNew,
 		Message: fmt.Sprintf("the catalog the import reads holds no Component %s, which resource_types names for %s, "+
 			"so the import drafts it new under that name; where a registry the workspace pulls from publishes a "+
