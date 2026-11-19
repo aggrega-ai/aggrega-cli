@@ -31,15 +31,17 @@
 // never inherit. The merge reports a child that widens a parent constraint as a
 // non-halting side-band signal; a narrow-only rule is opt-in policy
 // (the publishing-discipline plugin, at publish time), not a compiler check.
-// Recipe and FeatureRecipe split into separate index maps keyed by
-// spec.implements so their distinct schemas and roles stay distinct.
+// Recipe and FeatureRecipe split into separate index maps keyed by their
+// capability-scoped identity so their distinct schemas and roles stay distinct.
 //
-// LoadAll merges multiple directories with last-write-wins semantics, which
-// supports layered catalogs of the form `base/` + `recipes/<variant>/` —
-// the variant directory's Recipe (keyed by spec.implements) replaces the
-// base entry of the same key without further ceremony. Layering is the
-// authoring path the in-tree fixture testdata and the aggrega-hub catalog
-// repo both rely on.
+// LoadAll merges multiple directories as an ordered first-win stack: where two
+// directories hold one identity, the entity of the directory listed first is
+// loaded and the later one is shadowed — not loaded, and recorded in Shadows.
+// That supports layered catalogs of the form `recipes/<variant>/` + `base/`:
+// the variant directory, listed ahead of the base, replaces the base entities
+// of its identities without further ceremony, and every other base entity
+// stays in view. Layering is the authoring path the in-tree fixture testdata
+// and the aggrega-hub catalog repo both rely on.
 //
 // Resolution tiers. A catalog entity reference — a type, a Manifest mapping,
 // an implements, a pipeline plugin — resolves through the catalog directories
@@ -49,6 +51,7 @@
 //
 // Determinism. Iteration over loaded entities is sorted by name where
 // ordering is observable (ResolveAllExtends, DeprecationWarnings); load
-// order from filepath.WalkDir is filesystem-defined and feeds only the
-// unordered last-write-wins maps.
+// order from filepath.WalkDir is filesystem-defined and feeds only the index
+// maps, where two files of one directory claiming one identity halt the load
+// (ErrDuplicateEntityIdentity) rather than one overwriting the other.
 package catalog
