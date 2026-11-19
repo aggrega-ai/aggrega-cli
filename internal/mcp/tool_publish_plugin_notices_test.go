@@ -44,9 +44,9 @@ spec:
 	sbomBody    = `{"spdxVersion":"SPDX-2.3","name":"guest"}`
 )
 
-// pluginNoticesFixture stands up a workspace holding a Plugin entity, its
+// noticesFixture stands up a workspace holding a Plugin entity, its
 // executable, a notices file, a bill-of-materials file and an empty file.
-func pluginNoticesFixture(t *testing.T) (*server, string) {
+func noticesFixture(t *testing.T) (*server, string) {
 	t.Helper()
 	s, root := publishFixture(t, defaultRegistryWorkspace)
 	wasm, err := os.ReadFile(wasmtest.EnsureFixtureBuilt(t, "frp-step-go.wasm"))
@@ -71,7 +71,7 @@ func pluginNoticesFixture(t *testing.T) (*server, string) {
 // the tool's argument projection with both files: the manifest carries the notices
 // layer after the executable and one SPDX referrer carries the file.
 func TestPublishEntityToolPublishesAPluginsNoticesAndSBOM(t *testing.T) {
-	s, root := pluginNoticesFixture(t)
+	s, root := noticesFixture(t)
 	store := memory.New()
 	cfg, refusal := s.publishEntityConfig(publishEntityArgs{
 		Entity: "1.0.0/entity.yaml", Plugin: "guest.wasm",
@@ -113,7 +113,7 @@ func TestPublishEntityToolPublishesAPluginsNoticesAndSBOM(t *testing.T) {
 // TestPublishEntityToolRefusesAPluginsUnpublishableNoticesAndSBOM gives one fault
 // per row and asserts the core's refusal, naming the flag, reaches the caller.
 func TestPublishEntityToolRefusesAPluginsUnpublishableNoticesAndSBOM(t *testing.T) {
-	s, root := pluginNoticesFixture(t)
+	s, root := noticesFixture(t)
 	rows := []struct {
 		name string
 		args publishEntityArgs
@@ -154,7 +154,7 @@ func TestPublishEntityToolRefusesAPluginsUnpublishableNoticesAndSBOM(t *testing.
 // leading out of the workspace is refused for each new argument in the words it
 // is refused for plugin, naming that argument.
 func TestPublishEntityToolConfinesNoticesAndSBOMAsItConfinesThePlugin(t *testing.T) {
-	s, root := pluginNoticesFixture(t)
+	s, root := noticesFixture(t)
 	s.transport = transportHTTP
 	_, want := s.publishEntityConfig(publishEntityArgs{
 		Entity: "1.0.0/entity.yaml", Plugin: "../elsewhere", WorkspaceRoot: root,
@@ -162,9 +162,9 @@ func TestPublishEntityToolConfinesNoticesAndSBOMAsItConfinesThePlugin(t *testing
 	if want == "" {
 		t.Fatal("a plugin path leaving the workspace was not refused")
 	}
-	for _, field := range []string{"pluginNotices", "pluginSbom"} {
+	for _, field := range []string{"plugin_notices", "plugin_sbom"} {
 		args := publishEntityArgs{Entity: "1.0.0/entity.yaml", Plugin: "guest.wasm", WorkspaceRoot: root}
-		if field == "pluginNotices" {
+		if field == "plugin_notices" {
 			args.PluginNotices = "../elsewhere"
 		} else {
 			args.PluginSBOM = "../elsewhere"
@@ -173,5 +173,22 @@ func TestPublishEntityToolConfinesNoticesAndSBOMAsItConfinesThePlugin(t *testing
 		if got != strings.ReplaceAll(want, "'plugin'", "'"+field+"'") {
 			t.Errorf("%s refusal = %q, want plugin's refusal naming %s: %q", field, got, field, want)
 		}
+	}
+}
+
+// TestPublishEntityArgsReadSnakeCaseNoticeInputs checks the tool's JSON input names
+// the notices and bill of materials as plugin_notices and plugin_sbom, beside its
+// other snake_case inputs.
+func TestPublishEntityArgsReadSnakeCaseNoticeInputs(t *testing.T) {
+	var args publishEntityArgs
+	body := `{"entity":"e.yaml","plugin":"g.wasm","plugin_notices":"N","plugin_sbom":"S"}`
+	if err := json.Unmarshal([]byte(body), &args); err != nil {
+		t.Fatal(err)
+	}
+	if args.PluginNotices != "N" || args.PluginSBOM != "S" {
+		t.Errorf("plugin_notices/plugin_sbom decoded to %q/%q, want N/S", args.PluginNotices, args.PluginSBOM)
+	}
+	if !strings.Contains(publishEntityToolSpec.inputSchema, `"plugin_notices"`) || !strings.Contains(publishEntityToolSpec.inputSchema, `"plugin_sbom"`) {
+		t.Error("the publish-entity input schema does not declare plugin_notices and plugin_sbom")
 	}
 }

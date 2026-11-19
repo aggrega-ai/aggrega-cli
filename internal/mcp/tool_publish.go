@@ -272,8 +272,8 @@ type publishEntityArgs struct {
 	DryRun        bool   `json:"dry_run"`
 	Sign          *bool  `json:"sign"`
 	Plugin        string `json:"plugin"`
-	PluginNotices string `json:"pluginNotices"`
-	PluginSBOM    string `json:"pluginSbom"`
+	PluginNotices string `json:"plugin_notices"`
+	PluginSBOM    string `json:"plugin_sbom"`
 	KeyPath       string `json:"key_path"`
 	FulcioURL     string `json:"fulcio_url"`
 	RekorURL      string `json:"rekor_url"`
@@ -335,8 +335,8 @@ var publishEntityToolSpec = toolSpec{
 		"machine — the bytes every consumer of that registry resolves, and a signature that cannot be recalled from " +
 		"anyone who has already fetched it. Pass the entity document as `entity`, absolute or relative to the " +
 		"workspace root; a Plugin entity also needs `plugin`, the executable published inside its manifest, and may " +
-		"carry `pluginNotices`, the guest's third-party notices published as a layer of that manifest, and " +
-		"`pluginSbom`, its SPDX bill of materials attached to the published Plugin; both are paths like `plugin` and " +
+		"carry `plugin_notices`, the guest's third-party notices published as a layer of that manifest, and " +
+		"`plugin_sbom`, its SPDX bill of materials attached to the published Plugin; both are paths like `plugin` and " +
 		"are refused without it. The destination is `registry`, defaulting to the workspace's configured one. Set " +
 		"`dry_run` to compute the bundle and the digest a publication of it would land, and publish nothing. Signing follows the " +
 		"destination registry's policy unless `sign` says otherwise, and a registry that requires signatures refuses an unsigned publication whatever you send — " +
@@ -361,12 +361,12 @@ var publishEntityToolSpec = toolSpec{
       "minLength": 1,
       "description": "Path to the .wasm executable, required when the entity is a Plugin. Absolute or relative to the workspace root."
     },
-    "pluginNotices": {
+    "plugin_notices": {
       "type": "string",
       "minLength": 1,
       "description": "Path to the file of the guest's third-party notices, published as a layer of the Plugin's manifest. Requires the plugin argument. Absolute or relative to the workspace root."
     },
-    "pluginSbom": {
+    "plugin_sbom": {
       "type": "string",
       "minLength": 1,
       "description": "Path to the guest's SPDX bill of materials (JSON), attached to the published Plugin. Requires the plugin argument. Absolute or relative to the workspace root."
@@ -475,11 +475,11 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		}
 		pluginPath = resolved
 	}
-	pluginNoticesPath, refusal := a.pluginFile(tw, "pluginNotices", a.PluginNotices)
+	noticesPath, refusal := a.pluginFile(tw, "plugin_notices", a.PluginNotices)
 	if refusal != "" {
 		return publishops.PushConfig{}, refusal
 	}
-	pluginSBOMPath, refusal := a.pluginFile(tw, "pluginSbom", a.PluginSBOM)
+	pluginSBOMPath, refusal := a.pluginFile(tw, "plugin_sbom", a.PluginSBOM)
 	if refusal != "" {
 		return publishops.PushConfig{}, refusal
 	}
@@ -494,7 +494,7 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		DryRun:                    a.DryRun,
 		Sign:                      a.Sign,
 		PluginPath:                pluginPath,
-		PluginNoticesPath:         pluginNoticesPath,
+		PluginNoticesPath:         noticesPath,
 		PluginSBOMPath:            pluginSBOMPath,
 		KeyPath:                   a.KeyPath,
 		FulcioURL:                 a.FulcioURL,
