@@ -575,7 +575,7 @@ func renderReleaseValidation(vr *compilerops.ValidateResult, consistencyFindings
 	// first. A mapping finding is advisory in POSITION only — it never truncates
 	// the report — and never in verdict: the mapping is wrong whoever asked.
 	if len(consistencyFindings) > 0 {
-		return fmt.Errorf("release dependency validation failed: %d manifest mapping diagnostic(s)", len(consistencyFindings))
+		return fmt.Errorf("release dependency validation failed: %d Manifest mapping diagnostic(s)", len(consistencyFindings))
 	}
 	if len(pipelineDiags) > 0 {
 		return fmt.Errorf("release dependency validation failed: %d diagnostic(s)", len(pipelineDiags))

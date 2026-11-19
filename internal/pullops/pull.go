@@ -614,14 +614,14 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	}
 	manRes, err := resolver.ResolveManifest(rw.Root(), releaseDir, cfg.ReleasePath, rel.Spec.Manifest)
 	if err != nil {
-		return Result{}, fmt.Errorf("load manifest: %w", err)
+		return Result{}, fmt.Errorf("load Manifest: %w", err)
 	}
 	// Compose the Manifest's extends chain so the closure walk and recipe
 	// resolution see the inherited mappings rather than the child's own
 	// entries alone. A Manifest with no extends reference is unchanged.
 	manifest, err := resolver.ResolveManifestExtends(rw.Root(), releaseDir, cfg.ReleasePath, manRes)
 	if err != nil {
-		return Result{}, fmt.Errorf("compose manifest extends: %w", err)
+		return Result{}, fmt.Errorf("compose Manifest extends: %w", err)
 	}
 	// Everything above read the Release's own files; everything below can fill the
 	// artifact cache, from the first registry reach onward, under every mode — a

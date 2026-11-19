@@ -988,7 +988,7 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	// picture would then be of documents a build of the same Release never reads.
 	manRes, err := resolver.ResolveManifest(wsRoot, releaseDir, releasePath, rel.Spec.Manifest)
 	if err != nil {
-		return fmt.Errorf("load manifest: %w", err)
+		return fmt.Errorf("load Manifest: %w", err)
 	}
 	// The Manifest's own extends chain is composed as a build composes it, so the
 	// mappings a Manifest inherits are in place when the graph below binds each
@@ -998,7 +998,7 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	// returned unchanged.
 	manifest, err := resolver.ResolveManifestExtends(wsRoot, releaseDir, releasePath, manRes)
 	if err != nil {
-		return fmt.Errorf("compose manifest extends: %w", err)
+		return fmt.Errorf("compose Manifest extends: %w", err)
 	}
 	aggRes, err := resolver.ResolveAggregate(wsRoot, releaseDir, releasePath, rel.Spec.Aggregate, cat.AggregateLookup(), nil)
 	if err != nil {

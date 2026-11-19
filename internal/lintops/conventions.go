@@ -376,7 +376,7 @@ func runRelease(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, rele
 		return lintErr
 	}
 	if n := len(rc.ManifestConsistencyFindings); n > 0 {
-		return fmt.Errorf("release manifest mapping: %d diagnostic(s)", n)
+		return fmt.Errorf("Release Manifest mapping: %d diagnostic(s)", n)
 	}
 	return nil
 }

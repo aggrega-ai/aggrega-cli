@@ -50,8 +50,8 @@ type closureFaultRow struct {
 	//
 	// The text is pinned from BOTH ends because neither end alone is enough,
 	// and that was measured rather than assumed. A containment check is blind
-	// to a reword that only PREPENDS — "load manifest …" still contains
-	// itself after becoming "could not load manifest …" — so the opening is
+	// to a reword that only PREPENDS — "load Manifest …" still contains
+	// itself after becoming "could not load Manifest …" — so the opening is
 	// anchored as a prefix: the text that follows the condition's short code,
 	// which opens the message. A prefix alone stops at the first temporary
 	// directory the message names, which is why the condition's own sentence
@@ -106,7 +106,7 @@ spec:
 			},
 			release:     "release.yaml",
 			condition:   resolver.ErrYAMLLoad(),
-			wantPrefix:  `load manifest "./absent-manifest.yaml": file load failed:`,
+			wantPrefix:  `load Manifest "./absent-manifest.yaml": file load failed:`,
 			wantMessage: "the file could not be read, or its bytes did not parse",
 			// `  manifest: …` sits on line 9 at column 3; the key token is
 			// 8 runes, so the end column is 11.
@@ -182,7 +182,7 @@ spec:
 			},
 			release:     "release.yaml",
 			condition:   resolver.ErrYAMLLoad(),
-			wantPrefix:  `load manifest "./absent-inherited-manifest.yaml": file load failed:`,
+			wantPrefix:  `load Manifest "./absent-inherited-manifest.yaml": file load failed:`,
 			wantMessage: "the file could not be read, or its bytes did not parse",
 			// `spec:` sits on line 7 at column 1; the key token is 4 runes,
 			// so the end column is 5.

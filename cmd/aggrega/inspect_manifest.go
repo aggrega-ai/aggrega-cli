@@ -40,7 +40,7 @@ func renderManifestFile(_ context.Context, rw *workspaceconfig.ResolvedWorkspace
 
 	m, err := resolver.LoadManifest(path)
 	if err != nil {
-		return fmt.Errorf("load manifest: %w", err)
+		return fmt.Errorf("load Manifest: %w", err)
 	}
 	// Resolve the extends chain through the shared build-path funnel so the
 	// inspector's composed mappings cannot drift from the compiler's.

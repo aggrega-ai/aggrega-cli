@@ -172,11 +172,11 @@ func loadInputs(in Input) (*loadedWorkspace, error) {
 	releaseDir := filepath.Dir(in.ReleasePath)
 	manRes, err := resolver.ResolveManifest("", releaseDir, in.ReleasePath, rel.Spec.Manifest)
 	if err != nil {
-		return nil, fmt.Errorf("load manifest: %w", err)
+		return nil, fmt.Errorf("load Manifest: %w", err)
 	}
 	manifest, err := resolver.ResolveManifestExtends("", releaseDir, in.ReleasePath, manRes)
 	if err != nil {
-		return nil, fmt.Errorf("compose manifest extends chain: %w", err)
+		return nil, fmt.Errorf("compose Manifest extends chain: %w", err)
 	}
 	// Gate on Manifest mapping-table consistency exactly as cmd/aggrega/build.go
 	// does — same method, same join-and-halt — so a build-faithful test halts

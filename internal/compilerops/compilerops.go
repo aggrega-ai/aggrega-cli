@@ -321,7 +321,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageResolveManifest,
-			msg:   fmt.Sprintf("load manifest %q: %v", rel.Spec.Manifest, err),
+			msg:   fmt.Sprintf("load Manifest %q: %v", rel.Spec.Manifest, err),
 			err:   err,
 		}
 	}
@@ -329,7 +329,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	if err != nil {
 		return nil, &ClosureError{
 			Stage: ClosureStageComposeManifest,
-			msg:   fmt.Sprintf("compose manifest %q extends chain: %v", rel.Spec.Manifest, err),
+			msg:   fmt.Sprintf("compose Manifest %q extends chain: %v", rel.Spec.Manifest, err),
 			err:   err,
 		}
 	}
