@@ -4,6 +4,9 @@
 package helm
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"net"
@@ -14,7 +17,9 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	ocierr "github.com/aggrega-ai/aggrega-cli/pkg/oci"
+	"github.com/aggrega-ai/aggrega-cli/pkg/sourcecache"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/cacheslot"
 	"github.com/aggrega-ai/aggrega-cli/pkg/sourceresolver/internal/archive"
@@ -317,5 +322,62 @@ func TestOCIResolveReportsANonChartArtifactAsNoContentLayer(t *testing.T) {
 	}
 	if errors.Is(err, sourceresolver.ErrFetchNetworkUnreachable()) {
 		t.Errorf("a non-chart artifact must not read as network unreachable; got %v", err)
+	}
+}
+
+// TestOCIResolveRecordsAuthoredChartForTheBuildLookup proves a chart authored
+// on a helm-oci-chart source survives onto the resolved source: the lockfile
+// row built from it is found by the build's lookup with the authored chart, and
+// the cache slot the pull wrote is the one that lookup reads.
+func TestOCIResolveRecordsAuthoredChartForTheBuildLookup(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	chartYAML := []byte("apiVersion: v2\nname: mariadb\nversion: 25.0.8\n")
+	if err := tw.WriteHeader(&tar.Header{Name: "mariadb/Chart.yaml", Mode: 0o644, Size: int64(len(chartYAML))}); err != nil {
+		t.Fatalf("tar header: %v", err)
+	}
+	if _, err := tw.Write(chartYAML); err != nil {
+		t.Fatalf("tar body: %v", err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatalf("tar close: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+	store := memory.New()
+	if _, err := ocierr.Push(context.Background(), store, "25.0.8", MediatypeHelmChart, buf.Bytes(), nil); err != nil {
+		t.Fatalf("seed chart store: %v", err)
+	}
+	a := &ociAdapter{newTarget: func(string, *http.Client) (oras.ReadOnlyTarget, error) { return store, nil }}
+
+	const url = "oci://hub.aggrega.ai/charts/mariadb"
+	got, err := a.Resolve(context.Background(), sourceresolver.SourceSpec{
+		Kind:          KindOCI,
+		URL:           url,
+		Version:       "25.0.8",
+		Chart:         "mariadb",
+		WorkspaceRoot: root,
+		CacheDir:      ".aggrega/cache",
+	})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got.Chart != "mariadb" {
+		t.Fatalf("resolved Chart = %q; want the authored %q", got.Chart, "mariadb")
+	}
+	lf := &lockfile.Lockfile{
+		Version: 1, Release: "./release.yaml", GeneratedAt: "2026-05-22T10:00:00Z",
+		SourceArtifacts: []lockfile.SourceArtifact{{
+			Kind: got.Kind, URL: got.URL, Chart: got.Chart, PinnedVersion: got.PinnedVersion,
+			Digest: got.Digest, ManifestDigest: got.ManifestDigest, Mediatype: got.Mediatype,
+		}},
+	}
+	if _, err := sourcecache.LookupAndExtract(lf, KindOCI, url, "mariadb", "", "25.0.8", "", root, ".aggrega/cache"); err != nil {
+		t.Fatalf("build lookup with the authored chart: %v", err)
 	}
 }

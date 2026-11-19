@@ -86,7 +86,9 @@ func (a *ociAdapter) Kind() string { return KindOCI }
 // spec.URL is the OCI repository reference (e.g.,
 // "oci://hub.aggrega.ai/charts/mariadb" or
 // "hub.aggrega.ai/charts/mariadb" — the oci:// prefix is stripped
-// before passing to ORAS). spec.Version is the tag.
+// before passing to ORAS). spec.Version is the tag. spec.Chart, when the
+// Recipe authors one, is kept on the resolved source and in the cache slot's
+// identity so the build finds the row by the same terms it was written with.
 //
 // A target that cannot be built and a failed pull are both reported through
 // sourceresolver.WrapOCIPull.
@@ -112,7 +114,7 @@ func (a *ociAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec
 	}
 
 	digest := archive.Digest(result.Bytes)
-	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, KindOCI, spec.URL, "", "", spec.Version, digest)
+	slot, err := cacheslot.Slot(spec.WorkspaceRoot, spec.CacheDir, KindOCI, spec.URL, spec.Chart, "", spec.Version, digest)
 	if err != nil {
 		return nil, fmt.Errorf("helm-oci-chart: %w", err)
 	}
@@ -128,6 +130,7 @@ func (a *ociAdapter) Resolve(ctx context.Context, spec sourceresolver.SourceSpec
 	return &sourceresolver.ResolvedSource{
 		Kind:           KindOCI,
 		URL:            spec.URL,
+		Chart:          spec.Chart,
 		PinnedVersion:  spec.Version,
 		Digest:         digest,
 		ManifestDigest: result.Digest,
