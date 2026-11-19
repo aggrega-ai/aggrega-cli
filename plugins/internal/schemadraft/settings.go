@@ -50,6 +50,13 @@ func ReadSettings(raw json.RawMessage) (Settings, *aggrega.Diagnostic) {
 
 // readRequest reads one entry: a string naming a type, or an object with a type
 // and optionally a component. The reason is empty where the entry is read.
+//
+// A component is held to the rule the Component schema declares for a
+// metadata.name, the one rule a name meets wherever it is read: it is not empty.
+// The compiler reads a name by no other rule, and the shape the catalog's names
+// follow by convention is the publishing linter's to report, so an entry naming
+// a Component the catalog can hold is never refused here for its shape. An empty
+// component is refused rather than read as none.
 func readRequest(entry json.RawMessage) (Request, string) {
 	var name string
 	if json.Unmarshal(entry, &name) == nil {
@@ -71,6 +78,10 @@ func readRequest(entry json.RawMessage) (Request, string) {
 		case requestComponentKey:
 			if json.Unmarshal(e.Value, &component) != nil {
 				return Request{}, "the component of an entry is not text"
+			}
+			if component == "" {
+				return Request{}, "the component of an entry is empty, and a Component's name is not; name the " +
+					"Component to draft the type as, or leave component out"
 			}
 		default:
 			return Request{}, "an entry has the member \"" + e.Key + "\", which is neither type nor component"

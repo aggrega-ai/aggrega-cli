@@ -6,6 +6,7 @@ package schemadraft
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -62,5 +63,23 @@ func TestReadSettingsRefusesEachUnreadableShape(t *testing.T) {
 				t.Fatalf("requests read despite the halt: %+v", got.ResourceTypes)
 			}
 		})
+	}
+}
+
+// TestReadSettingsRefusesAComponentThatIsNoName reads an entry whose component
+// is empty, which names no Component a catalog can hold: the import halts under
+// resource-types-unreadable naming the entry, rather than reading the entry as
+// one with no component.
+func TestReadSettingsRefusesAComponentThatIsNoName(t *testing.T) {
+	const entry = `{"type": "AWS::SQS::Queue", "component": ""}`
+	got, d := ReadSettings(json.RawMessage(`{"resource_types": ["aws_sqs_queue", ` + entry + `]}`))
+	if d == nil || d.Code != codeResourceTypesUnreadable || d.Severity != "halt" {
+		t.Fatalf("diagnostic = %+v", d)
+	}
+	if !strings.Contains(d.Message, entry) || !strings.Contains(d.Message, "component") {
+		t.Errorf("the halt does not name the entry and its component: %s", d.Message)
+	}
+	if len(got.ResourceTypes) != 0 {
+		t.Fatalf("requests read despite the halt: %+v", got.ResourceTypes)
 	}
 }
