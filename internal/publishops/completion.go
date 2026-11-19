@@ -44,16 +44,18 @@ type completion struct {
 	sbom []byte
 }
 
-// completed is what a completion attached: a signature, a publication date, both,
-// or neither where the publication was already complete.
+// completed is what a completion attached that a result reports: a signature, a
+// publication date, both, or neither where the publication was already complete.
+// A bill of materials it attaches is announced on its own line and not recorded
+// here, because no result carries it.
 type completed struct {
 	signed bool
 	dated  bool
 }
 
 // completePublication attaches, to a version whose content is already published,
-// what that publication still lacks and nothing else, and reports what it
-// attached. A publication that failed after its content landed — its
+// what that publication still lacks and nothing else, and reports the signature
+// and date it attached. A publication that failed after its content landed — its
 // signature or its date could not be attached — is therefore completed by running
 // it again, and a publication that is already complete gets nothing attached.
 //

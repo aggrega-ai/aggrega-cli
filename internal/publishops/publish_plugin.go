@@ -30,6 +30,16 @@ import (
 // identity. The resolved content digest is recorded by the consumer at pull, in
 // the lockfile; it is never embedded in the published entity.
 //
+// A publication may also carry the guest's third-party notices and software
+// bill of materials, named beside the .wasm (PushConfig.PluginNoticesPath and
+// PluginSBOMPath). The notices become a second layer after the .wasm, so the
+// manifest digest, and with it the signature, covers them. The bill of materials
+// is attached as an application/spdx+json referrer of the landed manifest and
+// moves no digest; it is attached after the signature, and where the content is
+// already published it is attached only when the version carries none. Both
+// files are read once and refused, before anything is uploaded, when empty or
+// unreadable.
+//
 // The entity is read first, through the parse a catalog load runs
 // (catalog.ParsePluginEntity), so a document that fails its kind's schema — a
 // metadata.version that is not a semantic version among them — is refused as a
@@ -207,7 +217,8 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	}
 
 	// The digest this publication would land, derived from the whole manifest — the
-	// config entity plus the inline .wasm layer — and computed once ahead of the
+	// config entity, the inline .wasm layer and the notices layer when there are
+	// notices — and computed once ahead of the
 	// dry-run branch, so the digest a dry run states is the very value the
 	// immutability guard compares and the signer signs below. It packs into an
 	// in-memory store and contacts nothing.
@@ -252,8 +263,9 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	// re-publication of a byte-identical manifest uploads nothing and completes what
 	// that publication still lacks (completePublication); a tag already pointing at
 	// different content is refused. The proposed digest is derived from the whole
-	// manifest — the config entity plus the inline .wasm layer — so a changed
-	// executable under an unchanged entity is caught as a conflict too.
+	// manifest — the config entity, the inline .wasm layer and any notices layer —
+	// so a changed executable, or changed notices, under an unchanged entity is
+	// caught as a conflict too.
 	existingDigest, exists, err := resolvePublished(ctx, target, version, reference+":"+version)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("resolve %s:%s: %w", reference, version, err)
@@ -311,7 +323,8 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		}
 	}
 
-	// Publish the one manifest — entity config plus inline .wasm layer — tagged
+	// Publish the one manifest — entity config, inline .wasm layer and any notices
+	// layer — tagged
 	// by the entity's version. The returned digest is the manifest the signature
 	// (if any) commits to. Each write it makes retries a transient failure
 	// inside pkg/oci, so nothing here wraps it again.

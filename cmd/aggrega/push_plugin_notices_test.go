@@ -50,7 +50,14 @@ func manifestLayerTypes(t *testing.T, store *memory.Store, tag string) []string 
 	if err != nil {
 		t.Fatalf("resolve %s: %v", tag, err)
 	}
-	raw, err := content.FetchAll(t.Context(), store, desc)
+	return fetchLayerTypes(t, store, desc)
+}
+
+// fetchLayerTypes returns the media types of the layers of the manifest desc names
+// in src, in order.
+func fetchLayerTypes(t *testing.T, src content.Fetcher, desc ocispec.Descriptor) []string {
+	t.Helper()
+	raw, err := content.FetchAll(t.Context(), src, desc)
 	if err != nil {
 		t.Fatalf("fetch manifest: %v", err)
 	}
@@ -230,6 +237,10 @@ func TestPushPluginSBOMAttachedOnceWhenAlreadyPublished(t *testing.T) {
 	wsRoot, entityPath, pluginPath, _ := writeAgreeingPlugin(t)
 	notices, sbom := writeNoticesFiles(t)
 	store := memory.New()
+	other := filepath.Join(t.TempDir(), "other.spdx.json")
+	if err := os.WriteFile(other, []byte(`{"spdxVersion":"SPDX-2.3","name":"another"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	push := func(sbomPath string) string {
 		t.Helper()
 		var out bytes.Buffer
@@ -263,7 +274,16 @@ func TestPushPluginSBOMAttachedOnceWhenAlreadyPublished(t *testing.T) {
 	if out := push(sbom); !strings.Contains(out, "Already published") || !strings.Contains(out, "SBOM attached: ") || count() != 1 {
 		t.Fatalf("the re-publication did not attach exactly one bill of materials (count %d):\n%s", count(), out)
 	}
-	if out := push(sbom); strings.Contains(out, "SBOM attached: ") || count() != 1 {
-		t.Fatalf("a second re-publication attached another (count %d):\n%s", count(), out)
+	// A third publication offers different bytes: the version already carries a
+	// bill of materials, so nothing is attached and the first one stays.
+	if out := push(other); strings.Contains(out, "SBOM attached: ") || count() != 1 {
+		t.Fatalf("a re-publication offering another bill of materials attached it (count %d):\n%s", count(), out)
+	}
+	refs, err := oci.ListReferrers(t.Context(), store, "1.0.0", oci.MediaTypeSPDXJSON)
+	if err != nil || len(refs) != 1 {
+		t.Fatalf("spdx referrers = %d, err %v", len(refs), err)
+	}
+	if payload, err := oci.FetchReferrerPayload(t.Context(), store, refs[0]); err != nil || string(payload) != sbomFixture {
+		t.Fatalf("the attached payload = %q, err %v; want the original file", payload, err)
 	}
 }
