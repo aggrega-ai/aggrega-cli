@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // writeGo puts a source file under a fresh temporary directory and returns its
@@ -222,6 +223,40 @@ func TestClassBoundaries(t *testing.T) {
 		0x2580, 0x25FF, 0x2300, 0x23FF, 0x00A9, 0x00AE, 0x2122, 0x21FF, 0x2200, 0x25FF, 0x2AFF, 0x1EFFF} {
 		if isPictograph(r) {
 			t.Errorf("U+%04X must be outside the class", r)
+		}
+	}
+}
+
+func TestOnlyRefusesAValueThatIsNotACodepoint(t *testing.T) {
+	accepted := []struct {
+		in   string
+		want rune
+	}{
+		{"26A0", 0x26A0},
+		{"U+26A0", 0x26A0},
+		{"u+26a0", 0x26A0},
+		{"0", 0},
+		{"10FFFF", unicode.MaxRune},
+	}
+	for _, c := range accepted {
+		got, err := parseOnly(c.in)
+		if err != nil || got != c.want {
+			t.Errorf("parseOnly(%q) = %U, %v; want %U, nil", c.in, got, err, c.want)
+		}
+	}
+
+	refused := []struct{ in, msg string }{
+		{"110000", "is not a Unicode codepoint (the highest is U+10FFFF)"},
+		{"80000000", "is not a Unicode codepoint (the highest is U+10FFFF)"},
+		{"FFFFFFFF", "is not a Unicode codepoint (the highest is U+10FFFF)"},
+		{"100000000", "is not a hex codepoint"},
+		{"zz", "is not a hex codepoint"},
+		{"U+", "is not a hex codepoint"},
+	}
+	for _, c := range refused {
+		got, err := parseOnly(c.in)
+		if err == nil || err.Error() != c.msg {
+			t.Errorf("parseOnly(%q) = %v, %v; want the refusal %q", c.in, got, err, c.msg)
 		}
 	}
 }

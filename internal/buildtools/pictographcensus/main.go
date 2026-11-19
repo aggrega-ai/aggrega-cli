@@ -24,6 +24,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -35,6 +36,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Exit codes. Separated from an ordinary hit because they answer different
@@ -69,12 +71,12 @@ func main() {
 
 	var wanted rune = -1
 	if *only != "" {
-		v, err := strconv.ParseUint(strings.TrimPrefix(strings.TrimPrefix(*only, "U+"), "u+"), 16, 32)
+		v, err := parseOnly(*only)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "%s: -only %q is not a hex codepoint\n", toolName, *only)
+			fmt.Fprintf(os.Stderr, "%s: -only %q %v\n", toolName, *only, err)
 			os.Exit(exitBroken)
 		}
-		wanted = rune(v)
+		wanted = v
 	}
 
 	files, err := collect(flag.Args(), *corpus == corpusEvery)
@@ -113,6 +115,20 @@ func main() {
 		os.Exit(exitHits)
 	}
 	os.Exit(exitClean)
+}
+
+// parseOnly reads the -only value: a hex codepoint with an optional "U+" or "u+"
+// prefix, and refuses a value above unicode.MaxRune. The error completes the
+// sentence "-only <value> ...".
+func parseOnly(s string) (rune, error) {
+	v, err := strconv.ParseUint(strings.TrimPrefix(strings.TrimPrefix(s, "U+"), "u+"), 16, 32)
+	if err != nil {
+		return 0, errors.New("is not a hex codepoint")
+	}
+	if v > unicode.MaxRune {
+		return 0, errors.New("is not a Unicode codepoint (the highest is U+10FFFF)")
+	}
+	return rune(v), nil
 }
 
 func usage() {
