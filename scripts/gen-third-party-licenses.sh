@@ -123,7 +123,32 @@
 # With `--out <dir>` the four outputs are written under <dir> in the same layout
 # as the module root (LICENSES/, THIRD-PARTY.spdx, THIRD-PARTY-NOTICES.txt,
 # THIRD-PARTY-LICENSES.md); <dir> is created when missing and nothing in the
-# module is written, the embedded copy of the notices included. Any other
+# module is written, the embedded copy of the notices included.
+#
+# With `--guest <guest> --out <dir>` the script covers one WebAssembly guest
+# instead of the binary and writes two files under <dir> (created when missing,
+# nothing else written): notices.md, the guest's third-party notices in
+# Markdown, and sbom.spdx.json, its SPDX 2.3 JSON SBOM. <guest> is either
+# <socket>/<name>, a row of the core-plugin list (embedded or not), or the
+# source directory of a guest outside this module, written absolute or starting
+# with ./ or ../. A directory's toolchain is read from its files: go.mod is Go,
+# Cargo.toml is Rust, package.json is TypeScript. The lockfile is required, and
+# a guest without it is refused naming the file before anything is written:
+# go.sum (of the module holding the guest), Cargo.lock, package-lock.json.
+#   - Go:         the modules `go list -deps` reaches from that one package
+#                 (GOOS=wasip1 GOARCH=wasm, in THIRD_PARTY_GO_ENV, run in the
+#                 module holding it), and the Go standard library.
+#   - Rust:       the registry crates of that guest's Cargo.lock, and the Rust
+#                 standard library and wasi-libc of its channel: the one its
+#                 rust-toolchain.toml names, else the one `rustc --version`
+#                 reports in the guest's directory.
+#   - TypeScript: the packages of package-lock.json that are not `dev` and not
+#                 first-party; each licence id is the `license` field of its
+#                 package.json, its licence and notice texts come from its
+#                 directory under the guest's node_modules.
+# The mode reads package-lock.json and writes the JSON with jq. notices.md
+# opens with a header naming the guest (<socket>/<name>, or the directory's base
+# name) and says so when the guest has no third-party dependency. Any other
 # argument is refused.
 #
 # Exit status is 0 on success. A findings summary (dependency counts and any
@@ -144,21 +169,61 @@ CLI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Output root: the module itself, or the directory --out names.
 OUT_ROOT="$CLI_DIR"
 NOTICES_EMBED="$CLI_DIR/internal/thirdparty/THIRD-PARTY-NOTICES.txt"
-if [ "$#" -gt 0 ]; then
-	if [ "$1" != "--out" ]; then
-		echo "gen-third-party-licenses: ERROR: unsupported argument: $1 (the only form is: --out <dir>)" >&2
+USAGE="the forms are: --out <dir>, and --guest <guest> --out <dir>"
+GUEST=""        # the --guest value; empty for the whole binary
+GUEST_DIR=""    # the absolute source directory of a guest outside the module
+OUT_ARG=""
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	--out)
+		if [ "$#" -lt 2 ] || [ -z "$2" ] || [ -n "$OUT_ARG" ]; then
+			echo "gen-third-party-licenses: ERROR: --out needs one directory ($USAGE)" >&2
+			exit 2
+		fi
+		OUT_ARG="$2"
+		shift 2
+		;;
+	--guest)
+		if [ "$#" -lt 2 ] || [ -z "$2" ] || [ -n "$GUEST" ]; then
+			echo "gen-third-party-licenses: ERROR: --guest needs one guest, <socket>/<name> or a source directory ($USAGE)" >&2
+			exit 2
+		fi
+		GUEST="$2"
+		shift 2
+		;;
+	*)
+		echo "gen-third-party-licenses: ERROR: unsupported argument: $1 ($USAGE)" >&2
+		exit 2
+		;;
+	esac
+done
+if [ -n "$GUEST" ]; then
+	if [ -z "$OUT_ARG" ]; then
+		echo "gen-third-party-licenses: ERROR: --guest needs --out <dir> ($USAGE)" >&2
 		exit 2
 	fi
-	if [ "$#" -lt 2 ] || [ -z "$2" ]; then
-		echo "gen-third-party-licenses: ERROR: --out needs a directory (the only form is: --out <dir>)" >&2
+	case "$GUEST" in
+	/*|./*|../*)
+		if ! GUEST_DIR="$(cd "$GUEST" 2>/dev/null && pwd)"; then
+			echo "gen-third-party-licenses: ERROR: --guest $GUEST is not a directory" >&2
+			exit 2
+		fi
+		;;
+	*/*) ;;
+	*)
+		echo "gen-third-party-licenses: ERROR: --guest $GUEST is neither <socket>/<name> nor a source directory (absolute, or starting with ./ or ../)" >&2
 		exit 2
-	fi
-	if [ "$#" -gt 2 ]; then
-		echo "gen-third-party-licenses: ERROR: unsupported argument: $3 (the only form is: --out <dir>)" >&2
-		exit 2
-	fi
-	mkdir -p -- "$2"
-	OUT_ROOT="$(cd "$2" && pwd)"
+		;;
+	esac
+	# Resolved against the caller's directory, before the script changes into the
+	# module; the directory itself is created only once every output exists.
+	case "$OUT_ARG" in
+	/*) OUT_DIR="$OUT_ARG" ;;
+	*) OUT_DIR="$PWD/$OUT_ARG" ;;
+	esac
+elif [ -n "$OUT_ARG" ]; then
+	mkdir -p -- "$OUT_ARG"
+	OUT_ROOT="$(cd "$OUT_ARG" && pwd)"
 	NOTICES_EMBED=""
 fi
 INDEX="$OUT_ROOT/THIRD-PARTY-LICENSES.md"
@@ -534,12 +599,96 @@ add_src() {
 
 # --- Guest set: the embedded rows of the core-plugin list --------------------
 
+# cargo_lock_crates <Cargo.lock> : "name version" for every crate with a crates.io
+# registry source (registry crates are third-party; path crates are first-party).
+cargo_lock_crates() {
+	awk '
+		/^\[\[package\]\]/ { name=""; ver=""; src=0 }
+		/^name = /    { gsub(/"/,""); name=$3 }
+		/^version = / { gsub(/"/,""); ver=$3 }
+		/^source = "registry/ { src=1 }
+		/^$/          { if (src && name && ver) print name, ver }
+		END           { if (src && name && ver) print name, ver }
+	' "$1" | sort -u
+}
+
+# guest_rust_channel <source> : the Rust channel the guest at <source> builds with:
+# its rust-toolchain.toml's, else (a guest outside the module that pins none) the
+# version `rustc --version` reports in its directory.
+guest_rust_channel() {
+	local out
+	if [ -z "$GUEST_DIR" ]; then
+		core_plugin_rust_toolchain "$1"
+	elif [ -f "$1/rust-toolchain.toml" ]; then
+		core_plugin_rust_toolchain "$(realpath --relative-to="$CLI_DIR" "$1")"
+	else
+		if ! out="$(cd "$1" && rustc --version)"; then
+			echo "gen-third-party-licenses: ERROR: rustc --version failed in $1, which pins no toolchain" >&2
+			return 1
+		fi
+		printf '%s\n' "$out" | awk '{ print $2 }'
+	fi
+}
+
 # Captured before it is read, so a refusal stops the script.
 rows="$(core_plugin_rows)" || exit 1
 
 # The digest of everything this run reads to decide the attribution, recorded in
 # the SBOM so scripts/check-third-party-licenses.sh can tell when it is stale.
-inputs_digest="$(third_party_inputs_digest)" || exit 1
+inputs_digest=""
+[ -n "$GUEST" ] || inputs_digest="$(third_party_inputs_digest)" || exit 1
+
+# One guest: the row set is that guest alone (a row of the core-plugin list, even
+# one the binary does not embed, or a synthetic row for a directory outside the
+# module), its lockfile must exist, and nothing is written until every output is.
+GUEST_LABEL=""
+if [ -n "$GUEST" ]; then
+	command -v jq > /dev/null || { echo "gen-third-party-licenses: ERROR: --guest needs jq" >&2; exit 1; }
+	if [ -n "$GUEST_DIR" ]; then
+		GUEST_LABEL="$(basename "$GUEST_DIR")"
+		g_toolchain=""
+		for g_pair in go.mod:go Cargo.toml:rust package.json:typescript; do
+			if [ -f "$GUEST_DIR/${g_pair%%:*}" ]; then
+				if [ -n "$g_toolchain" ]; then
+					echo "gen-third-party-licenses: ERROR: $GUEST_DIR holds more than one of go.mod, Cargo.toml and package.json" >&2
+					exit 2
+				fi
+				g_toolchain="${g_pair##*:}"
+			fi
+		done
+		if [ -z "$g_toolchain" ]; then
+			echo "gen-third-party-licenses: ERROR: $GUEST_DIR holds none of go.mod, Cargo.toml and package.json" >&2
+			exit 2
+		fi
+		rows="$(printf 'guest\x1f%s\x1f%s\x1f%s\x1f\x1fyes\x1f\n' "$GUEST_LABEL" "$GUEST_DIR" "$g_toolchain")"
+		case "$g_toolchain" in
+		go) g_lock="$GUEST_DIR/go.sum" ;;
+		rust) g_lock="$GUEST_DIR/Cargo.lock" ;;
+		typescript) g_lock="$GUEST_DIR/package-lock.json" ;;
+		esac
+	else
+		GUEST_LABEL="$GUEST"
+		g_row="$(awk -F'\x1f' -v l="$GUEST" '$1 "/" $2 == l' <<< "$rows")"
+		if [ -z "$g_row" ]; then
+			echo "gen-third-party-licenses: ERROR: --guest $GUEST names no row of the core-plugin list" >&2
+			exit 2
+		fi
+		IFS=$'\x1f' read -r g_socket g_name g_src g_toolchain g_extra g_embed g_dir <<< "$g_row"
+		rows="$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1fyes\x1f%s\n' "$g_socket" "$g_name" "$g_src" "$g_toolchain" "$g_extra" "$g_dir")"
+		case "$g_toolchain" in
+		go) g_lock="go.sum" ;;
+		rust) g_lock="${g_src#./}/Cargo.lock" ;;
+		*)
+			echo "gen-third-party-licenses: ERROR: $GUEST names the toolchain \"$g_toolchain\", not go or rust" >&2
+			exit 1
+			;;
+		esac
+	fi
+	if [ ! -f "$g_lock" ]; then
+		echo "gen-third-party-licenses: ERROR: $GUEST_LABEL has no $g_lock (nothing written)" >&2
+		exit 1
+	fi
+fi
 
 mkdir -p "$WORK/sets"
 : > "$WORK/go-sets.list"     # "<label><TAB><file>" per Go set, host first
@@ -549,34 +698,43 @@ mkdir -p "$WORK/sets"
 : > "$WORK/covered.md"       # the index's list of what is covered
 : > "$WORK/failures.txt"     # every dependency with no resolvable license text
 : > "$WORK/rust-nofile.txt"  # crates shipping no license file; the Cargo.toml license field stands
+: > "$WORK/ts-src.list"      # "<label><TAB><source dir>" per TypeScript guest
+: > "$WORK/npm-nofile.txt"   # packages shipping no license file; the package.json license field stands
 embedded_labels=""
 n=0
 
 # --- Go enumeration ---------------------------------------------------------
 
-# The host set is the union over every release target.
-: > "$WORK/sets/host-all.txt"
-for target in $THIRD_PARTY_HOST_TARGETS; do
-	GOOS="${target%/*}" GOARCH="${target#*/}" module_set ./cmd/aggrega >> "$WORK/sets/host-all.txt"
-done
-sort -u "$WORK/sets/host-all.txt" > "$WORK/sets/host.txt"
-printf 'aggrega\t%s\n' "$WORK/sets/host.txt" >> "$WORK/go-sets.list"
-printf -- '- the Go host binary (`cmd/aggrega`), for %s\n' "${THIRD_PARTY_HOST_TARGETS// /, }" >> "$WORK/covered.md"
-printf -- '- the Go standard library, compiled into the host binary and every Go plugin below\n' >> "$WORK/covered.md"
-if [ "$(awk -F'\x1f' '$4 == "rust" && $6 == "yes"' <<< "$rows" | wc -l)" -gt 0 ]; then
-	printf -- '- the Rust standard library and wasi-libc, compiled into every Rust plugin below\n' >> "$WORK/covered.md"
+# The host set is the union over every release target. A single guest has none.
+if [ -z "$GUEST" ]; then
+	: > "$WORK/sets/host-all.txt"
+	for target in $THIRD_PARTY_HOST_TARGETS; do
+		GOOS="${target%/*}" GOARCH="${target#*/}" module_set ./cmd/aggrega >> "$WORK/sets/host-all.txt"
+	done
+	sort -u "$WORK/sets/host-all.txt" > "$WORK/sets/host.txt"
+	printf 'aggrega\t%s\n' "$WORK/sets/host.txt" >> "$WORK/go-sets.list"
+	printf -- '- the Go host binary (`cmd/aggrega`), for %s\n' "${THIRD_PARTY_HOST_TARGETS// /, }" >> "$WORK/covered.md"
+	printf -- '- the Go standard library, compiled into the host binary and every Go plugin below\n' >> "$WORK/covered.md"
+	if [ "$(awk -F'\x1f' '$4 == "rust" && $6 == "yes"' <<< "$rows" | wc -l)" -gt 0 ]; then
+		printf -- '- the Rust standard library and wasi-libc, compiled into every Rust plugin below\n' >> "$WORK/covered.md"
+	fi
 fi
 
 while IFS=$'\x1f' read -r socket name src toolchain extra embed dir; do
 	[ -n "$socket" ] || continue
 	[ "$embed" = yes ] || continue
 	n=$((n + 1))
-	label="$socket/$name"
+	label="${GUEST_LABEL:-$socket/$name}"
 	embedded_labels="${embedded_labels:+$embedded_labels, }$label"
 	src="${src#./}"
 	case "$toolchain" in
 	go)
-		GOOS=wasip1 GOARCH=wasm module_set "./$src" > "$WORK/sets/$n.txt"
+		if [ -n "$GUEST_DIR" ]; then
+			# The guest's own module: the go.mod beside it decides the graph.
+			(cd "$GUEST_DIR" && GOOS=wasip1 GOARCH=wasm module_set .) > "$WORK/sets/$n.txt" || exit 1
+		else
+			GOOS=wasip1 GOARCH=wasm module_set "./$src" > "$WORK/sets/$n.txt"
+		fi
 		printf '%s\t%s\n' "$label" "$WORK/sets/$n.txt" >> "$WORK/go-sets.list"
 		printf -- '- `%s`, a Go WebAssembly plugin (`%s`), embedded into the host binary\n' "$label" "$src" >> "$WORK/covered.md"
 		;;
@@ -586,20 +744,20 @@ while IFS=$'\x1f' read -r socket name src toolchain extra embed dir; do
 			echo "gen-third-party-licenses: ERROR: $label has no $lock" >&2
 			exit 1
 		fi
-		# "name version" for every crate with a crates.io registry source
-		# (registry crates are third-party; path crates are first-party).
-		awk '
-			/^\[\[package\]\]/ { name=""; ver=""; src=0 }
-			/^name = /    { gsub(/"/,""); name=$3 }
-			/^version = / { gsub(/"/,""); ver=$3 }
-			/^source = "registry/ { src=1 }
-			/^$/          { if (src && name && ver) print name, ver }
-			END           { if (src && name && ver) print name, ver }
-		' "$lock" | sort -u > "$WORK/sets/$n.txt"
+		cargo_lock_crates "$lock" > "$WORK/sets/$n.txt"
 		printf '%s\t%s\n' "$label" "$WORK/sets/$n.txt" >> "$WORK/rust-sets.list"
 		printf '%s\t%s\n' "$label" "$src" >> "$WORK/rust-src.list"
-		printf '%s\t%s\n' "$(core_plugin_rust_toolchain "$src")" "$label" >> "$WORK/rust-channels.list"
+		channel="$(guest_rust_channel "$src")" || exit 1
+		printf '%s\t%s\n' "$channel" "$label" >> "$WORK/rust-channels.list"
 		printf -- '- `%s`, a Rust WebAssembly plugin (`%s`), embedded into the host binary\n' "$label" "$src" >> "$WORK/covered.md"
+		;;
+	typescript)
+		# Only a single guest reaches this: the core-plugin list names go and rust.
+		if [ -z "$GUEST" ]; then
+			echo "gen-third-party-licenses: ERROR: $label names the toolchain \"$toolchain\", not go or rust" >&2
+			exit 1
+		fi
+		printf '%s\t%s\n' "$label" "$src" >> "$WORK/ts-src.list"
 		;;
 	*)
 		echo "gen-third-party-licenses: ERROR: $label names the toolchain \"$toolchain\", not go or rust" >&2
@@ -608,7 +766,11 @@ while IFS=$'\x1f' read -r socket name src toolchain extra embed dir; do
 	esac
 done <<< "$rows"
 
-sort -u $(awk -F'\t' '{print $2}' "$WORK/go-sets.list") > "$WORK/go-union.txt"
+if [ -s "$WORK/go-sets.list" ]; then
+	sort -u $(awk -F'\t' '{print $2}' "$WORK/go-sets.list") > "$WORK/go-union.txt"
+else
+	: > "$WORK/go-union.txt"
+fi
 if [ -s "$WORK/rust-sets.list" ]; then
 	sort -u $(awk -F'\t' '{print $2}' "$WORK/rust-sets.list") > "$WORK/rust.txt"
 else
@@ -646,6 +808,8 @@ fetch_dirs() {
 : > "$WORK/rels.txt"
 : > "$WORK/index-rows.txt"
 : > "$WORK/notices-pkgs.txt"
+: > "$WORK/notices-md-pkgs.txt"
+: > "$WORK/sbom-json-pkgs.jsonl"
 : > "$WORK/go-findings.txt"
 : > "$WORK/rust-findings.txt"
 
@@ -661,6 +825,12 @@ index_links() {
 }
 
 EMIT_NOTICES=()
+
+# spdx_expression <declared> : a license expression SPDX JSON accepts. Older
+# crates declare alternatives as `A/B`, which SPDX does not define; it reads as `A OR B`.
+spdx_expression() {
+	printf '%s' "${1//\// OR }"
+}
 
 # emit_pkg <ecosystem> <name> <version> <declared> <concluded> <download> <purl> <usedby> <license-files...>
 #
@@ -742,6 +912,41 @@ emit_pkg() {
 		fi
 	} >> "$WORK/notices-pkgs.txt"
 
+	# A single guest's outputs: the same content as the notices block above in
+	# Markdown, and the package as an SPDX JSON object.
+	if [ -n "$GUEST" ]; then
+		{
+			printf '\n### %s %s\n\n' "$name" "$ver"
+			printf -- '- License: `%s`\n' "$concluded"
+			printf -- '- Compiled into: %s\n' "$usedby"
+			[ -z "${EMIT_NOTE:-}" ] || printf -- '- Note: %s\n' "$EMIT_NOTE"
+			printf '\nCopyright:\n\n'
+			if [ -n "$copyr" ]; then
+				printf '~~~~\n%s\n~~~~\n' "$copyr"
+			else
+				printf 'None is stated in its license or notice files.\n'
+			fi
+			for f in "${files[@]}"; do
+				[ -f "$f" ] || continue
+				case "$(basename "$f" | tr '[:lower:]' '[:upper:]')" in
+				NOTICE*) printf '\nNotice:\n\n~~~~\n%s\n~~~~\n' "$(sed 's/\r$//' "$f")" ;;
+				esac
+			done
+			if [ "${#EMIT_NOTICES[@]}" -gt 0 ]; then
+				for f in "${EMIT_NOTICES[@]}"; do
+					printf '\nNotice:\n\n~~~~\n%s\n~~~~\n' "$(sed 's/\r$//' "$f")"
+				done
+			fi
+		} >> "$WORK/notices-md-pkgs.txt"
+		jq -nc --arg name "$name" --arg id "$id" --arg ver "$ver" --arg dl "$dl" \
+			--arg concluded "$(spdx_expression "$concluded")" --arg declared "$(spdx_expression "$declared")" --arg copyr "${copyr:-NOASSERTION}" \
+			--arg purl "$purl" --arg comment "Compiled into: $usedby${EMIT_NOTE:+. $EMIT_NOTE}" '{
+				name: $name, SPDXID: $id, versionInfo: $ver, downloadLocation: $dl, filesAnalyzed: false,
+				licenseConcluded: $concluded, licenseDeclared: $declared, copyrightText: $copyr,
+				externalRefs: [{referenceCategory: "PACKAGE-MANAGER", referenceType: "purl", referenceLocator: $purl}],
+				comment: $comment}' >> "$WORK/sbom-json-pkgs.jsonl"
+	fi
+
 	printf 'Relationship: SPDXRef-DOCUMENT DESCRIBES %s\n' "$id" >> "$WORK/rels.txt"
 
 	# Index row. The concluded expression drives the displayed identifier and
@@ -766,17 +971,22 @@ mv "$WORK/rust-third.txt" "$WORK/rust.txt"
 # One entry: the toolchain that compiles the host and every Go plugin. Its
 # version is go.mod's toolchain directive, else its go directive; its license
 # and copyright lines are the LICENSE file at the Go root.
-go_std_ver="$(awk '$1 == "toolchain" { print $2; exit }' go.mod)"
-[ -n "$go_std_ver" ] || go_std_ver="$(awk '$1 == "go" { print $2; exit }' go.mod)"
-go_std_ver="go${go_std_ver#go}"
-go_root="$(env $THIRD_PARTY_GO_ENV go env GOROOT)"
-if [ ! -f "$go_root/LICENSE" ]; then
-	echo "gen-third-party-licenses: ERROR: the Go standard library has no LICENSE file under $go_root" >&2
-	exit 1
+# A Rust or TypeScript guest compiles none of it. The module that decides the
+# version is the CLI's, or the directory's own for a guest outside it.
+if [ -s "$WORK/go-sets.list" ]; then
+	go_mod_dir="${GUEST_DIR:-$CLI_DIR}"
+	go_std_ver="$(awk '$1 == "toolchain" { print $2; exit }' "$go_mod_dir/go.mod")"
+	[ -n "$go_std_ver" ] || go_std_ver="$(awk '$1 == "go" { print $2; exit }' "$go_mod_dir/go.mod")"
+	go_std_ver="go${go_std_ver#go}"
+	go_root="$(cd "$go_mod_dir" && env $THIRD_PARTY_GO_ENV go env GOROOT)"
+	if [ ! -f "$go_root/LICENSE" ]; then
+		echo "gen-third-party-licenses: ERROR: the Go standard library has no LICENSE file under $go_root" >&2
+		exit 1
+	fi
+	go_std_usedby="$(awk -F'\t' '{ printf "%s%s", (NR > 1 ? ", " : ""), $1 }' "$WORK/go-sets.list")"
+	emit_pkg "go" "Go standard library" "$go_std_ver" "NOASSERTION" "BSD-3-Clause" \
+		"https://go.dev/dl/" "pkg:golang/stdlib@$go_std_ver" "$go_std_usedby" "$go_root/LICENSE"
 fi
-go_std_usedby="$(awk -F'\t' '{ printf "%s%s", (NR > 1 ? ", " : ""), $1 }' "$WORK/go-sets.list")"
-emit_pkg "go" "Go standard library" "$go_std_ver" "NOASSERTION" "BSD-3-Clause" \
-	"https://go.dev/dl/" "pkg:golang/stdlib@$go_std_ver" "$go_std_usedby" "$go_root/LICENSE"
 
 # --- Rust standard library and wasi-libc ------------------------------------
 
@@ -918,6 +1128,49 @@ while read -r name ver; do
 		"$(used_by "$WORK/rust-sets.list" "$name $ver")" "${lfiles[@]}"
 done < "$WORK/rust.txt"
 
+# --- TypeScript dependencies (a single guest) --------------------------------
+
+# The packages of package-lock.json that are neither `dev` nor first-party, each
+# read from its directory under the guest's node_modules.
+while IFS=$'\t' read -r label tsdir; do
+	[ -n "$label" ] || continue
+	lock="$tsdir/package-lock.json"
+	if ! jq -e '.packages' "$lock" > /dev/null 2>&1; then
+		echo "gen-third-party-licenses: ERROR: $lock lists no \"packages\" (npm lockfileVersion 2 or 3 is read; nothing written)" >&2
+		exit 1
+	fi
+	jq -r --arg scope "$THIRD_PARTY_FIRST_PARTY_NPM_SCOPE" '
+		.packages | to_entries[]
+		| select(.key | startswith("node_modules/"))
+		| select(((.value.dev // false) | not) and ((.value.link // false) | not))
+		| (.key | sub("^.*node_modules/"; "")) as $n
+		| select($n | startswith($scope) | not)
+		| [.key, $n, (.value.version // ""), (.value.resolved // "")] | @tsv' "$lock" \
+		| sort -t$'\t' -k2,2 -k3,3 -k1,1 | awk -F'\t' '!seen[$2 FS $3]++' > "$WORK/ts-deps.tsv"
+	while IFS=$'\t' read -r key name ver resolved; do
+		[ -n "$name" ] || continue
+		pdir="$tsdir/$key"
+		if [ ! -f "$pdir/package.json" ]; then
+			printf 'npm package %s@%s: not found at %s; run `npm ci` in %s\n' "$name" "$ver" "$pdir" "$tsdir" >> "$WORK/failures.txt"
+			continue
+		fi
+		declared="$(jq -r '
+			def spdx: if type == "string" then . elif type == "object" then (.type // empty) else empty end;
+			(.license | spdx) // ([.licenses[]? | spdx] | if length > 0 then join(" OR ") else empty end) // "NOASSERTION"' "$pdir/package.json")"
+		mapfile -t lfiles < <(license_files "$pdir")
+		if [ "${#lfiles[@]}" -eq 0 ]; then
+			if [ "$declared" = "NOASSERTION" ]; then
+				printf 'npm package %s@%s: no license file and no license field in %s\n' "$name" "$ver" "$pdir" >> "$WORK/failures.txt"
+				continue
+			fi
+			printf '%s@%s (%s)\n' "$name" "$ver" "$declared" >> "$WORK/npm-nofile.txt"
+		fi
+		dl="${resolved:-NOASSERTION}"
+		emit_pkg "npm" "$name" "$ver" "$declared" "$(elect_permissive "$declared")" "$dl" \
+			"pkg:npm/$(printf '%s' "$name" | sed 's/^@/%40/')@$ver" "$label" "${lfiles[@]}"
+	done < "$WORK/ts-deps.tsv"
+done < "$WORK/ts-src.list"
+
 if [ -s "$WORK/failures.txt" ]; then
 	echo "gen-third-party-licenses: ERROR: dependencies with no resolvable license text (nothing written):" >&2
 	sed 's/^/  /' "$WORK/failures.txt" >&2
@@ -926,7 +1179,7 @@ fi
 
 # --- LICENSES/ : one canonical body per unique referenced SPDX id -----------
 
-sort -u "$WORK/ids-raw.txt" | grep -v '^$' > "$WORK/ids.txt"
+sort -u "$WORK/ids-raw.txt" | { grep -v '^$' || true; } > "$WORK/ids.txt"
 
 # Built beside the other work files and moved into place only once every
 # referenced id has a body, so a failure leaves LICENSES/ as it was.
@@ -953,6 +1206,63 @@ if [ -n "$missing" ]; then
 	echo "gen-third-party-licenses: ERROR: no canonical license body found for:$missing" >&2
 	echo "  (a referenced SPDX id has neither a template nor an on-disk source file)" >&2
 	exit 1
+fi
+
+# --- A single guest: notices.md and sbom.spdx.json --------------------------
+
+# Built beside the other work files; <dir> is created and written only now, once
+# both exist. The whole-binary outputs below are not written in this mode.
+if [ -n "$GUEST" ]; then
+	guest_id="$(printf '%s' "$GUEST_LABEL" | sed -E 's/[^A-Za-z0-9.]/-/g')-third-party"
+	{
+		printf '# Third-party notices for %s\n\n' "$GUEST_LABEL"
+		printf 'This file lists every third-party dependency compiled into the `%s` plugin.\n' "$GUEST_LABEL"
+		printf 'It is generated from the dependency set the plugin is built from; do not edit it.\n\n'
+		if [ ! -s "$WORK/notices-md-pkgs.txt" ]; then
+			printf 'The plugin has no third-party dependency.\n'
+		else
+			printf 'Each dependency below names its version, its license, the copyright lines found in\n'
+			printf 'its package and any notice file it ships. The text of each license follows once,\n'
+			printf 'under its SPDX identifier.\n\n'
+			printf '## Dependencies\n'
+			cat "$WORK/notices-md-pkgs.txt"
+			printf '\n## License texts\n'
+			while read -r id; do
+				[ -n "$id" ] || continue
+				printf '\n### %s\n\n~~~~\n' "$id"
+				cat "$WORK/LICENSES/$id.txt"
+				printf '~~~~\n'
+			done < "$WORK/ids.txt"
+		fi
+	} > "$WORK/notices.md"
+	jq -s --indent 2 --arg name "$guest_id" --arg ns "https://aggrega.ai/spdx/$guest_id" --arg ts "$FIXED_TS" \
+		--arg comment "Third-party dependencies compiled into the $GUEST_LABEL plugin. Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License texts are in the plugin's notices." '{
+			spdxVersion: "SPDX-2.3", dataLicense: "CC0-1.0", SPDXID: "SPDXRef-DOCUMENT",
+			name: $name, documentNamespace: $ns,
+			creationInfo: {created: $ts, creators: ["Tool: gen-third-party-licenses.sh"]},
+			comment: $comment,
+			packages: (sort_by(.SPDXID)),
+			relationships: (if length == 0 then [{spdxElementId: "SPDXRef-DOCUMENT", relationshipType: "DESCRIBES", relatedSpdxElement: "NONE"}]
+				else sort_by(.SPDXID) | map({spdxElementId: "SPDXRef-DOCUMENT", relationshipType: "DESCRIBES", relatedSpdxElement: .SPDXID}) end)}' \
+		"$WORK/sbom-json-pkgs.jsonl" > "$WORK/sbom.spdx.json"
+	mkdir -p -- "$OUT_DIR"
+	cp "$WORK/notices.md" "$OUT_DIR/notices.md.new"
+	cp "$WORK/sbom.spdx.json" "$OUT_DIR/sbom.spdx.json.new"
+	mv "$OUT_DIR/notices.md.new" "$OUT_DIR/notices.md"
+	mv "$OUT_DIR/sbom.spdx.json.new" "$OUT_DIR/sbom.spdx.json"
+	{
+		echo "gen-third-party-licenses: wrote"
+		echo "  $OUT_DIR/notices.md"
+		echo "  $OUT_DIR/sbom.spdx.json"
+		echo "  $(wc -l < "$WORK/sbom-json-pkgs.jsonl" | tr -d ' ') third-party packages for $GUEST_LABEL"
+		if [ -s "$WORK/rust-nofile.txt" ]; then
+			echo "  Rust crates shipping no license file (license field of Cargo.toml stands, copyright NOASSERTION): $(wc -l < "$WORK/rust-nofile.txt" | tr -d ' ')"
+		fi
+		if [ -s "$WORK/npm-nofile.txt" ]; then
+			echo "  npm packages shipping no license file (license field of package.json stands, copyright NOASSERTION): $(wc -l < "$WORK/npm-nofile.txt" | tr -d ' ')"
+		fi
+	} >&2
+	exit 0
 fi
 
 rm -rf "$LICDIR"

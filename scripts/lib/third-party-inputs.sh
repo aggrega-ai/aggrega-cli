@@ -44,6 +44,7 @@
 #   THIRD_PARTY_DIGEST_PREFIX   the phrase that introduces the digest in the SBOM
 #   THIRD_PARTY_FIRST_PARTY_GO_PREFIX     path prefix of a first-party Go module
 #   THIRD_PARTY_FIRST_PARTY_CRATES        the exact names of the first-party crates
+#   THIRD_PARTY_FIRST_PARTY_NPM_SCOPE     name prefix of a first-party npm package
 #   THIRD_PARTY_HOST_TARGETS              the os/arch targets the release builds
 #                                         the host binary for
 #   THIRD_PARTY_GO_ENV                    the environment every `go list` runs in
@@ -67,6 +68,8 @@ THIRD_PARTY_DIGEST_PREFIX="Inputs digest: "
 
 THIRD_PARTY_FIRST_PARTY_GO_PREFIX="github.com/aggrega-ai/"
 THIRD_PARTY_FIRST_PARTY_CRATES="aggrega-abi aggrega-pdk-rust"
+# An npm package is first-party when its name starts with this scope.
+THIRD_PARTY_FIRST_PARTY_NPM_SCOPE="@aggrega-ai/"
 
 # The os/arch targets the release builds the host binary (./cmd/aggrega) for. The
 # generator attributes the union of the packages `go list -deps` reaches for each,

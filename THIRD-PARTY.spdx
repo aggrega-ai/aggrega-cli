@@ -5,7 +5,7 @@ DocumentName: aggrega-cli-third-party
 DocumentNamespace: https://aggrega.ai/spdx/aggrega-cli-third-party
 Creator: Tool: gen-third-party-licenses.sh
 Created: 1970-01-01T00:00:00Z
-DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly plugins it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:762b2d6f1a82f79adfea231649999497f6161114bb3f130719d808a119922ab7.</text>
+DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly plugins it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:b2895c9b7933864d3d028f9f90c341651fde5c7288613e316126ac0040da8a48.</text>
 
 PackageName: Go standard library
 SPDXID: SPDXRef-Package-go-Go-standard-library-go1.26.11
