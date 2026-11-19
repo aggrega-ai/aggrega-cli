@@ -216,12 +216,11 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		Signed:     wantSign,
 	}
 
-	// The digest this publication would land, derived from the whole manifest — the
+	// The digest this publication would land, derived from the whole manifest (the
 	// config entity, the inline .wasm layer and the notices layer when there are
-	// notices — and computed once ahead of the
-	// dry-run branch, so the digest a dry run states is the very value the
-	// immutability guard compares and the signer signs below. It packs into an
-	// in-memory store and contacts nothing.
+	// notices) and computed once ahead of the dry-run branch, so the digest a dry
+	// run states is the very value the immutability guard compares and the signer
+	// signs below. It packs into an in-memory store and contacts nothing.
 	proposedDigest, err := oci.PluginManifestDigest(ctx, entityYAML, wasmBytes, annotations, manifestOpts...)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("%s:%s: %w", reference, version, err)
@@ -323,11 +322,10 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		}
 	}
 
-	// Publish the one manifest — entity config, inline .wasm layer and any notices
-	// layer — tagged
-	// by the entity's version. The returned digest is the manifest the signature
-	// (if any) commits to. Each write it makes retries a transient failure
-	// inside pkg/oci, so nothing here wraps it again.
+	// Publish the one manifest (entity config, inline .wasm layer and any notices
+	// layer), tagged by the entity's version. The returned digest is the manifest
+	// the signature (if any) commits to. Each write it makes retries a transient
+	// failure inside pkg/oci, so nothing here wraps it again.
 	end := opprogress.Begin(ctx, "uploading "+reference+":"+version)
 	manifestDigest, err := oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes, annotations, manifestOpts...)
 	end(err)

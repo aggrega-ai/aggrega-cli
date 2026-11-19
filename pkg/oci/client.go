@@ -661,8 +661,8 @@ func FetchManifestAnnotations(ctx context.Context, target oras.ReadOnlyTarget, t
 // guess.
 //
 // When no expected media type is supplied, the manifest is expected to
-// carry a single artifact layer — the shape every push in this package
-// produces — and that layer is returned. The mediatype is taken from the
+// carry at least one layer, and the first is returned: for a Plugin that is the
+// .wasm, which any notices layer follows. The mediatype is taken from the
 // manifest's artifactType field, falling back to the selected layer's own
 // mediatype.
 func descriptorFromManifest(manifestBytes []byte, expectedMediaType ...string) (ocispec.Descriptor, string, error) {
@@ -707,8 +707,8 @@ func firstNonEmpty(vals []string) string {
 // blob.
 //
 // When expected is empty the caller has stated no content media type; the
-// manifest's first layer is returned, matching the single-layer shape
-// every push in this package produces.
+// manifest's first layer is returned; for a Plugin that is the .wasm, which
+// any notices layer follows.
 func selectContentLayer(layers []ocispec.Descriptor, expected string) (ocispec.Descriptor, error) {
 	if expected == "" {
 		return layers[0], nil

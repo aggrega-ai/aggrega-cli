@@ -20,7 +20,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
 
-// TestIntegration_PluginNoticesAndSBOM_RoundTripOverHTTP publishes a signed Plugin
+// TestIntegration_PluginNoticesAndSBOM_RoundTrip_OverHTTP publishes a signed Plugin
 // with its notices and bill of materials to an in-process registry served over
 // HTTP, so referrers come from the registry's Referrers API, then reads it back
 // as a consumer does: the manifest carries [wasm, notices], exactly one
