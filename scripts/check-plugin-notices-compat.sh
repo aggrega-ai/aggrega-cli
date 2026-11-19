@@ -53,6 +53,10 @@ export GOWORK=off
 RELEASE_TAG="v0.9.3"
 RELEASE_VERSION="0.9.3"
 RELEASE_URL="https://github.com/aggrega-ai/aggrega-cli/releases/download/$RELEASE_TAG"
+# A deliberate independent copy of how stage-platform-smoke.sh (REGISTRY_PROGRAM)
+# and platform-smoke.sh (`-port 0` and the "serving on port" parse, below) build and
+# start this registry: those stage a prebuilt program for another machine, this
+# builds and starts it in one run. A change to one is a reason to look at the others.
 REGISTRY_PROGRAM="github.com/google/go-containerregistry/cmd/registry"
 GUEST_FIXTURE="cmd/aggrega/testdata/cli-multi-guest"
 PLUGIN_NAME="notices-compat"
@@ -176,11 +180,11 @@ echo "==> the real case: push with --plugin-notices and --plugin-sbom"
   --plugin-notices "$NOTICES" --plugin-sbom "$SBOM" --registry "$HOST" >"$TMP/push.log" 2>&1 ||
   { cat "$TMP/push.log" >&2; cannot "the push with notices and bill of materials did not succeed"; }
 REF="$HOST/plugin/cli/$PLUGIN_NAME:$PLUGIN_VERSION"
-oras manifest fetch --plain-http "$REF" > "$TMP/manifest.json" || cannot "the pushed manifest could not be read back"
+oras manifest fetch --plain-http "$REF" > "$TMP/manifest.json" || { fail "real case: the pushed manifest could not be read back"; exit 1; }
 layers="$(jq -r '[.layers[].mediaType] | join(" ")' "$TMP/manifest.json")"
-[ "$layers" = "$MEDIA_WASM $MEDIA_NOTICES" ] || cannot "the pushed manifest lists layers \"$layers\", not the .wasm then the notices"
+[ "$layers" = "$MEDIA_WASM $MEDIA_NOTICES" ] || { fail "real case: the pushed manifest lists layers \"$layers\", not the .wasm then the notices"; exit 1; }
 referrers="$(oras discover --plain-http --artifact-type "$MEDIA_SPDX" --format json "$REF" | jq "(.manifests // .referrers // []) | length")"
-[ "$referrers" = 1 ] || cannot "the registry holds $referrers $MEDIA_SPDX referrers of the pushed Plugin, not one"
+[ "$referrers" = 1 ] || { fail "real case: the registry holds $referrers $MEDIA_SPDX referrers of the pushed Plugin, not one"; exit 1; }
 echo "  manifest layers: .wasm, notices; one $MEDIA_SPDX referrer"
 
 # install_with_released <name> <workspace> — the released binary installs <name>
@@ -226,9 +230,12 @@ planted_layers="$(oras manifest fetch --plain-http "$HOST/plugin/cli/$PLANTED_NA
 [ "$planted_layers" = "$MEDIA_NOTICES $MEDIA_WASM" ] || cannot "the planted manifest lists \"$planted_layers\", not the notices then the .wasm"
 if install_with_released "$PLANTED_NAME" "$TMP/ws-planted"; then
   fail "planted case: $RELEASE_VERSION installed a manifest listing the notices first, so the real case's pass proves nothing"
-else
-  echo "  $RELEASE_VERSION refused it: $(tail -n1 "$TMP/ws-planted.log")"
+elif grep -q 'wasm binary magic mismatch' "$TMP/ws-planted.log"; then
+  echo "  $RELEASE_VERSION refused it for the reason a non-wasm first layer gives: $(grep 'wasm binary magic mismatch' "$TMP/ws-planted.log" | tail -n1)"
   PLANTED_OK=1
+else
+  cat "$TMP/ws-planted.log" >&2
+  fail "planted case: the install failed, but not with 0.9.3's \"wasm binary magic mismatch\" for a non-wasm first layer"
 fi
 
 if [ "$REAL_OK" = 1 ] && [ "$PLANTED_OK" = 1 ]; then
