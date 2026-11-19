@@ -32,7 +32,8 @@ name: Publish and sign core plugins
 #                        for the local jobs.
 #   sources              Moves the CLI tree onto the release tag, checks out
 #                        aggrega-hub, whose overlays the build reads, with a
-#                        read token minted from the organization App's secrets,
+#                        token minted from the organization App's secrets for
+#                        aggrega-hub alone, asking to read its contents alone,
 #                        and hands the checkout, without a token, to the build
 #                        job in the hand-over folder described below, with a
 #                        SHA-256 list of it. It runs nothing but GitHub's own checkout and
@@ -1062,8 +1063,9 @@ jobs:
           echo "this run builds aggrega-cli at $commit"
 
       - name: Mint org app token for private-sibling access
-        # aggrega-hub is private; a GitHub App installation token scoped to the
-        # org grants the checkout below read access to it. The App's secrets are
+        # aggrega-hub is private; a GitHub App installation token for
+        # aggrega-hub alone, asking for read access to its contents and nothing
+        # else, grants the checkout below read access to it. The App's secrets are
         # handed to this action and to no step, and its token to that checkout,
         # which does not keep it; like everything a job
         # holds, both stay within reach of the job's later steps, which is why
@@ -1075,6 +1077,8 @@ jobs:
           client-id: ${{ secrets.SUBMODULE_APP_CLIENT_ID }}
           private-key: ${{ secrets.SUBMODULE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          repositories: aggrega-hub
+          permission-contents: read
 
       - name: Check out the hub sibling
         # Supplies the authored plugin overlays (OVERLAY_DIR) that catalog
@@ -1430,13 +1434,6 @@ jobs:
             fi
           done <<< "$dirs"
           echo "$cargo_bin" >> "$GITHUB_PATH"
-
-      - name: Cache the Rust guest build
-        # The publishing linter guest is a Rust crate; cache its registry and
-        # target so a rebuild does not recompile the dependency graph every run.
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          workspaces: aggrega-cli/plugins/publishing-linter
 
       - name: Build the binary and embedded guests
         # Regenerates the Wasm guests and their descriptors and produces the
@@ -1923,10 +1920,14 @@ jobs:
       - name: Set up Node for the extension packer
         # The desktop extension package is packed by the bundle format's own
         # packer, an npm package, so the job needs Node. A self-hosted runner need
-        # not carry it, so it is installed here rather than assumed.
+        # not carry it, so it is installed here rather than assumed. Its package
+        # manager cache is off: this job builds what the release publishes, so it
+        # restores nothing from the Actions cache, which other workflow runs can
+        # write.
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '24'
+          package-manager-cache: false
 
       - name: Pack the desktop extension package
         # Builds aggrega-<version>.mcpb, the single file a client such as Claude

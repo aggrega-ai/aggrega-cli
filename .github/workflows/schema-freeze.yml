@@ -34,7 +34,8 @@ jobs:
 
       - name: Mint org app token for private-sibling access
         # The schemas repository is private; a GitHub App installation token
-        # scoped to the org grants the checkout below read access. The App's
+        # for aggrega-schemas alone, asking for read access to its contents and
+        # nothing else, grants the checkout below read access. The App's
         # secrets are handed to this action and to no step, and its token to that
         # checkout, which does not keep it.
         id: app-token
@@ -43,6 +44,8 @@ jobs:
           client-id: ${{ secrets.SUBMODULE_APP_CLIENT_ID }}
           private-key: ${{ secrets.SUBMODULE_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+          repositories: aggrega-schemas
+          permission-contents: read
 
       - name: Check out the schemas sibling, which carries the check
         # Read by the two steps below, which build cmd/schemagate from it and
