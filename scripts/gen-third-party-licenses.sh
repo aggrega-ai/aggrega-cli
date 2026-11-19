@@ -97,6 +97,10 @@
 #   - a Rust channel with no row in third-party/toolchain/toolchains.tsv, or a
 #     pinned text missing under third-party/toolchain/, naming the channel and
 #     the command that fetches it;
+#   - a TypeScript guest whose build finds no extism-js on PATH, or whose
+#     extism-js has no row in third-party/toolchain/extism-js.tsv (naming the
+#     binary's path, its sha256, the version it reports and the command that
+#     fetches a release's texts), or whose row has a pinned text missing;
 #   - a referenced SPDX id with neither a template nor an on-disk source file.
 #
 # License-body deduplication and attribution:
@@ -109,7 +113,10 @@
 #     is never dropped — it is recorded in the SBOM's PackageCopyrightText for
 #     every dependency.
 #   - For the remaining licenses the canonical body is copied verbatim from the
-#     first authoritative on-disk license file.
+#     first authoritative on-disk license file. When no dependency's files offer
+#     an Apache-2.0 body (a TypeScript guest, whose Apache-2.0 alternatives are
+#     those of the Rust standard library and wasi-libc its runtime is built
+#     with), it is the Rust project's LICENSE-APACHE, pinned with the channel.
 #
 # Determinism:
 #   - Entries are sorted (LC_ALL=C) by ecosystem then module/crate path.
@@ -145,7 +152,19 @@
 #   - TypeScript: the packages of package-lock.json that are not `dev` and not
 #                 first-party; each licence id is the `license` field of its
 #                 package.json, its licence and notice texts come from its
-#                 directory under the guest's node_modules.
+#                 directory under the guest's node_modules. And the JavaScript
+#                 runtime the build merges into the .wasm: the extism-js that PATH
+#                 resolves in the guest's directory is identified by the sha256
+#                 of its bytes, through its row of third-party/toolchain/extism-js.tsv.
+#                 The row names its release and what that release's runtime
+#                 carries: the Extism JS PDK, the QuickJS-NG engine, the rquickjs
+#                 bindings, the core-js and urlpattern-polyfill code of its
+#                 prelude, and the Rust release it is built with, whose standard
+#                 library and wasi-libc are listed as for a Rust guest. Each entry's
+#                 license file is pinned under third-party/toolchain/ (fetched by
+#                 scripts/fetch-toolchain-notices.sh extism-js <tag>) and is
+#                 reproduced as its notice. Only `--version` is ever run, on an
+#                 extism-js that has no row, to name it.
 # The mode reads package-lock.json and writes the JSON with jq. notices.md
 # opens with a header naming the guest (<socket>/<name>, or the directory's base
 # name) and says so when the guest has no third-party dependency. Any other
@@ -630,6 +649,50 @@ guest_rust_channel() {
 	fi
 }
 
+# The pinned texts of what a toolchain builds into a guest, and their indexes:
+# toolchains.tsv for a Rust channel, extism-js.tsv for an extism-js binary.
+TOOLCHAIN_DIR="third-party/toolchain"
+
+# extism_js_runtime <dir> <label> : the row of extism-js.tsv for the extism-js the
+# TypeScript build in <dir> runs (the one PATH resolves there), found by the
+# sha256 of its bytes. Stops when there is none, naming the binary, its sha256,
+# the version it reports and the command that fetches a release's texts, and
+# when a text the row names is missing, naming the release and that command.
+extism_js_runtime() {
+	local bin sha row ver f x_tag x_rq x_qc x_cj x_up
+	if ! bin="$(cd "$1" && command -v extism-js)"; then
+		echo "gen-third-party-licenses: ERROR: $2 is built with extism-js, and none is on PATH in $1 (nothing written)" >&2
+		return 1
+	fi
+	case "$bin" in /*) ;; *) bin="$1/$bin" ;; esac
+	sha="$(sha256sum < "$bin" | awk '{ print $1 }')"
+	if [ "${#sha}" -ne 64 ]; then
+		echo "gen-third-party-licenses: ERROR: could not read $bin, the extism-js the build of $2 runs (nothing written)" >&2
+		return 1
+	fi
+	row="$(awk -F'\t' -v s="$sha" '!/^#/ && $3 == s { print; exit }' "$TOOLCHAIN_DIR/extism-js.tsv" 2> /dev/null || true)"
+	if [ -z "$row" ]; then
+		ver="$(cd "$1" && "$bin" --version 2> /dev/null | head -1)" || ver=""
+		{
+			echo "gen-third-party-licenses: ERROR: the extism-js the build of $2 runs has no row in $TOOLCHAIN_DIR/extism-js.tsv (nothing written)"
+			echo "  path:    $bin"
+			echo "  sha256:  $sha"
+			echo "  reports: ${ver:-nothing (its --version failed)}"
+			echo "  fetch the texts of the release it comes from with: bash scripts/fetch-toolchain-notices.sh extism-js <release-tag>"
+		} >&2
+		return 1
+	fi
+	IFS=$'\t' read -r x_tag _ _ _ x_rq x_qc _ x_cj _ x_up _ _ <<< "$row"
+	for f in "js-pdk-$x_tag/LICENSE" "rquickjs-$x_rq/LICENSE" "quickjs-ng-$x_qc/LICENSE" \
+		"core-js-$x_cj/LICENSE" "urlpattern-polyfill-$x_up/LICENSE"; do
+		if [ ! -f "$TOOLCHAIN_DIR/$f" ]; then
+			echo "gen-third-party-licenses: ERROR: extism-js $x_tag: $TOOLCHAIN_DIR/$f is missing (nothing written); fetch it with: bash scripts/fetch-toolchain-notices.sh extism-js $x_tag" >&2
+			return 1
+		fi
+	done
+	printf '%s\n' "$row"
+}
+
 # Captured before it is read, so a refusal stops the script.
 rows="$(core_plugin_rows)" || exit 1
 
@@ -694,7 +757,9 @@ mkdir -p "$WORK/sets"
 : > "$WORK/go-sets.list"     # "<label><TAB><file>" per Go set, host first
 : > "$WORK/rust-sets.list"   # "<label><TAB><file>" per Rust guest
 : > "$WORK/rust-src.list"    # "<label><TAB><source dir>" per Rust guest
-: > "$WORK/rust-channels.list"  # "<channel><TAB><label>" per Rust guest
+: > "$WORK/rust-channels.list"  # "<channel><TAB><label>" per Rust guest and per TypeScript guest's runtime
+: > "$WORK/rust-channel-notes.list"  # "<channel><TAB><note>" for a channel a TypeScript guest's runtime is built with
+: > "$WORK/extism-js.list"   # "<label><TAB><extism-js.tsv row>" per TypeScript guest
 : > "$WORK/covered.md"       # the index's list of what is covered
 : > "$WORK/failures.txt"     # every dependency with no resolvable license text
 : > "$WORK/rust-nofile.txt"  # crates shipping no license file; the Cargo.toml license field stands
@@ -758,6 +823,13 @@ while IFS=$'\x1f' read -r socket name src toolchain extra embed dir; do
 			exit 1
 		fi
 		printf '%s\t%s\n' "$label" "$src" >> "$WORK/ts-src.list"
+		# The runtime its extism-js merges in, and the Rust release that runtime is
+		# built with, whose standard library and wasi-libc are listed below.
+		x_row="$(extism_js_runtime "$src" "$label")" || exit 1
+		printf '%s\t%s\n' "$label" "$x_row" >> "$WORK/extism-js.list"
+		x_rust="$(cut -f12 <<< "$x_row")"
+		printf '%s\t%s\n' "$x_rust" "$label" >> "$WORK/rust-channels.list"
+		printf '%s\tthe Rust standard library the extism-js %s runtime is built with\n' "$x_rust" "$(cut -f1 <<< "$x_row")" >> "$WORK/rust-channel-notes.list"
 		;;
 	*)
 		echo "gen-third-party-licenses: ERROR: $label names the toolchain \"$toolchain\", not go or rust" >&2
@@ -988,14 +1060,55 @@ if [ -s "$WORK/go-sets.list" ]; then
 		"https://go.dev/dl/" "pkg:golang/stdlib@$go_std_ver" "$go_std_usedby" "$go_root/LICENSE"
 fi
 
+# --- JavaScript runtime (a TypeScript guest) ---------------------------------
+
+# What the extism-js a TypeScript guest's build runs merges into its .wasm, as the
+# binary's row of extism-js.tsv names it: the Extism JS PDK runtime, the
+# QuickJS-NG engine, the rquickjs bindings that build the engine in, and the
+# core-js and urlpattern-polyfill code the runtime's prelude bundles. Each
+# entry's license file, pinned under third-party/toolchain/, is reproduced as its
+# notice. The Rust release the runtime is built with is listed with the Rust
+# toolchain entries below.
+while IFS=$'\t' read -r label x_tag _ _ x_commit x_rq x_qc x_qv x_cj x_cjc x_up x_upc _; do
+	[ -n "$label" ] || continue
+	x_runtime="the extism-js $x_tag runtime"
+	EMIT_NO_SRC=1
+	EMIT_NOTE="the runtime extism-js $x_tag merges into the plugin's .wasm, at js-pdk commit $x_commit"
+	EMIT_NOTICES=("$TOOLCHAIN_DIR/js-pdk-$x_tag/LICENSE")
+	emit_pkg "extism-js" "Extism JS PDK" "${x_tag#v}" "BSD-3-Clause" "BSD-3-Clause" \
+		"https://github.com/extism/js-pdk/tree/$x_tag" "pkg:github/extism/js-pdk@$x_tag" "$label" \
+		"$TOOLCHAIN_DIR/js-pdk-$x_tag/LICENSE"
+	EMIT_NOTE="the JavaScript engine of $x_runtime, at quickjs-ng commit $x_qc, built in by rquickjs $x_rq"
+	EMIT_NOTICES=("$TOOLCHAIN_DIR/quickjs-ng-$x_qc/LICENSE")
+	emit_pkg "extism-js" "QuickJS-NG" "$x_qv" "MIT" "MIT" \
+		"https://github.com/quickjs-ng/quickjs/tree/$x_qc" "pkg:github/quickjs-ng/quickjs@$x_qc" "$label" \
+		"$TOOLCHAIN_DIR/quickjs-ng-$x_qc/LICENSE"
+	EMIT_NOTE="the bindings that build QuickJS-NG into $x_runtime"
+	EMIT_NOTICES=("$TOOLCHAIN_DIR/rquickjs-$x_rq/LICENSE")
+	emit_pkg "extism-js" "rquickjs" "$x_rq" "MIT" "MIT" \
+		"https://github.com/DelSkayn/rquickjs/tree/v$x_rq" "pkg:cargo/rquickjs@$x_rq" "$label" \
+		"$TOOLCHAIN_DIR/rquickjs-$x_rq/LICENSE"
+	EMIT_NOTE="bundled into the prelude of $x_runtime; its license file is read at core-js commit $x_cjc"
+	EMIT_NOTICES=("$TOOLCHAIN_DIR/core-js-$x_cj/LICENSE")
+	emit_pkg "extism-js" "core-js" "$x_cj" "MIT" "MIT" \
+		"https://registry.npmjs.org/core-js/-/core-js-$x_cj.tgz" "pkg:npm/core-js@$x_cj" "$label" \
+		"$TOOLCHAIN_DIR/core-js-$x_cj/LICENSE"
+	EMIT_NOTE="bundled into the prelude of $x_runtime; its license file is read at urlpattern-polyfill commit $x_upc"
+	EMIT_NOTICES=("$TOOLCHAIN_DIR/urlpattern-polyfill-$x_up/LICENSE")
+	emit_pkg "extism-js" "urlpattern-polyfill" "$x_up" "MIT" "MIT" \
+		"https://registry.npmjs.org/urlpattern-polyfill/-/urlpattern-polyfill-$x_up.tgz" "pkg:npm/urlpattern-polyfill@$x_up" "$label" \
+		"$TOOLCHAIN_DIR/urlpattern-polyfill-$x_up/LICENSE"
+	EMIT_NOTICES=(); unset EMIT_NOTE EMIT_NO_SRC
+done < "$WORK/extism-js.list"
+
 # --- Rust standard library and wasi-libc ------------------------------------
 
 # What each embedded Rust guest's wasm32-wasip1 build links in from its
-# toolchain. One standard-library entry per channel a guest pins, and one
-# wasi-libc entry (with the works it carries that the default build links) per
-# commit the channels' Rust releases build their libc from. The texts are the
-# pinned copies under third-party/toolchain/, so this stays offline.
-TOOLCHAIN_DIR="third-party/toolchain"
+# toolchain, and what the runtime a TypeScript guest's extism-js merges in links
+# in from the Rust release it is built with. One standard-library entry per
+# channel, and one wasi-libc entry (with the works it carries that the default
+# build links) per commit the channels' Rust releases build their libc from. The
+# texts are the pinned copies under third-party/toolchain/, so this stays offline.
 
 # toolchain_missing <channel> <what> : stop, naming the channel and the fetch command.
 toolchain_missing() {
@@ -1014,16 +1127,19 @@ if [ -s "$WORK/rust-channels.list" ]; then
 		commit="${row#*$'\t'}"
 		rust_copyright="$TOOLCHAIN_DIR/rust-$channel/COPYRIGHT"
 		[ -f "$rust_copyright" ] || toolchain_missing "$channel" "$rust_copyright is missing"
+		[ -f "$TOOLCHAIN_DIR/rust-$channel/LICENSE-APACHE" ] || toolchain_missing "$channel" "$TOOLCHAIN_DIR/rust-$channel/LICENSE-APACHE is missing"
 		for f in LICENSE LICENSE-MIT LICENSE-APACHE-LLVM libc-top-half/musl/COPYRIGHT \
 			libc-bottom-half/cloudlibc/LICENSE fts/musl-fts/COPYING; do
 			[ -f "$TOOLCHAIN_DIR/wasi-libc-$commit/$f" ] || toolchain_missing "$channel" "$TOOLCHAIN_DIR/wasi-libc-$commit/$f is missing"
 		done
 		EMIT_NO_SRC=1
 		EMIT_NOTICES=("$rust_copyright")
+		# A channel a TypeScript guest's runtime is built with says so.
+		EMIT_NOTE="$(awk -F'\t' -v c="$channel" '$1 == c { print $2; exit }' "$WORK/rust-channel-notes.list")"
 		emit_pkg "rust" "Rust standard library" "$channel" "MIT OR Apache-2.0" "MIT OR Apache-2.0" \
 			"https://github.com/rust-lang/rust/tree/$channel/library" "pkg:generic/rust-standard-library@$channel" \
 			"$usedby" "$rust_copyright"
-		EMIT_NOTICES=(); unset EMIT_NO_SRC
+		EMIT_NOTICES=(); unset EMIT_NO_SRC EMIT_NOTE
 		printf '%s\t%s\t%s\t%s\n' "$commit" "$sdk" "$channel" "$usedby" >> "$WORK/wasi-libc.list"
 	done < <(cut -f1 "$WORK/rust-channels.list" | sort -uV)
 
@@ -1132,6 +1248,7 @@ done < "$WORK/rust.txt"
 
 # The packages of package-lock.json that are neither `dev` nor first-party, each
 # read from its directory under the guest's node_modules.
+npm_n=0
 while IFS=$'\t' read -r label tsdir; do
 	[ -n "$label" ] || continue
 	lock="$tsdir/package-lock.json"
@@ -1168,6 +1285,7 @@ while IFS=$'\t' read -r label tsdir; do
 		dl="${resolved:-NOASSERTION}"
 		emit_pkg "npm" "$name" "$ver" "$declared" "$(elect_permissive "$declared")" "$dl" \
 			"pkg:npm/$(printf '%s' "$name" | sed 's/^@/%40/')@$ver" "$label" "${lfiles[@]}"
+		npm_n=$((npm_n + 1))
 	done < "$WORK/ts-deps.tsv"
 done < "$WORK/ts-src.list"
 
@@ -1176,6 +1294,13 @@ if [ -s "$WORK/failures.txt" ]; then
 	sed 's/^/  /' "$WORK/failures.txt" >&2
 	exit 1
 fi
+
+# The Apache-2.0 body when no dependency's files offered one: the Rust project's
+# LICENSE-APACHE of the first channel listed (add_src keeps a body already found).
+while read -r channel; do
+	[ -n "$channel" ] || continue
+	add_src "Apache-2.0" "$TOOLCHAIN_DIR/rust-$channel/LICENSE-APACHE"
+done < <(cut -f1 "$WORK/rust-channels.list" | sort -uV)
 
 # --- LICENSES/ : one canonical body per unique referenced SPDX id -----------
 
@@ -1217,19 +1342,18 @@ if [ -n "$GUEST" ]; then
 	{
 		printf '# Third-party notices for %s\n\n' "$GUEST_LABEL"
 		if [ "$g_toolchain" = "typescript" ]; then
-			printf 'This file lists the third-party packages the `%s` plugin'"'"'s package-lock.json bundles into it.\n' "$GUEST_LABEL"
-			printf 'The JavaScript engine the build merges into the plugin'"'"'s `.wasm` is not listed.\n'
+			printf 'This file lists the third-party packages the `%s` plugin'"'"'s package-lock.json bundles into it,\n' "$GUEST_LABEL"
+			printf 'and the JavaScript runtime and engine its build merges into the plugin'"'"'s `.wasm`.\n'
 		else
 			printf 'This file lists every third-party dependency compiled into the `%s` plugin.\n' "$GUEST_LABEL"
 		fi
 		printf 'It is generated from the dependency set the plugin is built from; do not edit it.\n\n'
 		if [ ! -s "$WORK/notices-md-pkgs.txt" ]; then
-			if [ "$g_toolchain" = "typescript" ]; then
-				printf 'The plugin'"'"'s package-lock.json bundles no third-party package.\n'
-			else
-				printf 'The plugin has no third-party dependency.\n'
-			fi
+			printf 'The plugin has no third-party dependency.\n'
 		else
+			if [ "$g_toolchain" = "typescript" ] && [ "$npm_n" -eq 0 ]; then
+				printf 'The plugin'"'"'s package-lock.json bundles no third-party package.\n\n'
+			fi
 			printf 'Each dependency below names its version, its license, the copyright lines found in\n'
 			printf 'its package and any notice file it ships. The text of each license follows once,\n'
 			printf 'under its SPDX identifier.\n\n'
@@ -1245,7 +1369,7 @@ if [ -n "$GUEST" ]; then
 		fi
 	} > "$WORK/notices.md"
 	if [ "$g_toolchain" = "typescript" ]; then
-		sbom_what="Third-party packages the $GUEST_LABEL plugin's package-lock.json bundles into it; the JavaScript engine the build merges into the plugin's .wasm is not listed."
+		sbom_what="Third-party packages the $GUEST_LABEL plugin's package-lock.json bundles into it, and the JavaScript runtime and engine its build merges into the plugin's .wasm."
 	else
 		sbom_what="Third-party dependencies compiled into the $GUEST_LABEL plugin."
 	fi

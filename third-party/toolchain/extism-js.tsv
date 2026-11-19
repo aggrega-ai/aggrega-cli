@@ -1,0 +1,29 @@
+# One row per extism-js binary a release of github.com/extism/js-pdk publishes, tab-separated:
+#   tag            the release tag; js-pdk-<tag>/LICENSE is read at its commit
+#   platform       the binary's platform, from its asset name extism-js-<platform>-<tag>.gz
+#   sha256         the sha256 of the decompressed binary, which identifies it
+#   commit         the commit the tag names
+#   rquickjs       the rquickjs release the runtime is built with, read from the binaries;
+#                  rquickjs-<version>/LICENSE is read at its tag v<version>
+#   quickjs-ng     the QuickJS-NG commit that rquickjs release pins as sys/quickjs;
+#                  quickjs-ng-<commit>/LICENSE is read at it
+#   quickjs-ng-version  the version the quickjs.h of that commit states
+#   core-js, core-js-commit, urlpattern-polyfill, urlpattern-polyfill-commit
+#                  the version crates/core/src/prelude/package-lock.json pins at the tag,
+#                  and the commit the npm registry records for it, which
+#                  <name>-<version>/LICENSE is read at
+#   rust           the Rust release the runtime is built with, read from the x86_64-linux
+#                  binary; toolchains.tsv holds its row
+# Written by scripts/fetch-toolchain-notices.sh extism-js <tag>.
+v1.5.1	aarch64-linux	3a4da224947de1ab8f3630903c46ea0fd4987db7d4d913cb74fdba6775dac755	06bd074de134e1f6a944199ef47b03e1aec9c9d1	0.8.1	55b67a6591071b2ada8895a7000e0fec5f348016	0.7.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.87.0
+v1.5.1	aarch64-macos	ebbe641a3f0b8903e3f4f9b29bae6ed3f5e23f9cb7cb8963ecf5fba0dda674b1	06bd074de134e1f6a944199ef47b03e1aec9c9d1	0.8.1	55b67a6591071b2ada8895a7000e0fec5f348016	0.7.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.87.0
+v1.5.1	aarch64-windows	9d7ee8cfe05f5d7db8c5b2cd9cdb3c827543ad748483989c91234c1d5cab796b	06bd074de134e1f6a944199ef47b03e1aec9c9d1	0.8.1	55b67a6591071b2ada8895a7000e0fec5f348016	0.7.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.87.0
+v1.5.1	x86_64-linux	4552ee7385d2f0583363448c9e45aa733dec8d7edac8d646b69ee1271ad09483	06bd074de134e1f6a944199ef47b03e1aec9c9d1	0.8.1	55b67a6591071b2ada8895a7000e0fec5f348016	0.7.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.87.0
+v1.5.1	x86_64-macos	0ee59b2d48904d43db41fa3653dd4610bb51c4d6f9fae30c676bef0eebb16d37	06bd074de134e1f6a944199ef47b03e1aec9c9d1	0.8.1	55b67a6591071b2ada8895a7000e0fec5f348016	0.7.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.87.0
+v1.5.1	x86_64-windows	0b740e6b5343528ee4d6ab973b1d40069ed404b9c2f5cdfb76d51f27c99bca7e	06bd074de134e1f6a944199ef47b03e1aec9c9d1	0.8.1	55b67a6591071b2ada8895a7000e0fec5f348016	0.7.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.87.0
+v1.6.0	aarch64-linux	c2e31b316fe6738feb35e0d8aeb993fa380d396e23d6b75073940d98d072c3cf	88eade10a7c6341d5d023cb503962795232fc863	0.11.0	d405777f7eefa22c17c12970317ef3d6e7658f5a	0.11.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.93.0
+v1.6.0	aarch64-macos	527211155a67828bae9fd1faf11858d93fc095f31736f1d2e38ca055e73d9bbd	88eade10a7c6341d5d023cb503962795232fc863	0.11.0	d405777f7eefa22c17c12970317ef3d6e7658f5a	0.11.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.93.0
+v1.6.0	aarch64-windows	13cbda8ffc2e93a172c5d4d9bd74735f6ed15ae57b2ae358bfdca8650f28eeda	88eade10a7c6341d5d023cb503962795232fc863	0.11.0	d405777f7eefa22c17c12970317ef3d6e7658f5a	0.11.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.93.0
+v1.6.0	x86_64-linux	a843ba962f99b4c8cc6cee1e46f2aeb58db39125c7a662a6636276112b4db441	88eade10a7c6341d5d023cb503962795232fc863	0.11.0	d405777f7eefa22c17c12970317ef3d6e7658f5a	0.11.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.93.0
+v1.6.0	x86_64-macos	1c21d3ca4a89d0bbe62a5f1de1dfbc247f4169ad8f323072f9cfddb837673e31	88eade10a7c6341d5d023cb503962795232fc863	0.11.0	d405777f7eefa22c17c12970317ef3d6e7658f5a	0.11.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.93.0
+v1.6.0	x86_64-windows	5dcaf225b6ee343255b7f67e6c987f85d59c571436a60b640f89fb917ff65400	88eade10a7c6341d5d023cb503962795232fc863	0.11.0	d405777f7eefa22c17c12970317ef3d6e7658f5a	0.11.0	3.30.2	a54caa5e5c5583ec9cc354b4cd7dcf8a059b6f72	8.0.2	f30fd0a1807fdae725114632586b86db8814a352	1.93.0

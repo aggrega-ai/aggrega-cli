@@ -7,4 +7,6 @@
 #                GitHub contents API; wasi-libc-<commit>/ holds its license files
 # Written by scripts/fetch-toolchain-notices.sh.
 1.85.1	wasi-sdk-25	574b88da481569b65a237cb80daf9a2d5aeaf82d
+1.87.0	wasi-sdk-25	574b88da481569b65a237cb80daf9a2d5aeaf82d
+1.93.0	wasi-sdk-29	ac020b86fd44bafe60aa4fa12f407d16e3731329
 1.98.1	wasi-sdk-33	161b3195fc2558d2b1ba3eb9ffae3b2b47407623
