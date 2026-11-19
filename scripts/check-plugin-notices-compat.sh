@@ -218,13 +218,13 @@ echo "==> the planted case: a manifest listing the notices before the .wasm"
 PLANT="$TMP/plant"
 mkdir -p "$PLANT"
 cp "$TMP/guest.wasm" "$PLANT/entity.wasm"
-cp "$NOTICES" "$PLANT/notices.markdown"
+cp "$NOTICES" "$PLANT/notices.md"
 oras blob fetch --plain-http "$HOST/plugin/cli/$PLUGIN_NAME@$(jq -r .config.digest "$TMP/manifest.json")" \
   --output "$PLANT/entity.yaml" >/dev/null || cannot "the entity blob could not be read back"
 ( cd "$PLANT" && oras push --plain-http "$HOST/plugin/cli/$PLANTED_NAME:$PLUGIN_VERSION" \
     --artifact-type "$MEDIA_ENTITY" --config "entity.yaml:$MEDIA_ENTITY" \
     --annotation ai.aggrega.kind=Plugin --annotation ai.aggrega.plugin-type=cli \
-    "notices.markdown:$MEDIA_NOTICES" "entity.wasm:$MEDIA_WASM" ) >"$TMP/plant.log" 2>&1 ||
+    "notices.md:$MEDIA_NOTICES" "entity.wasm:$MEDIA_WASM" ) >"$TMP/plant.log" 2>&1 ||
   { cat "$TMP/plant.log" >&2; cannot "the planted manifest was not pushed"; }
 planted_layers="$(oras manifest fetch --plain-http "$HOST/plugin/cli/$PLANTED_NAME:$PLUGIN_VERSION" | jq -r '[.layers[].mediaType] | join(" ")')"
 [ "$planted_layers" = "$MEDIA_NOTICES $MEDIA_WASM" ] || cannot "the planted manifest lists \"$planted_layers\", not the notices then the .wasm"

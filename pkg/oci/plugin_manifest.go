@@ -107,7 +107,7 @@ func PluginManifestDigest(ctx context.Context, entityYAML, wasm []byte, annotati
 // Every descriptor carries a title, because a standard registry client writes
 // each titled descriptor to a file — the config included — and skips an
 // untitled one: the entity is entity.yaml, the executable entity.wasm and the
-// notices notices.markdown (see contentTitle). The titles derive from the media
+// notices notices.md (see contentTitle). The titles derive from the media
 // types alone, so they keep the manifest digest a pure function of the inputs.
 //
 // `annotations` carries the searchable catalog annotations (see

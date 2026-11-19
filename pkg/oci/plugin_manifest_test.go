@@ -184,8 +184,8 @@ func TestPushPluginManifestWithNoticesPacksWasmThenNotices(t *testing.T) {
 	if want := "application/vnd.aggrega.wasmplugin.notices.v1beta1+markdown"; MediaTypePluginNotices != want {
 		t.Errorf("MediaTypePluginNotices = %q, want %q", MediaTypePluginNotices, want)
 	}
-	if got := notices.Annotations[ocispec.AnnotationTitle]; got != "notices.markdown" {
-		t.Errorf("layer 1 title = %q, want %q", got, "notices.markdown")
+	if got := notices.Annotations[ocispec.AnnotationTitle]; got != "notices.md" {
+		t.Errorf("layer 1 title = %q, want %q", got, "notices.md")
 	}
 	if want := digest.ContentDigest(testPluginNotices); notices.Digest.String() != want {
 		t.Errorf("notices layer digest = %s, want %s", notices.Digest, want)

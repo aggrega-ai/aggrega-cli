@@ -22,18 +22,21 @@ import (
 // serves every other consumer and changes nothing for this one.
 //
 // The title names what the descriptor carries, and its extension is the media
-// type's structured-syntax suffix, with each "+" read as a ".":
+// type's structured-syntax suffix, with each "+" read as a "." and the Markdown
+// suffix read as ".md":
 //
 //   - everything an entity publication carries is called entity — an entity
 //     published as its document alone is entity.yaml, one published with the
 //     files it declares is entity.tar.gz, and a Plugin publishes entity.yaml
 //     (the entity, as the config descriptor) beside entity.wasm (its
 //     executable, as the first layer), followed when the publication carries
-//     third-party notices by notices.markdown (the notices, as the second layer);
+//     third-party notices by notices.md (the notices, as the second layer);
 //   - a signature bundle attached as a referrer is signature.json;
 //   - a deprecation marker attached as a referrer is deprecation.json;
 //   - a publication date attached as a referrer is published-at.json;
-//   - a software bill of materials attached as a referrer is sbom.json.
+//   - a software bill of materials attached as a referrer is sbom.spdx.json: its stem is
+//     sbom.spdx, the format the file is written in, and its media type's
+//     +json suffix gives .json.
 //
 // A standalone data artifact carries no entity, so its title is not derived
 // here: its publisher supplies the name (see PushNamed).
@@ -49,7 +52,7 @@ const (
 	titleStemSignature   = "signature"
 	titleStemDeprecation = "deprecation"
 	titleStemPublishedAt = "published-at"
-	titleStemSBOM        = "sbom"
+	titleStemSBOM        = "sbom.spdx"
 )
 
 // contentTitle returns the title a content descriptor of mediaType is stamped
@@ -89,14 +92,19 @@ func titleStem(mediaType string) string {
 }
 
 // titleExtension returns the file extension a media type's structured-syntax
-// suffix names: "+yaml" is ".yaml", "+tar+gz" is ".tar.gz". A media type with
+// suffix names: "+yaml" is ".yaml", "+tar+gz" is ".tar.gz", and "+markdown" is
+// ".md", the extension Markdown files conventionally carry. A media type with
 // no suffix names no extension.
 func titleExtension(mediaType string) string {
 	i := strings.IndexByte(mediaType, '+')
 	if i < 0 {
 		return ""
 	}
-	return "." + strings.ReplaceAll(mediaType[i+1:], "+", ".")
+	suffix := mediaType[i+1:]
+	if suffix == "markdown" {
+		return ".md"
+	}
+	return "." + strings.ReplaceAll(suffix, "+", ".")
 }
 
 // withTitle returns desc carrying title as its org.opencontainers.image.title

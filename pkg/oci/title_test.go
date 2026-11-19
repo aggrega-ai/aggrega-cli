@@ -179,7 +179,7 @@ func TestReferrerPayloadIsTitledByItsArtifactType(t *testing.T) {
 		desc ocispec.Descriptor
 		want string
 	}{
-		{"bill of materials", sbom, "sbom.json"},
+		{"bill of materials", sbom, "sbom.spdx.json"},
 		{"signature", sig, "signature.json"},
 		{"deprecation marker", marker, "deprecation.json"},
 		{"signature over the marker", markerSig, "signature.json"},
@@ -249,7 +249,7 @@ func TestUnrecognisedMediaTypeIsPublishedUntitled(t *testing.T) {
 }
 
 // TestPluginNoticesLayerIsTitledByItsMediaType proves the notices layer of a
-// Plugin publication is titled notices.markdown beside the .wasm's entity.wasm.
+// Plugin publication is titled notices.md beside the .wasm's entity.wasm.
 func TestPluginNoticesLayerIsTitledByItsMediaType(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -264,7 +264,7 @@ func TestPluginNoticesLayerIsTitledByItsMediaType(t *testing.T) {
 	if got := titleOf(m.Layers[0]); got != "entity.wasm" {
 		t.Errorf("layer 0 title = %q, want %q", got, "entity.wasm")
 	}
-	if got := titleOf(m.Layers[1]); got != "notices.markdown" {
-		t.Errorf("layer 1 title = %q, want %q", got, "notices.markdown")
+	if got := titleOf(m.Layers[1]); got != "notices.md" {
+		t.Errorf("layer 1 title = %q, want %q", got, "notices.md")
 	}
 }
