@@ -286,15 +286,6 @@ type publishEntityArgs struct {
 	PinSources *bool `json:"pin_sources"`
 }
 
-// pluginFile resolves one of the files offered beside a Plugin's executable the way
-// the executable's own path is resolved, and answers "" for an argument not given.
-func (a publishEntityArgs) pluginFile(tw *toolWorkspace, argument, raw string) (string, string) {
-	if strings.TrimSpace(raw) == "" {
-		return "", ""
-	}
-	return tw.workspacePath(publishEntityToolName, argument, strings.TrimSpace(raw))
-}
-
 // publishEntityPayload is the catalog-entity publication's structured result: the
 // facts themselves rather than the status lines a terminal reads.
 //
@@ -475,13 +466,23 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		}
 		pluginPath = resolved
 	}
-	noticesPath, refusal := a.pluginFile(tw, "plugin_notices", a.PluginNotices)
-	if refusal != "" {
-		return publishops.PushConfig{}, refusal
+	// The files offered beside a Plugin's executable resolve the way the executable's
+	// own path does; an argument not given stays "".
+	noticesPath := ""
+	if strings.TrimSpace(a.PluginNotices) != "" {
+		resolved, refusal := tw.workspacePath(publishEntityToolName, "plugin_notices", strings.TrimSpace(a.PluginNotices))
+		if refusal != "" {
+			return publishops.PushConfig{}, refusal
+		}
+		noticesPath = resolved
 	}
-	pluginSBOMPath, refusal := a.pluginFile(tw, "plugin_sbom", a.PluginSBOM)
-	if refusal != "" {
-		return publishops.PushConfig{}, refusal
+	pluginSBOMPath := ""
+	if strings.TrimSpace(a.PluginSBOM) != "" {
+		resolved, refusal := tw.workspacePath(publishEntityToolName, "plugin_sbom", strings.TrimSpace(a.PluginSBOM))
+		if refusal != "" {
+			return publishops.PushConfig{}, refusal
+		}
+		pluginSBOMPath = resolved
 	}
 	entityPath, refusal := tw.workspacePath(publishEntityToolName, "entity", strings.TrimSpace(a.Entity))
 	if refusal != "" {
