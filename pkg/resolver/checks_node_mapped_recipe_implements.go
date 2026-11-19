@@ -89,7 +89,7 @@ var NodeMappedRecipeImplementsTheNodeVersion = constraint.Check[
 			detail = append(detail, constraint.Captioned("compiled as", refused.request))
 		}
 		detail = append(detail,
-			constraint.Captioned("reached through manifest mapping key", refused.key),
+			constraint.Captioned("reached through Manifest mapping key", refused.key),
 			constraint.Captioned("mapped to recipe", refused.reference),
 			constraint.Captioned("whose spec.implements is", refused.implements),
 		)

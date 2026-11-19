@@ -33,7 +33,7 @@ func ErrManifestImplementsMismatch() error { return errManifestImplementsMismatc
 
 var errManifestImplementsMismatch = cerrors.Register("manifest-implements-mismatch", cerrors.Meta{
 	ShortCode: "E0096",
-	Message:   "manifest mapping entry's recipe spec.implements does not match the mapped component-type / feature-type key",
+	Message:   "Manifest mapping entry's recipe spec.implements does not match the mapped component-type / feature-type key",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
@@ -52,7 +52,7 @@ var errManifestImplementsMismatch = cerrors.Register("manifest-implements-mismat
 func manifestCategory() cerrors.Category {
 	category, ok := cerrors.ClassifyEntityKind(string(entitykind.Manifest))
 	if !ok {
-		panic("resolver: the Manifest kind belongs to no authoring domain, so a manifest-mapping " +
+		panic("resolver: the Manifest kind belongs to no authoring domain, so a Manifest-mapping " +
 			"fault cannot be attributed; extend the entity-kind category mapping to cover it")
 	}
 	return category
@@ -454,7 +454,7 @@ func ancestryWalkFaultFrom(
 	return cerrors.Wrap(cause, manifestCategory(),
 		cerrors.SourceLocation{File: manifestPath},
 		fmt.Sprintf(
-			"manifest mapping %q -> %q: the mapped component type's extends chain cannot be walked, "+
+			"Manifest mapping %q -> %q: the mapped component type's extends chain cannot be walked, "+
 				"so the mapping cannot be judged", failure.ComponentType, reference))
 }
 
@@ -500,7 +500,7 @@ func manifestImplementsFaultFrom(entry constraint.ManifestRecipeMapping, o const
 	implements := detail[manifestImplementsDetailImplements]
 
 	values := []string{
-		fmt.Sprintf("manifest mapping %q -> %q", key, reference),
+		fmt.Sprintf("Manifest mapping %q -> %q", key, reference),
 		fmt.Sprintf("recipe spec.implements is %q", implements),
 		fmt.Sprintf("expected %q, or a type %q extends", key, key),
 	}
@@ -511,7 +511,7 @@ func manifestImplementsFaultFrom(entry constraint.ManifestRecipeMapping, o const
 		// separate question this rule does not answer, so offering the base as a
 		// remedy would suggest an edit that does not resolve the fault.
 		values = []string{
-			fmt.Sprintf("manifest feature mapping %q -> %q", key, reference),
+			fmt.Sprintf("Manifest feature mapping %q -> %q", key, reference),
 			fmt.Sprintf("featurerecipe spec.implements is %q", implements),
 			fmt.Sprintf("expected %q", key),
 		}
@@ -594,10 +594,10 @@ func mappingPinFaultFrom(entry constraint.ManifestRecipeMapping, o constraint.Ob
 				"and its conversion read one grammar, so they have come to disagree", pinned))
 	}
 
-	mapping := fmt.Sprintf("manifest mapping %q -> %q", key, reference)
+	mapping := fmt.Sprintf("Manifest mapping %q -> %q", key, reference)
 	recipe := "recipe"
 	if detail[mappingPinDetailTier] == constraint.MappingTierFeatures {
-		mapping = fmt.Sprintf("manifest feature mapping %q -> %q", key, reference)
+		mapping = fmt.Sprintf("Manifest feature mapping %q -> %q", key, reference)
 		recipe = "featurerecipe"
 	}
 	var where string

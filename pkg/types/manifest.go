@@ -170,7 +170,7 @@ func (m *ManifestMappings) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 	}
 	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("manifest mappings: expected map, got kind %d at line %d", node.Kind, node.Line)
+		return fmt.Errorf("Manifest mappings: expected map, got kind %d at line %d", node.Kind, node.Line)
 	}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		keyNode := node.Content[i]
@@ -179,18 +179,18 @@ func (m *ManifestMappings) UnmarshalYAML(node *yaml.Node) error {
 		case "components":
 			var mt MappingTier
 			if err := valNode.Decode(&mt); err != nil {
-				return fmt.Errorf("manifest mappings.components: %w", err)
+				return fmt.Errorf("Manifest mappings.components: %w", err)
 			}
 			m.Components = &mt
 		case "features":
 			var mt MappingTier
 			if err := valNode.Decode(&mt); err != nil {
-				return fmt.Errorf("manifest mappings.features: %w", err)
+				return fmt.Errorf("Manifest mappings.features: %w", err)
 			}
 			m.Features = &mt
 		default:
 			return fmt.Errorf(
-				"manifest mappings: unexpected key %q at line %d; mappings accepts only components and features. Declare component mappings under components: and feature mappings under features:",
+				"Manifest mappings: unexpected key %q at line %d; mappings accepts only components and features. Declare component mappings under components: and feature mappings under features:",
 				keyNode.Value, keyNode.Line)
 		}
 	}

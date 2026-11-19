@@ -320,7 +320,7 @@ func TestAKeyNotNamingTheInstancesVersionSendingItToAnotherVersionsRecipeHalts(t
 			rendered := reported[0].Error()
 			want := append([]string{
 				`"main-db"`,
-				`reached through manifest mapping key "` + tc.key + `"`,
+				`reached through Manifest mapping key "` + tc.key + `"`,
 				`mapped to recipe "` + tc.reference + `"`,
 				`whose spec.implements is "` + tc.implements + `"`,
 				"with a mapping key naming the version",

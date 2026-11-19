@@ -88,7 +88,7 @@ func TestVerifyManifestImplementsConsistency_FeatureArmNamesNoExtendsAlternative
 	}
 	got := errs[0].Error()
 	for _, want := range []string{
-		`manifest feature mapping "feature/mismatch" -> "myco/fr-mismatch"`,
+		`Manifest feature mapping "feature/mismatch" -> "myco/fr-mismatch"`,
 		`featurerecipe spec.implements is "feature/different"`,
 		`expected "feature/mismatch"`,
 	} {
@@ -142,7 +142,7 @@ func TestVerifyManifestImplementsConsistency_ChainFaultsPrecedeMismatches(t *tes
 	if !errors.Is(errs[1], ErrManifestImplementsMismatch()) {
 		t.Errorf("the mapping mismatch is reported after it; got %v", errs[1])
 	}
-	if !strings.Contains(errs[0].Error(), `manifest mapping "core/cyc-a:1.0.0" -> "core/helm/unrelated"`) {
+	if !strings.Contains(errs[0].Error(), `Manifest mapping "core/cyc-a:1.0.0" -> "core/helm/unrelated"`) {
 		t.Errorf("the chain fault names the mapping entry that asked for the chain; got %q", errs[0].Error())
 	}
 }

@@ -99,7 +99,7 @@ func ErrManifestCrossBindingPillarCollision() error { return errManifestCrossBin
 
 var errManifestCrossBindingPillarCollision = cerrors.Register("manifest-cross-binding-pillar-collision", cerrors.Meta{
 	ShortCode: "E0160",
-	Message:   "manifest annotation bindings collide on same Feature path+pillar",
+	Message:   "Manifest annotation bindings collide on same Feature path+pillar",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 

@@ -146,7 +146,7 @@ func TestVerifyManifestImplementsConsistency_MalformedPin(t *testing.T) {
 			if errors.Is(errs[0], ErrManifestImplementsMismatch()) {
 				t.Errorf("a malformed pin must not also report as a mismatch: %v", errs[0])
 			}
-			for _, want := range []string{tc.wantText, `manifest mapping "` + tc.key + `" -> "core/helm/postgres"`, types.VersionPinForms} {
+			for _, want := range []string{tc.wantText, `Manifest mapping "` + tc.key + `" -> "core/helm/postgres"`, types.VersionPinForms} {
 				if !strings.Contains(errs[0].Error(), want) {
 					t.Errorf("finding %q does not carry %q", errs[0].Error(), want)
 				}
@@ -208,7 +208,7 @@ func TestVerifyManifestImplementsConsistency_FindingsFollowEntryOrder(t *testing
 				if !errors.Is(errs[i], want) || errors.Is(errs[i], other) {
 					t.Errorf("finding %d = %v; want it to match %v and not %v", i, errs[i], want, other)
 				}
-				entryText := `manifest mapping "` + tc.entries[i].key + `" -> "` + tc.entries[i].reference + `"`
+				entryText := `Manifest mapping "` + tc.entries[i].key + `" -> "` + tc.entries[i].reference + `"`
 				if !strings.Contains(errs[i].Error(), entryText) {
 					t.Errorf("finding %d = %q; want it to name the entry declared at that position, %s",
 						i, errs[i].Error(), entryText)

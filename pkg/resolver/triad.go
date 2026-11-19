@@ -40,7 +40,7 @@ func ErrTriadRefUnresolvable() error { return errTriadRefUnresolvable }
 
 var errTriadRefUnresolvable = cerrors.Register("triad-ref-unresolvable", cerrors.Meta{
 	ShortCode: "E0170",
-	Message:   "aggregate/manifest reference unresolvable",
+	Message:   "Aggregate/Manifest reference unresolvable",
 	RulePlace: cerrors.RuleNoStageReaches("Triad resolution evaluates the rule, when a Release's bare-identity aggregate or manifest " +
 		"reference matches nothing in the Release directory, the catalog, or the registry. The resolution " +
 		"chooses which documents a build will read, so it happens ahead of every declared stage and no " +
