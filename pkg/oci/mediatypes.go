@@ -105,6 +105,13 @@ const (
 	// MediaTypeFor: the .wasm is part of a Plugin publication, not a catalog
 	// entity kind of its own.
 	MediaTypeWasm = mediaTypeVendor + "wasm." + mediaTypeVersion + "+wasm"
+	// MediaTypePluginNotices is the mediatype of the third-party notices a Plugin
+	// publication carries as the layer after its .wasm, in the same manifest (see
+	// PushPluginManifest and WithPluginNotices): the markdown that names what the
+	// guest's dependencies are and under which licences. Like MediaTypeWasm it is
+	// part of a Plugin publication, not an entity kind, and is never resolved
+	// through MediaTypeFor.
+	MediaTypePluginNotices = mediaTypeVendor + "wasmplugin.notices." + mediaTypeVersion + "+markdown"
 	// MediaTypeDocs is the mediatype of a documentation bundle — a gzipped
 	// tar of rendered documentation, published as a standalone data artifact
 	// rather than a catalog entity. It is a non-kind artifact, never resolved

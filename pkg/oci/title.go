@@ -28,7 +28,8 @@ import (
 //     published as its document alone is entity.yaml, one published with the
 //     files it declares is entity.tar.gz, and a Plugin publishes entity.yaml
 //     (the entity, as the config descriptor) beside entity.wasm (its
-//     executable, as the layer);
+//     executable, as the first layer), followed when the publication carries
+//     third-party notices by notices.markdown (the notices, as the second layer);
 //   - a signature bundle attached as a referrer is signature.json;
 //   - a deprecation marker attached as a referrer is deprecation.json;
 //   - a publication date attached as a referrer is published-at.json.
@@ -43,6 +44,7 @@ import (
 // publish-time immutability guard still recognises a re-publication of them.
 const (
 	titleStemEntity      = "entity"
+	titleStemNotices     = "notices"
 	titleStemSignature   = "signature"
 	titleStemDeprecation = "deprecation"
 	titleStemPublishedAt = "published-at"
@@ -67,6 +69,8 @@ func titleStem(mediaType string) string {
 	switch mediaType {
 	case MediaTypeWasm:
 		return titleStemEntity
+	case MediaTypePluginNotices:
+		return titleStemNotices
 	case MediaTypeSignatureBundle:
 		return titleStemSignature
 	case deprecation.ArtifactType:

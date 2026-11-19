@@ -13,15 +13,42 @@ import (
 	"oras.land/oras-go/v2/content/memory"
 )
 
+// PluginManifestOption adjusts what PushPluginManifest and PluginManifestDigest
+// pack. Both take the same options, so a digest previewed with a set of options
+// is the digest a push with that set lands.
+type PluginManifestOption func(*pluginManifestOptions)
+
+// pluginManifestOptions is what the PluginManifestOption values set.
+type pluginManifestOptions struct {
+	// notices is the notices document to pack as the layer after the .wasm;
+	// noticesGiven records that the option was passed, so an empty document is an
+	// error rather than an omitted layer.
+	notices      []byte
+	noticesGiven bool
+}
+
+// WithPluginNotices packs notices, the third-party notices of the plugin's guest
+// as markdown, as a second layer after the .wasm under MediaTypePluginNotices, so
+// the signed manifest commits to them. Empty notices are an error from the
+// push and from the digest preview alike: the layer is never silently omitted.
+func WithPluginNotices(notices []byte) PluginManifestOption {
+	return func(o *pluginManifestOptions) {
+		o.notices = notices
+		o.noticesGiven = true
+	}
+}
+
 // PushPluginManifest packs a Plugin entity and its .wasm executable into ONE
 // OCI manifest and tags it, returning the manifest digest. The manifest's
-// config blob carries the entity YAML under MediaTypePlugin; its single layer
-// carries the .wasm bytes under MediaTypeWasm. The executable is therefore
+// config blob carries the entity YAML under MediaTypePlugin; its first layer
+// carries the .wasm bytes under MediaTypeWasm, and WithPluginNotices adds a
+// second layer carrying the plugin's third-party notices under
+// MediaTypePluginNotices. The executable is therefore
 // referenced by digest from the same manifest that describes the entity — one
 // signed, tagged unit rather than two independently-addressed artifacts.
 //
 // The manifest's creation annotation is pinned, so byte-identical
-// (entityYAML, wasm) inputs always produce a byte-identical manifest digest —
+// (entityYAML, wasm, notices) inputs always produce a byte-identical manifest digest —
 // the property a re-push idempotency guard and diff-based review rely on. Push
 // adds no content canonicalisation; callers supply entity bytes and .wasm bytes
 // as they intend them published.
@@ -29,18 +56,18 @@ import (
 // `annotations` carries the searchable catalog annotations to stamp onto the
 // manifest (see SearchableMetadata); pass nil to stamp none. A caller that
 // previews the digest with PluginManifestDigest before pushing MUST pass the
-// same annotations map to both, or the previewed digest will not equal the
-// pushed digest.
+// same annotations map and the same options to both, or the previewed digest will
+// not equal the pushed digest.
 //
 // Each write it makes to the target — the entity config blob, the .wasm layer,
-// the manifest, the tag — retries a transient registry failure (see
+// the notices layer when given, the manifest, the tag — retries a transient registry failure (see
 // IsTransientRegistryError) up to three attempts with a short backoff. A
 // retried upload is a new upload of the same bytes, and a retried manifest is
 // the same manifest, so a retry lands the digest one attempt would. A write
 // still failing after its last attempt fails the push, and the error names the
 // step.
-func PushPluginManifest(ctx context.Context, target oras.Target, tag string, entityYAML, wasm []byte, annotations map[string]string) (string, error) {
-	manifestDesc, err := packPluginManifest(ctx, target, entityYAML, wasm, annotations)
+func PushPluginManifest(ctx context.Context, target oras.Target, tag string, entityYAML, wasm []byte, annotations map[string]string, opts ...PluginManifestOption) (string, error) {
+	manifestDesc, err := packPluginManifest(ctx, target, entityYAML, wasm, annotations, opts...)
 	if err != nil {
 		return "", err
 	}
@@ -51,7 +78,7 @@ func PushPluginManifest(ctx context.Context, target oras.Target, tag string, ent
 }
 
 // PluginManifestDigest computes, without contacting any remote, the manifest
-// digest PushPluginManifest would produce for (entityYAML, wasm). It packs into
+// digest PushPluginManifest would produce for (entityYAML, wasm) and opts. It packs into
 // an in-memory store and returns the descriptor digest. Because the manifest's
 // creation annotation is pinned and both the config and layer blobs are
 // content-addressed, the result is deterministic and equal to the digest a real
@@ -62,9 +89,9 @@ func PushPluginManifest(ctx context.Context, target oras.Target, tag string, ent
 // `annotations` must equal the map the corresponding PushPluginManifest will
 // stamp (see SearchableMetadata); the searchable annotations are part of the
 // manifest and therefore part of the digest, so a preview computed with a
-// different set will not match the pushed digest.
-func PluginManifestDigest(ctx context.Context, entityYAML, wasm []byte, annotations map[string]string) (string, error) {
-	manifestDesc, err := packPluginManifest(ctx, memory.New(), entityYAML, wasm, annotations)
+// different set will not match the pushed digest. The same holds for opts.
+func PluginManifestDigest(ctx context.Context, entityYAML, wasm []byte, annotations map[string]string, opts ...PluginManifestOption) (string, error) {
+	manifestDesc, err := packPluginManifest(ctx, memory.New(), entityYAML, wasm, annotations, opts...)
 	if err != nil {
 		return "", err
 	}
@@ -72,15 +99,16 @@ func PluginManifestDigest(ctx context.Context, entityYAML, wasm []byte, annotati
 }
 
 // packPluginManifest uploads the entity YAML as the config blob and the .wasm
-// as the single layer, then packs a deterministic OCI manifest referencing
-// both. It does NOT tag. The creation annotation is pinned so the manifest
-// digest is a pure function of the two inputs and the stamped annotations.
+// as the first layer, followed by the notices as the second layer when
+// WithPluginNotices is given, then packs a deterministic OCI manifest
+// referencing them. It does NOT tag. The creation annotation is pinned so the
+// manifest digest is a pure function of the inputs and the stamped annotations.
 //
-// Both descriptors carry a title, because a standard registry client writes
+// Every descriptor carries a title, because a standard registry client writes
 // each titled descriptor to a file — the config included — and skips an
-// untitled one: the entity is entity.yaml and the executable entity.wasm (see
-// contentTitle). The titles derive from the two media types alone, so they keep
-// the manifest digest a pure function of the inputs.
+// untitled one: the entity is entity.yaml, the executable entity.wasm and the
+// notices notices.markdown (see contentTitle). The titles derive from the media
+// types alone, so they keep the manifest digest a pure function of the inputs.
 //
 // `annotations` carries the searchable catalog annotations (see
 // SearchableMetadata); it is merged with the pinned creation annotation into
@@ -88,7 +116,14 @@ func PluginManifestDigest(ctx context.Context, entityYAML, wasm []byte, annotati
 //
 // The two uploads and the manifest pack each retry a transient registry failure
 // (see IsTransientRegistryError), each attempt a new upload of the same bytes.
-func packPluginManifest(ctx context.Context, target oras.Target, entityYAML, wasm []byte, annotations map[string]string) (ocispec.Descriptor, error) {
+func packPluginManifest(ctx context.Context, target oras.Target, entityYAML, wasm []byte, annotations map[string]string, opts ...PluginManifestOption) (ocispec.Descriptor, error) {
+	var o pluginManifestOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+	if o.noticesGiven && len(o.notices) == 0 {
+		return ocispec.Descriptor{}, fmt.Errorf("oci: plugin notices are empty: pass the notices document, or omit WithPluginNotices")
+	}
 	configDesc, err := pushBlob(ctx, target, MediaTypePlugin, entityYAML)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push plugin entity config: %w", err)
@@ -99,9 +134,17 @@ func packPluginManifest(ctx context.Context, target oras.Target, entityYAML, was
 		return ocispec.Descriptor{}, fmt.Errorf("oci: push plugin wasm layer: %w", err)
 	}
 	wasmDesc = withTitle(wasmDesc, contentTitle(MediaTypeWasm))
+	layers := []ocispec.Descriptor{wasmDesc}
+	if o.noticesGiven {
+		noticesDesc, err := pushBlob(ctx, target, MediaTypePluginNotices, o.notices)
+		if err != nil {
+			return ocispec.Descriptor{}, fmt.Errorf("oci: push plugin notices layer: %w", err)
+		}
+		layers = append(layers, withTitle(noticesDesc, contentTitle(MediaTypePluginNotices)))
+	}
 	manifestDesc, err := packManifest(ctx, target, MediaTypePlugin, oras.PackManifestOptions{
 		ConfigDescriptor:    &configDesc,
-		Layers:              []ocispec.Descriptor{wasmDesc},
+		Layers:              layers,
 		ManifestAnnotations: annotations,
 	})
 	if err != nil {

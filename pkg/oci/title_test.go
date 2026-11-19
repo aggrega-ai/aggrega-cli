@@ -241,3 +241,24 @@ func TestUnrecognisedMediaTypeIsPublishedUntitled(t *testing.T) {
 		t.Errorf("layer title = %q, want none", got)
 	}
 }
+
+// TestPluginNoticesLayerIsTitledByItsMediaType proves the notices layer of a
+// Plugin publication is titled notices.markdown beside the .wasm's entity.wasm.
+func TestPluginNoticesLayerIsTitledByItsMediaType(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := memory.New()
+	if _, err := oci.PushPluginManifest(ctx, store, "1.0.0", []byte("kind: Plugin\n"), []byte("\x00asm"), nil, oci.WithPluginNotices([]byte("# notices\n"))); err != nil {
+		t.Fatalf("PushPluginManifest: %v", err)
+	}
+	m := titleManifestTagged(t, store, "1.0.0")
+	if len(m.Layers) != 2 {
+		t.Fatalf("manifest carries %d layers, want 2", len(m.Layers))
+	}
+	if got := titleOf(m.Layers[0]); got != "entity.wasm" {
+		t.Errorf("layer 0 title = %q, want %q", got, "entity.wasm")
+	}
+	if got := titleOf(m.Layers[1]); got != "notices.markdown" {
+		t.Errorf("layer 1 title = %q, want %q", got, "notices.markdown")
+	}
+}
