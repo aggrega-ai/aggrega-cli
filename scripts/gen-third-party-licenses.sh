@@ -145,14 +145,21 @@ CLI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_ROOT="$CLI_DIR"
 NOTICES_EMBED="$CLI_DIR/internal/thirdparty/THIRD-PARTY-NOTICES.txt"
 if [ "$#" -gt 0 ]; then
-	if [ "$1" = "--out" ] && [ "$#" -eq 2 ] && [ -n "$2" ]; then
-		mkdir -p -- "$2"
-		OUT_ROOT="$(cd "$2" && pwd)"
-		NOTICES_EMBED=""
-	else
+	if [ "$1" != "--out" ]; then
 		echo "gen-third-party-licenses: ERROR: unsupported argument: $1 (the only form is: --out <dir>)" >&2
 		exit 2
 	fi
+	if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+		echo "gen-third-party-licenses: ERROR: --out needs a directory (the only form is: --out <dir>)" >&2
+		exit 2
+	fi
+	if [ "$#" -gt 2 ]; then
+		echo "gen-third-party-licenses: ERROR: unsupported argument: $3 (the only form is: --out <dir>)" >&2
+		exit 2
+	fi
+	mkdir -p -- "$2"
+	OUT_ROOT="$(cd "$2" && pwd)"
+	NOTICES_EMBED=""
 fi
 INDEX="$OUT_ROOT/THIRD-PARTY-LICENSES.md"
 NOTICES="$OUT_ROOT/THIRD-PARTY-NOTICES.txt"
