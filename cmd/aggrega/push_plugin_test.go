@@ -340,10 +340,10 @@ func (f *failVersionTagTarget) Tag(ctx context.Context, desc ocispec.Descriptor,
 }
 
 // largeGuestBytes returns the decompressed bytes of the largest embedded
-// standard-Go provider guest (the helm provider). Its linear-memory working set
-// exceeds the platform default cap, so it only instantiates for the publish
-// describe()-cross-check when the load honors a raised memory cap. Skips cleanly
-// when the embedded guests are not built into the test binary.
+// standard-Go provider guest (the helm provider), a guest with a large
+// linear-memory working set that the publish describe()-cross-check must load
+// under the entity's declared memory cap. Skips cleanly when the embedded guests
+// are not built into the test binary.
 func largeGuestBytes(t *testing.T) []byte {
 	t.Helper()
 	for _, uri := range embedded.URIs() {
@@ -459,13 +459,52 @@ func TestPushPluginLargeGuestDryRunFallsBackToDescribeFloor(t *testing.T) {
 	requirePublishedUnlessUncommitted(t, embeddedGuestVersion(t, largeGuestURI(t)), err)
 }
 
+// wasmMemoryMinPages returns the minimum linear-memory size, in 64 KiB pages,
+// that the module's memory section declares. It fails the test when the module
+// declares no memory.
+func wasmMemoryMinPages(t *testing.T, wasmBytes []byte) uint64 {
+	t.Helper()
+	i := 8 // magic and version
+	leb := func() uint64 {
+		var v uint64
+		for shift := uint(0); i < len(wasmBytes); shift += 7 {
+			c := wasmBytes[i]
+			i++
+			v |= uint64(c&0x7f) << shift
+			if c&0x80 == 0 {
+				break
+			}
+		}
+		return v
+	}
+	for i < len(wasmBytes) {
+		id := wasmBytes[i]
+		i++
+		size := int(leb())
+		end := i + size
+		if id == 5 { // memory section
+			leb() // memory count
+			i++   // limits flag
+			return leb()
+		}
+		i = end
+	}
+	t.Fatal("guest declares no memory section")
+	return 0
+}
+
 // TestPushPluginLargeGuestDefaultCapInsufficient pins the load-bearing half of
-// the cap threading: a large guest loaded under the platform default cap (the
-// pre-fix behavior) fails to instantiate for the cross-check, and the failure is
-// a load error, not a capability mismatch — proving the guest genuinely needs a
-// raised cap and that the declared cap is honored.
+// the cap threading: a declared cap one page below the large guest's own memory
+// minimum is honored by the cross-check load as a load failure, not a capability
+// mismatch, whatever the build's size. The cap is derived from the guest's
+// memory section, so the test holds for any build of the guest.
 func TestPushPluginLargeGuestDefaultCapInsufficient(t *testing.T) {
-	wsRoot, entityPath, pluginPath := writeLargeGuestPlugin(t, "  runtime:\n    maxMemoryPages: 1024\n")
+	minPages := wasmMemoryMinPages(t, largeGuestBytes(t))
+	if minPages < 2 {
+		t.Fatalf("large guest declares %d minimum memory pages; the test needs at least 2", minPages)
+	}
+	wsRoot, entityPath, pluginPath := writeLargeGuestPlugin(t,
+		fmt.Sprintf("  runtime:\n    maxMemoryPages: %d\n", minPages-1))
 
 	err := pushRun(t.Context(), pushConfig{
 		Workspace:  resolveTempWorkspace(t, tempWorkspaceOptions{Root: wsRoot}),
@@ -476,7 +515,7 @@ func TestPushPluginLargeGuestDefaultCapInsufficient(t *testing.T) {
 		Out:        &bytes.Buffer{},
 	})
 	if err == nil {
-		t.Fatal("a large guest loaded under the platform default cap should fail to instantiate; got nil")
+		t.Fatalf("a large guest loaded under a cap one page below its %d-page minimum should fail to instantiate; got nil", minPages)
 	}
 	if errors.Is(err, wasm.ErrWasmContractMismatch()) {
 		t.Fatalf("failure should be a load error, not a capability mismatch; got %v", err)
