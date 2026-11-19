@@ -85,7 +85,7 @@ func ErrManifestReservedPrefix() error { return errManifestReservedPrefix }
 
 var errManifestReservedPrefix = cerrors.Register("manifest-reserved-prefix", cerrors.Meta{
 	ShortCode: "E0161",
-	Message:   "manifest annotation binding uses reserved prefix",
+	Message:   "Manifest annotation binding uses reserved prefix",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 

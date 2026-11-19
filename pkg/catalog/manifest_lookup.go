@@ -43,7 +43,7 @@ func ErrAmbiguousTypeMapping() error { return errAmbiguousTypeMapping }
 
 var errAmbiguousTypeMapping = cerrors.Register("ambiguous-type-mapping", cerrors.Meta{
 	ShortCode: "E0093",
-	Message:   "manifest maps multiple version-distinct keys to the same base type; the type-to-recipe lookup is ambiguous",
+	Message:   "Manifest maps multiple version-distinct keys to the same base type; the type-to-recipe lookup is ambiguous",
 	RulePlace: cerrors.RuleOverAuthoredInput(),
 })
 
