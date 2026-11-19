@@ -120,6 +120,12 @@
 # Regenerate with:
 #   ./scripts/gen-third-party-licenses.sh    (run from the aggrega-cli module root)
 #
+# With `--out <dir>` the four outputs are written under <dir> in the same layout
+# as the module root (LICENSES/, THIRD-PARTY.spdx, THIRD-PARTY-NOTICES.txt,
+# THIRD-PARTY-LICENSES.md); <dir> is created when missing and nothing in the
+# module is written, the embedded copy of the notices included. Any other
+# argument is refused.
+#
 # Exit status is 0 on success. A findings summary (dependency counts and any
 # non-permissive license) is printed to stderr; a forbidden-license CI gate is a
 # separate concern and is intentionally NOT enforced here. A referenced SPDX id
@@ -134,11 +140,24 @@ source "$SCRIPT_DIR/lib/core-plugins.sh"
 # shellcheck source=lib/third-party-inputs.sh
 source "$SCRIPT_DIR/lib/third-party-inputs.sh"
 CLI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-INDEX="$CLI_DIR/THIRD-PARTY-LICENSES.md"
-NOTICES="$CLI_DIR/THIRD-PARTY-NOTICES.txt"
+
+# Output root: the module itself, or the directory --out names.
+OUT_ROOT="$CLI_DIR"
 NOTICES_EMBED="$CLI_DIR/internal/thirdparty/THIRD-PARTY-NOTICES.txt"
-SBOM="$CLI_DIR/THIRD-PARTY.spdx"
-LICDIR="$CLI_DIR/LICENSES"
+if [ "$#" -gt 0 ]; then
+	if [ "$1" = "--out" ] && [ "$#" -eq 2 ] && [ -n "$2" ]; then
+		mkdir -p -- "$2"
+		OUT_ROOT="$(cd "$2" && pwd)"
+		NOTICES_EMBED=""
+	else
+		echo "gen-third-party-licenses: ERROR: unsupported argument: $1 (the only form is: --out <dir>)" >&2
+		exit 2
+	fi
+fi
+INDEX="$OUT_ROOT/THIRD-PARTY-LICENSES.md"
+NOTICES="$OUT_ROOT/THIRD-PARTY-NOTICES.txt"
+SBOM="$OUT_ROOT/THIRD-PARTY.spdx"
+LICDIR="$OUT_ROOT/LICENSES"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -972,10 +991,12 @@ mv "$WORK/LICENSES" "$LICDIR"
 		cat "$LICDIR/$id.txt"
 	done < "$WORK/ids.txt"
 } > "$WORK/notices.txt"
-mkdir -p "$(dirname "$NOTICES_EMBED")"
-cp "$WORK/notices.txt" "$NOTICES_EMBED.new"
 cp "$WORK/notices.txt" "$NOTICES.new"
-mv "$NOTICES_EMBED.new" "$NOTICES_EMBED"
+if [ -n "$NOTICES_EMBED" ]; then
+	mkdir -p "$(dirname "$NOTICES_EMBED")"
+	cp "$WORK/notices.txt" "$NOTICES_EMBED.new"
+	mv "$NOTICES_EMBED.new" "$NOTICES_EMBED"
+fi
 mv "$NOTICES.new" "$NOTICES"
 
 # --- thin index -------------------------------------------------------------
@@ -1068,7 +1089,7 @@ rust_forbidden="$(wc -l < "$WORK/rust-findings.txt" | tr -d ' ')"
 	echo "gen-third-party-licenses: wrote"
 	echo "  $INDEX"
 	echo "  $SBOM"
-	echo "  $NOTICES (and $NOTICES_EMBED)"
+	echo "  $NOTICES${NOTICES_EMBED:+ (and $NOTICES_EMBED)}"
 	echo "  $LICDIR/ ($lic_count license files)"
 	echo "  Go third-party modules : $go_count"
 	echo "  Rust third-party crates: $rust_count"
