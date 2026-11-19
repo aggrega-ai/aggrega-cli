@@ -183,8 +183,10 @@ name: Publish and sign core plugins
 #                        plugin with its guest, signs both, and creates the
 #                        GitHub release with the downloadable binaries, the
 #                        Windows installer, the
-#                        extension package, the install scripts from its
-#                        checkout, and SHA256SUMS, the list of their SHA-256
+#                        extension package, the install scripts and the
+#                        quickstart scripts from its checkout, the software
+#                        bill of materials, THIRD-PARTY.spdx from that
+#                        checkout under a version-named file, and SHA256SUMS, the list of their SHA-256
 #                        digests it writes from the very files it attaches. It
 #                        may mint the OIDC token, for
 #                        those Sigstore signatures, and alone holds the token
