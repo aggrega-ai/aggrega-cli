@@ -317,16 +317,26 @@ var importToolSpec = toolSpec{
 		"and verified as a pull verifies a plugin, then kept in the workspace's content cache, so later imports " +
 		"reach no registry; nothing in the call names a registry or carries a credential. Where it cannot be " +
 		"fetched, the call is refused naming the importer, its version and what puts it on the machine. The " +
-		"catalog an import reads is the workspace's catalog folders; where the workspace names none, it reads " +
-		"the catalog its default registry publishes as one signed snapshot, at catalog/snapshot. A snapshot is " +
+		"catalog an import reads is the one a build resolves against: the workspace's catalog folders first, " +
+		"and behind them the catalog its default registry publishes as one signed snapshot, at " +
+		"catalog/snapshot. An entity a folder holds is read in place of the published one of the same " +
+		"identity, and every other published entity stays in view; a parser or an importer the folders hold " +
+		"for a syntax or a format is chosen for it before any the published catalog holds. A snapshot is " +
 		"fetched once: its signature is verified under that registry's trust policy, and it is kept in the " +
 		"workspace's content cache and read there, held to its digest, with no registry asked for it again. " +
-		"Which snapshot an import reads: with `upgrade`, the newest; otherwise the one the record beside the " +
-		"drafts names, fetched by its digest when this machine does not hold it; otherwise the one the " +
-		"workspace last fetched as the newest; otherwise the newest. The record an import writes names the " +
-		"snapshot it read by its digest. Offline, a call that would have to fetch one is refused " +
-		"naming what to do; a registry that publishes no snapshot leaves the import with no catalog, with a " +
-		"warning saying so. A " +
+		"Which snapshot an import reads: with `upgrade`, the newest; otherwise the one the import's entry in " +
+		"the record beside the drafts names, fetched by its digest when this machine does not hold it; " +
+		"otherwise the one the workspace last fetched as the newest; otherwise the newest. The entry an import " +
+		"writes names the snapshot it read by its digest. Where the snapshot cannot be read — the workspace is " +
+		"offline and this machine does not hold it, the workspace names no default registry, or the registry " +
+		"cannot be reached or publishes none — a workspace with catalog folders imports over them alone, a " +
+		"warning saying why, and the entry it writes keeps the snapshot it named before. `upgrade` is refused " +
+		"wherever the snapshot cannot be read, since only the registry can say which is the newest; and a " +
+		"`sync` whose entry names a snapshot this machine does not hold, and cannot fetch, is refused naming " +
+		"that snapshot, since the drafts it judges were drafted against that catalog and the folders alone may " +
+		"draft them otherwise: run it where the registry can be reached. A workspace with no catalog folder is " +
+		"refused instead, naming what to do, when it would have to fetch a snapshot offline; and where the " +
+		"registry publishes no snapshot it imports with no catalog, with a warning saying so. A " +
 		"`plugins.importer` attachment whose `uri` names an importer " +
 		"advertising the format, by identity and version, runs that importer at that version whatever other " +
 		"importer advertises the format too, and hands it — and no other importer — its `with.sources` and " +
@@ -354,25 +364,31 @@ var importToolSpec = toolSpec{
 		"capabilities the catalog's Recipes bind to, and nothing is written. Send `dry_run` to be " +
 		"handed each drafted file's path and content instead, with nothing created: every other behaviour is " +
 		"the write's, the same importer over the same source reporting the same diagnostics, so a source the " +
-		"write would refuse is refused under it too. Every import that drafts anything also writes, beside its " +
-		"drafts, `.aggrega-import.json`, the record of what it wrote — the `target` it was sent, where it was sent " +
-		"one, the catalog snapshot it read, where it read one, each drafted file, and each key of a drafted " +
-		"Aggregate or Release at every depth, with a digest of " +
-		"its text, any other drafted file recorded whole — and `dry_run` hands it back among the " +
-		"drafts. A call whose drafts would be written over an Aggregate, " +
-		"Component, Feature, Recipe or FeatureRecipe already in the output directory is refused, naming it, and " +
-		"nothing is written — under `dry_run` too — because an author goes on editing such a document once it is " +
-		"drafted; every other file already at a drafted path is written over. Send `sync` to bring what an earlier import drafted up to date with the " +
-		"source instead, changing only what the import wrote — with no `target`, for the target the record names, " +
-		"and with one, for that target, which the record then names: a part the source left alone stays as it is on " +
+		"write would refuse is refused under it too. Every import that drafts anything also writes its entry " +
+		"in `.aggrega-import.json` beside its drafts, the record of what imports wrote there, which holds one " +
+		"entry per import format: the entry names its format, the `target` it was sent, where it was sent one, " +
+		"the catalog snapshot it read, where it read one, each drafted file, and each key of a drafted " +
+		"Aggregate or Release at every depth, with a digest of its text, any other drafted file recorded whole. " +
+		"An import replaces its own format's entry, or adds it, and writes every other entry back as it found " +
+		"it, so imports of different formats into one directory each keep their own entry and each can be " +
+		"synced; `dry_run` hands the record back among the drafts. A call whose drafts would be written over an " +
+		"Aggregate, Component, Feature, Recipe or FeatureRecipe already in the output directory is refused, " +
+		"naming it, and nothing is written — under `dry_run` too — because an author goes on editing such a " +
+		"document once it is drafted; where another format's import drafted it, and that import's entry lists " +
+		"it, the refusal names that import and `output_dir`, since a sync of this format would not bring it up " +
+		"to date. Every other file already at a drafted path is written over. Send `sync` to bring what an earlier import drafted up to date with the " +
+		"source instead, changing only what the import wrote — with no `target`, for the target its entry in the record names, " +
+		"and with one, for that target, which its entry then names — reading and writing its own format's entry " +
+		"and leaving every other as it is: a part the source left alone stays as it is on " +
 		"disk, edited or not; a part it changed, dropped or gained is written anew, removed — a drafted file " +
 		"deleted whole — or added, where what is on disk is what the import last wrote; and everything else — a " +
-		"key an author added anywhere, a comment not written directly above a drafted key, a file the record does " +
-		"not list — stays byte for byte. The answer's `drift` lists each part brought up to date, or under " +
+		"key an author added anywhere, a comment not written directly above a drafted key, a file its entry does " +
+		"not list, another format's drafts among them — stays byte for byte. The answer's `drift` lists each part brought up to date, or under " +
 		"`dry_run` each part that would be, empty when the drafts are in step. A sync that would change or remove " +
 		"what an author edited or added, or add a part where an author already wrote one, is refused naming each " +
-		"part and why, and nothing is written; so is a sync over such an entity no record lists, and one whose " +
-		"importer could not finish writes nothing. What the importer could not translate comes back as " +
+		"part and why, and nothing is written; so is a sync over such an entity its entry does not list — naming " +
+		"another format's import where that import's entry lists it — and one whose importer could not finish " +
+		"writes nothing. What the importer could not translate comes back as " +
 		"diagnostics, one per construct, and an import it could not finish still drafts what it could — read " +
 		"`halted` for that outcome and the diagnostics beside it for what stopped it. Values no source can hold " +
 		"— an application's image, an owner's email, a model the source does not name, the name of a " +
@@ -380,7 +396,7 @@ var importToolSpec = toolSpec{
 		"the drafted document's own schema, or the catalog schema of a Component, Feature or connection it " +
 		"declares, says one is supplied. They are answered from the answers file — the one `answers` names, " +
 		"relative to the workspace root or absolute as every path here is named, or without it the one the " +
-		"record beside the drafts names, or else `import-answers.yaml` beside the source file or inside the " +
+		"import's entry in the record beside the drafts names, or else `import-answers.yaml` beside the source file or inside the " +
 		"source directory — which holds, under each drafted file's path, the key path inside it and its answer, " +
 		"and the answers are written into the drafts; an answer for a key these drafts do not leave empty is kept " +
 		"in the file and not applied, so one answers file serves every target. A secret's answer is the name of where it comes from — a " +
@@ -434,11 +450,11 @@ var importToolSpec = toolSpec{
     },
     "sync": {
       "type": "boolean",
-      "description": "Bring what an earlier import drafted up to date with the source, changing only what the import wrote, as the record beside the drafts lists it. The answer's drift names each part brought up to date, or under dry_run each part that would be."
+      "description": "Bring what an earlier import drafted up to date with the source, changing only what the import wrote, as its format's entry in the record beside the drafts lists it. The answer's drift names each part brought up to date, or under dry_run each part that would be. Where that entry names a catalog snapshot this machine does not hold and cannot fetch, the sync is refused, naming it."
     },
     "upgrade": {
       "type": "boolean",
-      "description": "Fetch the newest catalog snapshot the workspace's default registry publishes, verify it and import against it — behind the workspace's catalog folders, where it has some — holding it from then on in place of the one the workspace holds or the one the record beside the drafts names. It is refused offline, and where no default registry is named or the registry cannot be reached."
+      "description": "Fetch the newest catalog snapshot the workspace's default registry publishes, verify it and import against it — behind the workspace's catalog folders, where it has some — holding it from then on in place of the one the workspace holds or the one the import's entry in the record beside the drafts names. It is refused offline, and where no default registry is named or the registry cannot be reached."
     },
     "answers": {
       "type": "string",
