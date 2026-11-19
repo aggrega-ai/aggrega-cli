@@ -116,13 +116,15 @@ func Wrap(spec SourceSpec, sentinel error, cause error) error {
 //
 // A cause carrying the caller's withdrawal is reported as Wrap reports one. A
 // cause carrying a fetch identity (not found, unauthorized, network unreachable,
-// integrity) or an artifact-shape identity (no content layer, an ambiguous
-// content layer, a retired media type) is wrapped under that same identity,
-// whatever else the cause reads as. Otherwise a failure [oci.Unreachable] reads as
-// a transport failure is reported as network unreachable. Any other cause is
-// returned with the source's kind, url and version and stays matchable through
-// errors.Is, claiming no fetch condition: a registry that answered is not an
-// unreachable one.
+// integrity, server error, interrupted transfer) or an artifact-shape identity
+// (no content layer, an ambiguous content layer, a retired media type) is
+// wrapped under that same identity, whatever else the cause reads as.
+// Otherwise a failure [oci.Unreachable] reads as a transport failure is
+// reported as network unreachable; a registry answer [oci.ServerError] reads as
+// a server error is reported as a server error; and a transfer [oci.Interrupted]
+// reads as broken off is reported as interrupted. Any other cause is returned
+// with the source's kind, url and version and stays matchable through
+// errors.Is, claiming no fetch condition.
 func WrapOCIPull(spec SourceSpec, err error) error {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return Wrap(spec, nil, err)
@@ -132,6 +134,8 @@ func WrapOCIPull(spec SourceSpec, err error) error {
 		oci.ErrFetchUnauthorized(),
 		oci.ErrFetchNetworkUnreachable(),
 		oci.ErrFetchIntegrity(),
+		oci.ErrFetchServerError(),
+		oci.ErrFetchInterrupted(),
 		oci.ErrNoContentLayer(),
 		oci.ErrAmbiguousContentLayer(),
 		oci.ErrRetiredMediaType(),
@@ -142,6 +146,18 @@ func WrapOCIPull(spec SourceSpec, err error) error {
 	}
 	if oci.Unreachable(err) {
 		return Wrap(spec, oci.ErrFetchNetworkUnreachable(), err)
+	}
+	if oci.ServerError(err) {
+		return Wrap(spec, oci.ErrFetchServerError(), err)
+	}
+	if oci.Interrupted(err) {
+		return Wrap(spec, oci.ErrFetchInterrupted(), err)
+	}
+	if oci.ServerError(err) {
+		return Wrap(spec, oci.ErrFetchServerError(), err)
+	}
+	if oci.Interrupted(err) {
+		return Wrap(spec, oci.ErrFetchInterrupted(), err)
 	}
 	return fmt.Errorf("kind=%s url=%s version=%s: %w", spec.Kind, spec.URL, spec.Version, err)
 }

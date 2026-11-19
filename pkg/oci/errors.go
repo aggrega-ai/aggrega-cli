@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
+	"net/http"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 )
@@ -47,6 +48,34 @@ var errFetchNetworkUnreachable = cerrors.Register("fetch-network-unreachable", c
 	Message:   "oci: network unreachable",
 	RulePlace: cerrors.NotARule("The transport could not be established — name resolution, connection, or handshake. It " +
 		"reports an operation that failed."),
+})
+
+// ErrFetchServerError is returned when a registry answered a request with a
+// server error (a status of 500 or above) that it did not mean as a request to
+// slow down. The registry was reached and said it failed, so the artifact's
+// state at the far end is unknown. Call sites wrap this sentinel with the
+// source and the registry's answer.
+func ErrFetchServerError() error { return errFetchServerError }
+
+var errFetchServerError = cerrors.Register("fetch-server-error", cerrors.Meta{
+	ShortCode: "E0380",
+	Message:   "oci: the registry answered with a server error",
+	RulePlace: cerrors.NotARule("A registry answered a request with a server error. It reports an operation the registry " +
+		"failed to carry out rather than a rule over anything an author wrote."),
+})
+
+// ErrFetchInterrupted is returned when a transfer from a registry broke off
+// before it was complete: the connection was reset, or the response ended
+// before the bytes it promised. The registry was reached and began to answer,
+// so this is not an unreachable one. Call sites wrap this sentinel with the
+// source and the failure the transport reported.
+func ErrFetchInterrupted() error { return errFetchInterrupted }
+
+var errFetchInterrupted = cerrors.Register("fetch-interrupted", cerrors.Meta{
+	ShortCode: "E0381",
+	Message:   "oci: the transfer from the registry broke off",
+	RulePlace: cerrors.NotARule("A transfer from a registry ended before it was complete. It reports a network operation " +
+		"that did not finish rather than a rule over anything an author wrote."),
 })
 
 // Unreachable reports whether err shows that the remote origin a request
@@ -98,6 +127,27 @@ func Unreachable(err error) bool {
 	}
 	var recordErr tls.RecordHeaderError
 	return errors.As(err, &recordErr)
+}
+
+// ServerError reports whether err carries a registry's answer with a server
+// error status (500 or above). It reads the status the registry answered with,
+// never the wording of the message, and a registry that answered "slow down"
+// is a different condition and is handled before an answer reaches here.
+func ServerError(err error) bool {
+	status, answered := registryStatus(err)
+	return answered && status >= http.StatusInternalServerError
+}
+
+// Interrupted reports whether err shows a transfer that broke off after it
+// began: a connection the peer reset, or a response body that ended before the
+// length it promised. It reads the values the transport returned, never their
+// wording. A failure that [Unreachable] reads as an origin never reached is not
+// this condition, and neither is a caller that withdrew.
+func Interrupted(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	return cutShort(err) || connectionReset(err)
 }
 
 // ErrFetchIntegrity is returned when pulled bytes don't match the
@@ -461,6 +511,10 @@ func RemediationNaming(sentinel error, registryHost string, steps RemedySteps) s
 		return "remediation: aggrega login " + host + " (or docker login " + host + ") before re-running " + steps.Rerun
 	case errors.Is(sentinel, ErrFetchNetworkUnreachable()):
 		return "remediation: check network connectivity to " + host + "; corporate proxies typically need HTTPS_PROXY exported"
+	case errors.Is(sentinel, ErrFetchServerError()):
+		return "remediation: the registry " + host + " failed; run " + steps.Rerun + " again once it is back, and ask its operator if it keeps failing"
+	case errors.Is(sentinel, ErrFetchInterrupted()):
+		return "remediation: run " + steps.Rerun + " again; if the transfer keeps breaking off, check the connection to " + host + " and any proxy or gateway between"
 	case errors.Is(sentinel, ErrFetchIntegrity()), errors.Is(sentinel, ErrCachedManifestIntegrity()):
 		return "remediation: run " + steps.Refresh
 	default:
