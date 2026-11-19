@@ -22,8 +22,13 @@
 #      names in turn; or a step that runs any action but actions/checkout,
 #      actions/download-artifact and actions/upload-artifact (GitHub's own
 #      artifact actions, the last so that a job which signs files can hand them
-#      on); or calls a reusable workflow; or declares a container: or services:,
-#      whose images run beside its steps;
+#      on), save actions/attest (GitHub's own action that signs build
+#      provenance for files with the job's OIDC identity) in a job whose steps
+#      are an actions/download-artifact step and then that one, and nothing
+#      else, whose permissions grant exactly contents: read, id-token: write,
+#      attestations: write and artifact-metadata: write, and which names no
+#      secret anywhere; or calls a reusable workflow; or declares a container:
+#      or services:, whose images run beside its steps;
 #   3. an actions/checkout step, in any job, does not set
 #      persist-credentials: false;
 #   4. a job that may not mint the token but runs third-party code — a step that
@@ -254,6 +259,71 @@ secrets_in() {
   done
 }
 
+# The grants of the one job shape in which actions/attest runs (rule 2),
+# exactly, in the order the messages name them.
+ATTEST_GRANTS=("contents: read" "id-token: write" "attestations: write" "artifact-metadata: write")
+ATTEST_GRANTS_SAID="$(printf '%s, ' "${ATTEST_GRANTS[@]:0:${#ATTEST_GRANTS[@]}-1}")"
+ATTEST_GRANTS_SAID="${ATTEST_GRANTS_SAID%, } and ${ATTEST_GRANTS[-1]}"
+ATTEST_GRANTS_SORTED="$(printf '%s\n' "${ATTEST_GRANTS[@]}" | LC_ALL=C sort)"
+
+# attest_faults: sets ATTEST_FAULTS to what keeps job J from the shape in which
+# actions/attest runs — an actions/download-artifact step and then an
+# actions/attest step and nothing else, granted exactly ATTEST_GRANTS, naming no
+# secret — each worded to follow "uses <action>"; empty when J has that shape.
+ATTEST_FAULTS=()
+attest_faults() {
+  local n k step_uses step_runs step_name what grants joined ref named=""
+  local -a granted=()
+  ATTEST_FAULTS=()
+  n="$(yq -r '.jobs[strenv(J)].steps | length' "$WORKFLOW")"
+  case "$n" in ''|null) n=0 ;; esac
+  for ((k = 0; k < n || k < 2; k++)); do
+    if [ "$k" -ge "$n" ]; then
+      ATTEST_FAULTS+=("in a job of $n step(s), not an actions/download-artifact step followed by this one; actions/attest runs only in a job of those two steps alone")
+      break
+    fi
+    step_uses="$(K="$k" yq -r '.jobs[strenv(J)].steps[env(K)].uses // ""' "$WORKFLOW")"
+    step_runs="$(K="$k" yq -r '.jobs[strenv(J)].steps[env(K)] | has("run")' "$WORKFLOW")"
+    if [ "$step_runs" = false ]; then
+      case "$k:$step_uses" in
+        0:actions/download-artifact@*|1:actions/attest@*) continue ;;
+      esac
+    fi
+    step_name="$(K="$k" yq -r '.jobs[strenv(J)].steps[env(K)] | .name // .id // ""' "$WORKFLOW")"
+    [ -n "$step_name" ] || step_name="step $((k + 1))"
+    if [ "$step_runs" = true ]; then
+      what="runs a run: body"
+    elif [ -n "$step_uses" ]; then
+      what="uses $step_uses"
+    else
+      what="runs nothing"
+    fi
+    ATTEST_FAULTS+=("in a job whose steps are not an actions/download-artifact step followed by this one alone: step $((k + 1)), \"$step_name\", $what; actions/attest runs only in a job of those two steps alone")
+    break
+  done
+  case "$(yq -r '.jobs[strenv(J)].permissions | tag' "$WORKFLOW")" in
+    '!!map')
+      grants="$(yq -r '.jobs[strenv(J)].permissions | to_entries | .[] | .key + ": " + (.value | tostring)' "$WORKFLOW" | LC_ALL=C sort)"
+      if [ "$grants" != "$ATTEST_GRANTS_SORTED" ]; then
+        [ -z "$grants" ] || mapfile -t granted <<< "$grants"
+        joined="$(IFS=,; printf '%s' "${granted[*]}")"
+        joined="${joined//,/, }"
+        ATTEST_FAULTS+=("in a job granted ${joined:-nothing}; actions/attest runs only in a job granted exactly $ATTEST_GRANTS_SAID")
+      fi
+      ;;
+    '!!null')
+      ATTEST_FAULTS+=("in a job that declares no permissions of its own; actions/attest runs only in a job granted exactly $ATTEST_GRANTS_SAID")
+      ;;
+    *)
+      ATTEST_FAULTS+=("in a job granted $(yq -r '.jobs[strenv(J)].permissions' "$WORKFLOW"); actions/attest runs only in a job granted exactly $ATTEST_GRANTS_SAID")
+      ;;
+  esac
+  while IFS= read -r ref; do
+    case "$ref" in secrets.*) named="${named:+$named }$ref" ;; esac
+  done < <(secrets_in "$(yq -o=json '.jobs[strenv(J)]' "$WORKFLOW")" | LC_ALL=C sort -u)
+  [ -z "$named" ] || ATTEST_FAULTS+=("in a job that names $named; actions/attest runs only in a job that names no secret")
+}
+
 TOP_GRANTS="$(grants_write '.permissions' id-token)"
 if [ "$TOP_GRANTS" = yes ]; then
   violate "file level: permissions grant id-token: write, which every job declaring no permissions of its own inherits; grant it only in the jobs that sign"
@@ -269,6 +339,7 @@ checkouts=0
 holder_steps=0
 deleter_steps=0
 HOLDER_READ=()
+ATTEST_JOBS=()
 
 # Pass 1: which jobs may mint the token and which may delete the run's
 # artifacts, the steps of those jobs, and every checkout.
@@ -352,6 +423,21 @@ for job in "${JOBS[@]}"; do
     if [ -n "$uses" ]; then
       case "$uses" in
         actions/checkout@*|actions/checkout|actions/download-artifact@*|actions/upload-artifact@*) ;;
+        actions/attest@*)
+          # Admitted in a job that may mint the token only in the one shape
+          # rule 2 names; in any other job it is an action like any other.
+          if [ "$holds" = yes ]; then
+            attest_faults
+            if [ "${#ATTEST_FAULTS[@]}" -eq 0 ]; then
+              ATTEST_JOBS+=("$job")
+            fi
+            for fault in ${ATTEST_FAULTS[@]+"${ATTEST_FAULTS[@]}"}; do
+              violate "$where: uses $uses $fault"
+            done
+          elif [ -z "${THIRD_PARTY[$job]}" ]; then
+            THIRD_PARTY[$job]="step \"$name\" runs $uses"
+          fi
+          ;;
         *)
           if [ "$holds" = yes ]; then
             violate "$where: uses $uses in a job that may mint the OIDC token; only actions/checkout, actions/download-artifact and actions/upload-artifact run there"
@@ -570,9 +656,15 @@ if [ "${#HOLDER_READ[@]}" -gt 0 ]; then
   mapfile -t read_uniq < <(printf '%s\n' "${HOLDER_READ[@]}" | sort -u)
 fi
 printf 'release job isolation holds in %s:\n' "$(label_of "$WORKFLOW")"
-printf '  may mint the OIDC token: %s — %d step(s), none a build or pack step, no action but checkout, download-artifact and upload-artifact\n' \
+printf '  may mint the OIDC token: %s — %d step(s), none a build or pack step, no action but checkout, download-artifact and upload-artifact, and actions/attest as below\n' \
   "${holders[*]:-no job}" "$holder_steps"
 printf '  scripts read for those steps: %s\n' "${read_uniq[*]:-none}"
+if [ "${#ATTEST_JOBS[@]}" -gt 0 ]; then
+  printf '  actions/attest: in %s alone — each an actions/download-artifact step followed by the actions/attest step and nothing else, granted exactly %s, naming no secret\n' \
+    "${ATTEST_JOBS[*]}" "$ATTEST_GRANTS_SAID"
+else
+  printf '  actions/attest: in no job\n'
+fi
 printf '  may delete the run'"'"'s artifacts: %s — %d step(s), granted actions: write alone, no action, none a build or pack step, no secret\n' \
   "${deleters[*]:-no job}" "$deleter_steps"
 printf '  actions/checkout steps: %d, each with persist-credentials: false\n' "$checkouts"

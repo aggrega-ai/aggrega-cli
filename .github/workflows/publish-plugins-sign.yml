@@ -190,20 +190,47 @@ name: Publish and sign core plugins
 #                        those Sigstore signatures, and alone holds the token
 #                        that writes the release; the registry password it
 #                        holds is otherwise held only by registry-credential. It
-#                        runs no build or pack step and no action but checkout
-#                        and download-artifact: the programs it runs, beside the
-#                        shell's own utilities, are the aggrega binary the build
-#                        job built, docker (to load and push the image archives
-#                        and join them under one tag with its own manifest
-#                        command), gh and curl. On a real publish it hands the plugin
-#                        publish's own output on, as its plugin_push_output, to
+#                        runs no build or pack step and no action but checkout,
+#                        download-artifact and upload-artifact: the programs it
+#                        runs, beside the shell's own utilities, are the aggrega
+#                        binary the build job built, docker (to load and push the
+#                        image archives and join them under one tag with its own
+#                        manifest command), gh and curl. On a real publish it
+#                        hands the plugin publish's own output on, as its
+#                        plugin_push_output, to
 #                        record-published. Once the release step has run, a dry
-#                        run's included, it renders the Homebrew formula, the
+#                        run's included, it hands that SHA256SUMS on to attest as
+#                        release-checksums, renders the Homebrew formula, the
 #                        Scoop manifest and the winget manifest from the files it
 #                        attached and their SHA256SUMS, hands the first two on to
 #                        publish-package-channels, and prints the winget
 #                        manifest's three files and hands them on to
 #                        open-winget-pull-request.
+#   attest               After a real publish, writes GitHub's build provenance
+#                        for every file SHA256SUMS lists, each named and
+#                        digested as the list gives it: one attestation, signed
+#                        keyless with a Sigstore certificate issued for this
+#                        run's OIDC identity, recorded in the public transparency
+#                        log and stored with this repository's attestations, so
+#                        that gh attestation verify <file> --repo
+#                        aggrega-ai/aggrega-cli shows that a downloaded file is
+#                        one this workflow released. The provenance names this
+#                        workflow, the run and its attempt, and the ref the run
+#                        started from with that ref's commit, as the run's OIDC
+#                        token gives them: on a tag push the tag and its commit,
+#                        on a dispatch the ref it was dispatched from. It runs on
+#                        a GitHub-hosted runner, names no environment and no
+#                        secret, and has two steps and nothing else: the artifact
+#                        download of release-checksums, and GitHub's own attest
+#                        action, pinned by commit, which reads the list and
+#                        writes the attestation. It may mint the OIDC token, as
+#                        the attest action needs, and is a job of its own so
+#                        that the token shares a job with those two actions
+#                        alone. Its token names the ref rather than the release
+#                        environment; it runs only once sign-and-publish, which
+#                        names that environment, has succeeded in the same run,
+#                        so on a ref the environment admits. A dry run attests
+#                        nothing: this job is skipped there.
 #   record-published     After a real publish, records what sign-and-publish
 #                        published on aggrega-hub's
 #                        published branch: each plugin's reference, version and
@@ -362,7 +389,8 @@ name: Publish and sign core plugins
 # release's binaries smoke_binaries_from names — and what a job on the runner
 # writes after the hand-over folder's list and hands to the next: the
 # installer's signed program files, which windows-installer builds the installer
-# from, and the installer it builds, which sign-windows-installer signs. clean-up
+# from, the installer it builds, which sign-windows-installer signs, and the
+# release's SHA256SUMS, which sign-and-publish writes and attest reads. clean-up
 # deletes it all when
 # the run ends, so no artifact outlives the run that made it; the one-day
 # retention each upload names is what removes them should clean-up never run. A
@@ -370,7 +398,8 @@ name: Publish and sign core plugins
 # folder and the artifacts gone.
 #
 # Everything sign-and-publish signs is signed keyless via the GitHub Actions
-# OIDC identity against the public Sigstore instance (Fulcio + Rekor). The
+# OIDC identity against the public Sigstore instance (Fulcio + Rekor), and so is
+# the build provenance attest writes. The
 # Windows binaries are signed by sign-windows instead, with the Authenticode
 # signature Windows itself checks, and so are the program files the Windows
 # installer carries; the installer, which carries those signed files, is built
@@ -391,7 +420,10 @@ name: Publish and sign core plugins
 # scripts/check-release-job-isolation.sh reads this file and refuses it when a
 # job that may mint the OIDC token runs a build or pack step, directly or through
 # a repository script, when such a job runs any action but checkout and the
-# artifact download and upload, when a checkout keeps its token, when a job
+# artifact download and upload — save GitHub's attest action, in a job whose
+# steps are the artifact download and that action alone, granted contents:
+# read, id-token: write, attestations: write and artifact-metadata: write and
+# nothing else, and naming no secret — when a checkout keeps its token, when a job
 # that runs third-party code names a secret or the run's token anywhere in it —
 # in an action's with: as well as in an environment or a run body — when the
 # job that may delete the run's artifacts is granted anything else, runs any
@@ -509,7 +541,9 @@ name: Publish and sign core plugins
 # signature checks
 # are proven before a tag exists, runs the Windows, macOS and ARM Linux smoke jobs in full,
 # and then, once they have passed, sign-and-publish loads and checks the image's
-# two archives and prints what it would push, publish, sign and release, doing none of it.
+# two archives and prints what it would push, publish, sign and release, doing none of it,
+# and hands SHA256SUMS on as release-checksums, which attest, skipped on a dry
+# run, does not read.
 # record-published, publish-skills and publish-package-channels each mint their
 # App's token, which proves that App's client ID and private key, and use it
 # for nothing, the action that minted it revoking it when the job ends;
@@ -544,13 +578,17 @@ name: Publish and sign core plugins
 # identity's federated credentials trusts: sign-and-publish's token is
 # accepted too, as sign-windows' entry above says. Fulcio takes the identity
 # of sign-and-publish's Sigstore certificates from the workflow's path and
-# ref, not from that subject.
+# ref, not from that subject. attest, which may mint the token too, names no
+# environment, so its token's subject names the ref the run started from in
+# place of the environment.
 #
 # Which refs sign is decided by the release environment's branch and tag
-# rule: every job of this workflow that may mint the OIDC token names the
-# environment and presents its subject, which names no ref, so the signing
-# identity's federated credentials in Azure decide that the environment may
-# sign, and the environment decides from which refs. Whether a run signs is
+# rule: every job of this workflow that may mint the OIDC token but attest
+# names the environment and presents its subject, which names no ref, so the
+# signing identity's federated credentials in Azure decide that the environment
+# may sign, and the environment decides from which refs; attest runs only once
+# sign-and-publish has succeeded in the same run, so only on a ref the
+# environment admits. Whether a run signs is
 # decided in registry-credential by the event, the dry_run input and the ref,
 # before anything is built or signed, and never by a signing that failed:
 # sign, or skip for a manual dry run from a ref outside those
@@ -766,7 +804,7 @@ on:
         type: string
 
 # Every job reads this repository and nothing more unless it says otherwise
-# below. Three jobs add to it. sign-windows and sign-windows-installer add
+# below. sign-windows and sign-windows-installer add
 # id-token:write, which lets each mint the short-lived OIDC identity token
 # Microsoft Entra ID exchanges for the token that signs the Windows binaries, the
 # installer's program files and the installer, so no signing secret is stored.
@@ -776,10 +814,17 @@ on:
 # expected, not a leak), and contents:write, which lets it create the GitHub
 # release and upload the built binaries as release assets on this repository.
 # contents:write grants no other git write: the workflow never creates or pushes
-# a tag. clean-up replaces it with actions:write alone, which lets it list and
-# delete this run's artifacts and does not let it read the repository. sign-macos
-# takes nothing, not even contents:read: it checks nothing out, and the artifact
-# download and upload it runs reach this run's artifacts without the run's token.
+# a tag. attest adds id-token:write, which lets it mint the short-lived OIDC
+# identity token its Sigstore certificate is issued for; attestations:write,
+# which lets it store the attestation it signs with this repository's
+# attestations, where gh attestation verify finds it; and
+# artifact-metadata:write, the third grant GitHub's attest action asks for,
+# which lets it record where an attested container image is stored (it attests
+# files here, for which it records none). clean-up replaces it with
+# actions:write alone, which lets it list and delete this run's artifacts and
+# does not let it read the repository. sign-macos takes nothing, not even
+# contents:read: it checks nothing out, and the artifact download and upload it
+# runs reach this run's artifacts without the run's token.
 # notarization-check takes nothing either, for the same reasons.
 # record-published keeps contents:read: what it writes is aggrega-hub's published
 # branch, with the App token it mints, never this repository; so does
@@ -3962,6 +4007,21 @@ jobs:
               "${RELEASE_KIND[@]}"
           fi
 
+      - name: Hand SHA256SUMS on to attest
+        # The SHA256SUMS the release step wrote and held to the files it
+        # attached, as it attached it, uploaded alone as release-checksums: one
+        # workflow artifact, read by attest of this same run, which writes the
+        # build provenance of every file it lists, on a real publish. A dry run
+        # uploads it too, proving the hand-over before a tag exists; attest is
+        # skipped there and reads nothing. Deleted by clean-up when the run ends
+        # (kept a day at most should clean-up never run).
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-checksums
+          path: ${{ env.RELEASE_DIR }}/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Render the Homebrew formula, the Scoop manifest and the winget manifest
         # After the release step, a dry run's included, from the files that
         # step attached, in RELEASE_DIR, and the SHA256SUMS it attached with
@@ -4023,6 +4083,59 @@ jobs:
         run: |
           chmod -R u+w -- "$RUN_CONFIG_HOME" 2>/dev/null || true
           rm -rf -- "$RUN_CONFIG_HOME"
+
+  attest:
+    # Writes GitHub's build provenance for every file the release attaches, as
+    # the release's SHA256SUMS lists them: one attestation naming each file and
+    # its SHA-256, signed keyless with a Sigstore certificate issued for this
+    # run's OIDC identity, recorded in the public transparency log and stored
+    # with this repository's attestations, where
+    # gh attestation verify <file> --repo aggrega-ai/aggrega-cli finds it.
+    #
+    # It runs on a real publish alone, once sign-and-publish has succeeded:
+    # the release exists by then and SHA256SUMS lists exactly what it attached.
+    # A dry run releases nothing, so this job is skipped there. The if: names
+    # sign-and-publish as having succeeded rather than leaving it to the
+    # default, since sign-and-publish may run beside a sign-macos skipped while
+    # macOS signing is off.
+    #
+    # Everything that runs in this job can reach the OIDC token it may mint, so
+    # it runs two of GitHub's own actions, each pinned by commit, and nothing
+    # else: the artifact download of release-checksums and the attest action,
+    # which reads the list and writes the attestation. It names no environment
+    # and no secret, checks nothing out and runs on a GitHub-hosted runner, so
+    # it shares nothing with the machine the build ran on.
+    # check-release-job-isolation.sh admits the attest action in a job of
+    # exactly this shape and refuses it anywhere else.
+    needs: [sign-and-publish]
+    if: >-
+      ${{ !cancelled()
+      && needs.sign-and-publish.result == 'success'
+      && (github.event_name == 'push'
+      || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+
+    steps:
+      - name: Download SHA256SUMS
+        # The list sign-and-publish attached to the release, into the
+        # workspace, where the next step reads it.
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-checksums
+
+      - name: Attest every file SHA256SUMS lists
+        # Each line of the list, "<SHA-256>  <file name>", is one subject of the
+        # attestation, named and digested as the list gives it; the provenance
+        # is GitHub's SLSA build provenance for this run.
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: SHA256SUMS
 
   record-published:
     # Records what sign-and-publish published on aggrega-hub's published branch,
@@ -5531,7 +5644,7 @@ jobs:
     # emulation's installer image once the image is built, and
     # sign-and-publish's publish script removes every image and reference it
     # loads when it exits, a refusal included.
-    needs: [registry-credential, sources, build, sign-windows, windows-installer, sign-windows-installer, sign-macos, sign-and-publish, record-published, publish-skills, publish-package-channels, open-winget-pull-request, notarization-check, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
+    needs: [registry-credential, sources, build, sign-windows, windows-installer, sign-windows-installer, sign-macos, sign-and-publish, attest, record-published, publish-skills, publish-package-channels, open-winget-pull-request, notarization-check, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
     if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 15
