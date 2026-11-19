@@ -515,6 +515,10 @@ func lastSegment(name string) string {
 
 // draftedPath is the version directory a draft is written to, as
 // importer.CatalogFiles places it.
+//
+// It deliberately repeats the layout CatalogFiles writes: the kit exports the
+// files it lays out, not the directory of one draft, so a draft is named here
+// before its files exist. A change of the kit's layout changes this too.
 func draftedPath(d importer.CatalogDraft) string {
 	if d.Entity.Kind == "Recipe" {
 		return "catalog/recipe/" + d.Capability + "/" + d.Entity.Name + "/" + d.Version

@@ -11,6 +11,10 @@ import (
 // Categories are the closed set of Component categories the catalog's
 // conventions name: the second segment of a Component's name and the value of
 // its component.aggrega.ai/category label.
+//
+// It deliberately repeats the list the publishing linter checks a Component's
+// category against (category_vs_directory.rs): the linter is a Rust guest, so
+// this Go guest cannot read its list, and a change of the list changes both.
 var Categories = []string{"ai-agent", "ai-model", "ai-tool", "ai-pipeline", "datastore", "gateway", "mesh",
 	"network", "messaging", "storage", "compute", "observability", "security", "bigdata", "devtool"}
 
