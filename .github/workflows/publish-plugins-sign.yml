@@ -1976,7 +1976,10 @@ jobs:
         #
         # Deriving the filename runs Go, which is why the pairing is resolved
         # here: publish-plugins.sh --pairs-out writes, for each entity, the guest
-        # it pairs with, relative to the staging directory, and publishes nothing.
+        # it pairs with and the guest's notices and SBOM, relative to the staging
+        # directory, and publishes nothing. It generates the notices and SBOM
+        # here, beside the build whose module and crate caches they are read
+        # from, into the staging directory, so they travel with the guest.
         # The pairing is written only when every entity paired.
         run: |
           set -euo pipefail

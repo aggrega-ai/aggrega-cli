@@ -34,8 +34,12 @@
 #     returns 2, so the keyless flow never falls back to a browser prompt. A dry
 #     run signs nothing and always passes.
 #
-#   plugin_publish_one <wasm> <entity>
-#     Publishes one pair, prints the push's own output, and returns its status.
+#   plugin_publish_one <wasm> <entity> <notices> <sbom>
+#     Publishes one pair with the guest's third-party notices (packed as a layer
+#     after the .wasm) and its SBOM (attached as a referrer), prints the push's
+#     own output, and returns its status. A missing notices or SBOM file is
+#     refused on standard error naming it, before anything is pushed, and returns
+#     1: a guest is never published without them.
 #     On success it sets PLUGIN_PUBLISHED_REF to the resolved
 #     <registry>/<path>:<tag> reference, empty when the push printed none.
 #
@@ -64,8 +68,16 @@ plugin_publish_reference() {
 }
 
 plugin_publish_one() {
-  local wasm="$1" entity="$2" out
-  local cmd=("$AGGREGA" push --plugin "$wasm" "$entity" --registry "$REGISTRY")
+  local wasm="$1" entity="$2" notices="${3:-}" sbom="${4:-}" out
+  if [ -z "$notices" ] || [ ! -f "$notices" ]; then
+    echo "plugin-publish: $entity: the guest's notices file is missing (${notices:-no path given}); nothing was pushed" >&2
+    return 1
+  fi
+  if [ -z "$sbom" ] || [ ! -f "$sbom" ]; then
+    echo "plugin-publish: $entity: the guest's SBOM file is missing (${sbom:-no path given}); nothing was pushed" >&2
+    return 1
+  fi
+  local cmd=("$AGGREGA" push --plugin "$wasm" "$entity" --plugin-notices "$notices" --plugin-sbom "$sbom" --registry "$REGISTRY")
   if [ -n "$DRYRUN" ]; then
     cmd+=(--dry-run)
   fi

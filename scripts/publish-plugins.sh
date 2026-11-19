@@ -49,9 +49,19 @@
 # --dry-run computes and prints the proposed references for every mode without any
 # network call, OIDC contact, or marker advance.
 #
+# Every guest is published with its third-party notices and SBOM. In
+# enumerate-embedded the script generates both for each guest, where the guest
+# was built (the module and crate caches the generator reads are there), with
+# `scripts/gen-third-party-licenses.sh --guest <socket>/<name> --out <dir>`, into
+# <wasm-dir>/notices/<socket>/<name>/ as notices.md and sbom.spdx.json; the
+# socket and name are read from the entity's place under <entities-dir>
+# (<socket>/<name>/<version>/plugin.yaml). The other two modes name no core
+# plugin row to generate from, so a guest they discover has no notices and is
+# refused naming the missing file.
+#
 # --pairs-out <file> resolves the work-list and writes it as a pairing instead of
-# publishing it: one line per Plugin entity, its guest's path, a tab and the
-# entity's path, each relative to the directory <file> sits in. Both must lie
+# publishing it: one line per Plugin entity: its guest's path, the entity's path,
+# the guest's notices file and its SBOM file, separated by tabs, each relative to the directory <file> sits in. Both must lie
 # under that directory, so the directory can be handed to another machine whole,
 # and the pairing is written only when every entity paired. With --pairs-out
 # nothing is published or signed and no marker moves, so --dry-run, --sign, --key,
@@ -196,6 +206,20 @@ marker_advance() {
 }
 # -----------------------------------------------------------------------------
 
+# generate_notices <entity> prints, tab-separated, the notices file and the SBOM
+# file generated for the guest of a core plugin entity, or nothing when the mode
+# has no core plugin row to generate from. Fails when the generator does.
+generate_notices() {
+  local entity="$1" name socket out
+  [ "$MODE" = "enumerate-embedded" ] || return 0
+  name="$(basename "$(dirname "$(dirname "$entity")")")"
+  socket="$(basename "$(dirname "$(dirname "$(dirname "$entity")")")")"
+  out="$WASM_DIR/notices/$socket/$name"
+  mkdir -p "$out"
+  "$CLI_ROOT/scripts/gen-third-party-licenses.sh" --guest "$socket/$name" --out "$out" >&2 || return 1
+  printf '%s\t%s\n' "$out/notices.md" "$out/sbom.spdx.json"
+}
+
 # --- A pairing publishes nothing ---------------------------------------------
 # --pairs-out only resolves and writes, so every option that shapes a publish is
 # refused beside it rather than silently ignored.
@@ -276,15 +300,28 @@ for f in ${FILES[@]+"${FILES[@]}"}; do
     failed=$((failed + 1))
     continue
   fi
+  if ! gen="$(generate_notices "$f")"; then
+    echo "publish-plugins: cannot generate the notices and SBOM for $f" >&2
+    failed=$((failed + 1))
+    continue
+  fi
+  notices="${gen%%$'\t'*}" sbom=""
+  [ -z "$gen" ] || sbom="${gen#*$'\t'}"
   if [ -n "$PAIRS_OUT" ]; then
-    if wasm_rel="$(pair_path "$wasm")" && entity_rel="$(pair_path "$f")"; then
-      PAIRS+=("$wasm_rel"$'\t'"$entity_rel")
+    if [ -z "$gen" ]; then
+      echo "publish-plugins: $f has no notices or SBOM to pair: $MODE generates none, and a guest is never published without them" >&2
+      failed=$((failed + 1))
+      continue
+    fi
+    if wasm_rel="$(pair_path "$wasm")" && entity_rel="$(pair_path "$f")" \
+      && notices_rel="$(pair_path "$notices")" && sbom_rel="$(pair_path "$sbom")"; then
+      PAIRS+=("$wasm_rel"$'\t'"$entity_rel"$'\t'"$notices_rel"$'\t'"$sbom_rel")
     else
       failed=$((failed + 1))
     fi
     continue
   fi
-  if plugin_publish_one "$wasm" "$f"; then
+  if plugin_publish_one "$wasm" "$f" "$notices" "$sbom"; then
     pushed=$((pushed + 1))
     [ -n "$PLUGIN_PUBLISHED_REF" ] && REFS+=("$PLUGIN_PUBLISHED_REF")
   else

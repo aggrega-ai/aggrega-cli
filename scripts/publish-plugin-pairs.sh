@@ -4,8 +4,9 @@
 # alone.
 #
 # The pairing is the file `scripts/publish-plugins.sh … --pairs-out <file>`
-# writes: one line per plugin, the guest's path, a tab, and the entity's path,
-# each relative to the directory the pairing sits in. Working out which guest
+# writes: one line per plugin, the guest's path, the entity's path, the guest's
+# notices file and its SBOM file, separated by tabs, each relative to the
+# directory the pairing sits in. Working out which guest
 # belongs to which entity needs the Go toolchain and this module's source; this
 # script needs neither. It reads the pairing and publishes each pair with the
 # same command, options and signing refusal as scripts/publish-plugins.sh, from
@@ -32,7 +33,7 @@
 # Env: AGGREGA_BIN names the aggrega binary (default: aggrega on PATH).
 #
 # It refuses, before publishing anything, a pairing that is missing, empty, or
-# holds a line that is not two tab-separated paths naming existing files. It
+# holds a line that is not four tab-separated paths naming existing files. It
 # publishes every pair even after one fails, then exits 1 when any failed; it
 # exits 2 on a usage error and when signing material is missing.
 #
@@ -77,30 +78,40 @@ PAIRS_DIR="$(cd "$(dirname "$PAIRS_FILE")" && pwd -P)"
 
 # Read and check every line before publishing any, so a malformed pairing
 # publishes nothing rather than half of itself.
-WASMS=() ENTITIES=()
+WASMS=() ENTITIES=() NOTICES=() SBOMS=()
 lineno=0
 while IFS= read -r line || [ -n "$line" ]; do
   lineno=$((lineno + 1))
   [ -n "$line" ] || die "$PAIRS_FILE:$lineno: an empty line; each line is a guest path, a tab and an entity path"
-  case "$line" in
-    *$'\t'*$'\t'*) die "$PAIRS_FILE:$lineno: more than two tab-separated fields" ;;
-    *$'\t'*) ;;
-    *) die "$PAIRS_FILE:$lineno: no tab; each line is a guest path, a tab and an entity path" ;;
-  esac
-  wasm="${line%%$'\t'*}" entity="${line#*$'\t'}"
-  case "$wasm" in /*) ;; *) wasm="$PAIRS_DIR/$wasm" ;; esac
-  case "$entity" in /*) ;; *) entity="$PAIRS_DIR/$entity" ;; esac
+  rest="$line"
+  fields=()
+  while :; do
+    case "$rest" in
+      *$'\t'*) fields+=("${rest%%$'\t'*}"); rest="${rest#*$'\t'}" ;;
+      *) fields+=("$rest"); break ;;
+    esac
+  done
+  [ "${#fields[@]}" -eq 4 ] || die "$PAIRS_FILE:$lineno: ${#fields[@]} tab-separated field(s); each line is a guest path, an entity path, a notices path and an SBOM path"
+  for k in 0 1 2 3; do
+    [ -n "${fields[$k]}" ] || die "$PAIRS_FILE:$lineno: field $((k + 1)) is empty; each line is a guest path, an entity path, a notices path and an SBOM path"
+    case "${fields[$k]}" in /*) ;; *) fields[k]="$PAIRS_DIR/${fields[$k]}" ;; esac
+  done
+  wasm="${fields[0]}" entity="${fields[1]}" notices="${fields[2]}" sbom="${fields[3]}"
   [ -f "$wasm" ] || die "$PAIRS_FILE:$lineno: guest not found: $wasm"
   [ -f "$entity" ] || die "$PAIRS_FILE:$lineno: entity not found: $entity"
+  [ -f "$notices" ] || die "$PAIRS_FILE:$lineno: notices not found: $notices"
+  [ -f "$sbom" ] || die "$PAIRS_FILE:$lineno: SBOM not found: $sbom"
   WASMS+=("$wasm")
   ENTITIES+=("$entity")
+  NOTICES+=("$notices")
+  SBOMS+=("$sbom")
 done < "$PAIRS_FILE"
 [ "${#WASMS[@]}" -gt 0 ] || die "$PAIRS_FILE holds no pair; refusing to report a publish of nothing as a success"
 
 published=0 failed=0
 REFS=()
 for i in "${!WASMS[@]}"; do
-  if plugin_publish_one "${WASMS[$i]}" "${ENTITIES[$i]}"; then
+  if plugin_publish_one "${WASMS[$i]}" "${ENTITIES[$i]}" "${NOTICES[$i]}" "${SBOMS[$i]}"; then
     published=$((published + 1))
     if [ -n "$PLUGIN_PUBLISHED_REF" ]; then
       REFS+=("$PLUGIN_PUBLISHED_REF")
