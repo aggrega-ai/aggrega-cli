@@ -218,7 +218,9 @@ name: Publish and sign core plugins
 #                        workflow, the run and its attempt, and the ref the run
 #                        started from with that ref's commit, as the run's OIDC
 #                        token gives them: on a tag push the tag and its commit,
-#                        on a dispatch the ref it was dispatched from. It runs on
+#                        on a dispatch the ref it was dispatched from, so a real
+#                        manual publish is dispatched from its tag, whose commit
+#                        is the one the build built. It runs on
 #                        a GitHub-hosted runner, names no environment and no
 #                        secret, and has two steps and nothing else: the artifact
 #                        download of release-checksums, and GitHub's own attest
@@ -329,7 +331,9 @@ name: Publish and sign core plugins
 #                        but gh, git and the shell's own utilities. The token
 #                        reaches gh and git through their environment and is
 #                        never written to disk.
-#   notarization-check   Once the publish jobs above have ended, whatever each
+#   notarization-check   Once sign-and-publish, record-published,
+#                        publish-skills, publish-package-channels and
+#                        open-winget-pull-request have ended, whatever each
 #                        did, on a real publish and a dry run alike, whenever
 #                        sign-macos succeeded and gave a submission ID: asks
 #                        Apple's notary service, once, with Apple's own
@@ -423,9 +427,11 @@ name: Publish and sign core plugins
 # artifact download and upload — save GitHub's attest action, in a job whose
 # steps are the artifact download and that action alone, granted contents:
 # read, id-token: write, attestations: write and artifact-metadata: write and
-# nothing else, and naming no secret — when a checkout keeps its token, when a job
-# that runs third-party code names a secret or the run's token anywhere in it —
-# in an action's with: as well as in an environment or a run body — when the
+# nothing else, naming no secret and no environment, and running on a
+# GitHub-hosted image it names by a literal label — when a checkout keeps its
+# token, when a job that runs third-party code names a secret or the run's
+# token anywhere in it — in an action's with: as well as in an environment or a
+# run body — when the
 # job that may delete the run's artifacts is granted anything else, runs any
 # action or a build step, or names a secret, or when a secret whose name begins
 # APPLE_ is named outside sign-macos, save the notary key, which
@@ -4105,8 +4111,19 @@ jobs:
     # which reads the list and writes the attestation. It names no environment
     # and no secret, checks nothing out and runs on a GitHub-hosted runner, so
     # it shares nothing with the machine the build ran on.
-    # check-release-job-isolation.sh admits the attest action in a job of
-    # exactly this shape and refuses it anywhere else.
+    # check-release-job-isolation.sh admits the attest action only in a job
+    # whose steps are the artifact download and the attest action alone,
+    # granted exactly the four permissions below, naming no secret and no
+    # environment, and running on a GitHub-hosted image it names by a literal
+    # label, and refuses it in any other job that may mint the OIDC token; the
+    # commit pins are held by the workflow audit, zizmor's unpinned-uses audit,
+    # which refuses an action not pinned by its full commit.
+    #
+    # A failed attest cannot be redone for that release: clean-up deletes
+    # release-checksums when the run ends, so a re-run of the failed jobs
+    # finds it gone, and a re-run of every job is refused at the release step,
+    # since the release already carries the Windows installer; the release
+    # stays without provenance.
     needs: [sign-and-publish]
     if: >-
       ${{ !cancelled()
@@ -5348,11 +5365,12 @@ jobs:
 
   notarization-check:
     # Reads Apple's answer to the notarization submission sign-macos made, at
-    # the end of the run, once the publish jobs have ended: sign-macos submits
-    # the signed binaries without waiting, so the release does not sit on a
-    # macOS machine while Apple works, and a bare executable carries no stapled
-    # ticket, so the binaries may be published before Apple answers — macOS
-    # fetches each one's ticket online once Apple accepts the submission.
+    # the end of the run, once the publish jobs its needs: names have ended:
+    # sign-macos submits the signed binaries without waiting, so the release
+    # does not sit on a macOS machine while Apple works, and a bare executable
+    # carries no stapled ticket, so the binaries may be published before Apple
+    # answers — macOS fetches each one's ticket online once Apple accepts the
+    # submission.
     #
     # It asks once, with Apple's own notarytool info, and polls nothing:
     #   Accepted     it prints Apple's log of the submission, then holds each
@@ -5381,7 +5399,7 @@ jobs:
     # It runs on a real publish and a dry run alike — a dry run submits the
     # binaries too — whenever sign-macos succeeded and gave a submission ID,
     # whatever the jobs after sign-macos did; it is skipped with sign-macos.
-    # It is a job of its own so that it runs after the publish jobs, and so
+    # It is a job of its own so that it runs after those publish jobs, and so
     # that the notary key shares a job with nothing but Apple's own programs:
     # it holds the key, written as sign-macos writes it, readable by the
     # runner's user alone, into the runner's temporary directory and removed

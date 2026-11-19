@@ -26,9 +26,12 @@
 #      provenance for files with the job's OIDC identity) in a job whose steps
 #      are an actions/download-artifact step and then that one, and nothing
 #      else, whose permissions grant exactly contents: read, id-token: write,
-#      attestations: write and artifact-metadata: write, and which names no
-#      secret anywhere; or calls a reusable workflow; or declares a container:
-#      or services:, whose images run beside its steps;
+#      attestations: write and artifact-metadata: write, which names no secret
+#      anywhere and no environment:, and which runs-on a literal label of a
+#      GitHub-hosted image (ubuntu-…, windows-… or macos-…), which no variable
+#      can turn into the machine the build ran on; or calls a reusable
+#      workflow; or declares a container: or services:, whose images run
+#      beside its steps;
 #   3. an actions/checkout step, in any job, does not set
 #      persist-credentials: false;
 #   4. a job that may not mint the token but runs third-party code — a step that
@@ -260,8 +263,10 @@ secrets_in() {
 }
 
 # The grants of the one job shape in which actions/attest runs (rule 2),
-# exactly, in the order the messages name them.
+# exactly, in the order the messages name them, and the literal labels of the
+# GitHub-hosted images it may run on.
 ATTEST_GRANTS=("contents: read" "id-token: write" "attestations: write" "artifact-metadata: write")
+ATTEST_RUNS_ON_RE='^(ubuntu|windows|macos)-[0-9A-Za-z.-]+$'
 ATTEST_GRANTS_SAID="$(printf '%s, ' "${ATTEST_GRANTS[@]:0:${#ATTEST_GRANTS[@]}-1}")"
 ATTEST_GRANTS_SAID="${ATTEST_GRANTS_SAID%, } and ${ATTEST_GRANTS[-1]}"
 ATTEST_GRANTS_SORTED="$(printf '%s\n' "${ATTEST_GRANTS[@]}" | LC_ALL=C sort)"
@@ -269,10 +274,11 @@ ATTEST_GRANTS_SORTED="$(printf '%s\n' "${ATTEST_GRANTS[@]}" | LC_ALL=C sort)"
 # attest_faults: sets ATTEST_FAULTS to what keeps job J from the shape in which
 # actions/attest runs — an actions/download-artifact step and then an
 # actions/attest step and nothing else, granted exactly ATTEST_GRANTS, naming no
-# secret — each worded to follow "uses <action>"; empty when J has that shape.
+# environment, running on a label ATTEST_RUNS_ON_RE matches, naming no secret —
+# each worded to follow "uses <action>"; empty when J has that shape.
 ATTEST_FAULTS=()
 attest_faults() {
-  local n k step_uses step_runs step_name what grants joined ref named=""
+  local n k step_uses step_runs step_name what grants joined runs_on ref named=""
   local -a granted=()
   ATTEST_FAULTS=()
   n="$(yq -r '.jobs[strenv(J)].steps | length' "$WORKFLOW")"
@@ -318,6 +324,13 @@ attest_faults() {
       ATTEST_FAULTS+=("in a job granted $(yq -r '.jobs[strenv(J)].permissions' "$WORKFLOW"); actions/attest runs only in a job granted exactly $ATTEST_GRANTS_SAID")
       ;;
   esac
+  if [ "$(yq -r '.jobs[strenv(J)] | has("environment")' "$WORKFLOW")" = true ]; then
+    ATTEST_FAULTS+=("in a job that names the environment $(yq -o=json -I=0 '.jobs[strenv(J)].environment' "$WORKFLOW"); actions/attest runs only in a job that names no environment")
+  fi
+  runs_on="$(yq -r '.jobs[strenv(J)]."runs-on" | select(tag == "!!str")' "$WORKFLOW")"
+  if ! [[ $runs_on =~ $ATTEST_RUNS_ON_RE ]]; then
+    ATTEST_FAULTS+=("in a job that runs on $(yq -o=json -I=0 '.jobs[strenv(J)]."runs-on"' "$WORKFLOW"); actions/attest runs only in a job that runs on a GitHub-hosted image it names by a literal label (ubuntu-…, windows-… or macos-…)")
+  fi
   while IFS= read -r ref; do
     case "$ref" in secrets.*) named="${named:+$named }$ref" ;; esac
   done < <(secrets_in "$(yq -o=json '.jobs[strenv(J)]' "$WORKFLOW")" | LC_ALL=C sort -u)
@@ -660,7 +673,7 @@ printf '  may mint the OIDC token: %s — %d step(s), none a build or pack step,
   "${holders[*]:-no job}" "$holder_steps"
 printf '  scripts read for those steps: %s\n' "${read_uniq[*]:-none}"
 if [ "${#ATTEST_JOBS[@]}" -gt 0 ]; then
-  printf '  actions/attest: in %s alone — each an actions/download-artifact step followed by the actions/attest step and nothing else, granted exactly %s, naming no secret\n' \
+  printf '  actions/attest: in %s alone — each an actions/download-artifact step followed by the actions/attest step and nothing else, granted exactly %s, naming no secret and no environment, on a GitHub-hosted image named by a literal label\n' \
     "${ATTEST_JOBS[*]}" "$ATTEST_GRANTS_SAID"
 else
   printf '  actions/attest: in no job\n'
