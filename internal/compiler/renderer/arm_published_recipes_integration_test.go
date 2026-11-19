@@ -391,3 +391,80 @@ func TestRenderAll_ArmRedisInstanceNameLimit(t *testing.T) {
 		}
 	})
 }
+
+// terraformRedisVersion is the version of the terraform Azure Managed Redis
+// Recipe whose instance-name rule TestRenderAll_TerraformRedisInstanceNameLimit
+// holds.
+const terraformRedisVersion = "1.0.1"
+
+// renderTerraformRedis renders the published terraform Azure Managed Redis
+// Recipe as a component named node and returns what the build assembled.
+func renderTerraformRedis(t *testing.T, node string) (map[string]renderer.AssembledFile, error) {
+	t.Helper()
+	dir := wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog", "recipe", "terraform", "redis-azure-managed", terraformRedisVersion)
+	cat, err := catalog.LoadAll("", dir)
+	if err != nil {
+		t.Fatalf("loading the Recipe: %v", err)
+	}
+	if len(cat.Recipes) != 1 {
+		t.Fatalf("the directory of the Recipe holds %d Recipes, want one", len(cat.Recipes))
+	}
+	var recipe types.Recipe
+	for _, r := range cat.Recipes {
+		recipe = r
+	}
+	componentType, _, _ := strings.Cut(recipe.Spec.Implements, ":")
+
+	input := integrationInput(t, t.TempDir(), componentType, node, "terraform", "", "", "")
+	input.Lockfile.SourceArtifacts = nil
+	input.GraphView = derivedKeyGraphFacts{}
+	input.Graph.Spec.ValuesMapping.Set(node, json.RawMessage(`{"maxmemory_policy":"allkeys-lru","appendonly":false,"persistence":{"enabled":false}}`))
+	input.Graph.Spec.InfraMapping.Set(node, json.RawMessage(`{"port":6379,"client_tls":true,"overrides":{"resource_group_name":"rg-cache","location":"westeurope","sku_name":"Balanced_B5"}}`))
+
+	lookup := renderer.RecipeLookup{
+		Recipe: func(_, typeURI string) (*types.Recipe, bool) {
+			if typeURI != componentType {
+				return nil, false
+			}
+			return &recipe, true
+		},
+		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
+	}
+	result, err := renderer.RenderAll(context.Background(), input, lookup, wasmEngineFactory(t))
+	if err != nil {
+		return nil, err
+	}
+	return result.Files, nil
+}
+
+// TestRenderAll_TerraformRedisInstanceNameLimit holds the instance-name rule of
+// the terraform Azure Managed Redis Recipe: the service checks the name together
+// with the region's name against 63 characters, so a name of 45 characters is
+// refused and one of 44 renders, as with the arm Recipe.
+func TestRenderAll_TerraformRedisInstanceNameLimit(t *testing.T) {
+	t.Parallel()
+	wasmtest.SkipWithoutSiblings(t, "../../../../aggrega-hub/aggrega-catalog")
+
+	t.Run("45 characters is refused", func(t *testing.T) {
+		t.Parallel()
+		_, err := renderTerraformRedis(t, strings.Repeat("a", 45))
+		if err == nil {
+			t.Fatal("a 45-character instance name rendered, want it refused")
+		}
+		chain := cerrors.CauseChain(err)
+		t.Logf("refusal: %s", chain)
+		if !strings.Contains(chain, "an instance name holds up to 44 letters, digits and hyphens") {
+			t.Fatalf("the refusal does not name the 44-character limit: %s", chain)
+		}
+	})
+	t.Run("44 characters renders", func(t *testing.T) {
+		t.Parallel()
+		files, err := renderTerraformRedis(t, strings.Repeat("a", 44))
+		if err != nil {
+			t.Fatalf("a 44-character instance name was refused: %s", cerrors.CauseChain(err))
+		}
+		if len(files) == 0 {
+			t.Fatal("a 44-character instance name rendered no file")
+		}
+	})
+}
