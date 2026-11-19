@@ -61,6 +61,22 @@ type PushConfig struct {
 	// digest before publishing the entity. Empty for every non-Plugin kind.
 	PluginPath string
 
+	// PluginNoticesPath is the local path to the Markdown file holding the
+	// third-party notices of the plugin's guest, optional and only with a
+	// PluginPath. Publication reads it once and packs it as a manifest layer
+	// after the .wasm, so the notices travel with the executable they describe
+	// and the manifest digest covers them. Empty publishes no notices layer.
+	PluginNoticesPath string
+
+	// PluginSBOMPath is the local path to the SPDX 2.3 JSON software bill of
+	// materials of the plugin's guest, optional and only with a PluginPath.
+	// Publication reads it once and attaches it as an application/spdx+json
+	// referrer of the published manifest once that manifest has landed. It is
+	// not part of the manifest, so it moves no digest. A publication that finds
+	// its content already published attaches it unless the version already
+	// carries one. Empty attaches none.
+	PluginSBOMPath string
+
 	// PinSources is this invocation's answer to whether the publication runs the
 	// entity author's pin step on the entity before bundling it: nil defers to
 	// the workspace's pin_sources_at_push, and a value overrides that setting in
@@ -272,6 +288,34 @@ type ExecutableRequiredError struct {
 func (e *ExecutableRequiredError) Error() string {
 	return fmt.Sprintf("Plugin %s: --plugin <path-to-.wasm> is required to publish a Plugin (publish binds the .wasm into the entity's manifest)", e.name)
 }
+
+// PluginInputError refuses a file offered beside a Plugin's .wasm — its
+// third-party notices or its software bill of materials — that cannot be
+// published: it is given without a .wasm, cannot be read, or is empty.
+//
+// It is a type so a caller can recognise the refusal without reading its text;
+// Flag names the command-line flag the file came in on, and the text names it
+// even where another surface raised it. A file that cannot be read keeps its
+// cause in the chain, so errors.Is matches it.
+type PluginInputError struct {
+	flag   string
+	reason string
+	cause  error
+}
+
+// Flag returns the command-line flag naming the refused file.
+func (e *PluginInputError) Flag() string { return e.flag }
+
+// Error renders the refusal naming the flag.
+func (e *PluginInputError) Error() string {
+	if e.cause != nil {
+		return fmt.Sprintf("%s %s: %v", e.flag, e.reason, e.cause)
+	}
+	return fmt.Sprintf("%s %s", e.flag, e.reason)
+}
+
+// Unwrap returns the read failure, when the refusal is one.
+func (e *PluginInputError) Unwrap() error { return e.cause }
 
 // ListPublishableKinds writes each publishable entity kind on its own line, in
 // the lexical order oci.MediaTypeKinds already returns them in.
@@ -501,6 +545,14 @@ func writeWholeDirectoryNote(out io.Writer, source string) {
 func Push(ctx context.Context, cfg PushConfig) (PushResult, error) {
 	if cfg.EntityPath == "" {
 		return PushResult{}, fmt.Errorf("entity path required (pass as positional arg or via --entity)")
+	}
+	if cfg.PluginPath == "" {
+		if cfg.PluginNoticesPath != "" {
+			return PushResult{}, &PluginInputError{flag: "--plugin-notices", reason: "requires --plugin: the notices are published with the .wasm they describe"}
+		}
+		if cfg.PluginSBOMPath != "" {
+			return PushResult{}, &PluginInputError{flag: "--plugin-sbom", reason: "requires --plugin: the bill of materials is attached to the Plugin published with the .wasm it describes"}
+		}
 	}
 	out := cfg.Out
 	if out == nil {

@@ -38,6 +38,10 @@ type completion struct {
 	policy workspaceconfig.RegistryConfig
 	// now is the clock an owed date is read from; nil reads the live clock.
 	now func() time.Time
+	// sbom is the software bill of materials this publication offers, attached as
+	// an application/spdx+json referrer unless the version already carries one. Nil
+	// offers none.
+	sbom []byte
 }
 
 // completed is what a completion attached: a signature, a publication date, both,
@@ -75,6 +79,10 @@ type completed struct {
 // still counts and a run never states a second date. The date states the clock of
 // this run, read as recordPublicationDate reads it: the time the publication was
 // completed, since nothing the registry serves records when the content landed.
+//
+// A bill of materials this publication offers is owed when the version carries no
+// application/spdx+json referrer at all, so a run never attaches a second one; its
+// presence is read from the referrer listing, as the date's is.
 //
 // Every read comes before every write. A listing or a fetch that cannot be
 // completed is returned as an error with nothing attached, and is never read as
@@ -117,6 +125,16 @@ func completePublication(ctx context.Context, out io.Writer, c completion) (comp
 		dateOwed = len(dates) == 0
 	}
 
+	sbomOwed := false
+	if c.sbom != nil {
+		boms, err := oci.ListReferrers(ctx, c.target, c.tag, oci.MediaTypeSPDXJSON)
+		if err != nil {
+			return completed{}, fmt.Errorf("%s:%s is already published, but whether it carries a bill of materials could not be read: %w",
+				c.reference, c.tag, err)
+		}
+		sbomOwed = len(boms) == 0
+	}
+
 	var done completed
 	if signNow {
 		if err := attachBundle(ctx, c.target, c.tag, artifactType, bundle); err != nil {
@@ -124,6 +142,12 @@ func completePublication(ctx context.Context, out io.Writer, c completion) (comp
 		}
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", c.reference, c.tag)
 		done.signed = true
+	}
+	if sbomOwed {
+		if err := attachSBOM(ctx, c.target, c.tag, c.sbom); err != nil {
+			return done, fmt.Errorf("attach bill of materials to %s:%s: %w", c.reference, c.tag, err)
+		}
+		fmt.Fprintf(out, "SBOM attached: %s:%s\n", c.reference, c.tag)
 	}
 	if dateOwed {
 		dated, err := recordPublicationDate(ctx, out, c.target, c.reference, c.tag, datedBy, c.now)

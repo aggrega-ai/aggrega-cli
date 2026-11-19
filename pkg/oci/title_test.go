@@ -169,11 +169,17 @@ func TestReferrerPayloadIsTitledByItsArtifactType(t *testing.T) {
 		t.Fatalf("AttachPublishedAt: %v", err)
 	}
 
+	sbom, err := oci.AttachReferrer(ctx, store, "1.0.0", oci.MediaTypeSPDXJSON, []byte(`{"spdxVersion":"SPDX-2.3"}`))
+	if err != nil {
+		t.Fatalf("AttachReferrer(bill of materials): %v", err)
+	}
+
 	cases := []struct {
 		name string
 		desc ocispec.Descriptor
 		want string
 	}{
+		{"bill of materials", sbom, "sbom.json"},
 		{"signature", sig, "signature.json"},
 		{"deprecation marker", marker, "deprecation.json"},
 		{"signature over the marker", markerSig, "signature.json"},

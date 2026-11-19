@@ -132,6 +132,13 @@ const (
 	// It is declared with the transport so the transport can name what it
 	// carries; the signing package re-exports it as its bundle media type.
 	MediaTypeSignatureBundle = "application/vnd.dev.sigstore.bundle.v0.3+json"
+	// MediaTypeSPDXJSON is the media type of an SPDX 2.3 JSON document: the
+	// artifactType of the OCI referrer that attaches a software bill of materials
+	// to a publication, and the media type of that referrer's one layer. It is
+	// the standard SPDX type rather than a vendor one, so a registry client that
+	// lists referrers by it finds the bill of materials without knowing this
+	// product. It names no entity kind.
+	MediaTypeSPDXJSON = "application/spdx+json"
 )
 
 // kindMediaTypes maps the catalog entity kind string (matching the values

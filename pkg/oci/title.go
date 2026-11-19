@@ -32,7 +32,8 @@ import (
 //     third-party notices by notices.markdown (the notices, as the second layer);
 //   - a signature bundle attached as a referrer is signature.json;
 //   - a deprecation marker attached as a referrer is deprecation.json;
-//   - a publication date attached as a referrer is published-at.json.
+//   - a publication date attached as a referrer is published-at.json;
+//   - a software bill of materials attached as a referrer is sbom.json.
 //
 // A standalone data artifact carries no entity, so its title is not derived
 // here: its publisher supplies the name (see PushNamed).
@@ -48,6 +49,7 @@ const (
 	titleStemSignature   = "signature"
 	titleStemDeprecation = "deprecation"
 	titleStemPublishedAt = "published-at"
+	titleStemSBOM        = "sbom"
 )
 
 // contentTitle returns the title a content descriptor of mediaType is stamped
@@ -77,6 +79,8 @@ func titleStem(mediaType string) string {
 		return titleStemDeprecation
 	case MediaTypePublishedAt:
 		return titleStemPublishedAt
+	case MediaTypeSPDXJSON:
+		return titleStemSBOM
 	}
 	if _, _, ok := KindOfMediaType(mediaType); ok {
 		return titleStemEntity

@@ -10,6 +10,8 @@ import (
 	"io"
 	"os"
 
+	"oras.land/oras-go/v2"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/opprogress"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -84,6 +86,23 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	wasmBytes, err := os.ReadFile(cfg.PluginPath)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("read .wasm %s: %w", cfg.PluginPath, err)
+	}
+
+	// The optional notices and bill of materials are read once, here, before
+	// anything is validated or uploaded: a file that cannot be published refuses
+	// the whole publication, and the notices bytes that are digested are the ones
+	// that ship.
+	notices, err := readPluginInput("--plugin-notices", cfg.PluginNoticesPath)
+	if err != nil {
+		return PushResult{}, err
+	}
+	sbom, err := readPluginInput("--plugin-sbom", cfg.PluginSBOMPath)
+	if err != nil {
+		return PushResult{}, err
+	}
+	var manifestOpts []oci.PluginManifestOption
+	if notices != nil {
+		manifestOpts = append(manifestOpts, oci.WithPluginNotices(notices))
 	}
 
 	// Publication-time describe()-cross-check: refuse before any bytes land if the
@@ -192,7 +211,7 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	// dry-run branch, so the digest a dry run states is the very value the
 	// immutability guard compares and the signer signs below. It packs into an
 	// in-memory store and contacts nothing.
-	proposedDigest, err := oci.PluginManifestDigest(ctx, entityYAML, wasmBytes, annotations)
+	proposedDigest, err := oci.PluginManifestDigest(ctx, entityYAML, wasmBytes, annotations, manifestOpts...)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("%s:%s: %w", reference, version, err)
 	}
@@ -249,7 +268,7 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 			policy, _ := wsCfg.RegistryTrustPolicy(dest.Host)
 			c := completion{
 				target: target, reference: reference, tag: version, digest: existingDigest,
-				wsCfg: wsCfg, policy: policy, now: cfg.Now,
+				wsCfg: wsCfg, policy: policy, now: cfg.Now, sbom: sbom,
 			}
 			if wantSign {
 				req := cfg.signerRequest()
@@ -297,7 +316,7 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 	// (if any) commits to. Each write it makes retries a transient failure
 	// inside pkg/oci, so nothing here wraps it again.
 	end := opprogress.Begin(ctx, "uploading "+reference+":"+version)
-	manifestDigest, err := oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes, annotations)
+	manifestDigest, err := oci.PushPluginManifest(ctx, target, version, entityYAML, wasmBytes, annotations, manifestOpts...)
 	end(err)
 	if err != nil {
 		return PushResult{}, fmt.Errorf("push plugin %s:%s: %w", reference, version, err)
@@ -312,12 +331,44 @@ func pushPlugin(ctx context.Context, out io.Writer, cfg PushConfig, dest registr
 		}
 		fmt.Fprintf(out, "Signature attached: %s:%s\n", reference, version)
 	}
+	if sbom != nil {
+		if err := attachSBOM(ctx, target, version, sbom); err != nil {
+			return PushResult{}, fmt.Errorf("attach bill of materials to %s:%s: %w", reference, version, err)
+		}
+		fmt.Fprintf(out, "SBOM attached: %s:%s\n", reference, version)
+	}
 	dated, err := recordPublicationDate(ctx, out, target, reference, version, signatureBundle, cfg.Now)
 	if err != nil {
 		return PushResult{}, err
 	}
 	result.Dated = dated
 	return result, nil
+}
+
+// readPluginInput reads the file a publication offers beside the .wasm, named by
+// the flag it came in on. An empty path is no file and returns nil bytes; a file
+// that cannot be read, or holds nothing, is refused naming the flag.
+func readPluginInput(flag, path string) ([]byte, error) {
+	if path == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, &PluginInputError{flag: flag, reason: "cannot be read", cause: err}
+	}
+	if len(data) == 0 {
+		return nil, &PluginInputError{flag: flag, reason: "names an empty file: " + path}
+	}
+	return data, nil
+}
+
+// attachSBOM attaches a software bill of materials as an application/spdx+json
+// referrer of the manifest published under subjectRef. The manifest is untouched.
+func attachSBOM(ctx context.Context, target oras.Target, subjectRef string, sbom []byte) error {
+	end := opprogress.Begin(ctx, "attaching the bill of materials")
+	_, err := oci.AttachReferrer(ctx, target, subjectRef, oci.MediaTypeSPDXJSON, sbom)
+	end(err)
+	return err
 }
 
 // taggedBuildRemedy is the repair publication names when the version a plugin
