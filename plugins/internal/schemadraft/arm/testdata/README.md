@@ -53,6 +53,9 @@ them is written for these tests. The types they describe, under the `Microsoft.E
 - `scopes.json` holds one body under several types, each writable at a different set of scopes: tenant alone,
   extension alone, tenant and extension, subscription alone, management group alone, every scope, the tenant,
   management group and subscription scopes, and none.
+- `nested-secret.json` holds `Microsoft.Example/machines`, whose `properties` hold a sensitive write-only
+  `adminKey` and an `osProfile` object holding a user name, a sensitive write-only `adminPassword` and a sensitive
+  read-back `recoveryToken`: a sensitive member at the top of the resource and below it.
 - `golden/vault.component.yaml` and `golden/vault.recipe.yaml` are the Component and the Recipe an import of
   `Microsoft.Example/vaults` from `vault.json` drafts. `TestArmGolden` compares a draft with them; running it with
   `UPDATE_GOLDEN=1` writes the draft into them instead.

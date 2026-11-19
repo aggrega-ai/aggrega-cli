@@ -11,6 +11,9 @@ description in them is written for these tests. The provider `example/ledgers` a
   which the provider does not carry: the required `identifier` and `subnet_group` and the optional `name` and
   `kms_key_id`. Its attributes mirror four properties of the CloudFormation fixture `AWS::Example::Ledger`, so the
   drafts of the two place them alike.
+- `nested-secret.json` is an export of the provider `example/ledgers` holding one resource, `ex_vault`, with a
+  sensitive attribute `password` at the top and a list block `user` holding a login, a sensitive `password` and a
+  sensitive `token` read back: a sensitive attribute at the top of the resource and below it.
 - `golden/` holds what the Terraform writer drafts: `vault.main.tf.json` and `vault.recipe.yaml` for a resource the
   tests build in code, and `ledger.main.tf.json` and `ledger.recipe.yaml` for `ex_ledger` imported from `ledger.json`.
   The tests comparing a draft with them write the draft into them instead when run with `UPDATE_GOLDEN=1`.

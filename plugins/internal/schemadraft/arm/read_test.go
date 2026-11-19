@@ -701,3 +701,41 @@ func TestArmNeverPanicsOnMalformedInput(t *testing.T) {
 		})
 	}
 }
+
+// TestArmNestedSecretWarned imports a type whose properties hold a sensitive
+// member at the top, adminKey, and one below it, osProfile.adminPassword. Only
+// the top one is drafted as a secret; the one below is warned of once, under
+// constraint-dropped, naming its path and the key a Release sets it inside as a
+// plain value. A sensitive member read back, osProfile.recoveryToken, is no
+// input, and is not warned of so.
+func TestArmNestedSecretWarned(t *testing.T) {
+	out := schemadraft.Import(fileInput(t, "nested-secret.json", "Microsoft.Example/machines"), Format, parse)
+	noHalt(t, out.Diagnostics)
+	var warned []aggrega.Diagnostic
+	for _, d := range out.Diagnostics {
+		if d.Code == codeDropped && strings.Contains(d.Message, "as a secret") {
+			warned = append(warned, d)
+		}
+	}
+	if len(warned) != 1 {
+		t.Fatalf("%d warnings of a sensitive member not drafted as a secret, want one: %+v", len(warned), out.Diagnostics)
+	}
+	for _, want := range []string{`"properties.osProfile.adminPassword"`, "plain value", "infra.overrides.osProfile"} {
+		if !strings.Contains(warned[0].Message, want) {
+			t.Errorf("the warning does not name %s: %s", want, warned[0].Message)
+		}
+	}
+	if warned[0].Severity != aggrega.SeverityWarn {
+		t.Errorf("the warning's severity is %q", warned[0].Severity)
+	}
+	var recipe string
+	for _, f := range out.Files {
+		if strings.HasSuffix(f.Path, "/recipe.yaml") {
+			recipe = f.Content
+		}
+	}
+	if !strings.Contains(recipe, "AdminKey: string, required; secret:") &&
+		!strings.Contains(recipe, "AdminKey: string; secret:") {
+		t.Errorf("the top-level adminKey is not drafted as a secret parameter:\n%.2000s", recipe)
+	}
+}

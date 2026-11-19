@@ -619,3 +619,41 @@ func TestTerraformDepthCutReadsNoDiscardedSubtree(t *testing.T) {
 		t.Errorf("the cut is %+v", p)
 	}
 }
+
+// TestTerraformNestedSecretWarned imports a resource holding a sensitive
+// attribute at the top, password, and one in a block, user[].password. Only the
+// top one is drafted as a secret; the one in the block is warned of once, under
+// constraint-dropped, naming its path and the key a Release sets it inside as a
+// plain value. A sensitive attribute read back, user[].token, is no input, and
+// is not warned of so.
+func TestTerraformNestedSecretWarned(t *testing.T) {
+	input := bytesInput("nested-secret.json", fixture(t, "nested-secret.json"))
+	input.Settings = json.RawMessage(`{"resource_types":["ex_vault"]}`)
+	out := schemadraft.Import(input, Format, parse)
+	if halts := haltsOf(out.Diagnostics); len(halts) != 0 {
+		t.Fatalf("the import halts: %+v", halts)
+	}
+	var warned []aggrega.Diagnostic
+	for _, d := range out.Diagnostics {
+		if d.Code == "constraint-dropped" && strings.Contains(d.Message, "as a secret") {
+			warned = append(warned, d)
+		}
+	}
+	if len(warned) != 1 {
+		t.Fatalf("%d warnings of a sensitive attribute not drafted as a secret, want one: %+v", len(warned), out.Diagnostics)
+	}
+	for _, want := range []string{`"user[].password"`, "plain value", "infra.overrides.user"} {
+		if !strings.Contains(warned[0].Message, want) {
+			t.Errorf("the warning does not name %s: %s", want, warned[0].Message)
+		}
+	}
+	var component string
+	for _, f := range out.Files {
+		if strings.HasSuffix(f.Path, "/component.yaml") {
+			component = f.Content
+		}
+	}
+	if !strings.Contains(component, "featuresSchema:") || !strings.Contains(component, "password:") {
+		t.Errorf("the top-level password is not drafted as a featuresSchema slot:\n%.2000s", component)
+	}
+}

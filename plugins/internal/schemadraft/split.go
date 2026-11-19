@@ -133,8 +133,9 @@ const (
 // numeric suffix, and its rule and its Renamed name both.
 //
 // It returns the constraint-dropped warnings of carrying each key it types — in
-// values, infra and provides — into its pillar, and for an override one for
-// each cut in it.
+// values, infra and provides — into its pillar, for an override one for each
+// cut in it, and one for each member below a key it drafts that the format reads
+// as a secret, since only a property at the top of the resource becomes one.
 func Split(t *Type, r Rules) ([]Placed, []aggrega.Diagnostic) {
 	s := &splitter{t: t, r: r, values: newKeySpace(), infra: newKeySpace(overridesKey), provides: newKeySpace(),
 		secrets: newKeySpace(), overrides: overrideKeys{}}
@@ -167,16 +168,17 @@ func (s *splitter) place(p *Property) {
 		}
 		s.keyed(p, p.Name, PillarSecret, s.secrets, rule, p.Required)
 	case ruled(s.r.Placement, s.t, p):
-		s.keyed(p, p.Name, PillarInfra, s.infra, rulePlacement, p.Required)
+		s.nestedSecrets(p, "infra."+s.keyed(p, p.Name, PillarInfra, s.infra, rulePlacement, p.Required))
 	case ruled(s.r.Identity, s.t, p):
-		s.keyed(p, p.Name, PillarValues, s.values, ruleIdentity, p.Required)
+		s.nestedSecrets(p, "values."+s.keyed(p, p.Name, PillarValues, s.values, ruleIdentity, p.Required))
 	case p.Required:
-		s.keyed(p, p.Name, PillarInfra, s.infra, ruleRequired, true)
+		s.nestedSecrets(p, "infra."+s.keyed(p, p.Name, PillarInfra, s.infra, ruleRequired, true))
 	default:
 		key, renamed := s.overrides.take(p)
 		s.placed = append(s.placed, Placed{Property: p, Pillar: PillarOverrides, Key: key,
 			Rule: noted(ruleOverride, p.CreateOnly, p.Deprecated, renamed), Renamed: renamed})
 		s.diags = append(s.diags, cuts(p, vendorPath(p))...)
+		s.nestedSecrets(p, "infra."+overridesKey+"."+key)
 	}
 	if s.r.NestedProvides {
 		s.nestedReadBack(p, []string{p.Name})
@@ -222,9 +224,43 @@ func (s *splitter) nestedReadBack(p *Property, names []string) {
 	}
 }
 
-// keyed places p under a key taken in space for the vendor name, and records
-// the warnings of carrying it into its pillar.
-func (s *splitter) keyed(p *Property, vendor string, pillar Pillar, space *keySpace, rule string, required bool) {
+// nestedSecrets warns, under constraint-dropped, of each member of p at any
+// depth — an item of an array included — that the format reads as a secret
+// (Rules.Secret) and that a draft writes, naming its vendor path and where, the
+// key p is drafted under. Only a property at the top of the resource is drafted
+// as a secret, so a Release sets such a member as a plain value inside that key.
+// A member read back is no input, and is not warned of; nor is anything below a
+// member warned of already.
+func (s *splitter) nestedSecrets(p *Property, where string) {
+	if s.r.Secret == nil {
+		return
+	}
+	var walk func(m *Property, path string)
+	members := func(m *Property, path string) {
+		if m.Items != nil {
+			walk(m.Items, path+"[]")
+		}
+		for _, c := range m.Properties {
+			walk(c, path+"."+c.Name)
+		}
+	}
+	walk = func(m *Property, path string) {
+		switch {
+		case readBack(m):
+		case s.r.Secret(s.t, m):
+			s.diags = append(s.diags, constraintDropped(path, "the vendor schema's sensitivity as a secret",
+				"a draft makes a secret of a property at the top of the resource alone, so a Release sets this one "+
+					"as a plain value inside "+where))
+		default:
+			members(m, path)
+		}
+	}
+	members(p, vendorPath(p))
+}
+
+// keyed places p under a key taken in space for the vendor name, records the
+// warnings of carrying it into its pillar, and returns the key.
+func (s *splitter) keyed(p *Property, vendor string, pillar Pillar, space *keySpace, rule string, required bool) string {
 	key, renamed := space.take(vendor)
 	rule = noted(rule, p.CreateOnly && pillar != PillarValues && pillar != PillarProvides, p.Deprecated, renamed)
 	s.placed = append(s.placed, Placed{Property: p, Pillar: pillar, Key: key, Rule: rule, Renamed: renamed,
@@ -233,6 +269,7 @@ func (s *splitter) keyed(p *Property, vendor string, pillar Pillar, space *keySp
 		_, d := Carry(p, key)
 		s.diags = append(s.diags, d...)
 	}
+	return key
 }
 
 // noted appends to rule what holds beside it: that the property is replaced
