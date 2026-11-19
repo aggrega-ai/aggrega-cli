@@ -46,8 +46,10 @@
 # never fall back to a browser prompt. The publish command, its options and that
 # refusal live in scripts/lib/plugin-publish.sh, which this script sources.
 #
-# --dry-run computes and prints the proposed references for every mode without any
-# network call, OIDC contact, or marker advance.
+# --dry-run computes and prints the proposed references for every mode without
+# publishing, signing, contacting an OIDC issuer or advancing the marker. In
+# enumerate-embedded it still runs the notices generator for each guest, and that
+# generator's `go list` can fetch a Go module the module cache lacks.
 #
 # Every guest is published with its third-party notices and SBOM. In
 # enumerate-embedded the script generates both for each guest, where the guest
@@ -61,10 +63,11 @@
 #
 # --pairs-out <file> resolves the work-list and writes it as a pairing instead of
 # publishing it: one line per Plugin entity: its guest's path, the entity's path,
-# the guest's notices file and its SBOM file, separated by tabs, each relative to the directory <file> sits in. Both must lie
-# under that directory, so the directory can be handed to another machine whole,
-# and the pairing is written only when every entity paired. With --pairs-out
-# nothing is published or signed and no marker moves, so --dry-run, --sign, --key,
+# the guest's notices file and its SBOM file, separated by tabs, each relative to
+# the directory <file> sits in. All four paths must lie under that directory, so
+# the directory can be handed to another machine whole, and the pairing is written
+# only when every entity paired. With --pairs-out nothing is published or signed
+# and no marker moves, so --dry-run, --sign, --key,
 # --identity-token and --marker are refused beside it. A pairing is published by
 # scripts/publish-plugin-pairs.sh, which needs only the aggrega binary: that is
 # how a publishing machine is kept free of the toolchain the derivation above

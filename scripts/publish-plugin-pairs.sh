@@ -82,7 +82,7 @@ WASMS=() ENTITIES=() NOTICES=() SBOMS=()
 lineno=0
 while IFS= read -r line || [ -n "$line" ]; do
   lineno=$((lineno + 1))
-  [ -n "$line" ] || die "$PAIRS_FILE:$lineno: an empty line; each line is a guest path, a tab and an entity path"
+  [ -n "$line" ] || die "$PAIRS_FILE:$lineno: an empty line; each line is a guest path, an entity path, a notices path and an SBOM path, separated by tabs"
   rest="$line"
   fields=()
   while :; do
