@@ -392,16 +392,16 @@ func TestRenderAll_ArmRedisInstanceNameLimit(t *testing.T) {
 	})
 }
 
-// terraformRedisVersion is the version of the terraform Azure Managed Redis
+// terraformRedisVersions are the versions of the terraform Azure Managed Redis
 // Recipe whose instance-name rule TestRenderAll_TerraformRedisInstanceNameLimit
-// holds.
-const terraformRedisVersion = "1.0.1"
+// holds; every one carries the same rule.
+var terraformRedisVersions = []string{"1.0.1", "1.0.2"}
 
 // renderTerraformRedis renders the published terraform Azure Managed Redis
-// Recipe as a component named node and returns what the build assembled.
-func renderTerraformRedis(t *testing.T, node string) (map[string]renderer.AssembledFile, error) {
+// Recipe at the given version as a component named node and returns what the build assembled.
+func renderTerraformRedis(t *testing.T, version, node string) (map[string]renderer.AssembledFile, error) {
 	t.Helper()
-	dir := wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog", "recipe", "terraform", "redis-azure-managed", terraformRedisVersion)
+	dir := wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog", "recipe", "terraform", "redis-azure-managed", version)
 	cat, err := catalog.LoadAll("", dir)
 	if err != nil {
 		t.Fatalf("loading the Recipe: %v", err)
@@ -445,26 +445,31 @@ func TestRenderAll_TerraformRedisInstanceNameLimit(t *testing.T) {
 	t.Parallel()
 	wasmtest.SkipWithoutSiblings(t, "../../../../aggrega-hub/aggrega-catalog")
 
-	t.Run("45 characters is refused", func(t *testing.T) {
-		t.Parallel()
-		_, err := renderTerraformRedis(t, strings.Repeat("a", 45))
-		if err == nil {
-			t.Fatal("a 45-character instance name rendered, want it refused")
-		}
-		chain := cerrors.CauseChain(err)
-		t.Logf("refusal: %s", chain)
-		if !strings.Contains(chain, "an instance name holds up to 44 letters, digits and hyphens") {
-			t.Fatalf("the refusal does not name the 44-character limit: %s", chain)
-		}
-	})
-	t.Run("44 characters renders", func(t *testing.T) {
-		t.Parallel()
-		files, err := renderTerraformRedis(t, strings.Repeat("a", 44))
-		if err != nil {
-			t.Fatalf("a 44-character instance name was refused: %s", cerrors.CauseChain(err))
-		}
-		if len(files) == 0 {
-			t.Fatal("a 44-character instance name rendered no file")
-		}
-	})
+	for _, version := range terraformRedisVersions {
+		t.Run(version, func(t *testing.T) {
+			t.Parallel()
+			t.Run("45 characters is refused", func(t *testing.T) {
+				t.Parallel()
+				_, err := renderTerraformRedis(t, version, strings.Repeat("a", 45))
+				if err == nil {
+					t.Fatal("a 45-character instance name rendered, want it refused")
+				}
+				chain := cerrors.CauseChain(err)
+				t.Logf("refusal: %s", chain)
+				if !strings.Contains(chain, "an instance name holds up to 44 letters, digits and hyphens") {
+					t.Fatalf("the refusal does not name the 44-character limit: %s", chain)
+				}
+			})
+			t.Run("44 characters renders", func(t *testing.T) {
+				t.Parallel()
+				files, err := renderTerraformRedis(t, version, strings.Repeat("a", 44))
+				if err != nil {
+					t.Fatalf("a 44-character instance name was refused: %s", cerrors.CauseChain(err))
+				}
+				if len(files) == 0 {
+					t.Fatal("a 44-character instance name rendered no file")
+				}
+			})
+		})
+	}
 }
