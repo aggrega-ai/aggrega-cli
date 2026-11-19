@@ -122,7 +122,7 @@ func packPluginManifest(ctx context.Context, target oras.Target, entityYAML, was
 		opt(&o)
 	}
 	if o.noticesGiven && len(o.notices) == 0 {
-		return ocispec.Descriptor{}, fmt.Errorf("oci: plugin notices are empty: pass the notices document, or omit WithPluginNotices")
+		return ocispec.Descriptor{}, fmt.Errorf("plugin notices are empty: pass the notices document, or omit WithPluginNotices")
 	}
 	configDesc, err := pushBlob(ctx, target, MediaTypePlugin, entityYAML)
 	if err != nil {
@@ -138,7 +138,7 @@ func packPluginManifest(ctx context.Context, target oras.Target, entityYAML, was
 	if o.noticesGiven {
 		noticesDesc, err := pushBlob(ctx, target, MediaTypePluginNotices, o.notices)
 		if err != nil {
-			return ocispec.Descriptor{}, fmt.Errorf("oci: push plugin notices layer: %w", err)
+			return ocispec.Descriptor{}, fmt.Errorf("push plugin notices layer: %w", err)
 		}
 		layers = append(layers, withTitle(noticesDesc, contentTitle(MediaTypePluginNotices)))
 	}
