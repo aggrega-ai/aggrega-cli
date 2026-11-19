@@ -272,6 +272,8 @@ type publishEntityArgs struct {
 	DryRun        bool   `json:"dry_run"`
 	Sign          *bool  `json:"sign"`
 	Plugin        string `json:"plugin"`
+	PluginNotices string `json:"pluginNotices"`
+	PluginSBOM    string `json:"pluginSbom"`
 	KeyPath       string `json:"key_path"`
 	FulcioURL     string `json:"fulcio_url"`
 	RekorURL      string `json:"rekor_url"`
@@ -282,6 +284,15 @@ type publishEntityArgs struct {
 	// is a pointer for the reason Sign is: absent follows the workspace's
 	// pin_sources_at_push, and either value overrides it.
 	PinSources *bool `json:"pin_sources"`
+}
+
+// pluginFile resolves one of the files offered beside a Plugin's executable the way
+// the executable's own path is resolved, and answers "" for an argument not given.
+func (a publishEntityArgs) pluginFile(tw *toolWorkspace, argument, raw string) (string, string) {
+	if strings.TrimSpace(raw) == "" {
+		return "", ""
+	}
+	return tw.workspacePath(publishEntityToolName, argument, strings.TrimSpace(raw))
 }
 
 // publishEntityPayload is the catalog-entity publication's structured result: the
@@ -323,7 +334,10 @@ var publishEntityToolSpec = toolSpec{
 	description: "Publish a catalog entity to an OCI registry: it writes, and what it writes reaches beyond this " +
 		"machine — the bytes every consumer of that registry resolves, and a signature that cannot be recalled from " +
 		"anyone who has already fetched it. Pass the entity document as `entity`, absolute or relative to the " +
-		"workspace root; a Plugin entity also needs `plugin`, the executable published inside its manifest. The " +
+		"workspace root; a Plugin entity also needs `plugin`, the executable published inside its manifest, and may " +
+		"carry `pluginNotices`, the guest's third-party notices published as a layer of that manifest, and " +
+		"`pluginSbom`, its SPDX bill of materials attached to the published Plugin; both are paths like `plugin` and " +
+		"are refused without it. The " +
 		"destination is `registry`, defaulting to the workspace's configured one. Set `dry_run` to compute the " +
 		"bundle and the digest a publication of it would land, and publish nothing. Signing follows the " +
 		"destination registry's policy unless `sign` says otherwise, and a registry that requires signatures refuses an unsigned publication whatever you send — " +
@@ -347,6 +361,16 @@ var publishEntityToolSpec = toolSpec{
       "type": "string",
       "minLength": 1,
       "description": "Path to the .wasm executable, required when the entity is a Plugin. Absolute or relative to the workspace root."
+    },
+    "pluginNotices": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path to the file of the guest's third-party notices, published as a layer of the Plugin's manifest. Requires the plugin argument. Absolute or relative to the workspace root."
+    },
+    "pluginSbom": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path to the guest's SPDX bill of materials (JSON), attached to the published Plugin. Requires the plugin argument. Absolute or relative to the workspace root."
     },
     "registry": {
       "type": "string",
@@ -452,6 +476,14 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		}
 		pluginPath = resolved
 	}
+	pluginNoticesPath, refusal := a.pluginFile(tw, "pluginNotices", a.PluginNotices)
+	if refusal != "" {
+		return publishops.PushConfig{}, refusal
+	}
+	pluginSBOMPath, refusal := a.pluginFile(tw, "pluginSbom", a.PluginSBOM)
+	if refusal != "" {
+		return publishops.PushConfig{}, refusal
+	}
 	entityPath, refusal := tw.workspacePath(publishEntityToolName, "entity", strings.TrimSpace(a.Entity))
 	if refusal != "" {
 		return publishops.PushConfig{}, refusal
@@ -463,6 +495,8 @@ func (s *server) publishEntityConfig(a publishEntityArgs) (publishops.PushConfig
 		DryRun:                    a.DryRun,
 		Sign:                      a.Sign,
 		PluginPath:                pluginPath,
+		PluginNoticesPath:         pluginNoticesPath,
+		PluginSBOMPath:            pluginSBOMPath,
 		KeyPath:                   a.KeyPath,
 		FulcioURL:                 a.FulcioURL,
 		RekorURL:                  a.RekorURL,

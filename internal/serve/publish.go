@@ -98,7 +98,10 @@ func reachOf(r publishops.Reach) publicationReach {
 // entity is required and is a path relative to the workspace root naming the
 // entity document to publish, under the same contract every path-naming parameter
 // here carries. plugin is the same kind of path and is required only for a Plugin,
-// whose executable is published inside the entity's own manifest.
+// whose executable is published inside the entity's own manifest. pluginNotices and
+// pluginSbom are paths of the same kind, offered only beside plugin: the guest's
+// third-party notices, published as a layer of that manifest, and its SPDX bill of
+// materials, attached to the published Plugin.
 //
 // sign is a pointer so an absent key and an explicit false are distinguishable: an
 // absent one follows the destination registry's own policy, which is the command
@@ -121,6 +124,8 @@ type publishEntityParams struct {
 	DryRun        bool   `json:"dryRun,omitempty"`
 	Sign          *bool  `json:"sign,omitempty"`
 	Plugin        string `json:"plugin,omitempty"`
+	PluginNotices string `json:"pluginNotices,omitempty"`
+	PluginSBOM    string `json:"pluginSbom,omitempty"`
 	FulcioURL     string `json:"fulcioUrl,omitempty"`
 	RekorURL      string `json:"rekorUrl,omitempty"`
 	TimestampURL  string `json:"timestampUrl,omitempty"`
@@ -352,6 +357,14 @@ func (s *Server) publishEntityConfig(params publishEntityParams, progressOut io.
 		}
 		pluginPath = resolved
 	}
+	pluginNoticesPath, perr := s.resolvePluginFile("pluginNotices", "the plugin's third-party notices", params.PluginNotices)
+	if perr != nil {
+		return publishops.PushConfig{}, perr
+	}
+	pluginSBOMPath, perr := s.resolvePluginFile("pluginSbom", "the plugin's bill of materials", params.PluginSBOM)
+	if perr != nil {
+		return publishops.PushConfig{}, perr
+	}
 	if jerr := s.requireDestination(params.Registry); jerr != nil {
 		return publishops.PushConfig{}, jerr
 	}
@@ -365,6 +378,8 @@ func (s *Server) publishEntityConfig(params publishEntityParams, progressOut io.
 		TimestampURL:      params.TimestampURL,
 		IDToken:           params.IdentityToken,
 		PluginPath:        pluginPath,
+		PluginNoticesPath: pluginNoticesPath,
+		PluginSBOMPath:    pluginSBOMPath,
 		PinSources:        params.PinSources,
 		Workspace:         s.resolvedWorkspace,
 		IdentitySupply:    daemonIdentitySupply,
@@ -376,6 +391,16 @@ func (s *Server) publishEntityConfig(params publishEntityParams, progressOut io.
 		// process says what it has to say, not into the publication's report.
 		Notices: s.stderr,
 	}, nil
+}
+
+// resolvePluginFile resolves one of the files offered beside a Plugin's executable
+// the way the executable's own path is resolved, and answers "" for a parameter
+// the request did not carry.
+func (s *Server) resolvePluginFile(field, subject, value string) (string, *jsonRPCError) {
+	if value == "" {
+		return "", nil
+	}
+	return resolveWorkspacePathParam(field, subject, "the request named no "+field, s.workspaceRoot, value, nil)
 }
 
 // runPublishEntity runs the publication and shapes the answer.
