@@ -3695,13 +3695,14 @@ jobs:
             printf '%s\n' "$delimiter"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Create the GitHub release and upload the binaries, the Windows installer, the extension package, the install scripts and SHA256SUMS
+      - name: Create the GitHub release and upload the binaries, the Windows installer, the extension package, the install scripts, the software bill of materials and SHA256SUMS
         # The final side effect: attach the default, debug and light binaries for
         # linux/amd64, linux/arm64, windows/amd64, darwin/arm64 and darwin/amd64,
         # the Windows installer, the desktop extension package, the install scripts install.sh and
         # install.ps1, the quickstart scripts quickstart-ai.sh, quickstart-ai.ps1,
         # quickstart-web.sh and quickstart-web.ps1, each of which runs one step of
-        # an example from the documentation, and SHA256SUMS, the SHA-256 list of all of them, to the
+        # an example from the documentation, the software bill of materials
+        # aggrega-<version>.spdx, and SHA256SUMS, the SHA-256 list of all of them, to the
         # GitHub release for this tag so they are downloadable from the release
         # page. The default binary, under the plain name, is the
         # debug one without its debug information. The linux/amd64 and linux/arm64
@@ -3745,7 +3746,7 @@ jobs:
         # run runs them. The embedded guests are
         # NOT uploaded here — they publish to the registry with their Plugin
         # entities; the release carries only the runnable binaries, the Windows
-        # installer, the extension package, the install and quickstart scripts and the list, and GitHub
+        # installer, the extension package, the install and quickstart scripts, the software bill of materials and the list, and GitHub
         # attaches the source archives on its own. The step refuses to release
         # when any of those files is missing, and refuses to re-publish a
         # release that already carries the Windows installer (below).
@@ -3875,6 +3876,11 @@ jobs:
             "$QUICKSTART_AI_SH" "$QUICKSTART_AI_PS1" "$QUICKSTART_WEB_SH" "$QUICKSTART_WEB_PS1"; do
             attach "$script" "${script##*/}" "the checkout of the commit the build job built"
           done
+          # The software bill of materials of the binary and the plugins it
+          # embeds: the checkout's THIRD-PARTY.spdx, copied as it is under the
+          # version-named file, so the release carries the very bytes tracked at
+          # this tag. A checkout without it refuses the release.
+          attach aggrega-cli/THIRD-PARTY.spdx "aggrega-$BIN_VERSION.spdx" "the checkout of the commit the build job built"
           # Where this release's own files download from: the install commands
           # in the release notes fetch the scripts attached to this release and
           # set AGGREGA_VERSION, the scripts' own setting for the release to
@@ -3934,6 +3940,7 @@ jobs:
           | \`$(basename "$MCP_BUNDLE")\` | Claude Desktop extension: runs an installed \`aggrega\` as a local MCP server; one file for every OS |
           | \`${INSTALL_SH##*/}\`, \`${INSTALL_PS1##*/}\` | Install scripts |
           | \`${QUICKSTART_AI_SH##*/}\`, \`${QUICKSTART_AI_PS1##*/}\`, \`${QUICKSTART_WEB_SH##*/}\`, \`${QUICKSTART_WEB_PS1##*/}\` | Quickstart scripts: each runs one step of an example from the documentation |
+          | \`aggrega-$BIN_VERSION.spdx\` | Software bill of materials of the binary and the plugins it embeds, in SPDX |
           | \`SHA256SUMS\` | SHA-256 of every other file; check with \`sha256sum -c SHA256SUMS\` |
 
           **Signing:** Windows files carry a timestamped Authenticode signature from Cognitio S.r.l.; $MACOS_NOTE.
