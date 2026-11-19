@@ -31,12 +31,13 @@ name: Publish and sign core plugins
 #                        the refusal of a run with no self-hosted runner named
 #                        for the local jobs.
 #   sources              Moves the CLI tree onto the release tag, checks out
-#                        aggrega-hub, whose overlays the build reads, with a
-#                        token minted from the organization App's secrets for
+#                        aggrega-hub, whose overlays the build reads, with an
+#                        installation token of the organization App for
 #                        aggrega-hub alone, asking to read its contents alone,
-#                        and hands the checkout, without a token, to the build
-#                        job in the hand-over folder described below, with a
-#                        SHA-256 list of it. It runs nothing but GitHub's own checkout and
+#                        minted from the App's secrets, and hands the checkout,
+#                        without a token, to the build job in the hand-over
+#                        folder described below, with a SHA-256 list of it.
+#                        It runs nothing but GitHub's own checkout and
 #                        token actions, git and the shell's own utilities, so
 #                        the App's secrets share a job with no third-party code,
 #                        and the build job, which runs such code, names no
@@ -643,10 +644,10 @@ name: Publish and sign core plugins
 #                                        installer from the address the
 #                                        manifest names
 #   repository secrets
-#              SUBMODULE_APP_CLIENT_ID   the organization App that reads the
-#              SUBMODULE_APP_PRIVATE_KEY private aggrega-hub repository (sources
-#                                        only, handed to the action that mints
-#                                        the read token and to nothing else)
+#              SUBMODULE_APP_CLIENT_ID   the organization App whose token reads
+#              SUBMODULE_APP_PRIVATE_KEY aggrega-hub (sources only, handed to
+#                                        the action that mints the read token
+#                                        and to nothing else)
 #   release-environment variables
 #              HUB_PUBLISHED_APP_CLIENT_ID
 #                                        the client ID of the App installed on
@@ -959,10 +960,11 @@ jobs:
 
   sources:
     needs: registry-credential
-    # aggrega-hub, whose overlays the build reads, is private, and is read
-    # with an installation token of the organization's GitHub App, minted from
-    # the App's two secrets. A job holds every secret it names for its whole run,
-    # within reach of each of its later steps, so the token is minted here, in a
+    # aggrega-hub, whose overlays the build reads, is read with an
+    # installation token of the organization's GitHub App for aggrega-hub
+    # alone, minted from the App's two secrets. A job holds every secret it
+    # names for its whole run, within reach of each of its later steps, so the
+    # token is minted here, in a
     # job that runs nothing but GitHub's own checkout and token actions, git and
     # the shell's own utilities, and not in the build job, whose third-party build
     # code would otherwise run beside the App's private key. This job moves the
@@ -1062,10 +1064,10 @@ jobs:
           printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
           echo "this run builds aggrega-cli at $commit"
 
-      - name: Mint org app token for private-sibling access
-        # aggrega-hub is private; a GitHub App installation token for
-        # aggrega-hub alone, asking for read access to its contents and nothing
-        # else, grants the checkout below read access to it. The App's secrets are
+      - name: Mint the token that reads aggrega-hub
+        # The checkout below reads aggrega-hub with a GitHub App installation
+        # token for aggrega-hub alone, asking for read access to its contents
+        # and nothing else. The App's secrets are
         # handed to this action and to no step, and its token to that checkout,
         # which does not keep it; like everything a job
         # holds, both stay within reach of the job's later steps, which is why
@@ -1339,24 +1341,15 @@ jobs:
           aggrega-cli/scripts/check-third-party-licenses.sh
 
       - name: Set up Go
-        # Pin the toolchain to the (tag-pinned) module's declared version and
-        # cache modules so the guest and binary build does not re-download the
-        # dependency graph on every run.
+        # Pin the toolchain to the (tag-pinned) module's declared version.
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: aggrega-cli/go.mod
-          # 🔴 CACHING OFF, DELIBERATELY. setup-go caches GOMODCACHE and GOCACHE by
-          # default, which is right on an ephemeral hosted runner where both vanish
-          # between jobs. This workflow runs on a PERSISTENT self-hosted runner,
-          # where they are still on disk next run — so the post-job step was tarring
-          # and uploading ~3 GB to the Actions cache service, taking minutes, only to
-          # download it again over files that never left. It also competes for the
-          # 10 GB per-repository cache budget and evicts entries that are not
-          # redundant.
-          #
-          # ⚠️ Reverse this if the job is ever moved back to a hosted runner: there
-          # the cache is not redundant and its absence means re-downloading the whole
-          # dependency graph every run.
+          # setup-go's cache of GOMODCACHE and GOCACHE is off: this job builds
+          # what the release publishes, so it restores nothing from the Actions
+          # cache, which other workflow runs can write. On the persistent
+          # self-hosted runner this job runs on, both stay on the machine's disk
+          # between runs regardless.
           cache: false
 
       - name: Check that the committed skills repository is what the skills generate

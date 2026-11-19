@@ -32,12 +32,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Mint org app token for private-sibling access
-        # The schemas repository is private; a GitHub App installation token
-        # for aggrega-schemas alone, asking for read access to its contents and
-        # nothing else, grants the checkout below read access. The App's
-        # secrets are handed to this action and to no step, and its token to that
-        # checkout, which does not keep it.
+      - name: Mint the token that reads aggrega-schemas
+        # The checkout below reads aggrega-schemas with a GitHub App
+        # installation token for aggrega-schemas alone, asking for read access
+        # to its contents and nothing else. The App's secrets are handed to
+        # this action and to no step, and its token to that checkout, which
+        # does not keep it.
         id: app-token
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
