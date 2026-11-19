@@ -153,12 +153,6 @@ func WrapOCIPull(spec SourceSpec, err error) error {
 	if oci.Interrupted(err) {
 		return Wrap(spec, oci.ErrFetchInterrupted(), err)
 	}
-	if oci.ServerError(err) {
-		return Wrap(spec, oci.ErrFetchServerError(), err)
-	}
-	if oci.Interrupted(err) {
-		return Wrap(spec, oci.ErrFetchInterrupted(), err)
-	}
 	return fmt.Errorf("kind=%s url=%s version=%s: %w", spec.Kind, spec.URL, spec.Version, err)
 }
 

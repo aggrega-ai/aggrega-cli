@@ -97,3 +97,35 @@ func TestOCIResolveNamesATransferThatBrokeOff(t *testing.T) {
 		t.Errorf("a connection closed mid-blob also reported another condition: %v", err)
 	}
 }
+
+// TestOCIResolveStillNamesAMissingChartAsNotFound holds a registry answering 404
+// to the not-found condition alone, beside the server-error and interrupted
+// readings.
+func TestOCIResolveStillNamesAMissingChartAsNotFound(t *testing.T) {
+	t.Parallel()
+	err := resolveAgainst(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	if !errors.Is(err, ocierr.ErrFetchNotFound()) {
+		t.Fatalf("a 404 from the registry did not report the not-found condition: %v", err)
+	}
+	if errors.Is(err, ocierr.ErrFetchServerError()) || errors.Is(err, ocierr.ErrFetchInterrupted()) {
+		t.Errorf("a 404 from the registry also reported a server error or an interrupted transfer: %v", err)
+	}
+}
+
+// TestOCIResolveStillNamesARefusedCredentialAsUnauthorized holds a registry
+// answering 401 to the unauthorized condition alone, beside the server-error and
+// interrupted readings.
+func TestOCIResolveStillNamesARefusedCredentialAsUnauthorized(t *testing.T) {
+	t.Parallel()
+	err := resolveAgainst(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	if !errors.Is(err, ocierr.ErrFetchUnauthorized()) {
+		t.Fatalf("a 401 from the registry did not report the unauthorized condition: %v", err)
+	}
+	if errors.Is(err, ocierr.ErrFetchServerError()) || errors.Is(err, ocierr.ErrFetchInterrupted()) {
+		t.Errorf("a 401 from the registry also reported a server error or an interrupted transfer: %v", err)
+	}
+}
