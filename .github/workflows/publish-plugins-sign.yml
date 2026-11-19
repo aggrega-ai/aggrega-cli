@@ -1691,6 +1691,28 @@ jobs:
           [ -n "$BIN_VERSION" ] || { echo "binary reported no version" >&2; exit 1; }
           aggrega-cli/scripts/build.sh --light --target linux/arm64 --expect-version "$BIN_VERSION"
 
+      - name: Install oras for the released-binary compatibility check
+        # The check below writes a second Plugin manifest by hand with oras, and a
+        # self-hosted runner need not carry it, so it is installed here at a pinned
+        # version rather than assumed.
+        uses: oras-project/setup-oras@ac735097e22fe643015b0d19645f7c9a69942128 # v2.0.4
+        with:
+          version: 1.2.3
+
+      - name: Check that the released 0.9.3 binary installs a plugin published with its notices
+        # Proves what a user on the released 0.9.3 binary sees: a Plugin published
+        # with its third-party notices layer and its SBOM referrer installs, the
+        # .wasm it caches being the one pushed, and a Plugin whose manifest lists the
+        # notices before the .wasm is refused. The script builds this checkout's
+        # binary, downloads 0.9.3 and its SHA256SUMS from the GitHub release, and
+        # needs Go (set up above), curl, jq and oras. Any other outcome, including a
+        # download or tool that cannot run, fails the job here, before anything is
+        # signed or published, so no release goes out that 0.9.3 cannot install or
+        # that would break it.
+        run: |
+          set -euo pipefail
+          aggrega-cli/scripts/check-plugin-notices-compat.sh
+
       - name: Make this run's own staging directories
         # On the persistent self-hosted runner AGGREGA_RUNNER names, a fixed name
         # can still hold an earlier run's files, which the smoke staging refuses
