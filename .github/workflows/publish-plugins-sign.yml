@@ -853,7 +853,7 @@ jobs:
         # Only for the scripts the steps below run. The launched ref, not the
         # release tag: a dispatch naming an earlier tag still runs them from the
         # launched ref.
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           persist-credentials: false
@@ -1024,7 +1024,7 @@ jobs:
         # For the release tag's tree, which the build job builds, and for the
         # smoke library's SHA-256 list writer. Full history and every tag are
         # fetched here, so the pin step below needs no fetch of its own.
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           fetch-depth: 0
@@ -1070,7 +1070,7 @@ jobs:
         # this job runs nothing but that checkout, git and the shell's own
         # utilities after it.
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.SUBMODULE_APP_CLIENT_ID }}
           private-key: ${{ secrets.SUBMODULE_APP_PRIVATE_KEY }}
@@ -1084,7 +1084,7 @@ jobs:
         # are resolved by the build at the versions its go.mod requires, so no
         # checkout of them is needed. aggrega-hub has no CLI-side version pin,
         # so it is checked out at HUB_REF.
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: aggrega-ai/aggrega-hub
           path: aggrega-hub
@@ -1248,7 +1248,7 @@ jobs:
         # the versions its go.mod requires; the next step places the handed-over
         # aggrega-hub checkout beside it, for the embedded plugin entities and
         # the catalog generation.
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           ref: ${{ needs.sources.outputs.commit }}
@@ -1338,7 +1338,7 @@ jobs:
         # Pin the toolchain to the (tag-pinned) module's declared version and
         # cache modules so the guest and binary build does not re-download the
         # dependency graph on every run.
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: aggrega-cli/go.mod
           # 🔴 CACHING OFF, DELIBERATELY. setup-go caches GOMODCACHE and GOCACHE by
@@ -1434,7 +1434,7 @@ jobs:
       - name: Cache the Rust guest build
         # The publishing linter guest is a Rust crate; cache its registry and
         # target so a rebuild does not recompile the dependency graph every run.
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: aggrega-cli/plugins/publishing-linter
 
@@ -1804,7 +1804,7 @@ jobs:
         # when the run ends (kept a day at most should clean-up never run).
         # Hidden files are included so the example reaches the Windows run
         # exactly as it was built here.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-smoke-inputs
           path: ${{ env.WINDOWS_SMOKE_INPUTS }}
@@ -1846,7 +1846,7 @@ jobs:
         # here. An artifact keeps the bytes of each file, the signature the
         # linker embeds in an arm64 executable among them, but not its mode; the
         # smoke script makes the executables executable again.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: macos-smoke-inputs-darwin-arm64
           path: ${{ env.MACOS_SMOKE_INPUTS }}/darwin-arm64
@@ -1856,7 +1856,7 @@ jobs:
 
       - name: Upload the macOS amd64 smoke run's inputs
         # The darwin/amd64 inputs, as the step above uploads the darwin/arm64 ones.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: macos-smoke-inputs-darwin-amd64
           path: ${{ env.MACOS_SMOKE_INPUTS }}/darwin-amd64
@@ -1890,7 +1890,7 @@ jobs:
         # run). Hidden files are included so the example reaches the ARM Linux
         # run exactly as it was built here. An artifact does not keep file
         # modes; the smoke script makes the executables executable again.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: linux-smoke-inputs-linux-arm64
           path: ${{ env.LINUX_SMOKE_INPUTS }}
@@ -1902,7 +1902,7 @@ jobs:
         # The desktop extension package is packed by the bundle format's own
         # packer, an npm package, so the job needs Node. A self-hosted runner need
         # not carry it, so it is installed here rather than assumed.
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '24'
 
@@ -2038,7 +2038,7 @@ jobs:
         # reads as a defect in the build script and is not one — the script asks for
         # the right tool and the tool is not installed. This step supplies it. It
         # runs on a dry run too, because a dry run builds the image.
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Build the tooling image
         # Packages the freshly-built embedded binaries as the tooling image at the
@@ -2147,7 +2147,7 @@ jobs:
         # clean-up never run). An artifact keeps the bytes of each file, the
         # linker's signature in an arm64 executable among them, but not its
         # mode, which signing does not need.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: macos-binaries-unsigned
           path: ${{ env.MACOS_UNSIGNED }}
@@ -2273,7 +2273,7 @@ jobs:
       - name: Check out the CLI at the commit the build job built
         # For the signing script and the smoke library, at the commit whose
         # build this job signs.
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           ref: ${{ needs.build.outputs.commit }}
@@ -2380,7 +2380,7 @@ jobs:
         # same run, so the release attaches the very bytes the Windows run ran;
         # deleted by clean-up when the run ends (kept a day at most should
         # clean-up never run).
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-binaries-signed
           path: ${{ runner.temp }}/windows-signed
@@ -2391,7 +2391,7 @@ jobs:
         # One workflow artifact, read by windows-installer of this same run,
         # which builds the installer from them; deleted by clean-up when the run
         # ends (kept a day at most should clean-up never run).
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-installer-parts-signed
           path: ${{ runner.temp }}/windows-installer-parts-signed
@@ -2459,7 +2459,7 @@ jobs:
     steps:
       - name: Check out the CLI at the commit the build job built
         # For the installer's script, the build script and the smoke library.
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           ref: ${{ needs.build.outputs.commit }}
@@ -2488,14 +2488,14 @@ jobs:
         # Not on a run whose decision is skip, on which sign-windows signed
         # nothing and uploaded nothing.
         if: ${{ env.SIGNING != 'skip' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-binaries-signed
           path: ${{ runner.temp }}/windows-signed
 
       - name: Download the installer's signed program files
         if: ${{ env.SIGNING != 'skip' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-installer-parts-signed
           path: ${{ runner.temp }}/windows-installer-parts-signed
@@ -2538,7 +2538,7 @@ jobs:
         # which signs it, or on a run whose decision is skip by windows-smoke;
         # deleted by clean-up when the run ends (kept a day at most should
         # clean-up never run).
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-installer
           path: ${{ runner.temp }}/windows-installer
@@ -2585,7 +2585,7 @@ jobs:
     steps:
       - name: Check out the CLI at the commit the build job built
         # For the signing script and the smoke library.
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           ref: ${{ needs.build.outputs.commit }}
@@ -2597,7 +2597,7 @@ jobs:
           aggrega-cli/scripts/sign-windows-files.sh check-settings
 
       - name: Download the Windows installer
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-installer
           path: ${{ runner.temp }}/windows-installer-signed
@@ -2643,7 +2643,7 @@ jobs:
         # One workflow artifact, read by windows-smoke and by sign-and-publish
         # of this same run; deleted by clean-up when the run ends (kept a day at
         # most should clean-up never run).
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-installer-signed
           path: ${{ runner.temp }}/windows-installer-signed
@@ -3275,7 +3275,7 @@ jobs:
         # attaches, taken from the repository at the commit the build job built
         # rather than handed over by that job: the commit every smoke run checks
         # out and runs the install scripts from.
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           ref: ${{ needs.build.outputs.commit }}
@@ -3336,7 +3336,7 @@ jobs:
       - name: Download the signed Windows binaries
         # The artifact sign-windows uploaded and windows-smoke ran: the three
         # signed binaries and their SHA-256 list.
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-binaries-signed
           path: ${{ env.WINDOWS_SIGNED }}
@@ -3344,7 +3344,7 @@ jobs:
       - name: Download the signed Windows installer
         # The artifact sign-windows-installer uploaded and windows-smoke ran:
         # the signed installer and its SHA-256 list.
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-installer-signed
           path: ${{ env.WINDOWS_INSTALLER }}
@@ -3376,7 +3376,7 @@ jobs:
         # notarization, and their SHA-256 list. Not while macOS signing is off, when sign-macos signed
         # nothing and uploaded nothing.
         if: ${{ env.MACOS_SIGNING == 'sign' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: macos-binaries-signed-darwin-arm64
           path: ${{ env.MACOS_SIGNED }}/darwin-arm64
@@ -3384,7 +3384,7 @@ jobs:
       - name: Download the signed darwin/amd64 binaries
         # The same for darwin/amd64.
         if: ${{ env.MACOS_SIGNING == 'sign' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: macos-binaries-signed-darwin-amd64
           path: ${{ env.MACOS_SIGNED }}/darwin-amd64
@@ -3394,7 +3394,7 @@ jobs:
         # sign-macos, the six macOS binaries unsigned, the entitlements file and
         # SHA256SUMS, the build's list of the seven.
         if: ${{ env.MACOS_SIGNING == 'unsigned' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: macos-binaries-unsigned
           path: ${{ env.MACOS_UNSIGNED }}
@@ -4066,7 +4066,7 @@ jobs:
       - name: Check out the CLI at the commit the build job built
         # For the smoke library's list check only.
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           ref: ${{ needs.build.outputs.commit }}
@@ -4124,7 +4124,7 @@ jobs:
         # minted. On a dry run too, where minting it proves the App's client ID
         # and private key, and nothing uses it.
         id: hub-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.HUB_PUBLISHED_APP_CLIENT_ID }}
           private-key: ${{ secrets.HUB_PUBLISHED_APP_PRIVATE_KEY }}
@@ -4137,7 +4137,7 @@ jobs:
         # that writer and this job's row reader share. The checkout keeps no
         # token: the write below hands it to git through the environment.
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: aggrega-ai/aggrega-hub
           path: aggrega-hub
@@ -4263,7 +4263,7 @@ jobs:
     steps:
       - name: Check out the CLI at the commit the build job built
         # For the committed skills repository tree only.
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           ref: ${{ needs.build.outputs.commit }}
@@ -4300,7 +4300,7 @@ jobs:
         # action revokes the token when the job ends; an installation token
         # expires an hour after it is minted.
         id: skills-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.SKILLS_PUBLISH_APP_CLIENT_ID }}
           private-key: ${{ secrets.SKILLS_PUBLISH_APP_PRIVATE_KEY }}
@@ -4505,7 +4505,7 @@ jobs:
         # it is set, and the action revokes the token when the job ends; an
         # installation token expires an hour after it is minted.
         id: channels-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ vars.PACKAGE_CHANNELS_APP_CLIENT_ID }}
           private-key: ${{ secrets.PACKAGE_CHANNELS_APP_PRIVATE_KEY }}
@@ -4687,7 +4687,7 @@ jobs:
     steps:
       - name: Check out the CLI at the commit the build job built
         # For scripts/open-winget-pull-request.sh only.
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           ref: ${{ needs.build.outputs.commit }}
@@ -4766,7 +4766,7 @@ jobs:
 
       - name: Upload them for windows-smoke
         if: ${{ inputs.smoke_binaries_from != '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: substituted-windows-binaries
           path: ${{ runner.temp }}/substituted-binaries
@@ -4860,14 +4860,14 @@ jobs:
         run: git config --global core.autocrlf false
 
       - name: Check out the CLI at the commit the inputs were staged from
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           ref: ${{ needs.build.outputs.smoke_commit }}
           persist-credentials: false
 
       - name: Download the Windows smoke run's inputs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-smoke-inputs
           path: ${{ runner.temp }}/windows-smoke
@@ -4878,7 +4878,7 @@ jobs:
         # attaches. Not on a run whose decision is skip, on which sign-windows
         # signed nothing and uploaded nothing.
         if: ${{ env.SIGNING != 'skip' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-binaries-signed
           path: ${{ runner.temp }}/windows-signed
@@ -4888,7 +4888,7 @@ jobs:
         # of it: the installer the release attaches. Not on a run whose decision
         # is skip.
         if: ${{ env.SIGNING != 'skip' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-installer-signed
           path: ${{ runner.temp }}/windows-installer
@@ -4897,7 +4897,7 @@ jobs:
         # Only on a run whose decision is skip: the installer windows-installer
         # built from the unsigned files the build wrote, with its list.
         if: ${{ env.SIGNING == 'skip' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: windows-installer
           path: ${{ runner.temp }}/windows-installer
@@ -4906,7 +4906,7 @@ jobs:
         # Only on a dry run naming smoke_binaries_from: the binaries
         # smoke-binaries fetched from that release.
         if: ${{ inputs.smoke_binaries_from != '' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: substituted-windows-binaries
           path: ${{ runner.temp }}/substituted-binaries
@@ -5064,14 +5064,14 @@ jobs:
         run: git config --global core.autocrlf false
 
       - name: Check out the CLI at the commit the inputs were staged from
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           ref: ${{ needs.build.outputs.macos_smoke_commit }}
           persist-credentials: false
 
       - name: Download the macOS smoke run's inputs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ matrix.artifact }}
           path: ${{ runner.temp }}/macos-smoke
@@ -5082,7 +5082,7 @@ jobs:
         # the release attaches. Only on a run whose macOS decision is sign: on
         # any other, sign-macos signed nothing and uploaded nothing.
         if: ${{ env.MACOS_SIGNING == 'sign' }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ matrix.signed }}
           path: ${{ runner.temp }}/macos-signed
@@ -5186,14 +5186,14 @@ jobs:
         run: git config --global core.autocrlf false
 
       - name: Check out the CLI at the commit the inputs were staged from
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: aggrega-cli
           ref: ${{ needs.build.outputs.linux_smoke_commit }}
           persist-credentials: false
 
       - name: Download the ARM Linux smoke run's inputs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: linux-smoke-inputs-linux-arm64
           path: ${{ runner.temp }}/linux-smoke
