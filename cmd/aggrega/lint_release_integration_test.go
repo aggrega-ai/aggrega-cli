@@ -7,11 +7,14 @@ package main
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
 
 // TestIntegration_LintRelease_ClosureScoped exercises `aggrega lint --release`
@@ -21,11 +24,20 @@ import (
 // a schema-broken entity OUTSIDE the Release's closure does not fail
 // `lint --release` (it is never reached) while whole-catalog lint does catch it.
 func TestIntegration_LintRelease_ClosureScoped(t *testing.T) {
+	const release = "release-compose.yaml"
 	examplesRoot := localExamplesRoot(t)
 
 	ws := t.TempDir()
 	copyTree(t, filepath.Join(examplesRoot, "mariadb-adminer"), ws)
 	_ = os.RemoveAll(filepath.Join(ws, ".aggrega"))
+	// The example's repository ignores lockfiles, so a checkout that has been
+	// pulled or built in place carries one pinned to whatever revision it held
+	// then, and the copy above brings it along. lint --release holds the Release
+	// to a lockfile beside it, so that stale one would refuse the closure for
+	// drift before any check this test is about runs.
+	if err := os.Remove(filepath.Join(ws, lockfile.PathFor(release))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("discard the copied lockfile: %v", err)
+	}
 	composeCatalog := filepath.Join(ws, "catalog-compose")
 	std := standardCatalogDir(t)
 	// Point the workspace config at the local compose catalog plus the standard
@@ -36,7 +48,7 @@ func TestIntegration_LintRelease_ClosureScoped(t *testing.T) {
 	t.Chdir(ws)
 
 	// Clean closure → exit 0.
-	if err := validateRelease(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release-compose.yaml", nil, compilerops.VerbosityDetailed, false, false, os.Stderr, os.Stdout); err != nil {
+	if err := validateRelease(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), release, nil, compilerops.VerbosityDetailed, false, false, os.Stderr, os.Stdout); err != nil {
 		t.Fatalf("lint --release over a clean closure must pass; got %v", err)
 	}
 
@@ -56,7 +68,7 @@ spec:
       storage:
         $ref: "Nonexistent#/schemas/Storage"
 `)
-	if err := validateRelease(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), "release-compose.yaml", nil, compilerops.VerbosityDetailed, false, false, os.Stderr, os.Stdout); err != nil {
+	if err := validateRelease(context.Background(), resolveTempWorkspace(t, tempWorkspaceOptions{Root: ws}), release, nil, compilerops.VerbosityDetailed, false, false, os.Stderr, os.Stdout); err != nil {
 		t.Errorf("an out-of-closure broken entity must not fail closure-scoped lint --release; got %v", err)
 	}
 
