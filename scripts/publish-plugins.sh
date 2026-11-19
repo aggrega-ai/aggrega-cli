@@ -7,7 +7,7 @@
 # cross-checks the guest's describe() against the entity's authored claims. This
 # script only enumerates and invokes; every integrity guarantee lives in the CLI.
 #
-# It is NOT tied to any fixed plugin set. The one mode, enumerate-embedded,
+# It is NOT tied to any fixed plugin set. The mode enumerate-embedded
 # selects the work-list:
 #
 #   enumerate-embedded --entities-dir <dir> --wasm-dir <dir>
@@ -52,7 +52,7 @@
 # --pairs-out <file> resolves the work-list and writes it as a pairing instead of
 # publishing it: one line per Plugin entity: its guest's path, the entity's path,
 # the guest's notices file and its SBOM file, separated by tabs, each relative to
-# the directory <file> sits in. All four paths must lie under that directory, so
+# the directory <file> sits in. Every path in a line must lie under that directory, so
 # the directory can be handed to another machine whole, and the pairing is written
 # only when every entity paired. With --pairs-out nothing is published or signed,
 # so --dry-run, --sign, --key and --identity-token are refused beside it. A

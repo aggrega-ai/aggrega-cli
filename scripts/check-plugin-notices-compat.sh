@@ -39,8 +39,9 @@
 # the builds. Everything it writes is under one temporary directory, removed on
 # exit; the registry it starts is stopped on exit. It writes nothing in the module.
 #
-# Run it by hand, from any directory, under the host's heavy-command guard where
-# one is in use:
+# The release workflow's build job runs it before anything is signed or published
+# (.github/workflows/publish-plugins-sign.yml). It can also be run by hand, from
+# any directory, under the host's heavy-command guard where one is in use:
 #
 #   scripts/check-plugin-notices-compat.sh
 #
@@ -76,6 +77,8 @@ REGISTRY_PID=""
 # shellcheck disable=SC2329 # run by the EXIT trap
 cleanup() {
   [ -z "$REGISTRY_PID" ] || kill "$REGISTRY_PID" 2>/dev/null || true
+  # Go makes module-cache directories read-only; make them removable first.
+  chmod -R u+w "$TMP" 2>/dev/null || true
   rm -rf "$TMP"
 }
 trap cleanup EXIT
@@ -104,6 +107,11 @@ esac
 # this machine's configuration or caches.
 export NO_PROXY="localhost,127.0.0.1" no_proxy="localhost,127.0.0.1"
 unset AGGREGA_CONFIG AGGREGA_OFFLINE
+# The temporary home must hold no Go cache: keep this machine's own.
+GOPATH="$(go env GOPATH)"
+GOMODCACHE="$(go env GOMODCACHE)"
+GOCACHE="$(go env GOCACHE)"
+export GOPATH GOMODCACHE GOCACHE
 export HOME="$TMP/home" XDG_CACHE_HOME="$TMP/cache" XDG_CONFIG_HOME="$TMP/config"
 mkdir -p "$HOME"
 
