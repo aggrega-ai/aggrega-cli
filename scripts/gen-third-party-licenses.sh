@@ -672,7 +672,7 @@ extism_js_runtime() {
 	fi
 	row="$(awk -F'\t' -v s="$sha" '!/^#/ && $3 == s { print; exit }' "$TOOLCHAIN_DIR/extism-js.tsv" 2> /dev/null || true)"
 	if [ -z "$row" ]; then
-		ver="$(cd "$1" && "$bin" --version 2> /dev/null | head -1)" || ver=""
+		ver="$(cd "$1" && "$bin" --version < /dev/null 2> /dev/null | head -1)" || ver=""
 		{
 			echo "gen-third-party-licenses: ERROR: the extism-js the build of $2 runs has no row in $TOOLCHAIN_DIR/extism-js.tsv (nothing written)"
 			echo "  path:    $bin"
@@ -1343,7 +1343,9 @@ if [ -n "$GUEST" ]; then
 		printf '# Third-party notices for %s\n\n' "$GUEST_LABEL"
 		if [ "$g_toolchain" = "typescript" ]; then
 			printf 'This file lists the third-party packages the `%s` plugin'"'"'s package-lock.json bundles into it,\n' "$GUEST_LABEL"
-			printf 'and the JavaScript runtime and engine its build merges into the plugin'"'"'s `.wasm`.\n'
+			printf 'and, from the JavaScript runtime its build merges into the plugin'"'"'s `.wasm`: the Extism JS PDK,\n'
+			printf 'its QuickJS-NG engine and rquickjs bindings, the core-js and urlpattern-polyfill code of its\n'
+			printf 'prelude, and the Rust standard library and wasi-libc it is built with.\n'
 		else
 			printf 'This file lists every third-party dependency compiled into the `%s` plugin.\n' "$GUEST_LABEL"
 		fi
@@ -1369,7 +1371,7 @@ if [ -n "$GUEST" ]; then
 		fi
 	} > "$WORK/notices.md"
 	if [ "$g_toolchain" = "typescript" ]; then
-		sbom_what="Third-party packages the $GUEST_LABEL plugin's package-lock.json bundles into it, and the JavaScript runtime and engine its build merges into the plugin's .wasm."
+		sbom_what="Third-party packages the $GUEST_LABEL plugin's package-lock.json bundles into it, and, from the JavaScript runtime its build merges into the plugin's .wasm: the Extism JS PDK, its QuickJS-NG engine and rquickjs bindings, the core-js and urlpattern-polyfill code of its prelude, and the Rust standard library and wasi-libc it is built with."
 	else
 		sbom_what="Third-party dependencies compiled into the $GUEST_LABEL plugin."
 	fi

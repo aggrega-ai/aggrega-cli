@@ -126,10 +126,19 @@ tag_commit() {
 # refuses naming WHAT when there is none or more than one.
 one_match() {
   local m
-  m="$(LC_ALL=C grep -aoE "$2" "$1" | sort -u || true)"
+  m="$(LC_ALL=C grep -aoE "$2" "$1" | LC_ALL=C sort -u || true)"
   [ -n "$m" ] || die "$3: none found in $(basename "$1")"
   [ "$(printf '%s\n' "$m" | wc -l)" -eq 1 ] || die "$3: more than one in $(basename "$1"): $(printf '%s' "$m" | tr '\n' ' ')"
   printf '%s\n' "$m"
+}
+
+# release_name WHAT VALUE : refuses, naming WHAT, unless VALUE is a release name
+# (letters, digits, '.', '_' and '-'), as the tag and the channel must be: a
+# value read from a download becomes part of a path and an index row.
+release_name() {
+  case "$2" in
+    ""|*[!0-9A-Za-z._-]*) die "the $1 \"$2\" is not a release name" ;;
+  esac
 }
 
 fetch_extism_js() {
@@ -157,6 +166,7 @@ fetch_extism_js() {
     r="${r#rquickjs-core-}"
     r="${r%/}"
     [ -z "$rq" ] || [ "$rq" = "$r" ] || die "the $tag binaries carry different rquickjs releases: $rq and $r ($platform)"
+    release_name "rquickjs version" "$r"
     rq="$r"
     printf '%s\t%s\n' "$platform" "$sha" >> "$WORK/binaries.tsv"
   done < "$WORK/assets.txt"
@@ -172,6 +182,8 @@ fetch_extism_js() {
   up="$(jq -r '.packages["node_modules/urlpattern-polyfill"].version // empty' "$WORK/prelude-lock.json")"
   [ -n "$cj" ] || die "the prelude package-lock.json of $repo $tag names no core-js"
   [ -n "$up" ] || die "the prelude package-lock.json of $repo $tag names no urlpattern-polyfill"
+  release_name "core-js version" "$cj"
+  release_name "urlpattern-polyfill version" "$up"
 
   # 4. the Rust release the runtime is built with
   local linux="$WORK/bin/x86_64-linux" rust_commit rust_line rust
@@ -211,6 +223,7 @@ fetch_extism_js() {
     $1 == "#define" && $2 == "QJS_VERSION_SUFFIX" { su = $3; gsub(/"/, "", su) }
     END { if (ma != "" && mi != "" && pa != "") print ma "." mi "." pa (su == "" ? "" : "-" su) }' "$WORK/quickjs.h")"
   [ -n "$qv" ] || die "the quickjs.h of QuickJS-NG $qc states no QJS_VERSION"
+  release_name "QuickJS-NG version" "$qv"
   mkdir -p "$stage/quickjs-ng-$qc"
   get "$RAW/quickjs-ng/quickjs/$qc/LICENSE" "$stage/quickjs-ng-$qc/LICENSE"
 
@@ -275,7 +288,7 @@ fetch_extism_js() {
         "$rq" "$qc" "$qv" "$cj" "${commits[0]}" "$up" "${commits[1]}" "$rust"
     done < "$WORK/binaries.tsv"
   } > "$WORK/extism-js.tsv.new"
-  { grep '^#' "$WORK/extism-js.tsv.new" || true; grep -v '^#' "$WORK/extism-js.tsv.new" | sort -t "$(printf '\t')" -k1,1V -k2,2; } > "$WORK/extism-js.tsv.sorted"
+  { grep '^#' "$WORK/extism-js.tsv.new" || true; grep -v '^#' "$WORK/extism-js.tsv.new" | LC_ALL=C sort -t "$(printf '\t')" -k1,1V -k2,2; } > "$WORK/extism-js.tsv.sorted"
   mv "$WORK/extism-js.tsv.sorted" "$tsv"
 
   echo "fetch-toolchain-notices: extism-js $tag -> rquickjs $rq, QuickJS-NG $qv ($qc), core-js $cj, urlpattern-polyfill $up, Rust $rust; $(wc -l < "$WORK/binaries.tsv" | tr -d ' ') binaries (written under $DEST)"
