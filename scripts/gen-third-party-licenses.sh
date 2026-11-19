@@ -120,7 +120,7 @@
 # Regenerate with:
 #   ./scripts/gen-third-party-licenses.sh    (run from the aggrega-cli module root)
 #
-# With `--out <dir>` the four outputs are written under <dir> in the same layout
+# With `--out <dir>` the outputs are written under <dir> in the same layout
 # as the module root (LICENSES/, THIRD-PARTY.spdx, THIRD-PARTY-NOTICES.txt,
 # THIRD-PARTY-LICENSES.md); <dir> is created when missing and nothing in the
 # module is written, the embedded copy of the notices included.
@@ -1216,10 +1216,19 @@ if [ -n "$GUEST" ]; then
 	guest_id="$(printf '%s' "$GUEST_LABEL" | sed -E 's/[^A-Za-z0-9.]/-/g')-third-party"
 	{
 		printf '# Third-party notices for %s\n\n' "$GUEST_LABEL"
-		printf 'This file lists every third-party dependency compiled into the `%s` plugin.\n' "$GUEST_LABEL"
+		if [ "$g_toolchain" = "typescript" ]; then
+			printf 'This file lists the third-party packages the `%s` plugin'"'"'s package-lock.json bundles into it.\n' "$GUEST_LABEL"
+			printf 'The JavaScript engine the build merges into the plugin'"'"'s `.wasm` is not listed.\n'
+		else
+			printf 'This file lists every third-party dependency compiled into the `%s` plugin.\n' "$GUEST_LABEL"
+		fi
 		printf 'It is generated from the dependency set the plugin is built from; do not edit it.\n\n'
 		if [ ! -s "$WORK/notices-md-pkgs.txt" ]; then
-			printf 'The plugin has no third-party dependency.\n'
+			if [ "$g_toolchain" = "typescript" ]; then
+				printf 'The plugin'"'"'s package-lock.json bundles no third-party package.\n'
+			else
+				printf 'The plugin has no third-party dependency.\n'
+			fi
 		else
 			printf 'Each dependency below names its version, its license, the copyright lines found in\n'
 			printf 'its package and any notice file it ships. The text of each license follows once,\n'
@@ -1235,15 +1244,26 @@ if [ -n "$GUEST" ]; then
 			done < "$WORK/ids.txt"
 		fi
 	} > "$WORK/notices.md"
-	jq -s --indent 2 --arg name "$guest_id" --arg ns "https://aggrega.ai/spdx/$guest_id" --arg ts "$FIXED_TS" \
-		--arg comment "Third-party dependencies compiled into the $GUEST_LABEL plugin. Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License texts are in the plugin's notices." '{
+	if [ "$g_toolchain" = "typescript" ]; then
+		sbom_what="Third-party packages the $GUEST_LABEL plugin's package-lock.json bundles into it; the JavaScript engine the build merges into the plugin's .wasm is not listed."
+	else
+		sbom_what="Third-party dependencies compiled into the $GUEST_LABEL plugin."
+	fi
+	# The document namespace carries the sha256 of the packages and relationships as
+	# written, so a document with different content has a different namespace.
+	sbom_body='{
+		packages: (sort_by(.SPDXID)),
+		relationships: (if length == 0 then [{spdxElementId: "SPDXRef-DOCUMENT", relationshipType: "DESCRIBES", relatedSpdxElement: "NONE"}]
+			else sort_by(.SPDXID) | map({spdxElementId: "SPDXRef-DOCUMENT", relationshipType: "DESCRIBES", relatedSpdxElement: .SPDXID}) end)}'
+	sbom_digest="$(jq -s -c "$sbom_body" "$WORK/sbom-json-pkgs.jsonl" | sha256sum | cut -d' ' -f1)"
+	jq -s --indent 2 --arg name "$guest_id" --arg ns "https://aggrega.ai/spdx/$guest_id-$sbom_digest" --arg ts "$FIXED_TS" \
+		--arg comment "$sbom_what Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License texts are in the plugin's notices." \
+		"$sbom_body"' as $b | {
 			spdxVersion: "SPDX-2.3", dataLicense: "CC0-1.0", SPDXID: "SPDXRef-DOCUMENT",
 			name: $name, documentNamespace: $ns,
 			creationInfo: {created: $ts, creators: ["Tool: gen-third-party-licenses.sh"]},
 			comment: $comment,
-			packages: (sort_by(.SPDXID)),
-			relationships: (if length == 0 then [{spdxElementId: "SPDXRef-DOCUMENT", relationshipType: "DESCRIBES", relatedSpdxElement: "NONE"}]
-				else sort_by(.SPDXID) | map({spdxElementId: "SPDXRef-DOCUMENT", relationshipType: "DESCRIBES", relatedSpdxElement: .SPDXID}) end)}' \
+			packages: $b.packages, relationships: $b.relationships}' \
 		"$WORK/sbom-json-pkgs.jsonl" > "$WORK/sbom.spdx.json"
 	mkdir -p -- "$OUT_DIR"
 	cp "$WORK/notices.md" "$OUT_DIR/notices.md.new"
