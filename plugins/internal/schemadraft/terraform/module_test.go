@@ -864,3 +864,68 @@ func TestModuleSensitiveOutput(t *testing.T) {
 		t.Errorf("the outputs are %s, want %s", got, want)
 	}
 }
+
+// TestModuleOutputNamesDoNotCollide publishes a nested attribute, a.b, whose
+// path joined with underscores is the name of a top-level attribute, a_b. Listed
+// in either order, the top-level attribute keeps its output name and the nested
+// one takes the next name free, each provides value reads its own output, and
+// the Header names the output that does not take its path's name.
+func TestModuleOutputNamesDoNotCollide(t *testing.T) {
+	for _, nestedFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("nested first %v", nestedFirst), func(t *testing.T) {
+			top := schemadraft.Provide{Key: "a_b", Attribute: []string{"a_b"}}
+			nested := schemadraft.Provide{Key: "a_inner", Attribute: []string{"a", "b"}}
+			outputs := []schemadraft.Provide{top, nested}
+			if nestedFirst {
+				outputs = []schemadraft.Provide{nested, top}
+			}
+			m := moduleOf("vault_store", address(terraformHost, "example", "vault", "1.0.0"), nil, outputs...)
+			ab, a, b := prop(kString, "a_b"), prop(kObject, "a"), prop(kString, "a", "b")
+			ab.ReadOnly, b.ReadOnly = true, true
+			a.Properties = []*schemadraft.Property{b}
+			m.Type.Properties = []*schemadraft.Property{a, ab}
+			d, _ := written(t, m)
+			want := `{"a_b":{"value":"${vault_store.this.a_b}"},"a_b_2":{"value":"${vault_store.this.a.b}"}}`
+			if got := canon(t, at(mainTF(t, d), "output")); got != want {
+				t.Errorf("the outputs are %s, want %s", got, want)
+			}
+			provides := map[string]string{}
+			for _, e := range d.Provides {
+				provides[e.Key] = e.Value
+			}
+			if provides["a_b"] != "${module.{{ .context.instance_id }}.a_b}" ||
+				provides["a_inner"] != "${module.{{ .context.instance_id }}.a_b_2}" {
+				t.Errorf("the provides read %v, want each its own output", provides)
+			}
+			if !slices.ContainsFunc(d.Header, func(line string) bool {
+				return strings.Contains(line, "a_b_2") && strings.Contains(line, "a.b")
+			}) {
+				t.Errorf("the Header does not name the output a_b_2 publishing a.b: %q", d.Header)
+			}
+		})
+	}
+}
+
+// TestVariableNamesAreTheModulesVariables reads the variable of each input of a
+// module whose inputs take a reserved name and the name it is renamed to: each
+// is the variable the module declares and the valuesMapping sets.
+func TestVariableNamesAreTheModulesVariables(t *testing.T) {
+	m := moduleOf("vault_store", address(terraformHost, "example", "vault", "1.0.0"), []schemadraft.Input{
+		in(prop(kString, "source"), schemadraft.PillarOverrides, "source", false),
+		in(prop(kString, "source_value"), schemadraft.PillarOverrides, "source_value", false),
+		in(prop(kString, "name"), schemadraft.PillarValues, "name", true),
+	})
+	names := VariableNames(m)
+	if want := []string{"source_value_2", "source_value", "name"}; !slices.Equal(names, want) {
+		t.Fatalf("the variables are %v, want %v", names, want)
+	}
+	d, _ := written(t, m)
+	for _, name := range names {
+		if at(mainTF(t, d), "variable", name) == nil {
+			t.Errorf("the module declares no variable %s", name)
+		}
+		if !strings.Contains(d.ValuesMapping, name+":") {
+			t.Errorf("the valuesMapping sets no %s:\n%s", name, d.ValuesMapping)
+		}
+	}
+}

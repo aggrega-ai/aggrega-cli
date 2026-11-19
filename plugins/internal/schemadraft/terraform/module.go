@@ -62,9 +62,15 @@ type Module struct {
 	// constraint and warns provider-version-unconstrained.
 	Provider schemadraft.ProviderAddress
 	Type     *schemadraft.Type
-	// Inputs are pillar- or inject-sourced; one module variable each.
+	// Inputs are top-level attributes and blocks of the resource, each pillar-
+	// or inject-sourced and set from one module variable (VariableNames); a
+	// member of a block is set from within its block's variable.
 	Inputs []schemadraft.Input
-	// Outputs are the attributes read back; one output each.
+	// Outputs are attributes read back, one output each, at the top level of
+	// the resource as the terraform-schema format drafts them. An output is
+	// named after its attribute's path joined with underscores, so a path
+	// naming a nested attribute is published too, numbered where the output of
+	// another attribute holds that name (outputNames).
 	Outputs []schemadraft.Provide
 }
 
@@ -90,7 +96,8 @@ type Module struct {
 // leaves the argument unset; a member read back alone is not set, and a block
 // the reader cut is left out and named in the Header. A resource whose name
 // does not open with its provider's type is bound to that provider. Each
-// output publishes an attribute read back, sensitive where the attribute is.
+// output publishes an attribute read back, sensitive where the attribute is,
+// under the name outputNames gives it.
 //
 // The valuesMapping sets one module argument for each input with a value: a
 // required input always, an optional one where its source holds it, so one set
@@ -155,9 +162,11 @@ func WriteModule(m Module) (importer.RecipeDraft, []aggrega.Diagnostic) {
 	}
 	doc["resource"] = map[string]any{m.Type.Name: map[string]any{thisResource: body}}
 
+	outputNamed, outputLines := outputNames(m.Outputs)
+	d.Header = append(d.Header, outputLines...)
 	outputs := map[string]any{}
-	for _, o := range m.Outputs {
-		name, path := outputName(o), strings.Join(attributeOf(o), ".")
+	for i, o := range m.Outputs {
+		name, path := outputNamed[i], strings.Join(attributeOf(o), ".")
 		output := map[string]any{"value": "${" + m.Type.Name + "." + thisResource + "." + path + "}"}
 		if sensitiveAt(m.Type.Properties, attributeOf(o)) {
 			output["sensitive"] = true
@@ -192,14 +201,21 @@ func WriteModule(m Module) (importer.RecipeDraft, []aggrega.Diagnostic) {
 // WriteModule names the inputs whose names Terraform admits first and the
 // reserved ones after them, so with both source and source_value among the
 // inputs, source takes source_value_2. A caller needing the variable of an
-// input reads it from the draft WriteModule returns rather than calling
-// VariableName itself.
+// input reads it from VariableNames rather than calling VariableName itself.
 func VariableName(vendor string, used map[string]bool) string {
 	base := underscored(importer.Slug(vendor))
 	if slices.Contains(reservedVariables, base) {
 		base += reservedSuffix
 	}
 	return underscored(importer.UniqueKey(used, base))
+}
+
+// VariableNames returns the module variable WriteModule declares for each of
+// m.Inputs, in their order: the variable the module sets the input's attribute
+// or block from, and the key the valuesMapping sets it under.
+func VariableNames(m Module) []string {
+	names, _ := variableNames(m.Inputs)
+	return names
 }
 
 // underscored writes the kit's hyphenated key with underscores, as a Terraform
@@ -384,9 +400,46 @@ func attributeOf(o schemadraft.Provide) []string {
 	return o.Attribute
 }
 
-// outputName is the output publishing o: its attribute path joined by
-// underscores.
+// outputName is the name of the output publishing o where no other output
+// holds it: its attribute path joined by underscores.
 func outputName(o schemadraft.Provide) string { return strings.Join(attributeOf(o), "_") }
+
+// outputNames names the output of each of outputs, in their order. The outputs
+// of top-level attributes are named first, each by outputName, so each keeps
+// its attribute's own name; a nested path whose joined name an output named
+// before it holds takes the first numeric suffix free, _2 onward, rather than
+// overwriting that output. It returns beside them the Header line naming each
+// output whose name is not its path's joined name, and why.
+//
+// The suffix deliberately repeats the kit's numeric suffix (importer.UniqueKey)
+// rather than calling it: the kit rewrites a name into its own key spelling,
+// lowercase and hyphenated, and an output keeps its attribute path's spelling.
+func outputNames(outputs []schemadraft.Provide) ([]string, []string) {
+	names := make([]string, len(outputs))
+	used := map[string]bool{}
+	for _, nested := range []bool{false, true} {
+		for i, o := range outputs {
+			if (len(attributeOf(o)) > 1) != nested {
+				continue
+			}
+			base := outputName(o)
+			name := base
+			for n := 2; used[name]; n++ {
+				name = fmt.Sprintf("%s_%d", base, n)
+			}
+			used[name] = true
+			names[i] = name
+		}
+	}
+	var lines []string
+	for i, o := range outputs {
+		if base := outputName(o); names[i] != base {
+			lines = append(lines, fmt.Sprintf("The module output %s publishes the attribute %s, since the output "+
+				"of another attribute takes the name %s.", names[i], strings.Join(attributeOf(o), "."), base))
+		}
+	}
+	return names, lines
+}
 
 // sensitiveAt reports whether the property at path among props, through the
 // members of objects, is sensitive.
