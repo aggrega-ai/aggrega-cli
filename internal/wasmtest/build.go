@@ -260,6 +260,12 @@ func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outN
 	}
 	defer os.RemoveAll(stageDir)
 
+	if lang == "typescript" {
+		if err := ensureTypeScriptKitBuilt(t, siblingsDir, testdataDir); err != nil {
+			return "", err
+		}
+	}
+
 	buildScript := filepath.Join(sourceDir, "build.sh")
 	cmd := exec.Command("bash", buildScript)
 	cmd.Dir = sourceDir
@@ -294,6 +300,61 @@ func buildPDKFixtureAs(t *testing.T, moduleRoot, siblingsDir, artifactName, outN
 	}
 
 	return artifactPath, nil
+}
+
+// typeScriptKitLockName names the build lock the TypeScript plugin kit's own
+// build takes, so fixtures of different names that need the kit built take turns
+// over its shared dist/ directory.
+const typeScriptKitLockName = "typescript-kit-dist"
+
+// ensureTypeScriptKitBuilt makes the TypeScript plugin kit's compiled output
+// current before an example is built against it. An example links the kit as a
+// local package and its bundler resolves the kit through the package.json entry
+// point under dist/, which is build output no checkout carries. When that entry
+// is missing or older than the kit's sources or manifests, the kit's own
+// dependencies are installed (npm ci, when node_modules is absent or older than
+// the lockfile) and its build script runs, as package.json defines them. A
+// missing npm is reported through the output so the caller classifies it as an
+// absent toolchain; any other failure fails the test.
+func ensureTypeScriptKitBuilt(t *testing.T, siblingsDir, testdataDir string) error {
+	t.Helper()
+	kit := filepath.Join(siblingsDir, "aggrega-pdk", "typescript")
+	entry := filepath.Join(kit, "dist", "index.js")
+	inputs := existing(filepath.Join(kit, "package.json"), filepath.Join(kit, "package-lock.json"),
+		filepath.Join(kit, "tsconfig.json"), filepath.Join(kit, "tsconfig.test.json"), filepath.Join(kit, "src"))
+	if wasmfixture.IsFresh(entry, inputs...) {
+		return nil
+	}
+
+	release := wasmfixture.LockFixtureBuild(testdataDir, typeScriptKitLockName)
+	defer release()
+	if wasmfixture.IsFresh(entry, inputs...) {
+		return nil
+	}
+
+	// The example build scripts put the user-local node install on PATH before
+	// they run; this does the same so the same npm is found.
+	const npm = `for d in "$HOME/n/bin" "$HOME/.local/bin"; do [ -d "$d" ] && PATH="$d:$PATH"; done; exec npm "$@"`
+	run := func(args ...string) error {
+		cmd := exec.Command("bash", append([]string{"-c", npm, "npm"}, args...)...)
+		cmd.Dir = kit
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		if pdkToolchainAbsent(string(out)) {
+			return fmt.Errorf("TOOLCHAIN-ABSENT: the TypeScript plugin kit build needs npm, which is not on PATH\noutput:\n%s", out)
+		}
+		t.Fatalf("TypeScript plugin kit build failed (npm %s in %s): %v\noutput:\n%s", strings.Join(args, " "), kit, err, out)
+		return nil
+	}
+
+	if !wasmfixture.IsFresh(filepath.Join(kit, "node_modules", ".package-lock.json"), filepath.Join(kit, "package-lock.json")) {
+		if err := run("ci", "--no-audit", "--no-fund", "--silent"); err != nil {
+			return err
+		}
+	}
+	return run("run", "build", "--silent")
 }
 
 // pdkToolchainAbsent reports whether a failed PDK fixture build failed
