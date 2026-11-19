@@ -337,9 +337,8 @@ var publishEntityToolSpec = toolSpec{
 		"workspace root; a Plugin entity also needs `plugin`, the executable published inside its manifest, and may " +
 		"carry `pluginNotices`, the guest's third-party notices published as a layer of that manifest, and " +
 		"`pluginSbom`, its SPDX bill of materials attached to the published Plugin; both are paths like `plugin` and " +
-		"are refused without it. The " +
-		"destination is `registry`, defaulting to the workspace's configured one. Set `dry_run` to compute the " +
-		"bundle and the digest a publication of it would land, and publish nothing. Signing follows the " +
+		"are refused without it. The destination is `registry`, defaulting to the workspace's configured one. Set " +
+		"`dry_run` to compute the bundle and the digest a publication of it would land, and publish nothing. Signing follows the " +
 		"destination registry's policy unless `sign` says otherwise, and a registry that requires signatures refuses an unsigned publication whatever you send — " +
 		"there is no argument that bypasses that refusal. Keyless signing resolves an identity from " +
 		"`identity_token`, and refuses loudly when nothing carries one, because nothing here can prompt. Set " +

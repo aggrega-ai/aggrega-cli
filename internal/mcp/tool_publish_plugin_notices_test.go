@@ -20,6 +20,9 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
+// The fixture bodies below are a deliberate near-duplicate of the ones in the sibling
+// test package (internal/serve): the two packages share no test helper, and a helper package
+// for four constants would hold more than it saves.
 const (
 	pluginEntityBody = `apiVersion: aggrega.ai/v1beta1
 kind: Plugin
