@@ -2580,6 +2580,25 @@ func (c *Catalog) componentOfType(typeURI string) (types.Component, bool) {
 	return c.Components[key], true
 }
 
+// WithoutComponentsAuthoredIn returns a view of c whose Component index leaves
+// out every Component authored in a catalog-directory document leaveOut reports
+// true for, so a reader of it resolves a Component name among the versions that
+// remain. A Component authored in no such document — read from a cache slot, or
+// placed in a Catalog literal — stays in view. Every other index is c's own,
+// shared rather than copied, so the view is for reading: nothing is written to it
+// or through it. c is not changed.
+func (c *Catalog) WithoutComponentsAuthoredIn(leaveOut func(document string) bool) *Catalog {
+	view := *c
+	view.Components = make(map[string]types.Component, len(c.Components))
+	for key, comp := range c.Components {
+		if document, ok := c.authoredDocumentOf(entityBytesKey("Component", key)); ok && leaveOut(document) {
+			continue
+		}
+		view.Components[key] = comp
+	}
+	return &view
+}
+
 // featureOfType is componentOfType for the Feature index: the Feature this
 // catalog's own index resolves typeURI to — the version resolveFeatureKey
 // selects — and whether it holds one.

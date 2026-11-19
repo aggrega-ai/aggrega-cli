@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 
@@ -668,6 +669,17 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		}
 	}
 
+	// The drafts an earlier import of this format wrote are its own, not catalog
+	// facts: where they lie in a catalog folder the view reads — drafts an importer
+	// lays out under catalog/ beneath the workspace root — the importer would read its
+	// own earlier Component as one the catalog holds, and judge the draft against
+	// it. So the view it is handed leaves out every Component authored in a file
+	// this import's entry lists, by place alone; every other Component stays in
+	// view, one a catalog folder holds that no entry lists included.
+	if own := ownEntry(opts.Sync, rec); own != nil && seam.projectWithout != nil && len(own.Files) > 0 {
+		seam.Catalog = seam.projectWithout(listedDrafts(outputDir, *own))
+	}
+
 	imported, err := importersocket.ImportArtifact(ctx, resolvedImporter{plugin: importer, err: resolveErr},
 		seam.importerLoader(ctx), seam.ParserRes, seam.parserLoader(ctx), format, primary, primaryName, sources, settings,
 		seam.Catalog, target)
@@ -712,14 +724,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	if opts.Delivery.Reports() || (opts.Sync && (Result{Diagnostics: diagnostics}).Halted()) {
 		ask = nil
 	}
-	// An entry naming no format is this import's only once a sync takes it over:
-	// an import that is not a sync reads of it the catalog snapshot it pins alone,
-	// never the answers file it points at, which may be another import's.
-	prior := rec
-	if !opts.Sync && rec != nil && rec.Format == "" {
-		prior = nil
-	}
-	owing, err := answerDrafts(rw.Root(), outputDir, prior, opts, ask, seam.Recipes, draft)
+	owing, err := answerDrafts(rw.Root(), outputDir, ownEntry(opts.Sync, rec), opts, ask, seam.Recipes, draft)
 	if err != nil {
 		return Result{}, err
 	}
@@ -1088,6 +1093,52 @@ type resolvedImporter struct {
 
 func (r resolvedImporter) ImporterPluginForFormat(string) (types.Plugin, error) {
 	return r.plugin, r.err
+}
+
+// ownEntry returns the entry of the record beside the drafts whose drafts are
+// this import's own — rec, the entry the import reads — or nil where it has none.
+// An entry naming no format is this import's only once a sync takes it over: an
+// import that is not a sync reads of it the catalog snapshot it pins alone, never
+// the answers file it points at or the files it lists, which may be another
+// import's.
+func ownEntry(sync bool, rec *recordEntry) *recordEntry {
+	if !sync && rec != nil && rec.Format == "" {
+		return nil
+	}
+	return rec
+}
+
+// listedDrafts reports whether a document lies at a file own lists beneath
+// outputDir: one of the drafts of the import own records. A document is matched by
+// its place, and where its spelling differs from the listed one — a link on the
+// way to either — by the file it is. A listed path that does not place beneath
+// outputDir names no file.
+func listedDrafts(outputDir string, own recordEntry) func(document string) bool {
+	var places []string
+	var files []os.FileInfo
+	for _, f := range own.Files {
+		place, err := draftPlace(outputDir, f.Path)
+		if err != nil {
+			continue
+		}
+		places = append(places, filepath.Clean(place))
+		if info, err := os.Stat(place); err == nil {
+			files = append(files, info)
+		}
+	}
+	return func(document string) bool {
+		if abs, err := filepath.Abs(document); err == nil && slices.Contains(places, filepath.Clean(abs)) {
+			return true
+		}
+		if len(files) == 0 {
+			return false
+		}
+		info, err := os.Stat(document)
+		if err != nil {
+			return false
+		}
+		return slices.ContainsFunc(files, func(f os.FileInfo) bool { return os.SameFile(f, info) })
+	}
 }
 
 // outputDirFor returns the directory an import's drafts are written under and

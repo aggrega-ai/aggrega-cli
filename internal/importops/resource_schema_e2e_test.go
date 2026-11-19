@@ -369,3 +369,98 @@ func readFile(t *testing.T, path string) string {
 	}
 	return string(body)
 }
+
+// ledgerWithoutName is the CloudFormation ledger fixture with its Name property
+// removed, one of the identity properties its Component's values hold.
+func ledgerWithoutName(t *testing.T, src formatSource) string {
+	t.Helper()
+	const name = `    "Name": {
+      "type": "string",
+      "description": "A display name for the ledger."
+    },
+`
+	body := readFile(t, src.path)
+	if !strings.Contains(body, name) {
+		t.Fatalf("the ledger fixture holds no Name property to remove")
+	}
+	return strings.Replace(body, name, "", 1)
+}
+
+// componentExistsHalts returns the component-exists halts among diags.
+func componentExistsHalts(diags []abi.Diagnostic) []abi.Diagnostic {
+	var out []abi.Diagnostic
+	for _, d := range diags {
+		if d.Code == "component-exists" && d.Severity == abi.SeverityHalt {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// TestResourceSchemaSyncRedraftsItsOwnComponent imports the CloudFormation
+// fixture at the workspace's root, where its Component lands in the catalog
+// folder the import reads, and removes an identity property from the source. A
+// sync then reads the Component the import drafted as its own draft rather than
+// as a catalog Component: it does not halt component-exists, and brings the
+// Component and the Recipe up to date with the source, the Component's values no
+// longer holding the removed key.
+//
+// The control holds the first import's Component in the catalog folder with no
+// record entry listing it: an import of the edited source into a directory of
+// its own reads it as the catalog's, whose values keys differ from the draft's,
+// and halts component-exists naming it.
+func TestResourceSchemaSyncRedraftsItsOwnComponent(t *testing.T) {
+	t.Run("its own drafts", func(t *testing.T) {
+		rw := schemaWorkspace(t, onlyCloudFormation(), "")
+		src := schemaSource(t, "cloudformation/testdata/ledger.json")
+		root := rw.Root()
+		importSchema(t, rw, src, cloudFormationSchemaFormat, root, Options{})
+		before := treeBytes(t, root)
+
+		src.rewrite(t, ledgerWithoutName(t, src))
+		res, err := schemaImport(rw, src, cloudFormationSchemaFormat, root, Options{Sync: true})
+		if err != nil {
+			t.Fatalf("the sync was refused: %v", err)
+		}
+		if halts := componentExistsHalts(res.Diagnostics); len(halts) != 0 {
+			t.Fatalf("the sync halted component-exists over its own drafted Component: %+v", halts)
+		}
+		changed := map[string]bool{}
+		for _, d := range res.Drift {
+			changed[d.File] = true
+		}
+		for _, want := range []string{cfnLedgerComponentPath, cfnLedgerRecipePath} {
+			if !changed[want] {
+				t.Errorf("the sync brought %s up to date with nothing; drift %+v", want, res.Drift)
+			}
+		}
+		after := treeBytes(t, root)
+		component := after[cfnLedgerComponentPath]
+		if strings.Contains(component, "A display name for the ledger.") || !strings.Contains(component, "ledger_name:") {
+			t.Errorf("the synced Component does not hold the values the edited source drafts:\n%.2500s", component)
+		}
+		if after[cfnLedgerRecipePath] == before[cfnLedgerRecipePath] {
+			t.Errorf("the sync left the Recipe as it was, though the Component's values changed")
+		}
+	})
+
+	t.Run("a Component no record entry lists", func(t *testing.T) {
+		rw := schemaWorkspace(t, onlyCloudFormation(), "")
+		src := schemaSource(t, "cloudformation/testdata/ledger.json")
+		other := filepath.Join(t.TempDir(), "other")
+		importSchema(t, rw, src, cloudFormationSchemaFormat, other, Options{})
+		held := filepath.Join(rw.Root(), filepath.FromSlash(cfnLedgerComponentPath))
+		importopstest.WriteSource(t, held, readFile(t, filepath.Join(other, filepath.FromSlash(cfnLedgerComponentPath))))
+
+		src.rewrite(t, ledgerWithoutName(t, src))
+		res, err := schemaImport(rw, src, cloudFormationSchemaFormat, filepath.Join(t.TempDir(), "drafts"), Options{})
+		if err != nil {
+			t.Fatalf("the import was refused: %v", err)
+		}
+		halts := componentExistsHalts(res.Diagnostics)
+		if len(halts) != 1 || !strings.Contains(halts[0].Message, "imported/component/aws-example-ledger") {
+			t.Errorf("the import did not halt component-exists naming the catalog folder's Component: %+v",
+				res.Diagnostics)
+		}
+	})
+}

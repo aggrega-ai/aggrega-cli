@@ -320,7 +320,9 @@ var importToolSpec = toolSpec{
 		"catalog an import reads is the one a build resolves against: the workspace's catalog folders first, " +
 		"and behind them the catalog its default registry publishes as one signed snapshot, at " +
 		"catalog/snapshot. An entity a folder holds is read in place of the published one of the same " +
-		"identity, and every other published entity stays in view; a parser or an importer the folders hold " +
+		"identity, and every other published entity stays in view, save the Components at files the import's " +
+		"own entry in the record beside the drafts lists, which are its earlier drafts rather than catalog " +
+		"entities; a parser or an importer the folders hold " +
 		"for a syntax or a format is chosen for it before any the published catalog holds. A snapshot is " +
 		"fetched once: its signature is verified under that registry's trust policy, and it is kept in the " +
 		"workspace's content cache and read there, held to its digest, with no registry asked for it again. " +

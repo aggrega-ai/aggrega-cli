@@ -73,6 +73,14 @@ type Seam struct {
 	// alone, and the snapshot's notice. A harness standing in for the seam leaves
 	// it nil, and nothing is fetched for it.
 	readSnapshot func(ctx context.Context, read catalogSnapshotRead) (Seam, catalogSnapshot, error)
+
+	// projectWithout is set on every real seam: it projects the same catalog view
+	// Catalog is projected from, leaving out every Component authored in a document
+	// leaveOut reports true for — the drafts an earlier import of the same format
+	// wrote into a catalog folder the view reads, which are that import's drafts
+	// rather than catalog facts ([Import]). A harness standing in for the seam
+	// leaves it nil, and its Catalog is handed to the importer as it is.
+	projectWithout func(leaveOut func(document string) bool) *abi.CatalogProjection
 }
 
 // importerLoader returns the loader an import under ctx runs its importer
@@ -341,6 +349,9 @@ func seamOver(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesRe
 		Importers:   cat.ImporterPlugins(),
 		Recipes:     cat,
 		loadIn:      loadIn,
+		projectWithout: func(leaveOut func(document string) bool) *abi.CatalogProjection {
+			return importersocket.ProjectCatalog(cat.WithoutComponentsAuthoredIn(leaveOut))
+		},
 	}
 }
 
