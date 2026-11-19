@@ -27,6 +27,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -903,24 +904,29 @@ func pinOnDisk(t *testing.T, outputDir string) string {
 // published catalog behind the folder and without it. A first import pins the
 // snapshot; a newer one is then published and the content cache loses the pinned
 // one. Where the pinned snapshot cannot be read — the workspace offline, or its
-// registry out of reach — a sync of the first import's drafts and an import
-// beside its record read the folder alone, each warning once that it does,
-// naming the pin, and each writes the pin back unchanged: the record on disk
-// still names it, and so does the record handed back. Online again, a sync reads
-// that pin, asked for by its digest, never the newest.
+// registry out of reach — a sync of the first import's drafts is refused, naming
+// the pin and running the sync where the registry is reachable, and writes
+// nothing: its drafts were judged against that catalog, which the folder alone
+// may not draft alike. The offline refusal carries the offline condition. An
+// import beside its record that is not a sync reads the folder alone, warning
+// once that it does, naming the pin, and writes the pin back unchanged in the
+// record it hands back. Online again, a sync reads that pin, asked for by its
+// digest, never the newest.
 //
 // 🔴 PLANTED DEFECT: in readCatalogSnapshot (internal/importops/snapshot.go),
-// keep no pin for an import over the folders alone: the sync rewrites the record
-// naming no snapshot, and every row fails.
+// keep no pin for an import over the folders alone: the import beside the record
+// records no snapshot, and every row fails.
 func TestLayeredCatalogFoldersAloneKeepsThePin(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name   string
-		config func(t *testing.T, f snapshotFixture) string
+		name    string
+		config  func(t *testing.T, f snapshotFixture) string
+		offline bool
 	}{
 		{
-			name:   "offline",
-			config: func(t *testing.T, f snapshotFixture) string { return f.reg.WorkspaceConfiguration(f.pub, true) },
+			name:    "offline",
+			config:  func(t *testing.T, f snapshotFixture) string { return f.reg.WorkspaceConfiguration(f.pub, true) },
+			offline: true,
 		},
 		{
 			name: "a registry that cannot be reached",
@@ -963,29 +969,35 @@ func TestLayeredCatalogFoldersAloneKeepsThePin(t *testing.T) {
 			alone := resolveWorkspaceAt(t, wsDir)
 			sync := first
 			sync.Sync = true
-			res, err := Import(context.Background(), alone, sync)
-			if err != nil {
-				t.Fatalf("the sync over the folder alone was refused: %v", err)
+			drafts := treeBytes(t, first.OutputDir)
+			_, err = Import(context.Background(), alone, sync)
+			if err == nil {
+				t.Fatalf("a sync whose pinned snapshot cannot be read went on over the folder alone")
 			}
-			warned := warningsCarrying(res.Diagnostics, foldersAloneWords)
-			if len(warned) != 1 || !strings.Contains(warned[0], f.digest) {
-				t.Errorf("the sync warned %q; want one warning of reading the folder alone, naming the pin %s",
-					warned, f.digest)
+			if tc.offline && !errors.Is(err, egress.ErrOfflineEgress()) {
+				t.Errorf("the sync was not refused as offline: %v", err)
 			}
-			if len(res.Drift) != 0 {
-				t.Errorf("the sync found drift %+v over drafts the folder reads alike", res.Drift)
+			for _, want := range []string{f.digest, "run the sync"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("the refusal does not name %q: %v", want, err)
+				}
 			}
-			if got := pinOnDisk(t, first.OutputDir); got != f.digest {
-				t.Errorf("after the sync over the folder alone the record names %q; want the pin %q", got, f.digest)
+			if !reflect.DeepEqual(treeBytes(t, first.OutputDir), drafts) {
+				t.Errorf("the refused sync changed the drafts or the record")
 			}
 
 			beside := snapshotImportOptions(t, authoredcontent.DeliveryReport)
 			if err := os.WriteFile(filepath.Join(beside.OutputDir, RecordFileName), record, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			res, err = Import(context.Background(), alone, beside)
+			res, err := Import(context.Background(), alone, beside)
 			if err != nil {
 				t.Fatalf("the import beside the record over the folder alone was refused: %v", err)
+			}
+			warned := warningsCarrying(res.Diagnostics, foldersAloneWords)
+			if len(warned) != 1 || !strings.Contains(warned[0], f.digest) {
+				t.Errorf("the import beside the record warned %q; want one warning of reading the folder alone, "+
+					"naming the pin %s", warned, f.digest)
 			}
 			if got := recordIn(t, res).CatalogSnapshot; got != f.digest {
 				t.Errorf("the import beside the record over the folder alone records %q; want the pin %q", got,

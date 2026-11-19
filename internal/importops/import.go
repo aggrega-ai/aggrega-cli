@@ -130,8 +130,8 @@ func (e *ExistingEntityError) Error() string {
 // Sync asks the import to bring what an earlier import drafted beneath the
 // output directory up to date with the source, rather than writing the draft
 // whole. Without it an import whose drafts would be written over an existing
-// Aggregate is refused before anything is written or reported
-// ([ExistingEntityError]). With it, the import reads its entry in the record
+// Aggregate, Component, Feature, Recipe or FeatureRecipe is refused before
+// anything is written or reported ([ExistingEntityError]). With it, the import reads its entry in the record
 // imports write beside their drafts ([RecordFileName]) and judges every part
 // three ways — see [Import].
 //
@@ -162,7 +162,11 @@ func (e *ExistingEntityError) Error() string {
 // fetched as the newest; otherwise the newest. Under Upgrade the newest is fetched now, and the
 // workspace reads it from then on. It is refused under the offline posture, with
 // no default registry named and with the registry out of reach, since only the
-// registry can say which snapshot is the newest.
+// registry can say which snapshot is the newest. A workspace naming catalog
+// folders otherwise imports over them alone where the snapshot cannot be read so,
+// with a warning — except under Sync where its entry names a snapshot: that sync
+// is refused, naming the snapshot, since the drafts it judges were drafted against
+// that catalog.
 //
 // Answers is the answers file on this host ([AnswersFileName]) the values the
 // drafts leave empty that no source can hold are read from and written to. Empty
@@ -608,7 +612,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	// snapshot for one.
 	var snapshot catalogSnapshot
 	if seam.readSnapshot != nil {
-		read := catalogSnapshotRead{upgrade: opts.Upgrade}
+		read := catalogSnapshotRead{upgrade: opts.Upgrade, sync: opts.Sync}
 		if rec != nil {
 			read.pinned = rec.CatalogSnapshot
 		}

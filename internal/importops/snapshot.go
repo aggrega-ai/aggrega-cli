@@ -32,23 +32,35 @@ import (
 // there is no such entry or it names none: an import into drafts an earlier
 // import wrote reads the catalog they were imported against.
 //
+// sync says the import brings the drafts of the earlier import its entry records
+// up to date with the source.
+//
 // folders says the workspace names catalog folders, which the snapshot is read
 // behind. An import over folders that does not ask for the newest snapshot goes
 // on over the folders alone where the snapshot cannot be read — the workspace is
 // offline and this machine does not hold it, the workspace names no default
 // registry, or the registry cannot be reached — rather than being refused, as an
 // import with no folder is; the notice of the snapshot it read none of says why.
+// A sync whose entry pins a snapshot is the exception (syncPin).
 type catalogSnapshotRead struct {
 	upgrade bool
 	pinned  string
+	sync    bool
 	folders bool
 }
+
+// syncPin reports whether r is a sync whose entry in the record pins the
+// snapshot it reads. Such a sync reads that snapshot or nothing: the drafts it
+// judges were drafted against that catalog, and the folders alone may draft them
+// otherwise — a Component the snapshot holds missing from them, say — so the sync
+// would write, and remove, what the source never changed.
+func (r catalogSnapshotRead) syncPin() bool { return r.sync && r.pinned != "" }
 
 // overFoldersAlone reports whether an import reading r goes on over the
 // workspace's catalog folders alone where the snapshot cannot be read. An import
 // asking for the newest snapshot is refused instead, since only a fetch answers
-// what it asked.
-func (r catalogSnapshotRead) overFoldersAlone() bool { return r.folders && !r.upgrade }
+// what it asked, and so is a sync whose entry pins the snapshot (syncPin).
+func (r catalogSnapshotRead) overFoldersAlone() bool { return r.folders && !r.upgrade && !r.syncPin() }
 
 // catalogSnapshot is the published catalog snapshot an import read: the directory
 // it is laid out as in the content cache and its manifest digest. Where the import
@@ -129,16 +141,20 @@ func foldersAloneNotice(why, then string) string {
 // own sign-in, and is verified before anything is kept: the archive held to the
 // manifest it came in, and the manifest's signature to the registry's trust policy
 // (pullverify.VerifyKindlessArtifact). Under the offline posture nothing is
-// fetched, and an import needing a fetch is refused, naming what to run.
+// fetched, and an import needing a fetch is refused, naming what to run. A sync
+// whose entry pins a snapshot this machine does not hold is refused wherever that
+// snapshot cannot be fetched, folders or not, naming the pin (pinnedSyncRefusal).
 //
 // A registry that answers that it publishes no snapshot at all leaves the import
 // with no snapshot, which notice reports; asked for one by digest, it refuses.
 //
-// An import over catalog folders that does not ask for the newest snapshot is not
-// refused for a snapshot it cannot read for want of the network or a registry —
-// under the offline posture with the snapshot not on this machine, with no default
-// registry named, or with the registry out of reach: it reads no snapshot, and
-// notice says why and what reads one (read.overFoldersAlone). A snapshot that is
+// An import over catalog folders that does not ask for the newest snapshot, and is
+// not a sync whose entry pins one, is not refused for a snapshot it cannot read for
+// want of the network or a registry — under the offline posture with the snapshot
+// not on this machine, with no default registry named, or with the registry out of
+// reach: it reads no snapshot, and notice says why and what reads one
+// (read.overFoldersAlone). A sync whose entry pins a snapshot it cannot read so is
+// refused, naming the pin and what reads it (read.syncPin). A snapshot that is
 // read and does not verify, and a registry that answers with a refusal, refuse it
 // as they refuse any import.
 func readCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace,
@@ -277,6 +293,11 @@ func fetchCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 		if read.overFoldersAlone() {
 			return catalogSnapshot{notice: noDefaultRegistryNotice()}, nil
 		}
+		if read.syncPin() {
+			return catalogSnapshot{}, pinnedSyncRefusal(manifestDigest, "the workspace names no default registry "+
+				"to fetch it from", "set default_registry to the registry that publishes it and run the sync where "+
+				"that registry can be reached", nil)
+		}
 		if read.folders {
 			return catalogSnapshot{}, fmt.Errorf("the workspace names no default registry to fetch the newest " +
 				"published catalog from; set default_registry")
@@ -299,6 +320,9 @@ func fetchCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 		if errors.Is(err, egress.ErrOfflineEgress()) {
 			if read.overFoldersAlone() {
 				return catalogSnapshot{notice: offlineSnapshotNotice(rw, manifestDigest)}, nil
+			}
+			if read.syncPin() {
+				return catalogSnapshot{}, offlinePinnedSyncRefusal(rw, manifestDigest, err)
 			}
 			return catalogSnapshot{}, offlineSnapshotRefusal(rw, manifestDigest, err)
 		}
@@ -325,6 +349,11 @@ func fetchCatalogSnapshot(ctx context.Context, rw *workspaceconfig.ResolvedWorks
 				"could not be reached for the catalog snapshot %s (%v)", host, asked, err), "run the import again "+
 				"with the network available, which fetches the catalog snapshot and keeps it on this machine for "+
 				"every later import")}, nil
+		}
+		if read.syncPin() && ctx.Err() == nil && unreached(err) {
+			return catalogSnapshot{}, pinnedSyncRefusal(manifestDigest, fmt.Sprintf("the workspace's default "+
+				"registry %s could not be reached for it", host), "run the sync where that registry can be reached, "+
+				"which fetches the snapshot and keeps it on this machine for every later sync", err)
 		}
 		return catalogSnapshot{}, snapshotFetchRefusal(ctx, asked, host, read.folders, err)
 	}
@@ -433,6 +462,39 @@ func offlineSnapshotRefusal(rw *workspaceconfig.ResolvedWorkspace, manifestDiges
 	return fmt.Errorf("%w\n  to import with no network, run the import once with the network available, which "+
 		"fetches the catalog snapshot and keeps it on this machine for every later import, %s", refusal,
 		nameACatalogFolder)
+}
+
+// pinnedSyncRefusal is the refusal of a sync whose entry in the record beside the
+// drafts pins the catalog snapshot pin, which this machine does not hold and
+// cannot fetch: why says why it cannot, remedy what reads it, and cause, where
+// set, is the failure it wraps. The sync is refused rather than run over the
+// workspace's catalog folders alone (catalogSnapshotRead.syncPin).
+func pinnedSyncRefusal(pin, why, remedy string, cause error) error {
+	refusal := fmt.Sprintf("the import's entry in the record beside the drafts pins the catalog snapshot %s, "+
+		"which this machine does not hold, and %s; a sync reads the catalog its drafts were imported against, "+
+		"never the workspace's catalog folders alone, so %s", pin, why, remedy)
+	if cause == nil {
+		return errors.New(refusal)
+	}
+	return fmt.Errorf("%s: %w", refusal, cause)
+}
+
+// offlinePinnedSyncRefusal is pinnedSyncRefusal under the offline posture: the
+// offline condition, naming the layer that set the posture
+// (egress.RefuseIfOffline), followed by what reads the pinned snapshot. offline is
+// the refusal the egress gate returned, kept where the posture cannot be
+// attributed.
+func offlinePinnedSyncRefusal(rw *workspaceconfig.ResolvedWorkspace, pin string, offline error) error {
+	act := "the import's entry in the record beside the drafts pins the catalog snapshot " + pin + ", which this " +
+		"machine does not hold, so the sync would fetch it from the workspace's default registry"
+	refusal := egress.RefuseIfOffline(rw, act)
+	if refusal == nil {
+		refusal = fmt.Errorf("%s: %w", act, offline)
+	}
+	return fmt.Errorf("%w\n  a sync reads the catalog its drafts were imported against, never the workspace's "+
+		"catalog folders alone: run the sync once with the network available, where the workspace's default "+
+		"registry can be reached, which fetches the snapshot and keeps it on this machine for every later sync",
+		refusal)
 }
 
 // unreached reports whether err, the failure of a fetch from a registry, is a
