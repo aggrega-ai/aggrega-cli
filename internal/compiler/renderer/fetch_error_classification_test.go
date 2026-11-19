@@ -16,6 +16,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/egress"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
+	"github.com/aggrega-ai/aggrega-cli/pkg/oci"
 )
 
 // TestOfflineEgressRoutesToFetchErrorFamily proves the offline-egress refusal
@@ -122,5 +123,39 @@ func TestRenderAll_FetchErrorIncludesRemediationOnTamperedArchive(t *testing.T) 
 	}
 	if !strings.Contains(compilerErr.Error(), "aggrega pull --upgrade") {
 		t.Errorf("error should include 'aggrega pull --upgrade' remediation; got %q", compilerErr.Error())
+	}
+}
+
+// TestServerErrorRoutesToFetchErrorFamily proves a registry's server error
+// classifies as FETCH_ERROR, as the other fetch conditions do.
+func TestServerErrorRoutesToFetchErrorFamily(t *testing.T) {
+	t.Parallel()
+	wrapped := fmt.Errorf("source descent: %w", oci.ErrFetchServerError())
+	ce, ok := renderer.WrapSourceResolutionErrorForTest(wrapped)
+	if !ok {
+		t.Fatal("wrapped ErrFetchServerError did not produce a CompilerError")
+	}
+	if ce.Category() != cerrors.FetchError {
+		t.Errorf("Category = %q; want FETCH_ERROR for a registry server error", ce.Category())
+	}
+	if !errors.Is(ce, oci.ErrFetchServerError()) {
+		t.Errorf("classified error no longer detects ErrFetchServerError in its chain")
+	}
+}
+
+// TestInterruptedTransferRoutesToFetchErrorFamily proves a transfer that broke
+// off classifies as FETCH_ERROR, as the other fetch conditions do.
+func TestInterruptedTransferRoutesToFetchErrorFamily(t *testing.T) {
+	t.Parallel()
+	wrapped := fmt.Errorf("source descent: %w", oci.ErrFetchInterrupted())
+	ce, ok := renderer.WrapSourceResolutionErrorForTest(wrapped)
+	if !ok {
+		t.Fatal("wrapped ErrFetchInterrupted did not produce a CompilerError")
+	}
+	if ce.Category() != cerrors.FetchError {
+		t.Errorf("Category = %q; want FETCH_ERROR for an interrupted transfer", ce.Category())
+	}
+	if !errors.Is(ce, oci.ErrFetchInterrupted()) {
+		t.Errorf("classified error no longer detects ErrFetchInterrupted in its chain")
 	}
 }

@@ -615,6 +615,8 @@ func TestMatchFetchSentinelDetectsEachSentinel(t *testing.T) {
 		{"Unauthorized", oci.ErrFetchUnauthorized()},
 		{"NetworkUnreachable", oci.ErrFetchNetworkUnreachable()},
 		{"Integrity", oci.ErrFetchIntegrity()},
+		{"ServerError", oci.ErrFetchServerError()},
+		{"Interrupted", oci.ErrFetchInterrupted()},
 	}
 	for _, tc := range cases {
 		wrapped := fmt.Errorf("outer wrap: %w", tc.sent)

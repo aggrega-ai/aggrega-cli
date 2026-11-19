@@ -150,7 +150,7 @@ func wrapSourceResolutionError(err error, nodeID, label string) error {
 }
 
 // matchFetchSentinel walks the error chain via errors.Is against each
-// fetch-family sentinel: the four remote-acquisition faults declared at
+// fetch-family sentinel: the remote-acquisition faults declared at
 // pkg/oci/errors.go plus the offline-egress refusal from pkg/egress. Returns
 // the matched sentinel + true on first hit; returns (nil, false)
 // when the chain carries no fetch sentinel.
@@ -171,6 +171,10 @@ func matchFetchSentinel(err error) (error, bool) {
 		return oci.ErrFetchNetworkUnreachable(), true
 	case errors.Is(err, oci.ErrFetchIntegrity()):
 		return oci.ErrFetchIntegrity(), true
+	case errors.Is(err, oci.ErrFetchServerError()):
+		return oci.ErrFetchServerError(), true
+	case errors.Is(err, oci.ErrFetchInterrupted()):
+		return oci.ErrFetchInterrupted(), true
 	case errors.Is(err, egress.ErrOfflineEgress()):
 		// An offline-egress refusal is a fetch-family fault: from the user's
 		// perspective it is an inability to fetch. It carries its own remediation,
