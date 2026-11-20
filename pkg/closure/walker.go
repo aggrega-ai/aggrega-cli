@@ -952,8 +952,8 @@ type heldIdentities interface {
 //
 // The selected version (the highest floor any consumer states) reaches the lookup
 // as a `name:version` reference, which the lookup reads as `>=version` within that
-// version's major and answers with the highest held version it admits; a registry
-// pull resolves that tag. A pure bare-name
+// version's major and answers with the highest version it admits, from the
+// catalog it holds or from the tags a registry lists. A pure bare-name
 // reference (no floor) leaves the version empty for the lookup to resolve at first
 // pull (the list-tags→highest path). The stored library key stays the host-less bare
 // name regardless.

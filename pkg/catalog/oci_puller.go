@@ -5,8 +5,10 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
@@ -205,12 +207,13 @@ func (p DefaultOCIPuller) Pull(ctx context.Context, reference, tag string) (*oci
 }
 
 // PullLibrary pulls a library by its host-less identity (bare name + kind),
-// binding it to a physical location through the configured default registry —
-// the pull-side mirror of push's name→location (`<registry>/<kind-segment>/<name>`).
-// When floorVersion is empty (a pure bare-name reference at first pull) it lists
-// the registry's tags and selects the highest semver an attached withdrawal screen
-// leaves eligible; otherwise it uses the asserted floor as the tag, announcing it
-// when the screen holds a withdrawal record for it. The selected version is
+// binding it to a physical location through the configured default registry — the
+// pull-side mirror of push's name→location (`<registry>/<kind-segment>/<name>`).
+// The version is discovered from the registry's tags (discoverLibraryVersion):
+// with an empty floorVersion (a pure bare-name reference at first pull) the
+// highest semver an attached withdrawal screen leaves eligible; with a floor, the
+// highest such version in the floor's major at or above it, the selection a local
+// catalog makes of the same floor (selectLibraryVersion). The selected version is
 // returned so the lockfile pins it. The "latest" resolution happens HERE, at the
 // network step, and is pinned — the build never lists tags or fetches.
 func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVersion string) (*oci.PullResult, string, error) {
@@ -219,7 +222,7 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 	if err != nil {
 		return nil, "", err
 	}
-	version, err := p.discoverVersion(reference, floorVersion, func() ([]string, error) {
+	version, err := p.discoverLibraryVersion(reference, floorVersion, func() ([]string, error) {
 		return oci.MemoizedListTags(ctx, reference, repo)
 	})
 	if err != nil {
@@ -230,6 +233,48 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 		return nil, "", perr
 	}
 	return result, version, nil
+}
+
+// discoverLibraryVersion is the discovery step of a library pull. Without a floor
+// it is discoverVersion. With one it lists reference's tags through listTags and
+// selects the highest version the withdrawal screen leaves eligible that the
+// floor admits — the same version selectLibraryVersion picks among the same
+// versions held locally, so a floor records one version whichever tier serves it.
+// A floor that names a tag outright, which the screen withholds and no eligible
+// version admits, is that tag: naming the version overrides the withdrawal, and
+// the screen announces it. A listing the registry reports as not found, and a
+// floor no listed version admits, report ErrFetchNotFound; any other listing
+// failure is returned as it is.
+func (p DefaultOCIPuller) discoverLibraryVersion(reference, floorVersion string, listTags func() ([]string, error)) (string, error) {
+	if floorVersion == "" {
+		return p.discoverVersion(reference, floorVersion, listTags)
+	}
+	tags, err := listTags()
+	if err != nil {
+		return "", err
+	}
+	eligible := tags
+	if p.retraction != nil {
+		eligible, _ = p.retraction.ScreenVersions(reference, tags)
+	}
+	const name = "library"
+	floorRef := name + ":" + floorVersion
+	meta := func(tag string) (string, string) { return name, tag }
+	index := make(map[string]string, len(eligible))
+	for _, tag := range eligible {
+		index[tag] = tag
+	}
+	switch key, ok, err := selectLibraryVersion(index, floorRef, meta); {
+	case ok:
+		return key, nil
+	case err != nil && !errors.Is(err, ErrUnsatisfiableEntityVersion()):
+		return "", err
+	}
+	if slices.Contains(tags, floorVersion) {
+		p.reportPinnedVersion(reference, floorVersion)
+		return floorVersion, nil
+	}
+	return "", fmt.Errorf("%w: %s: no published version admitted by the floor %s", oci.ErrFetchNotFound(), reference, floorVersion)
 }
 
 // PullAggregate pulls a published Aggregate by its bare identity, binding it to

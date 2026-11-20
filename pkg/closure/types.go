@@ -704,7 +704,7 @@ func ErrMVSConflict() error { return errMVSConflict }
 
 var errMVSConflict = cerrors.Register("version-selection-conflict", cerrors.Meta{
 	ShortCode: "E0107",
-	Message:   "resolve: minimal version selection conflict — incompatible library version requirements",
+	Message:   "resolve: consumers of one library require versions in incompatible majors",
 	RulePlace: cerrors.RuleNoStageReaches("The closure walk evaluates the rule, when two library consumers it has reached require " +
 		"incompatible major versions of one library. The conflict is a fact about the requirements the " +
 		"walk has accumulated rather than about any one document, and the walk pins a Release's reachable " +
