@@ -199,6 +199,10 @@ var axesWithoutVerifiableRefs = map[string]string{
 		"included under and the references naming them: each reference is a member of Entities, " +
 		"which this enumeration covers, and the record is read by the sub-aggregate descent alone " +
 		"and never written to a lockfile",
+	"manifest": "the Manifest the walk was handed, which maps the instances: the Release's own " +
+		"Manifest is a member of Entities, which this enumeration covers, and the walk keeps the " +
+		"document only for the sub-aggregate descent to settle a module's instance versions " +
+		"through, never writing it to a lockfile",
 }
 
 // VerifiableAxes returns every closure section that carries references a

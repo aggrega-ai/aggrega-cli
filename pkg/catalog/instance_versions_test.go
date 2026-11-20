@@ -505,7 +505,7 @@ func TestInstanceVersionsConflictNamesEveryVersionHeld(t *testing.T) {
 		Instance: "web", Site: ".spec.components.web", Kind: ConstraintType,
 		Value: "core/compute/server:1.0.0", File: instanceVersionsAggregateFile,
 	}}
-	err := conflictingVersionConstraints(instanceVersionsRelease, declared, inVersionOrder([]string{"1.10.0", "", "latest", "1.2.0"}))
+	err := conflictingVersionConstraints(instanceVersionsRelease, declared, inVersionOrder([]string{"1.10.0", "", "latest", "1.2.0"}), "")
 	if !strings.Contains(err.Error(), `catalog holds "1.2.0, 1.10.0, latest")`) {
 		t.Errorf("the conflict does not name the versions held in order, without an empty one:\n%v", err)
 	}

@@ -126,7 +126,7 @@ func TestEveryClosureSectionIsClassified(t *testing.T) {
 // It compares names rather than a count, so a set that swapped one member for
 // another at the same size is still reported, and each difference is named.
 func TestOnlyThePinnedSectionsAreExempt(t *testing.T) {
-	want := []string{"Instances", "ReleaseDocuments", "SourceArtifacts", "modules"}
+	want := []string{"Instances", "ReleaseDocuments", "SourceArtifacts", "manifest", "modules"}
 
 	wantSet := make(map[string]struct{}, len(want))
 	for _, name := range want {

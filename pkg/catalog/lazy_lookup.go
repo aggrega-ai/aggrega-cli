@@ -1300,9 +1300,28 @@ func entityPinKey(entityKind, uri string) (PinKey, bool, error) {
 // the keying of an entity's pin (entityPinKey), and so its refusal: a closure entity
 // whose kind names no published kind halts as an internal fault.
 func PinsFromClosure(cl closure.Closure) (Pins, error) {
-	pins := make(Pins, len(cl.Entities)+len(cl.SchemaLibraries)+len(cl.MappingLibraries)+len(cl.WorkloadLibraries)+len(cl.ArtifactLibraries)+len(cl.Plugins))
+	pins, err := entityPins(cl.Entities)
+	if err != nil {
+		return nil, err
+	}
+	for _, axis := range closure.LibraryAxes() {
+		for _, lib := range axis.Libraries(&cl) {
+			pins[PinKey{Kind: axis.Kind, URI: lib.URI}] = libraryPin(lib)
+		}
+	}
+	for _, wp := range cl.Plugins {
+		pins[PluginExecutablePin(wp.URI)] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}
+	}
+	return pins, nil
+}
+
+// entityPins is the pin set of the resolved entity references refs: each keyed by
+// its kind and reference (entityPinKey), holding the version it resolved to and
+// its digests, and an entity of a kind no cache slot holds carrying none.
+func entityPins(refs []closure.ResolvedRef) (Pins, error) {
+	pins := make(Pins, len(refs))
 	var faults []error
-	for _, e := range cl.Entities {
+	for _, e := range refs {
 		key, cached, err := entityPinKey(e.Kind(), e.URI)
 		if err != nil {
 			faults = append(faults, err)
@@ -1314,14 +1333,6 @@ func PinsFromClosure(cl closure.Closure) (Pins, error) {
 	}
 	if len(faults) > 0 {
 		return nil, errors.Join(faults...)
-	}
-	for _, axis := range closure.LibraryAxes() {
-		for _, lib := range axis.Libraries(&cl) {
-			pins[PinKey{Kind: axis.Kind, URI: lib.URI}] = libraryPin(lib)
-		}
-	}
-	for _, wp := range cl.Plugins {
-		pins[PluginExecutablePin(wp.URI)] = Pin{ResolvedVersion: wp.ResolvedVersion, Digest: wp.Digest, ManifestDigest: wp.ManifestDigest}
 	}
 	return pins, nil
 }
@@ -1363,7 +1374,7 @@ const (
 // (cacheHitResolution), and the slot the bytes were read from, which is where a
 // caller that parses them lays them out (unpackEntitySlot).
 func (l *LazyLookup) tier2Verified(kind, uri string) ([]byte, []byte, string, tier2Outcome) {
-	pin, havePin := l.pins[PinKey{Kind: kind, URI: uri}]
+	pin, havePin := l.pinFor(kind, uri)
 	if !havePin {
 		return nil, nil, "", tier2Fetch
 	}
@@ -1390,6 +1401,33 @@ func (l *LazyLookup) tier2Verified(kind, uri string) ([]byte, []byte, string, ti
 	default: // oci.ErrFetchNotFound (slot absent / incomplete) or an unreadable slot
 		return nil, nil, "", tier2Fetch
 	}
+}
+
+// pinFor returns the pin a Tier-2 read of uri, as an entity of kind, is held to:
+// the pin recorded for uri itself, or — for an exact reference no pin is recorded
+// for — the pin of a reference of the same name recorded at exactly that version,
+// the first in pin order. A pin names bytes, and the slot it vouches for is the one
+// an exact reference to its version addresses, so the reference a build compiles
+// an instance at (ReferenceAt) reads the slot the reference as written was pinned
+// to.
+func (l *LazyLookup) pinFor(kind, uri string) (Pin, bool) {
+	if pin, ok := l.pins[PinKey{Kind: kind, URI: uri}]; ok {
+		return pin, true
+	}
+	ref := types.ParseVersionPin(uri)
+	version, exact := ref.Pin()
+	if !exact || ref.IsCaret() || version == "" {
+		return Pin{}, false
+	}
+	for _, key := range l.pins.sortedKeys() {
+		if key.Kind != kind || key.Executable || types.ParseVersionPin(key.URI).Base() != ref.Base() {
+			continue
+		}
+		if pin := l.pins[key]; pin.ResolvedVersion == version {
+			return pin, true
+		}
+	}
+	return Pin{}, false
 }
 
 // fileHeader is the partial unmarshal struct used by the catalog-tree
@@ -1441,7 +1479,10 @@ func (l *LazyLookup) ComponentContext(ctx context.Context, uri string) (types.Co
 }
 
 // ClosureComponent returns the Component a closure entity reference resolves to,
-// merged along its extends chain, satisfying closure.LibrarySource.
+// merged along its extends chain, satisfying closure.LibrarySource. It reads the
+// Component at the version the reference's row records (closureReference), so a
+// gate over the closure reads the version the walk resolved the reference to and
+// a build compiles, never another version the reference alone would select.
 //
 // A reference the walk collected as anything else — a Recipe, the Release's own
 // Manifest or Aggregate, a plugin — is that kind's entity, so it reads no Component
@@ -1461,7 +1502,17 @@ func (l *LazyLookup) closureComponent(ctx context.Context, ref closure.ResolvedR
 	if !ref.ReadableAs(closure.KindComponent) {
 		return types.Component{}, false
 	}
-	return l.componentContext(ctx, ref.URI, collectedAs(ref, "Component"))
+	return l.componentContext(ctx, closureReference(ref), collectedAs(ref, "Component"))
+}
+
+// closureReference is the reference a closure row reads its entity by: the
+// reference as written, at the version the row records, as an exact reference
+// (ReferenceAt). A row recording no version is read as written.
+func closureReference(ref closure.ResolvedRef) string {
+	if ref.ResolvedVersion == "" {
+		return ref.URI
+	}
+	return ReferenceAt(ref.URI, ref.ResolvedVersion)
 }
 
 // collectedAs reports whether the walk collected ref at a position naming the
@@ -1591,7 +1642,7 @@ func (l *LazyLookup) closureFeature(ctx context.Context, ref closure.ResolvedRef
 	if !ref.ReadableAs(closure.KindFeature) {
 		return types.Feature{}, false
 	}
-	return l.featureContext(ctx, ref.URI, collectedAs(ref, "Feature"))
+	return l.featureContext(ctx, closureReference(ref), collectedAs(ref, "Feature"))
 }
 
 // EntityNames reports the metadata.name of every entity of kind the configured
@@ -3972,7 +4023,7 @@ func (l *LazyLookup) ResolveClosureExtends(ctx context.Context, cl closure.Closu
 			n := lookupNameFromURI(e.URI)
 			r, ok := byName[n]
 			if !ok {
-				r = &nameRef{uri: e.URI}
+				r = &nameRef{uri: closureReference(e)}
 				byName[n] = r
 			}
 			r.registry = r.registry || collectedAs(e, catalogKind)
@@ -4129,10 +4180,191 @@ var _ closure.RecipeLoaderSource = (*lazyClosureLookup)(nil)
 // pinned socket entity down that cascade instead of failing to compile here.
 var _ closure.PinnedSocketEntityResolver = (*lazyClosureLookup)(nil)
 
+// The settlement of instance versions is reached by assertion as well, and a walk
+// over a lookup lacking it resolves every reference as written — so without this a
+// signature drift would quietly stop the walk settling them.
+var _ closure.InstanceVersionSelector = (*lazyClosureLookup)(nil)
+
 // Reading ahead is reached by assertion as well, and a walk over a lookup lacking it
 // simply reads one reference at a time — so without this a signature drift would
 // quietly turn the reading ahead off instead of failing to compile here.
 var _ closure.RegistryPrefetcher = (*lazyClosureLookup)(nil)
+
+// SelectInstanceVersions satisfies closure.InstanceVersionSelector over this view.
+// It settles the instance-version table (ResolveInstanceVersions) over the versions
+// the walk can resolve each Component reference to (resolutionVersions): those the
+// view's catalog directories hold, else the one the prior lockfile this lookup
+// honours pins, else those the registry this lookup was built to read lists — none
+// for a lookup built with no registry, as a build's is. The Recipes the walk has
+// resolved are read through a view of their own, pinned to what the walk resolved,
+// where a registry may have served them.
+//
+// It returns, for each instance's reference the table selects a version of, the
+// reference at that version as an exact reference (ReferenceAt), under the
+// identity the walk records the reference by. A reference the prior lockfile pins
+// at the version selected, whose Component no catalog directory holds, is left to
+// resolve as written, which honours the pin and verifies its slot as resolving it
+// always has. The table's refusals are left to the compilation of the Release,
+// which reports them where every surface reports them; the references they
+// concern resolve as written.
+func (x *lazyClosureLookup) SelectInstanceVersions(ctx context.Context, manifest *types.Manifest, instances []closure.InstanceReference, resolved []closure.ResolvedRef) map[closure.EntityKey]string {
+	var prior Pins
+	var puller OCIPuller
+	if base, ok := x.base.(*catalogLookup); ok {
+		prior, puller = base.priorPins, base.ociPuller
+	}
+	recipes, err := x.l.recipesResolvedBy(resolved, puller)
+	if err != nil {
+		return nil
+	}
+	table, _ := ResolveInstanceVersions("", instances, manifest, "", x.l.resolutionVersions(ctx, recipes, prior, "", puller))
+	requests := map[closure.EntityKey]string{}
+	for _, in := range instances {
+		version, held := table.Selected.Get(in.Reference)
+		if !held {
+			continue
+		}
+		key := closure.EntityKey{Kind: closure.KindComponent, URI: in.Reference}
+		if in.Feature {
+			key.Kind = closure.KindFeature
+		}
+		if x.pinHolds(prior, key, version) {
+			continue
+		}
+		requests[key] = ReferenceAt(in.Reference, version)
+	}
+	return requests
+}
+
+// pinHolds reports whether resolving the reference key names as written already
+// resolves it to version: a prior pin records it at that version, and no catalog
+// directory of this view holds its Component — a catalog directory answers a
+// reference before any pin is read, at the version the reference alone selects.
+func (x *lazyClosureLookup) pinHolds(prior Pins, key closure.EntityKey, version string) bool {
+	pin, pinned := prior[PinKey{Kind: EntityKindForHint(key.Kind), URI: key.URI}]
+	if !pinned || pin.ResolvedVersion != version {
+		return false
+	}
+	return len(x.l.ComponentVersions(types.ParseVersionPin(key.URI).Base())) == 0
+}
+
+// recipesResolvedBy returns what the instance-version settlement reads Recipes
+// through: this view, or, where the walk reads a registry through puller, a view
+// forked from it and pinned besides to the references resolved, so a Recipe the
+// walk has just fetched is read from the slot it was fetched into. The fork writes
+// no notices; this view writes the ones its own reads meet.
+func (l *LazyLookup) recipesResolvedBy(resolved []closure.ResolvedRef, puller OCIPuller) (recipeReader, error) {
+	if puller == nil {
+		return l, nil
+	}
+	pins, err := entityPins(resolved)
+	if err != nil {
+		return nil, err
+	}
+	l.mu.Lock()
+	for key, pin := range l.pins {
+		if _, own := pins[key]; !own {
+			pins[key] = pin
+		}
+	}
+	l.mu.Unlock()
+	fork := l.ForRequest(pins)
+	fork.WriteNoticesTo(io.Discard)
+	return fork, nil
+}
+
+// recipeReader is what the instance-version settlement reads a mapped Recipe
+// through.
+type recipeReader interface {
+	RecipeByURI(uri string) (types.Recipe, bool)
+}
+
+// ResolutionVersions returns the view a pull settles the version of each instance
+// over, satisfying InstanceVersionView. The versions a Component reference is
+// selected among are those this view's catalog directories hold of its name; where
+// they hold none, the version prior pins the reference at — the pins of the
+// lockfile a pull reconciles against, written in priorFile, which a conflict over
+// it names; and where prior pins none, the versions the registry this view reads
+// lists (EntityVersionLister). A candidate's extends ancestry is read from the
+// local tiers, and, for a candidate only a registry holds, from its document,
+// fetched then and kept for every later read; it is the one fetch the settlement
+// makes. Recipes are read as RecipeByURI reads them.
+func (l *LazyLookup) ResolutionVersions(ctx context.Context, prior Pins, priorFile string) InstanceVersionView {
+	return l.resolutionVersions(ctx, l, prior, priorFile, l.puller)
+}
+
+// resolutionVersions is ResolutionVersions reading Recipes through recipes and
+// listing a registry through puller where it can (EntityVersionLister); a nil
+// puller lists none, and the ancestry of a candidate is then read from the local
+// tiers alone.
+func (l *LazyLookup) resolutionVersions(ctx context.Context, recipes recipeReader, prior Pins, priorFile string, puller OCIPuller) *resolutionVersionView {
+	v := &resolutionVersionView{ctx: ctx, l: l, recipes: recipes, prior: prior, priorFile: priorFile}
+	if lister, ok := puller.(EntityVersionLister); ok {
+		v.lister = lister
+	}
+	return v
+}
+
+// resolutionVersionView is the view ResolutionVersions returns.
+type resolutionVersionView struct {
+	ctx       context.Context
+	l         *LazyLookup
+	recipes   recipeReader
+	prior     Pins
+	priorFile string
+	lister    EntityVersionLister
+}
+
+// ComponentVersions lists the versions of name this view's catalog directories
+// hold, in the order inVersionOrder gives.
+func (v *resolutionVersionView) ComponentVersions(name string) []string {
+	return v.l.ComponentVersions(name)
+}
+
+// RecordedVersion returns the version the prior lockfile pins reference's
+// Component at, satisfying recordedVersions.
+func (v *resolutionVersionView) RecordedVersion(reference string) (string, string, bool) {
+	pin, ok := v.prior[PinKey{Kind: componentKind, URI: reference}]
+	if !ok || pin.ResolvedVersion == "" {
+		return "", "", false
+	}
+	return pin.ResolvedVersion, v.priorFile, true
+}
+
+// ListedVersions lists the versions the registry this view reads publishes the
+// Component name at, satisfying listedVersions; a registry that cannot list the
+// name lists nothing.
+func (v *resolutionVersionView) ListedVersions(name string) []string {
+	if v.lister == nil {
+		return nil
+	}
+	listed, err := v.lister.ListEntityVersions(v.ctx, name, componentKind)
+	if err != nil {
+		return nil
+	}
+	return listed
+}
+
+// RecipeByURI reads a Recipe as the settlement's recipe reader does.
+func (v *resolutionVersionView) RecipeByURI(uri string) (types.Recipe, bool) {
+	return v.recipes.RecipeByURI(uri)
+}
+
+// ComponentAncestry walks a component type's extends ancestry over the local tiers
+// and, where this view lists a registry, over a document fetched from it.
+func (v *resolutionVersionView) ComponentAncestry(componentType string) ([]string, error) {
+	if v.lister == nil {
+		return v.l.ComponentAncestry(componentType)
+	}
+	v.l.mu.Lock()
+	defer v.l.mu.Unlock()
+	return componentAncestryOver(componentType, func(uri string) (types.Component, bool) {
+		if comp, ok := v.l.localComponent(uri); ok {
+			return comp, true
+		}
+		return v.l.componentContext(v.ctx, uri, true)
+	}, v.l.localComponentVersion)
+}
 
 func (x *lazyClosureLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHint string) (closure.Resolution, error) {
 	return x.resolveEntity(uri, kindHint, func() (closure.Resolution, error) {

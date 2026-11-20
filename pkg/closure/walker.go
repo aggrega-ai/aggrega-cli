@@ -96,6 +96,9 @@ type walkState struct {
 	// modules records every module an Aggregate the walk visits includes, in
 	// author order.
 	modules []moduleInclusion
+	// manifest is the Manifest the walk maps the instances through, nil for a walk
+	// handed none.
+	manifest *types.Manifest
 }
 
 // pendingRef collects the per-entity accumulating data the walker
@@ -184,6 +187,7 @@ func (s *walkState) walk(in inputs) error {
 		return nil
 	}
 
+	s.manifest = in.manifest
 	if in.release.Spec.Aggregate != "" {
 		s.addEntityKind(in.release.Spec.Aggregate, "release.spec.aggregate", ReleaseAggregateKindHint)
 	}
@@ -653,24 +657,107 @@ func (s *walkState) resolveAll(ctx context.Context, lookup Lookup) error {
 // runtime randomises would change both from one run to the next over identical
 // input.
 //
-// A lookup that can read ahead (RegistryPrefetcher) is first probed with every
-// reference in that same order, so what the references need from a registry is
-// fetched several at once; the resolution that follows is unchanged by it.
+// It resolves in two passes, each in that order. The Recipes and FeatureRecipes
+// come first, because the implements of the one a mapping names is a constraint on
+// the version of every instance the mapping reaches. The lookup is then asked to
+// settle the version each instance's reference resolves at, handed what the first
+// pass resolved (InstanceVersionSelector), and every other reference is resolved
+// in the second pass — a reference the settlement covers at the reference it
+// returned, and recorded under the reference as written.
+//
+// A lookup that can read ahead (RegistryPrefetcher) is first probed with the
+// references of each pass, in that pass's order and at the references it will ask,
+// so what the references need from a registry is fetched several at once; the
+// resolution that follows is unchanged by it.
 func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
+	var realizations, rest []EntityKey
+	for _, key := range s.sortedEntityKeys() {
+		if realizesInstances(key.Kind) {
+			realizations = append(realizations, key)
+		} else {
+			rest = append(rest, key)
+		}
+	}
+	if err := s.resolveKeys(ctx, lookup, realizations, nil); err != nil {
+		return err
+	}
+	requests := selectInstanceVersions(ctx, lookup, s.manifest, s.instances, s.resolvedRefs())
+	return s.resolveKeys(ctx, lookup, rest, requests)
+}
+
+// resolveAllButInstanceTypes resolves, as resolveEntities does, every recorded
+// reference but the Components and Features the walk's instances are typed by,
+// and returns those in the order resolveEntities resolves them. It is for a walk
+// whose instances are named, and so constrained, only once a walk around it is
+// done: a module's, whose instances the composition names after every module is
+// walked (DescendSubAggregates).
+func (s *walkState) resolveAllButInstanceTypes(ctx context.Context, lookup Lookup) ([]EntityKey, error) {
+	var realizations, rest, instanceTypes []EntityKey
+	for _, key := range s.sortedEntityKeys() {
+		switch {
+		case realizesInstances(key.Kind):
+			realizations = append(realizations, key)
+		case typesInstances(key.Kind):
+			instanceTypes = append(instanceTypes, key)
+		default:
+			rest = append(rest, key)
+		}
+	}
+	if err := s.resolveKeys(ctx, lookup, realizations, nil); err != nil {
+		return nil, err
+	}
+	if err := s.resolveKeys(ctx, lookup, rest, nil); err != nil {
+		return nil, err
+	}
+	return instanceTypes, nil
+}
+
+// realizesInstances reports whether an entity of kind is what a Manifest maps an
+// instance to: a Recipe or a FeatureRecipe.
+func realizesInstances(kind string) bool {
+	return kind == KindRecipe || kind == KindFeatureRecipe
+}
+
+// typesInstances reports whether an entity of kind is what an instance is typed
+// by: a Component or a Feature.
+func typesInstances(kind string) bool {
+	return kind == KindComponent || kind == KindFeature
+}
+
+// sortedEntityKeys returns the identities of the recorded references in the order
+// they are resolved: by reference, then by kind (EntityKey.Less).
+func (s *walkState) sortedEntityKeys() []EntityKey {
 	keys := make([]EntityKey, 0, len(s.entities))
 	for key := range s.entities {
 		keys = append(keys, key)
 	}
 	sort.Slice(keys, func(i, j int) bool { return keys[i].Less(keys[j]) })
+	return keys
+}
+
+// resolveKeys resolves the references keys name, in that order, each asked at the
+// reference requests holds for its identity where it holds one and as written
+// otherwise, and records each resolution under the reference as written. A lookup
+// that can read ahead is probed with the same requests first.
+func (s *walkState) resolveKeys(ctx context.Context, lookup Lookup, keys []EntityKey, requests map[EntityKey]string) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	requestFor := func(key EntityKey) string {
+		if request, ok := requests[key]; ok {
+			return request
+		}
+		return key.URI
+	}
 	prefetchRegistryReads(ctx, lookup, func(probe Lookup) {
 		for _, key := range keys {
-			_, _ = s.entities[key].resolve(ctx, probe, key.URI)
+			_, _ = s.entities[key].resolve(ctx, probe, requestFor(key))
 		}
 	})
 	for _, key := range keys {
-		uri := key.URI
+		uri, request := key.URI, requestFor(key)
 		pending := s.entities[key]
-		res, err := pending.resolve(ctx, lookup, uri)
+		res, err := pending.resolve(ctx, lookup, request)
 		if err != nil {
 			return err
 		}
@@ -678,18 +765,32 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 		// way a lookup failure does, for the same reason.
 		if res.NotFound {
 			return NewUnresolvedEntityError(uri, pending.kindHint,
-				entityNotFound(uri, referencedFromPreview(pending.referencedFrom), res.UnsatisfiedPin))
+				entityNotFound(request, referencedFromPreview(pending.referencedFrom), res.UnsatisfiedPin))
 		}
 		pending.resolution = &res
 	}
 	return nil
 }
 
-// resolve asks lookup for the entity p records under uri, by the resolution its
-// collection site calls for, and returns what the lookup answered — a NotFound
-// resolution included, which is the caller's to judge. It is the one resolution
-// of a recorded reference: the walk refuses a reference it answers NotFound for,
-// and the extends descent leaves such a base to the chain walk that reports it.
+// resolvedRefs returns every reference the walk has resolved so far, in the order
+// it resolves them.
+func (s *walkState) resolvedRefs() []ResolvedRef {
+	var out []ResolvedRef
+	for _, key := range s.sortedEntityKeys() {
+		if p := s.entities[key]; p.resolution != nil {
+			out = append(out, p.toResolvedRef(key.URI))
+		}
+	}
+	return out
+}
+
+// resolve asks lookup for the entity p records at uri — the reference as written,
+// or the exact reference a settlement of instance versions returned for it — by
+// the resolution its collection site calls for, and returns what the lookup
+// answered — a NotFound resolution included, which is the caller's to judge. It is
+// the one resolution of a recorded reference: the walk refuses a reference it
+// answers NotFound for, and the extends descent leaves such a base to the chain
+// walk that reports it.
 func (p *pendingRef) resolve(ctx context.Context, lookup Lookup, uri string) (Resolution, error) {
 	// A sub-aggregate reference resolves through the dedicated aggregate
 	// registry tier (bare-name capable), not the generic catalog-entity
@@ -1043,6 +1144,7 @@ func (s *walkState) materialise() Closure {
 	// order of the documents walked; canonicaliseClosure leaves them as they are.
 	c.Instances = s.instances
 	c.modules = s.modules
+	c.manifest = s.manifest
 	return c
 }
 

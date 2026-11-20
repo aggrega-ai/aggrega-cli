@@ -28,8 +28,9 @@ import (
 
 // ValidateClosureScopedPillars validates ONLY the catalog Components and Features
 // the closure reaches — the closure-scoped counterpart to whole-catalog pillar
-// validation (validateSchemaPillarsPass). It intersects cl.Entities (by
-// version-stripped name) with the loaded Components / Features — an entity the walk
+// validation (validateSchemaPillarsPass). It intersects cl.Entities, each at the
+// version its row records (closureReference), with the loaded Components /
+// Features — an entity the walk
 // collected as a Component with the Components, one collected as a Feature with
 // the Features, so an entity of another kind sharing a name reaches neither — and
 // delegates to ValidateClosurePillars against the catalog's SchemaLibraries (local +
@@ -50,7 +51,7 @@ func (c *Catalog) ValidateClosureScopedPillars(cl closure.Closure) error {
 		if !e.ReadableAs(closure.KindComponent) {
 			continue
 		}
-		if key, ok, _ := c.resolveComponentKey(e.URI); ok {
+		if key, ok, _ := c.resolveComponentKey(closureReference(e)); ok {
 			comps[key] = c.Components[key]
 			compSrc[key] = c.componentSources[key]
 		}
@@ -59,7 +60,7 @@ func (c *Catalog) ValidateClosureScopedPillars(cl closure.Closure) error {
 		if !e.ReadableAs(closure.KindFeature) {
 			continue
 		}
-		if key, ok, _ := c.resolveFeatureKey(e.URI); ok {
+		if key, ok, _ := c.resolveFeatureKey(closureReference(e)); ok {
 			feats[key] = c.Features[key]
 			featSrc[key] = c.featureSources[key]
 		}
@@ -71,7 +72,8 @@ func (c *Catalog) ValidateClosureScopedPillars(cl closure.Closure) error {
 }
 
 // ResolveClosureExtends resolves the extends chain for ONLY the Components and
-// Features the closure reaches, in sorted-name order, mutating them in place —
+// Features the closure reaches, each at the version its row records
+// (closureReference), in sorted-name order, mutating them in place —
 // the closure-scoped counterpart to ResolveAllExtends. An out-of-closure entity's
 // extends is never resolved, so a broken out-of-closure parent never fails the
 // build; an in-closure child whose parent is missing (skipped at tolerant load)
@@ -104,7 +106,7 @@ func (c *Catalog) ResolveClosureExtends(cl closure.Closure) []*validator.Validat
 		if !e.ReadableAs(closure.KindComponent) {
 			continue
 		}
-		if key, ok, _ := c.resolveComponentKey(e.URI); ok {
+		if key, ok, _ := c.resolveComponentKey(closureReference(e)); ok {
 			compSet[key] = struct{}{}
 		}
 	}
@@ -112,7 +114,7 @@ func (c *Catalog) ResolveClosureExtends(cl closure.Closure) []*validator.Validat
 		if !e.ReadableAs(closure.KindFeature) {
 			continue
 		}
-		if key, ok, _ := c.resolveFeatureKey(e.URI); ok {
+		if key, ok, _ := c.resolveFeatureKey(closureReference(e)); ok {
 			featSet[key] = struct{}{}
 		}
 	}
@@ -207,6 +209,19 @@ type AggregatePuller interface {
 // ("Component"/"Feature"/"Recipe"/"FeatureRecipe"); version is the tag.
 type EntityPuller interface {
 	PullEntity(ctx context.Context, identity, kind, floorVersion string) (result *oci.PullResult, resolvedVersion string, err error)
+}
+
+// EntityVersionLister is the optional puller capability listing the versions a
+// registry publishes a core catalog entity at, by its bare identity and kind: the
+// tag listing EntityPuller reads to resolve a reference naming no version, handed
+// back whole rather than reduced to its highest. A pull that judges every version a
+// Component reference could resolve to against the constraints declared on its
+// instances reads it, and then fetches only the version it selects, plus a
+// candidate's document where judging that candidate needs its extends ancestry. A
+// puller that does not implement it lists nothing, and a reference only a registry
+// serves then resolves as written.
+type EntityVersionLister interface {
+	ListEntityVersions(ctx context.Context, identity, kind string) ([]string, error)
 }
 
 // ClosureLookup returns a closure.Lookup that resolves catalog

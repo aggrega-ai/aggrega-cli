@@ -86,7 +86,10 @@ type BuildInputs struct {
 // broken out-of-closure entity never fails the build. The catalog lookup is
 // scoped to the version each instance compiles at
 // (ResolvedClosure.InstanceVersionLookup), and an instance whose constraints
-// admit no version halts the build before the pipeline runs.
+// admit no version halts the build before the pipeline runs. Built from a
+// lockfile, a reference no catalog directory holds compiles at the version its
+// row records, and a row its constraints do not admit halts the build as that
+// conflict, naming the lockfile.
 func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (pipeline.Outcome, error) {
 	view := in.View
 	r := in.Resolved
@@ -165,8 +168,10 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 	// Every instance is compiled at the version its constraints admit, through the
 	// one settlement a validation of the same Release reads too. A conflict between
 	// them halts here, before the pipeline runs, for the reason a composition
-	// failure does.
-	catLookup, err := r.InstanceVersionLookup(catLookup, view)
+	// failure does. Built from a lockfile, a reference no catalog directory holds is
+	// held to its row, which its constraints judge rather than select past.
+	catLookup, err := r.InstanceVersionLookup(catLookup,
+		catalog.HeldToLockfile(view, in.Lockfile, catalog.RelativeToWorkspace(in.WorkspaceRoot, lockfile.PathFor(in.ReleasePath))))
 	if err != nil {
 		return pipeline.Outcome{}, err
 	}

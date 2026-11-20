@@ -185,6 +185,10 @@ type ValidateInputs struct {
 	// from Lockfile, which also holds the pipeline's guests to their recorded
 	// identities, a footing a surface that only reads the record's libraries leaves
 	// off.
+	//
+	// Its Component rows are also the versions an instance's reference is held to
+	// where no catalog directory holds the reference's Component, as a build holds
+	// it (catalog.HeldToLockfile); with no LibraryRecord, Lockfile's rows are.
 	LibraryRecord *lockfile.Lockfile
 	Release       *types.Release
 	Manifest      *types.Manifest
@@ -439,8 +443,13 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 	// is the run error, and the pipeline is not run: compiling the instance at a
 	// version one of its constraints refuses would report, beside the conflict,
 	// the findings that version earns.
+	record := in.LibraryRecord
+	if record == nil {
+		record = in.Lockfile
+	}
 	catalogLookup, runErr := instanceVersionLookup(in.View.AsCatalogLookupWithSchemas(ctx, libraries.Schemas),
-		in.View, in.Release, in.Manifest, in.ManifestPath, in.Closure)
+		catalog.HeldToLockfile(in.View, record, catalog.RelativeToWorkspace(in.WorkspaceRoot, lockfile.PathFor(in.ReleasePath))),
+		in.Release, in.Manifest, in.ManifestPath, in.Closure)
 	var tier4 *pipeline.Tier4Result
 	if runErr == nil {
 		tier4, runErr = pipeline.RunTier4Pipeline(

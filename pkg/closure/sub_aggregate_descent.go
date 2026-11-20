@@ -166,6 +166,7 @@ func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoade
 
 	visited := map[string]struct{}{}
 	walked := map[string]moduleWalk{}
+	var deferred []deferredTypes
 	for len(level) > 0 {
 		// Stable, so a URI queued twice within one level keeps the frame of the
 		// parent loaded first, which the previous level's order already fixes.
@@ -192,10 +193,12 @@ func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoade
 			// (every production one loads through the parse core, which does) hands
 			// back the identical value.
 			sub.walkAggregate(types.Normalize(agg), fmt.Sprintf("aggregate(%s)", f.uri))
-			if err := sub.resolveEntities(ctx, lookup); err != nil {
+			instanceTypes, err := sub.resolveAllButInstanceTypes(ctx, lookup)
+			if err != nil {
 				return err
 			}
 			walked[f.uri] = moduleWalk{instances: sub.instances, modules: sub.modules, file: moduleFile(f)}
+			deferred = append(deferred, deferredTypes{walk: sub, keys: instanceTypes})
 
 			for key, p := range sub.entities {
 				if p.resolution == nil {
@@ -220,7 +223,60 @@ func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoade
 	}
 
 	c.Instances = append(c.Instances, moduleInstances(c.modules, "", walked, map[string]bool{})...)
+	if err := resolveModuleInstanceTypes(ctx, c, index, deferred, lookup); err != nil {
+		return err
+	}
 	canonicaliseClosure(c)
+	return nil
+}
+
+// deferredTypes is one module walk and the Components and Features its instances
+// are typed by, which the descent resolves once every module is walked.
+type deferredTypes struct {
+	walk *walkState
+	keys []EntityKey
+}
+
+// resolveModuleInstanceTypes resolves the types the modules' instances write,
+// which the descent leaves until every module is walked: the version an instance
+// resolves at is settled from every constraint on every instance writing its
+// reference, and a module's instance is mapped by the name the composition gives
+// it, which is known only then (InstanceVersionSelector). The settlement is handed
+// every instance of the Release, the closure's own and the modules', with the
+// Manifest the walk was handed.
+//
+// The walks are resolved in the order the descent loaded them, each in its own
+// order, so a type two modules write keeps the resolution of the one loaded first.
+// A type the closure already holds — one the Release's own Aggregate writes, or
+// one an earlier module wrote — is not resolved again: its sites are merged onto
+// the entity the closure holds.
+func resolveModuleInstanceTypes(ctx context.Context, c *Closure, index map[EntityKey]int, deferred []deferredTypes, lookup Lookup) error {
+	var requests map[EntityKey]string
+	settled := false
+	for _, d := range deferred {
+		var unresolved []EntityKey
+		for _, key := range d.keys {
+			if _, held := index[key]; held {
+				p := d.walk.entities[key]
+				mergeEntity(c, index, ResolvedRef{URI: key.URI, ReferencedFrom: p.sites(), KindHint: p.kindHint})
+				continue
+			}
+			unresolved = append(unresolved, key)
+		}
+		if len(unresolved) == 0 {
+			continue
+		}
+		if !settled {
+			requests = selectInstanceVersions(ctx, lookup, c.manifest, c.Instances, c.Entities)
+			settled = true
+		}
+		if err := d.walk.resolveKeys(ctx, lookup, unresolved, requests); err != nil {
+			return err
+		}
+		for _, key := range unresolved {
+			mergeEntity(c, index, d.walk.entities[key].toResolvedRef(key.URI))
+		}
+	}
 	return nil
 }
 

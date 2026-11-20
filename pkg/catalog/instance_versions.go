@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -100,6 +101,96 @@ type InstanceVersionView interface {
 	ComponentAncestry(componentType string) ([]string, error)
 }
 
+// recordedVersions is the optional InstanceVersionView capability of a view that
+// holds a reference to the version a lockfile records for it, where none of its
+// catalog directories holds the reference's Component: RecordedVersion returns
+// that version and the lockfile's file. The version is the reference's one
+// candidate, and a conflict over it names the lockfile among the sources.
+type recordedVersions interface {
+	RecordedVersion(reference string) (version, file string, ok bool)
+}
+
+// listedVersions is the optional InstanceVersionView capability of a view that
+// lists the versions a registry publishes a Component name at, read where neither
+// a catalog directory nor a lockfile holds the reference.
+type listedVersions interface {
+	ListedVersions(name string) []string
+}
+
+// candidates are the versions of a reference's Component the table selects among.
+// recorded reports that they are the one version a lockfile records the reference
+// at, and lockfile names that lockfile's file where the view names one.
+type candidates struct {
+	versions []string
+	recorded bool
+	lockfile string
+}
+
+// candidateVersions returns the versions of reference's Component the table
+// selects among, base being the Component's name: the versions view holds of the
+// name; where it holds none, the version a lockfile records the reference at
+// (recordedVersions); where none records it, the versions view lists
+// (listedVersions).
+func candidateVersions(view InstanceVersionView, reference, base string) candidates {
+	if held := view.ComponentVersions(base); len(held) > 0 {
+		return candidates{versions: held}
+	}
+	if recorded, ok := view.(recordedVersions); ok {
+		if version, file, ok := recorded.RecordedVersion(reference); ok {
+			return candidates{versions: []string{version}, recorded: true, lockfile: file}
+		}
+	}
+	return candidates{versions: listedVersionsOf(view, base)}
+}
+
+// listedVersionsOf returns the versions view lists of the Component name
+// (listedVersions), in the order inVersionOrder gives, and none for a view that
+// lists none.
+func listedVersionsOf(view InstanceVersionView, name string) []string {
+	if listing, ok := view.(listedVersions); ok {
+		return inVersionOrder(listing.ListedVersions(name))
+	}
+	return nil
+}
+
+// HeldToLockfile returns view holding, where none of its catalog directories
+// holds a Component reference's Component, that reference to the version lf's row
+// records for it, with file named as where it is written (recordedVersions). It is
+// the view a build from a lockfile settles instance versions over: a reference a
+// catalog directory holds is selected again from the versions there, and a
+// reference only the lockfile's pin reaches — one a registry served — is held to
+// its row, which every constraint declared on its instances then judges. A row
+// they do not admit is refused with the conflicting-version-constraints condition,
+// naming the lockfile; the table never selects past the row. A nil lf leaves view
+// as it is.
+func HeldToLockfile(view InstanceVersionView, lf *lockfile.Lockfile, file string) InstanceVersionView {
+	if lf == nil {
+		return view
+	}
+	held := lockfileHeldView{InstanceVersionView: view, rows: map[string]string{}, file: file}
+	for _, e := range lf.Entities {
+		if e.Kind == closure.KindComponent && e.ResolvedVersion != "" {
+			held.rows[e.URI] = e.ResolvedVersion
+		}
+	}
+	return held
+}
+
+// lockfileHeldView is the view HeldToLockfile returns: view, and the version each
+// Component reference the lockfile records is recorded at.
+type lockfileHeldView struct {
+	InstanceVersionView
+	rows map[string]string
+	file string
+}
+
+// RecordedVersion returns the version the lockfile's row records reference at,
+// satisfying recordedVersions.
+func (v lockfileHeldView) RecordedVersion(reference string) (string, string, bool) {
+	version, ok := v.rows[reference]
+	return version, v.file, ok
+}
+
 // ResolveInstanceVersions resolves each component reference the instances of the
 // Release named release write to the highest version every constraint declared
 // on its instances admits:
@@ -117,16 +208,24 @@ type InstanceVersionView interface {
 //
 // The selection is the version select's, under an admission predicate built
 // from those constraints, so "highest", the pre-release rule, the tie-break and
-// the version-less fallback are the select's own.
+// the version-less fallback are the select's own. The versions selected among are
+// those the view holds of the type's name; where it holds none, the one version a
+// lockfile records the reference at, where the view holds the reference to one
+// (HeldToLockfile), which the constraints then judge rather than select past; and
+// where no lockfile records it, the versions the view lists from a registry. A
+// recorded version the constraints refuse yields to the registry's versions where
+// the view lists any, as a pull's does, and is refused where it lists none, as a
+// build's is.
 //
 // Where the versions held include some the reference alone admits and none every
 // constraint admits, the reference is refused with the conflicting-version-
 // constraints condition, naming the Release, then each instance writing it with
 // where it is declared and each constraint with the file it is written in, then
-// the versions held, and positioned where the first of those instances is
-// declared. Where a mapping key or a spec.implements carries a malformed pin,
-// that pin admits no version, so the refusal is the malformed-pin condition
-// naming where the pin is written instead.
+// the versions held — or the version locked and the lockfile it is written in —
+// and positioned where the first of those instances is declared. Where a mapping
+// key or a spec.implements carries a malformed pin, that pin admits no version, so
+// the refusal is the malformed-pin condition naming where the pin is written
+// instead.
 //
 // A type-axis entry whose Recipe's spec.implements does not accept the entry's
 // own key — judged as the rule over the mapping entry judges it, through
@@ -137,7 +236,7 @@ type InstanceVersionView interface {
 // Every refused reference is reported, and the table holds the others.
 //
 // A reference the table cannot judge is left out of Selected and resolves as it
-// does without the table: one whose name the view holds at no version, one no
+// does without the table: one with no version to select among, one no
 // held version satisfies on its own pin, and one whose own pin is malformed are
 // reported where references are resolved. An instance no mapping reaches carries
 // its type alone and resolves as its reference does; one whose mapping lookup
@@ -218,12 +317,29 @@ func instanceSite(path string) string {
 }
 
 // selectComponentVersion selects the version of reference every constraint in
-// declared admits, among the versions the view holds under its name. It reports
-// the version and true on a selection, false with no error for a reference the
-// table leaves to its own resolution, and the refusal for one it refuses.
+// declared admits, among the versions the view offers it (candidateVersions). It
+// reports the version and true on a selection, false with no error for a reference
+// the table leaves to its own resolution, and the refusal for one it refuses.
+//
+// A version a lockfile records, which the constraints do not admit, yields to the
+// versions the view lists from a registry where it lists any: a pull resolving a
+// reference its prior lockfile pins re-selects a pin its constraints have moved
+// away from, while a build, whose view lists none, is held to the row.
 func selectComponentVersion(release, reference string, declared []VersionConstraint, view InstanceVersionView) (string, bool, error) {
 	base := types.ParseVersionPin(reference).Base()
-	held := view.ComponentVersions(base)
+	offered := candidateVersions(view, reference, base)
+	version, selected, err := selectAmong(release, reference, base, declared, view, offered)
+	if offered.recorded && errors.Is(err, ErrConflictingVersionConstraints()) {
+		if listed := listedVersionsOf(view, base); len(listed) > 0 {
+			return selectAmong(release, reference, base, declared, view, candidates{versions: listed})
+		}
+	}
+	return version, selected, err
+}
+
+// selectAmong is selectComponentVersion over the versions offered.
+func selectAmong(release, reference, base string, declared []VersionConstraint, view InstanceVersionView, offered candidates) (string, bool, error) {
+	held := offered.versions
 	index := make(map[string]string, len(held))
 	for _, version := range held {
 		index[entityIndexKey(base, version)] = version
@@ -238,7 +354,7 @@ func selectComponentVersion(release, reference string, declared []VersionConstra
 		if fault := malformedConstraintPin(declared, reference); fault != nil {
 			return "", false, fault
 		}
-		return "", false, conflictingVersionConstraints(release, declared, held)
+		return "", false, conflictingVersionConstraints(release, declared, held, offered.lockfile)
 	default:
 		return "", false, nil
 	}
@@ -301,10 +417,12 @@ const conflictingVersionAdvice = "change the Aggregate's version, or map this ty
 // the instances belong to, then each instance in turn — where it is declared, its
 // name, and each of its constraints with the file it is written in — then the
 // versions held, a version-less entry among them left unnamed because it has no
-// version to name. It is positioned where the first instance is declared: the
+// version to name. Where the versions are the ones a lockfile records, recordedIn
+// names that lockfile, and the versions are named as locked there, a source beside
+// the constraints. It is positioned where the first instance is declared: the
 // document its type is written in, at the instance's site, which is where the
 // remedy of changing the version is written.
-func conflictingVersionConstraints(release string, declared []VersionConstraint, held []string) error {
+func conflictingVersionConstraints(release string, declared []VersionConstraint, held []string, recordedIn string) error {
 	detail := []constraint.DetailValue{constraint.Captioned("Release", release)}
 	for _, c := range declared {
 		switch c.Kind {
@@ -330,7 +448,13 @@ func conflictingVersionConstraints(release string, declared []VersionConstraint,
 			named = append(named, version)
 		}
 	}
-	detail = append(detail, constraint.Captioned("catalog holds", strings.Join(named, ", ")))
+	if recordedIn != "" {
+		detail = append(detail,
+			constraint.Captioned("locked at", strings.Join(named, ", ")),
+			constraint.Captioned("written in", recordedIn))
+	} else {
+		detail = append(detail, constraint.Captioned("catalog holds", strings.Join(named, ", ")))
+	}
 
 	condition := ErrConflictingVersionConstraints()
 	var at cerrors.SourceLocation

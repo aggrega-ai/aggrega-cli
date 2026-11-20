@@ -17,10 +17,14 @@
 // instance's Component or Feature reads through — its document, its effective
 // schema, and the type its mapped Recipe's implements is judged against — so the
 // version an instance compiles at is the version that lookup answers with. A
-// surface compiling a Release hands over the lookup scoped to the version every
-// constraint on each instance admits (catalog.ScopeToInstanceVersions, settled by
+// surface compiling a Release — a build, a validation, an inspection and a pull's
+// own graph alike — hands over the lookup scoped to the version every constraint
+// on each instance admits (catalog.ScopeToInstanceVersions, settled by
 // compilerops.ResolvedClosure.InstanceVersionLookup), and no stage here resolves
-// an instance's type on its own.
+// an instance's type on its own. The validation of one entity compiles a Release
+// it composes itself, whose one instance is typed and mapped by the Recipe's own
+// implements, so the reference every constraint states is the one the lookup is
+// asked with and it hands the lookup over as it is.
 package pipeline
 
 import (

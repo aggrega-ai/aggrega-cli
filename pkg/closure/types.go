@@ -81,6 +81,12 @@ type Closure struct {
 	// module the identity the composition gives them, which starts with the name
 	// the including Aggregate writes the module under.
 	modules []moduleInclusion
+
+	// manifest is the Manifest the walk was handed, which maps the instances. The
+	// descent of the sub-aggregate axis reads it to settle the versions a module's
+	// instances resolve at, as the walk settled the Release's own (see
+	// InstanceVersionSelector).
+	manifest *types.Manifest
 }
 
 // InstanceReference is one component or feature instance the walk visited, as
@@ -583,6 +589,41 @@ type PinnedSocketEntityResolver interface {
 // what the bare one cached and never takes its read.
 type RegistryPrefetcher interface {
 	PrefetchRegistryReads(ctx context.Context, probe func(Lookup))
+}
+
+// InstanceVersionSelector is the optional Lookup capability that settles the
+// version each instance's reference resolves at from every constraint declared on
+// the instances writing it, before the walk resolves the reference. A walk over a
+// Lookup lacking it resolves every reference as written.
+//
+// SelectInstanceVersions is handed the Manifest the instances are mapped through,
+// the instances, and every reference the walk has resolved so far — each Recipe
+// and FeatureRecipe the Manifest names among them, since the walk resolves those
+// first, so the selector can read the implements of the Recipe that reaches an
+// instance. It returns, keyed by the identity the walk records a reference under,
+// the reference the walk resolves it with instead of the reference as written: the
+// reference at the version the constraints select, as an exact reference. The row
+// the walk records keeps the reference as written, at the version that request
+// resolves to.
+//
+// A reference it leaves out is resolved as written: one no constraint narrows
+// beyond its own pin, one a pin the lookup already holds keeps at the version the
+// constraints select, and one whose constraints admit no version — a refusal a
+// compilation of the Release reports, in its own words, at its own step.
+type InstanceVersionSelector interface {
+	SelectInstanceVersions(ctx context.Context, manifest *types.Manifest, instances []InstanceReference, resolved []ResolvedRef) map[EntityKey]string
+}
+
+// selectInstanceVersions asks lookup to settle the versions instances resolve at
+// (InstanceVersionSelector) and returns the requests it answers with, or none where
+// the lookup cannot settle versions, where there is no Manifest to map the
+// instances through, or where there are no instances.
+func selectInstanceVersions(ctx context.Context, lookup Lookup, manifest *types.Manifest, instances []InstanceReference, resolved []ResolvedRef) map[EntityKey]string {
+	selector, ok := lookup.(InstanceVersionSelector)
+	if !ok || manifest == nil || len(instances) == 0 {
+		return nil
+	}
+	return selector.SelectInstanceVersions(ctx, manifest, instances, resolved)
 }
 
 // prefetchRegistryReads reads ahead through lookup when it can (RegistryPrefetcher),

@@ -309,6 +309,31 @@ func (p DefaultOCIPuller) PullEntity(ctx context.Context, identity, kind, floorV
 	return result, version, nil
 }
 
+// ListEntityVersions lists the versions the default registry publishes a core
+// catalog entity at, satisfying EntityVersionLister: the tags of the location
+// PullEntity binds identity and kind to, less every version the attached
+// withdrawal screen withholds from a selection, so a version a reference naming no
+// version would never be resolved to is never a candidate.
+func (p DefaultOCIPuller) ListEntityVersions(ctx context.Context, identity, kind string) ([]string, error) {
+	reference, err := entityReference(p.registry, kind, identity)
+	if err != nil {
+		return nil, err
+	}
+	repo, err := oci.NewRemoteRepository(reference, p.httpClient)
+	if err != nil {
+		return nil, err
+	}
+	tags, err := oci.MemoizedListTags(ctx, reference, repo)
+	if err != nil {
+		return nil, err
+	}
+	if p.retraction == nil {
+		return tags, nil
+	}
+	eligible, _ := p.retraction.ScreenVersions(reference, tags)
+	return eligible, nil
+}
+
 // discoverVersion is the discovery step the three pull entrypoints share: an empty
 // floorVersion lists reference's tags through listTags and selects the highest
 // version the attached withdrawal screen leaves eligible; a non-empty one is the

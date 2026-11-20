@@ -873,6 +873,11 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		return Result{}, cfg.annotate(rw, err, lazyView.SkippedEntities())
 	}
 	cl.ReleaseDocuments = releaseDocs
+	// The walk is handed the Release and the Aggregate already loaded, so the files
+	// their instances are written in are named here, as a build names them, for a
+	// conflict between the versions an instance's constraints admit to name.
+	cl.NameInstanceFiles(catalog.RelativeToWorkspace(workspaceRoot, cfg.ReleasePath),
+		catalog.RelativeToWorkspace(workspaceRoot, aggRes.Path))
 	// Resolve the workspace provider-socket bindings to their Plugin entities at
 	// resolution time only. ComputeClosure does not read the provider socket's config,
 	// so build / serve reconstruct these entities from the lockfile rather than
@@ -1128,7 +1133,27 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// are the ones already run above, against the closure this pass is pinning.
 	report.phase(PhaseSources)
 	aggBytes := aggRes.Bytes
-	pullLookup := lazyView.AsCatalogLookupWithSchemas(ctx, closureSchemas)
+	// The graph compiles every instance at the version its constraints admit,
+	// through the one settlement a build and a validation read, over the versions
+	// this run resolved each reference among: those its catalog directories hold,
+	// else those the prior lockfile pins, else those the registry lists. So the
+	// graph this run draws is the one the build reading its lockfile draws, and an
+	// instance whose constraints admit no version halts the run here, before any
+	// lockfile is written.
+	var priorPins catalog.Pins
+	if pinReuse.Verification != nil {
+		priorPins = pinReuse.Verification.PriorPins
+	}
+	pullLookup, err := (&compilerops.ResolvedClosure{
+		Release:      rel,
+		Manifest:     manifest,
+		ManifestPath: catalog.RelativeToWorkspace(workspaceRoot, manRes.Path),
+		Closure:      cl,
+	}).InstanceVersionLookup(lazyView.AsCatalogLookupWithSchemas(ctx, closureSchemas),
+		lazyView.ResolutionVersions(ctx, priorPins, catalog.RelativeToWorkspace(workspaceRoot, lockfilePath)))
+	if err != nil {
+		return Result{}, err
+	}
 	// The lockfile this run assembles is carried out of the source-descent scope
 	// and written further down, once the external-input discovery below has had its
 	// chance to add to it. Assembling and writing are separate steps for two

@@ -138,8 +138,12 @@ type ResolvedClosure struct {
 // InstanceVersionLookup returns lookup scoped to the version every component
 // instance of this Release compiles at (catalog.ScopeToInstanceVersions), read
 // from view: the highest version every constraint declared on the instance
-// admits. It is the one place a compilation of a Release settles those versions,
-// and every surface that compiles one hands the pipeline the lookup it returns.
+// admits, among the versions view offers — those its catalog directories hold, a
+// lockfile's row where view holds a reference to one (catalog.HeldToLockfile), or
+// those a registry lists where view is the one a pull resolves through
+// (catalog.LazyLookup.ResolutionVersions). It is the one place a compilation of a
+// Release settles those versions, and every surface that compiles one hands the
+// pipeline the lookup it returns.
 //
 // It refuses where an instance's constraints admit no version the view holds,
 // with the conflicting-version-constraints condition, and the compilation is not
