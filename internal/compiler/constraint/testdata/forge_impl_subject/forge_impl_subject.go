@@ -33,6 +33,10 @@ func (impostor) RaiseAt(error, string, ...string) constraint.Objection {
 	return constraint.Objection{}
 }
 
+func (impostor) RaiseAtWith(error, string, ...constraint.DetailValue) constraint.Objection {
+	return constraint.Objection{}
+}
+
 func (impostor) sealed() {}
 
 // Passed claims the impostor satisfies the framework's subject contract.

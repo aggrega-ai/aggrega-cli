@@ -1529,6 +1529,18 @@ func (v *normalizedView) CompiledComponentSchema(componentType string) (map[stri
 	return v.componentContracts[componentType].resolved()
 }
 
+// HeldBackDetail returns the detail naming the held version of a component type
+// that declares an authored property of one of its pillars, and the constraints
+// that keep the instance below that version, as the catalog's lookup answers it;
+// none when the lookup carries no answer or no excluded version declares the
+// property.
+func (v *normalizedView) HeldBackDetail(componentType, pillar, path string) []constraint.HeldBackNote {
+	if v.catalog.HeldBackDetail == nil {
+		return nil
+	}
+	return v.catalog.HeldBackDetail(componentType, pillar, path)
+}
+
 // CompiledFeatureSchema returns the contract a Feature type declares over the
 // pillars an attachment of it may carry, resolved, and whether there was a
 // contract that resolved at all.

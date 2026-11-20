@@ -397,6 +397,37 @@ func validatePillarConformance(
 	return errs
 }
 
+// refusesUndeclaredProperty reports whether f is a refusal of a property the
+// contract does not declare, the two keywords a closed position refuses a key
+// with.
+func refusesUndeclaredProperty(f pillarFinding) bool {
+	return f.keyword == "additionalProperties" || f.keyword == "unevaluatedProperties"
+}
+
+// PillarDeclaresProperty reports whether the contract compiled declares the
+// property at path of pillar: whether a pillar holding a value at path draws no
+// refusal of an undeclared property there. path leads with the pillar name, as a
+// finding's does. It is judged by the validator that judges an authored pillar,
+// so a property a conditional branch or a reference declares counts as declared.
+func PillarDeclaresProperty(compiled compactform.Schema, pillar, path string) bool {
+	keys := strings.Split(path, ".")
+	if len(keys) < 2 || keys[0] != pillar {
+		return false
+	}
+	var value any = true
+	for i := len(keys) - 1; i >= 2; i-- {
+		value = map[string]any{keys[i]: value}
+	}
+	var instance types.OrderedMap[any]
+	instance.Set(keys[1], value)
+	for _, f := range pillarConformanceFindings(compiled, pillar, instance, nil) {
+		if f.path == path && refusesUndeclaredProperty(f) {
+			return false
+		}
+	}
+	return true
+}
+
 // pillarFinding is one way a pillar instance fails the contract declared over
 // it: the path the failure landed on, which leads with the pillar name, the
 // constraint keyword that failed, and why — with the reason withheld when the

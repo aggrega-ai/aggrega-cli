@@ -170,7 +170,7 @@ func instanceVersionLookup(lookup resolver.CatalogLookup, view catalog.InstanceV
 	if err != nil {
 		return resolver.CatalogLookup{}, err
 	}
-	return catalog.ScopeToInstanceVersions(lookup, table), nil
+	return catalog.WithHeldBackDetail(catalog.ScopeToInstanceVersions(lookup, table), lookup, table, view), nil
 }
 
 // Libraries returns the libraries a build or preview of this Release reads, one

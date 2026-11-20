@@ -215,6 +215,18 @@ var stages = []stageDecl{
 // records declares the composite records composite facts return.
 var records = []recordDecl{
 	{
+		Name: "HeldBackNote",
+		Doc: "HeldBackNote is one phrase of the account of why an instance compiles " +
+			"below a held version: a caption saying what the value is, and the " +
+			"value.\n\nIt is a record because a value reads as a sentence only " +
+			"with the words that precede it, and the account is a sequence of such " +
+			"pairs.",
+		Fields: []recordField{
+			{Name: "Caption", Type: "string", Doc: "Caption is the words that precede the value."},
+			{Name: "Value", Type: "string", Doc: "Value is what the caption introduces."},
+		},
+	},
+	{
 		Name: "LeafProvenance",
 		Doc: "LeafProvenance is where one leaf of an attachment's configuration " +
 			"came from: whether the author wrote it explicitly or an annotation " +
@@ -3435,6 +3447,31 @@ var facts = []factDecl{
 			"socket the catalog declares no entry for both leave an edge's " +
 			"operator configuration unvalidated, and what a rule asks is whether " +
 			"there is a contract to evaluate at all." +
+			declarationCompelsImplementation,
+	},
+	{
+		Name:        "held-back-detail",
+		Stage:       "normalized",
+		SourceField: "resolver.CatalogLookup.HeldBackDetail",
+		Subject:     []string{"node"},
+		Params: []paramDecl{
+			{Name: "componentType", Type: "string"},
+			{Name: "pillar", Type: "string"},
+			{Name: "path", Type: "string"},
+		},
+		Returns: "[]HeldBackNote",
+		Doc: "HeldBackDetail is, for an authored property of one pillar of a " +
+			"component instance, the detail naming the held version of its " +
+			"Component that declares the property and the constraints that keep the " +
+			"instance below that version, empty when no version the constraints " +
+			"exclude declares it.\n\nThe pillar is \"values\" or \"infra\" and " +
+			"path is the property's path leading with the pillar name. Where several " +
+			"excluded versions declare the property it names the highest, and the " +
+			"constraints it names are those that exclude that version, in the order " +
+			"the instance declares them.\n\nIt is a fact because the version an " +
+			"instance compiles at, and the versions its constraints exclude, are " +
+			"settled once for the Release; a rule reading this fact reports the " +
+			"detail beside its own and decides nothing from it." +
 			declarationCompelsImplementation,
 	},
 	{

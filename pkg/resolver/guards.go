@@ -114,6 +114,14 @@ type CatalogLookup struct {
 	// answer for the wrong one wherever the other applied. May be nil, on the same
 	// terms.
 	FeatureRecipe func(reference string) (types.FeatureRecipe, bool)
+	// HeldBackDetail answers, for a component type as an instance writes it and an
+	// authored property of one of its pillars, which a held version of the
+	// Component declares that the version the instance compiles at does not: the
+	// detail values naming the highest such version and the constraints that
+	// exclude it, or none where no excluded version declares the property. The
+	// pillar is "values" or "infra" and path is the property's path leading with
+	// the pillar name. May be nil, which names no version.
+	HeldBackDetail func(componentType, pillar, path string) []constraint.HeldBackNote
 	// ComponentAncestry reports the extends ancestry of a component type: the
 	// mapping key of every base it descends from, nearest parent first. A type the
 	// resolver finds no entry for has no ancestry and no error, because "the type

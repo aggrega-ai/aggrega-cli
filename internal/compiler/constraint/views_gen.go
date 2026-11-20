@@ -10,6 +10,19 @@ package constraint
 
 import "github.com/aggrega-ai/aggrega-cli/pkg/types"
 
+// HeldBackNote is one phrase of the account of why an instance compiles
+// below a held version: a caption saying what the value is, and the value.
+//
+// It is a record because a value reads as a sentence only with the words
+// that precede it, and the account is a sequence of such pairs.
+type HeldBackNote struct {
+	// Caption is the words that precede the value.
+	Caption string
+
+	// Value is what the caption introduces.
+	Value string
+}
+
 // LeafProvenance is where one leaf of an attachment's configuration came
 // from: whether the author wrote it explicitly or an annotation supplied
 // it, which annotation, and — when an explicit value took precedence
@@ -3411,6 +3424,34 @@ type NormalizedView interface {
 	//
 	// Keyed by (node, socket); read from types.UsesSchemaEntry.InfraSchema.
 	SocketInfraSchemaText(componentType string, socket string) []byte
+
+	// HeldBackDetail is, for an authored property of one pillar of a component
+	// instance, the detail naming the held version of its Component that
+	// declares the property and the constraints that keep the instance below
+	// that version, empty when no version the constraints exclude declares it.
+	//
+	// The pillar is "values" or "infra" and path is the property's path
+	// leading with the pillar name. Where several excluded versions declare
+	// the property it names the highest, and the constraints it names are
+	// those that exclude that version, in the order the instance declares
+	// them.
+	//
+	// It is a fact because the version an instance compiles at, and the
+	// versions its constraints exclude, are settled once for the Release; a
+	// rule reading this fact reports the detail beside its own and decides
+	// nothing from it.
+	//
+	// Declaring a fact puts its accessor on its stage's view interface, and
+	// every later stage carries that interface by embedding — so a view
+	// presenting any of those stages answers the accessor whether or not a
+	// check asks it. The declaration compels the implementation; nothing
+	// compels the declaration. This accessor is implemented for that reason
+	// rather than because a check reads it, which accounts for its presence
+	// without warranting it: a fact no check reads remains a candidate for
+	// removal.
+	//
+	// Keyed by node; read from resolver.CatalogLookup.HeldBackDetail.
+	HeldBackDetail(componentType string, pillar string, path string) []HeldBackNote
 
 	// CompiledComponentSchema is the contract a component type declares over
 	// its configuration, resolved: the authored document with every shorthand

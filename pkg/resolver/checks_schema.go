@@ -30,6 +30,12 @@ import (
 // pillarObjections measures one payload against one pillar of a resolved
 // contract and raises an objection per independent violation.
 //
+// heldBack, where a rule supplies one, is asked for the path of each finding that
+// refuses an undeclared property and adds its notes, captioned, after the finding's
+// own: the held version of the Component that declares the property and the
+// constraints that keep the instance below it. A rule whose contract belongs to no
+// versioned Component passes none.
+//
 // The detail is the path the violation landed on, which leads with the pillar
 // name, the constraint keyword that failed, and why — with the reason withheld
 // where the contract declares the leaf sensitive, because that text quotes the
@@ -53,6 +59,7 @@ func pillarObjections(
 	contract compactform.Schema,
 	payload types.OrderedMap[any],
 	parameters map[string]any,
+	heldBack func(path string) []constraint.HeldBackNote,
 ) []constraint.Objection {
 	findings := pillarConformanceFindings(contract, pillar, payload, parameters)
 	if len(findings) == 0 {
@@ -60,7 +67,13 @@ func pillarObjections(
 	}
 	out := make([]constraint.Objection, 0, len(findings))
 	for _, f := range findings {
-		out = append(out, s.RaiseAt(ErrSchemaConformance(), f.path, f.keyword, f.reason))
+		detail := []constraint.DetailValue{constraint.Uncaptioned(f.keyword), constraint.Uncaptioned(f.reason)}
+		if heldBack != nil && refusesUndeclaredProperty(f) {
+			for _, note := range heldBack(f.path) {
+				detail = append(detail, constraint.Captioned(note.Caption, note.Value))
+			}
+		}
+		out = append(out, s.RaiseAtWith(ErrSchemaConformance(), f.path, detail...))
 	}
 	return out
 }
@@ -105,7 +118,8 @@ var componentValuesConformToTheType = constraint.Check[
 		}
 		return pillarObjections(s, "values", contract,
 			v.AuthoredValuesPillar(s.NodeID(), "values"),
-			v.ResolvedParameterContext(s.SourceFile()))
+			v.ResolvedParameterContext(s.SourceFile()),
+			func(path string) []constraint.HeldBackNote { return v.HeldBackDetail(componentType, "values", path) })
 	},
 }
 
@@ -164,7 +178,8 @@ var componentInfraConformsToTheType = constraint.Check[
 		}
 		return pillarObjections(s, "infra", contract,
 			v.ReleaseComponentInfra(s.NodeID()),
-			v.ResolvedParameterContext(s.SourceFile()))
+			v.ResolvedParameterContext(s.SourceFile()),
+			func(path string) []constraint.HeldBackNote { return v.HeldBackDetail(componentType, "infra", path) })
 	},
 }
 
@@ -217,7 +232,7 @@ var connectionValuesConformToTheSocket = constraint.Check[
 		}
 		return pillarObjections(s, "values", contract,
 			v.PerEdgeValues(s.NodeID(), s.SocketName(), s.AliasName()),
-			v.ResolvedParameterContext(s.SourceFile()))
+			v.ResolvedParameterContext(s.SourceFile()), nil)
 	},
 }
 
@@ -267,6 +282,6 @@ var connectionInfraConformsToTheSocket = constraint.Check[
 		}
 		return pillarObjections(s, "infra", contract,
 			v.ReleasePerEdgeInfra(node, socket, alias),
-			v.ResolvedParameterContext(s.SourceFile()))
+			v.ResolvedParameterContext(s.SourceFile()), nil)
 	},
 }

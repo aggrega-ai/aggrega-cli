@@ -2765,6 +2765,12 @@ func (TopologyViewBase) SocketInfraSchemaText(componentType string, socket strin
 	panic("this view does not carry socket-infra-schema-text, which is read from types.UsesSchemaEntry.InfraSchema")
 }
 
+// HeldBackDetail panics. This view does not carry held-back-detail, which
+// is read from resolver.CatalogLookup.HeldBackDetail.
+func (TopologyViewBase) HeldBackDetail(componentType string, pillar string, path string) []HeldBackNote {
+	panic("this view does not carry held-back-detail, which is read from resolver.CatalogLookup.HeldBackDetail")
+}
+
 // CompiledComponentSchema panics. This view does not carry
 // compiled-component-schema, which is read from
 // resolver.CompileComponentSchema(catalog, componentType).
@@ -4039,6 +4045,7 @@ type NormalizedStageFacts interface {
 	AuthoredComponentSchemaText(componentType string) []byte
 	SocketValueSchemaText(componentType string, socket string) []byte
 	SocketInfraSchemaText(componentType string, socket string) []byte
+	HeldBackDetail(componentType string, pillar string, path string) []HeldBackNote
 	CompiledComponentSchema(componentType string) (map[string]any, bool)
 	CompiledSocketValueSchema(componentType string, socket string) (map[string]any, bool)
 	CompiledSocketInfraSchema(componentType string, socket string) (map[string]any, bool)

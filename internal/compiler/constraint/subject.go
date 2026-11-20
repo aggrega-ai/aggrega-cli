@@ -54,6 +54,11 @@ type Subject interface {
 	// value, and the check's remaining detail after it.
 	RaiseAt(sentinel error, leaf string, detail ...string) Objection
 
+	// RaiseAtWith is RaiseAt for a rule supplying a value its registered
+	// text does not name, so at least one of its detail values carries a
+	// caption. See [DetailValue].
+	RaiseAtWith(sentinel error, leaf string, detail ...DetailValue) Objection
+
 	sealed()
 }
 
@@ -201,7 +206,18 @@ func (p provenance) RaiseWithAdvice(sentinel error, advice string, detail ...Det
 // to, and rooting leaf on nothing would name a path no file contains — the
 // same reason the traversals drop a tail whose base is empty.
 func (p provenance) RaiseAt(sentinel error, leaf string, detail ...string) Objection {
-	o := p.Raise(sentinel, append([]string{leaf}, detail...)...)
+	values := make([]DetailValue, 0, len(detail))
+	for _, d := range detail {
+		values = append(values, Uncaptioned(d))
+	}
+	return p.RaiseAtWith(sentinel, leaf, values...)
+}
+
+// RaiseAtWith is [Subject.RaiseAt] with detail values that may carry captions:
+// leaf is the first detail value, uncaptioned, and the values follow it. It is
+// the form RaiseAt widens into, so the two position an objection identically.
+func (p provenance) RaiseAtWith(sentinel error, leaf string, detail ...DetailValue) Objection {
+	o := p.RaiseWith(sentinel, append([]DetailValue{Uncaptioned(leaf)}, detail...)...)
 	if p.locator == "" {
 		return o
 	}

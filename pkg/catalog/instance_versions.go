@@ -516,26 +516,39 @@ func selectAmong(release string, tier versionTier, reference, base string, decla
 // constraints are the reference the select is asked with, and need no predicate.
 func admittedBy(tier versionTier, base string, declared []VersionConstraint, view InstanceVersionView) func(string) bool {
 	return func(version string) bool {
-		request := base
-		if version != "" {
-			request = base + ":" + version
-		}
+		request := versionRequest(base, version)
 		for _, c := range declared {
-			switch c.Kind {
-			case ConstraintMappingKey:
-				// A key is read as the pin grammar reads a declaration admitting a
-				// concrete version: exact, caret range, or naming no version.
-				if !resolver.ImplementsSatisfies(c.Value, request) {
-					return false
-				}
-			case ConstraintImplements:
-				if !tier.accepts(view, c.Value, request) {
-					return false
-				}
+			if !admitsVersion(tier, c, request, view) {
+				return false
 			}
 		}
 		return true
 	}
+}
+
+// versionRequest is the type a constraint is judged against: base at version, or
+// base alone for a version-less entry.
+func versionRequest(base, version string) string {
+	if version == "" {
+		return base
+	}
+	return base + ":" + version
+}
+
+// admitsVersion reports whether the constraint c admits the type request, the
+// base at one held version. A mapping key is read as the pin grammar reads a
+// declaration admitting a concrete version: exact, caret range, or naming no
+// version; a spec.implements is judged by the mapping-consistency judgement of
+// the tier. The type as written admits through the same pin grammar, though the
+// select is asked with that reference and does not consult it here.
+func admitsVersion(tier versionTier, c VersionConstraint, request string, view InstanceVersionView) bool {
+	switch c.Kind {
+	case ConstraintType, ConstraintMappingKey:
+		return resolver.ImplementsSatisfies(c.Value, request)
+	case ConstraintImplements:
+		return tier.accepts(view, c.Value, request)
+	}
+	return true
 }
 
 // malformedConstraintPin returns the malformed-pin condition for the first
@@ -597,14 +610,10 @@ func conflictingVersionConstraints(release string, tier versionTier, declared []
 				constraint.Captioned("instance", c.Instance),
 				constraint.Captioned("type", c.Value),
 				constraint.Captioned("written in", c.File))
-		case ConstraintMappingKey:
-			detail = append(detail,
-				constraint.Captioned("Manifest "+tier.mappingKeyLabel(), c.Value),
-				constraint.Captioned("written in", c.File))
-		case ConstraintImplements:
-			detail = append(detail,
-				constraint.Captioned("mapped to "+tier.recipeLabel(), c.File),
-				constraint.Captioned("whose spec.implements is", c.Value))
+		case ConstraintMappingKey, ConstraintImplements:
+			for _, n := range mappingConstraintNotes(tier, c) {
+				detail = append(detail, constraint.Captioned(n.Caption, n.Value))
+			}
 		}
 	}
 	named := make([]string, 0, len(held))
@@ -630,6 +639,20 @@ func conflictingVersionConstraints(release string, tier versionTier, declared []
 	}
 	return cerrors.Wrap(condition, cerrors.OpsError, at,
 		cerrors.ComposeMessage(condition, constraint.RenderDetail(detail...), advice))
+}
+
+// mappingConstraintNotes is the captioned values naming a Manifest key or a
+// spec.implements constraint: the key with the file it is written in, or the
+// Recipe the mapping names with the type it implements.
+func mappingConstraintNotes(tier versionTier, c VersionConstraint) []constraint.HeldBackNote {
+	if c.Kind == ConstraintImplements {
+		return []constraint.HeldBackNote{
+			{Caption: "mapped to " + tier.recipeLabel(), Value: c.File},
+			{Caption: "whose spec.implements is", Value: c.Value}}
+	}
+	return []constraint.HeldBackNote{
+		{Caption: "Manifest " + tier.mappingKeyLabel(), Value: c.Value},
+		{Caption: "written in", Value: c.File}}
 }
 
 // inVersionOrder returns versions in the order a reader is shown them: every
