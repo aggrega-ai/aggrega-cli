@@ -56,19 +56,106 @@ type VersionConstraint struct {
 // one reference resolves to one version, so the table has one row per reference
 // rather than per instance. Constraints holds each instance's constraints in turn,
 // each instance's opening with its type.
+//
+// Feature references resolve in a table of their own, FeatureSelected and
+// FeatureConstraints, ordered the same way: a Component and a Feature written with
+// one reference string are two references and never share a row.
 type InstanceVersions struct {
 	Selected    types.OrderedMap[string]
 	Constraints types.OrderedMap[[]VersionConstraint]
+
+	FeatureSelected    types.OrderedMap[string]
+	FeatureConstraints types.OrderedMap[[]VersionConstraint]
 }
 
-// at returns reference at the version the table resolves it to (ReferenceAt),
-// and whether the table holds reference at all.
+// at returns the component reference at the version the table resolves it to
+// (ReferenceAt), and whether the table holds that component reference at all.
 func (t InstanceVersions) at(reference string) (string, bool) {
-	version, held := t.Selected.Get(reference)
+	return atVersion(t.Selected, reference)
+}
+
+// featureAt is at for a feature reference.
+func (t InstanceVersions) featureAt(reference string) (string, bool) {
+	return atVersion(t.FeatureSelected, reference)
+}
+
+func atVersion(selected types.OrderedMap[string], reference string) (string, bool) {
+	version, held := selected.Get(reference)
 	if !held {
 		return "", false
 	}
 	return ReferenceAt(reference, version), true
+}
+
+// versionTier is the kind of entity a table row resolves: the components tier or
+// the features tier. The features tier judges a FeatureRecipe's implements without
+// extends ancestry, as the mapping-consistency rule does for the features mapping.
+type versionTier struct{ feature bool }
+
+var (
+	componentTier = versionTier{}
+	featureTier   = versionTier{feature: true}
+)
+
+// kind is the closure kind of the entities the tier resolves.
+func (k versionTier) kind() string {
+	if k.feature {
+		return closure.KindFeature
+	}
+	return closure.KindComponent
+}
+
+// versions returns the versions of the entity named name the view holds.
+func (k versionTier) versions(view InstanceVersionView, name string) []string {
+	if k.feature {
+		return view.FeatureVersions(name)
+	}
+	return view.ComponentVersions(name)
+}
+
+// mappingEntry is the entry the Manifest's mapping for the tier settles on for an
+// instance, as the build asks it.
+func (k versionTier) mappingEntry(manifest *types.Manifest, name, reference string) (mappingMatch, bool, error) {
+	if k.feature {
+		return featureMappingEntry(manifest, name, reference)
+	}
+	return componentMappingEntry(manifest, name, reference)
+}
+
+// implements returns the spec.implements of the Recipe or FeatureRecipe a mapping
+// names, and whether the view holds it.
+func (k versionTier) implements(view InstanceVersionView, reference string) (string, bool) {
+	if k.feature {
+		recipe, held := view.FeatureRecipeByURI(reference)
+		return recipe.Spec.Implements, held
+	}
+	recipe, held := view.RecipeByURI(reference)
+	return recipe.Spec.Implements, held
+}
+
+// mappingKeyLabel names the Manifest key of the tier in a refusal.
+func (k versionTier) mappingKeyLabel() string {
+	if k.feature {
+		return "feature key"
+	}
+	return "mapping key"
+}
+
+// recipeLabel names the kind of recipe a mapping of the tier names in a refusal.
+func (k versionTier) recipeLabel() string {
+	if k.feature {
+		return "feature recipe"
+	}
+	return "recipe"
+}
+
+// accepts is the mapping-consistency judgement of the tier: a component type is
+// judged through the view's extends ancestry, a feature type without.
+func (k versionTier) accepts(view InstanceVersionView, implements, request string) bool {
+	if k.feature {
+		return resolver.ManifestMappingAccepts(implements, request, true, nil)
+	}
+	return resolver.ManifestMappingAccepts(implements, request, false, view.ComponentAncestry)
 }
 
 // ReferenceAt returns a type reference as an exact reference to version: the
@@ -82,9 +169,9 @@ func ReferenceAt(reference, version string) string {
 }
 
 // InstanceVersionView is what the instance-version table reads of a catalog: the
-// versions of a Component's name it can list without asking a registry, the
-// Recipe a mapping's reference names, and the extends ancestry of a component type
-// at one version. Both catalog views a build reads, the eagerly-loaded *Catalog
+// versions of a Component's or a Feature's name it can list without asking a
+// registry, the Recipe or FeatureRecipe a mapping's reference names, and the
+// extends ancestry of a component type at one version. Both catalog views a build reads, the eagerly-loaded *Catalog
 // and the *LazyLookup, satisfy it.
 type InstanceVersionView interface {
 	// ComponentVersions returns the versions of the Component named name the view
@@ -93,9 +180,14 @@ type InstanceVersionView interface {
 	// catalog directories hold, which leaves out a version only a cache slot or a
 	// registry holds.
 	ComponentVersions(name string) []string
+	// FeatureVersions is ComponentVersions for the Feature named name.
+	FeatureVersions(name string) []string
 	// RecipeByURI resolves a Recipe reference as the mapping lookup the build
 	// renders through resolves it.
 	RecipeByURI(uri string) (types.Recipe, bool)
+	// FeatureRecipeByURI resolves a FeatureRecipe reference as the features
+	// mapping lookup the build renders through resolves it.
+	FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool)
 	// ComponentAncestry returns the extends ancestry of a component type, as
 	// the mapping-consistency judgement reads it.
 	ComponentAncestry(componentType string) ([]string, error)
@@ -103,11 +195,12 @@ type InstanceVersionView interface {
 
 // recordedVersions is the optional InstanceVersionView capability of a view that
 // holds a reference to the version a lockfile records for it, where none of its
-// catalog directories holds the reference's Component: RecordedVersion returns
+// catalog directories holds the reference's Component or Feature, kind being the
+// closure kind of the entity: RecordedVersion returns
 // that version and the lockfile it is recorded in. The version is the reference's
 // one candidate, and a conflict over it names the lockfile among the sources.
 type recordedVersions interface {
-	RecordedVersion(reference string) (version string, record lockfileRecord, ok bool)
+	RecordedVersion(kind, reference string) (version string, record lockfileRecord, ok bool)
 }
 
 // lockfileRecord names a lockfile a version is recorded in, for a conflict over
@@ -120,12 +213,13 @@ type lockfileRecord struct {
 }
 
 // listedVersions is the optional InstanceVersionView capability of a view that
-// lists the versions a registry publishes a Component name at, read where neither
+// lists the versions a registry publishes the entity of closure kind kind named
+// name at, read where neither
 // a catalog directory nor a lockfile holds the reference. A registry holding no
 // version of the name lists none; any other failure to list is returned, and it
 // settles nothing (versionListingFailure).
 type listedVersions interface {
-	ListedVersions(name string) ([]string, error)
+	ListedVersions(kind, name string) ([]string, error)
 }
 
 // versionListingFailure is a failure to list the versions a registry publishes a
@@ -153,28 +247,28 @@ type candidates struct {
 // name; where it holds none, the version a lockfile records the reference at
 // (recordedVersions); where none records it, the versions view lists
 // (listedVersions).
-func candidateVersions(view InstanceVersionView, reference, base string) (candidates, error) {
-	if held := view.ComponentVersions(base); len(held) > 0 {
+func candidateVersions(view InstanceVersionView, tier versionTier, reference, base string) (candidates, error) {
+	if held := tier.versions(view, base); len(held) > 0 {
 		return candidates{versions: held}, nil
 	}
 	if recorded, ok := view.(recordedVersions); ok {
-		if version, record, ok := recorded.RecordedVersion(reference); ok {
+		if version, record, ok := recorded.RecordedVersion(tier.kind(), reference); ok {
 			return candidates{versions: []string{version}, recorded: true, record: record}, nil
 		}
 	}
-	listed, err := listedVersionsOf(view, base)
+	listed, err := listedVersionsOf(view, tier, base)
 	return candidates{versions: listed}, err
 }
 
 // listedVersionsOf returns the versions view lists of the Component name
 // (listedVersions), in the order inVersionOrder gives, and none for a view that
 // lists none. A failure to list is returned as a versionListingFailure.
-func listedVersionsOf(view InstanceVersionView, name string) ([]string, error) {
+func listedVersionsOf(view InstanceVersionView, tier versionTier, name string) ([]string, error) {
 	listing, ok := view.(listedVersions)
 	if !ok {
 		return nil, nil
 	}
-	listed, err := listing.ListedVersions(name)
+	listed, err := listing.ListedVersions(tier.kind(), name)
 	if err != nil {
 		return nil, &versionListingFailure{err: err}
 	}
@@ -196,11 +290,11 @@ func HeldToLockfile(view InstanceVersionView, lf *lockfile.Lockfile, lockfileFil
 	if lf == nil {
 		return view
 	}
-	held := lockfileHeldView{InstanceVersionView: view, rows: map[string]string{},
+	held := lockfileHeldView{InstanceVersionView: view, rows: map[recordedRow]string{},
 		record: lockfileRecord{lockfile: lockfileFile, release: releaseFile}}
 	for _, e := range lf.Entities {
-		if e.Kind == closure.KindComponent && e.ResolvedVersion != "" {
-			held.rows[e.URI] = e.ResolvedVersion
+		if (e.Kind == closure.KindComponent || e.Kind == closure.KindFeature) && e.ResolvedVersion != "" {
+			held.rows[recordedRow{kind: e.Kind, reference: e.URI}] = e.ResolvedVersion
 		}
 	}
 	return held
@@ -210,14 +304,18 @@ func HeldToLockfile(view InstanceVersionView, lf *lockfile.Lockfile, lockfileFil
 // Component reference the lockfile records is recorded at.
 type lockfileHeldView struct {
 	InstanceVersionView
-	rows   map[string]string
+	rows   map[recordedRow]string
 	record lockfileRecord
 }
 
+// recordedRow identifies a lockfile row by the kind of entity it records and the
+// reference, so a Component and a Feature written alike keep rows of their own.
+type recordedRow struct{ kind, reference string }
+
 // RecordedVersion returns the version the lockfile's row records reference at,
 // satisfying recordedVersions.
-func (v lockfileHeldView) RecordedVersion(reference string) (string, lockfileRecord, bool) {
-	version, ok := v.rows[reference]
+func (v lockfileHeldView) RecordedVersion(kind, reference string) (string, lockfileRecord, bool) {
+	version, ok := v.rows[recordedRow{kind: kind, reference: reference}]
 	return version, v.record, ok
 }
 
@@ -276,51 +374,62 @@ func (v lockfileHeldView) RecordedVersion(reference string) (string, lockfileRec
 // refusal is the build's to report. A mapping whose Recipe the view does not hold
 // adds no implements.
 //
-// Feature instances resolve as their references do, and the table holds no row
-// for them.
+// Feature instances resolve the same way in a table of their own, by the features
+// tier: the type as written, the Manifest's features-mapping key that reaches the
+// instance, and the spec.implements of the FeatureRecipe the reaching entry names,
+// judged by the same mapping-consistency judgement without extends ancestry, as
+// the features mapping is judged. A Feature reference and a Component reference
+// written alike are two rows.
 func ResolveInstanceVersions(release string, instances []closure.InstanceReference, manifest *types.Manifest, manifestFile string, view InstanceVersionView) (InstanceVersions, error) {
 	var table InstanceVersions
 	for _, in := range instances {
+		tier, constraints := componentTier, &table.Constraints
 		if in.Feature {
-			continue
+			tier, constraints = featureTier, &table.FeatureConstraints
 		}
-		declared, _ := table.Constraints.Get(in.Reference)
-		table.Constraints.Set(in.Reference, append(declared, componentConstraints(in, manifest, manifestFile, view)...))
+		declared, _ := constraints.Get(in.Reference)
+		constraints.Set(in.Reference, append(declared, tierConstraints(tier, in, manifest, manifestFile, view)...))
 	}
 
 	var refusals []error
-	for reference, declared := range table.Constraints.All() {
-		version, selected, err := selectComponentVersion(release, reference, declared, view)
-		var listing *versionListingFailure
-		switch {
-		case errors.As(err, &listing):
-			return InstanceVersions{}, err
-		case err != nil:
-			refusals = append(refusals, err)
-		case selected:
-			table.Selected.Set(reference, version)
+	for _, tier := range []versionTier{componentTier, featureTier} {
+		constraints, selection := &table.Constraints, &table.Selected
+		if tier.feature {
+			constraints, selection = &table.FeatureConstraints, &table.FeatureSelected
+		}
+		for reference, declared := range constraints.All() {
+			version, selected, err := selectTierVersion(release, tier, reference, declared, view)
+			var listing *versionListingFailure
+			switch {
+			case errors.As(err, &listing):
+				return InstanceVersions{}, err
+			case err != nil:
+				refusals = append(refusals, err)
+			case selected:
+				selection.Set(reference, version)
+			}
 		}
 	}
 	return table, errors.Join(refusals...)
 }
 
-// componentConstraints returns the constraints declared on one component
-// instance, in the order a refusal names them: its type, the type-axis key that
-// reached it, and the reaching Recipe's spec.implements.
-func componentConstraints(in closure.InstanceReference, manifest *types.Manifest, manifestFile string, view InstanceVersionView) []VersionConstraint {
+// tierConstraints returns the constraints declared on one instance of tier, in the
+// order a refusal names them: its type, the type-axis key that reached it, and the
+// reaching Recipe's or FeatureRecipe's spec.implements.
+func tierConstraints(tier versionTier, in closure.InstanceReference, manifest *types.Manifest, manifestFile string, view InstanceVersionView) []VersionConstraint {
 	site := instanceSite(in.Path)
 	declared := []VersionConstraint{{Instance: in.Name, Site: site, Kind: ConstraintType, Value: in.Reference, File: in.File}}
-	match, mapped, err := componentMappingEntry(manifest, in.Name, in.Reference)
+	match, mapped, err := tier.mappingEntry(manifest, in.Name, in.Reference)
 	if err != nil || !mapped {
 		return declared
 	}
-	recipe, held := view.RecipeByURI(match.reference)
+	implements, held := tier.implements(view, match.reference)
 	// A type-axis entry whose Recipe the rule over the mapping entry refuses for
 	// the entry's own key is that rule's to report, once: the key and the Recipe
 	// disagree with each other whatever the instance writes, so the entry is the
 	// fault and it holds the instance to nothing. The judgement is the rule's own,
 	// asked as the rule asks it, with the key standing as the request.
-	if held && match.byType && !resolver.ManifestMappingAccepts(recipe.Spec.Implements, match.typeKey, false, view.ComponentAncestry) {
+	if held && match.byType && !tier.accepts(view, implements, match.typeKey) {
 		return declared
 	}
 	if match.byType {
@@ -330,7 +439,7 @@ func componentConstraints(in closure.InstanceReference, manifest *types.Manifest
 	}
 	if held {
 		declared = append(declared, VersionConstraint{
-			Instance: in.Name, Site: site, Kind: ConstraintImplements, Value: recipe.Spec.Implements, File: match.reference,
+			Instance: in.Name, Site: site, Kind: ConstraintImplements, Value: implements, File: match.reference,
 		})
 	}
 	return declared
@@ -351,7 +460,7 @@ func instanceSite(path string) string {
 	return strings.TrimSuffix(path[start:], ".type")
 }
 
-// selectComponentVersion selects the version of reference every constraint in
+// selectTierVersion selects the version of reference of tier every constraint in
 // declared admits, among the versions the view offers it (candidateVersions). It
 // reports the version and true on a selection, false with no error for a reference
 // the table leaves to its own resolution, and the refusal for one it refuses.
@@ -360,27 +469,27 @@ func instanceSite(path string) string {
 // versions the view lists from a registry where it lists any: a pull resolving a
 // reference its prior lockfile pins re-selects a pin its constraints have moved
 // away from, while a build, whose view lists none, is held to the row.
-func selectComponentVersion(release, reference string, declared []VersionConstraint, view InstanceVersionView) (string, bool, error) {
+func selectTierVersion(release string, tier versionTier, reference string, declared []VersionConstraint, view InstanceVersionView) (string, bool, error) {
 	base := types.ParseVersionPin(reference).Base()
-	offered, err := candidateVersions(view, reference, base)
+	offered, err := candidateVersions(view, tier, reference, base)
 	if err != nil {
 		return "", false, err
 	}
-	version, selected, err := selectAmong(release, reference, base, declared, view, offered)
+	version, selected, err := selectAmong(release, tier, reference, base, declared, view, offered)
 	if offered.recorded && errors.Is(err, ErrConflictingVersionConstraints()) {
-		listed, lerr := listedVersionsOf(view, base)
+		listed, lerr := listedVersionsOf(view, tier, base)
 		if lerr != nil {
 			return "", false, lerr
 		}
 		if len(listed) > 0 {
-			return selectAmong(release, reference, base, declared, view, candidates{versions: listed})
+			return selectAmong(release, tier, reference, base, declared, view, candidates{versions: listed})
 		}
 	}
 	return version, selected, err
 }
 
-// selectAmong is selectComponentVersion over the versions offered.
-func selectAmong(release, reference, base string, declared []VersionConstraint, view InstanceVersionView, offered candidates) (string, bool, error) {
+// selectAmong is selectTierVersion over the versions offered.
+func selectAmong(release string, tier versionTier, reference, base string, declared []VersionConstraint, view InstanceVersionView, offered candidates) (string, bool, error) {
 	held := offered.versions
 	index := make(map[string]string, len(held))
 	for _, version := range held {
@@ -388,15 +497,15 @@ func selectAmong(release, reference, base string, declared []VersionConstraint, 
 	}
 	key, selected, err := selectEntityVersionWhere(index, reference,
 		func(version string) (string, string) { return base, version },
-		admittedBy(base, declared, view.ComponentAncestry))
+		admittedBy(tier, base, declared, view))
 	switch {
 	case selected:
 		return index[key], true, nil
 	case errors.Is(err, ErrConflictingVersionConstraints()):
-		if fault := malformedConstraintPin(declared, reference); fault != nil {
+		if fault := malformedConstraintPin(tier, declared, reference); fault != nil {
 			return "", false, fault
 		}
-		return "", false, conflictingVersionConstraints(release, declared, held, offered.record)
+		return "", false, conflictingVersionConstraints(release, tier, declared, held, offered.record)
 	default:
 		return "", false, nil
 	}
@@ -405,7 +514,7 @@ func selectAmong(release, reference, base string, declared []VersionConstraint, 
 // admittedBy is the admission predicate the mapping keys and the
 // spec.implements values in declared state over the versions of base. The type
 // constraints are the reference the select is asked with, and need no predicate.
-func admittedBy(base string, declared []VersionConstraint, ancestry func(string) ([]string, error)) func(string) bool {
+func admittedBy(tier versionTier, base string, declared []VersionConstraint, view InstanceVersionView) func(string) bool {
 	return func(version string) bool {
 		request := base
 		if version != "" {
@@ -420,7 +529,7 @@ func admittedBy(base string, declared []VersionConstraint, ancestry func(string)
 					return false
 				}
 			case ConstraintImplements:
-				if !resolver.ManifestMappingAccepts(c.Value, request, false, ancestry) {
+				if !tier.accepts(view, c.Value, request) {
 					return false
 				}
 			}
@@ -432,14 +541,14 @@ func admittedBy(base string, declared []VersionConstraint, ancestry func(string)
 // malformedConstraintPin returns the malformed-pin condition for the first
 // mapping key or spec.implements in declared whose pin is malformed, naming where
 // it is written, and nil when none is.
-func malformedConstraintPin(declared []VersionConstraint, reference string) error {
+func malformedConstraintPin(tier versionTier, declared []VersionConstraint, reference string) error {
 	for _, c := range declared {
 		var where string
 		switch c.Kind {
 		case ConstraintMappingKey:
-			where = fmt.Sprintf("Manifest mapping key for %q, written in %q", reference, c.File)
+			where = fmt.Sprintf("Manifest %s for %q, written in %q", tier.mappingKeyLabel(), reference, c.File)
 		case ConstraintImplements:
-			where = fmt.Sprintf("spec.implements of recipe %q", c.File)
+			where = fmt.Sprintf("spec.implements of %s %q", tier.recipeLabel(), c.File)
 		default:
 			continue
 		}
@@ -465,7 +574,7 @@ func lockedVersionAdvice(releaseFile string) string {
 	return fmt.Sprintf(", or run `aggrega pull --release %s` to lock the version every constraint admits", releaseFile)
 }
 
-// conflictingVersionConstraints is the refusal of a reference that no version the
+// conflictingVersionConstraints is the refusal of a reference of tier that no version the
 // catalog holds satisfies under every constraint in declared. It names the Release
 // the instances belong to, then each instance in turn — where it is declared, its
 // name, and each of its constraints with the file it is written in — then the
@@ -478,7 +587,7 @@ func lockedVersionAdvice(releaseFile string) string {
 // declared: the
 // document its type is written in, at the instance's site, which is where the
 // remedy of changing the version is written.
-func conflictingVersionConstraints(release string, declared []VersionConstraint, held []string, record lockfileRecord) error {
+func conflictingVersionConstraints(release string, tier versionTier, declared []VersionConstraint, held []string, record lockfileRecord) error {
 	detail := []constraint.DetailValue{constraint.Captioned("Release", release)}
 	for _, c := range declared {
 		switch c.Kind {
@@ -490,11 +599,11 @@ func conflictingVersionConstraints(release string, declared []VersionConstraint,
 				constraint.Captioned("written in", c.File))
 		case ConstraintMappingKey:
 			detail = append(detail,
-				constraint.Captioned("Manifest mapping key", c.Value),
+				constraint.Captioned("Manifest "+tier.mappingKeyLabel(), c.Value),
 				constraint.Captioned("written in", c.File))
 		case ConstraintImplements:
 			detail = append(detail,
-				constraint.Captioned("mapped to recipe", c.File),
+				constraint.Captioned("mapped to "+tier.recipeLabel(), c.File),
 				constraint.Captioned("whose spec.implements is", c.Value))
 		}
 	}
@@ -591,4 +700,33 @@ func (l *LazyLookup) ComponentVersions(name string) []string {
 // gate walks it, and asking no registry.
 func (l *LazyLookup) ComponentAncestry(componentType string) ([]string, error) {
 	return l.lockedComponentAncestry(componentType)
+}
+
+// FeatureVersions returns the version of every Feature named name this catalog's
+// own Feature index holds, in the order inVersionOrder gives.
+func (c *Catalog) FeatureVersions(name string) []string {
+	var held []string
+	for _, feat := range c.Features {
+		if feat.Metadata.Name == name {
+			held = append(held, feat.Metadata.Version)
+		}
+	}
+	return inVersionOrder(held)
+}
+
+// FeatureVersions returns the version of every Feature named name this view's
+// catalog directories hold, in the order inVersionOrder gives. A version only a
+// cache slot or a registry holds is not among them, and reading them asks no
+// registry.
+func (l *LazyLookup) FeatureVersions(name string) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.buildFeatureIndex()
+	var held []string
+	for _, doc := range l.featureIndex {
+		if doc.name == name {
+			held = append(held, doc.version)
+		}
+	}
+	return inVersionOrder(held)
 }

@@ -4226,14 +4226,15 @@ func (x *lazyClosureLookup) SelectInstanceVersions(ctx context.Context, manifest
 	}
 	requests := map[closure.EntityKey]string{}
 	for _, in := range instances {
-		version, held := table.Selected.Get(in.Reference)
+		kind, selected := closure.KindComponent, table.Selected
+		if in.Feature {
+			kind, selected = closure.KindFeature, table.FeatureSelected
+		}
+		version, held := selected.Get(in.Reference)
 		if !held {
 			continue
 		}
-		key := closure.EntityKey{Kind: closure.KindComponent, URI: in.Reference}
-		if in.Feature {
-			key.Kind = closure.KindFeature
-		}
+		key := closure.EntityKey{Kind: kind, URI: in.Reference}
 		if x.pinHolds(prior, key, version) {
 			continue
 		}
@@ -4251,7 +4252,11 @@ func (x *lazyClosureLookup) pinHolds(prior Pins, key closure.EntityKey, version 
 	if !pinned || pin.ResolvedVersion != version {
 		return false
 	}
-	return len(x.l.ComponentVersions(types.ParseVersionPin(key.URI).Base())) == 0
+	tier := componentTier
+	if key.Kind == closure.KindFeature {
+		tier = featureTier
+	}
+	return len(tier.versions(x.l, types.ParseVersionPin(key.URI).Base())) == 0
 }
 
 // recipesResolvedBy returns what the instance-version settlement reads Recipes
@@ -4283,6 +4288,7 @@ func (l *LazyLookup) recipesResolvedBy(resolved []closure.ResolvedRef, puller OC
 // through.
 type recipeReader interface {
 	RecipeByURI(uri string) (types.Recipe, bool)
+	FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool)
 }
 
 // ResolutionVersions returns the view a pull settles the version of each instance
@@ -4329,10 +4335,16 @@ func (v *resolutionVersionView) ComponentVersions(name string) []string {
 	return v.l.ComponentVersions(name)
 }
 
+// FeatureVersions lists the versions of the Feature name this view's catalog
+// directories hold, in the order inVersionOrder gives.
+func (v *resolutionVersionView) FeatureVersions(name string) []string {
+	return v.l.FeatureVersions(name)
+}
+
 // RecordedVersion returns the version the prior lockfile pins reference's
 // Component at, satisfying recordedVersions.
-func (v *resolutionVersionView) RecordedVersion(reference string) (string, lockfileRecord, bool) {
-	pin, ok := v.prior[PinKey{Kind: componentKind, URI: reference}]
+func (v *resolutionVersionView) RecordedVersion(kind, reference string) (string, lockfileRecord, bool) {
+	pin, ok := v.prior[PinKey{Kind: EntityKindForHint(kind), URI: reference}]
 	if !ok || pin.ResolvedVersion == "" {
 		return "", lockfileRecord{}, false
 	}
@@ -4344,11 +4356,11 @@ func (v *resolutionVersionView) RecordedVersion(reference string) (string, lockf
 // the name lists none; any other failure — the registry refusing the request, or
 // the request failing on its way — is returned as the registry's failure, with
 // the remediation a fetch of the entity would carry (entityRegistryFailure).
-func (v *resolutionVersionView) ListedVersions(name string) ([]string, error) {
+func (v *resolutionVersionView) ListedVersions(kind, name string) ([]string, error) {
 	if v.lister == nil {
 		return nil, nil
 	}
-	listed, err := v.lister.ListEntityVersions(v.ctx, name, componentKind)
+	listed, err := v.lister.ListEntityVersions(v.ctx, name, EntityKindForHint(kind))
 	switch {
 	case errors.Is(err, oci.ErrFetchNotFound()):
 		return nil, nil
@@ -4361,6 +4373,11 @@ func (v *resolutionVersionView) ListedVersions(name string) ([]string, error) {
 // RecipeByURI reads a Recipe as the settlement's recipe reader does.
 func (v *resolutionVersionView) RecipeByURI(uri string) (types.Recipe, bool) {
 	return v.recipes.RecipeByURI(uri)
+}
+
+// FeatureRecipeByURI reads a FeatureRecipe as the settlement's recipe reader does.
+func (v *resolutionVersionView) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool) {
+	return v.recipes.FeatureRecipeByURI(uri)
 }
 
 // ComponentAncestry walks a component type's extends ancestry over the local tiers

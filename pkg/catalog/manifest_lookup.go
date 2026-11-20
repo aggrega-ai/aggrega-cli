@@ -1833,10 +1833,18 @@ func componentMappingEntry(manifest *types.Manifest, instanceName, componentType
 // name-wins-over-type resolution of a feature instance against the features
 // mapping.
 func featureMappingURI(manifest *types.Manifest, instanceName, featureType string) (string, bool, error) {
+	match, ok, err := featureMappingEntry(manifest, instanceName, featureType)
+	return match.reference, ok, err
+}
+
+// featureMappingEntry is featureMappingURI answering with the entry the lookup
+// settled on, so a reader that also needs the type-axis key reads the same
+// resolution the reference came from.
+func featureMappingEntry(manifest *types.Manifest, instanceName, featureType string) (mappingMatch, bool, error) {
 	if manifest == nil || manifest.Spec.Mappings.Features == nil {
-		return "", false, nil
+		return mappingMatch{}, false, nil
 	}
-	return nameThenType(manifest.Spec.Mappings.Features, instanceName, featureType)
+	return nameThenTypeEntry(manifest.Spec.Mappings.Features, instanceName, featureType)
 }
 
 // ComponentRecipeURI returns the Recipe URI the Manifest maps componentType

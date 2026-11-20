@@ -11,7 +11,9 @@ import (
 
 // ScopeToInstanceVersions returns lookup answering, for every reference table
 // holds, at the version table resolves that reference to, and passing every other
-// reference through as written. A compilation of a Release reads each instance's
+// reference through as written. A component reference is answered from the
+// table's component rows and a feature reference from its feature rows, so a
+// Component and a Feature written alike each read their own version. A compilation of a Release reads each instance's
 // Component and Feature through the lookup it is handed, so handing it this one
 // compiles every instance at the version the instance-version table selected,
 // whichever reader asks: the instance's document, its effective schema, and the
@@ -19,10 +21,16 @@ import (
 //
 // What it answers at the table's version:
 //
-//   - Component, Feature and EffectiveSchema, asked with a reference the table
-//     holds, are asked of lookup with that reference at the table's version, as
-//     an exact reference. The table is keyed by the reference as written, so one
+//   - Component and Feature, asked with a reference the table holds, are asked
+//     of lookup with that reference at the table's version, as an exact
+//     reference. The table is keyed by the reference as written, so one
 //     reference resolves to one version wherever in the Release it is read.
+//   - EffectiveSchema, the composed schema of an extending Feature, is asked
+//     with the reference at the version of the component row, then, where that
+//     answers nothing, of the feature row. The eagerly-loaded catalog keys the
+//     composed schemas by identity, so the version selects the schema read. The
+//     lazy view keys them by name alone, one schema per Feature name, so the
+//     version leaves its answer as it is.
 //   - NodeRecipeResolution keeps finding the mapping that reaches an instance
 //     with the reference as the Aggregate writes it: the Manifest's keys are
 //     matched against what the author wrote, never against a version the table
@@ -52,12 +60,23 @@ func ScopeToInstanceVersions(lookup resolver.CatalogLookup, table InstanceVersio
 	}
 	if feature := lookup.Feature; feature != nil {
 		scoped.Feature = func(typeURI string) (types.Feature, bool) {
-			return feature(at(typeURI))
+			if versioned, held := table.featureAt(typeURI); held {
+				return feature(versioned)
+			}
+			return feature(typeURI)
 		}
 	}
 	if effectiveSchema := lookup.EffectiveSchema; effectiveSchema != nil {
 		scoped.EffectiveSchema = func(typeURI string) (compactform.Schema, bool) {
-			return effectiveSchema(at(typeURI))
+			if versioned, held := table.at(typeURI); held {
+				if schema, ok := effectiveSchema(versioned); ok {
+					return schema, true
+				}
+			}
+			if versioned, held := table.featureAt(typeURI); held {
+				return effectiveSchema(versioned)
+			}
+			return effectiveSchema(typeURI)
 		}
 	}
 	if nodeRecipe := lookup.NodeRecipeResolution; nodeRecipe != nil {

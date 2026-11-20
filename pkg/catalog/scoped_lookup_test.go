@@ -42,7 +42,8 @@ func TestScopeToInstanceVersions(t *testing.T) {
 		var table InstanceVersions
 		table.Selected.Set("core/compute/server", "1.0.0")
 		table.Selected.Set("core/compute/server:^1.0.0", "1.1.0")
-		table.Selected.Set("core/secret-value", "1.0.0")
+		table.FeatureSelected.Set("core/secret-value", "1.0.0")
+		table.FeatureSelected.Set("core/compute/server", "1.1.0")
 
 		scoped := ScopeToInstanceVersions(inner, table)
 		scoped.Component("core/compute/server")
@@ -50,6 +51,9 @@ func TestScopeToInstanceVersions(t *testing.T) {
 		scoped.Component("example/web")
 		scoped.Feature("core/secret-value")
 		scoped.Feature("core/other-feature")
+		// A Feature and a Component written alike read their own rows.
+		scoped.Feature("core/compute/server")
+		scoped.Component("core/secret-value")
 		scoped.EffectiveSchema("core/compute/server")
 		scoped.EffectiveSchema("example/web")
 
@@ -59,6 +63,8 @@ func TestScopeToInstanceVersions(t *testing.T) {
 			"Component example/web",
 			"Feature core/secret-value:1.0.0",
 			"Feature core/other-feature",
+			"Feature core/compute/server:1.1.0",
+			"Component core/secret-value",
 			"EffectiveSchema core/compute/server:1.0.0",
 			"EffectiveSchema example/web",
 		}
