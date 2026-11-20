@@ -52,7 +52,26 @@ var errUnsatisfiableEntityVersion = cerrors.Register("unsatisfiable-entity-versi
 		"condition for a not-found or translates it into a condition of its own."),
 })
 
-// selectEntityVersion resolves a caller's catalog-entity reference (callerURI,
+// ErrConflictingVersionConstraints is a recoverable sentinel: the versions a
+// catalog holds under a component or feature type's name include some the
+// reference alone admits, but none that also satisfies every other constraint
+// declared on the instance. It is distinct from E0103, where the reference
+// itself matches no held version, and from a plain miss, where the name is
+// absent. The version select raises it when asked with an admission predicate
+// that carries those constraints.
+func ErrConflictingVersionConstraints() error { return errConflictingVersionConstraints }
+
+var errConflictingVersionConstraints = cerrors.Register("conflicting-version-constraints", cerrors.Meta{
+	ShortCode: "E0382",
+	Message:   "no version of a component or feature type satisfies every constraint declared on the instance",
+	RulePlace: cerrors.RuleNoStageReaches("The version select evaluates the rule, asked with the constraints a Release " +
+		"declares on an instance: its Aggregate's type, the Manifest key that maps it and the mapped Recipe's " +
+		"`implements`. It is reported where a Release's dependency closure is resolved for the lockfile and where " +
+		"the build settles each instance's version before compiling. Resolving the closure is no declared stage " +
+		"of a compilation, so no declared stage holds the version candidates the constraints are matched against."),
+})
+
+// selectEntityVersionWhere resolves a caller's catalog-entity reference (callerURI,
 // optionally version-pinned) against an index of concrete-version entities,
 // returning the index KEY of the entry that best satisfies it under the
 // three-form rule the language documents:
@@ -94,7 +113,18 @@ var errUnsatisfiableEntityVersion = cerrors.Register("unsatisfiable-entity-versi
 // Determinism: the winner is the semver-highest satisfying version; ties (and the
 // version-less fallback set) break on the lexically-smallest index key, never on
 // map-iteration order.
-func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(V) (name, version string)) (string, bool, error) {
+//
+// The admission predicate narrows the selection: a candidate is selected only when the
+// reference's form is satisfied and admits(version) is true, and the winner is
+// the highest such version. The predicate never widens what the reference
+// admits: a pre-release is selected only by an exact reference, whatever the
+// predicate says. A nil predicate admits every version. Where some held version
+// satisfies the reference alone and the predicate admits none of them, the result is
+// ("", false, ErrConflictingVersionConstraints); an absent base, an unsatisfiable
+// reference and a malformed pin report as above, whatever the predicate. The
+// version-less fallback of an unversioned reference applies to the versions the
+// predicate admits.
+func selectEntityVersionWhere[V any](index map[string]V, callerURI string, meta func(V) (name, version string), admits func(version string) bool) (string, bool, error) {
 	pin := types.ParseVersionPin(callerURI)
 	base := pin.Base()
 	_, hasVer := pin.Pin()
@@ -132,9 +162,16 @@ func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(
 		}
 	}
 
+	admitted := func(c versionCandidate) bool { return admits == nil || admits(c.raw) }
+
 	best := -1
+	satisfiedAlone := false
 	for i, c := range cands {
 		if !satisfies(c) {
+			continue
+		}
+		satisfiedAlone = true
+		if !admitted(c) {
 			continue
 		}
 		if best == -1 || higherCandidate(cands[i], cands[best]) {
@@ -143,6 +180,9 @@ func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(
 	}
 	if best != -1 {
 		return cands[best].key, true, nil
+	}
+	if satisfiedAlone {
+		return "", false, ErrConflictingVersionConstraints()
 	}
 
 	// No satisfying candidate. For an explicit exact/caret constraint this is a
@@ -157,11 +197,23 @@ func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(
 	}
 	fallback := -1
 	for i := range cands {
+		if !admitted(cands[i]) {
+			continue
+		}
 		if fallback == -1 || higherCandidate(cands[i], cands[fallback]) {
 			fallback = i
 		}
 	}
+	if fallback == -1 {
+		return "", false, ErrConflictingVersionConstraints()
+	}
 	return cands[fallback].key, true, nil
+}
+
+// selectEntityVersion is selectEntityVersionWhere with no admission predicate;
+// the three-form rule it states is that function's.
+func selectEntityVersion[V any](index map[string]V, callerURI string, meta func(V) (name, version string)) (string, bool, error) {
+	return selectEntityVersionWhere(index, callerURI, meta, nil)
 }
 
 // selectCapabilityScopedVersion resolves a capability-scoped catalog reference to
