@@ -3471,8 +3471,7 @@ var facts = []factDecl{
 			"the instance declares them.\n\nIt is a fact because the version an " +
 			"instance compiles at, and the versions its constraints exclude, are " +
 			"settled once for the Release; a rule reading this fact reports the " +
-			"detail beside its own and decides nothing from it." +
-			declarationCompelsImplementation,
+			"detail beside its own and decides nothing from it.",
 	},
 	{
 		Name:        "compiled-component-schema",

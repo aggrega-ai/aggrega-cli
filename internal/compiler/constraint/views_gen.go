@@ -3441,15 +3441,6 @@ type NormalizedView interface {
 	// rule reading this fact reports the detail beside its own and decides
 	// nothing from it.
 	//
-	// Declaring a fact puts its accessor on its stage's view interface, and
-	// every later stage carries that interface by embedding — so a view
-	// presenting any of those stages answers the accessor whether or not a
-	// check asks it. The declaration compels the implementation; nothing
-	// compels the declaration. This accessor is implemented for that reason
-	// rather than because a check reads it, which accounts for its presence
-	// without warranting it: a fact no check reads remains a candidate for
-	// removal.
-	//
 	// Keyed by node; read from resolver.CatalogLookup.HeldBackDetail.
 	HeldBackDetail(componentType string, pillar string, path string) []HeldBackNote
 
