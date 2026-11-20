@@ -231,6 +231,65 @@ func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoade
 	return nil
 }
 
+// SettleSharedInstanceTypes settles, before anything reads what the closure's
+// Components and Features depend on, the version of each reference the Release's
+// own Aggregate writes that a module it includes writes too. The walk settles such
+// a reference over the Release's own instances alone, because a module's instances
+// are named only once every module is walked; the instances writing it in a module
+// may narrow it to another version, and the closure's row takes the version the
+// settlement over every instance selects (AdoptSettledVersions). The passes that
+// follow — the bases a Component extends, the libraries its schema reaches — then
+// read the version the row ends at, and pin nothing only another version needs.
+//
+// It settles through the one descent of the modules (DescendSubAggregates), run
+// over a copy of c whose entities, instances and module record are c's and whose
+// plugin and library axes are empty, as the descent that later adds the modules'
+// entities to c runs. Only the versions of the rows c already holds are taken
+// from it; the copy is discarded, and c gains no entity and no instance.
+//
+// A closure that includes no module is left as it is. A failure the copy's descent
+// meets is not reported here: the descent over c meets it again and reports it,
+// and c keeps the walk's versions until then.
+func SettleSharedInstanceTypes(ctx context.Context, c *Closure, loader AggregateLoader, lookup Lookup) {
+	if c == nil || loader == nil || len(c.modules) == 0 {
+		return
+	}
+	probe := Closure{
+		Entities:  make([]ResolvedRef, len(c.Entities)),
+		Instances: slices.Clone(c.Instances),
+		modules:   c.modules,
+		manifest:  c.manifest,
+	}
+	for i, e := range c.Entities {
+		e.ReferencedFrom = slices.Clone(e.ReferencedFrom)
+		probe.Entities[i] = e
+	}
+	if err := DescendSubAggregates(ctx, &probe, loader, lookup); err != nil {
+		return
+	}
+	c.AdoptSettledVersions(probe)
+}
+
+// AdoptSettledVersions gives each entity c holds the resolution settled records
+// for the same entity, where the two record different versions: the version a
+// descent of the modules settled a reference at over every instance writing it,
+// read off a copy of c that descent ran over. The reference, its sites and its
+// kind stay c's, and an entity settled holds that c does not is not added.
+func (c *Closure) AdoptSettledVersions(settled Closure) {
+	byKey := make(map[EntityKey]ResolvedRef, len(settled.Entities))
+	for _, e := range settled.Entities {
+		byKey[e.Key()] = e
+	}
+	for i, e := range c.Entities {
+		s, ok := byKey[e.Key()]
+		if !ok || s.ResolvedVersion == e.ResolvedVersion {
+			continue
+		}
+		row := &c.Entities[i]
+		row.ResolvedVersion, row.Digest, row.ManifestDigest, row.ResolutionPath = s.ResolvedVersion, s.Digest, s.ManifestDigest, s.ResolutionPath
+	}
+}
+
 // deferredTypes is one module walk and the Components and Features its instances
 // are typed by, which the descent resolves once every module is walked.
 type deferredTypes struct {

@@ -611,10 +611,12 @@ type RegistryPrefetcher interface {
 // constraints select, and one whose constraints admit no version — a refusal a
 // compilation of the Release reports, in its own words, at its own step.
 //
-// It fails only where it could not read the versions it selects among — a
-// registry that failed to list them — and the walk halts on that failure, because
-// a selection over versions read in part would record another version with no
-// word said.
+// It fails where it could not read what it settles over — a registry that failed
+// to list the versions it selects among, or a reference resolved so far that it
+// cannot pin to read the Recipes through, which is a fault in the compiler rather
+// than in the workspace — and the walk halts on that failure, because a selection
+// over what was read in part would record another version with no word said. A
+// conflict between the constraints is no failure of the settlement.
 type InstanceVersionSelector interface {
 	SelectInstanceVersions(ctx context.Context, manifest *types.Manifest, instances []InstanceReference, resolved []ResolvedRef) (map[EntityKey]string, error)
 }

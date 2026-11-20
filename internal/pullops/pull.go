@@ -878,6 +878,16 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// conflict between the versions an instance's constraints admit to name.
 	cl.NameInstanceFiles(catalog.RelativeToWorkspace(workspaceRoot, cfg.ReleasePath),
 		catalog.RelativeToWorkspace(workspaceRoot, aggRes.Path))
+	// A reference a module writes too is settled over every instance writing it
+	// before anything is pinned from the closure or read for what its entities
+	// depend on (closure.SettleSharedInstanceTypes), so the pins, the bases and the
+	// libraries below are those of the version its row records — the one the build
+	// reading this lockfile compiles.
+	aggLoader, aggErr := closure.RequireAggregateLoader(lookup)
+	if aggErr != nil {
+		return Result{}, aggErr
+	}
+	closure.SettleSharedInstanceTypes(ctx, &cl, aggLoader, lookup)
 	// Resolve the workspace provider-socket bindings to their Plugin entities at
 	// resolution time only. ComputeClosure does not read the provider socket's config,
 	// so build / serve reconstruct these entities from the lockfile rather than
@@ -917,10 +927,6 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	//
 	// The sub-aggregate pass and both plugin passes read the reconciling lookup the
 	// walk used, which honours the prior pins and may fetch.
-	aggLoader, aggErr := closure.RequireAggregateLoader(lookup)
-	if aggErr != nil {
-		return Result{}, aggErr
-	}
 	// Provider resolution honors the workspace-config plugins.providers selection
 	// and records the resolved target → plugin binding for the lockfile, so build
 	// selects the engine from the lockfile rather than re-reading the config. On an
@@ -1150,7 +1156,8 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 		ManifestPath: catalog.RelativeToWorkspace(workspaceRoot, manRes.Path),
 		Closure:      cl,
 	}).InstanceVersionLookup(lazyView.AsCatalogLookupWithSchemas(ctx, closureSchemas),
-		lazyView.ResolutionVersions(ctx, priorPins, catalog.RelativeToWorkspace(workspaceRoot, lockfilePath)))
+		lazyView.ResolutionVersions(ctx, priorPins, catalog.RelativeToWorkspace(workspaceRoot, lockfilePath),
+			catalog.RelativeToWorkspace(workspaceRoot, cfg.ReleasePath)))
 	if err != nil {
 		return Result{}, err
 	}

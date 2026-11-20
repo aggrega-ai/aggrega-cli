@@ -4219,7 +4219,7 @@ func (x *lazyClosureLookup) SelectInstanceVersions(ctx context.Context, manifest
 	if err != nil {
 		return nil, err
 	}
-	table, err := ResolveInstanceVersions("", instances, manifest, "", x.l.resolutionVersions(ctx, recipes, prior, "", puller))
+	table, err := ResolveInstanceVersions("", instances, manifest, "", x.l.resolutionVersions(ctx, recipes, prior, lockfileRecord{}, puller))
 	var listing *versionListingFailure
 	if errors.As(err, &listing) {
 		return nil, err
@@ -4290,21 +4290,22 @@ type recipeReader interface {
 // selected among are those this view's catalog directories hold of its name; where
 // they hold none, the version prior pins the reference at — the pins of the
 // lockfile a pull reconciles against, written in priorFile, which a conflict over
-// it names; and where prior pins none, the versions the registry this view reads
+// it names beside releaseFile, the Release a pull resolves again; and where prior
+// pins none, the versions the registry this view reads
 // lists (EntityVersionLister). A candidate's extends ancestry is read from the
 // local tiers, and, for a candidate only a registry holds, from its document,
 // fetched then and kept for every later read; it is the one fetch the settlement
 // makes. Recipes are read as RecipeByURI reads them.
-func (l *LazyLookup) ResolutionVersions(ctx context.Context, prior Pins, priorFile string) InstanceVersionView {
-	return l.resolutionVersions(ctx, l, prior, priorFile, l.puller)
+func (l *LazyLookup) ResolutionVersions(ctx context.Context, prior Pins, priorFile, releaseFile string) InstanceVersionView {
+	return l.resolutionVersions(ctx, l, prior, lockfileRecord{lockfile: priorFile, release: releaseFile}, l.puller)
 }
 
 // resolutionVersions is ResolutionVersions reading Recipes through recipes and
 // listing a registry through puller where it can (EntityVersionLister); a nil
 // puller lists none, and the ancestry of a candidate is then read from the local
 // tiers alone.
-func (l *LazyLookup) resolutionVersions(ctx context.Context, recipes recipeReader, prior Pins, priorFile string, puller OCIPuller) *resolutionVersionView {
-	v := &resolutionVersionView{ctx: ctx, l: l, recipes: recipes, prior: prior, priorFile: priorFile, puller: puller}
+func (l *LazyLookup) resolutionVersions(ctx context.Context, recipes recipeReader, prior Pins, priorRecord lockfileRecord, puller OCIPuller) *resolutionVersionView {
+	v := &resolutionVersionView{ctx: ctx, l: l, recipes: recipes, prior: prior, priorRecord: priorRecord, puller: puller}
 	if lister, ok := puller.(EntityVersionLister); ok {
 		v.lister = lister
 	}
@@ -4313,13 +4314,13 @@ func (l *LazyLookup) resolutionVersions(ctx context.Context, recipes recipeReade
 
 // resolutionVersionView is the view ResolutionVersions returns.
 type resolutionVersionView struct {
-	ctx       context.Context
-	l         *LazyLookup
-	recipes   recipeReader
-	prior     Pins
-	priorFile string
-	puller    OCIPuller
-	lister    EntityVersionLister
+	ctx         context.Context
+	l           *LazyLookup
+	recipes     recipeReader
+	prior       Pins
+	priorRecord lockfileRecord
+	puller      OCIPuller
+	lister      EntityVersionLister
 }
 
 // ComponentVersions lists the versions of name this view's catalog directories
@@ -4330,12 +4331,12 @@ func (v *resolutionVersionView) ComponentVersions(name string) []string {
 
 // RecordedVersion returns the version the prior lockfile pins reference's
 // Component at, satisfying recordedVersions.
-func (v *resolutionVersionView) RecordedVersion(reference string) (string, string, bool) {
+func (v *resolutionVersionView) RecordedVersion(reference string) (string, lockfileRecord, bool) {
 	pin, ok := v.prior[PinKey{Kind: componentKind, URI: reference}]
 	if !ok || pin.ResolvedVersion == "" {
-		return "", "", false
+		return "", lockfileRecord{}, false
 	}
-	return pin.ResolvedVersion, v.priorFile, true
+	return pin.ResolvedVersion, v.priorRecord, true
 }
 
 // ListedVersions lists the versions the registry this view reads publishes the

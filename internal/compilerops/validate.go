@@ -127,8 +127,9 @@ func ResolveValidationClosure(ctx context.Context, in ValidationClosureInputs) (
 // each module instance compiles at is settled with every other instance's
 // (ResolvedClosure.InstanceVersionLookup). So is the version the descent settles
 // a reference the closure already holds at, where a module writes it too and its
-// instances narrow it (closure.DescendSubAggregates): the closure's row takes it,
-// so the checks over the entity set read the version the compilation compiles.
+// instances narrow it (closure.Closure.AdoptSettledVersions): the closure's row
+// takes it, so the checks over the entity set read the version the compilation
+// compiles.
 func ResolveModuleReferences(ctx context.Context, resolved *ResolvedClosure) *ClosureError {
 	if err := resolveModuleReferences(ctx, resolved); err != nil {
 		return &ClosureError{Stage: ClosureStageComputeClosure, msg: err.Error(), err: err}
@@ -162,16 +163,7 @@ func resolveModuleReferences(ctx context.Context, resolved *ResolvedClosure) err
 		return err
 	}
 	resolved.Closure.Instances = probe.Instances
-	settled := make(map[closure.EntityKey]closure.ResolvedRef, len(probe.Entities))
-	for _, e := range probe.Entities {
-		settled[e.Key()] = e
-	}
-	for i, e := range resolved.Closure.Entities {
-		if s, ok := settled[e.Key()]; ok && s.ResolvedVersion != e.ResolvedVersion {
-			row := &resolved.Closure.Entities[i]
-			row.ResolvedVersion, row.Digest, row.ManifestDigest, row.ResolutionPath = s.ResolvedVersion, s.Digest, s.ManifestDigest, s.ResolutionPath
-		}
-	}
+	resolved.Closure.AdoptSettledVersions(probe)
 	return nil
 }
 
@@ -461,7 +453,8 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		record = in.Lockfile
 	}
 	catalogLookup, runErr := instanceVersionLookup(in.View.AsCatalogLookupWithSchemas(ctx, libraries.Schemas),
-		catalog.HeldToLockfile(in.View, record, catalog.RelativeToWorkspace(in.WorkspaceRoot, lockfile.PathFor(in.ReleasePath))),
+		catalog.HeldToLockfile(in.View, record, catalog.RelativeToWorkspace(in.WorkspaceRoot, lockfile.PathFor(in.ReleasePath)),
+			catalog.RelativeToWorkspace(in.WorkspaceRoot, in.ReleasePath)),
 		in.Release, in.Manifest, in.ManifestPath, in.Closure)
 	var tier4 *pipeline.Tier4Result
 	if runErr == nil {

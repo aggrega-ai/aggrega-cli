@@ -171,7 +171,8 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 	// failure does. Built from a lockfile, a reference no catalog directory holds is
 	// held to its row, which its constraints judge rather than select past.
 	catLookup, err := r.InstanceVersionLookup(catLookup,
-		catalog.HeldToLockfile(view, in.Lockfile, catalog.RelativeToWorkspace(in.WorkspaceRoot, lockfile.PathFor(in.ReleasePath))))
+		catalog.HeldToLockfile(view, in.Lockfile, catalog.RelativeToWorkspace(in.WorkspaceRoot, lockfile.PathFor(in.ReleasePath)),
+			catalog.RelativeToWorkspace(in.WorkspaceRoot, in.ReleasePath)))
 	if err != nil {
 		return pipeline.Outcome{}, err
 	}

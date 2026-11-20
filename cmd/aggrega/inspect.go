@@ -1058,7 +1058,8 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	// constraints admit no version, or whose row they do not admit, halts here as it
 	// halts them.
 	catalogLookup, err = deps.resolved.InstanceVersionLookup(catalogLookup,
-		catalog.HeldToLockfile(deps.view, deps.lockfile, catalog.RelativeToWorkspace(rw.Root(), lockfile.PathFor(releasePath))))
+		catalog.HeldToLockfile(deps.view, deps.lockfile, catalog.RelativeToWorkspace(rw.Root(), lockfile.PathFor(releasePath)),
+			catalog.RelativeToWorkspace(rw.Root(), releasePath)))
 	if err != nil {
 		return err
 	}

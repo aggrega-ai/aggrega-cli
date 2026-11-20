@@ -470,7 +470,20 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 	// closure.AugmentClosure) — so the resolved closure matches the one a build or
 	// lint verifies against. Opt-in: a caller that folds these separately leaves it
 	// off so the fold does not run twice.
+	//
+	// A reference a module writes too is settled over every instance writing it
+	// first (closure.SettleSharedInstanceTypes), so the fold reads the version its
+	// row ends at, as a pull folding the same Release reads it.
 	if in.Augment {
+		loader, lerr := closure.RequireAggregateLoader(lookup)
+		if lerr != nil {
+			return nil, &ClosureError{
+				Stage: ClosureStageComputeClosure,
+				msg:   lerr.Error(),
+				err:   lerr,
+			}
+		}
+		closure.SettleSharedInstanceTypes(ctx, &cl, loader, lookup)
 		if aerr := closure.AugmentClosure(ctx, &cl, in.View, lookup); aerr != nil {
 			return nil, &ClosureError{
 				Stage: ClosureStageComputeClosure,

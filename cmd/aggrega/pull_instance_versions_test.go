@@ -20,6 +20,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -424,7 +425,7 @@ func TestBuildRefusesLockedVersionOutsideConstraints(t *testing.T) {
 		if errors.Is(err, lockfile.ErrLockfileDrift()) {
 			t.Errorf("the build reports the lockfile out of date beside the conflict: %v", err)
 		}
-		for _, value := range []string{`locked at "1.1.0"`, `written in "release.lock"`, `Manifest mapping key "core/compute/server:1.0.0"`, "`aggrega pull`"} {
+		for _, value := range []string{`locked at "1.1.0"`, `written in "release.lock"`, `Manifest mapping key "core/compute/server:1.0.0"`, "`aggrega pull --release release.yaml`"} {
 			if !strings.Contains(conflict.Message(), value) {
 				t.Errorf("the conflict does not name %s:\n%s", value, conflict.Message())
 			}
@@ -748,5 +749,130 @@ func TestInspectRefusesLockedVersionOutsideConstraints(t *testing.T) {
 	err = renderReleaseFile(context.Background(), rw, releasePath, nil, nil, testInspectOptions(io.Discard))
 	if !errors.Is(err, catalog.ErrConflictingVersionConstraints()) {
 		t.Errorf("the inspection halts with %v; want the conflict the build halts with", err)
+	}
+}
+
+// extendingServerDocument is the server at 1.0.0 written as a Component extending
+// a base that carries the whole of its schema, so it reaches the base and nothing
+// of its own.
+const extendingServerDocument = `apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: core/compute/server
+  version: 1.0.0
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  extends: core/compute/server-base:1.0.0
+  schema: inherited
+`
+
+// serverBase is the reference of the base the extending server names.
+const serverBase = "core/compute/server-base:1.0.0"
+
+// writeServerBase adds to the catalog directory at root the base the extending
+// server names: the server's own 1.0.0 document under the base's name.
+func writeServerBase(t *testing.T, root string) string {
+	t.Helper()
+	path := filepath.Join(root, "catalog", "component", "core", "compute", "server-base", "1.0.0", "component.yaml")
+	writeFixture(t, path, string(mustReadFile(t, filepath.Join("testdata", "instance_versions", "catalog", "component",
+		filepath.FromSlash(instanceVersionsServer), "1.0.0", "component.yaml"))))
+	replaceInFixture(t, path, "  name: core/compute/server\n", "  name: core/compute/server-base\n")
+	return path
+}
+
+// augmentsWorkspace lays down the shared-server workspace, with web mapped to
+// webRecipe, over a catalog whose server at 1.0.0 extends a base carrying its
+// whole schema — in the catalog directory, or, with registry set, served by the
+// registry beside 1.1.0 — and returns its root, the puller to pull it with, and
+// the path of the base's document.
+func augmentsWorkspace(t *testing.T, registry bool, webRecipe string) (string, catalog.OCIPuller, string) {
+	t.Helper()
+	var root string
+	var puller catalog.OCIPuller
+	if registry {
+		root = registryInstanceVersionsWorkspace(t, "quickstart-site")
+		r := newVersionRegistry(t)
+		r.bodies["1.0.0"] = []byte(extendingServerDocument)
+		puller = r
+	} else {
+		root = instanceVersionsWorkspace(t, "quickstart-site")
+		writeFixture(t, filepath.Join(root, "catalog", "component", filepath.FromSlash(instanceVersionsServer), "1.0.0", "component.yaml"),
+			extendingServerDocument)
+	}
+	basePath := writeServerBase(t, root)
+	writeSharedServerWorkspace(t, root, webRecipe)
+	return root, puller, basePath
+}
+
+// serverDependencyRows returns the rows of the lockfile at lockPath that record
+// the server and what it depends on: the server's own rows and its base's, and
+// every schema library with its consumers.
+func serverDependencyRows(t *testing.T, lockPath string) ([]lockfile.Entity, []lockfile.SchemaLibrary) {
+	t.Helper()
+	lf, _, err := lockfile.LoadLockfile(lockPath)
+	if err != nil {
+		t.Fatalf("load the lockfile: %v", err)
+	}
+	var rows []lockfile.Entity
+	for _, e := range lf.Entities {
+		if e.Kind == closure.KindComponent && strings.HasPrefix(e.URI, instanceVersionsServer) {
+			e.ReferencedFrom = nil
+			rows = append(rows, e)
+		}
+	}
+	return rows, lf.SchemaLibraries
+}
+
+// TestPullAugmentsTheVersionTheRowRecords holds what a lockfile pins of a
+// reference's dependencies — the base its Component extends, the libraries its
+// schema reaches and the edges from it to them — to the version its row records,
+// where the settlement over every instance writing the reference moves it below
+// the version the Release's own instance alone selects. The server at 1.0.0
+// extends a base carrying its whole schema, and 1.1.0 extends nothing; web mapped
+// alone admits both and site.web only 1.0.0. The lockfile records exactly what a
+// pull records where web itself selects 1.0.0 — the base's row and every library
+// edge — rewrites byte for byte on a second pull, and an edit to the base after
+// the pull makes the build report the lockfile out of date.
+func TestPullAugmentsTheVersionTheRowRecords(t *testing.T) {
+	t.Parallel()
+	for _, source := range []struct {
+		name     string
+		registry bool
+	}{{name: "from a catalog directory"}, {name: "from a registry", registry: true}} {
+		t.Run(source.name, func(t *testing.T) {
+			t.Parallel()
+			control, controlPuller, _ := augmentsWorkspace(t, source.registry, "compose/server:1.0.0")
+			if text, err := pullInstanceVersions(t, control, filepath.Join(control, "release.yaml"), controlPuller); err != nil {
+				t.Fatalf("pull the Release whose web selects 1.0.0 itself: %v\n%s", err, text)
+			}
+			wantRows, wantLibraries := serverDependencyRows(t, lockfile.PathFor(filepath.Join(control, "release.yaml")))
+			if !slices.ContainsFunc(wantRows, func(e lockfile.Entity) bool { return e.URI == serverBase }) {
+				t.Fatalf("the control pins no row for %s, so the comparison below proves nothing", serverBase)
+			}
+
+			root, puller, basePath := augmentsWorkspace(t, source.registry, "compose/server-any:1.0.0")
+			releasePath := filepath.Join(root, "release.yaml")
+			if text, err := pullInstanceVersions(t, root, releasePath, puller); err != nil {
+				t.Fatalf("pull: %v\n%s", err, text)
+			}
+			lockPath := lockfile.PathFor(releasePath)
+			if row := serverRow(t, lockPath); row.ResolvedVersion != "1.0.0" {
+				t.Fatalf("the pull records %s at %q, want 1.0.0", instanceVersionsServer, row.ResolvedVersion)
+			}
+			gotRows, gotLibraries := serverDependencyRows(t, lockPath)
+			if !reflect.DeepEqual(gotRows, wantRows) {
+				t.Errorf("the pull pins the server and its base as\n%+v\nwant what a pull selecting 1.0.0 itself pins:\n%+v", gotRows, wantRows)
+			}
+			if !reflect.DeepEqual(gotLibraries, wantLibraries) {
+				t.Errorf("the pull records the schema libraries as\n%+v\nwant what a pull selecting 1.0.0 itself records:\n%+v", gotLibraries, wantLibraries)
+			}
+			assertPullHoldsItsLockfile(t, root, releasePath, puller)
+
+			writeFixture(t, basePath, string(mustReadFile(t, basePath))+"# Edited after the pull.\n")
+			if _, err := lockedBuild(t, root); !errors.Is(err, lockfile.ErrLockfileDrift()) {
+				t.Errorf("the build over a base edited after the pull halts with %v; want the lockfile reported out of date", err)
+			}
+		})
 	}
 }

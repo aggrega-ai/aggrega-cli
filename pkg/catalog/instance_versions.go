@@ -104,10 +104,19 @@ type InstanceVersionView interface {
 // recordedVersions is the optional InstanceVersionView capability of a view that
 // holds a reference to the version a lockfile records for it, where none of its
 // catalog directories holds the reference's Component: RecordedVersion returns
-// that version and the lockfile's file. The version is the reference's one
-// candidate, and a conflict over it names the lockfile among the sources.
+// that version and the lockfile it is recorded in. The version is the reference's
+// one candidate, and a conflict over it names the lockfile among the sources.
 type recordedVersions interface {
-	RecordedVersion(reference string) (version, file string, ok bool)
+	RecordedVersion(reference string) (version string, record lockfileRecord, ok bool)
+}
+
+// lockfileRecord names a lockfile a version is recorded in, for a conflict over
+// that version to name: the lockfile's file, and the file of the Release it locks,
+// which the command that resolves the Release again is run with. Either may be
+// empty where the view knows no file to name.
+type lockfileRecord struct {
+	lockfile string
+	release  string
 }
 
 // listedVersions is the optional InstanceVersionView capability of a view that
@@ -132,11 +141,11 @@ func (f *versionListingFailure) Unwrap() error { return f.err }
 
 // candidates are the versions of a reference's Component the table selects among.
 // recorded reports that they are the one version a lockfile records the reference
-// at, and lockfile names that lockfile's file where the view names one.
+// at, and record names that lockfile.
 type candidates struct {
 	versions []string
 	recorded bool
-	lockfile string
+	record   lockfileRecord
 }
 
 // candidateVersions returns the versions of reference's Component the table
@@ -149,8 +158,8 @@ func candidateVersions(view InstanceVersionView, reference, base string) (candid
 		return candidates{versions: held}, nil
 	}
 	if recorded, ok := view.(recordedVersions); ok {
-		if version, file, ok := recorded.RecordedVersion(reference); ok {
-			return candidates{versions: []string{version}, recorded: true, lockfile: file}, nil
+		if version, record, ok := recorded.RecordedVersion(reference); ok {
+			return candidates{versions: []string{version}, recorded: true, record: record}, nil
 		}
 	}
 	listed, err := listedVersionsOf(view, base)
@@ -174,7 +183,8 @@ func listedVersionsOf(view InstanceVersionView, name string) ([]string, error) {
 
 // HeldToLockfile returns view holding, where none of its catalog directories
 // holds a Component reference's Component, that reference to the version lf's row
-// records for it, with file named as where it is written (recordedVersions). It is
+// records for it, with lockfileFile named as where it is written and releaseFile
+// as the Release a pull resolves again (recordedVersions). It is
 // the view a build from a lockfile settles instance versions over: a reference a
 // catalog directory holds is selected again from the versions there, and a
 // reference only the lockfile's pin reaches — one a registry served — is held to
@@ -182,11 +192,12 @@ func listedVersionsOf(view InstanceVersionView, name string) ([]string, error) {
 // they do not admit is refused with the conflicting-version-constraints condition,
 // naming the lockfile; the table never selects past the row. A nil lf leaves view
 // as it is.
-func HeldToLockfile(view InstanceVersionView, lf *lockfile.Lockfile, file string) InstanceVersionView {
+func HeldToLockfile(view InstanceVersionView, lf *lockfile.Lockfile, lockfileFile, releaseFile string) InstanceVersionView {
 	if lf == nil {
 		return view
 	}
-	held := lockfileHeldView{InstanceVersionView: view, rows: map[string]string{}, file: file}
+	held := lockfileHeldView{InstanceVersionView: view, rows: map[string]string{},
+		record: lockfileRecord{lockfile: lockfileFile, release: releaseFile}}
 	for _, e := range lf.Entities {
 		if e.Kind == closure.KindComponent && e.ResolvedVersion != "" {
 			held.rows[e.URI] = e.ResolvedVersion
@@ -199,15 +210,15 @@ func HeldToLockfile(view InstanceVersionView, lf *lockfile.Lockfile, file string
 // Component reference the lockfile records is recorded at.
 type lockfileHeldView struct {
 	InstanceVersionView
-	rows map[string]string
-	file string
+	rows   map[string]string
+	record lockfileRecord
 }
 
 // RecordedVersion returns the version the lockfile's row records reference at,
 // satisfying recordedVersions.
-func (v lockfileHeldView) RecordedVersion(reference string) (string, string, bool) {
+func (v lockfileHeldView) RecordedVersion(reference string) (string, lockfileRecord, bool) {
 	version, ok := v.rows[reference]
-	return version, v.file, ok
+	return version, v.record, ok
 }
 
 // ResolveInstanceVersions resolves each component reference the instances of the
@@ -385,7 +396,7 @@ func selectAmong(release, reference, base string, declared []VersionConstraint, 
 		if fault := malformedConstraintPin(declared, reference); fault != nil {
 			return "", false, fault
 		}
-		return "", false, conflictingVersionConstraints(release, declared, held, offered.lockfile)
+		return "", false, conflictingVersionConstraints(release, declared, held, offered.record)
 	default:
 		return "", false, nil
 	}
@@ -444,9 +455,15 @@ func malformedConstraintPin(declared []VersionConstraint, reference string) erro
 const conflictingVersionAdvice = "change the Aggregate's version, or map this type at a version its recipe implements"
 
 // lockedVersionAdvice is what a conflicting-version-constraints refusal over a
-// version a lockfile records adds: a pull resolves the reference again, and
-// records the version its constraints admit.
-const lockedVersionAdvice = ", or run `aggrega pull` to lock the version every constraint admits"
+// version a lockfile records adds: the pull of the Release in releaseFile, which
+// resolves the reference again and records the version its constraints admit. A
+// refusal that knows no file names a placeholder in its place.
+func lockedVersionAdvice(releaseFile string) string {
+	if releaseFile == "" {
+		releaseFile = "<release>"
+	}
+	return fmt.Sprintf(", or run `aggrega pull --release %s` to lock the version every constraint admits", releaseFile)
+}
 
 // conflictingVersionConstraints is the refusal of a reference that no version the
 // catalog holds satisfies under every constraint in declared. It names the Release
@@ -454,13 +471,14 @@ const lockedVersionAdvice = ", or run `aggrega pull` to lock the version every c
 // name, and each of its constraints with the file it is written in — then the
 // versions held, a version-less entry among them left unnamed because it has no
 // version to name — the versions held by a catalog directory or listed by a
-// registry. Where the versions are the ones a lockfile records, recordedIn names
-// that lockfile, the versions are named as locked there, a source beside the
-// constraints, and the advice adds that a pull locks the version the constraints
-// admit. It is positioned where the first instance is declared: the
+// registry. Where the versions are the ones a lockfile records, record names that
+// lockfile, the versions are named as locked there, a source beside the
+// constraints, and the advice adds the pull of record's Release that locks the
+// version the constraints admit. It is positioned where the first instance is
+// declared: the
 // document its type is written in, at the instance's site, which is where the
 // remedy of changing the version is written.
-func conflictingVersionConstraints(release string, declared []VersionConstraint, held []string, recordedIn string) error {
+func conflictingVersionConstraints(release string, declared []VersionConstraint, held []string, record lockfileRecord) error {
 	detail := []constraint.DetailValue{constraint.Captioned("Release", release)}
 	for _, c := range declared {
 		switch c.Kind {
@@ -487,11 +505,11 @@ func conflictingVersionConstraints(release string, declared []VersionConstraint,
 		}
 	}
 	advice := conflictingVersionAdvice
-	if recordedIn != "" {
+	if record.lockfile != "" {
 		detail = append(detail,
 			constraint.Captioned("locked at", strings.Join(named, ", ")),
-			constraint.Captioned("written in", recordedIn))
-		advice += lockedVersionAdvice
+			constraint.Captioned("written in", record.lockfile))
+		advice += lockedVersionAdvice(record.release)
 	} else {
 		detail = append(detail, constraint.Captioned("versions held", strings.Join(named, ", ")))
 	}
