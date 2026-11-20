@@ -1050,6 +1050,15 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	if deps.lockfile != nil {
 		catalogLookup.Plugin = deps.view.PluginByURI
 	}
+	// Every instance is drawn at the version a build of the same Release compiles
+	// it at: the one settlement of each instance's version the build and the
+	// validation read, over the view the dependency resolution read, so this
+	// picture and those surfaces settle each instance alike. An instance whose
+	// constraints admit no version halts here as it halts them.
+	catalogLookup, err = deps.resolved.InstanceVersionLookup(catalogLookup, deps.view)
+	if err != nil {
+		return err
+	}
 
 	// Build the graph through the one entry that produces one, so what this
 	// command draws is the graph a build would render rather than one assembled

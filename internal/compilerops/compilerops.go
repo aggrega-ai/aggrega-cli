@@ -66,15 +66,23 @@ type ClosureInputs struct {
 
 // ResolvedClosure bundles the entities a build or drift flow needs together —
 // the parsed Release, its resolved Manifest and Aggregate, the raw Aggregate
-// bytes the resolver interpolates, the Aggregate's source path, and the
-// computed catalog closure.
+// bytes the resolver interpolates, the Aggregate's source path, the Manifest's
+// file, and the computed catalog closure.
+//
+// The closure names the file of each instance the Release and its Aggregate
+// declare, relative to the workspace root (closure.Closure.NameInstanceFiles), and
+// ManifestPath names the Manifest's file the same way, so a finding about an
+// instance's version names each file a constraint on it is written in.
 type ResolvedClosure struct {
 	Release       *types.Release
 	Manifest      *types.Manifest
 	Aggregate     *types.Aggregate
 	AggBytes      []byte
 	AggregatePath string
-	Closure       closure.Closure
+	// ManifestPath is the file of the Manifest the Release resolves to, relative
+	// to the workspace root where it lies inside it.
+	ManifestPath string
+	Closure      closure.Closure
 	// LibrariesResolved records that the closure was resolved with its library
 	// axes folded in (ClosureInputs.Augment), so Closure names each library at the
 	// version this Release resolved. A closure resolved without them names no
@@ -125,6 +133,40 @@ type ResolvedClosure struct {
 	// caller reporting on a document lists them with its other findings. Neither
 	// may halt on them.
 	ReleaseCompositionAdvisories []error
+}
+
+// InstanceVersionLookup returns lookup scoped to the version every component
+// instance of this Release compiles at (catalog.ScopeToInstanceVersions), read
+// from view: the highest version every constraint declared on the instance
+// admits. It is the one place a compilation of a Release settles those versions,
+// and every surface that compiles one hands the pipeline the lookup it returns.
+//
+// It refuses where an instance's constraints admit no version the view holds,
+// with the conflicting-version-constraints condition, and the compilation is not
+// run: compiling the instance at a version one of its constraints refuses would
+// render it through a Recipe written for another.
+//
+// The instances are the closure's, so a module's instances are among them once
+// the sub-aggregate descent has run over the closure: a build's reconstruction
+// from a lockfile runs it, and ResolveModuleReferences runs it where there is no
+// lockfile.
+func (r *ResolvedClosure) InstanceVersionLookup(lookup resolver.CatalogLookup, view catalog.InstanceVersionView) (resolver.CatalogLookup, error) {
+	return instanceVersionLookup(lookup, view, r.Release, r.Manifest, r.ManifestPath, r.Closure)
+}
+
+// instanceVersionLookup is InstanceVersionLookup over explicit inputs, for a
+// caller that holds the resolution's parts rather than the resolution.
+func instanceVersionLookup(lookup resolver.CatalogLookup, view catalog.InstanceVersionView, release *types.Release,
+	manifest *types.Manifest, manifestPath string, cl closure.Closure) (resolver.CatalogLookup, error) {
+	var name string
+	if release != nil {
+		name = release.Metadata.Name
+	}
+	table, err := catalog.ResolveInstanceVersions(name, cl.Instances, manifest, manifestPath, view)
+	if err != nil {
+		return resolver.CatalogLookup{}, err
+	}
+	return catalog.ScopeToInstanceVersions(lookup, table), nil
 }
 
 // Libraries returns the libraries a build or preview of this Release reads, one
@@ -415,6 +457,10 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 		}
 	}
 	cl.ReleaseDocuments = releaseDocs
+	// The walk is handed the Release and the Aggregate already loaded, so the files
+	// their instances are written in are named here, where they were loaded.
+	cl.NameInstanceFiles(catalog.RelativeToWorkspace(in.WorkspaceRoot, in.ReleasePath),
+		catalog.RelativeToWorkspace(in.WorkspaceRoot, aggRes.Path))
 	// Fold in what the entity walk does not descend — the bases the closure's
 	// Components and Features extend, then the cross-document library axes (see
 	// closure.AugmentClosure) — so the resolved closure matches the one a build or
@@ -435,6 +481,7 @@ func ResolveClosure(ctx context.Context, in ClosureInputs) (*ResolvedClosure, *C
 		Aggregate:                    aggregate,
 		AggBytes:                     aggBytes,
 		AggregatePath:                aggRes.Path,
+		ManifestPath:                 catalog.RelativeToWorkspace(in.WorkspaceRoot, manRes.Path),
 		Closure:                      cl,
 		LibrariesResolved:            in.Augment,
 		Lookup:                       lookup,

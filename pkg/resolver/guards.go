@@ -255,9 +255,12 @@ type NodeRecipeResolution struct {
 	MappedByType bool
 
 	// ResolvedType is this instance's component type at the version the build
-	// compiles it as: the type as written where it pins a version, the version
-	// the catalog's own version selection resolves a bare type to otherwise, and
-	// the type as written where the catalog holds no Component of it.
+	// compiles it as. Read through a lookup scoped to a Release's instance
+	// versions, it is the type at the version the instance-version table settled
+	// on, whatever form the type is written in. Otherwise it is the type as
+	// written where it pins a version, the version the catalog's own version
+	// selection resolves a bare type to where it pins none, and the type as
+	// written where the catalog holds no Component of it.
 	//
 	// It is the request the mapped Recipe's implements is judged against when an
 	// unversioned key reached the instance, and it is resolved by the one

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+# An Aggregate whose only component comes from the module it includes.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: quickstart-site-host
+  version: "1.0.0"
+  description: >
+    Includes the quickstart web application as a module and declares nothing
+    of its own.
+spec:
+  aggregates:
+    site:
+      type: example/quickstart-site

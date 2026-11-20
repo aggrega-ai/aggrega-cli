@@ -342,6 +342,7 @@ func (s *Server) runTier4Validation(ctx context.Context, releasePath, file strin
 		Release:                  resolved.Release,
 		ReleasePath:              releasePath,
 		Manifest:                 resolved.Manifest,
+		ManifestPath:             resolved.ManifestPath,
 		AggBytes:                 resolved.AggBytes,
 		ClosureLibrariesResolved: resolved.LibrariesResolved,
 		LibraryRecord:            lf,

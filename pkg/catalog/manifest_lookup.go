@@ -295,11 +295,13 @@ func entityIndexKey(name, version string) string {
 // resolve together when their stripVersion bases are equal.
 //
 // The tolerance is base-equality, NOT semver-range satisfaction — the
-// type-to-recipe mapping only needs to find the recipe; the concrete version is
-// pinned downstream by the closure's minimal-version selection. A caret key
-// (`core/x:^1.0.0`) base-matches like any other; a single base match resolves; a
-// base shared by multiple version-distinct keys is ambiguous and returns
-// ErrAmbiguousTypeMapping (a Loud Guardrail), never a silent first-wins.
+// type-to-recipe mapping only needs to find the recipe. The concrete version the
+// instance compiles at is the instance-version table's (ResolveInstanceVersions),
+// which reads the key this lookup settles on as one constraint among those
+// declared on the instance. A caret key (`core/x:^1.0.0`) base-matches like any
+// other; a single base match resolves; a base shared by multiple version-distinct
+// keys is ambiguous and returns ErrAmbiguousTypeMapping (a Loud Guardrail), never
+// a silent first-wins.
 //
 // It returns the key that matched beside the recipe URI it maps to. The key is
 // what the mapping-consistency rule judges a node's Recipe against: a key naming

@@ -31,12 +31,17 @@ const (
 )
 
 // VersionConstraint is one constraint declared on an instance's version: the
-// instance it is declared on, which kind of constraint it is, its value as
-// written, and the file it is written in — the Aggregate's file for the type,
-// the Manifest's file for a mapping key, and the Recipe's reference as the
-// mapping writes it for an implements.
+// instance it is declared on, where that instance is declared, which kind of
+// constraint it is, its value as written, and the file it is written in — the
+// Aggregate's file for the type, the Manifest's file for a mapping key, and the
+// Recipe's reference as the mapping writes it for an implements.
+//
+// Site is the locator of the instance's declaration in the document its type is
+// written in, such as .spec.components.web, and every constraint declared on one
+// instance carries the same Site.
 type VersionConstraint struct {
 	Instance string
+	Site     string
 	Kind     string
 	Value    string
 	File     string
@@ -55,13 +60,29 @@ type InstanceVersions struct {
 	Constraints types.OrderedMap[[]VersionConstraint]
 }
 
+// at returns reference at the version the table resolves it to, written as an
+// exact reference to that version, and whether the table holds reference at all.
+// A row whose selected entry carries no version is read at the reference's base,
+// as no exact reference can name it.
+func (t InstanceVersions) at(reference string) (string, bool) {
+	version, held := t.Selected.Get(reference)
+	if !held {
+		return "", false
+	}
+	return versionedSlotURI(types.ParseVersionPin(reference).Base(), version), true
+}
+
 // InstanceVersionView is what the instance-version table reads of a catalog: the
-// versions held under a Component's name, the Recipe a mapping's reference names,
-// and the extends ancestry of a component type at one version. Both catalog views
-// a build reads, the eagerly-loaded *Catalog and the *LazyLookup, satisfy it.
+// versions of a Component's name it can list without asking a registry, the
+// Recipe a mapping's reference names, and the extends ancestry of a component type
+// at one version. Both catalog views a build reads, the eagerly-loaded *Catalog
+// and the *LazyLookup, satisfy it.
 type InstanceVersionView interface {
-	// ComponentVersions returns the version of every Component named name the
-	// view holds, in semantic-version order.
+	// ComponentVersions returns the versions of the Component named name the view
+	// can list without asking a registry, in the order inVersionOrder gives: every
+	// version an eagerly-loaded catalog holds, and every version a lazy lookup's
+	// catalog directories hold, which leaves out a version only a cache slot or a
+	// registry holds.
 	ComponentVersions(name string) []string
 	// RecipeByURI resolves a Recipe reference as the mapping lookup the build
 	// renders through resolves it.
@@ -71,8 +92,9 @@ type InstanceVersionView interface {
 	ComponentAncestry(componentType string) ([]string, error)
 }
 
-// ResolveInstanceVersions resolves each component reference the instances write
-// to the highest version every constraint declared on its instances admits:
+// ResolveInstanceVersions resolves each component reference the instances of the
+// Release named release write to the highest version every constraint declared
+// on its instances admits:
 //
 //   - the type as written, by the pin grammar (types.ParseVersionPin);
 //   - the Manifest's type-axis key that reaches the instance, the one the
@@ -91,10 +113,12 @@ type InstanceVersionView interface {
 //
 // Where the versions held include some the reference alone admits and none every
 // constraint admits, the reference is refused with the conflicting-version-
-// constraints condition, naming each instance writing it, each constraint with
-// the file it is written in, and the versions held. Where a mapping key or a
-// spec.implements carries a malformed pin, that pin admits no version, so the
-// refusal is the malformed-pin condition naming where the pin is written instead.
+// constraints condition, naming the Release, then each instance writing it with
+// where it is declared and each constraint with the file it is written in, then
+// the versions held, and positioned where the first of those instances is
+// declared. Where a mapping key or a spec.implements carries a malformed pin,
+// that pin admits no version, so the refusal is the malformed-pin condition
+// naming where the pin is written instead.
 // Every refused reference is reported, and the table holds the others.
 //
 // A reference the table cannot judge is left out of Selected and resolves as it
@@ -108,7 +132,7 @@ type InstanceVersionView interface {
 //
 // Feature instances resolve as their references do, and the table holds no row
 // for them.
-func ResolveInstanceVersions(instances []closure.InstanceReference, manifest *types.Manifest, manifestFile string, view InstanceVersionView) (InstanceVersions, error) {
+func ResolveInstanceVersions(release string, instances []closure.InstanceReference, manifest *types.Manifest, manifestFile string, view InstanceVersionView) (InstanceVersions, error) {
 	var table InstanceVersions
 	for _, in := range instances {
 		if in.Feature {
@@ -120,7 +144,7 @@ func ResolveInstanceVersions(instances []closure.InstanceReference, manifest *ty
 
 	var refusals []error
 	for reference, declared := range table.Constraints.All() {
-		version, selected, err := selectComponentVersion(reference, declared, manifestFile, view)
+		version, selected, err := selectComponentVersion(release, reference, declared, view)
 		switch {
 		case err != nil:
 			refusals = append(refusals, err)
@@ -135,29 +159,45 @@ func ResolveInstanceVersions(instances []closure.InstanceReference, manifest *ty
 // instance, in the order a refusal names them: its type, the type-axis key that
 // reached it, and the reaching Recipe's spec.implements.
 func componentConstraints(in closure.InstanceReference, manifest *types.Manifest, manifestFile string, view InstanceVersionView) []VersionConstraint {
-	declared := []VersionConstraint{{Instance: in.Name, Kind: ConstraintType, Value: in.Reference, File: in.File}}
+	site := instanceSite(in.Path)
+	declared := []VersionConstraint{{Instance: in.Name, Site: site, Kind: ConstraintType, Value: in.Reference, File: in.File}}
 	match, mapped, err := componentMappingEntry(manifest, in.Name, in.Reference)
 	if err != nil || !mapped {
 		return declared
 	}
 	if match.byType {
 		declared = append(declared, VersionConstraint{
-			Instance: in.Name, Kind: ConstraintMappingKey, Value: match.typeKey, File: manifestFile,
+			Instance: in.Name, Site: site, Kind: ConstraintMappingKey, Value: match.typeKey, File: manifestFile,
 		})
 	}
 	if recipe, held := view.RecipeByURI(match.reference); held {
 		declared = append(declared, VersionConstraint{
-			Instance: in.Name, Kind: ConstraintImplements, Value: recipe.Spec.Implements, File: match.reference,
+			Instance: in.Name, Site: site, Kind: ConstraintImplements, Value: recipe.Spec.Implements, File: match.reference,
 		})
 	}
 	return declared
+}
+
+// instanceSite is the locator of an instance's declaration in its document, read
+// off the authoring site of its type as the closure walk records it: the walk
+// names the document the type is written in, then the path inside it to the
+// instance's key, then the key type — aggregate.spec.components.web.type for the
+// instance web of the Release's Aggregate — and the locator is that path inside
+// the document, .spec.components.web. A site recording no spec block yields no
+// locator.
+func instanceSite(path string) string {
+	start := strings.Index(path, ".spec.")
+	if start < 0 {
+		return ""
+	}
+	return strings.TrimSuffix(path[start:], ".type")
 }
 
 // selectComponentVersion selects the version of reference every constraint in
 // declared admits, among the versions the view holds under its name. It reports
 // the version and true on a selection, false with no error for a reference the
 // table leaves to its own resolution, and the refusal for one it refuses.
-func selectComponentVersion(reference string, declared []VersionConstraint, manifestFile string, view InstanceVersionView) (string, bool, error) {
+func selectComponentVersion(release, reference string, declared []VersionConstraint, view InstanceVersionView) (string, bool, error) {
 	base := types.ParseVersionPin(reference).Base()
 	held := view.ComponentVersions(base)
 	index := make(map[string]string, len(held))
@@ -174,7 +214,7 @@ func selectComponentVersion(reference string, declared []VersionConstraint, mani
 		if fault := malformedConstraintPin(declared, reference); fault != nil {
 			return "", false, fault
 		}
-		return "", false, conflictingVersionConstraints(declared, held, manifestFile)
+		return "", false, conflictingVersionConstraints(release, declared, held)
 	default:
 		return "", false, nil
 	}
@@ -232,17 +272,21 @@ func malformedConstraintPin(declared []VersionConstraint, reference string) erro
 // tells the author to do.
 const conflictingVersionAdvice = "change the Aggregate's version, or map this type at a version its recipe implements"
 
-// conflictingVersionConstraints is the refusal of a reference whose held versions
-// no version of satisfies every constraint in declared: each instance in turn,
-// with each of its constraints and the file it is written in, then the versions
-// held. It is positioned at the Manifest, whose mappings bring every constraint
-// beyond the type, and at the first instance.
-func conflictingVersionConstraints(declared []VersionConstraint, held []string, manifestFile string) error {
-	var detail []constraint.DetailValue
+// conflictingVersionConstraints is the refusal of a reference that no version the
+// catalog holds satisfies under every constraint in declared. It names the Release
+// the instances belong to, then each instance in turn — where it is declared, its
+// name, and each of its constraints with the file it is written in — then the
+// versions held, a version-less entry among them left unnamed because it has no
+// version to name. It is positioned where the first instance is declared: the
+// document its type is written in, at the instance's site, which is where the
+// remedy of changing the version is written.
+func conflictingVersionConstraints(release string, declared []VersionConstraint, held []string) error {
+	detail := []constraint.DetailValue{constraint.Captioned("Release", release)}
 	for _, c := range declared {
 		switch c.Kind {
 		case ConstraintType:
 			detail = append(detail,
+				constraint.Captioned("at", c.Site),
 				constraint.Captioned("instance", c.Instance),
 				constraint.Captioned("type", c.Value),
 				constraint.Captioned("written in", c.File))
@@ -256,19 +300,28 @@ func conflictingVersionConstraints(declared []VersionConstraint, held []string, 
 				constraint.Captioned("whose spec.implements is", c.Value))
 		}
 	}
-	detail = append(detail, constraint.Captioned("catalog holds", strings.Join(held, ", ")))
+	named := make([]string, 0, len(held))
+	for _, version := range held {
+		if version != "" {
+			named = append(named, version)
+		}
+	}
+	detail = append(detail, constraint.Captioned("catalog holds", strings.Join(named, ", ")))
 
 	condition := ErrConflictingVersionConstraints()
-	at := cerrors.SourceLocation{File: manifestFile}
+	var at cerrors.SourceLocation
 	if len(declared) > 0 {
-		at.Instance = declared[0].Instance
+		at = cerrors.SourceLocation{File: declared[0].File, Locator: declared[0].Site, Instance: declared[0].Instance}
 	}
 	return cerrors.Wrap(condition, cerrors.OpsError, at,
 		cerrors.ComposeMessage(condition, constraint.RenderDetail(detail...), conflictingVersionAdvice))
 }
 
-// inVersionOrder returns versions in semantic-version order, a version that is no
-// semantic version after every one that is, as the version select ranks them.
+// inVersionOrder returns versions in the order a reader is shown them: every
+// semantic version in ascending order, then every version that is no semantic
+// version, a version-less entry among them, in lexical order. Two spellings of
+// one semantic version, differing in build metadata only, keep lexical order
+// between them.
 func inVersionOrder(versions []string) []string {
 	candidates := make([]versionCandidate, 0, len(versions))
 	for _, v := range versions {
@@ -278,7 +331,19 @@ func inVersionOrder(versions []string) []string {
 		}
 		candidates = append(candidates, c)
 	}
-	sort.Slice(candidates, func(i, j int) bool { return higherCandidate(candidates[j], candidates[i]) })
+	sort.Slice(candidates, func(i, j int) bool {
+		a, b := candidates[i], candidates[j]
+		switch {
+		case a.parsed != nil && b.parsed == nil:
+			return true
+		case a.parsed == nil && b.parsed != nil:
+			return false
+		case a.parsed != nil && !a.parsed.Equal(b.parsed):
+			return a.parsed.LessThan(b.parsed)
+		default:
+			return a.raw < b.raw
+		}
+	})
 	out := make([]string, 0, len(candidates))
 	for _, c := range candidates {
 		out = append(out, c.raw)
@@ -287,7 +352,7 @@ func inVersionOrder(versions []string) []string {
 }
 
 // ComponentVersions returns the version of every Component named name this
-// catalog's own Component index holds, in semantic-version order.
+// catalog's own Component index holds, in the order inVersionOrder gives.
 func (c *Catalog) ComponentVersions(name string) []string {
 	var held []string
 	for _, comp := range c.Components {
@@ -299,9 +364,9 @@ func (c *Catalog) ComponentVersions(name string) []string {
 }
 
 // ComponentVersions returns the version of every Component named name this
-// view's catalog directories hold, in semantic-version order. A version only a
-// cache slot or a registry holds is not among them, and reading them asks no
-// registry.
+// view's catalog directories hold, in the order inVersionOrder gives. A version
+// only a cache slot or a registry holds is not among them, and reading them asks
+// no registry.
 func (l *LazyLookup) ComponentVersions(name string) []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()

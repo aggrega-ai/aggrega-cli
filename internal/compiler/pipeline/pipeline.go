@@ -12,6 +12,15 @@
 // RunPipeline performs no filesystem reads beyond the operations the
 // caller-supplied lookup callbacks perform. The Aggregate path on Inputs
 // is a source-location label only; it is not re-read.
+//
+// The catalog lookup an entry is handed is the one every reader of an
+// instance's Component or Feature reads through — its document, its effective
+// schema, and the type its mapped Recipe's implements is judged against — so the
+// version an instance compiles at is the version that lookup answers with. A
+// surface compiling a Release hands over the lookup scoped to the version every
+// constraint on each instance admits (catalog.ScopeToInstanceVersions, settled by
+// compilerops.ResolvedClosure.InstanceVersionLookup), and no stage here resolves
+// an instance's type on its own.
 package pipeline
 
 import (

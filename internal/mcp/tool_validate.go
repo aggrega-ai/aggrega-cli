@@ -377,6 +377,7 @@ func validateReleaseScope(
 		Release:                  resolved.Release,
 		ReleasePath:              releasePath,
 		Manifest:                 resolved.Manifest,
+		ManifestPath:             resolved.ManifestPath,
 		AggBytes:                 resolved.AggBytes,
 		Lockfile:                 lf,
 		ClosureLibrariesResolved: resolved.LibrariesResolved,

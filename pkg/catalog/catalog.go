@@ -2662,7 +2662,9 @@ func (c *Catalog) CatalogLookup() resolver.CatalogLookup {
 		Recipe:        c.RecipeByURI,
 		FeatureRecipe: c.FeatureRecipeByURI,
 		// The instance resolution resolves a bare type's pin candidates through this
-		// catalog's own Component index, the one Component above reads.
+		// catalog's own Component index, the one Component above reads; scoped to a
+		// Release's instance versions (ScopeToInstanceVersions), both are asked at
+		// the version each instance compiles at.
 		NodeRecipeResolution: func(manifest *types.Manifest, instanceName, componentType string) resolver.NodeRecipeResolution {
 			return c.nodeRecipeResolution(manifest, instanceName, componentType, c.componentOfType)
 		},

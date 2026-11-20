@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+# Places the module's server under the name the composition gives it, in the
+# one boundary the Release renders.
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: quickstart-site-local
+  environment: development
+  version: "1.0.0"
+spec:
+  aggregate: quickstart-site-host
+  manifest: quickstart-site-compose
+  boundaries:
+    local:
+      directory: ./dist/local
+      components:
+        site.web:
+          infra:
+            image: registry.example.invalid/quickstart-site:1.0.0
+            port: 8080

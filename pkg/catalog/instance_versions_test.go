@@ -24,9 +24,10 @@ import (
 // Every case runs over both catalog views a build reads: the eagerly-loaded
 // catalog and the lazy lookup over the same directory.
 
-// The two files the instances and the mapping are written in, as a caller that
-// loaded them names them.
+// The Release the instances belong to, and the two files the instances and the
+// mapping are written in, as a caller that loaded them names them.
 const (
+	instanceVersionsRelease       = "quickstart-web-local"
 	instanceVersionsAggregateFile = "aggregate.yaml"
 	instanceVersionsManifestFile  = "manifest.yaml"
 )
@@ -144,7 +145,7 @@ func runResolveCases(t *testing.T, dir string, cases []resolveCase) {
 	for _, v := range instanceVersionViews(t, dir) {
 		for _, tc := range cases {
 			t.Run(v.name+"/"+tc.name, func(t *testing.T) {
-				table, err := ResolveInstanceVersions(tc.instances, tc.manifest, instanceVersionsManifestFile, v.view)
+				table, err := ResolveInstanceVersions(instanceVersionsRelease, tc.instances, tc.manifest, instanceVersionsManifestFile, v.view)
 				if err != nil {
 					t.Fatalf("resolve: %v", err)
 				}
@@ -216,7 +217,9 @@ func TestInstanceVersionsNameEntryConstrainsByRecipe(t *testing.T) {
 // intersection: a type ^1.0.0, a key ^1.0.0 and a Recipe implementing ^1.1.0 admit
 // the versions in >=1.1.0 <2.0.0, and the highest of those is selected. A key
 // ^1.0.0 over a bare type, mapped to a Recipe implementing the type at any version,
-// keeps 2.0.0 out where the catalog holds it.
+// keeps 2.0.0 out where the catalog holds it. A bare key over a bare type, mapped
+// to a Recipe implementing ^1.0.0, leaves the Recipe's caret alone to keep 2.0.0
+// out, which is the row where the caret on the implements side decides.
 func TestInstanceVersionsCaretOnBothSides(t *testing.T) {
 	t.Parallel()
 	dir := instanceVersionsCatalog(t,
@@ -226,6 +229,8 @@ func TestInstanceVersionsCaretOnBothSides(t *testing.T) {
 			instanceVersionsRecipeYAML("server-caret", "1.0.0", "core/compute/server:^1.1.0")},
 		[2]string{"recipe/compose/server-any/1.0.0/recipe.yaml",
 			instanceVersionsRecipeYAML("server-any", "1.0.0", "core/compute/server")},
+		[2]string{"recipe/compose/server-major/1.0.0/recipe.yaml",
+			instanceVersionsRecipeYAML("server-major", "1.0.0", "core/compute/server:^1.0.0")},
 	)
 	runResolveCases(t, dir, []resolveCase{
 		{
@@ -241,6 +246,15 @@ func TestInstanceVersionsCaretOnBothSides(t *testing.T) {
 			name: "a caret key over a bare type",
 			manifest: instanceVersionsManifest([][2]string{
 				{"core/compute/server:^1.0.0", "compose/server-any:1.0.0"},
+			}, nil),
+			instances: []closure.InstanceReference{componentInstance("web", "core/compute/server")},
+			reference: "core/compute/server",
+			want:      "1.1.0",
+		},
+		{
+			name: "a bare key over a bare type, mapped to a Recipe implementing a caret range",
+			manifest: instanceVersionsManifest([][2]string{
+				{"core/compute/server", "compose/server-major:1.0.0"},
 			}, nil),
 			instances: []closure.InstanceReference{componentInstance("web", "core/compute/server")},
 			reference: "core/compute/server",
@@ -271,11 +285,12 @@ func TestInstanceVersionsExtendsThroughAncestry(t *testing.T) {
 }
 
 // TestInstanceVersionsConflictNamesEveryConstraint holds a reference no held
-// version satisfies under every constraint to the conflict, naming the instance,
-// each constraint with the file it is written in, and the versions held, in that
-// order: the type core/compute/server:1.0.0 in the Aggregate's file, the key
+// version satisfies under every constraint to the conflict, naming the Release,
+// where the instance is declared and its name, each constraint with the file it is
+// written in, and the versions held, in that order: the type
+// core/compute/server:1.0.0 in the Aggregate's file, the key
 // core/compute/server:1.1.0 in the Manifest's, and the Recipe the key maps to with
-// its spec.implements.
+// its spec.implements. The conflict is positioned where the instance is declared.
 func TestInstanceVersionsConflictNamesEveryConstraint(t *testing.T) {
 	t.Parallel()
 	manifest := instanceVersionsManifest([][2]string{
@@ -283,14 +298,15 @@ func TestInstanceVersionsConflictNamesEveryConstraint(t *testing.T) {
 	}, nil)
 	instances := []closure.InstanceReference{componentInstance("web", "core/compute/server:1.0.0")}
 	const want = `no version of a component or feature type satisfies every constraint declared on the instance ` +
-		`(instance "web", type "core/compute/server:1.0.0", written in "aggregate.yaml", ` +
+		`(Release "quickstart-web-local", at ".spec.components.web", ` +
+		`instance "web", type "core/compute/server:1.0.0", written in "aggregate.yaml", ` +
 		`Manifest mapping key "core/compute/server:1.1.0", written in "manifest.yaml", ` +
 		`mapped to recipe "compose/server:2.0.0", whose spec.implements is "core/compute/server:1.1.0", ` +
 		`catalog holds "1.0.0, 1.1.0"). change the Aggregate's version, or map this type at a version its recipe implements`
 
 	for _, v := range instanceVersionViews(t, instanceVersionsCatalog(t)) {
 		t.Run(v.name, func(t *testing.T) {
-			table, err := ResolveInstanceVersions(instances, manifest, instanceVersionsManifestFile, v.view)
+			table, err := ResolveInstanceVersions(instanceVersionsRelease, instances, manifest, instanceVersionsManifestFile, v.view)
 			if !errors.Is(err, ErrConflictingVersionConstraints()) {
 				t.Fatalf("err = %v; want the conflicting-version-constraints condition", err)
 			}
@@ -304,16 +320,18 @@ func TestInstanceVersionsConflictNamesEveryConstraint(t *testing.T) {
 			if raised.Category() != cerrors.OpsError {
 				t.Errorf("category = %q, want %q", raised.Category(), cerrors.OpsError)
 			}
-			if at := raised.Source(); at.File != "manifest.yaml" || at.Instance != "web" {
-				t.Errorf("positioned at %+v; want the Manifest's file and the instance web", at)
+			wantAt := cerrors.SourceLocation{File: "aggregate.yaml", Locator: ".spec.components.web", Instance: "web"}
+			if at := raised.Source(); at != wantAt {
+				t.Errorf("positioned at %+v; want where the instance is declared, %+v", at, wantAt)
 			}
 			if _, held := selectedVersion(table, "core/compute/server:1.0.0"); held {
 				t.Error("the table selected a version for the reference it refused")
 			}
+			const site = ".spec.components.web"
 			wantConstraints := []VersionConstraint{
-				{Instance: "web", Kind: ConstraintType, Value: "core/compute/server:1.0.0", File: "aggregate.yaml"},
-				{Instance: "web", Kind: ConstraintMappingKey, Value: "core/compute/server:1.1.0", File: "manifest.yaml"},
-				{Instance: "web", Kind: ConstraintImplements, Value: "core/compute/server:1.1.0", File: "compose/server:2.0.0"},
+				{Instance: "web", Site: site, Kind: ConstraintType, Value: "core/compute/server:1.0.0", File: "aggregate.yaml"},
+				{Instance: "web", Site: site, Kind: ConstraintMappingKey, Value: "core/compute/server:1.1.0", File: "manifest.yaml"},
+				{Instance: "web", Site: site, Kind: ConstraintImplements, Value: "core/compute/server:1.1.0", File: "compose/server:2.0.0"},
 			}
 			got, _ := table.Constraints.Get("core/compute/server:1.0.0")
 			if !slices.Equal(got, wantConstraints) {
@@ -339,7 +357,7 @@ func TestInstanceVersionsOneVersionPerReference(t *testing.T) {
 	}
 	for _, v := range instanceVersionViews(t, instanceVersionsCatalog(t)) {
 		t.Run(v.name, func(t *testing.T) {
-			_, err := ResolveInstanceVersions(instances, manifest, instanceVersionsManifestFile, v.view)
+			_, err := ResolveInstanceVersions(instanceVersionsRelease, instances, manifest, instanceVersionsManifestFile, v.view)
 			if !errors.Is(err, ErrConflictingVersionConstraints()) {
 				t.Fatalf("err = %v; want the conflicting-version-constraints condition", err)
 			}
@@ -372,7 +390,7 @@ func TestInstanceVersionsKeepsReferenceFormsApart(t *testing.T) {
 	}
 	for _, v := range instanceVersionViews(t, instanceVersionsCatalog(t)) {
 		t.Run(v.name, func(t *testing.T) {
-			table, err := ResolveInstanceVersions(instances, manifest, instanceVersionsManifestFile, v.view)
+			table, err := ResolveInstanceVersions(instanceVersionsRelease, instances, manifest, instanceVersionsManifestFile, v.view)
 			if err != nil {
 				t.Fatalf("resolve: %v", err)
 			}
@@ -398,7 +416,7 @@ func TestInstanceVersionsLeavesUnmappedInstanceToItsReference(t *testing.T) {
 	instances := []closure.InstanceReference{componentInstance("web", "core/compute/server")}
 	for _, v := range instanceVersionViews(t, instanceVersionsCatalog(t)) {
 		t.Run(v.name, func(t *testing.T) {
-			table, err := ResolveInstanceVersions(instances, manifest, instanceVersionsManifestFile, v.view)
+			table, err := ResolveInstanceVersions(instanceVersionsRelease, instances, manifest, instanceVersionsManifestFile, v.view)
 			if err != nil {
 				t.Fatalf("resolve: %v", err)
 			}
@@ -406,7 +424,10 @@ func TestInstanceVersionsLeavesUnmappedInstanceToItsReference(t *testing.T) {
 				t.Errorf("selected %q, want 1.1.0, the highest version held", got)
 			}
 			got, _ := table.Constraints.Get("core/compute/server")
-			want := []VersionConstraint{{Instance: "web", Kind: ConstraintType, Value: "core/compute/server", File: "aggregate.yaml"}}
+			want := []VersionConstraint{{
+				Instance: "web", Site: ".spec.components.web", Kind: ConstraintType,
+				Value: "core/compute/server", File: "aggregate.yaml",
+			}}
 			if !slices.Equal(got, want) {
 				t.Errorf("constraints = %+v, want the type alone %+v", got, want)
 			}
@@ -426,7 +447,7 @@ func TestInstanceVersionsMalformedImplementsIsNotAConflict(t *testing.T) {
 	instances := []closure.InstanceReference{componentInstance("web", "core/compute/server")}
 	for _, v := range instanceVersionViews(t, dir) {
 		t.Run(v.name, func(t *testing.T) {
-			_, err := ResolveInstanceVersions(instances, manifest, instanceVersionsManifestFile, v.view)
+			_, err := ResolveInstanceVersions(instanceVersionsRelease, instances, manifest, instanceVersionsManifestFile, v.view)
 			if !errors.Is(err, types.ErrMalformedVersionPin()) {
 				t.Fatalf("err = %v; want the malformed-pin condition", err)
 			}
@@ -437,6 +458,25 @@ func TestInstanceVersionsMalformedImplementsIsNotAConflict(t *testing.T) {
 				t.Errorf("the malformed pin does not name the Recipe declaring it: %v", err)
 			}
 		})
+	}
+}
+
+// TestInstanceVersionsConflictNamesEveryVersionHeld holds the versions a conflict
+// names to the order a reader is shown them — the semantic versions ascending,
+// then a version that is no semantic version — with an entry carrying no version
+// left unnamed rather than written as an empty name.
+func TestInstanceVersionsConflictNamesEveryVersionHeld(t *testing.T) {
+	t.Parallel()
+	if got, want := inVersionOrder([]string{"1.10.0", "", "latest", "1.2.0"}), []string{"1.2.0", "1.10.0", "", "latest"}; !slices.Equal(got, want) {
+		t.Errorf("inVersionOrder = %q, want %q", got, want)
+	}
+	declared := []VersionConstraint{{
+		Instance: "web", Site: ".spec.components.web", Kind: ConstraintType,
+		Value: "core/compute/server:1.0.0", File: instanceVersionsAggregateFile,
+	}}
+	err := conflictingVersionConstraints(instanceVersionsRelease, declared, inVersionOrder([]string{"1.10.0", "", "latest", "1.2.0"}))
+	if !strings.Contains(err.Error(), `catalog holds "1.2.0, 1.10.0, latest")`) {
+		t.Errorf("the conflict does not name the versions held in order, without an empty one:\n%v", err)
 	}
 }
 

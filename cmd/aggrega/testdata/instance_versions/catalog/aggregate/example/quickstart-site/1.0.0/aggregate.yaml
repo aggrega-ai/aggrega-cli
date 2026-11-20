@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+# A module declaring one server, written with no version, for an Aggregate that
+# includes it. The server is the only instance of its type in that Aggregate's
+# Release, so the version it compiles at is decided by what the Release's
+# Manifest declares about this module's own instance.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: example/quickstart-site
+  version: "1.0.0"
+  description: >
+    The web application of the quickstart, packaged as a module another
+    Aggregate includes.
+spec:
+  components:
+    web:
+      type: core/compute/server

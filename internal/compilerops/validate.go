@@ -114,13 +114,18 @@ func ResolveValidationClosure(ctx context.Context, in ValidationClosureInputs) (
 // modules again is what keeps a module's references resolved by one rule and
 // refused in one wording on every surface.
 //
-// It descends over a copy of the entity set, and the copy is discarded. What
-// follows covers the closure the walk computed — the closure-scoped checks, the
-// pins, the listing — and widening that closure to the modules' entities would
-// change what each of them reports for every Release that imports a module; this
-// resolves what the modules reference and reports what does not resolve, and
-// changes nothing else. Each entity's referencing sites are copied with it,
-// because the descent merges into and sorts that list in place.
+// It descends over a copy of the entity set, and the copy's entities are
+// discarded. What follows covers the closure the walk computed — the
+// closure-scoped checks, the pins, the listing — and widening that closure to the
+// modules' entities would change what each of them reports for every Release that
+// imports a module; this resolves what the modules reference and reports what
+// does not resolve. Each entity's referencing sites are copied with it, because
+// the descent merges into and sorts that list in place.
+//
+// The instances the descent reads in the modules are kept: they are added to the
+// closure's instances, which no check over the entity set reads, so the version
+// each module instance compiles at is settled with every other instance's
+// (ResolvedClosure.InstanceVersionLookup).
 func ResolveModuleReferences(ctx context.Context, resolved *ResolvedClosure) *ClosureError {
 	if err := resolveModuleReferences(ctx, resolved); err != nil {
 		return &ClosureError{Stage: ClosureStageComputeClosure, msg: err.Error(), err: err}
@@ -135,12 +140,26 @@ func resolveModuleReferences(ctx context.Context, resolved *ResolvedClosure) err
 	if err != nil {
 		return err
 	}
-	probe := closure.Closure{Entities: make([]closure.ResolvedRef, len(resolved.Closure.Entities))}
+	// The copy keeps what the walk recorded of the modules the Aggregate includes,
+	// which the descent names the modules' instances by. It holds no plugin and no
+	// library axis, because the descent re-sorts those in place and they would be
+	// the resolution's own.
+	probe := resolved.Closure
+	probe.Entities = make([]closure.ResolvedRef, len(resolved.Closure.Entities))
 	for i, e := range resolved.Closure.Entities {
 		e.ReferencedFrom = slices.Clone(e.ReferencedFrom)
 		probe.Entities[i] = e
 	}
-	return closure.DescendPinnedAxes(ctx, &probe, loader, nil, resolved.Lookup, nil, nil, nil, nil, nil)
+	probe.Instances = slices.Clone(resolved.Closure.Instances)
+	probe.Plugins = nil
+	for _, axis := range closure.LibraryAxes() {
+		axis.SetLibraries(&probe, nil)
+	}
+	if err := closure.DescendPinnedAxes(ctx, &probe, loader, nil, resolved.Lookup, nil, nil, nil, nil, nil); err != nil {
+		return err
+	}
+	resolved.Closure.Instances = probe.Instances
+	return nil
 }
 
 // ValidateInputs carries the explicit state Validate needs. View is the
@@ -183,6 +202,10 @@ type ValidateInputs struct {
 	// on every other surface that runs the pipeline over the same documents.
 	ReleasePath string
 	AggBytes    []byte
+	// ManifestPath is the file of the Manifest the Release resolves to
+	// (ResolvedClosure.ManifestPath). A conflict between the versions an instance's
+	// constraints admit names it as the file a mapping key is written in.
+	ManifestPath string
 	// Lockfile is the record of what this Release resolved to, and supplying it is
 	// what makes a validation run the pipeline on the same footing a build does. It
 	// does two things at once, because both have one cause — the pipeline reads the
@@ -342,6 +365,15 @@ type ValidateResult struct {
 // that those scopes have nothing at stake rather than that they merely cannot
 // locate a record.
 //
+// # Each instance's version is settled before the pipeline runs
+//
+// The pipeline reads every instance's Component at the version the instance
+// compiles at, settled by the one settlement a build of the same Release reads
+// (ResolvedClosure.InstanceVersionLookup). Where an instance's constraints admit
+// no version the catalog holds, the conflict is RunErr and the pipeline is not
+// run, so Tier4 is nil; the input-kind check and the advisory lines are still
+// computed.
+//
 // Cancellation (the caller's shutdown drain) surfaces as a context error in
 // RunErr; no findings are computed on a cancelled run — resolution-completeness,
 // input-kind capability, and the advisory lines all stay empty.
@@ -402,13 +434,23 @@ func Validate(ctx context.Context, in ValidateInputs) *ValidateResult {
 		return r
 	}
 
-	tier4, runErr := pipeline.RunTier4Pipeline(
-		ctx,
-		inputs,
-		in.View.AsCatalogLookupWithSchemas(ctx, libraries.Schemas),
-		in.View.RecipeLookupWithManifest(in.Manifest),
-		in.View.SubAggregateLoader(),
-	)
+	// Every instance is compiled at the version its constraints admit, through the
+	// one settlement a build of the same Release reads too. A conflict between them
+	// is the run error, and the pipeline is not run: compiling the instance at a
+	// version one of its constraints refuses would report, beside the conflict,
+	// the findings that version earns.
+	catalogLookup, runErr := instanceVersionLookup(in.View.AsCatalogLookupWithSchemas(ctx, libraries.Schemas),
+		in.View, in.Release, in.Manifest, in.ManifestPath, in.Closure)
+	var tier4 *pipeline.Tier4Result
+	if runErr == nil {
+		tier4, runErr = pipeline.RunTier4Pipeline(
+			ctx,
+			inputs,
+			catalogLookup,
+			in.View.RecipeLookupWithManifest(in.Manifest),
+			in.View.SubAggregateLoader(),
+		)
+	}
 	r.Tier4 = tier4
 	r.RunErr = runErr
 

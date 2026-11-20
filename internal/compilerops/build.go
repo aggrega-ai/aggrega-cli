@@ -83,7 +83,10 @@ type BuildInputs struct {
 // The three lookups the pipeline needs — the Component/Feature catalog lookup,
 // the Manifest-aware recipe lookup, and the sub-aggregate loader — all come
 // from the request view, so no eager whole-catalog load is required and a
-// broken out-of-closure entity never fails the build.
+// broken out-of-closure entity never fails the build. The catalog lookup is
+// scoped to the version each instance compiles at
+// (ResolvedClosure.InstanceVersionLookup), and an instance whose constraints
+// admit no version halts the build before the pipeline runs.
 func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (pipeline.Outcome, error) {
 	view := in.View
 	r := in.Resolved
@@ -156,6 +159,15 @@ func BuildToBuffer(ctx context.Context, in BuildInputs, opts pipeline.Options) (
 	if err := applyGovernanceComposition(&inputs, view, in.ReleasePath, in.composedTrust); err != nil {
 		// A composition failure happens before the pipeline runs, so there is no
 		// run to report findings from and the zero outcome is the truthful answer.
+		return pipeline.Outcome{}, err
+	}
+
+	// Every instance is compiled at the version its constraints admit, through the
+	// one settlement a validation of the same Release reads too. A conflict between
+	// them halts here, before the pipeline runs, for the reason a composition
+	// failure does.
+	catLookup, err := r.InstanceVersionLookup(catLookup, view)
+	if err != nil {
 		return pipeline.Outcome{}, err
 	}
 
