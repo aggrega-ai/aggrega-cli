@@ -24,14 +24,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline"
 	"github.com/aggrega-ai/aggrega-cli/internal/compilerops"
 	"github.com/aggrega-ai/aggrega-cli/internal/mcp"
 	"github.com/aggrega-ai/aggrega-cli/internal/serve"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/workspaceconfig"
 )
@@ -452,4 +455,221 @@ func validateOverTheAssistantWire(t *testing.T, root string) assistantValidateRe
 		t.Fatalf("decode the structured payload: %v\npayload: %s", err, envelope.Result.StructuredContent)
 	}
 	return payload
+}
+
+// TestAttachmentSlotsReadTheCompiledVersion holds the answer to which attachment
+// slots a connection carries to the Component the connection's node was compiled
+// from. The gateway names its type with no version and its Manifest maps it to a
+// Recipe written for 1.0.0, so it compiles at 1.0.0, whose models socket declares
+// a slot named credential; the catalog also holds 1.1.0, whose socket declares a
+// slot named token. The daemon and the assistant tool, which share the answer,
+// each name credential.
+func TestAttachmentSlotsReadTheCompiledVersion(t *testing.T) {
+	root := instanceVersionsWorkspace(t, "gateway-slots")
+
+	resolved, vr := instanceVersionsCoreValidate(t, root)
+	if findings := coreFindings(resolved, vr); len(findings) > 0 {
+		t.Fatalf("the Release does not validate:\n%v", errors.Join(findings...))
+	}
+	if node, ok := vr.Tier4.IRGraph.Spec.Nodes.Get("gateway"); !ok || node.ResolvedVersion != "1.0.0" {
+		t.Fatalf("the gateway compiled at %q; the case needs it compiled at 1.0.0", node.ResolvedVersion)
+	}
+
+	// The daemon draws a graph only for a Release carrying a lockfile. Nothing in
+	// it pins a version the answer reads: every entity resolves from the catalog
+	// directory.
+	releasePath := filepath.Join(root, "release.yaml")
+	if err := lockfile.WriteLockfile(lockfile.PathFor(releasePath), &lockfile.Lockfile{
+		Version: 1, Release: "release.yaml", GeneratedAt: "2026-11-20T10:00:00Z",
+	}); err != nil {
+		t.Fatalf("write the lockfile: %v", err)
+	}
+	connection := map[string]string{"socket": "models", "alias": "gpt"}
+	want := []string{"credential"}
+
+	t.Run("the daemon", func(t *testing.T) {
+		if got := attachmentSlotsOverTheDaemonWire(t, root, connection); !slices.Equal(got, want) {
+			t.Errorf("the daemon answers the slots %q, want %q", got, want)
+		}
+	})
+	t.Run("the assistant tool", func(t *testing.T) {
+		if got := attachmentSlotsOverTheAssistantWire(t, root, connection); !slices.Equal(got, want) {
+			t.Errorf("the assistant tool answers the slots %q, want %q", got, want)
+		}
+	})
+}
+
+// TestMappingTheEntryRuleRefusesIsReportedOnce holds a Manifest entry whose key
+// and Recipe disagree with each other to the one report the rule over the
+// mapping entry makes: the quickstart's server, written with no version, is
+// mapped by the key core/compute/server:1.1.0 to the Recipe implementing 1.0.0.
+// The entry is the fault, so the validation reports the mapping-consistency
+// mismatch alone, never a conflict between the instance's constraints beside it,
+// and the build of the same documents halts on the same one condition.
+func TestMappingTheEntryRuleRefusesIsReportedOnce(t *testing.T) {
+	t.Parallel()
+	root := instanceVersionsWorkspace(t, "quickstart-web")
+	replaceInFixture(t, filepath.Join(root, "manifest.yaml"),
+		"core/compute/server:1.0.0: compose/server:1.0.0", "core/compute/server:1.1.0: compose/server:1.0.0")
+
+	resolved, vr := instanceVersionsCoreValidate(t, root)
+	findings := coreFindings(resolved, vr)
+	if len(findings) != 1 || !errors.Is(findings[0], resolver.ErrManifestImplementsMismatch()) {
+		t.Fatalf("the validation reports %d finding(s); want the mapping-consistency mismatch alone:\n%v",
+			len(findings), errors.Join(findings...))
+	}
+
+	verdict, diag := validateReleaseAt(t, root)
+	if verdict == nil {
+		t.Fatalf("aggrega validate --release accepted the Release\n%s", diag)
+	}
+	mismatch := shortCodeOf(t, resolver.ErrManifestImplementsMismatch())
+	if n := strings.Count(diag, mismatch); n != 1 {
+		t.Errorf("the command's diagnostics carry %s %d times, want once:\n%s", mismatch, n, diag)
+	}
+	if conflict := shortCodeOf(t, catalog.ErrConflictingVersionConstraints()); strings.Contains(diag, conflict) {
+		t.Errorf("the command's diagnostics carry %s beside the mismatch:\n%s", conflict, diag)
+	}
+
+	buildErr := instanceVersionsBuild(t, root)
+	if !errors.Is(buildErr, resolver.ErrManifestImplementsMismatch()) || errors.Is(buildErr, catalog.ErrConflictingVersionConstraints()) {
+		t.Errorf("the build halts with %v; want the mapping-consistency mismatch alone", buildErr)
+	}
+}
+
+// instanceVersionsBuild runs the build's own computation over the Release at
+// root — the preview every surface that emits an artifact runs, with every gate
+// on — with no lockfile, and returns its refusal.
+func instanceVersionsBuild(t *testing.T, root string) error {
+	t.Helper()
+	rw, err := workspaceconfig.Resolve(root, root)
+	if err != nil {
+		t.Fatalf("resolve the workspace: %v", err)
+	}
+	releasePath := filepath.Join(root, "release.yaml")
+	dirs, err := rw.ResolveCatalogDirs(releasePath, nil)
+	if err != nil {
+		t.Fatalf("resolve the catalog directories: %v", err)
+	}
+	view := catalog.NewLazyLookup(rw.Root(), rw.Config().ResolvedArtifactCacheDir(), dirs, nil)
+	_, err = compilerops.PreviewForArtifact(context.Background(),
+		compilerops.NewPreviewInputs(compilerops.NoExternalInputs(), view, releasePath, rw.Root(), rw.Config(),
+			provenanceCompilerVersion()),
+		pipeline.Options{SkipRender: true})
+	return err
+}
+
+// attachmentSlotsReply is the part of an attach-candidates answer naming the
+// slots a connection carries, decoded by field name from either surface's wire.
+type attachmentSlotsReply struct {
+	Slots []struct {
+		Slot string `json:"slot"`
+	} `json:"slots"`
+}
+
+// names returns the slot names the reply carries, in its order.
+func (r attachmentSlotsReply) names() []string {
+	out := make([]string, 0, len(r.Slots))
+	for _, s := range r.Slots {
+		out = append(out, s.Slot)
+	}
+	return out
+}
+
+// attachmentSlotsOverTheDaemonWire asks the daemon over the workspace at root,
+// through its own framing, which slots the gateway's connection carries.
+func attachmentSlotsOverTheDaemonWire(t *testing.T, root string, connection map[string]string) []string {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "aggrega/attachCandidates",
+		"params": map[string]any{
+			"workspaceRoot": root,
+			"graphNode":     "gateway",
+			"release":       "release.yaml",
+			"connection":    connection,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal the request: %v", err)
+	}
+	var stdin bytes.Buffer
+	fmt.Fprintf(&stdin, "Content-Length: %d\r\n\r\n", len(body))
+	stdin.Write(body)
+	var stdout, stderr bytes.Buffer
+	if rerr := serve.Run(context.Background(), serve.RunConfig{
+		Stdin:           &stdin,
+		Stdout:          &stdout,
+		Stderr:          &stderr,
+		WorkspaceRoot:   root,
+		CompilerVersion: provenanceCompilerVersion(),
+	}); rerr != nil {
+		t.Fatalf("the daemon exited with an error: %v\nstderr: %s", rerr, stderr.String())
+	}
+	reply := answerFrame(t, stdout.Bytes())
+	if raw, refused := reply["error"]; refused {
+		t.Fatalf("aggrega/attachCandidates refused the request: %s\nstderr: %s", raw, stderr.String())
+	}
+	var result attachmentSlotsReply
+	if err := json.Unmarshal(reply["result"], &result); err != nil {
+		t.Fatalf("decode the result: %v\nresult: %s", err, reply["result"])
+	}
+	return result.names()
+}
+
+// attachmentSlotsOverTheAssistantWire calls the assistant's attach-candidates
+// tool over the workspace at root, through its own message loop, for the slots
+// the gateway's connection carries.
+func attachmentSlotsOverTheAssistantWire(t *testing.T, root string, connection map[string]string) []string {
+	t.Helper()
+	t.Chdir(root)
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name": "attach-candidates",
+			"arguments": map[string]any{
+				"release": "release.yaml", "graph_node": "gateway", "connection": connection, "workspace_root": root,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal the request: %v", err)
+	}
+	var stdin bytes.Buffer
+	stdin.Write(body)
+	stdin.WriteByte('\n')
+	var stdout, stderr bytes.Buffer
+	if rerr := mcp.Run(context.Background(), mcp.Config{
+		Stdin:         &stdin,
+		Stdout:        &stdout,
+		Stderr:        &stderr,
+		ServerVersion: provenanceCompilerVersion(),
+	}); rerr != nil {
+		t.Fatalf("the session exited with an error: %v\nstderr: %s", rerr, stderr.String())
+	}
+	var envelope struct {
+		Result *struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			StructuredContent json.RawMessage `json:"structuredContent"`
+			IsError           bool            `json:"isError"`
+		} `json:"result"`
+		Error json.RawMessage `json:"error"`
+	}
+	line := bytes.TrimSpace(stdout.Bytes())
+	if err := json.Unmarshal(line, &envelope); err != nil {
+		t.Fatalf("decode the reply: %v\nreply: %s", err, line)
+	}
+	if envelope.Error != nil || envelope.Result == nil || envelope.Result.IsError {
+		t.Fatalf("the attach-candidates tool was refused: %s\nstderr: %s", line, stderr.String())
+	}
+	var payload attachmentSlotsReply
+	if err := json.Unmarshal(envelope.Result.StructuredContent, &payload); err != nil {
+		t.Fatalf("decode the structured payload: %v\npayload: %s", err, envelope.Result.StructuredContent)
+	}
+	return payload.names()
 }

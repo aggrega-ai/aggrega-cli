@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+# A gateway reaching models through one socket. At this version the socket's one
+# slot is named token, so an answer read at this version names another slot than
+# one read at 1.0.0.
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: example/gateway
+  version: "1.1.0"
+  labels:
+    component.aggrega.ai/type: server
+spec:
+  usesSchema:
+    models:
+      selector: "component.aggrega.ai/category=model"
+      featuresSchema:
+        token:
+          description: The attachment a connection to a model carries.
+  schema:
+    provides:
+      host: { type: string, required: true }

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+# The Compose realization of example/gateway:1.0.0, written for that version alone.
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: gateway
+  version: "1.0.0"
+spec:
+  capability: compose
+  implements: example/gateway:1.0.0
+  provides:
+    host: "{{ .context.instance_id }}"
+  workload: |
+    apiVersion: aggrega.ai/v1beta1
+    kind: Workload
+    containers:
+      main:
+        image: registry.example.invalid/gateway:1.0.0

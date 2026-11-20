@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+# Places both components.
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: gateway-slots-local
+  environment: development
+  version: "1.0.0"
+spec:
+  aggregate: gateway-slots
+  manifest: gateway-slots-compose
+  components:
+    gateway: {}
+    model: {}

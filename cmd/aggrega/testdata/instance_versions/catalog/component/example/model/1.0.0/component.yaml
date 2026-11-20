@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+# A model a gateway's socket selects by its category.
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: example/model
+  version: "1.0.0"
+  labels:
+    component.aggrega.ai/type: server
+    component.aggrega.ai/category: model
+spec:
+  schema:
+    provides:
+      host: { type: string, required: true }

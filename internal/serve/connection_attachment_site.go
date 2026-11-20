@@ -326,7 +326,15 @@ func attachCandidatesForConnectionIn(ctx context.Context, root string, cfg works
 	if view == nil {
 		return AttachCandidatesResult{}, ConnectionRefusedSlotsUnknown
 	}
-	slots, known := resolver.SocketAttachmentSlots(view.AsCatalogLookup(), irNode.Component, edge.Socket)
+	// The slots are those of the Component the node compiled from: its type at the
+	// version the graph records for it, which the type as written does not name
+	// where it names no version or a range. A node no Component was found for
+	// records no version and is asked as written.
+	compiledAs := irNode.Component
+	if irNode.ResolvedVersion != "" {
+		compiledAs = catalog.ReferenceAt(irNode.Component, irNode.ResolvedVersion)
+	}
+	slots, known := resolver.SocketAttachmentSlots(view.AsCatalogLookup(), compiledAs, edge.Socket)
 	if !known {
 		return AttachCandidatesResult{}, ConnectionRefusedSlotsUnknown
 	}

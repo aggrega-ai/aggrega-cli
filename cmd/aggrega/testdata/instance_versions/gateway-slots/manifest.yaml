@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+# Keys naming no version, each mapped to a Recipe written for 1.0.0, so the
+# gateway compiles at 1.0.0 although the catalog holds 1.1.0.
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: gateway-slots-compose
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      type:
+        example/gateway: compose/gateway:1.0.0
+        example/model: compose/model:1.0.0

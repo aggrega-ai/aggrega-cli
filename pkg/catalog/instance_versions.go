@@ -60,16 +60,24 @@ type InstanceVersions struct {
 	Constraints types.OrderedMap[[]VersionConstraint]
 }
 
-// at returns reference at the version the table resolves it to, written as an
-// exact reference to that version, and whether the table holds reference at all.
-// A row whose selected entry carries no version is read at the reference's base,
-// as no exact reference can name it.
+// at returns reference at the version the table resolves it to (ReferenceAt),
+// and whether the table holds reference at all.
 func (t InstanceVersions) at(reference string) (string, bool) {
 	version, held := t.Selected.Get(reference)
 	if !held {
 		return "", false
 	}
-	return versionedSlotURI(types.ParseVersionPin(reference).Base(), version), true
+	return ReferenceAt(reference, version), true
+}
+
+// ReferenceAt returns a type reference as an exact reference to version: the
+// reference's base, whatever version or range it is written with, then version.
+// It is how an instance's type is named at the version the instance compiled at,
+// the version an IR node records as its resolved version, so every reader asking
+// for that instance's Component asks the same reference. An empty version, an
+// entry carrying none, yields the base alone, as no exact reference can name it.
+func ReferenceAt(reference, version string) string {
+	return versionedSlotURI(types.ParseVersionPin(reference).Base(), version)
 }
 
 // InstanceVersionView is what the instance-version table reads of a catalog: the
@@ -119,6 +127,13 @@ type InstanceVersionView interface {
 // declared. Where a mapping key or a spec.implements carries a malformed pin,
 // that pin admits no version, so the refusal is the malformed-pin condition
 // naming where the pin is written instead.
+//
+// A type-axis entry whose Recipe's spec.implements does not accept the entry's
+// own key — judged as the rule over the mapping entry judges it, through
+// resolver.ManifestMappingAccepts — adds neither its key nor its implements: the
+// entry disagrees with itself, that rule reports it once as the mapping fault it
+// is, and the instance resolves as its other constraints admit. A malformed pin
+// on such an entry is that rule's to report too.
 // Every refused reference is reported, and the table holds the others.
 //
 // A reference the table cannot judge is left out of Selected and resolves as it
@@ -165,12 +180,21 @@ func componentConstraints(in closure.InstanceReference, manifest *types.Manifest
 	if err != nil || !mapped {
 		return declared
 	}
+	recipe, held := view.RecipeByURI(match.reference)
+	// A type-axis entry whose Recipe the rule over the mapping entry refuses for
+	// the entry's own key is that rule's to report, once: the key and the Recipe
+	// disagree with each other whatever the instance writes, so the entry is the
+	// fault and it holds the instance to nothing. The judgement is the rule's own,
+	// asked as the rule asks it, with the key standing as the request.
+	if held && match.byType && !resolver.ManifestMappingAccepts(recipe.Spec.Implements, match.typeKey, false, view.ComponentAncestry) {
+		return declared
+	}
 	if match.byType {
 		declared = append(declared, VersionConstraint{
 			Instance: in.Name, Site: site, Kind: ConstraintMappingKey, Value: match.typeKey, File: manifestFile,
 		})
 	}
-	if recipe, held := view.RecipeByURI(match.reference); held {
+	if held {
 		declared = append(declared, VersionConstraint{
 			Instance: in.Name, Site: site, Kind: ConstraintImplements, Value: recipe.Spec.Implements, File: match.reference,
 		})

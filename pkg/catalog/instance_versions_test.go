@@ -435,6 +435,37 @@ func TestInstanceVersionsLeavesUnmappedInstanceToItsReference(t *testing.T) {
 	}
 }
 
+// TestInstanceVersionsLeavesASelfContradictingEntryToItsRule holds a type-axis
+// entry whose key and Recipe disagree with each other — the key
+// core/compute/server:1.1.0 maps to the Recipe implementing 1.0.0 — to holding the
+// instance to nothing: the rule over the mapping entry reports that entry, so the
+// table neither refuses the reference nor reads the entry's key or implements,
+// and the bare type resolves as its reference does, to 1.1.0.
+func TestInstanceVersionsLeavesASelfContradictingEntryToItsRule(t *testing.T) {
+	t.Parallel()
+	manifest := instanceVersionsManifest([][2]string{{"core/compute/server:1.1.0", "compose/server:1.0.0"}}, nil)
+	instances := []closure.InstanceReference{componentInstance("web", "core/compute/server")}
+	for _, v := range instanceVersionViews(t, instanceVersionsCatalog(t)) {
+		t.Run(v.name, func(t *testing.T) {
+			table, err := ResolveInstanceVersions(instanceVersionsRelease, instances, manifest, instanceVersionsManifestFile, v.view)
+			if err != nil {
+				t.Fatalf("the table refuses an entry the rule over it reports: %v", err)
+			}
+			if got, _ := selectedVersion(table, "core/compute/server"); got != "1.1.0" {
+				t.Errorf("selected %q, want 1.1.0, the version the reference alone selects", got)
+			}
+			got, _ := table.Constraints.Get("core/compute/server")
+			want := []VersionConstraint{{
+				Instance: "web", Site: ".spec.components.web", Kind: ConstraintType,
+				Value: "core/compute/server", File: "aggregate.yaml",
+			}}
+			if !slices.Equal(got, want) {
+				t.Errorf("constraints = %+v, want the type alone %+v", got, want)
+			}
+		})
+	}
+}
+
 // TestInstanceVersionsMalformedImplementsIsNotAConflict holds a mapped Recipe whose
 // spec.implements carries a malformed pin to the malformed-pin condition: a pin
 // naming no version admits none, and reporting that as a conflict would send the

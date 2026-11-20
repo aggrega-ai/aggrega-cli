@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Cognitio s.r.l.
+
+# A gateway named with no version, connected to a model through its models socket.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: gateway-slots
+  version: "1.0.0"
+spec:
+  components:
+    gateway:
+      type: example/gateway
+      uses:
+        models:
+          gpt:
+            target: model
+    model:
+      type: example/model
