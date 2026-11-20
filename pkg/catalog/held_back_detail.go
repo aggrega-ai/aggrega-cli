@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -51,13 +52,7 @@ func WithHeldBackDetail(scoped, unscoped resolver.CatalogLookup, table InstanceV
 			detail := []constraint.HeldBackNote{
 				note("declared by", reference),
 				note("held at", selected)}
-			for _, c := range excluding {
-				if c.Kind == ConstraintType {
-					detail = append(detail, note("type", c.Value), note("written in", c.File))
-					continue
-				}
-				detail = append(detail, mappingConstraintNotes(componentTier, c)...)
-			}
+			detail = append(detail, HeldReference{Kind: closure.KindComponent, Holding: excluding}.Notes()...)
 			return detail
 		}
 		return nil
@@ -87,4 +82,66 @@ func excludingConstraints(tier versionTier, base, version string, declared []Ver
 		}
 	}
 	return excluding
+}
+
+// HeldReference is a reference the table selects below the newest version held,
+// and what holds it there: Kind is the closure kind of the entity, Reference the
+// reference as written, Selected the version the instances compile at, Newest the
+// highest version the reference as written admits among the versions the
+// selection was made over, and Holding the constraints that do not admit Newest,
+// each once, in the order the instances declare them.
+type HeldReference struct {
+	Kind      string
+	Reference string
+	Selected  string
+	Newest    string
+	Holding   []VersionConstraint
+}
+
+// HeldBelowNewest returns, in the table's visit order — the component references
+// then the feature references — each reference selected below its newest held
+// version, with the constraints that exclude that version. A reference selected at
+// its newest yields none. view is the view the table was resolved over, which the
+// judgement of a Recipe's spec.implements reads.
+func (t InstanceVersions) HeldBelowNewest(view InstanceVersionView) []HeldReference {
+	var held []HeldReference
+	for _, tier := range []versionTier{componentTier, featureTier} {
+		selected, newest, constraints := t.Selected, t.Newest, t.Constraints
+		if tier.feature {
+			selected, newest, constraints = t.FeatureSelected, t.FeatureNewest, t.FeatureConstraints
+		}
+		for reference, version := range selected.All() {
+			highest, _ := newest.Get(reference)
+			if highest == "" || highest == version {
+				continue
+			}
+			declared, _ := constraints.Get(reference)
+			base := types.ParseVersionPin(reference).Base()
+			held = append(held, HeldReference{
+				Kind: tier.kind(), Reference: reference, Selected: version, Newest: highest,
+				Holding: excludingConstraints(tier, base, highest, declared, view),
+			})
+		}
+	}
+	return held
+}
+
+// Notes returns the captioned values naming the constraints that hold the
+// reference, each constraint as the held-back detail of a validation names it:
+// the type as written with the file it is written in, the Manifest key with its
+// file, or the Recipe the mapping names with the type it implements.
+func (h HeldReference) Notes() []constraint.HeldBackNote {
+	tier := componentTier
+	if h.Kind == closure.KindFeature {
+		tier = featureTier
+	}
+	var notes []constraint.HeldBackNote
+	for _, c := range h.Holding {
+		if c.Kind == ConstraintType {
+			notes = append(notes, note("type", c.Value), note("written in", c.File))
+			continue
+		}
+		notes = append(notes, mappingConstraintNotes(tier, c)...)
+	}
+	return notes
 }

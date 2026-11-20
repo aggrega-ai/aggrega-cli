@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/closure"
 	"github.com/aggrega-ai/aggrega-cli/pkg/lockfile"
 )
@@ -98,6 +99,25 @@ func printPullDetail(out io.Writer, cl closure.Closure) {
 		}
 	}
 	tw.Flush()
+	_, _ = out.Write(report.Bytes())
+}
+
+// printHeldBelowNewest renders, for `aggrega pull --detail`, one line per
+// reference the pull settled below the newest version held: the reference, the
+// version it is selected at, the newest version held, and the constraints that do
+// not admit the newest, each as the validation detail for a held-back property
+// names it. The rows arrive in the settlement's visit order and are printed in it.
+// Like the rest of the report it is composed whole and written once.
+func printHeldBelowNewest(out io.Writer, held []catalog.HeldReference) {
+	var report bytes.Buffer
+	for _, h := range held {
+		var holding []string
+		for _, n := range h.Notes() {
+			holding = append(holding, n.Caption+" "+n.Value)
+		}
+		fmt.Fprintf(&report, "  %s %s is selected at %s, below %s, the newest held: held by %s\n",
+			closure.DocumentKind(h.Kind), h.Reference, h.Selected, h.Newest, strings.Join(holding, ", "))
+	}
 	_, _ = out.Write(report.Bytes())
 }
 

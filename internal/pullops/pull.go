@@ -84,6 +84,13 @@ type Reporter struct {
 	// and the in-memory resolution tier it reports on is not persisted in the
 	// lockfile — so a caller that wants it has to be handed it here.
 	Resolved func(cl closure.Closure)
+
+	// Held is handed each reference the run selected below the newest version
+	// held, with the constraints that hold it, in the table's visit order, once the
+	// run has settled the versions the graph is drawn at. It is not called where no
+	// reference is held below its newest. It reads the table the run settled, so it
+	// states what the lockfile records.
+	Held func(held []catalog.HeldReference)
 }
 
 func (r Reporter) phase(p Phase) {
@@ -1150,16 +1157,21 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if pinReuse.Verification != nil {
 		priorPins = pinReuse.Verification.PriorPins
 	}
-	pullLookup, err := (&compilerops.ResolvedClosure{
+	versionView := lazyView.ResolutionVersions(ctx, priorPins, catalog.RelativeToWorkspace(workspaceRoot, lockfilePath),
+		catalog.RelativeToWorkspace(workspaceRoot, cfg.ReleasePath))
+	pullLookup, versionTable, err := (&compilerops.ResolvedClosure{
 		Release:      rel,
 		Manifest:     manifest,
 		ManifestPath: catalog.RelativeToWorkspace(workspaceRoot, manRes.Path),
 		Closure:      cl,
-	}).InstanceVersionLookup(lazyView.AsCatalogLookupWithSchemas(ctx, closureSchemas),
-		lazyView.ResolutionVersions(ctx, priorPins, catalog.RelativeToWorkspace(workspaceRoot, lockfilePath),
-			catalog.RelativeToWorkspace(workspaceRoot, cfg.ReleasePath)))
+	}).InstanceVersionLookupWithTable(lazyView.AsCatalogLookupWithSchemas(ctx, closureSchemas), versionView)
 	if err != nil {
 		return Result{}, err
+	}
+	if report.Held != nil {
+		if held := versionTable.HeldBelowNewest(versionView); len(held) > 0 {
+			report.Held(held)
+		}
 	}
 	// The lockfile this run assembles is carried out of the source-descent scope
 	// and written further down, once the external-input discovery below has had its

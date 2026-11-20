@@ -66,6 +66,14 @@ type InstanceVersions struct {
 
 	FeatureSelected    types.OrderedMap[string]
 	FeatureConstraints types.OrderedMap[[]VersionConstraint]
+
+	// Newest and FeatureNewest hold, for each reference Selected and FeatureSelected
+	// hold, the highest version the reference as written admits among the versions
+	// the selection was made over, whatever the constraints declared on its
+	// instances admit: the newest version held. A reference selected below its
+	// newest is held there by the constraints that exclude it (HeldBelowNewest).
+	Newest        types.OrderedMap[string]
+	FeatureNewest types.OrderedMap[string]
 }
 
 // at returns the component reference at the version the table resolves it to
@@ -393,12 +401,12 @@ func ResolveInstanceVersions(release string, instances []closure.InstanceReferen
 
 	var refusals []error
 	for _, tier := range []versionTier{componentTier, featureTier} {
-		constraints, selection := &table.Constraints, &table.Selected
+		constraints, selection, newest := &table.Constraints, &table.Selected, &table.Newest
 		if tier.feature {
-			constraints, selection = &table.FeatureConstraints, &table.FeatureSelected
+			constraints, selection, newest = &table.FeatureConstraints, &table.FeatureSelected, &table.FeatureNewest
 		}
 		for reference, declared := range constraints.All() {
-			version, selected, err := selectTierVersion(release, tier, reference, declared, view)
+			version, highest, selected, err := selectTierVersion(release, tier, reference, declared, view)
 			var listing *versionListingFailure
 			switch {
 			case errors.As(err, &listing):
@@ -407,6 +415,7 @@ func ResolveInstanceVersions(release string, instances []closure.InstanceReferen
 				refusals = append(refusals, err)
 			case selected:
 				selection.Set(reference, version)
+				newest.Set(reference, highest)
 			}
 		}
 	}
@@ -462,52 +471,57 @@ func instanceSite(path string) string {
 
 // selectTierVersion selects the version of reference of tier every constraint in
 // declared admits, among the versions the view offers it (candidateVersions). It
-// reports the version and true on a selection, false with no error for a reference
-// the table leaves to its own resolution, and the refusal for one it refuses.
+// reports the version, the highest version the reference as written admits among
+// the same versions (the newest held), and true on a selection, false with no
+// error for a reference the table leaves to its own resolution, and the refusal
+// for one it refuses.
 //
 // A version a lockfile records, which the constraints do not admit, yields to the
 // versions the view lists from a registry where it lists any: a pull resolving a
 // reference its prior lockfile pins re-selects a pin its constraints have moved
 // away from, while a build, whose view lists none, is held to the row.
-func selectTierVersion(release string, tier versionTier, reference string, declared []VersionConstraint, view InstanceVersionView) (string, bool, error) {
+func selectTierVersion(release string, tier versionTier, reference string, declared []VersionConstraint, view InstanceVersionView) (string, string, bool, error) {
 	base := types.ParseVersionPin(reference).Base()
 	offered, err := candidateVersions(view, tier, reference, base)
 	if err != nil {
-		return "", false, err
+		return "", "", false, err
 	}
-	version, selected, err := selectAmong(release, tier, reference, base, declared, view, offered)
+	version, newest, selected, err := selectAmong(release, tier, reference, base, declared, view, offered)
 	if offered.recorded && errors.Is(err, ErrConflictingVersionConstraints()) {
 		listed, lerr := listedVersionsOf(view, tier, base)
 		if lerr != nil {
-			return "", false, lerr
+			return "", "", false, lerr
 		}
 		if len(listed) > 0 {
 			return selectAmong(release, tier, reference, base, declared, view, candidates{versions: listed})
 		}
 	}
-	return version, selected, err
+	return version, newest, selected, err
 }
 
 // selectAmong is selectTierVersion over the versions offered.
-func selectAmong(release string, tier versionTier, reference, base string, declared []VersionConstraint, view InstanceVersionView, offered candidates) (string, bool, error) {
+func selectAmong(release string, tier versionTier, reference, base string, declared []VersionConstraint, view InstanceVersionView, offered candidates) (string, string, bool, error) {
 	held := offered.versions
 	index := make(map[string]string, len(held))
 	for _, version := range held {
 		index[entityIndexKey(base, version)] = version
 	}
-	key, selected, err := selectEntityVersionWhere(index, reference,
-		func(version string) (string, string) { return base, version },
-		admittedBy(tier, base, declared, view))
+	meta := func(version string) (string, string) { return base, version }
+	key, selected, err := selectEntityVersionWhere(index, reference, meta, admittedBy(tier, base, declared, view))
 	switch {
 	case selected:
-		return index[key], true, nil
+		newest := index[key]
+		if highest, ok, _ := selectEntityVersionWhere(index, reference, meta, nil); ok {
+			newest = index[highest]
+		}
+		return index[key], newest, true, nil
 	case errors.Is(err, ErrConflictingVersionConstraints()):
 		if fault := malformedConstraintPin(tier, declared, reference); fault != nil {
-			return "", false, fault
+			return "", "", false, fault
 		}
-		return "", false, conflictingVersionConstraints(release, tier, declared, held, offered.record)
+		return "", "", false, conflictingVersionConstraints(release, tier, declared, held, offered.record)
 	default:
-		return "", false, nil
+		return "", "", false, nil
 	}
 }
 

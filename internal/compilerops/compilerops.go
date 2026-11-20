@@ -155,22 +155,38 @@ type ResolvedClosure struct {
 // from a lockfile runs it, and ResolveModuleReferences runs it where there is no
 // lockfile.
 func (r *ResolvedClosure) InstanceVersionLookup(lookup resolver.CatalogLookup, view catalog.InstanceVersionView) (resolver.CatalogLookup, error) {
-	return instanceVersionLookup(lookup, view, r.Release, r.Manifest, r.ManifestPath, r.Closure)
+	scoped, _, err := r.InstanceVersionLookupWithTable(lookup, view)
+	return scoped, err
+}
+
+// InstanceVersionLookupWithTable is InstanceVersionLookup returning, beside the
+// lookup, the instance-version table it is scoped to, for a caller reporting what
+// the table holds (catalog.InstanceVersions.HeldBelowNewest) rather than
+// resolving it a second time.
+func (r *ResolvedClosure) InstanceVersionLookupWithTable(lookup resolver.CatalogLookup, view catalog.InstanceVersionView) (resolver.CatalogLookup, catalog.InstanceVersions, error) {
+	return instanceVersionLookupWithTable(lookup, view, r.Release, r.Manifest, r.ManifestPath, r.Closure)
 }
 
 // instanceVersionLookup is InstanceVersionLookup over explicit inputs, for a
 // caller that holds the resolution's parts rather than the resolution.
 func instanceVersionLookup(lookup resolver.CatalogLookup, view catalog.InstanceVersionView, release *types.Release,
 	manifest *types.Manifest, manifestPath string, cl closure.Closure) (resolver.CatalogLookup, error) {
+	scoped, _, err := instanceVersionLookupWithTable(lookup, view, release, manifest, manifestPath, cl)
+	return scoped, err
+}
+
+// instanceVersionLookupWithTable is instanceVersionLookup returning the table too.
+func instanceVersionLookupWithTable(lookup resolver.CatalogLookup, view catalog.InstanceVersionView, release *types.Release,
+	manifest *types.Manifest, manifestPath string, cl closure.Closure) (resolver.CatalogLookup, catalog.InstanceVersions, error) {
 	var name string
 	if release != nil {
 		name = release.Metadata.Name
 	}
 	table, err := catalog.ResolveInstanceVersions(name, cl.Instances, manifest, manifestPath, view)
 	if err != nil {
-		return resolver.CatalogLookup{}, err
+		return resolver.CatalogLookup{}, catalog.InstanceVersions{}, err
 	}
-	return catalog.WithHeldBackDetail(catalog.ScopeToInstanceVersions(lookup, table), lookup, table, view), nil
+	return catalog.WithHeldBackDetail(catalog.ScopeToInstanceVersions(lookup, table), lookup, table, view), table, nil
 }
 
 // Libraries returns the libraries a build or preview of this Release reads, one
