@@ -140,6 +140,17 @@ func RequireAggregateLoader(lookup Lookup) (AggregateLoader, error) {
 // that fails to load, or whose own references do not resolve, is the one the
 // refusal names, and an entity two siblings both reference keeps the kind and the
 // resolution the sibling loaded first recorded for it.
+//
+// The instances of every included module are appended to c.Instances once the
+// descent is done, depth first in the author order of each Aggregate's includes:
+// a module's own instances, then those of the modules it includes. Each module is
+// loaded and walked once whatever number of Aggregates include it, and its
+// instances are reported once per place the composition includes it, each
+// component under the identity that place gives it (types.JoinQualifiedID of the
+// names the includes are written under, then its own name), as the composition
+// names the node it flattens it to. The first level of includes is the one the
+// walk of the Release's own Aggregate recorded; a closure assembled without that
+// walk reports no module's instances.
 func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoader, lookup Lookup) error {
 	if c == nil || loader == nil {
 		return nil
@@ -154,6 +165,7 @@ func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoade
 	}
 
 	visited := map[string]struct{}{}
+	walked := map[string]moduleWalk{}
 	for len(level) > 0 {
 		// Stable, so a URI queued twice within one level keeps the frame of the
 		// parent loaded first, which the previous level's order already fixes.
@@ -183,6 +195,7 @@ func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoade
 			if err := sub.resolveEntities(ctx, lookup); err != nil {
 				return err
 			}
+			walked[f.uri] = moduleWalk{instances: sub.instances, modules: sub.modules, file: moduleFile(f)}
 
 			for key, p := range sub.entities {
 				if p.resolution == nil {
@@ -206,8 +219,59 @@ func DescendSubAggregates(ctx context.Context, c *Closure, loader AggregateLoade
 		level = next
 	}
 
+	c.Instances = append(c.Instances, moduleInstances(c.modules, "", walked, map[string]bool{})...)
 	canonicaliseClosure(c)
 	return nil
+}
+
+// moduleWalk is what the walk of one loaded module recorded: the instances it
+// declares, named as inside the module, the modules it includes, and the file
+// its instances are written in.
+type moduleWalk struct {
+	instances []InstanceReference
+	modules   []moduleInclusion
+	file      string
+}
+
+// moduleFile names the document a loaded module's instances are written in: the
+// module's reference at the version it resolved to, or as written where it
+// resolved to none.
+func moduleFile(f descentFrame) string {
+	if f.version == "" {
+		return f.uri
+	}
+	return types.ParseVersionPin(f.uri).Base() + ":" + f.version
+}
+
+// moduleInstances returns the instances of each module in modules, included
+// under prefix, and of the modules each of them includes, depth first and in
+// author order. A component is named by the identity the composition gives it
+// there; a feature keeps the name its attachment is written under. onPath holds
+// the modules of the include chain being followed, so an include leading back
+// into that chain is not followed again: the descent has already stopped such a
+// chain without a refusal of its own, and the composition refuses it where it
+// flattens the Aggregate.
+func moduleInstances(modules []moduleInclusion, prefix string, walked map[string]moduleWalk, onPath map[string]bool) []InstanceReference {
+	var out []InstanceReference
+	for _, m := range modules {
+		w, loaded := walked[m.uri]
+		if !loaded || onPath[m.uri] {
+			continue
+		}
+		modulePrefix := types.JoinQualifiedID(prefix, m.name)
+		for _, in := range w.instances {
+			if !in.Feature {
+				in.Name = types.JoinQualifiedID(modulePrefix, in.Name)
+			}
+			in.File = w.file
+			in.document = documentNamed
+			out = append(out, in)
+		}
+		onPath[m.uri] = true
+		out = append(out, moduleInstances(w.modules, modulePrefix, walked, onPath)...)
+		delete(onPath, m.uri)
+	}
+	return out
 }
 
 // mergeReferencedFrom unions two referenced-from path lists, dropping

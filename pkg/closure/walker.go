@@ -90,6 +90,12 @@ type walkState struct {
 	// the walk axis-agnostic: an axis added to the declared set accumulates here
 	// without this type changing.
 	libs map[string]map[string]*pendingLibrary
+	// instances records every component and feature instance the walk visits, in
+	// the order it visits them.
+	instances []InstanceReference
+	// modules records every module an Aggregate the walk visits includes, in
+	// author order.
+	modules []moduleInclusion
 }
 
 // pendingRef collects the per-entity accumulating data the walker
@@ -221,6 +227,7 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 			// aggregate entities to load and re-walk for their transitive
 			// closure. The hint is not serialised to the lockfile.
 			s.addEntityKind(sub.Type, subPath, KindAggregate)
+			s.modules = append(s.modules, moduleInclusion{name: name, uri: sub.Type})
 		}
 	}
 	// Every subsystem's components and its own scope-wide attachments are recorded;
@@ -243,7 +250,9 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 			},
 			Visit: func(ci types.ComponentInstance, name, subPath string, _ bool, _ struct{}) error {
 				if ci.Type != "" {
-					s.addEntityKind(ci.Type, fmt.Sprintf("%s.components.%s.type", subPath, name), KindComponent)
+					site := fmt.Sprintf("%s.components.%s.type", subPath, name)
+					s.addEntityKind(ci.Type, site, KindComponent)
+					s.addInstance(site, name, ci.Type, false, documentAggregate)
 				}
 				s.walkComponentInstanceFeatures(ci, fmt.Sprintf("%s.components.%s", subPath, name))
 				return nil
@@ -251,7 +260,9 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 			Leave: func(sys types.Subsystem, _, subPath string, _ struct{}) {
 				for name, fi := range sys.Features.All() {
 					if fi.Type != "" {
-						s.addEntityKind(fi.Type, fmt.Sprintf("%s.features.%s.type", subPath, name), KindFeature)
+						site := fmt.Sprintf("%s.features.%s.type", subPath, name)
+						s.addEntityKind(fi.Type, site, KindFeature)
+						s.addInstance(site, name, fi.Type, true, documentAggregate)
 					}
 				}
 			},
@@ -273,11 +284,13 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 func (s *walkState) walkComponentInstanceFeatures(ci types.ComponentInstance, path string) {
 	for name, fi := range ci.Features.All() {
 		if fi.Type != "" {
-			s.addEntityKind(fi.Type, fmt.Sprintf("%s.features.%s.type", path, name), KindFeature)
+			site := fmt.Sprintf("%s.features.%s.type", path, name)
+			s.addEntityKind(fi.Type, site, KindFeature)
+			s.addInstance(site, name, fi.Type, true, documentAggregate)
 		}
 	}
 	for conn, att := range ci.ConnectionAttachments() {
-		s.addConnectionAttachment(conn, att.Type, path)
+		s.addConnectionAttachment(conn, att.Type, path, documentAggregate)
 	}
 }
 
@@ -287,13 +300,15 @@ func (s *walkState) walkComponentInstanceFeatures(ci types.ComponentInstance, pa
 // naming no type adds nothing, as an attachment written without one does
 // elsewhere: on the Release it is the sizing for an attachment the Aggregate
 // declares on the same connection, whose type is recorded where the Aggregate
-// writes it.
-func (s *walkState) addConnectionAttachment(conn types.AttachmentConnection, featureType, componentPath string) {
+// writes it. The attachment is an instance of the document it is written in,
+// under the name it takes on its component.
+func (s *walkState) addConnectionAttachment(conn types.AttachmentConnection, featureType, componentPath string, document instanceDocument) {
 	if featureType == "" {
 		return
 	}
-	s.addEntityKind(featureType,
-		fmt.Sprintf("%s.uses.%s.%s.features.%s.type", componentPath, conn.Socket, conn.Alias, conn.Attachment), KindFeature)
+	site := fmt.Sprintf("%s.uses.%s.%s.features.%s.type", componentPath, conn.Socket, conn.Alias, conn.Attachment)
+	s.addEntityKind(featureType, site, KindFeature)
+	s.addInstance(site, types.JoinConnectionAttachmentName(conn.Alias, conn.Attachment), featureType, true, document)
 }
 
 // walkManifest descends Manifest.Spec.Mappings.{Components,
@@ -387,7 +402,7 @@ func (s *walkState) walkReleaseAttachments(r *types.Release) {
 				componentPath := fmt.Sprintf("%s.%s", path, strings.Join(types.BoundaryComponentLocator(scope, name), "."))
 				s.addBoundaryFeatures(bc.Features, componentPath)
 				for conn, att := range bc.ConnectionAttachments() {
-					s.addConnectionAttachment(conn, att.Type, componentPath)
+					s.addConnectionAttachment(conn, att.Type, componentPath, documentRelease)
 				}
 				return nil
 			},
@@ -404,7 +419,9 @@ func (s *walkState) walkReleaseAttachments(r *types.Release) {
 func (s *walkState) addBoundaryFeatures(features types.OrderedMap[types.BoundaryFeature], path string) {
 	for name, bf := range features.All() {
 		if bf.Type != "" {
-			s.addEntityKind(bf.Type, fmt.Sprintf("%s.features.%s.type", path, name), KindFeature)
+			site := fmt.Sprintf("%s.features.%s.type", path, name)
+			s.addEntityKind(bf.Type, site, KindFeature)
+			s.addInstance(site, name, bf.Type, true, documentRelease)
 		}
 	}
 }
@@ -1022,6 +1039,10 @@ func (s *walkState) materialise() Closure {
 	for _, a := range libraryAxes {
 		a.SetLibraries(&c, s.materialiseLibs(a))
 	}
+	// The instances keep the order the walk visited them in, which is the author
+	// order of the documents walked; canonicaliseClosure leaves them as they are.
+	c.Instances = s.instances
+	c.modules = s.modules
 	return c
 }
 
@@ -1106,6 +1127,18 @@ func (s *walkState) addEntityKind(uri, refPath, hint string) *pendingRef {
 	p.referencedFrom[refPath] = struct{}{}
 	p.kindHint = keptKindHint(p.kindHint, hint)
 	return p
+}
+
+// addInstance records one component or feature instance the walk visits, under
+// the authoring site of its type, and the document it was read from.
+func (s *walkState) addInstance(site, name, reference string, feature bool, document instanceDocument) {
+	s.instances = append(s.instances, InstanceReference{
+		Path:      site,
+		Name:      name,
+		Reference: reference,
+		Feature:   feature,
+		document:  document,
+	})
 }
 
 // seedLibs re-seeds an axis's accumulator from libraries already resolved into a

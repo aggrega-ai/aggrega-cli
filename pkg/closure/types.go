@@ -32,7 +32,8 @@ import (
 )
 
 // Closure captures the full result of ComputeClosure. Fields map
-// one-to-one to lockfile sections; downstream code consumes the
+// one-to-one to lockfile sections, but for Instances and the walk's own
+// record of the modules it met; downstream code consumes the
 // Closure field-by-field when materialising the lockfile.
 //
 // Fields are grouped by what they hold — the entity refs, then the
@@ -57,6 +58,13 @@ import (
 // Release already composed, with no file behind it, so it cannot say which files
 // the composition read; the caller that loaded and composed the Release fills it
 // from the same load.
+//
+// Instances is the exported field no lockfile section mirrors. It lists the component
+// and feature instances the walk visits, for a reader that resolves each
+// instance's version from the constraints declared on it; the lockfile records
+// the references those instances carry, on Entities, and nothing per instance.
+// ComputeClosure reports the instances the Aggregate and the Release declare, and
+// DescendSubAggregates appends those of every module the Aggregate includes.
 type Closure struct {
 	Entities          []ResolvedRef
 	MappingLibraries  []ResolvedLibrary
@@ -66,6 +74,81 @@ type Closure struct {
 	SourceArtifacts   []SourceArtifact
 	Plugins           []ResolvedRef
 	ReleaseDocuments  []ReleaseDocument
+	Instances         []InstanceReference
+
+	// modules is each module the walked Aggregate includes, in author order. The
+	// descent of the sub-aggregate axis reads it to give the instances inside a
+	// module the identity the composition gives them, which starts with the name
+	// the including Aggregate writes the module under.
+	modules []moduleInclusion
+}
+
+// InstanceReference is one component or feature instance the walk visited, as
+// written where it is declared.
+type InstanceReference struct {
+	// Path is the authoring site of the instance's type, as the walk records it
+	// among the sites an entity is referenced from.
+	Path string
+	// Name is the instance's name. A component carries the identity the
+	// composition gives it: its own name inside the Aggregate, and inside an
+	// included module the module's name, a dot, then its own — the name the
+	// Manifest's name axis matches. A feature carries the name its attachment is
+	// written under; an attachment a connection carries, the name it takes on its
+	// component (types.JoinConnectionAttachmentName).
+	Name string
+	// Reference is the instance's type, as written.
+	Reference string
+	// File names the document the type is written in: for an instance of an
+	// included module, the module's reference at the version it resolved to; for
+	// one the Release or its Aggregate declares, the file NameInstanceFiles names,
+	// and empty until it is called.
+	File string
+	// Feature reports whether the instance is a feature attachment rather than a
+	// component.
+	Feature bool
+
+	// document is which of the Release and its Aggregate the walk read the
+	// instance from, for NameInstanceFiles; an instance of an included module
+	// carries its file from the walk and none of the two.
+	document instanceDocument
+}
+
+// instanceDocument says which document the walk read an instance from where the
+// walk cannot name the file itself.
+type instanceDocument uint8
+
+const (
+	// documentNamed marks an instance whose file the walk named.
+	documentNamed instanceDocument = iota
+	// documentAggregate marks an instance of the Aggregate the Release deploys.
+	documentAggregate
+	// documentRelease marks an attachment the Release declares.
+	documentRelease
+)
+
+// moduleInclusion is one module an Aggregate includes: the name it writes the
+// module under in spec.aggregates, and the module's reference as written.
+type moduleInclusion struct {
+	name string
+	uri  string
+}
+
+// NameInstanceFiles names the file of each instance read from the Release or
+// from the Aggregate it deploys: release for an attachment the Release declares,
+// aggregate for an instance the Aggregate declares. ComputeClosure is handed both
+// documents already loaded, with no file behind either, so the caller that loaded
+// them names the files. A Release that extends another is named by the file the
+// resolution was asked for. An instance of an included module keeps the file the
+// walk named.
+func (c *Closure) NameInstanceFiles(release, aggregate string) {
+	for i := range c.Instances {
+		switch c.Instances[i].document {
+		case documentRelease:
+			c.Instances[i].File = release
+		case documentAggregate:
+			c.Instances[i].File = aggregate
+		}
+	}
 }
 
 // ReleaseDocument records one Release file a composition of the Release read, by

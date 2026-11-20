@@ -116,17 +116,17 @@ func TestEveryClosureSectionIsClassified(t *testing.T) {
 	}
 }
 
-// TestSourceArtifactsAndReleaseDocumentsAreTheOnlyExemptSections pins the exemption
-// set to exactly those two members. The coverage assertion above tolerates any
-// exemption that carries a reason, which is right — it must not decide which
-// sections deserve one — so this asserts the membership separately: a further
-// exemption appearing is a design change that should be read, not absorbed, and
-// one of these two disappearing is the same change in the other direction.
+// TestOnlyThePinnedSectionsAreExempt pins the exemption set to exactly the members
+// it names. The coverage assertion above tolerates any exemption that carries a
+// reason, which is right — it must not decide which sections deserve one — so this
+// asserts the membership separately: a further exemption appearing is a design
+// change that should be read, not absorbed, and one of these disappearing is the
+// same change in the other direction.
 //
 // It compares names rather than a count, so a set that swapped one member for
 // another at the same size is still reported, and each difference is named.
-func TestSourceArtifactsAndReleaseDocumentsAreTheOnlyExemptSections(t *testing.T) {
-	want := []string{"ReleaseDocuments", "SourceArtifacts"}
+func TestOnlyThePinnedSectionsAreExempt(t *testing.T) {
+	want := []string{"Instances", "ReleaseDocuments", "SourceArtifacts", "modules"}
 
 	wantSet := make(map[string]struct{}, len(want))
 	for _, name := range want {

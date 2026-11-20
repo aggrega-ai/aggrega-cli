@@ -191,6 +191,14 @@ var axesWithoutVerifiableRefs = map[string]string{
 		"content digest, which each load takes from the bytes it read and the drift comparison " +
 		"checks against the recorded one whenever a lockfile written earlier is held to the " +
 		"Release as it now stands",
+	"Instances": "an instance is a place in the Release's composition that names a type, not an " +
+		"artifact: the reference it names is a member of Entities, which this enumeration covers, " +
+		"so whatever is signed or withdrawn is reached there, and the instance itself is never " +
+		"published, fetched or written to a lockfile",
+	"modules": "the walk's record of the modules the Aggregate includes, by the names they are " +
+		"included under and the references naming them: each reference is a member of Entities, " +
+		"which this enumeration covers, and the record is read by the sub-aggregate descent alone " +
+		"and never written to a lockfile",
 }
 
 // VerifiableAxes returns every closure section that carries references a
