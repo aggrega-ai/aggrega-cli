@@ -4206,8 +4206,10 @@ var _ closure.RegistryPrefetcher = (*lazyClosureLookup)(nil)
 // resolve as written, which honours the pin and verifies its slot as resolving it
 // always has. The table's refusals are left to the compilation of the Release,
 // which reports them where every surface reports them; the references they
-// concern resolve as written.
-func (x *lazyClosureLookup) SelectInstanceVersions(ctx context.Context, manifest *types.Manifest, instances []closure.InstanceReference, resolved []closure.ResolvedRef) map[closure.EntityKey]string {
+// concern resolve as written. A registry that fails to list a name's versions,
+// for any reason but holding none, fails the settlement with the registry's own
+// failure.
+func (x *lazyClosureLookup) SelectInstanceVersions(ctx context.Context, manifest *types.Manifest, instances []closure.InstanceReference, resolved []closure.ResolvedRef) (map[closure.EntityKey]string, error) {
 	var prior Pins
 	var puller OCIPuller
 	if base, ok := x.base.(*catalogLookup); ok {
@@ -4215,9 +4217,13 @@ func (x *lazyClosureLookup) SelectInstanceVersions(ctx context.Context, manifest
 	}
 	recipes, err := x.l.recipesResolvedBy(resolved, puller)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	table, _ := ResolveInstanceVersions("", instances, manifest, "", x.l.resolutionVersions(ctx, recipes, prior, "", puller))
+	table, err := ResolveInstanceVersions("", instances, manifest, "", x.l.resolutionVersions(ctx, recipes, prior, "", puller))
+	var listing *versionListingFailure
+	if errors.As(err, &listing) {
+		return nil, err
+	}
 	requests := map[closure.EntityKey]string{}
 	for _, in := range instances {
 		version, held := table.Selected.Get(in.Reference)
@@ -4233,7 +4239,7 @@ func (x *lazyClosureLookup) SelectInstanceVersions(ctx context.Context, manifest
 		}
 		requests[key] = ReferenceAt(in.Reference, version)
 	}
-	return requests
+	return requests, nil
 }
 
 // pinHolds reports whether resolving the reference key names as written already
@@ -4298,7 +4304,7 @@ func (l *LazyLookup) ResolutionVersions(ctx context.Context, prior Pins, priorFi
 // puller lists none, and the ancestry of a candidate is then read from the local
 // tiers alone.
 func (l *LazyLookup) resolutionVersions(ctx context.Context, recipes recipeReader, prior Pins, priorFile string, puller OCIPuller) *resolutionVersionView {
-	v := &resolutionVersionView{ctx: ctx, l: l, recipes: recipes, prior: prior, priorFile: priorFile}
+	v := &resolutionVersionView{ctx: ctx, l: l, recipes: recipes, prior: prior, priorFile: priorFile, puller: puller}
 	if lister, ok := puller.(EntityVersionLister); ok {
 		v.lister = lister
 	}
@@ -4312,6 +4318,7 @@ type resolutionVersionView struct {
 	recipes   recipeReader
 	prior     Pins
 	priorFile string
+	puller    OCIPuller
 	lister    EntityVersionLister
 }
 
@@ -4332,17 +4339,22 @@ func (v *resolutionVersionView) RecordedVersion(reference string) (string, strin
 }
 
 // ListedVersions lists the versions the registry this view reads publishes the
-// Component name at, satisfying listedVersions; a registry that cannot list the
-// name lists nothing.
-func (v *resolutionVersionView) ListedVersions(name string) []string {
+// Component name at, satisfying listedVersions. A registry holding no version of
+// the name lists none; any other failure — the registry refusing the request, or
+// the request failing on its way — is returned as the registry's failure, with
+// the remediation a fetch of the entity would carry (entityRegistryFailure).
+func (v *resolutionVersionView) ListedVersions(name string) ([]string, error) {
 	if v.lister == nil {
-		return nil
+		return nil, nil
 	}
 	listed, err := v.lister.ListEntityVersions(v.ctx, name, componentKind)
-	if err != nil {
-		return nil
+	switch {
+	case errors.Is(err, oci.ErrFetchNotFound()):
+		return nil, nil
+	case err != nil:
+		return nil, entityRegistryFailure(v.puller, "list the versions of "+name, name, err)
 	}
-	return listed
+	return listed, nil
 }
 
 // RecipeByURI reads a Recipe as the settlement's recipe reader does.

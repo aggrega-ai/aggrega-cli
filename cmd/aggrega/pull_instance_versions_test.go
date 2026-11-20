@@ -16,6 +16,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,6 +46,9 @@ var instanceVersionsServerVersions = []string{"1.0.0", "1.1.0"}
 // by identity and version, and every listing it answers, by identity.
 type versionRegistry struct {
 	bodies map[string][]byte
+	// listErr, where set, is what every listing answers with in place of the
+	// versions.
+	listErr error
 
 	mu      sync.Mutex
 	fetched map[string]int
@@ -98,6 +103,9 @@ func (r *versionRegistry) ListEntityVersions(_ context.Context, identity, kind s
 	r.mu.Lock()
 	r.listed[identity]++
 	r.mu.Unlock()
+	if r.listErr != nil {
+		return nil, r.listErr
+	}
 	if kind != "Component" || identity != instanceVersionsServer {
 		return nil, oci.ErrFetchNotFound()
 	}
@@ -371,6 +379,11 @@ func TestPullConflictWritesNoLockfile(t *testing.T) {
 			if _, serr := os.Stat(lockfile.PathFor(releasePath)); !errors.Is(serr, os.ErrNotExist) {
 				t.Errorf("the pull that halted left a lockfile behind (%v)", serr)
 			}
+			// The versions are named in words true of a catalog directory and of a
+			// registry alike.
+			if msg := err.Error(); !strings.Contains(msg, `versions held "1.0.0, 1.1.0"`) || strings.Contains(msg, "catalog holds") {
+				t.Errorf("the conflict does not name the versions held in words true of where they are held:\n%s", msg)
+			}
 		})
 	}
 }
@@ -411,7 +424,7 @@ func TestBuildRefusesLockedVersionOutsideConstraints(t *testing.T) {
 		if errors.Is(err, lockfile.ErrLockfileDrift()) {
 			t.Errorf("the build reports the lockfile out of date beside the conflict: %v", err)
 		}
-		for _, value := range []string{`locked at "1.1.0"`, `written in "release.lock"`, `Manifest mapping key "core/compute/server:1.0.0"`} {
+		for _, value := range []string{`locked at "1.1.0"`, `written in "release.lock"`, `Manifest mapping key "core/compute/server:1.0.0"`, "`aggrega pull`"} {
 			if !strings.Contains(conflict.Message(), value) {
 				t.Errorf("the conflict does not name %s:\n%s", value, conflict.Message())
 			}
@@ -530,5 +543,210 @@ spec:
 	resolved, vr := instanceVersionsCoreValidate(t, root)
 	if findings := coreFindings(resolved, vr); len(findings) > 0 {
 		t.Errorf("the validation refused the Release:\n%v", errors.Join(findings...))
+	}
+}
+
+// writeSharedServerWorkspace rewrites the module workspace at root so the server is
+// written twice — by the Release's own Aggregate as web, and by the module it
+// includes as site.web — and each instance is mapped by name: web to webRecipe and
+// site.web to the Recipe implementing 1.0.0. A Recipe implementing the server at
+// any 1.x version, compose/server-any, is added to the catalog directory.
+func writeSharedServerWorkspace(t *testing.T, root, webRecipe string) {
+	t.Helper()
+	recipeDir := filepath.Join(root, "catalog", "recipe", "compose")
+	anyRecipe := filepath.Join(recipeDir, "server-any", "1.0.0", "recipe.yaml")
+	writeFixture(t, anyRecipe, string(mustReadFile(t, filepath.Join(recipeDir, "server", "1.0.0", "recipe.yaml"))))
+	replaceInFixture(t, anyRecipe, "  name: server\n", "  name: server-any\n")
+	replaceInFixture(t, anyRecipe, "implements: core/compute/server:1.0.0", "implements: core/compute/server:^1.0.0")
+	writeFixture(t, filepath.Join(root, "aggregate.yaml"), `apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: quickstart-site-host
+  version: "1.0.0"
+spec:
+  components:
+    web:
+      type: core/compute/server
+  aggregates:
+    site:
+      type: example/quickstart-site
+`)
+	writeFixture(t, filepath.Join(root, "manifest.yaml"), `apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: quickstart-site-compose
+  version: "1.0.0"
+spec:
+  mappings:
+    components:
+      name:
+        web: `+webRecipe+`
+        site.web: compose/server:1.0.0
+`)
+	writeFixture(t, filepath.Join(root, "release.yaml"), `apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: quickstart-site-local
+  environment: development
+  version: "1.0.0"
+spec:
+  aggregate: quickstart-site-host
+  manifest: quickstart-site-compose
+  boundaries:
+    local:
+      directory: ./dist/local
+      components:
+        web:
+          infra:
+            image: registry.example.invalid/quickstart-web:1.0.0
+            port: 8080
+        site.web:
+          infra:
+            image: registry.example.invalid/quickstart-site:1.0.0
+            port: 8081
+`)
+}
+
+// TestPullSettlesAReferenceOverEveryInstance holds the row of a reference written
+// both by the Release's own Aggregate and by a module it includes to the one
+// version every instance writing it admits, which is the version the build
+// compiles each of them at. Mapped alone, web admits 1.0.0 and 1.1.0, and site.web
+// 1.0.0 only, so the row records 1.0.0; mapped to Recipes implementing 1.1.0 and
+// 1.0.0, the two admit no version together and the pull halts with the conflict,
+// writing no lockfile — from a catalog directory and from a registry alike.
+func TestPullSettlesAReferenceOverEveryInstance(t *testing.T) {
+	t.Parallel()
+	for _, source := range []struct {
+		name     string
+		registry bool
+	}{{name: "from a catalog directory"}, {name: "from a registry", registry: true}} {
+		workspace := func(t *testing.T) (string, catalog.OCIPuller) {
+			t.Helper()
+			if !source.registry {
+				return instanceVersionsWorkspace(t, "quickstart-site"), nil
+			}
+			return registryInstanceVersionsWorkspace(t, "quickstart-site"), newVersionRegistry(t)
+		}
+		t.Run(source.name+", the instances agree", func(t *testing.T) {
+			t.Parallel()
+			root, puller := workspace(t)
+			writeSharedServerWorkspace(t, root, "compose/server-any:1.0.0")
+			releasePath := filepath.Join(root, "release.yaml")
+			if text, err := pullInstanceVersions(t, root, releasePath, puller); err != nil {
+				t.Fatalf("pull: %v\n%s", err, text)
+			}
+			if row := serverRow(t, lockfile.PathFor(releasePath)); row.ResolvedVersion != "1.0.0" {
+				t.Errorf("the pull records %s at %q, want 1.0.0, the one version both instances admit", instanceVersionsServer, row.ResolvedVersion)
+			}
+			preview, err := lockedBuild(t, root)
+			if err != nil {
+				t.Fatalf("the build refused the lockfile its pull wrote: %v", err)
+			}
+			for _, node := range []string{"web", "site.web"} {
+				if got := compiledVersion(t, preview, node); got != "1.0.0" {
+					t.Errorf("the build compiled %s at %q, want the row's 1.0.0", node, got)
+				}
+			}
+			assertPullHoldsItsLockfile(t, root, releasePath, puller)
+			if !source.registry {
+				// A validation reads the closure at the version it compiles too.
+				resolved, vr := instanceVersionsCoreValidate(t, root)
+				if findings := coreFindings(resolved, vr); len(findings) > 0 {
+					t.Errorf("the validation refused the Release:\n%v", errors.Join(findings...))
+				}
+				for _, e := range resolved.Closure.Entities {
+					if e.Kind() == closure.KindComponent && e.URI == instanceVersionsServer && e.ResolvedVersion != "1.0.0" {
+						t.Errorf("the validation's closure records %s at %q, want 1.0.0", instanceVersionsServer, e.ResolvedVersion)
+					}
+				}
+			}
+		})
+		t.Run(source.name+", the instances cannot agree", func(t *testing.T) {
+			t.Parallel()
+			root, puller := workspace(t)
+			writeSharedServerWorkspace(t, root, "compose/server:2.0.0")
+			releasePath := filepath.Join(root, "release.yaml")
+			text, err := pullInstanceVersions(t, root, releasePath, puller)
+			if !errors.Is(err, catalog.ErrConflictingVersionConstraints()) {
+				t.Fatalf("the pull halts with %v; want the conflicting-version-constraints condition\n%s", err, text)
+			}
+			for _, instance := range []string{`instance "web"`, `instance "site.web"`} {
+				if !strings.Contains(err.Error(), instance) {
+					t.Errorf("the conflict does not name %s:\n%v", instance, err)
+				}
+			}
+			if _, serr := os.Stat(lockfile.PathFor(releasePath)); !errors.Is(serr, os.ErrNotExist) {
+				t.Errorf("the pull that halted left a lockfile behind (%v)", serr)
+			}
+		})
+	}
+}
+
+// TestPullHaltsOnAFailedVersionListing holds a pull to halting, in the registry's
+// own condition, where the registry fails to list a Component's versions for any
+// reason but holding none — a selection over a listing that failed part-way would
+// change the version recorded with no word said — while a registry that holds no
+// versions of the name lists none, and the reference resolves as written.
+func TestPullHaltsOnAFailedVersionListing(t *testing.T) {
+	t.Parallel()
+	t.Run("a refused listing halts", func(t *testing.T) {
+		t.Parallel()
+		root := registryInstanceVersionsWorkspace(t, "quickstart-web")
+		registry := newVersionRegistry(t)
+		registry.listErr = fmt.Errorf("list tags: %w", oci.ErrFetchUnauthorized())
+		releasePath := filepath.Join(root, "release.yaml")
+		text, err := pullInstanceVersions(t, root, releasePath, registry)
+		if !errors.Is(err, oci.ErrFetchUnauthorized()) {
+			t.Fatalf("the pull halts with %v; want the registry's refusal\n%s", err, text)
+		}
+		if _, serr := os.Stat(lockfile.PathFor(releasePath)); !errors.Is(serr, os.ErrNotExist) {
+			t.Errorf("the pull that halted left a lockfile behind (%v)", serr)
+		}
+	})
+	t.Run("a listing of nothing lists none", func(t *testing.T) {
+		t.Parallel()
+		root := registryInstanceVersionsWorkspace(t, "quickstart-web")
+		replaceInFixture(t, filepath.Join(root, "aggregate.yaml"),
+			"      type: core/compute/server\n", "      type: core/compute/server:1.0.0\n")
+		registry := newVersionRegistry(t)
+		registry.listErr = oci.ErrFetchNotFound()
+		releasePath := filepath.Join(root, "release.yaml")
+		if text, err := pullInstanceVersions(t, root, releasePath, registry); err != nil {
+			t.Fatalf("pull: %v\n%s", err, text)
+		}
+		if registry.listings() == 0 {
+			t.Error("the pull never asked the registry for the server's versions")
+		}
+		if n := registry.fetches("1.0.0"); n != 1 {
+			t.Errorf("the registry served the server at 1.0.0 %d times, want once", n)
+		}
+	})
+}
+
+// TestInspectRefusesLockedVersionOutsideConstraints holds `aggrega inspect` of a
+// Release to the judgement a build from its lockfile makes: with the server's row
+// moved to a version the constraints do not admit, the inspection halts with the
+// same conflict the build halts with.
+func TestInspectRefusesLockedVersionOutsideConstraints(t *testing.T) {
+	t.Parallel()
+	root := registryInstanceVersionsWorkspace(t, "quickstart-web")
+	registry := newVersionRegistry(t)
+	releasePath := filepath.Join(root, "release.yaml")
+	if text, err := pullInstanceVersions(t, root, releasePath, registry); err != nil {
+		t.Fatalf("pull: %v\n%s", err, text)
+	}
+	moveServerRow(t, lockfile.PathFor(releasePath), newerServerRow(t, root, registry))
+
+	_, buildErr := lockedBuild(t, root)
+	if !errors.Is(buildErr, catalog.ErrConflictingVersionConstraints()) {
+		t.Fatalf("the build halts with %v; the case needs it to halt with the conflict", buildErr)
+	}
+	rw, err := workspaceconfig.Resolve(root, root)
+	if err != nil {
+		t.Fatalf("resolve the workspace: %v", err)
+	}
+	err = renderReleaseFile(context.Background(), rw, releasePath, nil, nil, testInspectOptions(io.Discard))
+	if !errors.Is(err, catalog.ErrConflictingVersionConstraints()) {
+		t.Errorf("the inspection halts with %v; want the conflict the build halts with", err)
 	}
 }

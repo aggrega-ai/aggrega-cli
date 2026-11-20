@@ -302,7 +302,7 @@ func TestInstanceVersionsConflictNamesEveryConstraint(t *testing.T) {
 		`instance "web", type "core/compute/server:1.0.0", written in "aggregate.yaml", ` +
 		`Manifest mapping key "core/compute/server:1.1.0", written in "manifest.yaml", ` +
 		`mapped to recipe "compose/server:2.0.0", whose spec.implements is "core/compute/server:1.1.0", ` +
-		`catalog holds "1.0.0, 1.1.0"). change the Aggregate's version, or map this type at a version its recipe implements`
+		`versions held "1.0.0, 1.1.0"). change the Aggregate's version, or map this type at a version its recipe implements`
 
 	for _, v := range instanceVersionViews(t, instanceVersionsCatalog(t)) {
 		t.Run(v.name, func(t *testing.T) {
@@ -506,7 +506,7 @@ func TestInstanceVersionsConflictNamesEveryVersionHeld(t *testing.T) {
 		Value: "core/compute/server:1.0.0", File: instanceVersionsAggregateFile,
 	}}
 	err := conflictingVersionConstraints(instanceVersionsRelease, declared, inVersionOrder([]string{"1.10.0", "", "latest", "1.2.0"}), "")
-	if !strings.Contains(err.Error(), `catalog holds "1.2.0, 1.10.0, latest")`) {
+	if !strings.Contains(err.Error(), `versions held "1.2.0, 1.10.0, latest")`) {
 		t.Errorf("the conflict does not name the versions held in order, without an empty one:\n%v", err)
 	}
 }

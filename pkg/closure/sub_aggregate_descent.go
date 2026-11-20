@@ -6,6 +6,7 @@ package closure
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -241,34 +242,44 @@ type deferredTypes struct {
 // which the descent leaves until every module is walked: the version an instance
 // resolves at is settled from every constraint on every instance writing its
 // reference, and a module's instance is mapped by the name the composition gives
-// it, which is known only then (InstanceVersionSelector). The settlement is handed
-// every instance of the Release, the closure's own and the modules', with the
-// Manifest the walk was handed.
+// it, which is known only then (InstanceVersionSelector). The settlement is asked
+// once, handed every instance of the Release, the closure's own and the modules',
+// with the Manifest the walk was handed.
 //
 // The walks are resolved in the order the descent loaded them, each in its own
 // order, so a type two modules write keeps the resolution of the one loaded first.
 // A type the closure already holds — one the Release's own Aggregate writes, or
-// one an earlier module wrote — is not resolved again: its sites are merged onto
-// the entity the closure holds.
+// one an earlier module wrote — has its sites merged onto the entity the closure
+// holds, and is resolved again only where the settlement over every instance
+// selects another version than the one its row records: the walk settled it over
+// the Release's own instances alone, and a module's may narrow it. The row then
+// records the version every instance writing the reference admits, which is the
+// version a compilation of the Release compiles each of them at. Where the
+// instances admit no version together the settlement selects none, the row keeps
+// what the walk resolved, and the compilation refuses the reference.
 func resolveModuleInstanceTypes(ctx context.Context, c *Closure, index map[EntityKey]int, deferred []deferredTypes, lookup Lookup) error {
-	var requests map[EntityKey]string
-	settled := false
+	if !slices.ContainsFunc(deferred, func(d deferredTypes) bool { return len(d.keys) > 0 }) {
+		return nil
+	}
+	requests, err := selectInstanceVersions(ctx, lookup, c.manifest, c.Instances, c.Entities)
+	if err != nil {
+		return err
+	}
 	for _, d := range deferred {
 		var unresolved []EntityKey
 		for _, key := range d.keys {
-			if _, held := index[key]; held {
-				p := d.walk.entities[key]
-				mergeEntity(c, index, ResolvedRef{URI: key.URI, ReferencedFrom: p.sites(), KindHint: p.kindHint})
+			i, held := index[key]
+			if !held {
+				unresolved = append(unresolved, key)
 				continue
 			}
-			unresolved = append(unresolved, key)
-		}
-		if len(unresolved) == 0 {
-			continue
-		}
-		if !settled {
-			requests = selectInstanceVersions(ctx, lookup, c.manifest, c.Instances, c.Entities)
-			settled = true
+			if request, settled := requests[key]; settled && !resolvedAtRequest(c.Entities[i], request) {
+				if err := resolveRowAgain(ctx, &c.Entities[i], d.walk.entities[key], lookup, request); err != nil {
+					return err
+				}
+			}
+			p := d.walk.entities[key]
+			mergeEntity(c, index, ResolvedRef{URI: key.URI, ReferencedFrom: p.sites(), KindHint: p.kindHint})
 		}
 		if err := d.walk.resolveKeys(ctx, lookup, unresolved, requests); err != nil {
 			return err
@@ -277,6 +288,31 @@ func resolveModuleInstanceTypes(ctx context.Context, c *Closure, index map[Entit
 			mergeEntity(c, index, d.walk.entities[key].toResolvedRef(key.URI))
 		}
 	}
+	return nil
+}
+
+// resolvedAtRequest reports whether row records the version request names.
+func resolvedAtRequest(row ResolvedRef, request string) bool {
+	version, _ := types.ParseVersionPin(request).Pin()
+	return row.ResolvedVersion == version
+}
+
+// resolveRowAgain resolves the reference row records at request, through the
+// module walk's record of it, and replaces what row records of the resolution with
+// the answer; the reference, its sites and its kind stay the row's.
+func resolveRowAgain(ctx context.Context, row *ResolvedRef, p *pendingRef, lookup Lookup, request string) error {
+	res, err := p.resolve(ctx, lookup, request)
+	if err != nil {
+		return err
+	}
+	if res.NotFound {
+		return NewUnresolvedEntityError(row.URI, p.kindHint,
+			entityNotFound(request, ReferencedFromPreview(row.ReferencedFrom), res.UnsatisfiedPin))
+	}
+	row.ResolvedVersion = res.ResolvedVersion
+	row.Digest = res.Digest
+	row.ManifestDigest = res.ManifestDigest
+	row.ResolutionPath = res.ResolutionPath
 	return nil
 }
 

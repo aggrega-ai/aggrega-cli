@@ -261,7 +261,7 @@ func TestConflictParityAcrossSurfaces(t *testing.T) {
 		`type "core/compute/server:1.0.0", written in "aggregate.yaml"`,
 		`Manifest mapping key "core/compute/server:1.1.0", written in "manifest.yaml"`,
 		`mapped to recipe "compose/server:2.0.0", whose spec.implements is "core/compute/server:1.1.0"`,
-		`catalog holds "1.0.0, 1.1.0"`,
+		`versions held "1.0.0, 1.1.0"`,
 	} {
 		if !strings.Contains(message, value) {
 			t.Errorf("the conflict does not name %s:\n%s", value, message)

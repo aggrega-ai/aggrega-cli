@@ -681,7 +681,10 @@ func (s *walkState) resolveEntities(ctx context.Context, lookup Lookup) error {
 	if err := s.resolveKeys(ctx, lookup, realizations, nil); err != nil {
 		return err
 	}
-	requests := selectInstanceVersions(ctx, lookup, s.manifest, s.instances, s.resolvedRefs())
+	requests, err := selectInstanceVersions(ctx, lookup, s.manifest, s.instances, s.resolvedRefs())
+	if err != nil {
+		return err
+	}
 	return s.resolveKeys(ctx, lookup, rest, requests)
 }
 

@@ -610,18 +610,23 @@ type RegistryPrefetcher interface {
 // beyond its own pin, one a pin the lookup already holds keeps at the version the
 // constraints select, and one whose constraints admit no version — a refusal a
 // compilation of the Release reports, in its own words, at its own step.
+//
+// It fails only where it could not read the versions it selects among — a
+// registry that failed to list them — and the walk halts on that failure, because
+// a selection over versions read in part would record another version with no
+// word said.
 type InstanceVersionSelector interface {
-	SelectInstanceVersions(ctx context.Context, manifest *types.Manifest, instances []InstanceReference, resolved []ResolvedRef) map[EntityKey]string
+	SelectInstanceVersions(ctx context.Context, manifest *types.Manifest, instances []InstanceReference, resolved []ResolvedRef) (map[EntityKey]string, error)
 }
 
 // selectInstanceVersions asks lookup to settle the versions instances resolve at
 // (InstanceVersionSelector) and returns the requests it answers with, or none where
 // the lookup cannot settle versions, where there is no Manifest to map the
 // instances through, or where there are no instances.
-func selectInstanceVersions(ctx context.Context, lookup Lookup, manifest *types.Manifest, instances []InstanceReference, resolved []ResolvedRef) map[EntityKey]string {
+func selectInstanceVersions(ctx context.Context, lookup Lookup, manifest *types.Manifest, instances []InstanceReference, resolved []ResolvedRef) (map[EntityKey]string, error) {
 	selector, ok := lookup.(InstanceVersionSelector)
 	if !ok || manifest == nil || len(instances) == 0 {
-		return nil
+		return nil, nil
 	}
 	return selector.SelectInstanceVersions(ctx, manifest, instances, resolved)
 }

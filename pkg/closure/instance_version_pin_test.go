@@ -21,10 +21,12 @@ import (
 // selectingLookup is fakeLookup with an instance-version selector: it records, in
 // order, every catalog-entity resolution it is asked for and every time it is asked
 // to settle versions, together with what it was handed then, and answers each
-// settlement with selections.
+// settlement with selections — or, where selectFor is set, with what selectFor
+// answers for the instances it is handed.
 type selectingLookup struct {
 	*fakeLookup
 	selections map[closure.EntityKey]string
+	selectFor  func([]closure.InstanceReference) map[closure.EntityKey]string
 	log        []string
 	asked      []selectionAsk
 }
@@ -41,10 +43,13 @@ func (l *selectingLookup) ResolveCatalogEntity(ctx context.Context, uri, kindHin
 	return l.fakeLookup.ResolveCatalogEntity(ctx, uri, kindHint)
 }
 
-func (l *selectingLookup) SelectInstanceVersions(_ context.Context, manifest *types.Manifest, instances []closure.InstanceReference, resolved []closure.ResolvedRef) map[closure.EntityKey]string {
+func (l *selectingLookup) SelectInstanceVersions(_ context.Context, manifest *types.Manifest, instances []closure.InstanceReference, resolved []closure.ResolvedRef) (map[closure.EntityKey]string, error) {
 	l.log = append(l.log, "select")
 	l.asked = append(l.asked, selectionAsk{manifest: manifest, instances: slices.Clone(instances), resolved: slices.Clone(resolved)})
-	return l.selections
+	if l.selectFor != nil {
+		return l.selectFor(instances), nil
+	}
+	return l.selections, nil
 }
 
 // The quickstart's shape: the Aggregate writes the server with no version, and the
@@ -112,6 +117,7 @@ func pinWalkLookup() *selectingLookup {
 	return &selectingLookup{
 		fakeLookup: &fakeLookup{entities: map[string]closure.Resolution{
 			"core/compute/server":       resolutionOK("1.1.0", "sha256:server-1.1.0", "catalog"),
+			"core/compute/server:1.1.0": resolutionOK("1.1.0", "sha256:server-1.1.0", "catalog"),
 			"core/compute/server:1.0.0": resolutionOK("1.0.0", "sha256:server-1.0.0", "catalog"),
 			"compose/server:1.0.0":      resolutionOK("1.0.0", "sha256:recipe", "tier-3-pull"),
 			"example/site":              resolutionOK("1.0.0", "sha256:site", "catalog"),
@@ -124,6 +130,22 @@ func pinWalkLookup() *selectingLookup {
 		},
 	}
 }
+
+// pinWalkHostWithOwnServer writes the server at the top level and includes the
+// module writing it too, so one reference is written by two instances.
+const pinWalkHostWithOwnServer = `apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: host
+  version: 1.0.0
+spec:
+  components:
+    web:
+      type: core/compute/server
+  aggregates:
+    site:
+      type: example/site
+`
 
 // moduleLoader serves the one module the host Aggregate includes.
 type moduleLoader struct{ t *testing.T }
@@ -243,4 +265,60 @@ func TestClosureResolvesRecipesBeforeConstrainedReferences(t *testing.T) {
 		}
 		assertRowAt(t, cl, "core/compute/server", "1.0.0")
 	})
+}
+
+// TestDescentSettlesAReferenceOverEveryInstance holds the row of a reference the
+// Release's own Aggregate and a module both write to the settlement over every
+// instance writing it: the walk settles the Release's own instance alone, at
+// 1.1.0, and once the descent hands the settlement the module's instance too, it
+// narrows to 1.0.0, so the row is resolved again at 1.0.0 and keeps the sites of
+// both instances. Where the instances admit no version together the settlement
+// covers no request and the row keeps what the walk resolved, for the compilation
+// to refuse.
+func TestDescentSettlesAReferenceOverEveryInstance(t *testing.T) {
+	t.Parallel()
+	server := closure.EntityKey{Kind: closure.KindComponent, URI: "core/compute/server"}
+	for _, c := range []struct {
+		name  string
+		union map[closure.EntityKey]string
+		want  string
+	}{
+		{name: "the instances narrow the reference together",
+			union: map[closure.EntityKey]string{server: "core/compute/server:1.0.0"}, want: "1.0.0"},
+		{name: "the instances admit no version together", union: nil, want: "1.1.0"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			lookup := pinWalkLookup()
+			lookup.selectFor = func(instances []closure.InstanceReference) map[closure.EntityKey]string {
+				if slices.ContainsFunc(instances, func(in closure.InstanceReference) bool { return in.Name == "site.web" }) {
+					return c.union
+				}
+				return map[closure.EntityKey]string{server: "core/compute/server:1.1.0"}
+			}
+			cl, err := closure.ComputeClosure(context.Background(), loadRelease(t, pinWalkRelease), loadManifest(t, pinWalkManifest),
+				types.Normalize(loadAggregate(t, pinWalkHostWithOwnServer)), workspaceconfig.Config{}, lookup)
+			if err != nil {
+				t.Fatalf("ComputeClosure: %v", err)
+			}
+			assertRowAt(t, cl, "core/compute/server", "1.1.0")
+			if err := closure.DescendSubAggregates(context.Background(), &cl, moduleLoader{t: t}, lookup); err != nil {
+				t.Fatalf("DescendSubAggregates: %v", err)
+			}
+			if len(lookup.asked) != 2 {
+				t.Fatalf("the settlement was asked %d times, want twice: once by the walk, once over every instance by the descent", len(lookup.asked))
+			}
+			assertRowAt(t, cl, "core/compute/server", c.want)
+			for _, e := range cl.Entities {
+				if e.Key() != server {
+					continue
+				}
+				for _, site := range []string{"aggregate.spec.components.web.type", "aggregate(example/site).spec.components.web.type"} {
+					if !slices.Contains(e.ReferencedFrom, site) {
+						t.Errorf("the row is referenced from %q, missing %q", e.ReferencedFrom, site)
+					}
+				}
+			}
+		})
+	}
 }

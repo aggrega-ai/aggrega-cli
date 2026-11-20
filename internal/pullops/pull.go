@@ -1530,6 +1530,13 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	if compilerops.IsComposedLockfileRefusal(discoveryErr) {
 		return Result{}, discoveryErr
 	}
+	// The render refusing a version this run recorded is the same kind of refusal:
+	// the build reading the lockfile holds each reference to its row and judges it by
+	// the constraints declared on its instances, so a row they do not admit is one
+	// that build halts on. The run writes nothing rather than leave it on disk.
+	if errors.Is(discoveryErr, catalog.ErrConflictingVersionConstraints()) {
+		return Result{}, discoveryErr
+	}
 	if discoveryErr != nil {
 		reportExternalInputDiscoveryFailure(cfg.DiagOut, lockfilePath, len(pins), cfg.DryRun, discoveryErr, cfg.FormatFailure)
 	}

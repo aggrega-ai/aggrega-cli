@@ -1052,10 +1052,13 @@ func renderReleaseFile(ctx context.Context, rw *workspaceconfig.ResolvedWorkspac
 	}
 	// Every instance is drawn at the version a build of the same Release compiles
 	// it at: the one settlement of each instance's version the build and the
-	// validation read, over the view the dependency resolution read, so this
+	// validation read, over the view the dependency resolution read, holding a
+	// reference only the lockfile's pin reaches to its row as they hold it, so this
 	// picture and those surfaces settle each instance alike. An instance whose
-	// constraints admit no version halts here as it halts them.
-	catalogLookup, err = deps.resolved.InstanceVersionLookup(catalogLookup, deps.view)
+	// constraints admit no version, or whose row they do not admit, halts here as it
+	// halts them.
+	catalogLookup, err = deps.resolved.InstanceVersionLookup(catalogLookup,
+		catalog.HeldToLockfile(deps.view, deps.lockfile, catalog.RelativeToWorkspace(rw.Root(), lockfile.PathFor(releasePath))))
 	if err != nil {
 		return err
 	}

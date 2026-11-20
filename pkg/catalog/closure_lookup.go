@@ -1888,23 +1888,7 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 			if errors.Is(err, oci.ErrFetchNotFound()) {
 				return nil, closure.Resolution{NotFound: true}, nil
 			}
-			// For the EntityPuller path the bound host is the configured registry's,
-			// not the bare identity's leading segment — ask the puller for the
-			// prefix it binds under and read the host out of it, so the docker-login
-			// remediation names the host a login is stored for and never the path.
-			host := registryhost.Of(name)
-			if rp, ok := puller.(interface{ RegistryPrefix() string }); ok {
-				host = registryhost.Of(rp.RegistryPrefix())
-			}
-			// remediationFor, not oci.RemediationFor: this is the one pull path that
-			// can surface a reference-binding refusal (PullEntity binds the identity
-			// before it fetches), and those sentinels are declared in this package, so
-			// only the catalog-side mapping reaches them. It delegates to the fetch
-			// mapping first, so every fetch remediation still arrives unchanged.
-			if rem := remediationFor(err, host); rem != "" {
-				return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w\n  %s", uri, err, rem)
-			}
-			return nil, closure.Resolution{}, fmt.Errorf("catalog: tier-3 pull %s: %w", uri, err)
+			return nil, closure.Resolution{}, entityRegistryFailure(puller, "tier-3 pull "+uri, name, err)
 		}
 		if aerr := admitFetchedEntity(slotKind, result.Bytes, name+":"+resolvedVersion); aerr != nil {
 			return nil, closure.Resolution{}, aerr
@@ -1974,6 +1958,30 @@ func tier3PullCatalogEntity(ctx context.Context, workspaceRoot, cacheDir string,
 		ManifestDigest:  result.Digest,
 		ResolutionPath:  closure.ResolutionPathRegistry,
 	}, nil
+}
+
+// entityRegistryFailure is the failure of a registry read of the core catalog
+// entity identity through puller's kind-bound location (EntityPuller,
+// EntityVersionLister), done as action: err, with the remediation the failure
+// carries beneath it. The host the remediation names is the configured registry's
+// the puller binds identities under, not the bare identity's leading segment, so
+// the docker-login remediation names the host a login is stored for and never the
+// path.
+//
+// It reads remediationFor, not oci.RemediationFor: a kind-bound read binds the
+// identity before it fetches, so it can surface a reference-binding refusal, and
+// those sentinels are declared in this package, so only the catalog-side mapping
+// reaches them. It delegates to the fetch mapping first, so every fetch
+// remediation still arrives unchanged.
+func entityRegistryFailure(puller OCIPuller, action, identity string, err error) error {
+	host := registryhost.Of(identity)
+	if rp, ok := puller.(interface{ RegistryPrefix() string }); ok {
+		host = registryhost.Of(rp.RegistryPrefix())
+	}
+	if rem := remediationFor(err, host); rem != "" {
+		return fmt.Errorf("catalog: %s: %w\n  %s", action, err, rem)
+	}
+	return fmt.Errorf("catalog: %s: %w", action, err)
 }
 
 // tier3Library is the registry tier of a library on any axis: it fetches the

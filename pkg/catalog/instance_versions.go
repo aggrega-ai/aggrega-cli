@@ -112,10 +112,23 @@ type recordedVersions interface {
 
 // listedVersions is the optional InstanceVersionView capability of a view that
 // lists the versions a registry publishes a Component name at, read where neither
-// a catalog directory nor a lockfile holds the reference.
+// a catalog directory nor a lockfile holds the reference. A registry holding no
+// version of the name lists none; any other failure to list is returned, and it
+// settles nothing (versionListingFailure).
 type listedVersions interface {
-	ListedVersions(name string) []string
+	ListedVersions(name string) ([]string, error)
 }
+
+// versionListingFailure is a failure to list the versions a registry publishes a
+// Component name at. It is not a refusal of the reference: the settlement stops on
+// it, returning it as it is, because a selection over versions read in part would
+// select another version with no word said. It reads as the registry's own
+// failure (Unwrap).
+type versionListingFailure struct{ err error }
+
+func (f *versionListingFailure) Error() string { return f.err.Error() }
+
+func (f *versionListingFailure) Unwrap() error { return f.err }
 
 // candidates are the versions of a reference's Component the table selects among.
 // recorded reports that they are the one version a lockfile records the reference
@@ -131,26 +144,32 @@ type candidates struct {
 // name; where it holds none, the version a lockfile records the reference at
 // (recordedVersions); where none records it, the versions view lists
 // (listedVersions).
-func candidateVersions(view InstanceVersionView, reference, base string) candidates {
+func candidateVersions(view InstanceVersionView, reference, base string) (candidates, error) {
 	if held := view.ComponentVersions(base); len(held) > 0 {
-		return candidates{versions: held}
+		return candidates{versions: held}, nil
 	}
 	if recorded, ok := view.(recordedVersions); ok {
 		if version, file, ok := recorded.RecordedVersion(reference); ok {
-			return candidates{versions: []string{version}, recorded: true, lockfile: file}
+			return candidates{versions: []string{version}, recorded: true, lockfile: file}, nil
 		}
 	}
-	return candidates{versions: listedVersionsOf(view, base)}
+	listed, err := listedVersionsOf(view, base)
+	return candidates{versions: listed}, err
 }
 
 // listedVersionsOf returns the versions view lists of the Component name
 // (listedVersions), in the order inVersionOrder gives, and none for a view that
-// lists none.
-func listedVersionsOf(view InstanceVersionView, name string) []string {
-	if listing, ok := view.(listedVersions); ok {
-		return inVersionOrder(listing.ListedVersions(name))
+// lists none. A failure to list is returned as a versionListingFailure.
+func listedVersionsOf(view InstanceVersionView, name string) ([]string, error) {
+	listing, ok := view.(listedVersions)
+	if !ok {
+		return nil, nil
 	}
-	return nil
+	listed, err := listing.ListedVersions(name)
+	if err != nil {
+		return nil, &versionListingFailure{err: err}
+	}
+	return inVersionOrder(listed), nil
 }
 
 // HeldToLockfile returns view holding, where none of its catalog directories
@@ -233,7 +252,9 @@ func (v lockfileHeldView) RecordedVersion(reference string) (string, string, boo
 // entry disagrees with itself, that rule reports it once as the mapping fault it
 // is, and the instance resolves as its other constraints admit. A malformed pin
 // on such an entry is that rule's to report too.
-// Every refused reference is reported, and the table holds the others.
+// Every refused reference is reported, and the table holds the others. A failure
+// to list the versions a registry publishes is no refusal: it is returned alone,
+// as the registry's failure, and the table is empty.
 //
 // A reference the table cannot judge is left out of Selected and resolves as it
 // does without the table: one with no version to select among, one no
@@ -259,7 +280,10 @@ func ResolveInstanceVersions(release string, instances []closure.InstanceReferen
 	var refusals []error
 	for reference, declared := range table.Constraints.All() {
 		version, selected, err := selectComponentVersion(release, reference, declared, view)
+		var listing *versionListingFailure
 		switch {
+		case errors.As(err, &listing):
+			return InstanceVersions{}, err
 		case err != nil:
 			refusals = append(refusals, err)
 		case selected:
@@ -327,10 +351,17 @@ func instanceSite(path string) string {
 // away from, while a build, whose view lists none, is held to the row.
 func selectComponentVersion(release, reference string, declared []VersionConstraint, view InstanceVersionView) (string, bool, error) {
 	base := types.ParseVersionPin(reference).Base()
-	offered := candidateVersions(view, reference, base)
+	offered, err := candidateVersions(view, reference, base)
+	if err != nil {
+		return "", false, err
+	}
 	version, selected, err := selectAmong(release, reference, base, declared, view, offered)
 	if offered.recorded && errors.Is(err, ErrConflictingVersionConstraints()) {
-		if listed := listedVersionsOf(view, base); len(listed) > 0 {
+		listed, lerr := listedVersionsOf(view, base)
+		if lerr != nil {
+			return "", false, lerr
+		}
+		if len(listed) > 0 {
 			return selectAmong(release, reference, base, declared, view, candidates{versions: listed})
 		}
 	}
@@ -412,14 +443,21 @@ func malformedConstraintPin(declared []VersionConstraint, reference string) erro
 // tells the author to do.
 const conflictingVersionAdvice = "change the Aggregate's version, or map this type at a version its recipe implements"
 
+// lockedVersionAdvice is what a conflicting-version-constraints refusal over a
+// version a lockfile records adds: a pull resolves the reference again, and
+// records the version its constraints admit.
+const lockedVersionAdvice = ", or run `aggrega pull` to lock the version every constraint admits"
+
 // conflictingVersionConstraints is the refusal of a reference that no version the
 // catalog holds satisfies under every constraint in declared. It names the Release
 // the instances belong to, then each instance in turn — where it is declared, its
 // name, and each of its constraints with the file it is written in — then the
 // versions held, a version-less entry among them left unnamed because it has no
-// version to name. Where the versions are the ones a lockfile records, recordedIn
-// names that lockfile, and the versions are named as locked there, a source beside
-// the constraints. It is positioned where the first instance is declared: the
+// version to name — the versions held by a catalog directory or listed by a
+// registry. Where the versions are the ones a lockfile records, recordedIn names
+// that lockfile, the versions are named as locked there, a source beside the
+// constraints, and the advice adds that a pull locks the version the constraints
+// admit. It is positioned where the first instance is declared: the
 // document its type is written in, at the instance's site, which is where the
 // remedy of changing the version is written.
 func conflictingVersionConstraints(release string, declared []VersionConstraint, held []string, recordedIn string) error {
@@ -448,12 +486,14 @@ func conflictingVersionConstraints(release string, declared []VersionConstraint,
 			named = append(named, version)
 		}
 	}
+	advice := conflictingVersionAdvice
 	if recordedIn != "" {
 		detail = append(detail,
 			constraint.Captioned("locked at", strings.Join(named, ", ")),
 			constraint.Captioned("written in", recordedIn))
+		advice += lockedVersionAdvice
 	} else {
-		detail = append(detail, constraint.Captioned("catalog holds", strings.Join(named, ", ")))
+		detail = append(detail, constraint.Captioned("versions held", strings.Join(named, ", ")))
 	}
 
 	condition := ErrConflictingVersionConstraints()
@@ -462,7 +502,7 @@ func conflictingVersionConstraints(release string, declared []VersionConstraint,
 		at = cerrors.SourceLocation{File: declared[0].File, Locator: declared[0].Site, Instance: declared[0].Instance}
 	}
 	return cerrors.Wrap(condition, cerrors.OpsError, at,
-		cerrors.ComposeMessage(condition, constraint.RenderDetail(detail...), conflictingVersionAdvice))
+		cerrors.ComposeMessage(condition, constraint.RenderDetail(detail...), advice))
 }
 
 // inVersionOrder returns versions in the order a reader is shown them: every
