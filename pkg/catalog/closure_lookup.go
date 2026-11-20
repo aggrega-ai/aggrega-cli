@@ -1225,7 +1225,7 @@ func (l *catalogLookup) catalogDirectoryOwns(kind string, unsatisfied error) boo
 // localLibrary reads one library out of the locally-authored catalog, returning
 // the identity it is indexed under, its version and the set of entry names it
 // publishes. Of the versions the catalog holds under the library's name, it reads
-// the one the reference uri selects (selectLibrary); err is the selection's own
+// the one the reference uri selects as a floor (selectLibraryFloor); err is the selection's own
 // account of a reference it does not answer.
 //
 // This is the one place an axis is bound to the catalog map and the spec section
@@ -1236,7 +1236,7 @@ func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, uri string) (stri
 	entries := map[string]struct{}{}
 	switch axis.Kind {
 	case "SchemaLibrary":
-		lib, key, found, err := selectLibrary(l.catalog.SchemaLibraryVersions, ref, schemaLibraryMeta)
+		lib, key, found, err := selectLibraryFloor(l.catalog.SchemaLibraryVersions, ref, schemaLibraryMeta)
 		if !found {
 			return "", "", nil, false, err
 		}
@@ -1250,7 +1250,7 @@ func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, uri string) (stri
 		}
 		return key, lib.Metadata.Version, entries, true, nil
 	case "MappingLibrary":
-		lib, key, found, err := selectLibrary(l.catalog.MappingLibraryVersions, ref, mappingLibraryMeta)
+		lib, key, found, err := selectLibraryFloor(l.catalog.MappingLibraryVersions, ref, mappingLibraryMeta)
 		if !found {
 			return "", "", nil, false, err
 		}
@@ -1259,7 +1259,7 @@ func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, uri string) (stri
 		}
 		return key, lib.Metadata.Version, entries, true, nil
 	case "WorkloadLibrary":
-		lib, key, found, err := selectLibrary(l.catalog.WorkloadLibraryVersions, ref, workloadLibraryMeta)
+		lib, key, found, err := selectLibraryFloor(l.catalog.WorkloadLibraryVersions, ref, workloadLibraryMeta)
 		if !found {
 			return "", "", nil, false, err
 		}
@@ -1268,7 +1268,7 @@ func (l *catalogLookup) localLibrary(axis closure.LibraryAxis, uri string) (stri
 		}
 		return key, lib.Metadata.Version, entries, true, nil
 	case "ArtifactLibrary":
-		lib, key, found, err := selectLibrary(l.catalog.ArtifactLibraryVersions, ref, artifactLibraryMeta)
+		lib, key, found, err := selectLibraryFloor(l.catalog.ArtifactLibraryVersions, ref, artifactLibraryMeta)
 		if !found {
 			return "", "", nil, false, err
 		}

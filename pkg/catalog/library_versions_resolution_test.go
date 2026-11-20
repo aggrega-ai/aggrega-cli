@@ -118,7 +118,7 @@ func TestTier1LibraryReportsSelectedCopy(t *testing.T) {
 		ref  string
 		want string
 	}{
-		{name: "a floor naming the lower held version", held: []string{"1.0.0", "1.1.0"}, ref: "Lib:1.0.0", want: "1.0.0"},
+		{name: "a floor below the highest held version", held: []string{"1.0.0", "1.1.0"}, ref: "Lib:1.0.0", want: "1.1.0"},
 		{name: "a floor naming the higher held version", held: []string{"1.0.0", "1.1.0"}, ref: "Lib:1.1.0", want: "1.1.0"},
 		{name: "a bare reference", held: []string{"1.0.0", "1.1.0"}, ref: "Lib", want: "1.1.0"},
 		{name: "a floor between two held versions", held: []string{"1.0.0", "1.2.0"}, ref: "Lib:1.1.0", want: "1.2.0"},
@@ -468,9 +468,10 @@ func libraryDocument(kind, name, version, spec string) string {
 
 // TestAugmentFollowsResolvedLibraryVersion: the discovery descends a library's
 // own references at the version the resolution selected for it. Lib 1.0.0
-// references Other and Lib 1.1.0 references Third; a consumer whose floor selects
-// Lib 1.0.0 reaches Other and not Third, on every library axis — where a descent
-// reading the library by its name alone would read the higher version's body.
+// references Other and Lib 1.1.0 references Third; a consumer whose floor is 1.0.0
+// selects Lib 1.1.0, the highest version the floor admits, and reaches Third and
+// not Other, on every library axis — where a descent reading the floor's own
+// version would read the lower version's body.
 func TestAugmentFollowsResolvedLibraryVersion(t *testing.T) {
 	t.Parallel()
 	ws := t.TempDir()
@@ -527,8 +528,8 @@ spec:
 		for _, lib := range axisOfKind(t, k.kind).Libraries(&cl) {
 			got = append(got, lib.URI+":"+lib.ResolvedVersion)
 		}
-		if want := "Lib:1.0.0 Other:1.0.0"; strings.Join(got, " ") != want {
-			t.Errorf("%s: the closure holds %v; want %s — the libraries Lib 1.0.0 references, and not those of Lib 1.1.0",
+		if want := "Lib:1.1.0 Third:1.0.0"; strings.Join(got, " ") != want {
+			t.Errorf("%s: the closure holds %v; want %s — the libraries Lib 1.1.0 references, and not those of Lib 1.0.0",
 				k.kind, got, want)
 		}
 	}

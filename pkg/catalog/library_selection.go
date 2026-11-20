@@ -41,8 +41,9 @@ func (c *Catalog) defaultSchemaLibraries() map[string]types.SchemaLibrary {
 }
 
 // SchemaLibrary returns the SchemaLibrary a reference selects among the versions
-// this catalog holds: a bare name reads the highest version, and a name with a
-// version reads the version that floor selects. ok is false where the catalog
+// this catalog holds: a bare name reads the highest version, a name with a
+// held version reads that version, and any other version reads as a floor: the
+// highest held version of its major at or above it. ok is false where the catalog
 // holds the name at no version, or at none the floor admits.
 func (c *Catalog) SchemaLibrary(ref string) (types.SchemaLibrary, bool) {
 	lib, _, ok, _ := selectLibrary(c.SchemaLibraryVersions, ref, schemaLibraryMeta)
@@ -67,20 +68,52 @@ func (c *Catalog) ArtifactLibrary(ref string) (types.ArtifactLibrary, bool) {
 	return lib, ok
 }
 
-// selectLibrary returns the library ref selects among the versions index holds
-// (selectLibraryVersion), with the identity it is indexed under, applying the
-// selection to the reference as given. It is the one by-reference read of a
-// library: the catalog tier of a dependency resolution, the per-kind reads of
-// both catalog backings and the by-reference byte read (Catalog.EntityBytes) all
-// read through it. A miss, and a reference no held version satisfies, both report
-// ok false; err is the selection's account of the second (or of a floor that is no
-// version), and nil for a plain miss.
+// selectLibrary returns the library ref names among the versions index holds,
+// with the identity it is indexed under. It is the one read of a library by the
+// identity a resolution recorded or a caller spells out: a reference naming a
+// held version exactly (`Name:1.1.0` with 1.1.0 held) reads that version, so a
+// recorded version reads back as itself however many later versions the index
+// comes to hold; any other reference is selected as selectLibraryFloor selects
+// it. The per-kind reads of both catalog backings and the by-reference byte read
+// (Catalog.EntityBytes) read through it. A miss, and a reference no held version
+// satisfies, both report ok false; err is the selection's account of the second
+// (or of a floor that is no version), and nil for a plain miss.
 func selectLibrary[V any](index map[string]V, ref string, meta func(V) (string, string)) (lib V, key string, ok bool, err error) {
+	if key, ok := heldLibraryIdentity(index, ref, meta); ok {
+		return index[key], key, true, nil
+	}
+	return selectLibraryFloor(index, ref, meta)
+}
+
+// selectLibraryFloor returns the library ref selects among the versions index
+// holds (selectLibraryVersion), reading a version in ref as a floor: the highest
+// held version every such floor admits. It is the dependency resolution's read,
+// where a consumer's `@version` states what it needs and not what it holds.
+func selectLibraryFloor[V any](index map[string]V, ref string, meta func(V) (string, string)) (lib V, key string, ok bool, err error) {
 	key, ok, err = selectLibraryVersion(index, ref, meta)
 	if !ok || err != nil {
 		return lib, "", false, err
 	}
 	return index[key], key, true, nil
+}
+
+// heldLibraryIdentity reports the index key of the held version ref names
+// exactly: the entry whose name and version are ref's base and version as
+// written. Entries equal in both (differing in build metadata only are different
+// versions as written) select the smaller key, so the read is deterministic.
+func heldLibraryIdentity[V any](index map[string]V, ref string, meta func(V) (string, string)) (string, bool) {
+	pin := types.ParseVersionPin(ref)
+	version, hasVersion := pin.Pin()
+	if !hasVersion || pin.IsCaret() {
+		return "", false
+	}
+	found := ""
+	for k, v := range index {
+		if n, ver := meta(v); n == pin.Base() && ver == version && (found == "" || k < found) {
+			found = k
+		}
+	}
+	return found, found != ""
 }
 
 // defaultLibrarySelection derives a name-keyed map from an identity-keyed index:

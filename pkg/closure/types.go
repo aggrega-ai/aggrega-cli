@@ -9,7 +9,7 @@
 // across the catalog-entity axis (Components, Features, Recipes,
 // FeatureRecipes, Aggregates), the library closures
 // (SchemaLibrary $ref: and MappingLibrary $import: sites with
-// minimum version selection over conflicting requirements), and
+// version selection over conflicting requirements), and
 // the Wasm plugin axis (embedded Recipe / FeatureRecipe pipeline
 // plugins plus workspace-level plugin attachments). The Recipe
 // source: field axis is not part of this package's scope; a

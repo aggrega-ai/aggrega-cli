@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"errors"
 	"sort"
 	"strings"
 
@@ -373,11 +374,16 @@ func higherCandidate(a, b versionCandidate) bool {
 //
 //   - bare ("Lib")        -> the highest non-prerelease version, as
 //     selectEntityVersion picks it;
-//   - floor ("Lib:1.1.0") -> the lowest held version at or above the floor that
-//     shares the floor's major component. A floor may omit trailing components
-//     ("Lib:1.1" reads as 1.1.0). Versions of major 0 share one major, so 0.5.1
-//     is satisfied by 0.6.0. A prerelease is selected only when the floor names
-//     it literally.
+//   - floor ("Lib:1.1.0") -> the highest held version at or above the floor that
+//     shares the floor's major component, so a floor reads as `>=1.1.0` within
+//     its major. A floor may omit trailing components ("Lib:1.1" reads as
+//     1.1.0). Versions of major 0 share one major, so 0.5.1 is satisfied by
+//     0.6.0. A prerelease is selected only when the floor names it literally
+//     and no later release of the major is held.
+//
+// A floor is selected through selectEntityVersionWhere, asked for the bare name
+// with the floor's range as its admission predicate, so a bare reference and a
+// floor choose "highest" by the one rule.
 //
 // Returns the same three-way contract selectEntityVersion does: (key, true, nil)
 // on a pick, ("", false, nil) when the library name is held at no version, and
@@ -403,8 +409,6 @@ func selectLibraryVersion[V any](index map[string]V, ref string, meta func(V) (n
 	floor, floorErr := semver.NewVersion(floorText)
 	base := pin.Base()
 	var held []versionCandidate
-	best := versionCandidate{}
-	found := false
 	for k, v := range index {
 		n, ver := meta(v)
 		if n != base {
@@ -415,29 +419,36 @@ func selectLibraryVersion[V any](index map[string]V, ref string, meta func(V) (n
 			c.parsed = parsed
 		}
 		held = append(held, c)
-		if floorErr != nil || c.parsed == nil || c.parsed.Major() != floor.Major() || c.parsed.LessThan(floor) {
-			continue
-		}
-		if c.parsed.Prerelease() != "" && !c.parsed.Equal(floor) {
-			continue
-		}
-		// higherCandidate(best, c) asks whether c is lower, keeping the lowest; a semver tie keeps the smaller key, as a bare reference does.
-		if !found || (c.parsed.Equal(best.parsed) && c.key < best.key) || (!c.parsed.Equal(best.parsed) && higherCandidate(best, c)) {
-			best, found = c, true
-		}
 	}
-	switch {
-	case len(held) == 0:
+	if len(held) == 0 {
 		return "", false, nil
-	case floorErr != nil:
+	}
+	if floorErr != nil {
 		if fault := pin.Fault(); fault != nil {
 			return "", false, fault
 		}
 		return "", false, newUnsatisfiedLibraryFloor(base, held)
-	case !found:
-		return "", false, newUnsatisfiedLibraryFloor(base, held)
 	}
-	return best.key, true, nil
+
+	admitsFloor := func(version string) bool {
+		v, err := semver.NewVersion(version)
+		return err == nil && v.Major() == floor.Major() && !v.LessThan(floor)
+	}
+	key, ok, err := selectEntityVersionWhere(index, base, meta, admitsFloor)
+	if ok {
+		return key, true, nil
+	}
+	if err != nil && !errors.Is(err, ErrConflictingVersionConstraints()) {
+		return "", false, err
+	}
+	// A floor that names a prerelease selects the copy that names it, when no
+	// release of the major is held at or above the floor.
+	if floor.Prerelease() != "" {
+		if key, ok, err := selectEntityVersionWhere(index, ref, meta, nil); ok && err == nil {
+			return key, true, nil
+		}
+	}
+	return "", false, newUnsatisfiedLibraryFloor(base, held)
 }
 
 // unsatisfiedLibraryFloor is the library selection's account of a floor no held

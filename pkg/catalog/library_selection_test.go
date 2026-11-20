@@ -41,8 +41,9 @@ func TestSelectLibraryVersion(t *testing.T) {
 	}{
 		{"bare picks highest", lib("1.0.0", "1.1.0"), "Lib", "Lib:1.1.0", true, false},
 		{"bare skips prerelease", lib("1.0.0", "1.1.0", "1.2.0-rc.1"), "Lib", "Lib:1.1.0", true, false},
-		{"floor held exactly", lib("1.0.0", "1.1.0"), "Lib:1.0.0", "Lib:1.0.0", true, false},
-		{"floor selects lowest above", lib("1.0.0", "1.2.0", "1.3.0"), "Lib:1.1.0", "Lib:1.2.0", true, false},
+		{"floor held exactly and a higher one held", lib("1.0.0", "1.1.0"), "Lib:1.0.0", "Lib:1.1.0", true, false},
+		{"floor held exactly and alone", lib("1.0.0"), "Lib:1.0.0", "Lib:1.0.0", true, false},
+		{"floor selects highest above", lib("1.0.0", "1.2.0", "1.3.0"), "Lib:1.1.0", "Lib:1.3.0", true, false},
 		{"short floor reads as 1.1.0", lib("1.0.0", "1.1.0"), "Lib:1.1", "Lib:1.1.0", true, false},
 		{"prerelease named literally", lib("1.2.0-rc.1"), "Lib:1.2.0-rc.1", "Lib:1.2.0-rc.1", true, false},
 		{"floor above all held", lib("1.0.0"), "Lib:1.1.0", "", false, true},

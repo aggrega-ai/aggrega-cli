@@ -121,7 +121,7 @@ type pendingRef struct {
 
 // pendingLibrary collects per-library-URI consumer→fragment
 // mappings the walker builds; the version constraints contributed
-// by each consumer feed the minimum version selection pass.
+// by each consumer feed the library version selection pass.
 // Once the resolveAll pass has run, resolution carries the
 // looked-up LibraryResolution metadata.
 //
@@ -481,11 +481,11 @@ func (s *walkState) walkWorkspacePlugins(cfg workspaceconfig.Config) {
 // after ComputeClosure's first pass has resolved Component /
 // Feature entities and integration code descends into each
 // resolved entity's schema body. Calling repeatedly AFTER a
-// library's MVS-resolved version has already been recorded (via
+// library's selected version has already been recorded (via
 // a prior ComputeClosure + Lookup pass) re-blends the per-consumer
 // version constraints in a non-obvious way: each existing
 // consumer's stored version becomes the previously-resolved
-// version rather than its original pin, so MVS cannot detect a
+// version rather than its original pin, so the selection cannot detect a
 // fresh major-version disagreement against a new consumer's
 // different pin. A use case that requires post-resolution
 // re-walking should re-run ComputeClosure (or a dedicated
@@ -636,7 +636,7 @@ func (s *walkState) walkImportRef(axis LibraryAxis, ref string, consumer consume
 // resolveAll iterates the pending entity / library maps and invokes
 // the Lookup interface per URI. NotFound on a catalog entity is a
 // fatal closure gap and returns ErrUnresolvableURI. Library
-// resolution feeds the minimum version selection pass before invoking
+// resolution feeds the library version selection pass before invoking
 // the library lookup.
 func (s *walkState) resolveAll(ctx context.Context, lookup Lookup) error {
 	if err := s.resolveEntities(ctx, lookup); err != nil {
@@ -845,7 +845,7 @@ func entityNotFound(uri, referencedFrom string, unsatisfiedPin error) error {
 	return fmt.Errorf("%w: entity %q (referenced from %s)", ErrUnresolvableURI(), uri, referencedFrom)
 }
 
-// resolveLibraries applies minimum version selection (MVS) across the
+// resolveLibraries applies library version selection across the
 // per-library consumer→version mapping for one axis, then invokes the injected
 // Lookup to obtain digest + resolution-path metadata. The axis selects both the
 // accumulator to drain and the kind the resolver dispatches on, so every library
@@ -944,14 +944,16 @@ type heldIdentities interface {
 }
 
 // libraryRequest is what resolveLibraries asks the lookup for the library recorded
-// under uri: the version minimum version selection settles on across its consumers,
+// under uri: the version the selection settles on across its consumers,
 // the reference that asks for that version, and whether to ask at all — a library
 // already resolved at the selected version is not asked again (see resolveLibraries).
 // It is the one statement of the request, so the read ahead asks for what the
 // resolution goes on to ask for.
 //
-// The selected version (the optional `@version` floor) reaches the lookup as a
-// `name:version` reference, so a registry pull resolves that tag. A pure bare-name
+// The selected version (the highest floor any consumer states) reaches the lookup
+// as a `name:version` reference, which the lookup reads as `>=version` within that
+// version's major and answers with the highest held version it admits; a registry
+// pull resolves that tag. A pure bare-name
 // reference (no floor) leaves the version empty for the lookup to resolve at first
 // pull (the list-tags→highest path). The stored library key stays the host-less bare
 // name regardless.
@@ -970,16 +972,17 @@ func libraryRequest(uri string, lib *pendingLibrary) (selected, resolveURI strin
 	return selected, resolveURI, true, nil
 }
 
-// selectMVSVersion applies the standard minimum version selection
-// algorithm: per library URI, the resolved version is the maximum
-// across all consumers' pinned versions (i.e., the lowest version
-// that satisfies every consumer's minimum requirement). Major-
-// version disagreement surfaces as ErrMVSConflict.
+// selectMVSVersion settles the version a library is requested at across its
+// consumers. A consumer's `@version` is a floor, `>=version` within its major, so
+// the consumers' constraints intersect in `>=` the highest floor within the shared
+// major, and the highest floor is the version requested; the lookup answers that
+// request with the highest held version the intersection admits. Major-version
+// disagreement surfaces as ErrMVSConflict.
 //
-// Unpinned consumers (empty version string) don't contribute to
-// the max; the result is determined by the pinned consumers
-// alone. If every consumer is unpinned the function returns
-// empty string (the lookup-reported ResolvedVersion wins).
+// Unpinned consumers (empty version string) state no constraint and don't
+// contribute; the result is determined by the pinned consumers alone. If every
+// consumer is unpinned the function returns the empty string and the lookup
+// selects the highest version it holds.
 //
 // The result is a function of the pins alone, never of the order a map is
 // ranged in. Consumers are visited in consumer-URI order: the major every pin is

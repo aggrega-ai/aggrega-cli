@@ -63,7 +63,7 @@ type VerifiableAxis struct {
 }
 
 // LibraryAxis describes one library axis of a closure: a section whose members
-// are cross-document libraries selected by minimum version and pinned by the
+// are cross-document libraries selected as the highest version every consumer admits and pinned by the
 // lockfile. The four axes differ only in the fragment surface they admit and the
 // section they accumulate into, so every operation over them is written once and
 // parameterised by this descriptor rather than copied per axis.
