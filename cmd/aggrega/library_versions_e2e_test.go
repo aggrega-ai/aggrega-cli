@@ -378,7 +378,7 @@ func TestLibraryVersionsSeveralHeldMapping(t *testing.T) {
 		d12 := w.addLib("libs", "1.2.0")
 		_, _, err := w.build()
 		want := fmt.Sprintf("lockfile=(1.1.0,%s) current=(1.2.0,%s)", d11, d12)
-		if err == nil || !errors.Is(err, lockfile.ErrLockfileDrift()) || !strings.Contains(err.Error(), want) {
+		if !errors.Is(err, lockfile.ErrLockfileDrift()) || !strings.Contains(err.Error(), want) {
 			t.Fatalf("build error = %v, want the lockfile-drift refusal containing %q", err, want)
 		}
 	})

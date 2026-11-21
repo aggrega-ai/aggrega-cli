@@ -412,10 +412,12 @@ func TestResolveLibrariesKeepsLookupVersion(t *testing.T) {
 // pull and a build run.
 //
 // On the mapping axis Lib is reached from one Recipe bare and from another with
-// the floor 1.0.0, so the consumers admit 1.0.0 and later and the closure holds Lib
-// once, at the highest, 1.1.0. Lib 1.1.0's own body imports Lib2 with the floor
-// 1.2.0 (Lib 1.0.0's imports it at 1.1.0), so Lib2 is held once, at 1.2.0: the
-// descent follows the selected version's body. A Component's schema
+// the floor 1.0.0, so the consumers admit 1.0.0 and later within its major and the
+// closure holds Lib once, at the highest, 1.1.0. Lib 1.1.0's own body imports Lib2
+// with the floor 1.2.0, so Lib2 is held once, at 1.2.0. Lib 1.0.0's body, which is
+// not selected, imports Lib2 at 1.1.0 and also Lib3, which no other body imports:
+// the descent follows the selected version's body alone, so Lib3 is not held. A
+// Component's schema
 // references Lib2 bare; that reference names the SchemaLibrary Lib2, a library of
 // another kind selected on the schema axis by its own consumers alone, so it is
 // held there once, at the highest version. Every row records the digest of the
@@ -425,7 +427,9 @@ func TestResolveLibrariesOneVersionPerName(t *testing.T) {
 	ws := t.TempDir()
 	dir := filepath.Join(ws, "catalog")
 	files := map[string]string{
-		"lib-1.0.0.yaml":          mappingLibraryDoc("Lib", "1.0.0", "X", "$import: Lib2:1.1.0#/mappings/Y"),
+		"lib-1.0.0.yaml": mappingLibraryDoc("Lib", "1.0.0", "X", "$import: Lib2:1.1.0#/mappings/Y") +
+			"    Z: |\n      $import: Lib3:1.0.0#/mappings/Y\n",
+		"lib3-1.0.0.yaml":         mappingLibraryDoc("Lib3", "1.0.0", "Y", "level: 3"),
 		"lib-1.1.0.yaml":          mappingLibraryDoc("Lib", "1.1.0", "X", "$import: Lib2:1.2.0#/mappings/Y"),
 		"lib2-1.0.0.yaml":         mappingLibraryDoc("Lib2", "1.0.0", "Y", "level: 0"),
 		"lib2-1.1.0.yaml":         mappingLibraryDoc("Lib2", "1.1.0", "Y", "level: 1"),
