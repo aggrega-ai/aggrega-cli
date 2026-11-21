@@ -2050,9 +2050,22 @@ jobs:
         # here, beside the build whose module and crate caches they are read
         # from, into the staging directory, so they travel with the guest.
         # The pairing is written only when every entity paired.
+        #
+        # A Rust guest's notices list every crate its Cargo.lock locks, the
+        # platform-specific ones included, and the generator reads each crate's
+        # source from the cargo registry, offline. The wasm build fetched only
+        # the crates that target compiles, so `cargo fetch --locked` runs first in
+        # each Rust guest directory the core-plugin list names; it fetches what
+        # the cache lacks and nothing else.
         run: |
           set -euo pipefail
           . aggrega-cli/scripts/lib/core-plugins.sh
+          rust_dirs="$(core_plugin_rust_dirs)"
+          while IFS= read -r d; do
+            [ -n "$d" ] || continue
+            ( cd "$CORE_PLUGIN_MODULE_ROOT/$d" && cargo fetch --locked ) \
+              || { echo "cargo fetch --locked failed in aggrega-cli/$d; the notices generator reads every locked crate's source" >&2; exit 1; }
+          done <<< "$rust_dirs"
           STAGE="$RELEASE_INPUTS/plugins"
           WASM_DIR="$STAGE/wasm"
           mkdir -p "$WASM_DIR"
