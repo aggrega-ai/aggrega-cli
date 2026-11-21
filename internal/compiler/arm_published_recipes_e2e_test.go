@@ -202,9 +202,11 @@ var armFeaturesReadPattern = regexp.MustCompile(`\.features(?:[^.A-Za-z_]|$)`)
 // whole body is another field-root `$import:` until a terminal template. The
 // library is the version a bare reference selects, from the catalog's own
 // selection. problem is empty on success and otherwise says why the text cannot
-// be read, so the caller reports it. The chain is followed here because the
-// compiler's resolver is unexported in the renderer; it ends at the first
-// repeated reference.
+// be read, so the caller reports it. It is a deliberate near-duplicate of
+// resolveMappingLibraryImport and fieldRootImportTarget in
+// internal/compiler/renderer/mapping_import.go: both are unexported there and
+// work over a render's inputs, so the scan, which reads raw catalog files, follows
+// the chain itself. The chain ends at the first repeated reference.
 func armImportedMapping(libs map[string]types.MappingLibrary, ref string) (text, entryID, problem string) {
 	seen := map[string]bool{}
 	for {
