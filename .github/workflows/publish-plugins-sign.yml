@@ -1006,9 +1006,8 @@ jobs:
     needs: registry-credential
     # aggrega-hub, whose overlays the build reads, is a public repository, read
     # with the run's own token. This job runs nothing but GitHub's own checkout
-    # action, git and the shell's own utilities, and not the build job, whose
-    # third-party build code would otherwise run beside that token. This job
-    # moves the CLI tree onto the release tag, checks aggrega-hub out at HUB_REF, and
+    # action, git and the shell's own utilities. It moves the CLI tree onto the
+    # release tag, checks aggrega-hub out at HUB_REF, and
     # hands the checkout, which keeps no token, to the build job in this run's
     # hand-over folder, with a SHA-256 list of every file in it. It makes the
     # folder.
