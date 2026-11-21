@@ -16,8 +16,11 @@ import (
 // component reference the table holds and an authored property of one of its
 // pillars, the highest held version of the Component that declares the property
 // among those the instance's constraints exclude, and the constraints that
-// exclude it. The contracts compared are those of unscoped, the lookup the table
-// was resolved over, which answers every version rather than the one selected.
+// exclude it. "Highest" is the version select's, asked for the Component's name
+// with that admission predicate, so the version named is the one a reference
+// naming no version selects among them, and never a pre-release while a release
+// is held. The contracts compared are those of unscoped, the lookup the table was
+// resolved over, which answers every version rather than the one selected.
 //
 // The notes are the version, captioned "declared by"; the version the
 // instance compiles at, captioned "held at"; and each constraint that excludes
@@ -33,29 +36,29 @@ func WithHeldBackDetail(scoped, unscoped resolver.CatalogLookup, table InstanceV
 			return nil
 		}
 		base := types.ParseVersionPin(componentType).Base()
-		versions := view.ComponentVersions(base)
-		// The highest excluded version that declares the property: the versions
-		// are ascending, so the walk runs from the end.
-		for _, version := range slices.Backward(versions) {
-			if version == "" || version == selected {
-				continue
-			}
-			excluding := excludingConstraints(componentTier, base, version, declared, view)
-			if len(excluding) == 0 {
-				continue
-			}
-			reference := ReferenceAt(componentType, version)
-			schema, resolved := resolver.CompileComponentSchema(unscoped, reference)
-			if !resolved || !resolver.PillarDeclaresProperty(schema, pillar, path) {
-				continue
-			}
-			detail := []constraint.HeldBackNote{
-				note("declared by", reference),
-				note("held at", selected)}
-			detail = append(detail, HeldReference{Kind: closure.KindComponent, Holding: excluding}.Notes()...)
-			return detail
+		index := map[string]string{}
+		for _, version := range view.ComponentVersions(base) {
+			index[entityIndexKey(base, version)] = version
 		}
-		return nil
+		meta := func(version string) (string, string) { return base, version }
+		declaring := func(version string) bool {
+			if version == "" || version == selected ||
+				len(excludingConstraints(componentTier, base, version, declared, view)) == 0 {
+				return false
+			}
+			schema, resolved := resolver.CompileComponentSchema(unscoped, ReferenceAt(componentType, version))
+			return resolved && resolver.PillarDeclaresProperty(schema, pillar, path)
+		}
+		key, found, _ := selectEntityVersionWhere(index, base, meta, declaring)
+		if !found {
+			return nil
+		}
+		version := index[key]
+		detail := []constraint.HeldBackNote{
+			note("declared by", ReferenceAt(componentType, version)),
+			note("held at", selected)}
+		excluding := excludingConstraints(componentTier, base, version, declared, view)
+		return append(detail, HeldReference{Kind: closure.KindComponent, Holding: excluding}.Notes()...)
 	}
 	return scoped
 }
