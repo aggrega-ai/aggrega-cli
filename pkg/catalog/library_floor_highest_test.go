@@ -118,3 +118,51 @@ func TestLibraryFloorRegistryAgreesWithCatalog(t *testing.T) {
 		}
 	})
 }
+
+// TestLibraryFloorSelectsNoPrerelease holds a floor to the rule a component
+// reference follows: a pre-release is selected only by a floor that names it
+// exactly, and then only while no release of its major at or above it is held. A
+// floor naming a release never selects a pre-release, whatever else is held, and
+// the registry's discovery selects as the catalog does.
+func TestLibraryFloorSelectsNoPrerelease(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		held  []string
+		floor string
+		want  string // empty: no version satisfies the floor
+	}{
+		{name: "a floor held only below a pre-release selects nothing",
+			held: []string{"1.2.0-rc.1"}, floor: "1.1.0"},
+		{name: "a floor passes over a later pre-release for the release it admits",
+			held: []string{"1.1.0", "1.2.0-rc.1"}, floor: "1.1.0", want: "1.1.0"},
+		{name: "a floor naming a pre-release selects it while no release admits the floor",
+			held: []string{"1.2.0-rc.1"}, floor: "1.2.0-rc.1", want: "1.2.0-rc.1"},
+		{name: "a floor naming a pre-release selects the release that follows it",
+			held: []string{"1.2.0-rc.1", "1.2.0"}, floor: "1.2.0-rc.1", want: "1.2.0"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var held [][2]string
+			for _, version := range c.held {
+				held = append(held, [2]string{"Lib", version})
+			}
+			got, ok, err := selectLibraryVersion(libraryIndex(t, held...), "Lib:"+c.floor, mappingLibraryMeta)
+			switch {
+			case c.want == "":
+				if ok || !errors.Is(err, ErrUnsatisfiableEntityVersion()) {
+					t.Errorf("catalog selects (%q, %v, %v), want ErrUnsatisfiableEntityVersion", got, ok, err)
+				}
+			case err != nil || !ok || got != "Lib:"+c.want:
+				t.Errorf("catalog selects (%q, %v, %v), want Lib:%s", got, ok, err, c.want)
+			}
+
+			tag, err := DefaultOCIPuller{}.discoverLibraryVersion("reg.test/mappinglibrary/Lib", c.floor,
+				func() ([]string, error) { return c.held, nil })
+			switch {
+			case c.want == "" && !errors.Is(err, oci.ErrFetchNotFound()):
+				t.Errorf("registry selects (%q, %v), want ErrFetchNotFound", tag, err)
+			case c.want != "" && (err != nil || tag != c.want):
+				t.Errorf("registry selects (%q, %v), want %s", tag, err, c.want)
+			}
+		})
+	}
+}

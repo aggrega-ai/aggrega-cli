@@ -212,7 +212,7 @@ func (p DefaultOCIPuller) Pull(ctx context.Context, reference, tag string) (*oci
 // The version is discovered from the registry's tags (discoverLibraryVersion):
 // with an empty floorVersion (a pure bare-name reference at first pull) the
 // highest semver an attached withdrawal screen leaves eligible; with a floor, the
-// highest such version in the floor's major at or above it, the selection a local
+// highest such release in the floor's major at or above it, the selection a local
 // catalog makes of the same floor (selectLibraryVersion). The selected version is
 // returned so the lockfile pins it. The "latest" resolution happens HERE, at the
 // network step, and is pinned — the build never lists tags or fetches.
@@ -240,11 +240,13 @@ func (p DefaultOCIPuller) PullLibrary(ctx context.Context, name, kind, floorVers
 // selects the highest version the withdrawal screen leaves eligible that the
 // floor admits — the same version selectLibraryVersion picks among the same
 // versions held locally, so a floor records one version whichever tier serves it.
-// A floor that names a tag outright, which the screen withholds and no eligible
-// version admits, is that tag: naming the version overrides the withdrawal, and
-// the screen announces it. A listing the registry reports as not found, and a
-// floor no listed version admits, report ErrFetchNotFound; any other listing
-// failure is returned as it is.
+// Only where no eligible version admits the floor is a listed tag the floor names
+// outright selected though the screen withholds it: the floor then names the one
+// version that can satisfy it, and the screen announces it. Where an eligible
+// version admits the floor, a withheld tag the floor names is passed over like any
+// other. A listing the registry reports as not found, and a floor no listed
+// version admits, report ErrFetchNotFound; any other listing failure is returned
+// as it is.
 func (p DefaultOCIPuller) discoverLibraryVersion(reference, floorVersion string, listTags func() ([]string, error)) (string, error) {
 	if floorVersion == "" {
 		return p.discoverVersion(reference, floorVersion, listTags)

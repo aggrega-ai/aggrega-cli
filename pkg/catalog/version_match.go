@@ -374,16 +374,17 @@ func higherCandidate(a, b versionCandidate) bool {
 //
 //   - bare ("Lib")        -> the highest non-prerelease version, as
 //     selectEntityVersion picks it;
-//   - floor ("Lib:1.1.0") -> the highest held version at or above the floor that
+//   - floor ("Lib:1.1.0") -> the highest held release at or above the floor that
 //     shares the floor's major component, so a floor reads as `>=1.1.0` within
 //     its major. A floor may omit trailing components ("Lib:1.1" reads as
 //     1.1.0). Versions of major 0 share one major, so 0.5.1 is satisfied by
 //     0.6.0. A prerelease is selected only when the floor names it literally
-//     and no later release of the major is held.
+//     and no release of the major at or above the floor is held, as a component
+//     reference selects a prerelease only by naming it exactly.
 //
 // A floor is selected through selectEntityVersionWhere, asked for the bare name
-// with the floor's range as its admission predicate, so a bare reference and a
-// floor choose "highest" by the one rule.
+// with the floor's range, releases only, as its admission predicate, so a bare
+// reference and a floor choose "highest" by the one rule.
 //
 // Returns the same three-way contract selectEntityVersion does: (key, true, nil)
 // on a pick, ("", false, nil) when the library name is held at no version, and
@@ -432,7 +433,7 @@ func selectLibraryVersion[V any](index map[string]V, ref string, meta func(V) (n
 
 	admitsFloor := func(version string) bool {
 		v, err := semver.NewVersion(version)
-		return err == nil && v.Major() == floor.Major() && !v.LessThan(floor)
+		return err == nil && v.Prerelease() == "" && v.Major() == floor.Major() && !v.LessThan(floor)
 	}
 	key, ok, err := selectEntityVersionWhere(index, base, meta, admitsFloor)
 	if ok {
