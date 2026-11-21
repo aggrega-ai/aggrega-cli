@@ -62,10 +62,16 @@ github.com/agext/levenshtein v1.2.1 h1:QmvMAjj2aEICytGiWzmxoE0x2KZvE0fvmqMOfy2tj
 github.com/agext/levenshtein v1.2.1/go.mod h1:JEDfjyjHDjOF/1e4FlBE/PkbqA9OfWu2ki2W0IB5558=
 github.com/aggrega-ai/aggrega-abi/go v0.9.2 h1:ClRAVQ/J8Qza4ckVVoVSUYH9XugLIO08AKfokKDvzzo=
 github.com/aggrega-ai/aggrega-abi/go v0.9.2/go.mod h1:YwKns9kwVgfr6Qs/5CVqawbbOzpi3LfGTyt20CCp40Q=
+github.com/aggrega-ai/aggrega-abi/go v0.9.3 h1:+tQQyDqFuUUQIi2d80ZCLeOFWdjewPJBrSUDJhd0znw=
+github.com/aggrega-ai/aggrega-abi/go v0.9.3/go.mod h1:YwKns9kwVgfr6Qs/5CVqawbbOzpi3LfGTyt20CCp40Q=
 github.com/aggrega-ai/aggrega-pdk/go v0.9.2 h1:HS4x/4f1sXymFl9opnknfiO9TK9hCob1BzAbsp00Suc=
 github.com/aggrega-ai/aggrega-pdk/go v0.9.2/go.mod h1:Zz/zqO7jrroq+RIy2Yt+CqgXFq1C1QenxDQkCykHGhE=
+github.com/aggrega-ai/aggrega-pdk/go v0.9.3 h1:O02Xai5R9mYugrdqaSj9NA6Qa+6spSOgr+HlZSkciyc=
+github.com/aggrega-ai/aggrega-pdk/go v0.9.3/go.mod h1:A8v312icI3El+VVGzhjfQn7EDyhFtvqx+K7g8O37T40=
 github.com/aggrega-ai/aggrega-schemas v0.13.2 h1:XPHc6DumoVrUTWXLwEQk/wgPw3X+p/w7l2P2riyv0tU=
 github.com/aggrega-ai/aggrega-schemas v0.13.2/go.mod h1:rsEPzUJDEhv8zXlS1dOTxEgVmYr74SfQ+w/awcpQ8as=
+github.com/aggrega-ai/aggrega-schemas v0.13.3 h1:po2Ou3PbNt/HPDKfR6fe1pqgpSl/9EZngrpz5Vh3Ngo=
+github.com/aggrega-ai/aggrega-schemas v0.13.3/go.mod h1:rsEPzUJDEhv8zXlS1dOTxEgVmYr74SfQ+w/awcpQ8as=
 github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be h1:9AeTilPcZAjCFIImctFaOjnTIavg87rW78vTPkQqLI8=
 github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be/go.mod h1:ySMOLuWl6zY27l47sB3qLNK6tF2fkHG55UZxx8oIVo4=
 github.com/apparentlymart/go-textseg/v15 v15.0.0 h1:uYvfpb3DyLSCGWnctWKGj857c6ew1u1fNQOlOtuGxQY=
