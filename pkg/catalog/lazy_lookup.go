@@ -4297,8 +4297,9 @@ type recipeReader interface {
 // they hold none, the version prior pins the reference at — the pins of the
 // lockfile a pull reconciles against, written in priorFile, which a conflict over
 // it names beside releaseFile, the Release a pull resolves again; and where prior
-// pins none, the versions the registry this view reads
-// lists (EntityVersionLister). A candidate's extends ancestry is read from the
+// pins none, the version a reference naming an exact version names, and for any
+// other reference the versions the registry this view reads lists
+// (EntityVersionLister). A candidate's extends ancestry is read from the
 // local tiers, and, for a candidate only a registry holds, from its document,
 // fetched then and kept for every later read; it is the one fetch the settlement
 // makes. Recipes are read as RecipeByURI reads them.

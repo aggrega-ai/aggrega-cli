@@ -1149,7 +1149,7 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	// The graph compiles every instance at the version its constraints admit,
 	// through the one settlement a build and a validation read, over the versions
 	// this run resolved each reference among: those its catalog directories hold,
-	// else those the prior lockfile pins, else those the registry lists. So the
+	// else those the prior lockfile pins, else those a registry offers. So the
 	// graph this run draws is the one the build reading its lockfile draws, and an
 	// instance whose constraints admit no version halts the run here, before any
 	// lockfile is written.

@@ -686,8 +686,9 @@ func TestPullSettlesAReferenceOverEveryInstance(t *testing.T) {
 // TestPullHaltsOnAFailedVersionListing holds a pull to halting, in the registry's
 // own condition, where the registry fails to list a Component's versions for any
 // reason but holding none — a selection over a listing that failed part-way would
-// change the version recorded with no word said — while a registry that holds no
-// versions of the name lists none, and the reference resolves as written.
+// change the version recorded with no word said — while a reference naming an
+// exact version is offered that version alone and never listed, so a registry
+// that serves versions but refuses to list them still serves it.
 func TestPullHaltsOnAFailedVersionListing(t *testing.T) {
 	t.Parallel()
 	t.Run("a refused listing halts", func(t *testing.T) {
@@ -704,22 +705,36 @@ func TestPullHaltsOnAFailedVersionListing(t *testing.T) {
 			t.Errorf("the pull that halted left a lockfile behind (%v)", serr)
 		}
 	})
-	t.Run("a listing of nothing lists none", func(t *testing.T) {
+	t.Run("an exact reference is not listed", func(t *testing.T) {
 		t.Parallel()
 		root := registryInstanceVersionsWorkspace(t, "quickstart-web")
 		replaceInFixture(t, filepath.Join(root, "aggregate.yaml"),
 			"      type: core/compute/server\n", "      type: core/compute/server:1.0.0\n")
 		registry := newVersionRegistry(t)
-		registry.listErr = oci.ErrFetchNotFound()
+		registry.listErr = fmt.Errorf("list tags: %w", oci.ErrFetchUnauthorized())
 		releasePath := filepath.Join(root, "release.yaml")
 		if text, err := pullInstanceVersions(t, root, releasePath, registry); err != nil {
 			t.Fatalf("pull: %v\n%s", err, text)
 		}
-		if registry.listings() == 0 {
-			t.Error("the pull never asked the registry for the server's versions")
+		if n := registry.listings(); n != 0 {
+			t.Errorf("the pull asked the registry for the versions of an exact reference %d times", n)
 		}
 		if n := registry.fetches("1.0.0"); n != 1 {
 			t.Errorf("the registry served the server at 1.0.0 %d times, want once", n)
+		}
+		lockPath := lockfile.PathFor(releasePath)
+		lf, _, err := lockfile.LoadLockfile(lockPath)
+		if err != nil {
+			t.Fatalf("load the lockfile: %v", err)
+		}
+		recorded := false
+		for _, e := range lf.Entities {
+			if e.Kind == closure.KindComponent && e.URI == instanceVersionsServer+":1.0.0" {
+				recorded = e.ResolvedVersion == "1.0.0"
+			}
+		}
+		if !recorded {
+			t.Errorf("the lockfile does not record %s:1.0.0 at 1.0.0:\n%s", instanceVersionsServer, mustReadFile(t, lockPath))
 		}
 	})
 }

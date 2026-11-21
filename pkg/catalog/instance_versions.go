@@ -226,8 +226,8 @@ type lockfileRecord struct {
 
 // listedVersions is the optional InstanceVersionView capability of a view that
 // lists the versions a registry publishes the entity of closure kind kind named
-// name at, read where neither
-// a catalog directory nor a lockfile holds the reference. A registry holding no
+// name at, read where neither a catalog directory nor a lockfile holds the
+// reference and the reference names no exact version. A registry holding no
 // version of the name lists none; any other failure to list is returned, and it
 // settles nothing (versionListingFailure).
 type listedVersions interface {
@@ -247,18 +247,20 @@ func (f *versionListingFailure) Unwrap() error { return f.err }
 
 // candidates are the versions of a reference's Component the table selects among.
 // recorded reports that they are the one version a lockfile records the reference
-// at, and record names that lockfile.
+// at, and record names that lockfile; unlisted, that they are the one version an
+// exact reference names, offered for a registry without asking it to list any.
 type candidates struct {
 	versions []string
 	recorded bool
 	record   lockfileRecord
+	unlisted bool
 }
 
 // candidateVersions returns the versions of reference's Component the table
 // selects among, base being the Component's name: the versions view holds of the
 // name; where it holds none, the version a lockfile records the reference at
-// (recordedVersions); where none records it, the versions view lists
-// (listedVersions).
+// (recordedVersions); where none records it, the versions a registry offers
+// (registryCandidates).
 func candidateVersions(view InstanceVersionView, tier versionTier, reference, base string) (candidates, error) {
 	if held := tier.versions(view, base); len(held) > 0 {
 		return candidates{versions: held}, nil
@@ -267,6 +269,24 @@ func candidateVersions(view InstanceVersionView, tier versionTier, reference, ba
 		if version, record, ok := recorded.RecordedVersion(tier.kind(), reference); ok {
 			return candidates{versions: []string{version}, recorded: true, record: record}, nil
 		}
+	}
+	return registryCandidates(view, tier, reference, base)
+}
+
+// registryCandidates returns the versions of reference's Component a view that
+// lists a registry (listedVersions) offers the table: for a reference naming an
+// exact version, that version alone, which the registry is not asked to list — the
+// one version the reference admits, which the walk fetches by name and whose
+// absence it reports as the reference's own — and for any other reference, the
+// versions the registry lists. A view that lists no registry offers none.
+func registryCandidates(view InstanceVersionView, tier versionTier, reference, base string) (candidates, error) {
+	if _, lists := view.(listedVersions); !lists {
+		return candidates{}, nil
+	}
+	pin := types.ParseVersionPin(reference)
+	if pin.Version() != nil {
+		exact, _ := pin.Pin()
+		return candidates{versions: []string{exact}, unlisted: true}, nil
 	}
 	listed, err := listedVersionsOf(view, tier, base)
 	return candidates{versions: listed}, err
@@ -352,10 +372,11 @@ func (v lockfileHeldView) RecordedVersion(kind, reference string) (string, lockf
 // those the view holds of the type's name; where it holds none, the one version a
 // lockfile records the reference at, where the view holds the reference to one
 // (HeldToLockfile), which the constraints then judge rather than select past; and
-// where no lockfile records it, the versions the view lists from a registry. A
-// recorded version the constraints refuse yields to the registry's versions where
-// the view lists any, as a pull's does, and is refused where it lists none, as a
-// build's is.
+// where no lockfile records it, the versions a registry offers: the version an
+// exact reference names, unlisted, and for any other reference the versions the
+// view lists from the registry (registryCandidates). A recorded version the
+// constraints refuse yields to the registry's versions where the view lists any,
+// as a pull's does, and is refused where it lists none, as a build's is.
 //
 // Where the versions held include some the reference alone admits and none every
 // constraint admits, the reference is refused with the conflicting-version-
@@ -480,9 +501,11 @@ func instanceSite(path string) string {
 // for one it refuses.
 //
 // A version a lockfile records, which the constraints do not admit, yields to the
-// versions the view lists from a registry where it lists any: a pull resolving a
-// reference its prior lockfile pins re-selects a pin its constraints have moved
-// away from, while a build, whose view lists none, is held to the row.
+// versions a registry offers where the view lists one (registryCandidates): a pull
+// resolving a reference its prior lockfile pins re-selects a pin its constraints
+// have moved away from, while a build, whose view lists none, is held to the row.
+// The refusal of an exact reference offered unlisted names the versions the
+// registry lists, where it lists them.
 func selectTierVersion(release string, tier versionTier, reference string, declared []VersionConstraint, view InstanceVersionView) (string, string, bool, error) {
 	base := types.ParseVersionPin(reference).Base()
 	offered, err := candidateVersions(view, tier, reference, base)
@@ -491,12 +514,22 @@ func selectTierVersion(release string, tier versionTier, reference string, decla
 	}
 	version, newest, selected, err := selectAmong(release, tier, reference, base, declared, view, offered)
 	if offered.recorded && errors.Is(err, ErrConflictingVersionConstraints()) {
-		listed, lerr := listedVersionsOf(view, tier, base)
+		reoffered, lerr := registryCandidates(view, tier, reference, base)
 		if lerr != nil {
 			return "", "", false, lerr
 		}
-		if len(listed) > 0 {
-			return selectAmong(release, tier, reference, base, declared, view, candidates{versions: listed})
+		if len(reoffered.versions) > 0 {
+			offered = reoffered
+			version, newest, selected, err = selectAmong(release, tier, reference, base, declared, view, offered)
+		}
+	}
+	if offered.unlisted && errors.Is(err, ErrConflictingVersionConstraints()) {
+		// The refusal names the versions the registry publishes where it lists them,
+		// as a refusal over a listing does. The selection read none of them, so a
+		// registry that will not list them leaves the refusal naming the one version
+		// the reference names, rather than putting its own failure in its place.
+		if listed, lerr := listedVersionsOf(view, tier, base); lerr == nil && len(listed) > 0 {
+			err = conflictingVersionConstraints(release, tier, declared, listed, lockfileRecord{})
 		}
 	}
 	return version, newest, selected, err
