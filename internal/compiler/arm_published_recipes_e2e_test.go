@@ -26,7 +26,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Masterminds/semver/v3"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
@@ -198,61 +197,42 @@ func TestArmFragmentEntitiesBuild(t *testing.T) {
 // defaulting it to a dictionary and handing it whole to a function.
 var armFeaturesReadPattern = regexp.MustCompile(`\.features(?:[^.A-Za-z_]|$)`)
 
-// armMappingEntries reads the MappingLibrary entries under hub/mappinglibrary,
-// keyed by library name and then entry name, taking the highest version of each
-// library as the compiler does when the lockfile pins none. It mirrors the
-// compiler's resolution of a `<Library>#/mappings/<Entry>` import for this scan
-// only: the compiler's resolver is unexported in the renderer and works over a
-// loaded catalog, which this scan of raw files does not build.
-func armMappingEntries(hub string) (map[string]map[string]string, error) {
-	type library struct {
-		version *semver.Version
-		entries map[string]string
+// armImportedMapping resolves a `<Library>[:<version>]#/mappings/<Entry>` import
+// to the template text the compiler renders for it, following an entry whose
+// whole body is another field-root `$import:` until a terminal template. The
+// library is the version a bare reference selects, from the catalog's own
+// selection. problem is empty on success and otherwise says why the text cannot
+// be read, so the caller reports it. The chain is followed here because the
+// compiler's resolver is unexported in the renderer; it ends at the first
+// repeated reference.
+func armImportedMapping(libs map[string]types.MappingLibrary, ref string) (text, entryID, problem string) {
+	seen := map[string]bool{}
+	for {
+		library, entry, ok := types.IdentityRefParts(ref, "/mappings/")
+		if !ok || entry == "" {
+			return "", entryID, fmt.Sprintf("imports %q, which is not a <Library>#/mappings/<Entry> reference", ref)
+		}
+		library, _, _ = strings.Cut(library, ":")
+		entryID = library + "#/mappings/" + entry
+		if seen[entryID] {
+			return "", entryID, "imports a chain of entries that returns to " + entryID
+		}
+		seen[entryID] = true
+		lib, found := libs[library]
+		if !found {
+			return "", entryID, "imports " + entryID + ", and no MappingLibrary named " + library + " is in the catalog"
+		}
+		mapping, found := lib.Spec.Mappings.Get(entry)
+		if !found {
+			return "", entryID, "imports " + entryID + ", which the library does not declare"
+		}
+		trimmed := strings.TrimSpace(mapping.Body)
+		if !strings.HasPrefix(trimmed, "$import:") {
+			return mapping.Body, entryID, ""
+		}
+		rest, _, _ := strings.Cut(strings.TrimPrefix(trimmed, "$import:"), "\n")
+		ref = strings.TrimSpace(rest)
 	}
-	best := map[string]library{}
-	err := filepath.WalkDir(filepath.Join(hub, "mappinglibrary"), func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		if d.IsDir() || d.Name() != "library.yaml" {
-			return nil
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		var doc struct {
-			Metadata struct {
-				Name    string `yaml:"name"`
-				Version string `yaml:"version"`
-			} `yaml:"metadata"`
-			Spec struct {
-				Mappings map[string]string `yaml:"mappings"`
-			} `yaml:"spec"`
-		}
-		if err := yaml.Unmarshal(raw, &doc); err != nil {
-			return fmt.Errorf("%s does not parse: %w", path, err)
-		}
-		version, err := semver.NewVersion(doc.Metadata.Version)
-		if err != nil {
-			return fmt.Errorf("%s: version %q: %w", path, doc.Metadata.Version, err)
-		}
-		if current, seen := best[doc.Metadata.Name]; !seen || version.GreaterThan(current.version) {
-			best[doc.Metadata.Name] = library{version: version, entries: doc.Spec.Mappings}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]map[string]string, len(best))
-	for name, lib := range best {
-		out[name] = lib.entries
-	}
-	return out, nil
 }
 
 // armWholeFeatureReads returns, for every Recipe and FeatureRecipe file under
@@ -264,10 +244,13 @@ func armMappingEntries(hub string) (map[string]map[string]string, error) {
 // library or entry that is absent is reported as a finding as well, so a file the
 // scan cannot read never reads as clean.
 func armWholeFeatureReads(hub string) (findings []string, scanned int, err error) {
-	libraries, err := armMappingEntries(hub)
+	// Entries that fail to index are passed over; an import that needed one is
+	// then reported as unresolvable.
+	cat, _, err := catalog.LoadPassOneTolerant(hub, "", hub)
 	if err != nil {
 		return nil, 0, err
 	}
+	libraries := cat.DefaultLibraries().Mappings
 	for _, dir := range []string{"recipe/arm", "feature-recipe/arm"} {
 		root := filepath.Join(hub, dir)
 		if _, statErr := os.Stat(root); errors.Is(statErr, os.ErrNotExist) {
@@ -302,19 +285,17 @@ func armWholeFeatureReads(hub string) (findings []string, scanned int, err error
 				}
 			case map[string]any:
 				ref, _ := mapping["$import"].(string)
-				library, entry, ok := types.IdentityRefParts(ref, "/mappings/")
-				if len(mapping) != 1 || !ok || entry == "" {
+				if len(mapping) != 1 || ref == "" {
 					findings = append(findings, fmt.Sprintf("%s: valuesMapping is a map the scan cannot read: %v", path, mapping))
 					return nil
 				}
-				library, _, _ = strings.Cut(library, ":")
-				text, found := libraries[library][entry]
-				if !found {
-					findings = append(findings, fmt.Sprintf("%s: valuesMapping imports %s#/mappings/%s, which no MappingLibrary under %s declares", path, library, entry, hub))
+				text, entryID, problem := armImportedMapping(libraries, ref)
+				if problem != "" {
+					findings = append(findings, fmt.Sprintf("%s: valuesMapping %s", path, problem))
 					return nil
 				}
 				if loc := armFeaturesReadPattern.FindStringIndex(text); loc != nil {
-					findings = append(findings, fmt.Sprintf("%s: valuesMapping imports %s#/mappings/%s, which reads .features other than by exact leaf, at %q", path, library, entry, text[loc[0]:min(len(text), loc[1]+24)]))
+					findings = append(findings, fmt.Sprintf("%s: valuesMapping imports %s, which reads .features other than by exact leaf, at %q", path, entryID, text[loc[0]:min(len(text), loc[1]+24)]))
 				}
 			default:
 				findings = append(findings, fmt.Sprintf("%s: valuesMapping is a %T, which the scan cannot read", path, mapping))
@@ -340,7 +321,7 @@ func armWholeFeatureReads(hub string) (findings []string, scanned int, err error
 // whose mapping ranges over `.features`, and must name that file, and over a copy
 // holding a Recipe that reads one leaf, and must not. The same holds for a
 // Recipe importing a MappingLibrary entry that ranges over `.features`, one that
-// reads a leaf, and one naming an entry no library declares.
+// reads a leaf, one that chains to a ranging entry, and one naming an entry no library declares.
 func TestArmRecipesReadAttachmentsByExactLeaf(t *testing.T) {
 	t.Parallel()
 
@@ -374,24 +355,26 @@ func TestArmRecipesReadAttachmentsByExactLeaf(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(libraryPath), 0o755); err != nil {
 		t.Fatalf("creating the planted directory: %v", err)
 	}
-	library := "metadata:\n  name: PlantedMappings\n  version: 1.0.0\nspec:\n  mappings:\n" +
+	library := "apiVersion: aggrega.ai/v1beta1\nkind: MappingLibrary\nmetadata:\n  name: PlantedMappings\n  version: 1.0.0\nspec:\n  mappings:\n" +
 		"    RangesFeatures: |\n      {{- range $name, $_ := .features }}\n      kind: {{ $name }}\n      {{- end }}\n" +
-		"    ReadsLeaf: |\n      kind: \"{{ .features.password.type }}\"\n"
+		"    ReadsLeaf: |\n      kind: \"{{ .features.password.type }}\"\n" +
+		"    ChainsToRange: |\n      $import: PlantedMappings#/mappings/RangesFeatures\n"
 	if err := os.WriteFile(libraryPath, []byte(library), 0o644); err != nil {
 		t.Fatalf("writing the planted MappingLibrary: %v", err)
 	}
 	importRanged := writeImport("recipe/arm/import-ranged/1.0.0", "PlantedMappings#/mappings/RangesFeatures")
 	importExact := writeImport("recipe/arm/import-exact/1.0.0", "PlantedMappings#/mappings/ReadsLeaf")
+	importChained := writeImport("recipe/arm/import-chained/1.0.0", "PlantedMappings#/mappings/ChainsToRange")
 	importMissing := writeImport("recipe/arm/import-missing/1.0.0", "PlantedMappings#/mappings/NoSuchEntry")
 	findings, scanned, err := armWholeFeatureReads(planted)
 	if err != nil {
 		t.Fatalf("scanning the planted tree: %v", err)
 	}
-	if scanned != 6 {
-		t.Fatalf("the scan read %d of the 6 planted files", scanned)
+	if scanned != 7 {
+		t.Fatalf("the scan read %d of the 7 planted files", scanned)
 	}
 	text := strings.Join(findings, "\n")
-	for _, plantedFile := range []string{ranged, defaulted, importRanged, importMissing} {
+	for _, plantedFile := range []string{ranged, defaulted, importRanged, importChained, importMissing} {
 		if !strings.Contains(text, plantedFile) {
 			t.Fatalf("the scan does not name the planted match %s, so a clean result proves nothing:\n%s", plantedFile, text)
 		}
