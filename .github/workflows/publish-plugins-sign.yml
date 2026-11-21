@@ -31,17 +31,14 @@ name: Publish and sign core plugins
 #                        the refusal of a run with no self-hosted runner named
 #                        for the local jobs.
 #   sources              Moves the CLI tree onto the release tag, checks out
-#                        aggrega-hub, whose overlays the build reads, with an
-#                        installation token of the organization App for
-#                        aggrega-hub alone, asking to read its contents alone,
-#                        minted from the App's secrets, and hands the checkout,
-#                        without a token, to the build job in the hand-over
-#                        folder described below, with a SHA-256 list of it.
-#                        It runs nothing but GitHub's own checkout and
-#                        token actions, git and the shell's own utilities, so
-#                        the App's secrets share a job with no third-party code,
-#                        and the build job, which runs such code, names no
-#                        secret at all.
+#                        aggrega-hub, whose overlays the build reads, with the
+#                        run's own read token (aggrega-hub is a public
+#                        repository), and hands the checkout, without a token,
+#                        to the build job in the hand-over folder described
+#                        below, with a SHA-256 list of it. It runs nothing but
+#                        GitHub's own checkout action, git and the shell's own
+#                        utilities, and the build job, which runs third-party
+#                        code, names no secret at all.
 #   build                Compiles, packs and stages everything the release
 #                        carries, naming no secret and holding no permission to
 #                        mint an OIDC token: it builds the commit the sources job
@@ -689,11 +686,6 @@ name: Publish and sign core plugins
 #                                        winget-pkgs' validation downloads the
 #                                        installer from the address the
 #                                        manifest names
-#   repository secrets
-#              SUBMODULE_APP_CLIENT_ID   the organization App whose token reads
-#              SUBMODULE_APP_PRIVATE_KEY aggrega-hub (sources only, handed to
-#                                        the action that mints the read token
-#                                        and to nothing else)
 #   release-environment variables
 #              HUB_PUBLISHED_APP_CLIENT_ID
 #                                        the client ID of the App installed on
@@ -841,8 +833,7 @@ on:
 # with the App token it mints, and open-winget-pull-request, which writes the
 # organization's fork of microsoft/winget-pkgs and opens the pull request with
 # the personal access token it is given.
-# sources keeps contents:read too: it reads aggrega-hub with the App token it
-# mints.
+# sources keeps contents:read too: it reads aggrega-hub with the run's own token.
 permissions:
   contents: read
 
@@ -1013,15 +1004,11 @@ jobs:
 
   sources:
     needs: registry-credential
-    # aggrega-hub, whose overlays the build reads, is read with an
-    # installation token of the organization's GitHub App for aggrega-hub
-    # alone, minted from the App's two secrets. A job holds every secret it
-    # names for its whole run, within reach of each of its later steps, so the
-    # token is minted here, in a
-    # job that runs nothing but GitHub's own checkout and token actions, git and
-    # the shell's own utilities, and not in the build job, whose third-party build
-    # code would otherwise run beside the App's private key. This job moves the
-    # CLI tree onto the release tag, checks aggrega-hub out at HUB_REF, and
+    # aggrega-hub, whose overlays the build reads, is a public repository, read
+    # with the run's own token. This job runs nothing but GitHub's own checkout
+    # action, git and the shell's own utilities, and not the build job, whose
+    # third-party build code would otherwise run beside that token. This job
+    # moves the CLI tree onto the release tag, checks aggrega-hub out at HUB_REF, and
     # hands the checkout, which keeps no token, to the build job in this run's
     # hand-over folder, with a SHA-256 list of every file in it. It makes the
     # folder.
@@ -1117,24 +1104,6 @@ jobs:
           printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
           echo "this run builds aggrega-cli at $commit"
 
-      - name: Mint the token that reads aggrega-hub
-        # The checkout below reads aggrega-hub with a GitHub App installation
-        # token for aggrega-hub alone, asking for read access to its contents
-        # and nothing else. The App's secrets are
-        # handed to this action and to no step, and its token to that checkout,
-        # which does not keep it; like everything a job
-        # holds, both stay within reach of the job's later steps, which is why
-        # this job runs nothing but that checkout, git and the shell's own
-        # utilities after it.
-        id: app-token
-        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
-        with:
-          client-id: ${{ secrets.SUBMODULE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.SUBMODULE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: aggrega-hub
-          permission-contents: read
-
       - name: Check out the hub sibling
         # Supplies the authored plugin overlays (OVERLAY_DIR) that catalog
         # generation consumes, that the embedded plugin entities are generated
@@ -1142,13 +1111,14 @@ jobs:
         # other sibling modules — the schemas, the Go plugin kit and the Go ABI —
         # are resolved by the build at the versions its go.mod requires, so no
         # checkout of them is needed. aggrega-hub has no CLI-side version pin,
-        # so it is checked out at HUB_REF.
+        # so it is checked out at HUB_REF. The repository is public: the run's
+        # own token reads it. The checkout keeps no credential in its git
+        # configuration, and the next step refuses to hand one over.
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: aggrega-ai/aggrega-hub
           path: aggrega-hub
           ref: ${{ env.HUB_REF }}
-          token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
 
       - name: Make this run's hand-over folder
@@ -1239,10 +1209,10 @@ jobs:
       version: ${{ steps.installer-parts.outputs.version }}
       macos_unsigned_sums: ${{ steps.macos-unsigned.outputs.sums }}
 
-    # No secret appears anywhere in this job, the App's that reads aggrega-hub
-    # included: it runs third-party build code, so it holds no registry,
-    # signing or repository credential beyond the run's own read token, and
-    # builds with the checkout the sources job handed over.
+    # No secret appears anywhere in this job: it runs third-party build code,
+    # so it holds no registry, signing or repository credential beyond the
+    # run's own read token, and builds with the checkout the sources job handed
+    # over.
     env:
       # Destination registry host, a variable rather than a secret: the tooling
       # image is built under its references, and the archives carry them to the
