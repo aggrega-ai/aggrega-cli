@@ -35,8 +35,7 @@ jobs:
       - name: Check out the schemas sibling, which carries the check
         # Read by the two steps below, which build cmd/schemagate from it and
         # run it; nothing here builds this repository. The repository is
-        # public: the run's own token reads it, and a Dependabot or fork pull
-        # request run receives it too.
+        # public, so the run's own token reads it.
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: ${{ github.repository_owner }}/aggrega-schemas
