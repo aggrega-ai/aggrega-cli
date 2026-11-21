@@ -106,7 +106,7 @@ type discoverConsumer[B any] struct {
 // discoverLibraries is the discovery fixpoint, shared by every library axis.
 //
 // It walks the current frontier into a fresh walk state seeded from the libraries
-// already resolved, resolves the whole set so minimum-version selection sees every
+// already resolved, resolves the whole set so the version selection sees every
 // consumer of every library, merges the result back into the axis's section, and
 // then builds the next frontier from the bodies of libraries not yet descended at
 // the version they now resolve to. Re-seeding each round is safe: a seeded library

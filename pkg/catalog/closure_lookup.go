@@ -1996,10 +1996,11 @@ func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (clo
 
 	// Bare-name identity (the form discovery records): resolve location + version
 	// via the LibraryPuller capability — name→location, then list-tags→highest
-	// (when the URI carries no version) or the asserted floor as the tag (when a
-	// consumer's `@version` threaded a `name:floor` URI here). The cache
-	// slot is keyed `<name>:<version>` (writeEntityToCacheSlot) — the symmetric
-	// key the lazy lookup's verified Tier-2 read addresses.
+	// (when the URI carries no version) or list-tags→the highest release the floor
+	// admits within its major (when the selection across a library's consumers
+	// threaded a `name:floor` URI here), as a catalog holding the same versions
+	// selects. The cache slot is keyed `<name>:<version>` (writeEntityToCacheSlot) —
+	// the symmetric key the lazy lookup's verified Tier-2 read addresses.
 	if lp, ok := l.ociPuller.(LibraryPuller); ok {
 		name, floor, hasFloor := resolver.SplitVersionedURI(uri)
 		result, resolvedVersion, err := lp.PullLibrary(ctx, name, kind, floor)
@@ -2012,14 +2013,13 @@ func (l *catalogLookup) tier3Library(ctx context.Context, uri, kind string) (clo
 		if aerr := admitFetchedEntity(kind, result.Bytes, name+":"+resolvedVersion); aerr != nil {
 			return closure.Resolution{}, aerr
 		}
-		// For a bare-name reference (no consumer @version floor), pin the fetched
-		// library's metadata.version (identity), not the resolver-selected tag
-		// (location): the tag drove discovery (list-tags → highest) but the pinned
-		// + cached identity is the body's metadata.version, matching the build-side
-		// tier-1 derivation so a tag != metadata.version publish does not drift. A
-		// floored reference keeps the floor as the pin — the consumer asked for that
-		// version, the registry served the tag it names, and the cache key and the
-		// version the walk records must agree.
+		// For a bare-name reference (no version floor), pin the fetched library's
+		// metadata.version (identity), not the resolver-selected tag (location): the
+		// tag drove discovery (list-tags → highest) but the pinned + cached identity
+		// is the body's metadata.version, matching the build-side tier-1 derivation
+		// so a tag != metadata.version publish does not drift. A floored reference
+		// pins the tag the floor selected — the version the walk records — so the
+		// cache key and that version agree.
 		pinnedVersion := resolvedVersion
 		if !hasFloor {
 			mv, verr := entityMetadataVersion(result.Bytes)

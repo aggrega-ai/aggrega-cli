@@ -27,10 +27,12 @@ import (
 // lookup reads the cache on the next run.
 //
 // Scope is the pull EVENT, not post-pull state: it reports the source, the kind,
-// the identity, and the always-present referenced-from disambiguator — not
-// minimum-version-selection decisions or consumer→library chains, which are
-// `aggrega inspect`'s remit (and why the library axes, whose only disambiguator
-// is the consumer chain, are not listed here). Output is stdout-only; rows are
+// the identity, and the always-present referenced-from disambiguator — not a
+// library's version selection across its consumers or its consumer→library
+// chains, which are `aggrega inspect`'s remit (and why a library's row, whose only
+// disambiguator is its consumer chain, carries no referenced-from column). A
+// component or feature reference selected below the newest version held is
+// printHeldBelowNewest's to report. Output is stdout-only; rows are
 // deterministically sorted.
 func printPullDetail(out io.Writer, cl closure.Closure) {
 	type row struct {

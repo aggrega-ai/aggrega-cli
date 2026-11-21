@@ -173,8 +173,9 @@ func importConsumer(uri, importTarget string) []TemplateConsumer {
 // rather than two independently-built catalog views. It scans every in-closure
 // Component's and Feature's schema, and every per-edge contract their dependency
 // sockets declare, for cross-document $ref:s, resolves the discovered libraries
-// (minimum-version selection + the injected lookup), and descends them
-// transitively to a fixpoint, merging the result into cl.SchemaLibraries.
+// (the version selection across their consumers + the injected lookup), and
+// descends them transitively to a fixpoint, merging the result into
+// cl.SchemaLibraries.
 //
 // Scanning is CLOSURE-SCOPED: only the Components and Features the Release reaches
 // (cl.Entities) are scanned for $ref:s, matching the closure-scoped pillar-validation gate —

@@ -92,7 +92,7 @@ type LibraryAxis struct {
 
 // libraryAxes is the single declared set of library axes. Every pass that treats
 // the axes alike ranges over it, so an axis added here is picked up by the walk,
-// the reference grammar, minimum-version resolution, materialisation,
+// the reference grammar, version selection across consumers, materialisation,
 // canonical ordering, the resolver interface, lockfile drift reporting, the pin
 // projection and the convention lint without any of them naming it.
 //

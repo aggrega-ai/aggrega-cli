@@ -205,8 +205,9 @@ func expandSchemaLibraryRef(
 	}
 
 	// A host-less `:version` is accepted as an optional minimum-version-floor
-	// assertion: the closure walk records it as a floor for minimum-version
-	// selection at lock time, and the lockfile owns the selected version. The
+	// assertion: the closure walk records it as a floor, `>=` that version within
+	// its major, for the selection at lock time of the highest version every
+	// consumer admits, and the lockfile owns the selected version. The
 	// reference resolves by name, never by version — so the expander strips the
 	// asserted version and resolves the bare-name identity. The version separator
 	// is `:` (matching Manifest mappings and the lockfile pin); a stale `@`
