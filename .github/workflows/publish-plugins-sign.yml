@@ -2020,10 +2020,10 @@ jobs:
         #
         # 🔴 `internal/buildtools/pluginguestfile` is the one place that rule
         # lives, and publish-plugins.sh resolves every guest through it. The
-        # socket and name read out of the entity path below only find the
+        # socket and name the script reads out of the entity path only find the
         # entity's row of the core-plugin list; joining them into the filename
-        # here would work today and be a second copy of the rule — the first
-        # naming change would break this loop silently, since a wrong name looks
+        # there would work today and be a second copy of the rule — the first
+        # naming change would break its loop silently, since a wrong name looks
         # exactly like a missing file.
         #
         # Deriving the filename runs Go, which is why the pairing is resolved
