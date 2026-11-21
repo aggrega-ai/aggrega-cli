@@ -1458,28 +1458,19 @@ jobs:
         # cargo and rustc they run are this rustup's. Installing from a toolchain
         # file with no toolchain named needs rustup 1.28.0 or newer, which the
         # pinned release is.
+        # The install is `scripts/install-guest-rust-toolchains.sh`, which a local
+        # check of the staging steps runs too.
         run: |
           set -euo pipefail
-          homes="$(aggrega-cli/scripts/pinned-rustup.sh install "$RUNNER_TEMP/rust")"
+          homes="$(aggrega-cli/scripts/install-guest-rust-toolchains.sh "$RUNNER_TEMP/rust")"
           while IFS= read -r line; do
             case "$line" in
               RUSTUP_HOME=?*|CARGO_HOME=?*) export "${line?}" ;;
-              *) echo "rust: pinned-rustup.sh printed $line, not a RUSTUP_HOME or CARGO_HOME setting" >&2; exit 1 ;;
+              *) echo "rust: install-guest-rust-toolchains.sh printed $line, not a RUSTUP_HOME or CARGO_HOME setting" >&2; exit 1 ;;
             esac
           done <<< "$homes"
           printf '%s\n' "$homes" >> "$GITHUB_ENV"
-          cargo_bin="$CARGO_HOME/bin"
-          . aggrega-cli/scripts/lib/core-plugins.sh
-          dirs="$(core_plugin_rust_dirs)"
-          while IFS= read -r dir; do
-            [ -n "$dir" ] || continue
-            echo "rust: installing the toolchain aggrega-cli/$dir/rust-toolchain.toml pins, with its targets"
-            if ! ( cd "$CORE_PLUGIN_MODULE_ROOT/$dir" && env -u RUSTUP_TOOLCHAIN "$cargo_bin/rustup" toolchain install --profile minimal --no-self-update ); then
-              echo "rust: $("$cargo_bin/rustup" --version 2>/dev/null) could not install the toolchain aggrega-cli/$dir/rust-toolchain.toml pins" >&2
-              exit 1
-            fi
-          done <<< "$dirs"
-          echo "$cargo_bin" >> "$GITHUB_PATH"
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
 
       - name: Build the binary and embedded guests
         # Regenerates the Wasm guests and their descriptors and produces the
@@ -1969,10 +1960,11 @@ jobs:
         # not carry it, so it is installed here rather than assumed. Its package
         # manager cache is off: this job builds what the release publishes, so it
         # restores nothing from the Actions cache, which other workflow runs can
-        # write.
+        # write. The major version is `aggrega-cli/.nvmrc`'s, the one a local check
+        # of the staging steps reads too.
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
-          node-version: '24'
+          node-version-file: aggrega-cli/.nvmrc
           package-manager-cache: false
 
       - name: Pack the desktop extension package
@@ -1999,7 +1991,7 @@ jobs:
           BUNDLE="$(aggrega-cli/scripts/build-mcp-bundle.sh --output-dir "$RELEASE_INPUTS/mcp-bundle" --expect-version "$BIN_VERSION")"
           echo "packed $BUNDLE"
 
-      - name: Generate the core plugin catalog entities
+      - name: Generate and stage the core plugins for publishing
         # Emits one Plugin entity per core guest by merging each guest's
         # machine-derived contract fields with its authored overlay; the entity
         # version is the binary's own build version, which every core guest was
@@ -2011,15 +2003,6 @@ jobs:
         # input surfaced above; a guest with no overlay halts this step rather
         # than getting invented entity content. Pure computation from the built
         # guests, with no external side effect.
-        run: |
-          set -euo pipefail
-          export AGGREGA_BIN="$PWD/aggrega-cli/aggrega"
-          mkdir -p "$RELEASE_INPUTS/plugins/entities"
-          "$AGGREGA_BIN" plugin gen-catalog --from-embedded --overlay "$OVERLAY_DIR" --output-dir "$RELEASE_INPUTS/plugins/entities"
-          . aggrega-cli/scripts/lib/core-plugins.sh
-          core_plugin_generate_unembedded "$AGGREGA_BIN" "$OVERLAY_DIR" "$RELEASE_INPUTS/plugins/entities"
-
-      - name: Stage the core plugins for publishing
         # Exactly the set of core guests this build stamped — the ones built into
         # this binary and the ones the core-plugin list builds without embedding —
         # each generated entity paired with its decompressed guest, written as the
@@ -2057,36 +2040,11 @@ jobs:
         # the crates that target compiles, so `cargo fetch --locked` runs first in
         # each Rust guest directory the core-plugin list names; it fetches what
         # the cache lacks and nothing else.
+        # Both are `scripts/stage-core-plugins.sh`, which a local check of the
+        # staging steps runs too.
         run: |
           set -euo pipefail
-          . aggrega-cli/scripts/lib/core-plugins.sh
-          rust_dirs="$(core_plugin_rust_dirs)"
-          while IFS= read -r d; do
-            [ -n "$d" ] || continue
-            ( cd "$CORE_PLUGIN_MODULE_ROOT/$d" && cargo fetch --locked ) \
-              || { echo "cargo fetch --locked failed in aggrega-cli/$d; the notices generator reads every locked crate's source" >&2; exit 1; }
-          done <<< "$rust_dirs"
-          STAGE="$RELEASE_INPUTS/plugins"
-          WASM_DIR="$STAGE/wasm"
-          mkdir -p "$WASM_DIR"
-          staged=0
-          for entity in "$STAGE"/entities/*/*/*/plugin.yaml; do
-            [ -f "$entity" ] || continue
-            leaf="$(cd aggrega-cli && GOWORK=off go run ./internal/buildtools/pluginguestfile -entity "$entity")"
-            # entities/<socket>/<name>/<version>/plugin.yaml -> <socket>, <name>:
-            # the row of the core-plugin list the entity was generated for.
-            name="$(basename "$(dirname "$(dirname "$entity")")")"
-            socket="$(basename "$(dirname "$(dirname "$(dirname "$entity")")")")"
-            dir="$(core_plugin_dir_of "$socket" "$name")"
-            src="aggrega-cli/$dir/$name.wasm.gz"
-            [ -f "$src" ] || { echo "no built guest for $entity at $src" >&2; exit 1; }
-            gunzip -c "$src" > "$WASM_DIR/$leaf"
-            staged=$((staged + 1))
-          done
-          [ "$staged" -gt 0 ] || { echo "staged no guests — entity generation produced nothing" >&2; exit 1; }
-          echo "staged $staged guest(s) into $WASM_DIR"
-          aggrega-cli/scripts/publish-plugins.sh enumerate-embedded \
-            --entities-dir "$STAGE/entities" --wasm-dir "$WASM_DIR" --pairs-out "$STAGE/pairs.tsv"
+          aggrega-cli/scripts/stage-core-plugins.sh --overlay "$OVERLAY_DIR" --stage "$RELEASE_INPUTS/plugins"
 
       - name: Register ARM emulation for the tooling image
         # The tooling image is built for linux/amd64 and linux/arm64, and its
