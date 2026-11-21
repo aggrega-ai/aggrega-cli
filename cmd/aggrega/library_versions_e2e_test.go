@@ -335,38 +335,52 @@ func TestLibraryVersionsSeveralHeldMapping(t *testing.T) {
 		}
 	})
 
-	t.Run("floor-low", func(t *testing.T) {
+	t.Run("floor-below-highest", func(t *testing.T) {
 		w := newLibVerWorkspace(t, libVerMapping, "Lib:1.0.0", "libs")
-		d10 := w.addLib("libs", "1.0.0")
-		w.addLib("libs", "1.1.0")
+		w.addLib("libs", "1.0.0")
+		d11 := w.addLib("libs", "1.1.0")
 		w.mustPull()
-		if v, d := w.libRow(); v != "1.0.0" || d != d10 {
-			t.Fatalf("lock row = (%s,%s), want (1.0.0,%s)", v, d, d10)
+		if v, d := w.libRow(); v != "1.1.0" || d != d11 {
+			t.Fatalf("lock row = (%s,%s), want (1.1.0,%s): a floor admits its major from the floor up, and the highest is selected", v, d, d11)
 		}
 		_, tree := w.mustBuild()
-		wantLibBody(t, tree, "1.0.0", "1.1.0")
+		wantLibBody(t, tree, "1.1.0", "1.0.0")
 	})
 
 	t.Run("floor-raised", func(t *testing.T) {
 		w := newLibVerWorkspace(t, libVerMapping, "Lib:1.0.0", "libs")
-		d10 := w.addLib("libs", "1.0.0")
+		w.addLib("libs", "1.0.0")
 		d11 := w.addLib("libs", "1.1.0")
 		w.mustPull()
-		w.setRef("Lib:1.0.0", "Lib:1.1.0")
+		d12 := w.addLib("libs", "1.2.0")
+		w.setRef("Lib:1.0.0", "Lib:1.2.0")
 		_, _, err := w.build()
 		if err == nil {
 			t.Fatal("build must halt on a lock recording a copy the raised floor no longer selects")
 		}
-		want := fmt.Sprintf("lockfile=(1.0.0,%s) current=(1.1.0,%s)", d10, d11)
+		want := fmt.Sprintf("lockfile=(1.1.0,%s) current=(1.2.0,%s)", d11, d12)
 		if !errors.Is(err, lockfile.ErrLockfileDrift()) || !strings.Contains(err.Error(), want) {
 			t.Fatalf("build error = %v, want the lockfile-drift refusal containing %q", err, want)
 		}
 		w.mustPull()
-		if v, d := w.libRow(); v != "1.1.0" || d != d11 {
-			t.Fatalf("lock row after pull = (%s,%s), want (1.1.0,%s)", v, d, d11)
+		if v, d := w.libRow(); v != "1.2.0" || d != d12 {
+			t.Fatalf("lock row after pull = (%s,%s), want (1.2.0,%s)", v, d, d12)
 		}
 		_, tree := w.mustBuild()
-		wantLibBody(t, tree, "1.1.0", "1.0.0")
+		wantLibBody(t, tree, "1.2.0", "1.1.0")
+	})
+
+	t.Run("newer-version-held-after-pull", func(t *testing.T) {
+		w := newLibVerWorkspace(t, libVerMapping, "Lib:1.0.0", "libs")
+		w.addLib("libs", "1.0.0")
+		d11 := w.addLib("libs", "1.1.0")
+		w.mustPull()
+		d12 := w.addLib("libs", "1.2.0")
+		_, _, err := w.build()
+		want := fmt.Sprintf("lockfile=(1.1.0,%s) current=(1.2.0,%s)", d11, d12)
+		if err == nil || !errors.Is(err, lockfile.ErrLockfileDrift()) || !strings.Contains(err.Error(), want) {
+			t.Fatalf("build error = %v, want the lockfile-drift refusal containing %q", err, want)
+		}
 	})
 
 	t.Run("floor-unheld", func(t *testing.T) {

@@ -412,9 +412,10 @@ func TestResolveLibrariesKeepsLookupVersion(t *testing.T) {
 // pull and a build run.
 //
 // On the mapping axis Lib is reached from one Recipe bare and from another with
-// the floor 1.0.0, so the floors select 1.0.0 and the closure holds Lib once, at
-// 1.0.0. Lib 1.0.0's own body imports Lib2 with the floor 1.1.0 (Lib 1.1.0's
-// imports it at 1.2.0), so Lib2 is held once, at 1.1.0. A Component's schema
+// the floor 1.0.0, so the consumers admit 1.0.0 and later and the closure holds Lib
+// once, at the highest, 1.1.0. Lib 1.1.0's own body imports Lib2 with the floor
+// 1.2.0 (Lib 1.0.0's imports it at 1.1.0), so Lib2 is held once, at 1.2.0: the
+// descent follows the selected version's body. A Component's schema
 // references Lib2 bare; that reference names the SchemaLibrary Lib2, a library of
 // another kind selected on the schema axis by its own consumers alone, so it is
 // held there once, at the highest version. Every row records the digest of the
@@ -477,8 +478,8 @@ spec:
 	}
 	digestOf := func(file string) string { return digest.ContentDigest([]byte(files[file])) }
 	if got, want := rows(cl.MappingLibraries), []string{
-		"Lib 1.0.0 " + digestOf("lib-1.0.0.yaml"),
-		"Lib2 1.1.0 " + digestOf("lib2-1.1.0.yaml"),
+		"Lib 1.1.0 " + digestOf("lib-1.1.0.yaml"),
+		"Lib2 1.2.0 " + digestOf("lib2-1.2.0.yaml"),
 	}; !reflect.DeepEqual(got, want) {
 		t.Errorf("mapping libraries:\n  got:  %v\n  want: %v", got, want)
 	}
