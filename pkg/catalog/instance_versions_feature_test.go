@@ -64,6 +64,7 @@ func featureInstance(name, reference string) closure.InstanceReference {
 		Reference: reference,
 		File:      instanceVersionsAggregateFile,
 		Feature:   true,
+		Document:  closure.InAggregate,
 	}
 }
 
@@ -130,7 +131,7 @@ func TestInstanceVersionsFeatureConflictNamesFeatureConstraints(t *testing.T) {
 		`instance "db_password", type "core/secret-value:1.1.0", written in "aggregate.yaml", ` +
 		`Manifest feature key "core/secret-value", written in "manifest.yaml", ` +
 		`mapped to feature recipe "compose/dotenv-secret:1.0.0", whose spec.implements is "core/secret-value:1.0.0", ` +
-		`versions held "1.0.0, 1.1.0"). change the Aggregate's version, or map this type at a version its recipe implements`
+		`versions held "1.0.0, 1.1.0"). change the Aggregate's version, or map this type at a version its feature recipe implements`
 	for _, v := range instanceVersionViews(t, dir) {
 		t.Run(v.name, func(t *testing.T) {
 			table, err := ResolveInstanceVersions(instanceVersionsRelease, instances, manifest, instanceVersionsManifestFile, v.view)

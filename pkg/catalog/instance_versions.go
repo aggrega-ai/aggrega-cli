@@ -34,15 +34,19 @@ const (
 // VersionConstraint is one constraint declared on an instance's version: the
 // instance it is declared on, where that instance is declared, which kind of
 // constraint it is, its value as written, and the file it is written in — the
-// Aggregate's file for the type, the Manifest's file for a mapping key, and the
-// Recipe's reference as the mapping writes it for an implements.
+// file of the document the instance's type is written in for the type, the
+// Manifest's file for a mapping key, and the Recipe's reference as the mapping
+// writes it for an implements.
 //
 // Site is the locator of the instance's declaration in the document its type is
-// written in, such as .spec.components.web, and every constraint declared on one
-// instance carries the same Site.
+// written in, such as .spec.components.web, and Document the kind of that
+// document: the Aggregate the Release deploys, the Release, or a module the
+// Aggregate includes. Every constraint declared on one instance carries the same
+// Site and Document.
 type VersionConstraint struct {
 	Instance string
 	Site     string
+	Document closure.InstanceDocument
 	Kind     string
 	Value    string
 	File     string
@@ -427,7 +431,8 @@ func ResolveInstanceVersions(release string, instances []closure.InstanceReferen
 // reaching Recipe's or FeatureRecipe's spec.implements.
 func tierConstraints(tier versionTier, in closure.InstanceReference, manifest *types.Manifest, manifestFile string, view InstanceVersionView) []VersionConstraint {
 	site := instanceSite(in.Path)
-	declared := []VersionConstraint{{Instance: in.Name, Site: site, Kind: ConstraintType, Value: in.Reference, File: in.File}}
+	declared := []VersionConstraint{{Instance: in.Name, Site: site, Document: in.Document, Kind: ConstraintType,
+		Value: in.Reference, File: in.File}}
 	match, mapped, err := tier.mappingEntry(manifest, in.Name, in.Reference)
 	if err != nil || !mapped {
 		return declared
@@ -442,14 +447,12 @@ func tierConstraints(tier versionTier, in closure.InstanceReference, manifest *t
 		return declared
 	}
 	if match.byType {
-		declared = append(declared, VersionConstraint{
-			Instance: in.Name, Site: site, Kind: ConstraintMappingKey, Value: match.typeKey, File: manifestFile,
-		})
+		declared = append(declared, VersionConstraint{Instance: in.Name, Site: site, Document: in.Document,
+			Kind: ConstraintMappingKey, Value: match.typeKey, File: manifestFile})
 	}
 	if held {
-		declared = append(declared, VersionConstraint{
-			Instance: in.Name, Site: site, Kind: ConstraintImplements, Value: implements, File: match.reference,
-		})
+		declared = append(declared, VersionConstraint{Instance: in.Name, Site: site, Document: in.Document,
+			Kind: ConstraintImplements, Value: implements, File: match.reference})
 	}
 	return declared
 }
@@ -586,9 +589,33 @@ func malformedConstraintPin(tier versionTier, declared []VersionConstraint, refe
 	return nil
 }
 
-// conflictingVersionAdvice is what a conflicting-version-constraints refusal
-// tells the author to do.
-const conflictingVersionAdvice = "change the Aggregate's version, or map this type at a version its recipe implements"
+// conflictingVersionAdvice is what a conflicting-version-constraints refusal of a
+// reference of tier tells the author to do: change the version where the type is
+// written — once for each kind of document its instances are declared in, in the
+// order they are named — or map the type at a version its recipe implements. The
+// Aggregate the Release deploys and the Release are edited where the type is
+// written; a module is published, so the version its instance names changes only
+// with another version of the module.
+func conflictingVersionAdvice(tier versionTier, declared []VersionConstraint) string {
+	var remedies []string
+	written := map[closure.InstanceDocument]bool{}
+	for _, c := range declared {
+		if c.Kind != ConstraintType || written[c.Document] {
+			continue
+		}
+		written[c.Document] = true
+		switch c.Document {
+		case closure.InAggregate:
+			remedies = append(remedies, "change the Aggregate's version")
+		case closure.InRelease:
+			remedies = append(remedies, "change the Release's version")
+		case closure.InModule:
+			remedies = append(remedies, "include another version of the module that writes it")
+		}
+	}
+	remedies = append(remedies, "map this type at a version its "+tier.recipeLabel()+" implements")
+	return strings.Join(remedies, ", or ")
+}
 
 // lockedVersionAdvice is what a conflicting-version-constraints refusal over a
 // version a lockfile records adds: the pull of the Release in releaseFile, which
@@ -606,14 +633,14 @@ func lockedVersionAdvice(releaseFile string) string {
 // the instances belong to, then each instance in turn — where it is declared, its
 // name, and each of its constraints with the file it is written in — then the
 // versions held, a version-less entry among them left unnamed because it has no
-// version to name — the versions held by a catalog directory or listed by a
+// version to name — the versions held by a catalog directory or offered by a
 // registry. Where the versions are the ones a lockfile records, record names that
 // lockfile, the versions are named as locked there, a source beside the
 // constraints, and the advice adds the pull of record's Release that locks the
-// version the constraints admit. It is positioned where the first instance is
-// declared: the
-// document its type is written in, at the instance's site, which is where the
-// remedy of changing the version is written.
+// version the constraints admit. The advice names the remedies true of the
+// documents the instances' types are written in (conflictingVersionAdvice). It is
+// positioned where the first instance is declared: the document its type is
+// written in, at the instance's site.
 func conflictingVersionConstraints(release string, tier versionTier, declared []VersionConstraint, held []string, record lockfileRecord) error {
 	detail := []constraint.DetailValue{constraint.Captioned("Release", release)}
 	for _, c := range declared {
@@ -636,7 +663,7 @@ func conflictingVersionConstraints(release string, tier versionTier, declared []
 			named = append(named, version)
 		}
 	}
-	advice := conflictingVersionAdvice
+	advice := conflictingVersionAdvice(tier, declared)
 	if record.lockfile != "" {
 		detail = append(detail,
 			constraint.Captioned("locked at", strings.Join(named, ", ")),

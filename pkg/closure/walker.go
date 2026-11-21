@@ -256,7 +256,7 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 				if ci.Type != "" {
 					site := fmt.Sprintf("%s.components.%s.type", subPath, name)
 					s.addEntityKind(ci.Type, site, KindComponent)
-					s.addInstance(site, name, ci.Type, false, documentAggregate)
+					s.addInstance(site, name, ci.Type, false, InAggregate)
 				}
 				s.walkComponentInstanceFeatures(ci, fmt.Sprintf("%s.components.%s", subPath, name))
 				return nil
@@ -266,7 +266,7 @@ func (s *walkState) walkAggregate(na types.NormalizedAggregate, path string) {
 					if fi.Type != "" {
 						site := fmt.Sprintf("%s.features.%s.type", subPath, name)
 						s.addEntityKind(fi.Type, site, KindFeature)
-						s.addInstance(site, name, fi.Type, true, documentAggregate)
+						s.addInstance(site, name, fi.Type, true, InAggregate)
 					}
 				}
 			},
@@ -290,11 +290,11 @@ func (s *walkState) walkComponentInstanceFeatures(ci types.ComponentInstance, pa
 		if fi.Type != "" {
 			site := fmt.Sprintf("%s.features.%s.type", path, name)
 			s.addEntityKind(fi.Type, site, KindFeature)
-			s.addInstance(site, name, fi.Type, true, documentAggregate)
+			s.addInstance(site, name, fi.Type, true, InAggregate)
 		}
 	}
 	for conn, att := range ci.ConnectionAttachments() {
-		s.addConnectionAttachment(conn, att.Type, path, documentAggregate)
+		s.addConnectionAttachment(conn, att.Type, path, InAggregate)
 	}
 }
 
@@ -306,7 +306,7 @@ func (s *walkState) walkComponentInstanceFeatures(ci types.ComponentInstance, pa
 // declares on the same connection, whose type is recorded where the Aggregate
 // writes it. The attachment is an instance of the document it is written in,
 // under the name it takes on its component.
-func (s *walkState) addConnectionAttachment(conn types.AttachmentConnection, featureType, componentPath string, document instanceDocument) {
+func (s *walkState) addConnectionAttachment(conn types.AttachmentConnection, featureType, componentPath string, document InstanceDocument) {
 	if featureType == "" {
 		return
 	}
@@ -406,7 +406,7 @@ func (s *walkState) walkReleaseAttachments(r *types.Release) {
 				componentPath := fmt.Sprintf("%s.%s", path, strings.Join(types.BoundaryComponentLocator(scope, name), "."))
 				s.addBoundaryFeatures(bc.Features, componentPath)
 				for conn, att := range bc.ConnectionAttachments() {
-					s.addConnectionAttachment(conn, att.Type, componentPath, documentRelease)
+					s.addConnectionAttachment(conn, att.Type, componentPath, InRelease)
 				}
 				return nil
 			},
@@ -425,7 +425,7 @@ func (s *walkState) addBoundaryFeatures(features types.OrderedMap[types.Boundary
 		if bf.Type != "" {
 			site := fmt.Sprintf("%s.features.%s.type", path, name)
 			s.addEntityKind(bf.Type, site, KindFeature)
-			s.addInstance(site, name, bf.Type, true, documentRelease)
+			s.addInstance(site, name, bf.Type, true, InRelease)
 		}
 	}
 }
@@ -1239,13 +1239,13 @@ func (s *walkState) addEntityKind(uri, refPath, hint string) *pendingRef {
 
 // addInstance records one component or feature instance the walk visits, under
 // the authoring site of its type, and the document it was read from.
-func (s *walkState) addInstance(site, name, reference string, feature bool, document instanceDocument) {
+func (s *walkState) addInstance(site, name, reference string, feature bool, document InstanceDocument) {
 	s.instances = append(s.instances, InstanceReference{
 		Path:      site,
 		Name:      name,
 		Reference: reference,
 		Feature:   feature,
-		document:  document,
+		Document:  document,
 	})
 }
 

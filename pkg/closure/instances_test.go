@@ -121,16 +121,18 @@ func TestClosureReportsInstancesInVisitOrder(t *testing.T) {
 
 	const top = "aggregate.spec.components."
 	want := []closure.InstanceReference{
-		{Path: top + "router.type", Name: "router", Reference: "app/gw", File: "aggregate.yaml"},
-		{Path: top + "router.features.audit.type", Name: "audit", Reference: "obs/audit", File: "aggregate.yaml", Feature: true},
+		{Path: top + "router.type", Name: "router", Reference: "app/gw", File: "aggregate.yaml", Document: closure.InAggregate},
+		{Path: top + "router.features.audit.type", Name: "audit", Reference: "obs/audit", File: "aggregate.yaml", Feature: true,
+			Document: closure.InAggregate},
 		{Path: top + "router.uses.models.gpt.features.credential.type", Name: "gpt.credential", Reference: "sec/token",
-			File: "aggregate.yaml", Feature: true},
-		{Path: top + "gpt.type", Name: "gpt", Reference: "app/model", File: "aggregate.yaml"},
-		{Path: "release.spec.boundaries.prod.features.tls.type", Name: "tls", Reference: "net/tls", File: "release.yaml", Feature: true},
+			File: "aggregate.yaml", Feature: true, Document: closure.InAggregate},
+		{Path: top + "gpt.type", Name: "gpt", Reference: "app/model", File: "aggregate.yaml", Document: closure.InAggregate},
+		{Path: "release.spec.boundaries.prod.features.tls.type", Name: "tls", Reference: "net/tls", File: "release.yaml", Feature: true,
+			Document: closure.InRelease},
 		{Path: "aggregate(example/db:1.0.0).spec.components.store.type", Name: "data.store", Reference: "app/store:1.0.0",
-			File: "example/db:1.0.0"},
+			File: "example/db:1.0.0", Document: closure.InModule},
 		{Path: "aggregate(example/cache:1.0.0).spec.components.mem.type", Name: "data.cache.mem", Reference: "app/mem",
-			File: "example/cache:1.0.0"},
+			File: "example/cache:1.0.0", Document: closure.InModule},
 	}
 
 	got := cl.Instances
@@ -140,7 +142,7 @@ func TestClosureReportsInstancesInVisitOrder(t *testing.T) {
 	for i := range want {
 		g := got[i]
 		w := want[i]
-		if g.Path != w.Path || g.Name != w.Name || g.Reference != w.Reference || g.File != w.File || g.Feature != w.Feature {
+		if g != w {
 			t.Errorf("instance %d:\n got %+v\nwant %+v", i, g, w)
 		}
 	}

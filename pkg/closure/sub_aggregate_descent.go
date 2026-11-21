@@ -415,7 +415,7 @@ func moduleInstances(modules []moduleInclusion, prefix string, walked map[string
 				in.Name = types.JoinQualifiedID(modulePrefix, in.Name)
 			}
 			in.File = w.file
-			in.document = documentNamed
+			in.Document = InModule
 			out = append(out, in)
 		}
 		onPath[m.uri] = true

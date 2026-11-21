@@ -120,6 +120,7 @@ func componentInstance(name, reference string) closure.InstanceReference {
 		Name:      name,
 		Reference: reference,
 		File:      instanceVersionsAggregateFile,
+		Document:  closure.InAggregate,
 	}
 }
 
@@ -329,9 +330,12 @@ func TestInstanceVersionsConflictNamesEveryConstraint(t *testing.T) {
 			}
 			const site = ".spec.components.web"
 			wantConstraints := []VersionConstraint{
-				{Instance: "web", Site: site, Kind: ConstraintType, Value: "core/compute/server:1.0.0", File: "aggregate.yaml"},
-				{Instance: "web", Site: site, Kind: ConstraintMappingKey, Value: "core/compute/server:1.1.0", File: "manifest.yaml"},
-				{Instance: "web", Site: site, Kind: ConstraintImplements, Value: "core/compute/server:1.1.0", File: "compose/server:2.0.0"},
+				{Instance: "web", Site: site, Document: closure.InAggregate, Kind: ConstraintType,
+					Value: "core/compute/server:1.0.0", File: "aggregate.yaml"},
+				{Instance: "web", Site: site, Document: closure.InAggregate, Kind: ConstraintMappingKey,
+					Value: "core/compute/server:1.1.0", File: "manifest.yaml"},
+				{Instance: "web", Site: site, Document: closure.InAggregate, Kind: ConstraintImplements,
+					Value: "core/compute/server:1.1.0", File: "compose/server:2.0.0"},
 			}
 			got, _ := table.Constraints.Get("core/compute/server:1.0.0")
 			if !slices.Equal(got, wantConstraints) {
@@ -425,7 +429,7 @@ func TestInstanceVersionsLeavesUnmappedInstanceToItsReference(t *testing.T) {
 			}
 			got, _ := table.Constraints.Get("core/compute/server")
 			want := []VersionConstraint{{
-				Instance: "web", Site: ".spec.components.web", Kind: ConstraintType,
+				Instance: "web", Site: ".spec.components.web", Document: closure.InAggregate, Kind: ConstraintType,
 				Value: "core/compute/server", File: "aggregate.yaml",
 			}}
 			if !slices.Equal(got, want) {
@@ -456,7 +460,7 @@ func TestInstanceVersionsLeavesASelfContradictingEntryToItsRule(t *testing.T) {
 			}
 			got, _ := table.Constraints.Get("core/compute/server")
 			want := []VersionConstraint{{
-				Instance: "web", Site: ".spec.components.web", Kind: ConstraintType,
+				Instance: "web", Site: ".spec.components.web", Document: closure.InAggregate, Kind: ConstraintType,
 				Value: "core/compute/server", File: "aggregate.yaml",
 			}}
 			if !slices.Equal(got, want) {
@@ -502,12 +506,79 @@ func TestInstanceVersionsConflictNamesEveryVersionHeld(t *testing.T) {
 		t.Errorf("inVersionOrder = %q, want %q", got, want)
 	}
 	declared := []VersionConstraint{{
-		Instance: "web", Site: ".spec.components.web", Kind: ConstraintType,
+		Instance: "web", Site: ".spec.components.web", Document: closure.InAggregate, Kind: ConstraintType,
 		Value: "core/compute/server:1.0.0", File: instanceVersionsAggregateFile,
 	}}
 	err := conflictingVersionConstraints(instanceVersionsRelease, componentTier, declared, inVersionOrder([]string{"1.10.0", "", "latest", "1.2.0"}), lockfileRecord{})
 	if !strings.Contains(err.Error(), `versions held "1.2.0, 1.10.0, latest")`) {
 		t.Errorf("the conflict does not name the versions held in order, without an empty one:\n%v", err)
+	}
+}
+
+// TestInstanceVersionsConflictAdviceFollowsWhereTheTypeIsWritten holds the remedy
+// a conflict names to the documents its instances' types are written in: the
+// Aggregate the Release deploys and the Release are edited where the type is
+// written, while a module is published, so its instance's version changes only
+// with another version of the module. The Manifest's mapping is always a remedy,
+// naming the kind of recipe the tier maps to.
+func TestInstanceVersionsConflictAdviceFollowsWhereTheTypeIsWritten(t *testing.T) {
+	t.Parallel()
+	const mapRecipe = "map this type at a version its recipe implements"
+	const mapFeatureRecipe = "map this type at a version its feature recipe implements"
+	moduleInstance := closure.InstanceReference{
+		Path:      "aggregate(acme/site:1.0.0).spec.components.web.type",
+		Name:      "site.web",
+		Reference: "core/compute/server:1.0.0",
+		File:      "acme/site:1.0.0",
+		Document:  closure.InModule,
+	}
+	releaseAttachment := closure.InstanceReference{
+		Path:      "release.spec.boundaries.prod.components.web.features.db_password.type",
+		Name:      "db_password",
+		Reference: "core/secret-value:1.1.0",
+		File:      "release.yaml",
+		Feature:   true,
+		Document:  closure.InRelease,
+	}
+	componentsManifest := instanceVersionsManifest([][2]string{{"core/compute/server:1.1.0", "compose/server:2.0.0"}}, nil)
+	featuresManifest := instanceVersionsFeaturesManifest([][2]string{{"core/secret-value", "compose/dotenv-secret:1.0.0"}})
+	dir := instanceVersionsCatalog(t,
+		[2]string{"feature/core/secret-value/1.0.0/feature.yaml", instanceVersionsFeatureYAML("core/secret-value", "1.0.0")},
+		[2]string{"feature/core/secret-value/1.1.0/feature.yaml", instanceVersionsFeatureYAML("core/secret-value", "1.1.0")},
+		[2]string{"feature-recipe/compose/dotenv-secret/1.0.0/recipe.yaml",
+			instanceVersionsFeatureRecipeYAML("dotenv-secret", "1.0.0", "core/secret-value:1.0.0")})
+
+	for _, c := range []struct {
+		name      string
+		manifest  *types.Manifest
+		instances []closure.InstanceReference
+		advice    string
+	}{
+		{name: "a component the Aggregate declares", manifest: componentsManifest,
+			instances: []closure.InstanceReference{componentInstance("web", "core/compute/server:1.0.0")},
+			advice:    "change the Aggregate's version, or " + mapRecipe},
+		{name: "an attachment the Release declares", manifest: featuresManifest,
+			instances: []closure.InstanceReference{releaseAttachment},
+			advice:    "change the Release's version, or " + mapFeatureRecipe},
+		{name: "a module's component", manifest: componentsManifest,
+			instances: []closure.InstanceReference{moduleInstance},
+			advice:    "include another version of the module that writes it, or " + mapRecipe},
+		{name: "a component the Aggregate and a module both write", manifest: componentsManifest,
+			instances: []closure.InstanceReference{componentInstance("web", "core/compute/server:1.0.0"), moduleInstance},
+			advice:    "change the Aggregate's version, or include another version of the module that writes it, or " + mapRecipe},
+	} {
+		for _, v := range instanceVersionViews(t, dir) {
+			t.Run(c.name+"/"+v.name, func(t *testing.T) {
+				_, err := ResolveInstanceVersions(instanceVersionsRelease, c.instances, c.manifest, instanceVersionsManifestFile, v.view)
+				var raised *cerrors.CompilerError
+				if !errors.Is(err, ErrConflictingVersionConstraints()) || !errors.As(err, &raised) {
+					t.Fatalf("err = %v; want the conflicting-version-constraints diagnostic", err)
+				}
+				if msg := raised.Message(); !strings.HasSuffix(msg, "). "+c.advice) {
+					t.Errorf("the conflict's remedy is not %q:\n%s", c.advice, msg)
+				}
+			})
+		}
 	}
 }
 

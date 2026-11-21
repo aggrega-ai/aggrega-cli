@@ -112,24 +112,26 @@ type InstanceReference struct {
 	// Feature reports whether the instance is a feature attachment rather than a
 	// component.
 	Feature bool
-
-	// document is which of the Release and its Aggregate the walk read the
-	// instance from, for NameInstanceFiles; an instance of an included module
-	// carries its file from the walk and none of the two.
-	document instanceDocument
+	// Document is the kind of document the instance's type is written in: the
+	// Release, the Aggregate the Release deploys, or a module that Aggregate
+	// includes. NameInstanceFiles names the file of the first two from it.
+	Document InstanceDocument
 }
 
-// instanceDocument says which document the walk read an instance from where the
-// walk cannot name the file itself.
-type instanceDocument uint8
+// InstanceDocument is the kind of document an instance's type is written in, which
+// says who can change the version the type names.
+type InstanceDocument uint8
 
 const (
-	// documentNamed marks an instance whose file the walk named.
-	documentNamed instanceDocument = iota
-	// documentAggregate marks an instance of the Aggregate the Release deploys.
-	documentAggregate
-	// documentRelease marks an attachment the Release declares.
-	documentRelease
+	// InModule marks an instance of a module the Aggregate includes, whose file the
+	// walk names: the module's reference at the version it resolved to. A module is
+	// published, so the version its instance names changes only with another
+	// version of the module.
+	InModule InstanceDocument = iota
+	// InAggregate marks an instance of the Aggregate the Release deploys.
+	InAggregate
+	// InRelease marks an attachment the Release declares.
+	InRelease
 )
 
 // moduleInclusion is one module an Aggregate includes: the name it writes the
@@ -148,10 +150,10 @@ type moduleInclusion struct {
 // walk named.
 func (c *Closure) NameInstanceFiles(release, aggregate string) {
 	for i := range c.Instances {
-		switch c.Instances[i].document {
-		case documentRelease:
+		switch c.Instances[i].Document {
+		case InRelease:
 			c.Instances[i].File = release
-		case documentAggregate:
+		case InAggregate:
 			c.Instances[i].File = aggregate
 		}
 	}
