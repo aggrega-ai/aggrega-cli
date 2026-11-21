@@ -32,30 +32,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Mint the token that reads aggrega-schemas
-        # The checkout below reads aggrega-schemas with a GitHub App
-        # installation token for aggrega-schemas alone, asking for read access
-        # to its contents and nothing else. The App's secrets are handed to
-        # this action and to no step, and its token to that checkout, which
-        # does not keep it.
-        id: app-token
-        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
-        with:
-          client-id: ${{ secrets.SUBMODULE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.SUBMODULE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: aggrega-schemas
-          permission-contents: read
-
       - name: Check out the schemas sibling, which carries the check
         # Read by the two steps below, which build cmd/schemagate from it and
-        # run it; nothing here builds this repository.
+        # run it; nothing here builds this repository. The repository is
+        # public: the run's own token reads it, and a Dependabot or fork pull
+        # request run receives it too.
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: ${{ github.repository_owner }}/aggrega-schemas
           path: aggrega-schemas
           ref: dev
-          token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
 
       - name: Set up Go
