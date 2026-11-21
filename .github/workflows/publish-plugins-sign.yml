@@ -4065,8 +4065,8 @@ jobs:
     # granted exactly the four permissions below, naming no secret and no
     # environment, and running on a GitHub-hosted image it names by a literal
     # label, and refuses it in any other job that may mint the OIDC token; the
-    # commit pins are held by the workflow audit, zizmor's unpinned-uses audit,
-    # which refuses an action not pinned by its full commit.
+    # commit pins are held by zizmor's unpinned-uses audit, which refuses an
+    # action not pinned by its full commit.
     #
     # A failed attest cannot be redone for that release: clean-up deletes
     # release-checksums when the run ends, so a re-run of the failed jobs
