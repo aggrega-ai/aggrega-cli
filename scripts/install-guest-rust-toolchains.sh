@@ -47,6 +47,7 @@ install_toolchains() {
     esac
   done <<< "$homes"
   cargo_bin="$CARGO_HOME/bin"
+  # shellcheck source=lib/core-plugins.sh
   . "$here/lib/core-plugins.sh"
   dirs="$(core_plugin_rust_dirs)"
   while IFS= read -r d; do

@@ -94,7 +94,7 @@ for entity in "$STAGE"/entities/*/*/*/plugin.yaml; do
   socket="$(basename "$(dirname "$(dirname "$(dirname "$entity")")")")"
   dir="$(core_plugin_dir_of "$socket" "$name")"
   src="$dir/$name.wasm.gz"
-  [ -f "$src" ] || { echo "no built guest for $entity at $src" >&2; exit 1; }
+  [ -f "$src" ] || { echo "no built guest for $entity at aggrega-cli/$src" >&2; exit 1; }
   gunzip -c "$src" > "$WASM_DIR/$leaf"
   staged=$((staged + 1))
 done
