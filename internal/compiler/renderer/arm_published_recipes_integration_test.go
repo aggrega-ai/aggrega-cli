@@ -22,7 +22,8 @@ import (
 )
 
 // These tests render each arm Recipe of the sibling catalog that wraps a module of
-// the Azure Verified Modules programme through RenderAll and the embedded arm
+// the Azure Verified Modules programme, sourced from a git repository or a Bicep
+// module in an OCI registry, through RenderAll and the embedded arm
 // guest. The Recipe is loaded from its own YAML, so its locals, assertions and
 // valuesMapping are the published ones; only its source is replaced, by a git
 // repository seeded in the cache as a pull leaves it, holding the fixture under
@@ -48,9 +49,16 @@ type armPublishedCase struct {
 	// infra and values are the node's resolved infra and values, as JSON, written
 	// the way the Component's defaults and the Release leave them.
 	infra, values string
-	// password attaches core/referenced-secret on the password slot, realized by
+	// password attaches core/referenced-secret on a password slot, realized by
 	// the published Key Vault secret FeatureRecipe.
 	password bool
+	// passwordSlot names the slot the attachment fills; the empty string is
+	// "password".
+	passwordSlot string
+	// mappingLibrary is the directory under mappinglibrary of the catalog that
+	// holds the MappingLibrary the Recipe's valuesMapping imports; empty when the
+	// Recipe's mapping is its own.
+	mappingLibrary string
 	// node names the component the Recipe renders; the empty string is "api".
 	node string
 }
@@ -71,6 +79,25 @@ func armPublishedCases() []armPublishedCase {
 				"private_dns_zone_id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-net/providers/Microsoft.Network/privateDnsZones/db.postgres.database.azure.com",
 				"sku_name":"GP_Standard_D2ds_v5","zone":"1","tags":{"env":"test"}}}`,
 			values: `{"user":"appadmin","database":"orders","encoding":"UTF8","locale":"en_US.utf8"}`,
+		},
+		{
+			recipe:       "mysql-flexible-server",
+			fixture:      "mysql-flexible-server",
+			password:     true,
+			passwordSlot: "root_password",
+			infra: `{"engine_version":"8.4","port":3306,"storage":{"size":"32Gi"},"ha":{"enabled":false,"read_replicas":0},
+				"overrides":{"delegated_subnet_id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-net/providers/Microsoft.Network/virtualNetworks/vnet/subnets/db",
+				"private_dns_zone_id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-net/providers/Microsoft.Network/privateDnsZones/db.mysql.database.azure.com",
+				"sku_name":"GP_Standard_D2ds_v4","zone":"1","tags":{"env":"test"}}}`,
+			values: `{"user":"appadmin","database":"orders","charset":"utf8mb4","collation":"utf8mb4_general_ci"}`,
+		},
+		{
+			recipe:         "task-container-apps",
+			fixture:        "container-app-job",
+			mappingLibrary: "container-app-parameters",
+			infra: `{"image":"registry.example.com/orders-migrate:1.0.0","compute":{"cpu":"250m","memory":"512Mi"},
+				"overrides":{"container_app_environment_id":"` + environment + `"}}`,
+			values: `{"schedule":"30 2 * * 1-5","timeout":"10m"}`,
 		},
 		{
 			recipe:  "server-container-apps",
@@ -108,7 +135,8 @@ func armPublishedCases() []armPublishedCase {
 }
 
 // armPublishedRecipe loads one arm Recipe from the sibling catalog, with its
-// source replaced by the seeded repository. It fails the test when the Recipe
+// source, a git repository or a Bicep module in an OCI registry, replaced by the
+// seeded repository. It fails the test when the Recipe
 // does not source a module, since a Recipe without a source would render nothing
 // of the fixture.
 func armPublishedRecipe(t *testing.T, c armPublishedCase) *types.Recipe {
@@ -126,8 +154,8 @@ func armPublishedRecipe(t *testing.T, c armPublishedCase) *types.Recipe {
 		recipe = r
 	}
 	source, ok := recipe.Spec.Source.(map[string]any)
-	if !ok || source["kind"] != "git-repository" {
-		t.Fatalf("the Recipe %s does not source a git repository: %v", c.recipe, recipe.Spec.Source)
+	if !ok || (source["kind"] != "git-repository" && source["kind"] != "bicep-module-oci") {
+		t.Fatalf("the Recipe %s sources neither a git repository nor a Bicep module in an OCI registry: %v", c.recipe, recipe.Spec.Source)
 	}
 	recipe.Spec.Source = map[string]any{"kind": "git-repository", "url": armSourcedURL, "ref": armSourcedRef}
 	return &recipe
@@ -143,10 +171,28 @@ func armPublishedFixture(t *testing.T, fixture string) string {
 	return string(body)
 }
 
-// armPublishedPassword attaches core/referenced-secret to the node "api" as
-// "password", realized by the published Key Vault secret FeatureRecipe, and
+// armPublishedMappingLibraries loads the published MappingLibrary in the given
+// directory of the catalog, keyed by name as a valuesMapping import names it.
+func armPublishedMappingLibraries(t *testing.T, dir string) map[string]types.MappingLibrary {
+	t.Helper()
+	cat, err := catalog.LoadAll("", wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog", "mappinglibrary", dir, "1.0.0"))
+	if err != nil {
+		t.Fatalf("loading the MappingLibrary %s: %v", dir, err)
+	}
+	libraries := map[string]types.MappingLibrary{}
+	for _, library := range cat.MappingLibraryVersions {
+		libraries[library.Metadata.Name] = library
+	}
+	if len(libraries) == 0 {
+		t.Fatalf("the directory of the MappingLibrary %s holds none", dir)
+	}
+	return libraries
+}
+
+// armPublishedPassword attaches core/referenced-secret to the node "api" on the
+// case's password slot, realized by the published Key Vault secret FeatureRecipe, and
 // returns the FeatureRecipe lookup.
-func armPublishedPassword(t *testing.T, input *renderer.RendererInput) func(string, string) (*types.FeatureRecipe, bool) {
+func armPublishedPassword(t *testing.T, slot string, input *renderer.RendererInput) func(string, string) (*types.FeatureRecipe, bool) {
 	t.Helper()
 	feature := wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog", "feature", "core", "referenced-secret", "1.0.0")
 	realization := wasmtest.SiblingPath(t, "aggrega-hub", "aggrega-catalog", "feature-recipe", "arm", "key-vault-secret", "1.0.0")
@@ -164,9 +210,9 @@ func armPublishedPassword(t *testing.T, input *renderer.RendererInput) func(stri
 	values.Set("origin", armPublishedKeyVaultSecret)
 	values.Set("key", "value")
 	instances := types.OrderedMap[types.IRFeatureEntry]{}
-	instances.Set("password", types.IRFeatureEntry{Type: "core/referenced-secret:1.0.0", Sensitive: true, Values: values})
+	instances.Set(slot, types.IRFeatureEntry{Type: "core/referenced-secret:1.0.0", Sensitive: true, Values: values})
 	input.Graph.Spec.FeatureValuesMapping.Set("api", instances)
-	input.FeatureOrder = ir.FeatureOrder{"api": {"password"}}
+	input.FeatureOrder = ir.FeatureOrder{"api": {slot}}
 	input.CatalogLookup = cat.CatalogLookup()
 	return lookup
 }
@@ -202,8 +248,11 @@ func renderArmPublished(t *testing.T, c armPublishedCase) (map[string]renderer.A
 		},
 		FeatureRecipe: func(_, _ string) (*types.FeatureRecipe, bool) { return nil, false },
 	}
+	if c.mappingLibrary != "" {
+		input.MappingLibraries = armPublishedMappingLibraries(t, c.mappingLibrary)
+	}
 	if c.password {
-		lookup.FeatureRecipe = armPublishedPassword(t, &input)
+		lookup.FeatureRecipe = armPublishedPassword(t, cmp.Or(c.passwordSlot, "password"), &input)
 	}
 	result, err := renderer.RenderAll(context.Background(), input, lookup, wasmEngineFactory(t))
 	if err != nil {
