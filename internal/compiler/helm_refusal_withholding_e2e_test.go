@@ -8,8 +8,8 @@
 // guest and the guest withholds by it. The input marks a value in two ways, and
 // both are driven: per key, where a chart receives the Component's own values
 // keyed by the leaves the Component declares; and as a whole payload, where the
-// template that produced the payload read a declared value — a values mapping,
-// the node's, an attachment's FeatureRecipe's or a boundary's feature's, a
+// template that produced the payload produced output depending on a declared
+// value — a values mapping, the node's, an attachment's FeatureRecipe's or a boundary's feature's, a
 // workload, an artifact — and no key of its output can be traced to a
 // declaration. Every row quoting the declared value has a control quoting the
 // value nobody declared, which must reach the text unchanged.

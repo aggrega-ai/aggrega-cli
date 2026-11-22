@@ -76,8 +76,8 @@ var shortFormIntrinsicTags = map[string]bool{
 }
 
 // BindInput is what a sourced render hands the binding: the node's values, whether
-// a values mapping produced them, and whether that mapping read a value an author
-// declared sensitive.
+// a values mapping produced them, and whether that mapping's output depends on a
+// value an author declared sensitive.
 //
 // A mapping's output keys are the mapping's own invention, so no declaration names
 // one of them: the payload marks a mapped node's values only as a whole, never key
@@ -166,8 +166,8 @@ func (b boundValue) literal() bool { return b.kind == boundLiteral }
 //
 // A literal that may carry secret material is refused, while a dynamic reference
 // and an intrinsic are written as given. A NoEcho parameter takes a dynamic
-// reference or an intrinsic and refuses a literal. Where the mapping read a value an
-// author declared sensitive, every literal binding of the node is refused, and a
+// reference or an intrinsic and refuses a literal. Where the mapping's output depends on a value
+// an author declared sensitive, every literal binding of the node is refused, and a
 // dynamic reference or an intrinsic is admitted as written — the text inside an
 // intrinsic included, so a sensitive value the mapping splices into an Fn::Sub
 // string reaches the template as that text. A dynamic reference is refused where

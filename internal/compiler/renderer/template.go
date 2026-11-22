@@ -552,18 +552,21 @@ func (e templateEval) runDecoded(dst any) (output string, evalErr, decodeErr err
 // write. The output's keys are the mapping's own invention, so this is the only
 // marking its values can carry.
 //
-// The marking is read against the plugin marking of withheld. A mapping whose
-// references reach nothing that set names, read statically as
-// templateReadsWithheld reads them, is unmarked and evaluated once. A mapping
-// whose references reach a named datum is evaluated twice more, once over each
-// text redact.SubstitutionTexts returns standing for every datum the set names,
-// and is marked where either evaluation fails or produces text differing from
-// the reference in any byte; see templateEval.outputDependsOn.
+// Two readings of withheld take part. The static first filter reads the plugin
+// marking of withheld (withheld.PluginMarking, which leaves out what the set names
+// inside lists): a mapping whose references reach nothing that marking names, as
+// templateReadsWithheld reads them, is unmarked and evaluated once, so a mapping
+// reading only list entries is never flagged. A flagged mapping is evaluated twice
+// more, once over each text redact.SubstitutionTexts returns, with every datum the
+// whole of withheld names replaced — list entries and the locals computed from them
+// included — and is marked where either evaluation fails or produces text differing
+// from the reference in any byte; see templateEval.outputDependsOn.
 //
 // So a mapping that reads an object holding a declared leaf and prints only its
 // keys is unmarked. One that only tests whether a declared value is set is
 // unmarked where the value is one a template reads as true; both texts read as
-// true, so the same test over a value set to "", false or 0 marks it. One that
+// true, so the same test over a value a template reads as false (an empty text,
+// false, 0, null, an empty list or an empty map) marks it. One that
 // prints a declared value is marked. One that prints a property of a declared
 // value, or branches on it, is marked where either text gives that property or
 // branch differently from the value — a printed length always, since the texts
@@ -579,20 +582,21 @@ func evalValuesMapping(name, tmplText string, data any, withheld redact.Keys, ds
 	if evalErr != nil || decodeErr != nil {
 		return false, evalErr, decodeErr
 	}
-	marking := withheld.PluginMarking()
-	if !templateReadsWithheld(tmplText, marking) {
+	if !templateReadsWithheld(tmplText, withheld.PluginMarking()) {
 		return false, nil, nil
 	}
-	return e.outputDependsOn(marking, output), nil, nil
+	return e.outputDependsOn(withheld, output), nil, nil
 }
 
 // outputDependsOn reports whether the evaluation's output depends on a datum
-// marking names. The template is executed once over each replacement text
-// redact.SubstitutionTexts returns, each time over a fresh private copy of its
-// data with every datum marking names replaced by that text before the
-// execution supplies absent leaves, and the output depends on such a datum where
-// an execution fails or its text differs from reference in any byte. The
-// texts differ from each other in length and share no character, so a printed
+// refusal names, refusal being the evaluation's whole refusal set, what it names
+// inside lists included (the static first filter that decides whether to ask is
+// evalValuesMapping's, over the plugin marking). The template is executed once
+// over each replacement text redact.SubstitutionTexts returns, each time over a
+// fresh private copy of its data with every datum refusal names replaced by that
+// text before the execution supplies absent leaves, and the output depends on
+// such a datum where an execution fails or its text differs from reference in any
+// byte. The texts differ from each other in length and share no character, so a printed
 // length, a character printed from a position both texts have, or a value equal
 // to one text changes the output over at least one of them.
 //
@@ -605,7 +609,7 @@ func evalValuesMapping(name, tmplText string, data any, withheld redact.Keys, ds
 //
 // Every execution is the evaluation's own — the same parse, reference check,
 // missing-key policy, number handling and functions — through a copy whose
-// withheld set is marking, so what the comparison reads differs from the real
+// withheld set is refusal, so what the comparison reads differs from the real
 // evaluation in the substituted data alone. No output or failure of these
 // executions is reported or kept.
 //
@@ -613,9 +617,9 @@ func evalValuesMapping(name, tmplText string, data any, withheld redact.Keys, ds
 // the comparison from showing the output unchanged marks it. What it cannot
 // see is a branch or property both texts give the real value's outcome for,
 // which the output then carries without the value's text.
-func (e templateEval) outputDependsOn(marking redact.Keys, reference string) bool {
+func (e templateEval) outputDependsOn(refusal redact.Keys, reference string) bool {
 	sub := e
-	sub.scope.withheld = marking
+	sub.scope.withheld = refusal
 	t, refs, err := sub.prepare()
 	if err != nil {
 		return true

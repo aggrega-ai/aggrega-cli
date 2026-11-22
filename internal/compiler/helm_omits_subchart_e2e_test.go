@@ -101,7 +101,7 @@ func TestHelmOmitsSubchart_AnEntryNamingASubchartTheChartDoesNotRenderHalts(t *t
 const helmOmitsSubchartSensitiveLicence = "omits-sensitive-licence-plaintext"
 
 // TestHelmOmitsSubchart_TheHaltKeepsItsSentenceWhereTheInputMarksAValueSensitive builds
-// a fixture whose values mapping reads a value declared sensitive, so the chart's
+// a fixture whose values mapping produces output depending on a value declared sensitive, so the chart's
 // values reach the provider marked as a whole, and whose values schema types a
 // boolean the mapping writes — a value the placeholder cannot stand in for. The
 // Release naming a subchart the chart does not have halts naming the entry, the

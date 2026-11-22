@@ -35,7 +35,7 @@
 // CloudFormation and the link pass to resolve, and a literal is converted as
 // CloudFormation converts it at deploy and checked against the parameter's
 // constraints. A key naming no parameter halts, and so does a literal bound to a
-// NoEcho parameter or produced by a mapping that read a value declared sensitive; an
+// NoEcho parameter or produced by a mapping whose output depends on a value declared sensitive; an
 // intrinsic is written as given, the text inside it included. Values the node
 // carries for any other reason are left unread.
 //

@@ -406,7 +406,9 @@ func (l ListKeys) Any() bool {
 // marking by what a set names inside lists would halt builds that are accepted
 // without it. What a set names inside lists therefore governs the host's own
 // reading of a failure, what a refusal may say, and leaves every marking a plugin
-// receives exactly what the rest of the set makes it.
+// receives exactly what the rest of the set makes it. What the set names inside
+// lists never raises a plugin marking, but it is replaced in the evaluations that
+// decide whether a flagged values mapping keeps its mark.
 func (k Keys) PluginMarking() Keys {
 	k.Lists = ListKeys{}
 	return k

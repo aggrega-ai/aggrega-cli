@@ -56,7 +56,7 @@ const (
 // an expression must parse and is kept as written, and text the binding itself
 // produces by converting a number or boolean to a string is written with
 // ArmLiteral. A literal is refused for a secure
-// parameter, and for every parameter when the mapping read a sensitive value. A
+// parameter, and for every parameter when the mapping's output depends on a sensitive value. A
 // parameter with no default that admits no null and has no key is refused,
 // because a nested deployment's parameters cannot be supplied when it runs.
 func bindParameters(n SourcedNode, template map[string]any) (map[string]any, error) {

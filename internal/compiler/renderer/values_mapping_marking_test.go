@@ -9,6 +9,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
@@ -219,7 +220,7 @@ func TestEvalValuesMapping_ACrossBoundaryReferenceRunThatFailsMarks(t *testing.T
 					t.Fatalf("the comparison panicked: %v", r)
 				}
 			}()
-			if got := e.outputDependsOn(withheld.PluginMarking(), "a: b"); got != tc.marked {
+			if got := e.outputDependsOn(withheld, "a: b"); got != tc.marked {
 				t.Errorf("marked = %v, want %v", got, tc.marked)
 			}
 		})
@@ -266,6 +267,37 @@ func TestExecutePhaseBForFeature_MarksOnlyOutputThatDependsOnADeclaredValue(t *t
 			if !reflect.DeepEqual(got.Resolved, map[string]any(want)) {
 				t.Errorf("Resolved is %v, want the rendered %v", got.Resolved, want)
 			}
+		})
+	}
+}
+
+// TestEvalValuesMapping_ReplacesWhatTheSetNamesInsideLists holds the evaluations
+// that decide whether a flagged values mapping keeps its mark to the whole
+// refusal set. A mapping flagged by a presence test of its own declared leaf that
+// also prints a list entry's declared value is marked; the same mapping printing
+// an undeclared field of that entry is not, so a value the set names inside a
+// list reaches the marking only through a flagged mapping's output.
+func TestEvalValuesMapping_ReplacesWhatTheSetNamesInsideLists(t *testing.T) {
+	t.Parallel()
+
+	const presence = "{{ if .values.secret }}flag: on\n{{ end }}"
+	for _, tc := range []struct {
+		name    string
+		mapping string
+		marked  bool
+	}{
+		{name: "prints a list entry's declared value",
+			mapping: presence + `ref: "{{ range .boundary.internal_uses_edges }}{{ .provides.secret_ref }}{{ end }}"`, marked: true},
+		{name: "prints a list entry's undeclared field",
+			mapping: presence + `host: "{{ range .boundary.internal_uses_edges }}{{ .provides.host }}{{ end }}"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := listEntryBoundaryContext()
+			ctx.Values.Set("secret", valuesMarkingSecret)
+			keys := boundaryFRKeys(listEntryFR(), resolver.SensitiveLeaves{}, ctx.Boundary, listEntryDeclarations())
+			keys.Values = map[string]bool{"secret": true}
+			assertMarkedAndDecodedAsRendered(t, tc.mapping, ctx, keys, tc.marked)
 		})
 	}
 }
