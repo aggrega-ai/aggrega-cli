@@ -93,7 +93,7 @@ func TestRenderChartWithholding_KeepsAMarkedValueOutOfTheFailure(t *testing.T) {
 		values string
 		marked map[string]string
 		// sensitiveValues: the input marks the values as a whole — a values mapping
-		// that read a declared value produced them.
+		// whose output depends on a declared value produced them.
 		sensitiveValues bool
 		// renders: the render succeeds and its output is the plain render's.
 		renders bool

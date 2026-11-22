@@ -142,7 +142,8 @@ func localsReading(locals types.OrderedMap[string], readable redact.Keys) map[st
 // Over a set's plugin marking this reading is the whole of the marking a provider
 // guest receives for a workload, an artifact entry and an omit entry, and the first
 // filter of the marking a values mapping's output receives: a mapping it flags is
-// marked only where its output depends on the datum it reaches (evalValuesMapping).
+// marked only where its output depends on a datum the set names, which may be one
+// the filter did not read, a list entry among them (evalValuesMapping).
 func templateReadsWithheld(tmplText string, keys redact.Keys) bool {
 	return templateReadsWithheldDelims(tmplText, "{{", "}}", keys)
 }

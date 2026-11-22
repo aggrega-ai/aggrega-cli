@@ -255,8 +255,10 @@ type FeatureValues struct {
 	KeysAreDeclaredLeaves bool
 
 	// Sensitive reports that the output of the values mapping that produced
-	// Resolved depends on a value the plugin marking of the evaluation's withheld
-	// set names, as evalValuesMapping decides it — the marking the base Recipe's own
+	// Resolved depends on a value the evaluation's withheld set names, as
+	// evalValuesMapping decides it — its references reach a value the plugin marking
+	// names, and an evaluation replacing every value the set names, list entries
+	// included, differs — the marking the base Recipe's own
 	// values pass records for the same fact. False where no mapping ran.
 	Sensitive bool
 

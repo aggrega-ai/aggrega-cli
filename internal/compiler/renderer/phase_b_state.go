@@ -71,9 +71,10 @@ type PhaseBState struct {
 	ValuesAreDeclaredLeaves bool
 
 	// SensitiveValues reports that the output of the values mapping that produced
-	// ResolvedValues depends on a value Withheld's plugin marking names, as
-	// evalValuesMapping decides it: the mapping's references reach such a value, and
-	// an evaluation with every such value replaced fails or produces different text.
+	// ResolvedValues depends on a value Withheld names, as evalValuesMapping
+	// decides it: the mapping's references reach a value its plugin marking names,
+	// and an evaluation with every value Withheld names replaced, list entries
+	// included, fails or produces different text.
 	// Recorded by the sub-pass that evaluates the mapping, which is the one place
 	// holding the mapping's text, its data and the set, and carried from here to the
 	// provider guest on the node projection. False where no mapping ran: the values

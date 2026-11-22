@@ -173,8 +173,9 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 	// one that records the fact, as the branch above records its own.
 	state.ValuesMapped = true
 	// Whether the mapping's output depends on a value an author declared sensitive,
-	// as the evaluation above decided it over the plugin marking of the set its
-	// failure is withheld by.
+	// as the evaluation above decided it: a static reading over the plugin marking
+	// of the set its failure is withheld by, then evaluations replacing every value
+	// that whole set names.
 	state.SensitiveValues = marked
 	// Trace point: B.1 valuesMapping output (slot 07).
 	state.capture(trace.PassPhaseB1, "", ctx)

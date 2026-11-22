@@ -276,8 +276,8 @@ func TestBindSourced(t *testing.T) {
 		},
 		{
 			// The whole-map mark refuses a literal and admits an intrinsic as written,
-			// the text inside it included: the mark says the mapping read a declared
-			// value, never which part of an intrinsic's text came from it.
+			// the text inside it included: the mark says the mapping's output depends on a
+			// declared value, never which part of an intrinsic's text came from it.
 			name:  "with the whole values marked, an intrinsic is written as given, the text inside it included",
 			body:  bindTemplate,
 			input: BindInput{Mapped: true, SensitiveValues: true, Values: mappedValues("BucketName", "!Sub zq-${AWS::Region}-text")},
