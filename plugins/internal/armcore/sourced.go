@@ -171,7 +171,9 @@ type SourcedNode struct {
 	// Content is the template file's bytes.
 	Content []byte
 	// Values is the node's values mapping, read where ValuesMapped; SensitiveValues
-	// reports that the mapping read a value declared sensitive.
+	// reports that the mapping's output depends on a value declared sensitive: the
+	// mapping reads one, and what it produces changes, or it fails, when the values
+	// declared sensitive are replaced.
 	Values                        types.OrderedMap[any]
 	ValuesMapped, SensitiveValues bool
 	// Omits are the resources the node leaves out of the template.

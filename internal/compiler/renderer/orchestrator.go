@@ -2163,9 +2163,10 @@ func RenderAll(ctx context.Context, input RendererInput, recipeLookup RecipeLook
 			Slots:                   sensitiveSlots(node.Component),
 			SocketSlots:             SensitiveSocketSlots(workloadSlots),
 		}
-		// Whether the values mapping read a declared value, as the values pass
-		// recorded it. It travels beside the declarations rather than inside them
-		// because it is read from a template, which a declaration set never is.
+		// Whether the values mapping's output depends on a declared value, as the
+		// values pass recorded it. It travels beside the declarations rather than
+		// inside them because it is read from the mapping's evaluation, which a
+		// declaration set never is.
 		nodeCtx.SensitiveValues = state.SensitiveValues
 		// Whether those values are the output of the Recipe's values mapping, as the
 		// same pass recorded it, so a guest binding values to its source's own inputs

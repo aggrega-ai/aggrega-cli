@@ -89,9 +89,10 @@ type BindInput struct {
 	// values the author wrote for something else — the Recipe's artifacts, say —
 	// name no parameter and are left alone.
 	Mapped bool
-	// SensitiveValues reports that the mapping producing Values read a value an
-	// author declared sensitive, so no literal it produced is written into a
-	// template.
+	// SensitiveValues reports that the output of the mapping producing Values
+	// depends on a value an author declared sensitive: the mapping reads one, and
+	// what it produces changes, or it fails, when the values declared sensitive
+	// are replaced. So no literal it produced is written into a template.
 	SensitiveValues bool
 }
 

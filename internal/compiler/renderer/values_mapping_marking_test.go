@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -62,10 +63,11 @@ func assertMarkedAndDecodedAsRendered(t *testing.T, mapping string, data any, wi
 // marking of a values mapping to its output: a mapping whose references reach a
 // declared value is marked where an evaluation over that value replaced fails or
 // produces different text, and only there. A read of the object holding the value
-// that prints only its keys, and a presence test, produce the same text whatever
-// the value holds; an interpolation, a printed length, and a branch that fails on
-// another value do not. A real value equal to one replacement text is still told
-// apart by the other.
+// that prints only its keys, and a presence test over a value a template reads as
+// true, produce the same text whatever the value holds; the same presence test
+// over a value set to the empty text, an interpolation, a printed length, and a
+// branch that fails on another value do not. A real value equal to one
+// replacement text is still told apart by the other.
 func TestEvalValuesMapping_MarksOnlyOutputThatDependsOnADeclaredValue(t *testing.T) {
 	t.Parallel()
 
@@ -80,6 +82,8 @@ func TestEvalValuesMapping_MarksOnlyOutputThatDependsOnADeclaredValue(t *testing
 		{name: "ranges over an object holding a declared leaf, printing keys", secret: valuesMarkingSecret,
 			mapping: "{{ range $k, $_ := .values.creds }}{{ $k }}: x\n{{ end }}"},
 		{name: "tests presence only", secret: valuesMarkingSecret, mapping: `a: "{{ if .values.secret }}set{{ end }}"`},
+		{name: "tests presence of a value set to the empty text", secret: "",
+			mapping: `a: "{{ if .values.secret }}set{{ end }}"`, marked: true},
 		{name: "a substituted run fails where the real passes", secret: valuesMarkingSecret,
 			mapping: `{{ if ne .values.secret "s3cr3t-value" }}{{ fail "changed" }}{{ end }}a: b`, marked: true},
 		{name: "prints the declared value's length", secret: valuesMarkingSecret, mapping: `a: "{{ len .values.secret }}"`, marked: true},
@@ -104,14 +108,15 @@ func TestEvalValuesMapping_ReadsAConnectionByAKeyFromALocal(t *testing.T) {
 
 	const mapping = `{{ $p := .context.uses.db.provides }}{{ with .locals.key }}a: "{{ index $p . }}"{{ else }}a: none{{ end }}`
 	for _, tc := range []struct {
+		name   string
 		key    string
 		marked bool
 	}{
-		{key: ""},
-		{key: "host"},
-		{key: "token", marked: true},
+		{name: "the local is empty", key: ""},
+		{name: "the local names host", key: "host"},
+		{name: "the local names token", key: "token", marked: true},
 	} {
-		t.Run("local naming "+tc.key, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			provides := types.OrderedMap[string]{}
 			provides.Set("host", "db.example.com")
@@ -149,23 +154,74 @@ func TestEvalValuesMapping_ComparesCrossBoundaryCopiesWithAnUnsubstitutedRun(t *
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			provides := types.OrderedMap[string]{}
-			provides.Set("host", "!GetAtt Db.Endpoint.Address")
-			provides.Set("token", "t0ken")
-			edge := types.IREdge{Source: "consumer", Target: "producer", Socket: "db", Alias: "primary"}
-			links := newCrossBoundaryLinks()
-			links.fires[linkTripleOf(edge)] = true
-			links.aliases[linkTripleOf(edge)] = "primary"
-			uses := types.OrderedMap[types.EnrichedEdge]{}
-			uses.Set("primary", types.EnrichedEdge{Target: "producer", Socket: "db", Provides: provides})
-			ctx := &types.TemplateContext{Context: types.ContextBlock{InstanceID: "consumer", Uses: uses}}
-			stampCrossBoundaryLinkReads(ctx, "consumer", &types.IRGraph{Spec: types.IRSpec{Edges: []types.IREdge{edge}}}, links)
-			if linkReadsOf(ctx) == nil {
-				t.Fatal("the context carries no link read placeholders, so this case reads nothing it names")
-			}
-			withheld := redact.NodeKeys(nil, nil, types.OrderedMap[types.IRFeatureEntry]{},
-				redact.CrossNode{Provides: map[string]map[string]bool{"primary": {"token": true}}}, nil, nil, redact.Derived{})
+			ctx, withheld := crossBoundaryMarkingContext(t)
 			assertMarkedAndDecodedAsRendered(t, tc.mapping, ctx, withheld, tc.marked)
+		})
+	}
+}
+
+// crossBoundaryMarkingContext is a consuming node's render context whose
+// connection "primary" — consumer "consumer" to producer "producer" on socket
+// "db" — crosses into another output, stamped as the render stamps one: each
+// provides value the connection carries, host and token, reads as its read
+// placeholder. The set returned declares token, as the producer's Component
+// declares it.
+func crossBoundaryMarkingContext(t *testing.T) (*types.TemplateContext, redact.Keys) {
+	t.Helper()
+	provides := types.OrderedMap[string]{}
+	provides.Set("host", "!GetAtt Db.Endpoint.Address")
+	provides.Set("token", "t0ken")
+	edge := types.IREdge{Source: "consumer", Target: "producer", Socket: "db", Alias: "primary"}
+	links := newCrossBoundaryLinks()
+	links.fires[linkTripleOf(edge)] = true
+	links.aliases[linkTripleOf(edge)] = "primary"
+	uses := types.OrderedMap[types.EnrichedEdge]{}
+	uses.Set("primary", types.EnrichedEdge{Target: "producer", Socket: "db", Provides: provides})
+	ctx := &types.TemplateContext{Context: types.ContextBlock{InstanceID: "consumer", Uses: uses}}
+	stampCrossBoundaryLinkReads(ctx, "consumer", &types.IRGraph{Spec: types.IRSpec{Edges: []types.IREdge{edge}}}, links)
+	if linkReadsOf(ctx) == nil {
+		t.Fatal("the context carries no link read placeholders, so this case reads nothing it names")
+	}
+	withheld := redact.NodeKeys(nil, nil, types.OrderedMap[types.IRFeatureEntry]{},
+		redact.CrossNode{Provides: map[string]map[string]bool{"primary": {"token": true}}}, nil, nil, redact.Derived{})
+	return ctx, withheld
+}
+
+// TestEvalValuesMapping_ACrossBoundaryReferenceRunThatFailsMarks holds the
+// comparison to marking a mapping whose unsubstituted reference run fails over a
+// context whose connection crosses into another output. The template fails only
+// where the declared token reads as its link read placeholder, which is what the
+// unsubstituted run reads and neither substituted run does, so both substituted
+// runs produce the reference text and the reference run's failure is the one
+// fault; the control differs only in testing for a text no run reads, and is
+// unmarked. A real evaluation of such a template halts before the marking is
+// asked, because it branches on a value read off the link, so the comparison is
+// driven here directly.
+func TestEvalValuesMapping_ACrossBoundaryReferenceRunThatFailsMarks(t *testing.T) {
+	t.Parallel()
+
+	readPlaceholder := rendercore.CrossBoundaryLinkReadPlaceholder("consumer", "producer", "db", "token")
+	for _, tc := range []struct {
+		name   string
+		tested string
+		marked bool
+	}{
+		{name: "the reference run fails", tested: readPlaceholder, marked: true},
+		{name: "the control: no run fails", tested: "a text no run reads"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, withheld := crossBoundaryMarkingContext(t)
+			mapping := `{{ if eq .context.uses.primary.provides.token "` + tc.tested + `" }}{{ fail "the reference run" }}{{ end }}a: b`
+			e := valueTemplate("valuesMapping[marking]", mapping, templateScope{}.with(ctx, withheld), "{{", "}}")
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("the comparison panicked: %v", r)
+				}
+			}()
+			if got := e.outputDependsOn(withheld.PluginMarking(), "a: b"); got != tc.marked {
+				t.Errorf("marked = %v, want %v", got, tc.marked)
+			}
 		})
 	}
 }
@@ -173,7 +229,8 @@ func TestEvalValuesMapping_ComparesCrossBoundaryCopiesWithAnUnsubstitutedRun(t *
 // TestExecutePhaseBForFeature_MarksOnlyOutputThatDependsOnADeclaredValue holds a
 // FeatureRecipe's values mapping to the same marking a Recipe's is held to: a
 // mapping printing only the keys of an object holding a declared leaf is unmarked,
-// and one interpolating the declared value is marked.
+// and one interpolating the declared value is marked, and either way the values
+// resolved are the ones the mapping renders.
 func TestExecutePhaseBForFeature_MarksOnlyOutputThatDependsOnADeclaredValue(t *testing.T) {
 	t.Parallel()
 
@@ -200,6 +257,14 @@ func TestExecutePhaseBForFeature_MarksOnlyOutputThatDependsOnADeclaredValue(t *t
 			}
 			if !got.Mapped {
 				t.Errorf("a values mapping ran, so the values are mapped")
+			}
+			var want valuesMappingOutput
+			if _, evalErr, decodeErr := EvalTemplateDecoded("fr-valuesMapping[marking]", tc.mapping,
+				valuesMarkingContext(valuesMarkingSecret), valuesMarkingKeys(), &want); evalErr != nil || decodeErr != nil {
+				t.Fatalf("the reference evaluation failed: evaluation %v, decode %v", evalErr, decodeErr)
+			}
+			if !reflect.DeepEqual(got.Resolved, map[string]any(want)) {
+				t.Errorf("Resolved is %v, want the rendered %v", got.Resolved, want)
 			}
 		})
 	}

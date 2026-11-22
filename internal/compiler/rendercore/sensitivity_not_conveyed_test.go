@@ -237,7 +237,7 @@ func TestUnconveyedValueLeafDeclarations_IsTheComplementOfTheValuesJoin(t *testi
 func TestFeatureRecipeSensitivityNotConveyedDiagnostic_IsTheRecipeAdvisoryNamingItsGate(t *testing.T) {
 	t.Parallel()
 
-	const recipeSentence = `"values.dbPassword" is declared sensitive, but recipe "gate" maps its values through a valuesMapping whose output keys no declaration names, so the target receives no per-key sensitivity marking for it; where the mapping's output changes, or its evaluation fails, with that value replaced by a stand-in text, the mapping's whole output is marked as carrying a value declared sensitive instead; a recipe declaring no valuesMapping renders the declared leaf paths as its own keys, and the per-key marking travels with them`
+	const recipeSentence = `"values.dbPassword" is declared sensitive, but recipe "gate" maps its values through a valuesMapping whose output keys no declaration names, so the target receives no per-key sensitivity marking for it; the mapping's whole output is marked as carrying a value declared sensitive instead wherever the mapping reads such a value and its output changes, or its evaluation fails, when every value declared sensitive or computed from one is replaced by either of two stand-in texts; a recipe declaring no valuesMapping renders the declared leaf paths as its own keys, and the per-key marking travels with them`
 
 	recipe := SensitivityNotConveyedDiagnostic("gate", "values.dbPassword")
 	if recipe.Message != recipeSentence {

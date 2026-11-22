@@ -49,7 +49,7 @@ const alternate = "#SUBSTITUTED-DATUM#"
 // in turn for every datum a set names, through SubstituteTreeWith, to tell
 // whether a template's output depends on one: the placeholder first, then a
 // second text of another length sharing no character with it. What a template
-// produces over either of them there is compared and discarded.
+// produces over them for that question is compared and discarded.
 func SubstitutionTexts() [2]string { return [2]string{placeholder, alternate} }
 
 // withheldProjection stands in for a WHOLE projection the display cannot show,

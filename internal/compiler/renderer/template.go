@@ -558,11 +558,16 @@ func (e templateEval) runDecoded(dst any) (output string, evalErr, decodeErr err
 // whose references reach a named datum is evaluated twice more, once over each
 // text redact.SubstitutionTexts returns standing for every datum the set names,
 // and is marked where either evaluation fails or produces text differing from
-// the reference in any byte; see templateEval.outputDependsOn. So a mapping
-// that reads an object holding a declared leaf and prints only its keys, or
-// tests only whether a declared value is set, is unmarked, while one that
-// prints a declared value, a property of it such as its length, or a branch
-// taken on it that the two texts do not both take as the value did, is marked.
+// the reference in any byte; see templateEval.outputDependsOn.
+//
+// So a mapping that reads an object holding a declared leaf and prints only its
+// keys is unmarked. One that only tests whether a declared value is set is
+// unmarked where the value is one a template reads as true; both texts read as
+// true, so the same test over a value set to "", false or 0 marks it. One that
+// prints a declared value is marked. One that prints a property of a declared
+// value, or branches on it, is marked where either text gives that property or
+// branch differently from the value — a printed length always, since the texts
+// differ in length — and unmarked where both give it as the value does.
 //
 // The substituted evaluations feed only the marking: what the build renders is
 // the real evaluation's output, decoded into dst, whatever the marking decides.

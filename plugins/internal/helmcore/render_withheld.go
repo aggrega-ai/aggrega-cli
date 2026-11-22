@@ -25,12 +25,14 @@ type ChartLoader func() (*chart.Chart, error)
 //
 // marked is the node's sensitivity marking over its values: the keys of values the
 // render input names as carrying a datum an author declared sensitive. The
-// context's SensitiveValues is the marking over the values as a whole: the
-// template that produced them — a values mapping — reads such a datum, and since
-// no key of its output can be traced to the datum it came from, every value is
-// treated as marked. A render that succeeds, and a render whose values carry no
-// marked value, are RenderChart's own — one run, its output and its advisories,
-// its failure, byte for byte.
+// context's SensitiveValues is the marking over the values as a whole: the output
+// of the template that produced them — a values mapping — depends on such a
+// datum: the mapping reads one, and what it produces changes, or it fails, when
+// the values declared sensitive are replaced. Since no key of its output can be
+// traced to the datum it came from, every value is treated as marked. A render
+// that succeeds, and a render whose values carry no marked value, are
+// RenderChart's own — one run, its output and its advisories, its failure, byte
+// for byte.
 //
 // A render that fails while its values carry a marked value is run again on a
 // fresh chart, every marked value replaced by the placeholder — under the marking
