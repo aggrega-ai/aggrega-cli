@@ -2506,7 +2506,7 @@ foldhash 0.2.0
   Copyright:
     Copyright (c) 2024 Orson Peters
 
-form_urlencoded 1.2.2
+form_urlencoded 1.2.3
   License: MIT OR Apache-2.0
   Compiled into: governance/rego
   Copyright:
@@ -3269,7 +3269,7 @@ unsafe-libyaml 0.2.11
   Compiled into: governance/rego, governance/cel
   Copyright: none is stated in its license or notice files
 
-url 2.5.8
+url 2.5.9
   License: MIT OR Apache-2.0
   Compiled into: governance/rego
   Copyright:

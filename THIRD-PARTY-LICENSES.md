@@ -309,7 +309,7 @@ Distinct licenses: 12 (see `LICENSES/`).
 | `flate2` | `1.1.9` | rust | governance/rego | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `fluent-uri` | `0.4.1` | rust | governance/rego | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `foldhash` | `0.2.0` | rust | governance/rego | `Zlib` | [Zlib](LICENSES/Zlib.txt) |
-| `form_urlencoded` | `1.2.2` | rust | governance/rego | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
+| `form_urlencoded` | `1.2.3` | rust | governance/rego | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `fraction` | `0.15.4` | rust | governance/rego | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `futures-core` | `0.3.34` | rust | governance/rego, governance/cel | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `futures-task` | `0.3.34` | rust | governance/rego, governance/cel | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
@@ -438,7 +438,7 @@ Distinct licenses: 12 (see `LICENSES/`).
 | `unicode-general-category` | `1.1.0` | rust | governance/rego | `Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt) |
 | `unicode-ident` | `1.0.24` | rust | linter/publishing, governance/rego, governance/cel | `(MIT OR Apache-2.0) AND Unicode-3.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt), [Unicode-3.0](LICENSES/Unicode-3.0.txt) |
 | `unsafe-libyaml` | `0.2.11` | rust | governance/rego, governance/cel | `MIT` | [MIT](LICENSES/MIT.txt) |
-| `url` | `2.5.8` | rust | governance/rego | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
+| `url` | `2.5.9` | rust | governance/rego | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `utf8_iter` | `1.0.4` | rust | governance/rego | `Apache-2.0 OR MIT` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `uuid` | `1.24.1` | rust | governance/rego | `Apache-2.0 OR MIT` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `uuid` | `1.25.0` | rust | governance/cel | `Apache-2.0 OR MIT` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |

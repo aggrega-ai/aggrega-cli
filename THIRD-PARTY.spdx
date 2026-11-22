@@ -5,7 +5,7 @@ DocumentName: aggrega-cli-third-party
 DocumentNamespace: https://aggrega.ai/spdx/aggrega-cli-third-party
 Creator: Tool: gen-third-party-licenses.sh
 Created: 1970-01-01T00:00:00Z
-DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly plugins it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:fad063c925c8709af4dcf12be446bb59d1ab8024b2a9304b39bac5bbb1b21d79.</text>
+DocumentComment: <text>Third-party dependencies compiled into the shipped Aggrega CLI (the Go host binary and the WebAssembly plugins it embeds: provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, linter/publishing, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger, governance/rego, governance/cel). Generated deterministically; the creation timestamp is fixed so re-runs are byte-identical. License bodies are in the sibling LICENSES/ directory. Inputs digest: sha256:8f5c75040ecf9d8134992e1e750d0b0d908632f2d534f28c295d187de15b0467.</text>
 
 PackageName: Go standard library
 SPDXID: SPDXRef-Package-go-Go-standard-library-go1.26.11
@@ -2644,13 +2644,13 @@ PackageComment: <text>Compiled into: governance/rego</text>
 FilesAnalyzed: false
 
 PackageName: form_urlencoded
-SPDXID: SPDXRef-Package-rust-form-urlencoded-1.2.2
-PackageVersion: 1.2.2
-PackageDownloadLocation: https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.2.crate
+SPDXID: SPDXRef-Package-rust-form-urlencoded-1.2.3
+PackageVersion: 1.2.3
+PackageDownloadLocation: https://static.crates.io/crates/form_urlencoded/form_urlencoded-1.2.3.crate
 PackageLicenseConcluded: MIT OR Apache-2.0
 PackageLicenseDeclared: MIT OR Apache-2.0
 PackageCopyrightText: <text>Copyright (c) 2013-2016 The rust-url developers</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:cargo/form_urlencoded@1.2.2
+ExternalRef: PACKAGE-MANAGER purl pkg:cargo/form_urlencoded@1.2.3
 PackageComment: <text>Compiled into: governance/rego</text>
 FilesAnalyzed: false
 
@@ -4089,13 +4089,13 @@ PackageComment: <text>Compiled into: governance/rego, governance/cel</text>
 FilesAnalyzed: false
 
 PackageName: url
-SPDXID: SPDXRef-Package-rust-url-2.5.8
-PackageVersion: 2.5.8
-PackageDownloadLocation: https://static.crates.io/crates/url/url-2.5.8.crate
+SPDXID: SPDXRef-Package-rust-url-2.5.9
+PackageVersion: 2.5.9
+PackageDownloadLocation: https://static.crates.io/crates/url/url-2.5.9.crate
 PackageLicenseConcluded: MIT OR Apache-2.0
 PackageLicenseDeclared: MIT OR Apache-2.0
 PackageCopyrightText: <text>Copyright (c) 2013-2025 The rust-url developers</text>
-ExternalRef: PACKAGE-MANAGER purl pkg:cargo/url@2.5.8
+ExternalRef: PACKAGE-MANAGER purl pkg:cargo/url@2.5.9
 PackageComment: <text>Compiled into: governance/rego</text>
 FilesAnalyzed: false
 
@@ -4697,7 +4697,7 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-find-msvc-tools-0.
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-flate2-1.1.9
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-fluent-uri-0.4.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-foldhash-0.2.0
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-form-urlencoded-1.2.2
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-form-urlencoded-1.2.3
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-fraction-0.15.4
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-futures-core-0.3.34
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-futures-task-0.3.34
@@ -4826,7 +4826,7 @@ Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-typed-arena-2.0.2
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-unicode-general-category-1.1.0
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-unicode-ident-1.0.24
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-unsafe-libyaml-0.2.11
-Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-url-2.5.8
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-url-2.5.9
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-utf8-iter-1.0.4
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-uuid-1.24.1
 Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-Package-rust-uuid-1.25.0
