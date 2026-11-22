@@ -315,9 +315,13 @@ func armWholeFeatureReads(hub string) (findings []string, scanned int, err error
 // TestArmRecipesReadAttachmentsByExactLeaf holds that no arm Recipe's
 // valuesMapping ranges over, defaults or passes on `.features` whole. A mapping
 // that reads the attachments as a set reaches the leaves their Features declare
-// sensitive and is then refused every literal it produces, so each Recipe reads
-// the attachment it needs by exact leaf. A fragment Recipe's artifact is not a
-// valuesMapping and may test an attachment's presence.
+// sensitive, so whether its literals bind turns on what it prints: wherever its
+// output depends on such a leaf it is marked, and every literal it produces is
+// refused. A mapping that reads by exact leaf reaches a declared leaf only by
+// naming it, so a reader of the Recipe sees which values can mark it; that
+// exact-leaf read is the convention this scan holds every arm Recipe to. A
+// fragment Recipe's artifact is not a valuesMapping and may test an attachment's
+// presence.
 //
 // The scan proves itself first: it runs over a copy of the tree holding a Recipe
 // whose mapping ranges over `.features`, and must name that file, and over a copy

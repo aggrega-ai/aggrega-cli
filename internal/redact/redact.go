@@ -35,6 +35,23 @@ const placeholder = "<redacted>"
 // the hidden datum can be recovered from what is printed.
 func Placeholder() string { return placeholder }
 
+// alternate is the second replacement text an evaluation substitutes for every
+// datum a set names, beside placeholder, to tell whether what a template produces
+// depends on such a datum. It differs from placeholder in length and shares no
+// character with it, so a template printing a value's length, a character of it
+// from a position both texts have, or a value equal to one of the two texts
+// produces a different output over one of them. It never reaches an output: what
+// a template produces over it is compared and discarded, and no surface displays
+// it.
+const alternate = "#SUBSTITUTED-DATUM#"
+
+// SubstitutionTexts returns the two replacement texts an evaluation substitutes
+// in turn for every datum a set names, through SubstituteTreeWith, to tell
+// whether a template's output depends on one: the placeholder first, then a
+// second text of another length sharing no character with it. What a template
+// produces over either of them there is compared and discarded.
+func SubstitutionTexts() [2]string { return [2]string{placeholder, alternate} }
+
 // withheldProjection stands in for a WHOLE projection the display cannot show,
 // rather than for one value inside it. Like placeholder it is declared exactly
 // once in the module — two spellings would make "was this withheld, or simply

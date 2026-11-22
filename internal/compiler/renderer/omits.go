@@ -33,10 +33,10 @@ import (
 // exactly where an entry naming none is placed.
 //
 // Each field whose template reads a value withheld names is recorded on the entry's
-// Withheld, read from the template by the same reading the values mapping's own mark
-// is read by. That one record serves both places the entry is shown: a report about
-// the entry quotes none of those fields, and the entry reaches its provider marked
-// sensitive when any of them is recorded.
+// Withheld, read from the template's references by templateReadsWithheld — the
+// reading a values mapping's own mark starts from. That one record serves both
+// places the entry is shown: a report about the entry quotes none of those fields,
+// and the entry reaches its provider marked sensitive when any of them is recorded.
 //
 // Nothing about what the strings mean is read here. Which documents an entry selects
 // is the rendering provider's own contract; the host evaluates the templates and

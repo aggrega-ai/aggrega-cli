@@ -531,12 +531,106 @@ func EvalTemplate(name, tmplText string, data any, withheld redact.Keys) (string
 // names them apart: evalErr is a failure to evaluate the template, decodeErr a
 // failure to read what it produced.
 func EvalTemplateDecoded(name, tmplText string, data any, withheld redact.Keys, dst any) (output string, evalErr, decodeErr error) {
-	e := valueTemplate(name, tmplText, templateScope{}.with(data, withheld), "{{", "}}")
+	return valueTemplate(name, tmplText, templateScope{}.with(data, withheld), "{{", "}}").runDecoded(dst)
+}
+
+// runDecoded runs the evaluation and reads the YAML it produced into dst, on the
+// terms EvalTemplateDecoded states.
+func (e templateEval) runDecoded(dst any) (output string, evalErr, decodeErr error) {
 	output, evalErr = e.run()
 	if evalErr != nil {
 		return "", evalErr, nil
 	}
 	return output, nil, decodeTemplateOutput(e, output, dst)
+}
+
+// evalValuesMapping evaluates a values mapping — a Recipe's, or an attachment's
+// FeatureRecipe's — exactly as EvalTemplateDecoded does, and reports whether
+// what it produced depends on a value an author declared sensitive: the marking
+// the provider guest receives with the values, which keeps every one of them out
+// of a refusal or a warning and has a guest refuse a literal it would otherwise
+// write. The output's keys are the mapping's own invention, so this is the only
+// marking its values can carry.
+//
+// The marking is read against the plugin marking of withheld. A mapping whose
+// references reach nothing that set names, read statically as
+// templateReadsWithheld reads them, is unmarked and evaluated once. A mapping
+// whose references reach a named datum is evaluated twice more, once over each
+// text redact.SubstitutionTexts returns standing for every datum the set names,
+// and is marked where either evaluation fails or produces text differing from
+// the reference in any byte; see templateEval.outputDependsOn. So a mapping
+// that reads an object holding a declared leaf and prints only its keys, or
+// tests only whether a declared value is set, is unmarked, while one that
+// prints a declared value, a property of it such as its length, or a branch
+// taken on it that the two texts do not both take as the value did, is marked.
+//
+// The substituted evaluations feed only the marking: what the build renders is
+// the real evaluation's output, decoded into dst, whatever the marking decides.
+// The marking is decided after that output decoded, so a failure is reported
+// exactly as EvalTemplateDecoded reports it.
+func evalValuesMapping(name, tmplText string, data any, withheld redact.Keys, dst any) (marked bool, evalErr, decodeErr error) {
+	e := valueTemplate(name, tmplText, templateScope{}.with(data, withheld), "{{", "}}")
+	output, evalErr, decodeErr := e.runDecoded(dst)
+	if evalErr != nil || decodeErr != nil {
+		return false, evalErr, decodeErr
+	}
+	marking := withheld.PluginMarking()
+	if !templateReadsWithheld(tmplText, marking) {
+		return false, nil, nil
+	}
+	return e.outputDependsOn(marking, output), nil, nil
+}
+
+// outputDependsOn reports whether the evaluation's output depends on a datum
+// marking names. The template is executed once over each replacement text
+// redact.SubstitutionTexts returns, each time over a fresh private copy of its
+// data with every datum marking names replaced by that text before the
+// execution supplies absent leaves, and the output depends on such a datum where
+// an execution fails or its text differs from reference in any byte. The
+// texts differ from each other in length and share no character, so a printed
+// length, a character printed from a position both texts have, or a value equal
+// to one text changes the output over at least one of them.
+//
+// reference is the real evaluation's output. Where the data carries the
+// placeholders of a connection that crosses into another output, the real
+// evaluation rewrote each one it copied into the form a provider locates (see
+// crossBoundaryLinks.runCopyOnly), so the substituted text is compared instead
+// with one execution over the same data unsubstituted, and a failure of that
+// execution marks.
+//
+// Every execution is the evaluation's own — the same parse, reference check,
+// missing-key policy, number handling and functions — through a copy whose
+// withheld set is marking, so what the comparison reads differs from the real
+// evaluation in the substituted data alone. No output or failure of these
+// executions is reported or kept.
+//
+// The answer is fail-safe in the direction a marking needs: anything that keeps
+// the comparison from showing the output unchanged marks it. What it cannot
+// see is a branch or property both texts give the real value's outcome for,
+// which the output then carries without the value's text.
+func (e templateEval) outputDependsOn(marking redact.Keys, reference string) bool {
+	sub := e
+	sub.scope.withheld = marking
+	t, refs, err := sub.prepare()
+	if err != nil {
+		return true
+	}
+	if linkReadsOf(sub.scope.data) != nil {
+		unsubstituted, err := sub.executeData(t, refs, sub.data(), false)
+		if err != nil {
+			return true
+		}
+		reference = unsubstituted
+	}
+	for _, text := range redact.SubstitutionTexts() {
+		data := sub.data()
+		sub.scope.withheld.SubstituteTreeWith(data, text)
+		out, err := sub.executeData(t, refs, data, false)
+		if err != nil || out != reference {
+			return true
+		}
+	}
+	return false
 }
 
 // evalSubstitutedTemplate evaluates a Go template once, over its data with every
@@ -581,8 +675,9 @@ func evalValueTemplate(name, tmplText string, scope templateScope, leftDelim, ri
 
 // valueTemplate is the one construction of a value-template evaluation, shared
 // by the evaluation itself, by the second evaluation a failure to read its output
-// may need, and by the self-inject surface, so all of them are the same template
-// on the same terms.
+// may need, by the evaluations that decide whether a values mapping's output
+// depends on a declared value, and by the self-inject surface, so all of them are
+// the same template on the same terms.
 //
 // A value template reads every number as a number. A number an author wrote
 // reaches it as a number — see numbersAsNumbers — and its comparisons are the

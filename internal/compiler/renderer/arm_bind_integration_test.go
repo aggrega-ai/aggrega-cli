@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderer"
 	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
@@ -102,6 +104,80 @@ type armSourcedCase struct {
 	// node, whose arm FeatureRecipe is the fixture's, so the node's context
 	// carries an attachment whose origin its Feature declares sensitive.
 	secret bool
+	// connection draws a uses edge "db" on the socket "database" from the node to
+	// a node "db" whose arm Recipe writes its own fragment and publishes host and
+	// token; tokenSensitive has db's Component declare token sensitive.
+	connection, tokenSensitive bool
+}
+
+// The connection's target, as armSourcedCase.connection draws it.
+const (
+	armTokenStoreType  = "core/test/token-store"
+	armTokenStoreToken = "t0ken"
+)
+
+// armConnectToTokenStore adds to the input the node "db" the case's connection
+// targets and the uses edge to it, and returns the lookup of db's Recipe and the
+// Component lookup answering for db's type: a Component declaring host and token
+// as the provides it publishes, token sensitive where the case says so. Any other
+// type is answered by next.
+func armConnectToTokenStore(t *testing.T, c armSourcedCase, input *renderer.RendererInput, next func(string) (types.Component, bool)) (func(string) (*types.Recipe, bool), func(string) (types.Component, bool)) {
+	t.Helper()
+	labels := types.OrderedMap[string]{}
+	labels.Set("component.aggrega.ai/type", "resource")
+	input.Graph.Spec.Nodes.Set("db", types.IRNode{Component: armTokenStoreType, Labels: labels, ResolvedVersion: "1.0.0", BoundaryPath: "local/default"})
+	input.Graph.Spec.ValuesMapping.Set("db", json.RawMessage(`{}`))
+	input.Graph.Spec.Edges = append(input.Graph.Spec.Edges, types.IREdge{
+		Source: "api", Target: "db", Socket: "database", Alias: "db", SocketDeclaration: types.SocketDeclarationAdHoc,
+	})
+
+	token := "{ type: string }"
+	if c.tokenSensitive {
+		token = "{ type: string, sensitive: true }"
+	}
+	var schema yaml.Node
+	if err := yaml.Unmarshal([]byte("provides:\n  host: { type: string }\n  token: "+token+"\n"), &schema); err != nil {
+		t.Fatalf("parsing the token store's schema: %v", err)
+	}
+	component := func(typeURI string) (types.Component, bool) {
+		if strings.HasPrefix(typeURI, armTokenStoreType) {
+			return types.Component{
+				Metadata: types.ComponentMetadata{Name: armTokenStoreType, Version: "1.0.0"},
+				Spec:     types.ComponentSpec{Schema: schema},
+			}, true
+		}
+		if next != nil {
+			return next(typeURI)
+		}
+		return types.Component{}, false
+	}
+
+	provides := types.OrderedMap[string]{}
+	provides.Set("host", "[reference('Db').fullyQualifiedDomainName]")
+	provides.Set("token", armTokenStoreToken)
+	artifacts := types.OrderedMap[types.ArtifactEntry]{}
+	artifacts.Set("db.yaml", types.ArtifactEntry{Inline: `resources:
+  Db:
+    type: Microsoft.DBforPostgreSQL/flexibleServers
+    apiVersion: "2024-08-01"
+    name: "{{ .context.instance_id }}"
+    location: "[resourceGroup().location]"
+`})
+	recipe := func(componentType string) (*types.Recipe, bool) {
+		if componentType != armTokenStoreType {
+			return nil, false
+		}
+		return &types.Recipe{
+			Metadata: types.RecipeMetadata{Name: "token-store", Version: "1.0.0"},
+			Spec: types.RecipeSpec{
+				Capability: "arm",
+				Implements: armTokenStoreType,
+				Provides:   provides,
+				Artifacts:  artifacts,
+			},
+		}, true
+	}
+	return recipe, component
 }
 
 // armSourcedRecipe is the node's Recipe.
@@ -146,6 +222,17 @@ func renderArmSourced(t *testing.T, c armSourcedCase) (map[string]renderer.Assem
 	}
 	if c.secret {
 		lookup.FeatureRecipe = armSecretAttachment(t, &input)
+	}
+	if c.connection {
+		recipe, component := armConnectToTokenStore(t, c, &input, input.CatalogLookup.Component)
+		own := lookup.Recipe
+		lookup.Recipe = func(instanceName, componentType string) (*types.Recipe, bool) {
+			if r, ok := recipe(componentType); ok {
+				return r, true
+			}
+			return own(instanceName, componentType)
+		}
+		input.CatalogLookup.Component = component
 	}
 
 	result, err := renderer.RenderAll(context.Background(), input, lookup, wasmEngineFactory(t))
@@ -410,7 +497,7 @@ enableTelemetry: false
 `
 
 // armRangedMapping reads every attachment, which reaches the leaves its Feature
-// declares sensitive.
+// declares sensitive, and prints only the name each is attached under.
 const armRangedMapping = `{{- range $name, $_ := (default dict .features) }}
 # attached: {{ $name }}
 {{- end }}
@@ -418,6 +505,26 @@ kind: standard
 vaultSecret: plain
 enableTelemetry: false
 `
+
+// armRangedLeafMapping reads every attachment as armRangedMapping does and prints
+// each one's origin, the leaf its Feature declares sensitive, into a comment.
+const armRangedLeafMapping = `{{- range $name, $f := (default dict .features) }}
+# attached: {{ $name }} from {{ $f.values.origin }}
+{{- end }}
+kind: standard
+vaultSecret: plain
+enableTelemetry: false
+`
+
+// armStandardParameters are the parameters every literal-only mapping of
+// armSecretTemplate binds.
+func armStandardParameters() map[string]any {
+	return map[string]any{
+		"kind":            map[string]any{"value": "standard"},
+		"vaultSecret":     map[string]any{"value": "plain"},
+		"enableTelemetry": map[string]any{"value": false},
+	}
+}
 
 // TestRenderAll_ArmExactLeafAttachmentReadLeavesTheMappingUnmarked proves the premise
 // the sourced path rests on: a mapping that reads an attachment's type and the name
@@ -448,16 +555,17 @@ func TestRenderAll_ArmExactLeafAttachmentReadLeavesTheMappingUnmarked(t *testing
 }
 
 // TestRenderAll_ArmRangedFeaturesMarkTheMappingAndRefuseLiterals is the other side of
-// the premise: a mapping that ranges over `.features` reaches the attachment's
-// sensitive leaves, is marked, and so every literal it produces halts naming the
-// parameters and the routes, never a value. The attachment, the template and the
-// literals are the exact-leaf test's, so the one difference is the read.
+// the premise: a mapping that ranges over `.features` and prints the attachment's
+// sensitive origin produces output that depends on it, is marked, and so every
+// literal it produces halts naming the parameters and the routes, never a value.
+// The attachment, the template and the literals are the exact-leaf test's, so the
+// one difference is the read.
 func TestRenderAll_ArmRangedFeaturesMarkTheMappingAndRefuseLiterals(t *testing.T) {
 	t.Parallel()
 
 	_, err := renderArmSourced(t, armSourcedCase{
 		files:   map[string]string{"main.json": armSecretTemplate},
-		mapping: armRangedMapping,
+		mapping: armRangedLeafMapping,
 		secret:  true,
 	})
 	chain := requireArmHalt(t, err, plugincondition.ErrPluginValueNotRepresentable())
@@ -469,6 +577,88 @@ func TestRenderAll_ArmRangedFeaturesMarkTheMappingAndRefuseLiterals(t *testing.T
 	if strings.Contains(chain, "vault-secret-ref") {
 		t.Errorf("the halt quotes the attachment's origin:\n%s", chain)
 	}
+}
+
+// TestRenderAll_ArmRangedFeaturesPrintingNamesLeavesTheMappingUnmarked holds the
+// marking to the output: a mapping that ranges over `.features` reaches the
+// attachment's sensitive origin, but prints only the name the attachment is
+// attached under, so its output is the same whatever the origin holds, it is not
+// marked, and its literals bind.
+func TestRenderAll_ArmRangedFeaturesPrintingNamesLeavesTheMappingUnmarked(t *testing.T) {
+	t.Parallel()
+
+	files, err := renderArmSourced(t, armSourcedCase{
+		files:   map[string]string{"main.json": armSecretTemplate},
+		mapping: armRangedMapping,
+		secret:  true,
+	})
+	if err != nil {
+		t.Fatalf("the mapping printing only attachment names was refused, so the build marked it sensitive: %s", cerrors.CauseChain(err))
+	}
+	if got, want := decodeUsingNumbers(t, armParametersOf(t, files)), armStandardParameters(); !reflect.DeepEqual(got, want) {
+		t.Errorf("properties.parameters is\n%s\nwant\n%s", mustJSON(t, got), mustJSON(t, want))
+	}
+}
+
+// TestRenderAll_ArmConnectionToASensitiveProvidesKey renders the node with a
+// connection to a target whose Component declares the token it publishes
+// sensitive. A mapping that ranges over the connections and prints each one's
+// socket and target reaches the token without its output depending on it, so its
+// literals bind, and the build emits the same files as it does where the token is
+// declared nothing. A mapping writing the token into a parameter is marked, and
+// every literal it produces halts naming the parameters, never the token.
+func TestRenderAll_ArmConnectionToASensitiveProvidesKey(t *testing.T) {
+	t.Parallel()
+
+	const socketsAndTargets = `{{- range $alias, $c := .context.uses }}
+# {{ $alias }}: {{ $c.socket }} to {{ $c.target }}
+{{- end }}
+kind: standard
+vaultSecret: plain
+enableTelemetry: false
+`
+	t.Run("a mapping reading each connection's socket and target binds", func(t *testing.T) {
+		t.Parallel()
+		c := armSourcedCase{
+			files:          map[string]string{"main.json": armSecretTemplate},
+			mapping:        socketsAndTargets,
+			connection:     true,
+			tokenSensitive: true,
+		}
+		files, err := renderArmSourced(t, c)
+		if err != nil {
+			t.Fatalf("the mapping reading sockets and targets was refused, so the build marked it sensitive: %s", cerrors.CauseChain(err))
+		}
+		if got, want := decodeUsingNumbers(t, armParametersOf(t, files)), armStandardParameters(); !reflect.DeepEqual(got, want) {
+			t.Errorf("properties.parameters is\n%s\nwant\n%s", mustJSON(t, got), mustJSON(t, want))
+		}
+		c.tokenSensitive = false
+		undeclared, err := renderArmSourced(t, c)
+		if err != nil {
+			t.Fatalf("the build with the token declared nothing: %s", cerrors.CauseChain(err))
+		}
+		if !reflect.DeepEqual(files, undeclared) {
+			t.Errorf("the build emitted different files with the token declared sensitive than with it declared nothing")
+		}
+	})
+	t.Run("a mapping writing the token into a parameter halts", func(t *testing.T) {
+		t.Parallel()
+		_, err := renderArmSourced(t, armSourcedCase{
+			files:          map[string]string{"main.json": armSecretTemplate},
+			mapping:        "kind: standard\nvaultSecret: \"{{ .context.uses.db.provides.token }}\"\nenableTelemetry: false\n",
+			connection:     true,
+			tokenSensitive: true,
+		})
+		chain := requireArmHalt(t, err, plugincondition.ErrPluginValueNotRepresentable())
+		for _, want := range []string{`"enableTelemetry"`, `"kind"`, `"vaultSecret"`} {
+			if !strings.Contains(chain, want) {
+				t.Errorf("the halt does not name %s:\n%s", want, chain)
+			}
+		}
+		if strings.Contains(chain, armTokenStoreToken) {
+			t.Errorf("the halt quotes the token:\n%s", chain)
+		}
+	})
 }
 
 // decodeUsingNumbers returns a decoded JSON tree with its numbers kept as written,

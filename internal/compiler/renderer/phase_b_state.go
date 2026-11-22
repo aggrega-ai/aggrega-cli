@@ -70,13 +70,14 @@ type PhaseBState struct {
 	// declines the join rather than making it on an unproven spelling.
 	ValuesAreDeclaredLeaves bool
 
-	// SensitiveValues reports that the values mapping that produced ResolvedValues
-	// reads a value Withheld names — the static reading of the mapping's
-	// references, never of what it produced. Recorded by the sub-pass that
-	// evaluates the mapping, which is the one place holding both the mapping's text
-	// and the set, and carried from here to the provider guest on the node
-	// projection. False where no mapping ran: the values are then the declared
-	// leaves, which are marked per key instead.
+	// SensitiveValues reports that the output of the values mapping that produced
+	// ResolvedValues depends on a value Withheld's plugin marking names, as
+	// evalValuesMapping decides it: the mapping's references reach such a value, and
+	// an evaluation with every such value replaced fails or produces different text.
+	// Recorded by the sub-pass that evaluates the mapping, which is the one place
+	// holding the mapping's text, its data and the set, and carried from here to the
+	// provider guest on the node projection. False where no mapping ran: the values
+	// are then the declared leaves, which are marked per key instead.
 	SensitiveValues bool
 
 	// ValuesMapped reports that ResolvedValues is the output of the Recipe's values

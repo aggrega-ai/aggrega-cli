@@ -198,7 +198,8 @@ func coordinateAncestors(coords map[string]bool) map[string]bool {
 
 // SubstituteTree replaces, in place, every datum the set names in a template's
 // data tree with the placeholder, leaving the tree's shape and every datum the set
-// does not name exactly as they were.
+// does not name exactly as they were. It is SubstituteTreeWith writing the
+// placeholder.
 //
 // It is the ONE substitution of a template's data in the module, and it is the
 // answer wherever what a template produced cannot be addressed by key — a rendered
@@ -229,6 +230,15 @@ func coordinateAncestors(coords map[string]bool) map[string]bool {
 // against the placeholder, and a datum reaching the template through a position
 // the set does not name is carried through unchanged.
 func (k Keys) SubstituteTree(tree any) {
+	k.SubstituteTreeWith(tree, placeholder)
+}
+
+// SubstituteTreeWith is the substitution SubstituteTree performs, writing text
+// where it writes the placeholder: the same walk over the same coordinates, on
+// the same terms. It is how an evaluation substitutes each of the texts
+// SubstitutionTexts returns, to tell whether what a template produced depends on
+// a datum the set names.
+func (k Keys) SubstituteTreeWith(tree any, text string) {
 	root, ok := tree.(map[string]any)
 	if !ok || !k.AnyWithheld() {
 		return
@@ -237,7 +247,7 @@ func (k Keys) SubstituteTree(tree any) {
 	if len(coords) == 0 {
 		return
 	}
-	w := substitution{coords: coords, ancestors: coordinateAncestors(coords), lists: map[string]bool{}}
+	w := substitution{coords: coords, ancestors: coordinateAncestors(coords), lists: map[string]bool{}, text: text}
 	for list := range k.Lists.Entries {
 		w.lists[list] = true
 	}
@@ -245,8 +255,8 @@ func (k Keys) SubstituteTree(tree any) {
 }
 
 // substitution is one walk of a template's data tree: the coordinates it writes
-// at, the objects those are reached through, and the lists whose entries are
-// addressed by position.
+// at, the objects those are reached through, the lists whose entries are
+// addressed by position, and the text written at each coordinate.
 //
 // A list is descended into only where the set names entries of it. A coordinate
 // naming a map position is spelled from the names an author declared, and a
@@ -255,6 +265,7 @@ func (k Keys) SubstituteTree(tree any) {
 // appliers, which never enter a list, leave the array as it is.
 type substitution struct {
 	coords, ancestors, lists map[string]bool
+	text                     string
 }
 
 // walkMap walks one map of a template's data tree. The keys are visited in sorted
@@ -272,7 +283,7 @@ func (w substitution) walkMap(m map[string]any, prefix string) {
 			path = prefix + "." + key
 		}
 		if w.coords[path] {
-			m[key] = placeholder
+			m[key] = w.text
 			continue
 		}
 		if w.ancestors[path] {
@@ -287,7 +298,7 @@ func (w substitution) walkList(entries []any, list string) {
 	for position := range entries {
 		path := entryPath(list, position)
 		if w.coords[path] {
-			entries[position] = placeholder
+			entries[position] = w.text
 			continue
 		}
 		if w.ancestors[path] {

@@ -437,6 +437,64 @@ func TestSubstituteTree_EmptySetIsIdentity(t *testing.T) {
 	}
 }
 
+// TestSubstituteTreeWith_WritesTheGivenText holds the substitution taking its
+// replacement text: every coordinate the set names holds the text given, every
+// undeclared sibling survives, and SubstituteTree writes the placeholder at the
+// same coordinates.
+func TestSubstituteTreeWith_WritesTheGivenText(t *testing.T) {
+	t.Parallel()
+	const given = "given-replacement-text"
+	keys := parityKeys()
+	withText := templateTree(t, parityContext())
+	keys.SubstituteTreeWith(withText, given)
+	withPlaceholder := templateTree(t, parityContext())
+	keys.SubstituteTree(withPlaceholder)
+
+	for _, at := range [][]string{
+		{"values", "adminPassword"}, {"values", "db", "password"}, {"values", "tuning"},
+		{"infra", "apiKey"}, {"locals", "dsn"}, {"source", "url"},
+		{"context", "inject", "env", "DB_PASSWORD"}, {"context", "inject", "file", "token.txt"},
+		{"context", "inject", "custom", "SECRET_HEADER"}, {"context", "inject", "all", "DB_PASSWORD"},
+		{"context", "uses", "gpt", "provides", "zzTargetSecret"},
+		{"context", "uses", "gpt", "features", "credential", "values", "literalPassword"},
+	} {
+		if got := dig(withText, at...); got != given {
+			t.Errorf("%s: want the given text, got %v", strings.Join(at, "."), got)
+		}
+		if got := dig(withPlaceholder, at...); got != placeholder {
+			t.Errorf("%s: SubstituteTree wrote %v, want the placeholder", strings.Join(at, "."), got)
+		}
+	}
+	for _, at := range [][]string{
+		{"values", "appName"}, {"values", "db", "user"}, {"infra", "region"}, {"locals", "label"},
+		{"source", "version"}, {"context", "inject", "env", "DB_NAME"}, {"context", "inject", "custom", "PUBLIC_HEADER"},
+		{"context", "uses", "gpt", "provides", "endpoint"},
+	} {
+		if got := dig(withText, at...); got == given || got == nil {
+			t.Errorf("%s: an undeclared datum must survive, got %v", strings.Join(at, "."), got)
+		}
+	}
+}
+
+// TestSubstituteTreeWith_TheTwoTextsDifferInLengthAndAtEveryPosition holds the
+// replacement texts an evaluation substitutes to tell whether its output depends
+// on a declared value: the placeholder first, and a second text of another length
+// that shares no character with it, so a printed length or any one character of a
+// value is told apart by one of the two.
+func TestSubstituteTreeWith_TheTwoTextsDifferInLengthAndAtEveryPosition(t *testing.T) {
+	t.Parallel()
+	texts := SubstitutionTexts()
+	if texts[0] != Placeholder() {
+		t.Fatalf("the first replacement text is %q, want the placeholder", texts[0])
+	}
+	if len(texts[1]) == len(texts[0]) {
+		t.Errorf("the two replacement texts share their length, %d", len(texts[0]))
+	}
+	if i := strings.IndexAny(texts[1], texts[0]); i >= 0 {
+		t.Errorf("the second replacement text %q shares the character %q with the placeholder", texts[1], texts[1][i])
+	}
+}
+
 // TestReachedBy_PerRoot is the reading over the same coordinates: each row is a
 // reference the census spells, against the widened set, beside a control of the
 // same shape that reaches nothing declared.

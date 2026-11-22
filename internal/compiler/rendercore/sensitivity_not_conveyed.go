@@ -70,7 +70,7 @@ func sensitivityNotConveyed(gateKind, gate, coordinate string) renderctx.Diagnos
 		Code:      SensitivityNotConveyedCode,
 		SourceRef: coordinate,
 		Message: fmt.Sprintf(
-			"%q is declared sensitive, but %s %q maps its values through a valuesMapping whose output keys no declaration names, so the target receives no per-key sensitivity marking for it; where the mapping reads it, the mapping's whole output is marked as carrying a value declared sensitive instead; a %s declaring no valuesMapping renders the declared leaf paths as its own keys, and the per-key marking travels with them",
+			"%q is declared sensitive, but %s %q maps its values through a valuesMapping whose output keys no declaration names, so the target receives no per-key sensitivity marking for it; where the mapping's output changes, or its evaluation fails, with that value replaced by a stand-in text, the mapping's whole output is marked as carrying a value declared sensitive instead; a %s declaring no valuesMapping renders the declared leaf paths as its own keys, and the per-key marking travels with them",
 			coordinate, gateKind, gate, gateKind),
 	}
 }

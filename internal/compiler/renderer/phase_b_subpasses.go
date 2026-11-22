@@ -155,7 +155,7 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 	}
 
 	var values valuesMappingOutput
-	_, err, decodeErr := EvalTemplateDecoded(
+	marked, err, decodeErr := evalValuesMapping(
 		fmt.Sprintf("valuesMapping[%s]", state.Recipe.Metadata.Name),
 		tmplText,
 		ctx,
@@ -172,11 +172,10 @@ func phaseB1(ctx *types.TemplateContext, state *PhaseBState) error {
 	// This branch is the only one whose values a mapping produced, so it is the
 	// one that records the fact, as the branch above records its own.
 	state.ValuesMapped = true
-	// Whether the mapping read a value an author declared sensitive, asked of its
-	// references over the plugin marking of the set its failure is withheld by. The
-	// output's keys are the mapping's own invention, so this is the only marking its
-	// values can carry to the provider guest.
-	state.SensitiveValues = templateReadsWithheld(tmplText, state.Withheld.PluginMarking())
+	// Whether the mapping's output depends on a value an author declared sensitive,
+	// as the evaluation above decided it over the plugin marking of the set its
+	// failure is withheld by.
+	state.SensitiveValues = marked
 	// Trace point: B.1 valuesMapping output (slot 07).
 	state.capture(trace.PassPhaseB1, "", ctx)
 	state.PhaseReached = 1

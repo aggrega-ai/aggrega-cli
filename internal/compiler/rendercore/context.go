@@ -49,17 +49,18 @@ type NodeRenderContext struct {
 	// marks nothing, which is the safe direction here — see DeclaredSensitivity.
 	DeclaredSensitivity DeclaredSensitivity
 	// SensitiveValues reports that the values this node's render carries were
-	// produced by a template — a values mapping — whose references reach a value an
-	// author declared sensitive, read statically from the template over the
-	// declarations and never from a value. No key of such a template's output can be
-	// traced back to the datum it came from, so the fact covers the whole map: the
-	// node projection carries it to the guest wherever it carries the values, and a
-	// guest reads it to keep every one of those values out of a refusal or a warning.
+	// produced by a template — a values mapping — whose output depends on a value an
+	// author declared sensitive: its references reach such a value, and an
+	// evaluation with every such value replaced by a stand-in text fails or produces
+	// different text. No key of such a template's output can be traced back to the
+	// datum it came from, so the fact covers the whole map: the node projection
+	// carries it to the guest wherever it carries the values, and a guest reads it to
+	// keep every one of those values out of a refusal or a warning.
 	//
 	// It is a statement about the template that produced the values, which is what
 	// sets it apart from DeclaredSensitivity: that holds declarations alone, joined
 	// to a key only where the join is exact, while this is derived from the
-	// template's references and claims nothing about any one key. Its zero value
+	// template's evaluation and claims nothing about any one key. Its zero value
 	// claims nothing either, and it never reaches an emitted byte — only the text a
 	// guest composes when something fails.
 	SensitiveValues bool
@@ -71,11 +72,12 @@ type NodeRenderContext struct {
 	// SensitiveValues it is a statement about how the values were produced, recorded
 	// by the pass that produced them, and never read from a value or a key.
 	ValuesMapped bool
-	// SensitiveWorkload reports the same fact about the template that produced the
-	// workload this node's render synthesizes from, the same reading the host's own
-	// checks of that workload are worded by. It is set on the context a workload
-	// synthesis is handed and carried on the workload projection, which a guest
-	// rebuilds it from.
+	// SensitiveWorkload reports that the template that produced the workload this
+	// node's render synthesizes from reads a value an author declared sensitive,
+	// read from the template's references over the declarations and never from a
+	// value — the reading the host's own checks of that workload are worded by. It
+	// is set on the context a workload synthesis is handed and carried on the
+	// workload projection, which a guest rebuilds it from.
 	SensitiveWorkload bool
 	// Source is what engines actually consume (via loader.Load or
 	// equivalent): the resolved filesystem path for remote sources
