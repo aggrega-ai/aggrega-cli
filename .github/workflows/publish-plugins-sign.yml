@@ -330,9 +330,43 @@ name: Publish and sign core plugins
 #                        but gh, git and the shell's own utilities. The token
 #                        reaches gh and git through their environment and is
 #                        never written to disk.
+#   publish-downloads    Once sign-and-publish has succeeded, for every release
+#                        tag, a pre-release's included, publishes the Windows
+#                        installer that release attached to the public R2
+#                        bucket aggrega-downloads, at the address the Microsoft
+#                        Store listing installs from,
+#                        https://download.aggrega.ai/aggrega-cli/v<version>/aggrega-<version>-windows-amd64-setup.exe,
+#                        which answers 200 itself where a GitHub release asset
+#                        redirects. It downloads the installer and SHA256SUMS
+#                        from the release with gh release download and holds the
+#                        one to the other, uploads the installer through R2's S3
+#                        endpoint with one PUT curl signs, carrying
+#                        If-None-Match: *, so the object is created only where
+#                        none is and never replaced — a key already taken passes
+#                        when the object there is this installer, which makes a
+#                        re-run safe, and fails otherwise, naming both SHA-256
+#                        digests — and then downloads the public address in full:
+#                        200 with no redirect, a Content-Length equal to the
+#                        installer's size, and the bytes SHA256SUMS lists. On a
+#                        dry run it prints the address it would publish and
+#                        uploads nothing. On a dry run and a real publish alike
+#                        it refuses, naming each, a setting it needs that is not
+#                        set, so a release never skips the Store's download. It
+#                        runs on a GitHub-hosted runner, checks out this
+#                        repository at the commit the build job built for the
+#                        smoke library and needs nothing from the hand-over
+#                        folder. Its one credential beside the run's own
+#                        read-only token is the R2 key pair
+#                        DOWNLOADS_R2_ACCESS_KEY_ID and
+#                        DOWNLOADS_R2_SECRET_ACCESS_KEY; it may not mint an OIDC
+#                        token, and runs no action but checkout and no program
+#                        but gh, curl and the shell's own utilities. The key
+#                        pair reaches curl on its standard input and is never
+#                        written to disk.
 #   notarization-check   Once sign-and-publish, record-published,
-#                        publish-skills, publish-package-channels and
-#                        open-winget-pull-request have ended, whatever each
+#                        publish-skills, publish-package-channels,
+#                        open-winget-pull-request and publish-downloads have
+#                        ended, whatever each
 #                        did, on a real publish and a dry run alike, whenever
 #                        sign-macos succeeded and gave a submission ID: asks
 #                        Apple's notary service, once, with Apple's own
@@ -536,6 +570,9 @@ name: Publish and sign core plugins
 # commit that adds the winget manifest's three files, from which it opens a pull
 # request on microsoft/winget-pkgs. A real publish of a pre-release makes
 # record-published's write alone: the three jobs after it are skipped.
+# Beside those, a real publish writes one object, a pre-release's included:
+# publish-downloads' copy of the Windows installer in the download bucket,
+# created under the release's version and never replaced.
 #
 # A manual dispatch, from the main branch or a v* tag (the refs the release
 # environment admits), defaults to a dry run. It checks the credential,
@@ -562,13 +599,16 @@ name: Publish and sign core plugins
 # and passes — save for a tag carrying a pre-release suffix, for which
 # publish-skills, publish-package-channels and open-winget-pull-request
 # are skipped, as on a real run, so the dry run shows the run graph the real
-# run would; last, notarization-check reads
+# run would; publish-downloads refuses, naming each, an R2 setting that is not
+# set, and prints the address it would publish the Windows installer at,
+# uploading nothing; last, notarization-check reads
 # Apple's answer to the submission as on a real run, which publishes nothing.
 #
 # The release credentials are held by the GitHub environment named release,
 # which these jobs name: registry-credential, sign-windows, sign-windows-installer,
 # sign-macos, sign-and-publish, record-published, publish-skills,
-# publish-package-channels, open-winget-pull-request and notarization-check.
+# publish-package-channels, open-winget-pull-request, publish-downloads and
+# notarization-check.
 # Its branch and tag rule admits the main branch and the tags matching v*. On
 # a run from any other ref, registry-credential, the run's first job, fails
 # before any step of it runs, and every other job is skipped but clean-up,
@@ -686,6 +726,12 @@ name: Publish and sign core plugins
 #                                        winget-pkgs' validation downloads the
 #                                        installer from the address the
 #                                        manifest names
+#              DOWNLOADS_R2_ENDPOINT     the S3 endpoint of the Cloudflare
+#                                        account holding the download bucket,
+#                                        https://<account ID>.r2.cloudflarestorage.com
+#                                        (publish-downloads only, which refuses
+#                                        it unset or not an https:// address;
+#                                        an address, not a secret)
 #   release-environment variables
 #              HUB_PUBLISHED_APP_CLIENT_ID
 #                                        the client ID of the App installed on
@@ -757,6 +803,17 @@ name: Publish and sign core plugins
 #                                        checked on a dry run, and
 #                                        reaching gh and git through their
 #                                        environment alone)
+#              DOWNLOADS_R2_ACCESS_KEY_ID
+#              DOWNLOADS_R2_SECRET_ACCESS_KEY
+#                                        the S3 key pair of an R2 API token
+#                                        with Object Read & Write on the
+#                                        bucket aggrega-downloads alone, which
+#                                        uploads the Windows installer there
+#                                        (publish-downloads only, read on a
+#                                        real publish, refused unset on a dry
+#                                        run and a real publish alike, and
+#                                        reaching curl on its standard input
+#                                        alone)
 #
 # Before AGGREGA_WINGET_PULL_REQUEST is set to true, once:
 #   1. fork microsoft/winget-pkgs into this organization, keeping the name
@@ -832,7 +889,9 @@ on:
 # publish-package-channels, which writes the Homebrew tap and the Scoop bucket
 # with the App token it mints, and open-winget-pull-request, which writes the
 # organization's fork of microsoft/winget-pkgs and opens the pull request with
-# the personal access token it is given.
+# the personal access token it is given, and publish-downloads, which reads the
+# release with the run's own token and writes the download bucket with the R2
+# key pair it is given.
 # sources keeps contents:read too: it reads aggrega-hub with the run's own token.
 permissions:
   contents: read
@@ -3194,8 +3253,9 @@ jobs:
     # version their binaries carry: publish-package-channels commits the two
     # files to the tap and the bucket. The winget manifest's three files, one
     # line each as scripts/open-winget-pull-request.sh --pack writes them:
-    # open-winget-pull-request adds them to winget-pkgs. Set on a dry run too,
-    # which renders them.
+    # open-winget-pull-request adds them to winget-pkgs. publish-downloads names
+    # the Windows installer and its address in the download bucket from the
+    # version. Set on a dry run too, which renders them.
     #
     # Whether the tag carries a pre-release suffix, true or false, as the
     # release step decides it, on a dry run too: publish-skills,
@@ -4827,6 +4887,280 @@ jobs:
           aggrega-cli/scripts/open-winget-pull-request.sh --manifest "$manifest" \
             --version "$RELEASE_VERSION" --tag "$TAG" --fork "$WINGET_PKGS_FORK" --dry-run "$DRY"
 
+  publish-downloads:
+    # Publishes the Windows installer the release attached to the public
+    # download bucket, aggrega-downloads, which serves it at
+    # https://download.aggrega.ai/aggrega-cli/v<version>/<installer>: the
+    # address the Microsoft Store listing installs from. The Store refuses a
+    # package address that redirects, and a GitHub release asset always
+    # redirects, to a short-lived signed address; the bucket's custom domain
+    # answers the versioned address itself, with the file's length, and serves
+    # byte ranges.
+    #
+    # It takes the installer and SHA256SUMS from the GitHub release
+    # sign-and-publish created, with gh release download, so the bytes it
+    # publishes are the ones the release attaches, and holds the installer to
+    # the digest that SHA256SUMS gives it before anything is uploaded. The
+    # upload is one PUT to the bucket through R2's S3 endpoint, signed by curl
+    # with AWS Signature Version 4 and carrying If-None-Match: *, which R2
+    # evaluates atomically against the bucket: the object is created when the
+    # key is free, and when it is taken nothing is written and R2 answers 412.
+    # So an installer once published is never replaced, as the release step
+    # never replaces one once attached: the Store pins the address and its
+    # bytes. A taken key passes when the object there is this installer, which
+    # makes a re-run safe, and fails otherwise, naming both SHA-256 digests.
+    # Last, it downloads the public address in full: it must answer 200 itself,
+    # not a redirect, with a Content-Length equal to the installer's size and
+    # the bytes SHA256SUMS lists.
+    #
+    # It runs once sign-and-publish has succeeded, for every release tag, a
+    # pre-release's included: the address carries the version, so each
+    # release's installer takes an address of its own and leaves every other
+    # as it is. On a dry run, where no release exists, it prints the address
+    # it would publish and uploads nothing. On a dry run and a real publish
+    # alike its first step refuses, naming each, a setting it needs that is not
+    # set — the endpoint variable and the two R2 secrets — so a release never
+    # skips the Store's download.
+    #
+    # A job of its own, on a GitHub-hosted runner, so the R2 key pair shares a
+    # job with no other credential but the run's own token, which here reads
+    # this repository and its release and nothing more. It checks out this
+    # repository at the commit the build job built, for the smoke library,
+    # whose namer gives the installer's name and whose reader of SHA-256 lists
+    # gives its digest, as in the release step and the package-channel render;
+    # it runs no action but checkout and no program but gh, curl and the
+    # shell's own utilities. The key pair reaches curl on its standard input,
+    # as a line of curl's configuration, so it is never placed on a command
+    # line or written to disk.
+    #
+    # The bucket, the public address and the installer's media type are
+    # written once, in this job's env. The if: names both jobs it needs as
+    # having succeeded rather than leaving it to the default, since
+    # sign-and-publish may run beside a sign-macos skipped while macOS signing
+    # is off.
+    needs: [build, sign-and-publish]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: release
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      DOWNLOADS_BUCKET: aggrega-downloads
+      DOWNLOADS_PUBLIC_BASE: https://download.aggrega.ai
+      INSTALLER_MEDIA_TYPE: application/vnd.microsoft.portable-executable
+
+    steps:
+      - name: Refuse a download setting that is not set
+        # Before anything is read or uploaded, on a dry run too: R2's S3
+        # endpoint and the key pair must be set, and each that is not is named;
+        # the endpoint must be an https:// address. The two secrets reach this
+        # step only as whether each is set, never as their values.
+        env:
+          DOWNLOADS_R2_ENDPOINT: ${{ vars.DOWNLOADS_R2_ENDPOINT }}
+          ACCESS_KEY_ID_SET: ${{ secrets.DOWNLOADS_R2_ACCESS_KEY_ID != '' }}
+          SECRET_ACCESS_KEY_SET: ${{ secrets.DOWNLOADS_R2_SECRET_ACCESS_KEY != '' }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "$DOWNLOADS_R2_ENDPOINT" ] || missing+=("the repository variable DOWNLOADS_R2_ENDPOINT")
+          [ "$ACCESS_KEY_ID_SET" = true ] || missing+=("the secret DOWNLOADS_R2_ACCESS_KEY_ID")
+          [ "$SECRET_ACCESS_KEY_SET" = true ] || missing+=("the secret DOWNLOADS_R2_SECRET_ACCESS_KEY")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            for setting in "${missing[@]}"; do
+              echo "publish-downloads: $setting is not set" >&2
+            done
+            echo "publish-downloads: the Windows installer cannot be published to the download bucket without the ${#missing[@]} setting(s) above: the endpoint is read as a repository variable, and the key pair as secrets of the release environment" >&2
+            exit 1
+          fi
+          case "$DOWNLOADS_R2_ENDPOINT" in
+            https://*) ;;
+            *)
+              echo "publish-downloads: the repository variable DOWNLOADS_R2_ENDPOINT is '$DOWNLOADS_R2_ENDPOINT', not an https:// address; it names R2's S3 endpoint, https://<account ID>.r2.cloudflarestorage.com" >&2
+              exit 1
+              ;;
+          esac
+          echo "publish-downloads: the endpoint and the R2 key pair are set"
+
+      - name: Check out the CLI at the commit the build job built
+        # For the smoke library only.
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          path: aggrega-cli
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+
+      - name: Publish the Windows installer to the download bucket
+        # The installer's name is the smoke library's, for the version the
+        # release's files carry, and its object key is
+        # aggrega-cli/v<version>/<installer>. On a dry run the step prints the
+        # address it would publish and exits before it reads the release or the
+        # key pair. On a real publish the tag must be v<version>; the installer
+        # and SHA256SUMS are downloaded from the tag's release into a directory
+        # of this step's own, and the installer must have the digest SHA256SUMS
+        # gives it, or nothing is uploaded. The PUT names the installer's media
+        # type and If-None-Match: *; R2 answers 200 when it created the object
+        # and 412 when the key was taken, and any other answer fails the step,
+        # printing it. Which of the two it was, the installer's name, digest
+        # and size, and its public address reach the next step through the
+        # job's environment.
+        env:
+          DOWNLOADS_R2_ENDPOINT: ${{ vars.DOWNLOADS_R2_ENDPOINT }}
+          DOWNLOADS_R2_ACCESS_KEY_ID: ${{ secrets.DOWNLOADS_R2_ACCESS_KEY_ID }}
+          DOWNLOADS_R2_SECRET_ACCESS_KEY: ${{ secrets.DOWNLOADS_R2_SECRET_ACCESS_KEY }}
+          RELEASE_VERSION: ${{ needs.sign-and-publish.outputs.release_version }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY="$DISPATCH_DRY_RUN"
+            TAG="$DISPATCH_TAG"
+          else
+            DRY="false"
+            TAG="$REF_NAME"
+          fi
+
+          if [ -z "$RELEASE_VERSION" ]; then
+            echo "publish-downloads: sign-and-publish handed on no version; nothing was uploaded" >&2
+            exit 1
+          fi
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          installer="$(smoke_release_asset_name windows/amd64 "$RELEASE_VERSION" "$(smoke_target_installer windows/amd64)")"
+          key="aggrega-cli/v$RELEASE_VERSION/$installer"
+          url="$DOWNLOADS_PUBLIC_BASE/$key"
+
+          if [ "$DRY" = "true" ]; then
+            echo "publish-downloads: dry run: would publish $installer from the release $TAG to the bucket $DOWNLOADS_BUCKET as $key, served at $url; nothing is uploaded."
+            exit 0
+          fi
+
+          if [ "$TAG" != "v$RELEASE_VERSION" ]; then
+            echo "publish-downloads: the release tag is $TAG, but its files carry the version $RELEASE_VERSION; nothing was uploaded" >&2
+            exit 1
+          fi
+          work="$(mktemp -d "$RUNNER_TEMP/downloads.XXXXXX")"
+          trap 'rm -rf -- "$work"' EXIT
+          gh release download "$TAG" --repo "$GH_REPO" --dir "$work" --pattern "$installer" --pattern SHA256SUMS
+          if [ ! -f "$work/$installer" ]; then
+            echo "publish-downloads: the release $TAG on $GH_REPO carries no $installer; nothing was uploaded" >&2
+            exit 1
+          fi
+          if ! digest="$(smoke_listed_digest "$work/SHA256SUMS" "$installer")"; then
+            echo "publish-downloads: the release's SHA256SUMS gives no single digest for $installer; nothing was uploaded" >&2
+            exit 1
+          fi
+          actual="$(sha256sum < "$work/$installer")"
+          actual="${actual%% *}"
+          if [ "$actual" != "$digest" ]; then
+            echo "publish-downloads: $installer as the release $TAG serves it has SHA-256 $actual, but the release's SHA256SUMS lists $digest; nothing was uploaded" >&2
+            exit 1
+          fi
+          size="$(wc -c < "$work/$installer")"
+          size="${size//[[:space:]]/}"
+          echo "publish-downloads: $installer from the release $TAG has SHA-256 $digest, as SHA256SUMS lists, and $size bytes"
+
+          # The key pair as curl's user option, one configuration line read
+          # from standard input, quoted as curl's configuration quotes a value.
+          credentials="$DOWNLOADS_R2_ACCESS_KEY_ID:$DOWNLOADS_R2_SECRET_ACCESS_KEY"
+          credentials="${credentials//\\/\\\\}"
+          credentials="${credentials//\"/\\\"}"
+          status="$(printf 'user = "%s"\n' "$credentials" | curl --config - \
+            --silent --show-error --proto '=https' --connect-timeout 30 --max-time 900 --retry 3 \
+            --aws-sigv4 "aws:amz:auto:s3" \
+            --upload-file "$work/$installer" \
+            --header "Content-Type: $INSTALLER_MEDIA_TYPE" \
+            --header "If-None-Match: *" \
+            --output "$work/answer" --write-out '%{http_code}' \
+            "${DOWNLOADS_R2_ENDPOINT%/}/$DOWNLOADS_BUCKET/$key")"
+          case "$status" in
+            200)
+              outcome=created
+              echo "publish-downloads: created $key in the bucket $DOWNLOADS_BUCKET"
+              ;;
+            412)
+              outcome=taken
+              echo "publish-downloads: the bucket $DOWNLOADS_BUCKET already holds $key, so nothing was written; the next step holds the object there to this installer"
+              ;;
+            *)
+              echo "publish-downloads: R2 answered the upload of $key to the bucket $DOWNLOADS_BUCKET with HTTP $status, so whether it holds the installer is unknown; R2's answer:" >&2
+              cat "$work/answer" >&2 2>/dev/null || true
+              echo >&2
+              exit 1
+              ;;
+          esac
+          printf 'INSTALLER=%s\nINSTALLER_KEY=%s\nINSTALLER_URL=%s\nINSTALLER_SHA256=%s\nINSTALLER_SIZE=%s\nUPLOAD_OUTCOME=%s\n' \
+            "$installer" "$key" "$url" "$digest" "$size" "$outcome" >> "$GITHUB_ENV"
+
+      - name: Check the installer at its public address
+        # On a real publish, the address the Microsoft Store downloads from:
+        # one GET of it in full, following no redirect, which must answer 200,
+        # with the bytes SHA256SUMS lists and a Content-Length equal to their
+        # size. An answer of 404 is asked again, every 30 seconds for up to
+        # eight tries, since the bucket's domain is cached and may still hold
+        # an answer given before the object existed. When the upload found the
+        # key taken, the digest compared here is the object's that was already
+        # there.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          DRY="false"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY="$DISPATCH_DRY_RUN"
+          fi
+          if [ "$DRY" = "true" ]; then
+            echo "publish-downloads: dry run: nothing was uploaded, so no address is checked"
+            exit 0
+          fi
+          for name in INSTALLER INSTALLER_KEY INSTALLER_URL INSTALLER_SHA256 INSTALLER_SIZE UPLOAD_OUTCOME; do
+            if [ -z "${!name:-}" ]; then
+              echo "publish-downloads: the upload step recorded no $name; nothing is checked" >&2
+              exit 1
+            fi
+          done
+          work="$(mktemp -d "$RUNNER_TEMP/downloads-check.XXXXXX")"
+          trap 'rm -rf -- "$work"' EXIT
+          tries=8
+          for try in $(seq 1 "$tries"); do
+            answer="$(curl --silent --show-error --proto '=https' --connect-timeout 30 --max-time 900 --retry 3 \
+              --dump-header "$work/headers" --output "$work/installer" \
+              --write-out '%{http_code} %{redirect_url}' "$INSTALLER_URL")"
+            status="${answer%% *}"
+            redirect="${answer#* }"
+            if [ "$status" != 404 ] || [ "$try" -eq "$tries" ]; then
+              break
+            fi
+            echo "publish-downloads: $INSTALLER_URL answered 404 (try $try of $tries); asking again in 30 seconds"
+            sleep 30
+          done
+          if [ "$status" != 200 ] || [ -n "$redirect" ]; then
+            echo "publish-downloads: $INSTALLER_URL answered HTTP $status${redirect:+, redirecting to $redirect}; the Microsoft Store needs 200 from the address itself" >&2
+            exit 1
+          fi
+          actual="$(sha256sum < "$work/installer")"
+          actual="${actual%% *}"
+          if [ "$actual" != "$INSTALLER_SHA256" ]; then
+            if [ "$UPLOAD_OUTCOME" = taken ]; then
+              echo "publish-downloads: the bucket $DOWNLOADS_BUCKET already held $INSTALLER_KEY, and $INSTALLER_URL serves SHA-256 $actual, while this release's $INSTALLER has SHA-256 $INSTALLER_SHA256. The upload creates an object only where none is, so it replaced nothing: the address serves bytes other than this release's installer." >&2
+            else
+              echo "publish-downloads: $INSTALLER_URL serves SHA-256 $actual, but the release's SHA256SUMS lists $INSTALLER_SHA256 for $INSTALLER" >&2
+            fi
+            exit 1
+          fi
+          length="$(tr -d '\r' < "$work/headers" | awk -F': *' 'tolower($1) == "content-length" { value = $2 } END { print value }')"
+          if [ "$length" != "$INSTALLER_SIZE" ]; then
+            echo "publish-downloads: $INSTALLER_URL answered with Content-Length '$length', but $INSTALLER is $INSTALLER_SIZE bytes" >&2
+            exit 1
+          fi
+          echo "publish-downloads: $INSTALLER_URL answers 200 itself, with Content-Length $length and SHA-256 $actual, as the release's SHA256SUMS lists"
+
   smoke-binaries:
     # Fetches, on a dry run naming smoke_binaries_from, that release's Windows
     # binaries and hands them to windows-smoke as an artifact, saved under the
@@ -5363,7 +5697,7 @@ jobs:
     # job name another Apple secret or run anything but Apple's programs, the
     # shell's own utilities and the artifact download pinned by commit.
     # clean-up waits for it, so the artifacts it reads are still there.
-    needs: [sign-macos, sign-and-publish, record-published, publish-skills, publish-package-channels, open-winget-pull-request]
+    needs: [sign-macos, sign-and-publish, record-published, publish-skills, publish-package-channels, open-winget-pull-request, publish-downloads]
     if: >-
       ${{ !cancelled()
       && needs.sign-macos.result == 'success'
@@ -5611,7 +5945,7 @@ jobs:
     # emulation's installer image once the image is built, and
     # sign-and-publish's publish script removes every image and reference it
     # loads when it exits, a refusal included.
-    needs: [registry-credential, sources, build, sign-windows, windows-installer, sign-windows-installer, sign-macos, sign-and-publish, attest, record-published, publish-skills, publish-package-channels, open-winget-pull-request, notarization-check, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
+    needs: [registry-credential, sources, build, sign-windows, windows-installer, sign-windows-installer, sign-macos, sign-and-publish, attest, record-published, publish-skills, publish-package-channels, open-winget-pull-request, publish-downloads, notarization-check, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
     if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 15

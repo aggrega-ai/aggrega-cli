@@ -28,7 +28,10 @@
 # smoke_release_asset_name's. The
 # Homebrew formula and the Scoop manifest each release writes for its default
 # binaries take every digest from that list, through smoke_listed_digest, once
-# smoke_check_tree_sums has held the list to the files. The smoke
+# smoke_check_tree_sums has held the list to the files. The job that publishes
+# the Windows installer to the download bucket names it through
+# smoke_release_asset_name and holds the copy it downloads from the release to
+# the digest smoke_listed_digest reads from the release's list. The smoke
 # run's install step lays out a release the same way, with the same two
 # functions, so the install scripts are proven against the names and the list a
 # release carries.
