@@ -25,10 +25,6 @@ const (
 	templateFileAzureDeploy = "azuredeploy.json"
 )
 
-// byteOrderMark is the UTF-8 encoding of the byte-order mark some Windows tools
-// write at the start of a file.
-const byteOrderMark = "\xef\xbb\xbf"
-
 // SelectTemplate names the file of an acquired source that holds the compiled
 // template, as a path relative to the source root. A source that is one file is
 // that file whatever its name, and its path is the empty string, which the host
@@ -66,11 +62,10 @@ func templateSubject(path string) string {
 }
 
 // readTemplate reads a sourced template as a JSON object tree with numbers kept
-// as written. A leading byte-order mark is dropped, and comments and trailing
-// commas are read as JSON with comments admits them. A document that is not one
-// JSON value is an error naming what the reader found.
+// as written. The text goes through the shared JSON-with-comments reader, which
+// drops a leading byte-order mark and admits comments and trailing commas. A
+// document that is not one JSON value is an error naming what the reader found.
 func readTemplate(content []byte) (any, error) {
-	content = bytes.TrimPrefix(content, []byte(byteOrderMark))
 	dec := json.NewDecoder(bytes.NewReader(jsonc.Strip(content)))
 	dec.UseNumber()
 	var doc any
