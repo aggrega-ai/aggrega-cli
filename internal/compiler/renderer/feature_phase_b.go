@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/ir"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/libraryimport"
 	"github.com/aggrega-ai/aggrega-cli/internal/redact"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
@@ -87,7 +88,7 @@ func resolveValuesMappingText(vm types.ValuesMapping, entityName, entityKind str
 			}, ""))
 	}
 	if vm.IsLibraryImport() {
-		text, err := resolveMappingLibraryImport(vm.Import, mappingLibs, nil)
+		text, err := libraryimport.Mapping(vm.Import, mappingLibs, nil)
 		if err != nil {
 			return "", cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: entityName}, fmt.Sprintf("%s %q valuesMapping library import %q", entityKind, entityName, vm.Import))
 		}

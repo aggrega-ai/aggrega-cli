@@ -6,6 +6,7 @@ package renderer
 import (
 	"fmt"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/libraryimport"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -199,7 +200,7 @@ func templateReadsOf(doc templateReadDocument, libs RecipeTemplateLibraries, art
 			}
 			label := block.labelPrefix + key + "]"
 			if entry.IsLibraryImport() {
-				bundle, err := resolveArtifactLibraryImport(entry.Import, libs.Artifacts)
+				bundle, err := libraryimport.Artifact(entry.Import, libs.Artifacts)
 				if err != nil {
 					return nil, err
 				}

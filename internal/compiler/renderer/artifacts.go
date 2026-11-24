@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/libraryimport"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/pkg/digest"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
@@ -352,7 +353,7 @@ func walkArtifactBlock(
 			// is what keeps both halves readable in the output. The library version
 			// is lockfile-pinned, so no artifactDigests file-pin applies here (that
 			// check guards only mode-2 local-file imports).
-			bundle, err := resolveArtifactLibraryImport(entry.Import, state.ArtifactLibraries)
+			bundle, err := libraryimport.Artifact(entry.Import, state.ArtifactLibraries)
 			if err != nil {
 				return cerrors.Wrap(err, cerrors.CatalogError, cerrors.SourceLocation{File: state.RecipeName},
 					fmt.Sprintf("Recipe %q %s library import %q", state.RecipeName, block.noun, entry.Import))

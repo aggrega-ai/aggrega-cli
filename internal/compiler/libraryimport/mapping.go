@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio s.r.l.
 
-package renderer
+package libraryimport
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// resolveMappingLibraryImport resolves a bare-name MappingLibrary import
+// Mapping resolves a bare-name MappingLibrary import
 // reference `<Library>#/mappings/<Entry>` to the entry's Go-template fragment.
 // It is recursive: an entry whose whole body is itself a field-root `$import:`
 // of another library entry resolves to that target's fragment, so a chain of
@@ -48,11 +48,11 @@ import (
 // however completely the authored reference is covered.
 //
 // And a caller assembling a render's input directly runs no authored-stage rule at
-// all, which is a documented shape of this package's entry rather than a defect to
+// all, which is a documented shape of the renderer's entry rather than a defect to
 // close here. A resolver must also return a value, so an arm cannot simply be
 // dropped the way a guard can.
-func resolveMappingLibraryImport(ref string, libs map[string]types.MappingLibrary, stack []string) (string, error) {
-	found := lookUpMappingLibraryEntry(ref, libs)
+func Mapping(ref string, libs map[string]types.MappingLibrary, stack []string) (string, error) {
+	found := LookUpMappingEntry(ref, libs)
 	if !found.WellFormed {
 		if strings.HasPrefix(ref, "oci://") {
 			return "", fmt.Errorf("%w: %q", ErrHostInLibraryImport(), ref)
@@ -66,7 +66,7 @@ func resolveMappingLibraryImport(ref string, libs map[string]types.MappingLibrar
 	}
 	key := found.Library + "#/mappings/" + found.EntryName
 	if chain, cyclic := refcycle.Check(stack, key); cyclic {
-		return "", fmt.Errorf("%w: %s", ErrCircularImport(), strings.Join(chain, " -> "))
+		return "", fmt.Errorf("%w: %s", refcycle.ErrCycle(), strings.Join(chain, " -> "))
 	}
 	if !found.LibraryFound {
 		return "", fmt.Errorf("%w: MappingLibrary %q (entry %q)", ErrMappingLibraryNotFound(), found.Library, found.EntryName)
@@ -74,13 +74,13 @@ func resolveMappingLibraryImport(ref string, libs map[string]types.MappingLibrar
 	if !found.EntryFound {
 		return "", fmt.Errorf("%w: entry %q in MappingLibrary %q", ErrMappingEntryNotFound(), found.EntryName, found.Library)
 	}
-	if target, ok := fieldRootImportTarget(found.Body); ok {
-		return resolveMappingLibraryImport(target, libs, refcycle.Push(stack, key))
+	if target, ok := FieldRootTarget(found.Body); ok {
+		return Mapping(target, libs, refcycle.Push(stack, key))
 	}
 	return found.Body, nil
 }
 
-// mappingLibraryLookup is how far one values-mapping import reference got against
+// MappingLookup is how far one values-mapping import reference got against
 // the MappingLibrary set the catalog resolved: the names it gave, and which step
 // of the resolution each of them answered.
 //
@@ -95,7 +95,7 @@ func resolveMappingLibraryImport(ref string, libs map[string]types.MappingLibrar
 // It reaches for nothing, which is what makes a second reader safe here. The set
 // is the one the load already resolved and an entry's body is content that set
 // carries, so asking twice over identical input answers identically.
-type mappingLibraryLookup struct {
+type MappingLookup struct {
 	// Library is the MappingLibrary the reference names, with any `:version`
 	// floor stripped. It is empty where the reference does not split.
 	Library string
@@ -127,7 +127,7 @@ type mappingLibraryLookup struct {
 	Body string
 }
 
-// lookUpMappingLibraryEntry resolves a bare-name MappingLibrary import reference
+// LookUpMappingEntry resolves a bare-name MappingLibrary import reference
 // against the resolved library set, reporting how far it got.
 //
 // It is the single reading of that resolution. Every reader of it — the resolver
@@ -139,14 +139,14 @@ type mappingLibraryLookup struct {
 // lockfile-pinned remote libraries bridged in at load. The version is supplied by
 // that set, keyed by bare name, so a `:version` floor in the reference is a
 // lock-time selection assertion and is stripped here.
-func lookUpMappingLibraryEntry(
+func LookUpMappingEntry(
 	ref string, libs map[string]types.MappingLibrary,
-) mappingLibraryLookup {
-	library, entry, ok := splitLibraryImportRef(ref, "/mappings/")
+) MappingLookup {
+	library, entry, ok := SplitRef(ref, "/mappings/")
 	if !ok {
-		return mappingLibraryLookup{}
+		return MappingLookup{}
 	}
-	out := mappingLibraryLookup{Library: library, EntryName: entry, WellFormed: true}
+	out := MappingLookup{Library: library, EntryName: entry, WellFormed: true}
 	if strings.IndexByte(library, '@') >= 0 {
 		out.StaleVersionSeparator = true
 		return out
@@ -163,54 +163,4 @@ func lookUpMappingLibraryEntry(
 	out.EntryFound = true
 	out.Body = me.Body
 	return out
-}
-
-// splitLibraryImportRef parses a host-less `<Library>[:<version>]#<fragmentPrefix><Entry>`
-// into its library name and entry, stripping any `:version` floor. A host-bearing
-// reference (`oci://…`), a fragment shape other than the requested one, or an empty
-// entry or library returns ok=false.
-//
-// The host-less identity grammar itself is shared from [types.IdentityRefParts]; the
-// `:version` strip and the non-empty-entry requirement are layered here. Every
-// import axis consumes the same grammar and differs only in the fragment prefix it
-// admits, so the split is written once and the axis supplies the prefix.
-//
-// The prefixes are stated at the three call sites rather than read from the
-// closure package's axis table: this is the render-time consumption site, and it
-// stays decoupled from the catalog/closure layer on purpose. A reference reaches
-// here already resolved, so nothing here needs to know how it was pinned.
-func splitLibraryImportRef(ref, fragmentPrefix string) (library, entry string, ok bool) {
-	doc, ent, matched := types.IdentityRefParts(ref, fragmentPrefix)
-	if !matched || ent == "" {
-		return "", "", false
-	}
-	library = doc
-	if at := strings.IndexByte(doc, ':'); at >= 0 {
-		library = doc[:at]
-	}
-	if library == "" {
-		return "", "", false
-	}
-	return library, ent, true
-}
-
-// fieldRootImportTarget reports whether body's first non-whitespace token is a
-// field-root `$import: <ref>` directive (whole-content replacement) and returns
-// <ref>. A plain template body (no field-root `$import:`) returns ok=false. The
-// field-root-only rule matches the `$import:` authoring vocabulary: an `$import:`
-// embedded deeper in a template body is not a whole-content replacement.
-func fieldRootImportTarget(body string) (ref string, ok bool) {
-	trimmed := strings.TrimSpace(body)
-	if !strings.HasPrefix(trimmed, "$import:") {
-		return "", false
-	}
-	rest := strings.TrimPrefix(trimmed, "$import:")
-	if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
-		rest = rest[:nl]
-	}
-	rest = strings.TrimSpace(rest)
-	if rest == "" {
-		return "", false
-	}
-	return rest, true
 }

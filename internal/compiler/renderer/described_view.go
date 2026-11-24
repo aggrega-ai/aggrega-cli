@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/libraryimport"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasm"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/pluginpath"
@@ -863,7 +864,7 @@ func (v *describedView) ArtifactsEntryBundleNestedImportFiles(node string, entry
 	if !found.BundleFound {
 		return nil
 	}
-	return bundleNestedImportFiles(found.Bundle)
+	return libraryimport.BundleNestedImportFiles(found.Bundle)
 }
 
 // RecipeValuesMappingImportReference returns the library reference a node's own
@@ -948,12 +949,12 @@ func (v *describedView) recipeValuesMappingImport(
 // would be two readings of one reference, each free to answer for a different step
 // of a different reading. The zero value is what a field naming no library resolves
 // to, and every step of it reports the absence its own accessor reports.
-func (v *describedView) recipeValuesMappingLookup(node string, field string) mappingLibraryLookup {
+func (v *describedView) recipeValuesMappingLookup(node string, field string) libraryimport.MappingLookup {
 	authored, held := v.recipeValuesMappingImport(node, field)
 	if !held {
-		return mappingLibraryLookup{}
+		return libraryimport.MappingLookup{}
 	}
-	return lookUpMappingLibraryEntry(authored.Import, v.mappingLibraries)
+	return libraryimport.LookUpMappingEntry(authored.Import, v.mappingLibraries)
 }
 
 // RecipeWorkloadImportReference returns the library reference a node's own Recipe
@@ -1068,12 +1069,12 @@ func (v *describedView) artifactsEntry(node string, entry string) (types.Artifac
 // different step of a different reading. The zero value is what an entry naming
 // no library resolves to, and every step of it reports the absence its own
 // accessor reports.
-func (v *describedView) artifactsEntryLookup(node string, entry string) artifactLibraryLookup {
+func (v *describedView) artifactsEntryLookup(node string, entry string) libraryimport.ArtifactLookup {
 	authored, held := v.artifactsEntry(node, entry)
 	if !held || authored.HasOCIPrefix() || !authored.IsLibraryImport() {
-		return artifactLibraryLookup{}
+		return libraryimport.ArtifactLookup{}
 	}
-	return lookUpArtifactLibraryBundle(authored.Import, v.artifactLibraries)
+	return libraryimport.LookUpArtifactBundle(authored.Import, v.artifactLibraries)
 }
 
 // ProviderArtifactTemplateDelimiters returns the delimiter pair the provider

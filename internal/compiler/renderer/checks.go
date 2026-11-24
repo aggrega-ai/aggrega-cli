@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/constraint"
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/libraryimport"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/internal/sourceref"
@@ -3469,7 +3470,7 @@ func artifactsEntryLibraryReference(ref string) (library, bundle string, held bo
 	if ref == "" {
 		return "", "", false
 	}
-	library, bundle, ok := splitLibraryImportRef(ref, "/artifacts/")
+	library, bundle, ok := libraryimport.SplitRef(ref, "/artifacts/")
 	if !ok {
 		return "", "", false
 	}
@@ -3504,7 +3505,7 @@ func valuesMappingLibraryReference(ref string) (library, entry string, held bool
 	if ref == "" {
 		return "", "", false
 	}
-	library, entry, ok := splitLibraryImportRef(ref, "/mappings/")
+	library, entry, ok := libraryimport.SplitRef(ref, "/mappings/")
 	if !ok {
 		return "", "", false
 	}
@@ -3625,7 +3626,7 @@ func workloadLibraryReference(ref string) (library, entry string, held bool) {
 	if ref == "" {
 		return "", "", false
 	}
-	library, entry, ok := splitLibraryImportRef(ref, "/workloads/")
+	library, entry, ok := libraryimport.SplitRef(ref, "/workloads/")
 	if !ok {
 		return "", "", false
 	}

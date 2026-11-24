@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Cognitio s.r.l.
 
-package renderer
+package libraryimport
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
 
-// artifactLibraryLookup is how far one artifacts entry's library import
+// ArtifactLookup is how far one artifacts entry's library import
 // reference got against the ArtifactLibrary set the catalog resolved: the names
 // it gave, and which step of the resolution each of them answered.
 //
@@ -32,7 +32,7 @@ import (
 // carries, so asking twice over identical input answers identically. That is not
 // true of an entry supplied by a file of the workspace, where the read happens
 // once inside the walk and is retained rather than repeated.
-type artifactLibraryLookup struct {
+type ArtifactLookup struct {
 	// Library is the ArtifactLibrary the reference names, with any `:version`
 	// floor stripped. It is empty where the reference does not split.
 	Library string
@@ -63,7 +63,7 @@ type artifactLibraryLookup struct {
 	Bundle types.ArtifactLibraryEntry
 }
 
-// lookUpArtifactLibraryBundle resolves a bare-name ArtifactLibrary import
+// LookUpArtifactBundle resolves a bare-name ArtifactLibrary import
 // reference against the resolved library set, reporting how far it got.
 //
 // It is the single reading of that resolution. Every reader of it — the walk that
@@ -75,14 +75,14 @@ type artifactLibraryLookup struct {
 // lockfile-pinned remote libraries bridged in at load. The version is supplied by
 // that set, keyed by bare name, so a `:version` floor in the reference is a
 // lock-time selection assertion and is stripped here.
-func lookUpArtifactLibraryBundle(
+func LookUpArtifactBundle(
 	ref string, libs map[string]types.ArtifactLibrary,
-) artifactLibraryLookup {
-	library, entry, ok := splitLibraryImportRef(ref, "/artifacts/")
+) ArtifactLookup {
+	library, entry, ok := SplitRef(ref, "/artifacts/")
 	if !ok {
-		return artifactLibraryLookup{}
+		return ArtifactLookup{}
 	}
-	out := artifactLibraryLookup{Library: library, BundleName: entry, WellFormed: true}
+	out := ArtifactLookup{Library: library, BundleName: entry, WellFormed: true}
 	if strings.IndexByte(library, '@') >= 0 {
 		out.StaleVersionSeparator = true
 		return out
@@ -101,10 +101,10 @@ func lookUpArtifactLibraryBundle(
 	return out
 }
 
-// resolveArtifactLibraryImport resolves a bare-name ArtifactLibrary import
+// Artifact resolves a bare-name ArtifactLibrary import
 // reference `<Library>#/artifacts/<Entry>` to the entry's bundle — the ordered
 // filename→body map the consumption site expands into one output per file. It
-// mirrors resolveWorkloadLibraryImport / resolveMappingLibraryImport keyed on
+// mirrors the workload and mapping resolvers keyed on
 // `/artifacts/`, with one deliberate divergence forced by the bundle entry shape:
 // an ArtifactLibrary entry is a set of files, not a single body, so resolution
 // returns the whole bundle rather than a scalar. A bundle file body is TERMINAL
@@ -133,12 +133,12 @@ func lookUpArtifactLibraryBundle(
 // same walk under a synthesized Recipe, and the declared rules read the node's
 // OWN Recipe, so no rule covers that FeatureRecipe and these arms are the whole
 // of its refusal. And a caller assembling a render's input directly runs no
-// authored-stage rule at all, which is a documented shape of this package's entry
+// authored-stage rule at all, which is a documented shape of this renderer's entry
 // rather than a defect to close here. Removing an arm would leave both silently
 // admitting a reference the compiler refuses everywhere else; a resolver must
 // also return a value, so an arm cannot simply be dropped the way a guard can.
-func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactLibrary) (types.ArtifactLibraryEntry, error) {
-	found := lookUpArtifactLibraryBundle(ref, libs)
+func Artifact(ref string, libs map[string]types.ArtifactLibrary) (types.ArtifactLibraryEntry, error) {
+	found := LookUpArtifactBundle(ref, libs)
 	if !found.WellFormed {
 		// No production path reaches this arm, and it is retained deliberately.
 		// The one caller gates HasOCIPrefix ahead of its library-import branch, and
@@ -172,14 +172,14 @@ func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactLibr
 	// named, which is what this arm reported before the reading was shared: a
 	// resolver returns one error, and the rule declared over the same fact is the
 	// reading that reports every one of them.
-	if nested := bundleNestedImportFiles(found.Bundle); len(nested) > 0 {
+	if nested := BundleNestedImportFiles(found.Bundle); len(nested) > 0 {
 		return types.ArtifactLibraryEntry{}, fmt.Errorf("%w: bundle %q file %q body is a field-root $import: (nested library import inside a bundle file is not supported; compose at the consumption site)",
 			ErrArtifactImportShape(), found.BundleName, nested[0])
 	}
 	return found.Bundle, nil
 }
 
-// bundleNestedImportFiles returns the names of a bundle's files whose own body is
+// BundleNestedImportFiles returns the names of a bundle's files whose own body is
 // a field-root `$import:`, in the order the bundle declares its files.
 //
 // It is the single reading of what makes a bundle file body non-terminal, shared
@@ -188,11 +188,11 @@ func resolveArtifactLibraryImport(ref string, libs map[string]types.ArtifactLibr
 // differ the next time the field-root vocabulary moves, with nothing comparing
 // them — and the disagreement would surface as a build that refuses a bundle the
 // rule admitted, or admits one the rule refused.
-func bundleNestedImportFiles(bundle types.ArtifactLibraryEntry) []string {
+func BundleNestedImportFiles(bundle types.ArtifactLibraryEntry) []string {
 	var out []string
 	for _, fname := range bundle.Files.Keys() {
 		body, _ := bundle.Files.Get(fname)
-		if _, nested := fieldRootImportTarget(body); nested {
+		if _, nested := FieldRootTarget(body); nested {
 			out = append(out, fname)
 		}
 	}

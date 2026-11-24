@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/libraryimport"
 	"github.com/aggrega-ai/aggrega-cli/pkg/refcycle"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
 )
@@ -73,7 +74,7 @@ func resolveWorkloadLibraryImport(ref string, libs map[string]types.WorkloadLibr
 	if !found.EntryFound {
 		return "", fmt.Errorf("%w: entry %q in WorkloadLibrary %q", ErrWorkloadEntryNotFound(), found.EntryName, found.Library)
 	}
-	if target, ok := fieldRootImportTarget(found.Body); ok {
+	if target, ok := libraryimport.FieldRootTarget(found.Body); ok {
 		return resolveWorkloadLibraryImport(target, libs, refcycle.Push(stack, key))
 	}
 	return found.Body, nil
@@ -140,7 +141,7 @@ type workloadLibraryLookup struct {
 func lookUpWorkloadLibraryEntry(
 	ref string, libs map[string]types.WorkloadLibrary,
 ) workloadLibraryLookup {
-	library, entry, ok := splitLibraryImportRef(ref, "/workloads/")
+	library, entry, ok := libraryimport.SplitRef(ref, "/workloads/")
 	if !ok {
 		return workloadLibraryLookup{}
 	}
