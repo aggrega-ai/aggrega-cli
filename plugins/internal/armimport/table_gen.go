@@ -9,7 +9,7 @@ import "github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 
 // TableRevision is the aggrega-hub revision whose arm Recipes, and the
 // Components and libraries they read, the generated rows were read from.
-const TableRevision = "d1bcc94620df143c3ea26aee081cb895556e41b0"
+const TableRevision = "fd634a486ca93f6a18a897f4179e0197bbdc0e4e"
 
 // generatedRows are the mapping table's rows read from the hub's arm Recipes,
 // one per Recipe whose text names its resource, ordered by key, When and
