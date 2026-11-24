@@ -50,6 +50,8 @@ set -euo pipefail
 
 CLI_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export GOWORK=off
+# shellcheck source=lib/first-line.sh
+source "$CLI_ROOT/scripts/lib/first-line.sh"
 
 RELEASE_TAG="v0.9.3"
 RELEASE_VERSION="0.9.3"
@@ -131,7 +133,7 @@ want="$(awk -v a="$ASSET" '$2 == a || $2 == "*" a { print $1 }' "$TMP/SHA256SUMS
 got="$(sha256_of "$RELEASED")"
 [ "$got" = "$want" ] || cannot "$ASSET has sha256 $got; $RELEASE_TAG's SHA256SUMS lists $want; refusing it"
 chmod +x "$RELEASED"
-reported="$("$RELEASED" version | head -n1)"
+reported="$(first_line_of "$RELEASED" version)" || cannot "the downloaded binary did not run \`version\`"
 case "$reported" in
   "aggrega $RELEASE_VERSION "*) echo "  $reported" ;;
   *) cannot "the downloaded binary reports \"$reported\", not $RELEASE_VERSION" ;;
@@ -209,7 +211,7 @@ REAL_OK=0 PLANTED_OK=0
 
 echo "==> the real case: $RELEASE_VERSION installs it"
 if install_with_released "$PLUGIN_NAME" "$TMP/ws-real"; then
-  blob="$(find "$TMP/ws-real/.aggrega/cache" -type f -name blob | head -n1)"
+  blob="$(find "$TMP/ws-real/.aggrega/cache" -type f -name blob -print -quit)"
   if [ -n "$blob" ] && [ "$(sha256_of "$blob")" = "$WASM_SHA" ]; then
     echo "  installed .wasm sha256 $(sha256_of "$blob") equals the pushed .wasm's"
     REAL_OK=1

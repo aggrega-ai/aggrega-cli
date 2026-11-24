@@ -220,14 +220,14 @@ check_token() {
   fi
   response="${response//$'\r'/}"
   # The headers end at the first blank line; the filtered body is the last line.
-  headers="$(printf '%s\n' "$response" | awk 'NF == 0 { exit } { print }')"
+  headers="$(awk 'NF == 0 { exit } { print }' <<<"$response")"
   account="$(printf '%s\n' "$response" | awk 'blank && NF { line = $0 } NF == 0 { blank = 1 } END { print line }')"
   ACCOUNT_ID="${account%% *}" LOGIN="${account#* }"
   [ -n "$ACCOUNT_ID" ] && [ -n "$LOGIN" ] && [ "$ACCOUNT_ID" != "$account" ] || refuse "GitHub named no account for the token; nothing was opened"
   if ! printf '%s\n' "$headers" | awk -F: 'tolower($1) == "x-oauth-scopes" { found = 1 } END { exit !found }'; then
     refuse "the token in WINGET_PULL_REQUEST_TOKEN carries no X-OAuth-Scopes header, so it is not a personal access token (classic); the winget pull request needs a personal access token (classic) with the public_repo scope, of an account that may push to $FORK; nothing was opened"
   fi
-  SCOPES="$(printf '%s\n' "$headers" | awk -F: 'tolower($1) == "x-oauth-scopes" { sub(/^[^:]*:[ \t]*/, ""); print; exit }')"
+  SCOPES="$(awk -F: 'tolower($1) == "x-oauth-scopes" { sub(/^[^:]*:[ \t]*/, ""); print; exit }' <<<"$headers")"
   local -a listed
   IFS=, read -r -a listed <<<"$SCOPES"
   for scope in "${listed[@]}"; do
