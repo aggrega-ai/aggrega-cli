@@ -17,14 +17,14 @@
 #
 # Which refs may sign is decided by the signing identity's federated credentials
 # in Microsoft Entra ID, which this repository cannot read. The refs this script
-# takes the identity to admit are written once, in ADMITTED_REFS below: the main
-# branch, from which a dry run proves the signing before a tag exists, and every
-# tag, the refs a release is signed from. Any other ref is taken not to be
-# admitted; Entra ID refuses the token of a run from a branch its credentials do
-# not name, naming that branch. A dry run from a ref the list names but the
-# identity does not admit still signs, and fails in the signing, naming the ref;
-# a dry run from a ref the identity admits but the list leaves out is left
-# unsigned, and publishes nothing either way.
+# takes the identity to admit are written once, in ADMITTED_REFS below: every
+# release/* branch, from which a dry run proves the signing before a tag exists,
+# and every tag, the refs a release is signed from. Any other ref is taken not
+# to be admitted; Entra ID refuses the token of a run from a branch its
+# credentials do not name, naming that branch. A dry run from a ref the list
+# names but the identity does not admit still signs, and fails in the signing,
+# naming the ref; a dry run from a ref the identity admits but the list leaves
+# out is left unsigned, and publishes nothing either way.
 #
 # The guard reads the event and the input itself rather than asking decide, and
 # never consults ADMITTED_REFS: it checks the one property that keeps an unsigned
@@ -47,9 +47,9 @@ decide
   Prints the decision, sign or skip, and why. Under GitHub Actions it is also
   written to the step's outputs as signing=<decision>. It is skip only when the
   event is workflow_dispatch, the dry_run input is true, and the ref is not one
-  the signing identity is taken to admit: refs/heads/main, or any ref under
-  refs/tags/. Every other run signs, a tag push and a dispatch that publishes
-  among them.
+  the signing identity is taken to admit: any ref under refs/heads/release/,
+  or any ref under refs/tags/. Every other run signs, a tag push and a
+  dispatch that publishes among them.
 
 guard
   Passes a decision of sign on any run, and a decision of skip on a
@@ -63,7 +63,7 @@ Arguments:
   --dry-run   the dry_run input as the run reads it: true, false, or empty on
               an event that carries no inputs
   --ref       the ref the run was launched from, as github.ref gives it:
-              refs/heads/main, refs/tags/v1.2.3
+              refs/heads/release/v1.2.3, refs/tags/v1.2.3
   --signing   the decision decide wrote, as a later step reads it
 
 Exit status: 0 when the decision is written or passes, 1 when the guard
@@ -73,7 +73,7 @@ EOF
 
 # The refs the signing identity is taken to admit, as shell patterns. This is
 # the one statement of them in the repository.
-ADMITTED_REFS=('refs/heads/main' 'refs/tags/*')
+ADMITTED_REFS=('refs/heads/release/*' 'refs/tags/*')
 
 fail() {
   echo "windows-signing: $*" >&2

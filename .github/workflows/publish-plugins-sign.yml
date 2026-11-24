@@ -31,14 +31,15 @@ name: Publish and sign core plugins
 #                        the refusal of a run with no self-hosted runner named
 #                        for the local jobs.
 #   sources              Moves the CLI tree onto the release tag, checks out
-#                        aggrega-hub, whose overlays the build reads, with the
-#                        run's own read token (aggrega-hub is a public
-#                        repository), and hands the checkout, without a token,
-#                        to the build job in the hand-over folder described
-#                        below, with a SHA-256 list of it. It runs nothing but
-#                        GitHub's own checkout action, git and the shell's own
-#                        utilities, and the build job, which runs third-party
-#                        code, names no secret at all.
+#                        aggrega-hub, whose overlays the build reads, at the
+#                        commit it resolves once for the run, as the job
+#                        describes, with the run's own read token (aggrega-hub
+#                        is a public repository), and hands the checkout,
+#                        without a token, to the build job in the hand-over
+#                        folder described below, with a SHA-256 list of it. It
+#                        runs nothing but GitHub's own checkout action, git and
+#                        the shell's own utilities, and the build job, which
+#                        runs third-party code, names no secret at all.
 #   build                Compiles, packs and stages everything the release
 #                        carries, naming no secret and holding no permission to
 #                        mint an OIDC token: it builds the commit the sources job
@@ -575,18 +576,19 @@ name: Publish and sign core plugins
 # publish-downloads' copy of the Windows installer in the download bucket,
 # created under the release's version and never replaced.
 #
-# A manual dispatch, from the main branch or a v* tag (the refs the release
-# environment admits), defaults to a dry run. It checks the credential,
-# builds everything a real run builds — the tooling image and the Windows
-# installer included — signs the
-# Windows binaries and the installer, and signs the macOS binaries and submits
-# them to Apple for notarization, as a real run does, so the signing and the
-# signature checks
-# are proven before a tag exists, runs the Windows, macOS and ARM Linux smoke jobs in full,
-# and then, once they have passed, sign-and-publish loads and checks the image's
-# two archives and prints what it would push, publish, sign and release, doing none of it,
-# and hands SHA256SUMS on as release-checksums, which attest, skipped on a dry
-# run, does not read.
+# A manual dispatch, from a release/* branch or a v* tag (the refs the release
+# environment admits), defaults to a dry run; the dry run before a release tag
+# exists is dispatched from release/vX.Y.Z, the release's own branch, which
+# carries the commit the tag will name. It checks the credential, builds
+# everything a real run builds — the tooling image and the Windows installer
+# included — signs the Windows binaries and the installer, and signs the macOS
+# binaries and submits them to Apple for notarization, as a real run does, so
+# the signing and the signature checks are proven before a tag exists, runs the
+# Windows, macOS and ARM Linux smoke jobs in full, and then, once they have
+# passed, sign-and-publish loads and checks the image's two archives and prints
+# what it would push, publish, sign and release, doing none of it, and hands
+# SHA256SUMS on as release-checksums, which attest, skipped on a dry run, does
+# not read.
 # record-published, publish-skills and publish-package-channels each mint their
 # App's token, which proves that App's client ID and private key, and use it
 # for nothing, the action that minted it revoking it when the job ends;
@@ -607,15 +609,14 @@ name: Publish and sign core plugins
 # Apple's answer to the submission as on a real run, which publishes nothing.
 #
 # The release credentials are held by the GitHub environment named release,
-# which these jobs name: registry-credential, sign-windows, sign-windows-installer,
-# sign-macos, sign-and-publish, record-published, publish-skills,
-# publish-package-channels, open-winget-pull-request, publish-downloads and
-# notarization-check.
-# Its branch and tag rule admits the main branch and the tags matching v*. On
-# a run from any other ref, registry-credential, the run's first job, fails
-# before any step of it runs, and every other job is skipped but clean-up,
-# which names no environment and holds no secret: nothing is checked out,
-# built, signed or published.
+# which these jobs name: registry-credential, sign-windows,
+# sign-windows-installer, sign-macos, sign-and-publish, record-published,
+# publish-skills, publish-package-channels, open-winget-pull-request,
+# publish-downloads and notarization-check. Its branch and tag rule admits the
+# branches matching release/* and the tags matching v*. On a run from any other
+# ref, registry-credential, the run's first job, fails before any step of it
+# runs, and every other job is skipped but clean-up, which names no environment
+# and holds no secret: nothing is checked out, built, signed or published.
 # The environment's secrets reach only the jobs that name it, whatever any
 # other job runs; the list of settings below says which are the environment's.
 # Every job naming it that may mint the OIDC token — sign-windows,
@@ -640,9 +641,9 @@ name: Publish and sign core plugins
 # before anything is built or signed, and never by a signing that failed:
 # sign, or skip for a manual dry run from a ref outside those
 # .github/scripts/windows-signing.sh takes the identity to admit, written once
-# there — the main branch and every tag. Every ref that list leaves out is one
-# the release environment does not admit, and registry-credential names the
-# environment, so no run the environment admits reaches skip: every run that
+# there — every release/* branch and every tag. Every ref that list leaves out
+# is one the release environment does not admit, and registry-credential names
+# the environment, so no run the environment admits reaches skip: every run that
 # reaches the decision signs. On a decision to skip, sign-windows,
 # sign-windows-installer and sign-macos are skipped, windows-installer builds the installer
 # from the unsigned files the build wrote,
@@ -679,7 +680,9 @@ name: Publish and sign core plugins
 #              CLI_PUBLISH_HUB_REF       the aggrega-hub ref sources checks out
 #                                        for the overlays, and record-published
 #                                        takes aggrega-hub's writer from
-#                                        (optional, main by default)
+#                                        (optional; set, it overrides
+#                                        .github/release-hub-commit, as the
+#                                        sources job describes)
 #              AZURE_TENANT_ID           the Microsoft Entra tenant of the
 #                                        identity sign-windows and
 #                                        sign-windows-installer sign as
@@ -847,7 +850,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Check the stored registry credential, build everything a release carries (the tooling image and the extension package included), generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release; the jobs a pre-release tag does not skip mint each App's token, using it for nothing, and check the winget token. Dispatch it from main or a v* tag, the refs the release environment admits: from any other ref nothing is checked out, built, signed or published."
+        description: "Check the stored registry credential, build everything a release carries (the tooling image and the extension package included), generate the entities, and print the publish plan without pushing the image, publishing, signing, or creating a release; the jobs a pre-release tag does not skip mint each App's token, using it for nothing, and check the winget token. Dispatch it from a release/* branch or a v* tag, the refs the release environment admits, and before a release from release/vX.Y.Z, the release's own branch: from any other ref nothing is checked out, built, signed or published."
         required: false
         default: true
         type: boolean
@@ -1068,7 +1071,8 @@ jobs:
     # aggrega-hub, whose overlays the build reads, is a public repository, read
     # with the run's own token. This job runs nothing but GitHub's own checkout
     # action, git and the shell's own utilities. It moves the CLI tree onto the
-    # release tag, checks aggrega-hub out at HUB_REF, and
+    # release tag, resolves the aggrega-hub commit the run reads, checks
+    # aggrega-hub out there, and
     # hands the checkout, which keeps no token, to the build job in this run's
     # hand-over folder, with a SHA-256 list of every file in it. It makes the
     # folder.
@@ -1081,16 +1085,17 @@ jobs:
 
     # The commit the build job checks out and builds: the release tag's on a tag
     # push or a dispatch naming a tag, otherwise the commit the run was launched
-    # at.
+    # at. And the aggrega-hub commit this job checked out, which the build job
+    # hands on to record-published, so both read the same aggrega-hub commit.
     outputs:
       commit: ${{ steps.pinned.outputs.commit }}
+      hub_commit: ${{ steps.hub-commit.outputs.commit }}
 
     env:
-      # aggrega-hub carries no CLI-side version pin, so it is always checked out at
-      # HUB_REF (operator-overridable via a repository variable). The schemas, abi
-      # and pdk modules are NOT configured here: the CLI's own go.mod is the single
-      # source for their versions, and the build resolves them from it.
-      HUB_REF: ${{ vars.CLI_PUBLISH_HUB_REF || 'main' }}
+      # The schemas, abi and pdk modules are NOT configured here: the CLI's own
+      # go.mod is the single source for their versions, and the build resolves
+      # them from it. aggrega-hub carries no CLI-side version pin; the step that
+      # resolves its commit says where that commit comes from.
       # Event data surfaced as env so run scripts read it from the environment
       # rather than interpolating expressions into shell.
       EVENT_NAME: ${{ github.event_name }}
@@ -1164,6 +1169,40 @@ jobs:
           printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
           echo "this run builds aggrega-cli at $commit"
 
+      - name: Resolve the aggrega-hub ref this run reads
+        # Resolved once, here: the repository variable CLI_PUBLISH_HUB_REF when
+        # it is set; otherwise the aggrega-hub commit .github/release-hub-commit
+        # names at the commit this run builds, where a release records the
+        # aggrega-hub commit it checked, so a dry run and the tag's run of the
+        # same commit read the same overlays; otherwise main. The file holds one
+        # line, the commit's 40 lowercase hexadecimal digits; a file holding
+        # anything else fails the job, naming it.
+        id: hub-ref
+        env:
+          HUB_REF_VARIABLE: ${{ vars.CLI_PUBLISH_HUB_REF }}
+          COMMIT: ${{ steps.pinned.outputs.commit }}
+        run: |
+          set -euo pipefail
+          file=.github/release-hub-commit
+          if [ -n "$HUB_REF_VARIABLE" ]; then
+            ref="$HUB_REF_VARIABLE"
+            from="the repository variable CLI_PUBLISH_HUB_REF"
+          elif git -C aggrega-cli cat-file -e "$COMMIT:$file" 2>/dev/null; then
+            git -C aggrega-cli show "$COMMIT:$file" > "$RUNNER_TEMP/release-hub-commit"
+            lines="$(awk 'END { print NR }' "$RUNNER_TEMP/release-hub-commit")"
+            ref="$(head -n 1 "$RUNNER_TEMP/release-hub-commit")"
+            if [ "$lines" -ne 1 ] || ! printf '%s\n' "$ref" | grep -Eqx '[0-9a-f]{40}'; then
+              echo "publish-plugins: $file at $COMMIT must hold exactly one line, an aggrega-hub commit as 40 lowercase hexadecimal digits; it holds $lines line(s), the first reading '$ref'" >&2
+              exit 1
+            fi
+            from="$file at $COMMIT"
+          else
+            ref=main
+            from="neither CLI_PUBLISH_HUB_REF nor $file at $COMMIT names one"
+          fi
+          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
+          echo "this run reads aggrega-hub at $ref: $from"
+
       - name: Check out the hub sibling
         # Supplies the authored plugin overlays (OVERLAY_DIR) that catalog
         # generation consumes, that the embedded plugin entities are generated
@@ -1171,15 +1210,26 @@ jobs:
         # other sibling modules — the schemas, the Go plugin kit and the Go ABI —
         # are resolved by the build at the versions its go.mod requires, so no
         # checkout of them is needed. aggrega-hub has no CLI-side version pin,
-        # so it is checked out at HUB_REF. The repository is public: the run's
-        # own token reads it. The checkout keeps no credential in its git
-        # configuration, and the next step refuses to hand one over.
+        # so it is checked out at the ref the step above resolved. The repository
+        # is public: the run's own token reads it. The checkout keeps no
+        # credential in its git configuration, and the hand-over step below
+        # refuses to hand one over.
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: aggrega-ai/aggrega-hub
           path: aggrega-hub
-          ref: ${{ env.HUB_REF }}
+          ref: ${{ steps.hub-ref.outputs.ref }}
           persist-credentials: false
+
+      - name: Record the aggrega-hub commit this run reads
+        # The commit the checkout above holds, which record-published checks out
+        # for aggrega-hub's writer, so that job reads what this one resolved.
+        id: hub-commit
+        run: |
+          set -euo pipefail
+          commit="$(git -C aggrega-hub rev-parse HEAD)"
+          printf 'commit=%s\n' "$commit" >> "$GITHUB_OUTPUT"
+          echo "this run reads aggrega-hub at commit $commit"
 
       - name: Make this run's hand-over folder
         # The folder in which this run's jobs on the self-hosted runner hand files
@@ -1260,9 +1310,12 @@ jobs:
     # version the binaries report, which windows-installer records in the
     # installer. And the SHA-256 of the list of the unsigned macOS binaries this
     # job uploads, which sign-macos, checking nothing out, holds that list to
-    # before it holds the binaries to the list.
+    # before it holds the binaries to the list. And the aggrega-hub commit the
+    # sources job checked out, which record-published checks out for
+    # aggrega-hub's writer.
     outputs:
       commit: ${{ needs.sources.outputs.commit }}
+      hub_commit: ${{ needs.sources.outputs.hub_commit }}
       smoke_commit: ${{ steps.windows-smoke-inputs.outputs.commit }}
       macos_smoke_commit: ${{ steps.macos-smoke-inputs.outputs.commit }}
       linux_smoke_commit: ${{ steps.linux-smoke-inputs.outputs.commit }}
@@ -4293,14 +4346,16 @@ jobs:
 
       - name: Check out aggrega-hub
         # For its writer, scripts/record-published.sh, and the branch library
-        # that writer and this job's row reader share. The checkout keeps no
-        # token: the write below hands it to git through the environment.
+        # that writer and this job's row reader share, at the aggrega-hub commit
+        # the sources job resolved and checked out, handed on by the build job.
+        # The checkout keeps no token: the write below hands it to git through
+        # the environment.
         if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: aggrega-ai/aggrega-hub
           path: aggrega-hub
-          ref: ${{ vars.CLI_PUBLISH_HUB_REF || 'main' }}
+          ref: ${{ needs.build.outputs.hub_commit }}
           token: ${{ steps.hub-token.outputs.token }}
           persist-credentials: false
 
