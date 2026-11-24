@@ -25,6 +25,9 @@
 #   - the Go host binary            (./cmd/aggrega), for every target the release
 #                                   builds it for (THIRD_PARTY_HOST_TARGETS)
 #   - the Go standard library, compiled into the host and every Go plugin
+#   - the Azure Verified Modules module index, whose rows the arm importer embeds
+#     (plugins/internal/armimport/avmindex_gen.go), as data compiled into
+#     importer/arm
 #   - for the embedded Rust guests, what their wasm32-wasip1 builds link in from
 #     the toolchain: the Rust standard library and wasi-libc (with the third-party
 #     works it carries), one entry per toolchain channel and per wasi-libc commit
@@ -47,6 +50,11 @@
 #   - The Go standard library is one entry: its version from go.mod's toolchain
 #     directive (else its go directive), BSD-3-Clause, copyright lines from the
 #     LICENSE file of the Go root.
+#   - The Azure Verified Modules module index is one entry, listed in the
+#     binary's attribution and in no single guest's: MIT, copyright Microsoft
+#     Corporation. Its version is the commit the generated index names
+#     (AVMIndexCommit), and its notice is the repository's LICENSE at that commit,
+#     pinned under third-party/toolchain/azure-verified-modules-<commit>/.
 #   - The Rust standard library entries are one per distinct channel a guest's
 #     rust-toolchain.toml names: MIT OR Apache-2.0, with the Rust project's
 #     COPYRIGHT file at that release tag as copyright source and notice. The
@@ -780,6 +788,7 @@ if [ -z "$GUEST" ]; then
 	printf 'aggrega\t%s\n' "$WORK/sets/host.txt" >> "$WORK/go-sets.list"
 	printf -- '- the Go host binary (`cmd/aggrega`), for %s\n' "${THIRD_PARTY_HOST_TARGETS// /, }" >> "$WORK/covered.md"
 	printf -- '- the Go standard library, compiled into the host binary and every Go plugin below\n' >> "$WORK/covered.md"
+	printf -- '- the Azure Verified Modules module index, compiled into `importer/arm` as data\n' >> "$WORK/covered.md"
 	if [ "$(awk -F'\x1f' '$4 == "rust" && $6 == "yes"' <<< "$rows" | wc -l)" -gt 0 ]; then
 		printf -- '- the Rust standard library and wasi-libc, compiled into every Rust plugin below\n' >> "$WORK/covered.md"
 	fi
@@ -1058,6 +1067,32 @@ if [ -s "$WORK/go-sets.list" ]; then
 	go_std_usedby="$(awk -F'\t' '{ printf "%s%s", (NR > 1 ? ", " : ""), $1 }' "$WORK/go-sets.list")"
 	emit_pkg "go" "Go standard library" "$go_std_ver" "NOASSERTION" "BSD-3-Clause" \
 		"https://go.dev/dl/" "pkg:golang/stdlib@$go_std_ver" "$go_std_usedby" "$go_root/LICENSE"
+fi
+
+# --- Azure Verified Modules module index --------------------------------------
+
+# One entry for the binary: the rows of Microsoft's module index the arm importer
+# embeds. The commit is the one the generated index names, so the entry follows a
+# regeneration; its LICENSE, pinned under third-party/toolchain/, is the notice.
+if [ -z "$GUEST" ]; then
+	avm_gen="plugins/internal/armimport/avmindex_gen.go"
+	avm_commit="$(sed -n 's/^const AVMIndexCommit = "\([0-9a-f]\{40\}\)".*$/\1/p' "$avm_gen" 2>/dev/null || true)"
+	if [ -z "$avm_commit" ]; then
+		echo "gen-third-party-licenses: ERROR: $avm_gen names no AVMIndexCommit" >&2
+		exit 1
+	fi
+	avm_license="$TOOLCHAIN_DIR/azure-verified-modules-$avm_commit/LICENSE"
+	if [ ! -f "$avm_license" ]; then
+		echo "gen-third-party-licenses: ERROR: $avm_license is missing: pin the LICENSE of github.com/Azure/Azure-Verified-Modules at commit $avm_commit there" >&2
+		exit 1
+	fi
+	EMIT_NO_SRC=1
+	EMIT_NOTE="the module paths, telemetry prefixes, provider namespaces and resource types of $avm_gen, read from docs/static/module-indexes/BicepResourceModules.csv at commit $avm_commit"
+	EMIT_NOTICES=("$avm_license")
+	emit_pkg "data" "Azure Verified Modules module index" "$avm_commit" "MIT" "MIT" \
+		"https://github.com/Azure/Azure-Verified-Modules/blob/$avm_commit/docs/static/module-indexes/BicepResourceModules.csv" \
+		"pkg:github/azure/azure-verified-modules@$avm_commit" "importer/arm" "$avm_license"
+	EMIT_NOTICES=(); unset EMIT_NOTE EMIT_NO_SRC
 fi
 
 # --- JavaScript runtime (a TypeScript guest) ---------------------------------

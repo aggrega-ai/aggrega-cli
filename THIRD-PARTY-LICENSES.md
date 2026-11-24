@@ -7,6 +7,7 @@ Shipped artifacts covered:
 
 - the Go host binary (`cmd/aggrega`), for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64
 - the Go standard library, compiled into the host binary and every Go plugin below
+- the Azure Verified Modules module index, compiled into `importer/arm` as data
 - the Rust standard library and wasi-libc, compiled into every Rust plugin below
 - `provider/helm`, a Go WebAssembly plugin (`plugins/helm-provider`), embedded into the host binary
 - `provider/compose`, a Go WebAssembly plugin (`plugins/compose-provider`), embedded into the host binary
@@ -76,6 +77,7 @@ Distinct licenses: 12 (see `LICENSES/`).
 | Component | Version | Ecosystem | Compiled into | SPDX | License text |
 | --- | --- | --- | --- | --- | --- |
 | `Go standard library` | `go1.26.11` | go | aggrega, provider/helm, provider/compose, provider/helm-chart, provider/terraform, provider/cloudformation, provider/arm, parser/hcl, parser/toml, parser/yaml, parser/json, parser/jsonc, governance/label-injector, governance/selector-tagger | `BSD-3-Clause` | [BSD-3-Clause](LICENSES/BSD-3-Clause.txt) |
+| `Azure Verified Modules module index` | `ef1f2199f8c29d5489261aff8d4b5dc92178d1b8` | data | importer/arm | `MIT` | [MIT](LICENSES/MIT.txt) |
 | `Rust standard library` | `1.85.1` | rust | linter/publishing | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `Rust standard library` | `1.98.1` | rust | governance/rego, governance/cel | `MIT OR Apache-2.0` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
 | `wasi-libc` | `161b3195fc2558d2b1ba3eb9ffae3b2b47407623` | c | governance/rego, governance/cel | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` | [Apache-2.0](LICENSES/Apache-2.0.txt), [MIT](LICENSES/MIT.txt) |
