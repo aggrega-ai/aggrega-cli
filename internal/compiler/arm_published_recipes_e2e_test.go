@@ -28,6 +28,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/compiler/libraryimport"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/pipeline/pipelinetest"
 	"github.com/aggrega-ai/aggrega-cli/internal/wasmtest"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
@@ -198,43 +199,21 @@ func TestArmFragmentEntitiesBuild(t *testing.T) {
 var armFeaturesReadPattern = regexp.MustCompile(`\.features(?:[^.A-Za-z_]|$)`)
 
 // armImportedMapping resolves a `<Library>[:<version>]#/mappings/<Entry>` import
-// to the template text the compiler renders for it, following an entry whose
-// whole body is another field-root `$import:` until a terminal template. The
-// library is the version a bare reference selects, from the catalog's own
-// selection. problem is empty on success and otherwise says why the text cannot
-// be read, so the caller reports it. It is a deliberate near-duplicate of
-// resolveMappingLibraryImport and fieldRootImportTarget in
-// internal/compiler/renderer/mapping_import.go: both are unexported there and
-// work over a render's inputs, so the scan, which reads raw catalog files, follows
-// the chain itself. The chain ends at the first repeated reference.
+// to the template text the compiler renders for it, through the same resolver a
+// build uses, so a chain of field-root `$import:` entries ends at the terminal
+// template exactly as it does there. The library is the version a bare reference
+// selects, from the catalog's own selection. entryID names the entry the Recipe
+// imports. problem is empty on success and otherwise carries the resolver's own
+// refusal, so the caller reports it.
 func armImportedMapping(libs map[string]types.MappingLibrary, ref string) (text, entryID, problem string) {
-	seen := map[string]bool{}
-	for {
-		library, entry, ok := types.IdentityRefParts(ref, "/mappings/")
-		if !ok || entry == "" {
-			return "", entryID, fmt.Sprintf("imports %q, which is not a <Library>#/mappings/<Entry> reference", ref)
-		}
-		library, _, _ = strings.Cut(library, ":")
+	if library, entry, ok := libraryimport.SplitRef(ref, "/mappings/"); ok {
 		entryID = library + "#/mappings/" + entry
-		if seen[entryID] {
-			return "", entryID, "imports a chain of entries that returns to " + entryID
-		}
-		seen[entryID] = true
-		lib, found := libs[library]
-		if !found {
-			return "", entryID, "imports " + entryID + ", and no MappingLibrary named " + library + " is in the catalog"
-		}
-		mapping, found := lib.Spec.Mappings.Get(entry)
-		if !found {
-			return "", entryID, "imports " + entryID + ", which the library does not declare"
-		}
-		trimmed := strings.TrimSpace(mapping.Body)
-		if !strings.HasPrefix(trimmed, "$import:") {
-			return mapping.Body, entryID, ""
-		}
-		rest, _, _ := strings.Cut(strings.TrimPrefix(trimmed, "$import:"), "\n")
-		ref = strings.TrimSpace(rest)
 	}
+	text, err := libraryimport.Mapping(ref, libs, nil)
+	if err != nil {
+		return "", entryID, "imports " + ref + ": " + err.Error()
+	}
+	return text, entryID, ""
 }
 
 // armWholeFeatureReads returns, for every Recipe and FeatureRecipe file under

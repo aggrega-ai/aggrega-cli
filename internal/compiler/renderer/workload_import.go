@@ -14,7 +14,7 @@ import (
 
 // resolveWorkloadLibraryImport resolves a bare-name WorkloadLibrary import
 // reference `<Library>#/workloads/<Entry>` to the entry's Go-template fragment.
-// It mirrors resolveMappingLibraryImport keyed on `/workloads/`: recursive, so an
+// It mirrors libraryimport.Mapping keyed on `/workloads/`: recursive, so an
 // entry whose whole body is itself a field-root `$import:` of another library
 // entry resolves to that target's fragment; recursion is guarded by the shared
 // refcycle primitive keyed on the canonical `<Library>#/workloads/<Entry>`
