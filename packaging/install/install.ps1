@@ -21,6 +21,12 @@
 # in Windows PowerShell 5.1 and in PowerShell 7, and needs no administrator
 # rights.
 #
+# While the binary downloads, and only in a window that shows what the script
+# writes, neither its output nor its errors redirected, PowerShell's progress
+# display shows how much of it has arrived, and is gone once the download
+# ends. A session whose $ProgressPreference is SilentlyContinue shows none, nor
+# does a run whose output is captured.
+#
 # A refusal ends in an error, and a failed step in a warning, reading:
 #
 #   aggrega install: error: <what went wrong> - <what to do>
@@ -119,6 +125,11 @@ param([switch]$Verbose, [switch]$Completion, [switch]$Skills)
     param([bool]$WantVerbose, [bool]$WantCompletion, [bool]$WantSkills, [object[]]$Rest)
 
     $ErrorActionPreference = 'Stop'
+    # The binary's download shows its progress only to someone watching: where
+    # the session shows progress at all, and the window shows what the script
+    # writes, neither its output nor its errors redirected.
+    $watched = (@('SilentlyContinue', 'Ignore') -notcontains "$ProgressPreference") -and
+        -not [Console]::IsOutputRedirected -and -not [Console]::IsErrorRedirected
     # Windows PowerShell 5.1 redraws a progress bar for every block it
     # downloads, which slows a large download many times over.
     $ProgressPreference = 'SilentlyContinue'
@@ -376,12 +387,80 @@ param([switch]$Verbose, [switch]$Completion, [switch]$Skills)
         }
     }
 
-    function Get-ReleaseFile([string]$Url, [string]$Path) {
+    # Save-WithProgress downloads the url into the file, showing how much of it
+    # has arrived with Write-Progress at most four times a second, and throws
+    # why when it cannot. It reads the response itself rather than through
+    # Invoke-WebRequest, whose own progress display is what slows a download in
+    # Windows PowerShell 5.1. The display is gone once the download ends,
+    # however it ends.
+    function Save-WithProgress([string]$Url, [string]$Path) {
+        $ProgressPreference = 'Continue'
+        $activity = 'Downloading ' + [IO.Path]::GetFileName($Path)
+        $client = $null
+        $response = $null
+        $source = $null
+        $target = $null
         try {
-            # -UseBasicParsing: Windows PowerShell 5.1 otherwise needs the
-            # Internet Explorer engine to parse the response; PowerShell 7
-            # accepts the switch and ignores it.
-            Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Path
+            # Windows PowerShell 5.1 does not load HttpClient's assembly on
+            # its own.
+            Add-Type -AssemblyName System.Net.Http
+            $client = New-Object Net.Http.HttpClient
+            $response = $client.GetAsync($Url, [Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+            [void]$response.EnsureSuccessStatusCode()
+            $total = $response.Content.Headers.ContentLength
+            $source = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+            $target = [IO.File]::Create($Path)
+            $buffer = New-Object byte[] 262144
+            [long]$received = 0
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            [long]$shownAt = -1000
+            while (($count = $source.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                $target.Write($buffer, 0, $count)
+                $received += $count
+                if ($clock.ElapsedMilliseconds - $shownAt -lt 250) {
+                    continue
+                }
+                $shownAt = $clock.ElapsedMilliseconds
+                if ($total) {
+                    $percent = [int][Math]::Min(100, [Math]::Floor(100 * $received / $total))
+                    Write-Progress -Activity $activity -Status ('{0}% - {1:N1} of {2:N1} MB' -f $percent, ($received / 1MB), ($total / 1MB)) -PercentComplete $percent
+                } else {
+                    Write-Progress -Activity $activity -Status ('{0:N1} MB' -f ($received / 1MB))
+                }
+            }
+        } catch {
+            # A .NET method's failure reaches the script wrapped in
+            # PowerShell's 'Exception calling ...'; the innermost exception
+            # says what went wrong.
+            $cause = $_.Exception
+            while ($cause.InnerException) {
+                $cause = $cause.InnerException
+            }
+            throw $cause.Message
+        } finally {
+            foreach ($disposable in $target, $source, $response, $client) {
+                if ($null -ne $disposable) {
+                    $disposable.Dispose()
+                }
+            }
+            Write-Progress -Activity $activity -Completed
+        }
+    }
+
+    # Get-ReleaseFile downloads the url into the file and returns $null, or
+    # returns why it could not. With -ShowProgress it shows the download's
+    # progress where $watched holds; everywhere else it downloads through
+    # Invoke-WebRequest, showing nothing.
+    function Get-ReleaseFile([string]$Url, [string]$Path, [switch]$ShowProgress) {
+        try {
+            if ($ShowProgress -and $watched) {
+                Save-WithProgress $Url $Path
+            } else {
+                # -UseBasicParsing: Windows PowerShell 5.1 otherwise needs the
+                # Internet Explorer engine to parse the response; PowerShell 7
+                # accepts the switch and ignores it.
+                Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Path
+            }
         } catch {
             return $_.Exception.Message
         }
@@ -493,7 +572,7 @@ param([switch]$Verbose, [switch]$Completion, [switch]$Skills)
             Write-Item "Downloaded from $url"
         }
         $download = Join-Path $tmp $asset
-        $failure = Get-ReleaseFile $url $download
+        $failure = Get-ReleaseFile $url $download -ShowProgress
         if ($failure) {
             Stop-Install "could not download ${url}: $failure" $network
         }

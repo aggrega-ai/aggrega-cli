@@ -21,6 +21,11 @@
 # Aggrega MCP server. It never uses sudo, and it edits a shell profile only
 # when --completion sets up completion for zsh.
 #
+# While the binary downloads, and only when standard error is a terminal, a
+# progress bar there shows how much of it has arrived: curl's, or wget's where
+# wget offers one. Run any other way, as with its output captured, it shows
+# none.
+#
 # A refusal or a failed step is written to standard error as one line:
 #
 #   aggrega install: error: <what went wrong> - <what to do>
@@ -226,8 +231,28 @@ pick_tools() {
   fi
 }
 
-# fetch <url> <file>
+# fetch <url> <file> [progress] downloads the url into the file, showing no
+# progress. Given progress, and with standard error a terminal, it shows the
+# download's progress there instead: curl's progress bar, which --silent would
+# hide, or wget's, where the wget offers --show-progress, as the wget built
+# into BusyBox does not.
 fetch() {
+  if [ "${3:-}" = progress ] && [ -t 2 ]; then
+    case "$fetcher" in
+      curl)
+        curl -fSL --progress-bar -o "$2" "$1"
+        return
+        ;;
+      *)
+        # wget labels its bar with the file's name as -O gives it, so the
+        # name is given from the file's own folder.
+        if wget --help 2>&1 | grep -e --show-progress >/dev/null; then
+          (cd -- "${2%/*}" && wget -q --show-progress -O "${2##*/}" "$1")
+          return
+        fi
+        ;;
+    esac
+  fi
   case "$fetcher" in
     curl) curl -fsSL -o "$2" "$1" ;;
     *) wget -q -O "$2" "$1" ;;
@@ -528,7 +553,7 @@ main() {
     item "Release file:   $asset"
     item "Downloaded from $url"
   fi
-  fetch "$url" "$tmp/$asset" ||
+  fetch "$url" "$tmp/$asset" progress ||
     refuse "could not download $url" "check your network connection and run the installer again"
   actual="$(digest "$tmp/$asset")" ||
     refuse "could not compute the SHA-256 checksum of the downloaded $asset" "run the installer again"
