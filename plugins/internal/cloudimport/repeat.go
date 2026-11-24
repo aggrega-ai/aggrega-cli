@@ -11,12 +11,16 @@ import (
 
 // Expand writes each repeated node of g as the nodes it deploys. Where the
 // source states the instances literally, the node is replaced by one node per
-// key, in key order: the node Repetition.Instance returns for the key, its ID
-// "<id>-<key>", taking the repeated node's Source where it names none; and a
-// dependency of any node on the repeated node becomes a dependency on each of
-// its instances. Where the source computes the instances when it deploys, the
-// node stays one node, with a repetition-not-expanded warning naming it. No
-// node of g repeats afterwards, and g.Nodes stays ordered by ID.
+// key: the node Repetition.Instance returns for the key, its ID "<id>-<key>",
+// taking the repeated node's Source where it names none; and a dependency of
+// any node on the repeated node becomes a dependency on each of its instances.
+// Where the literal keys are none, the source deploys no instance: the node is
+// removed, nothing is drafted for it, and a resource-not-carried warning names
+// it. Where the source computes the instances when it deploys, the node stays
+// one node, with a repetition-not-expanded warning naming it. A Ref or
+// Credential elsewhere in g that names a repeated node keeps naming that
+// node's own ID; a reader of the edges resolves such an ID to the node's
+// instances. No node of g repeats afterwards, and g.Nodes stays ordered by ID.
 func Expand(g *Graph) []aggrega.Diagnostic {
 	if g == nil {
 		return nil
@@ -32,6 +36,9 @@ func Expand(g *Graph) []aggrega.Diagnostic {
 			n.Repeat = nil
 			nodes = append(nodes, n)
 			diags = append(diags, repetitionNotExpanded(n))
+		case len(n.Repeat.Keys) == 0:
+			instances[n.ID] = nil
+			diags = append(diags, noInstance(n))
 		default:
 			ids := make([]string, 0, len(n.Repeat.Keys))
 			for _, key := range n.Repeat.Keys {
@@ -108,6 +115,15 @@ func idOf(n *Node) string {
 		return ""
 	}
 	return n.ID
+}
+
+// noInstance warns that n's repetition deploys no instance, so nothing is
+// drafted for it.
+func noInstance(n *Node) aggrega.Diagnostic {
+	d := Report(CodeResourceNotCarried, n.ID+" repeats over no key, so the source deploys no instance of it and "+
+		"nothing is drafted for it: where it is wanted, write an instance of it in the Aggregate")
+	d.SourceRef = n.Source
+	return d
 }
 
 // repetitionNotExpanded warns that n is drafted once.

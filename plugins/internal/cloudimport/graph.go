@@ -52,8 +52,9 @@ type ModuleRef struct {
 // Repetition is how a node repeats: one instance per key.
 type Repetition struct {
 	// Keys holds one key per instance — a literal count's indices, a literal
-	// map's keys — and is nil where the source computes the instances when it
-	// deploys.
+	// map's keys. Nil is a repetition the source computes when it deploys,
+	// drafted as one instance with a repetition-not-expanded warning; an empty
+	// slice is a literal repetition of no instance.
 	Keys []string
 	// Instance returns the node one key deploys, the key written wherever the
 	// source reads the current instance's index or key.

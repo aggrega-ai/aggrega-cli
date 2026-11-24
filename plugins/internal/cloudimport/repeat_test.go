@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
@@ -66,5 +67,18 @@ func TestExpandComputedWarns(t *testing.T) {
 	}
 	if got := ids(g.Nodes); !reflect.DeepEqual(got, []string{"db"}) || g.Nodes[0].Repeat != nil {
 		t.Fatalf("nodes = %q, repeat = %+v; want db once, no longer repeating", got, g.Nodes[0].Repeat)
+	}
+}
+
+func TestExpandZeroInstancesReportsTheResource(t *testing.T) {
+	db := repeated([]string{})
+	g := &Graph{Nodes: []*Node{{ID: "app"}, db}}
+	diags := Expand(g)
+	if got := ids(g.Nodes); !reflect.DeepEqual(got, []string{"app"}) {
+		t.Fatalf("nodes = %q, want db absent", got)
+	}
+	if len(diags) != 1 || diags[0].Code != string(CodeResourceNotCarried) || diags[0].Severity != aggrega.SeverityWarn ||
+		!strings.Contains(diags[0].Message, "db") || diags[0].SourceRef != db.Source {
+		t.Fatalf("diagnostics = %+v, want one resource-not-carried warning naming db", diags)
 	}
 }
