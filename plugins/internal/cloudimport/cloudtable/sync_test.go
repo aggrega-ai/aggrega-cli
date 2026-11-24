@@ -5,7 +5,9 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -190,35 +192,46 @@ func TestEveryArmRecipeIsAccountedFor(t *testing.T) {
 	}
 }
 
-// missingEntities returns a line for each row of table a hand row writes that
-// names a Component or a Recipe h does not hold, or a category other than its
-// Component's category label, and for each notImported entry naming an arm
-// Recipe or FeatureRecipe h does not hold.
-func missingEntities(h *hubCatalog, table cloudimport.Table) ([]string, error) {
-	rows, err := table.Rows()
-	if err != nil {
-		return nil, err
+// missingEntities returns a line for each hand row of table that names a
+// Component or a Recipe h does not hold, gives a category other than its
+// Component's category label, or a trait its Component's labels do not carry
+// with that value, and for each notImported entry naming an arm Recipe or
+// FeatureRecipe h does not hold. A hand row leaving its Component, category or
+// Recipe unset takes the generated row's of its identity, as merging it does.
+func missingEntities(h *hubCatalog, table cloudimport.Table) []string {
+	generated := map[string]cloudimport.Row{}
+	for _, g := range table.Generated {
+		generated[g.Identity()] = g
 	}
 	recipes := map[string]bool{}
 	for _, name := range h.recipeNames() {
 		recipes[name] = true
 	}
 	var out []string
-	for _, r := range rows {
-		if strings.HasPrefix(r.Origin, "generated ") && !strings.HasSuffix(r.Origin, " and hand") {
-			continue
+	for _, r := range table.Hand {
+		g := generated[r.Identity()]
+		component, category, recipe := cmp.Or(r.Component, g.Component), cmp.Or(r.Category, g.Category),
+			cmp.Or(r.Recipe, g.Recipe)
+		row := "the hand row of " + r.Key + cloudimport.WhenText(r.When)
+		if labels, ok := h.labels[component]; !ok {
+			out = append(out, fmt.Sprintf("%s names the Component %q, which the hub holds no version of", row,
+				component))
+		} else {
+			if category != labels[schemadraft.LabelCategory] {
+				out = append(out, fmt.Sprintf("%s gives the category %q, and the hub's %s carries %q", row,
+					category, component, labels[schemadraft.LabelCategory]))
+			}
+			for _, label := range slices.Sorted(maps.Keys(r.Traits)) {
+				want, carried := labels[label]
+				if label == schemadraft.LabelCategory || !carried || want != r.Traits[label] {
+					out = append(out, fmt.Sprintf("%s gives the trait %s=%q, and the hub's %s carries %q under "+
+						"it, the category being no trait", row, label, r.Traits[label], component, want))
+				}
+			}
 		}
-		row := "the hand row of " + r.Key + " realized by " + r.Recipe
-		labels, ok := h.labels[r.Component]
-		switch {
-		case !ok:
-			out = append(out, row+" names the Component "+r.Component+", which the hub holds no version of")
-		case r.Category != labels[schemadraft.LabelCategory]:
-			out = append(out, fmt.Sprintf("%s gives the category %q, and the hub's %s carries %q", row, r.Category,
-				r.Component, labels[schemadraft.LabelCategory]))
-		}
-		if !recipes[r.Recipe] {
-			out = append(out, row+" names the Recipe arm/"+r.Recipe+", which the hub holds no version of")
+		if !recipes[recipe] {
+			out = append(out, fmt.Sprintf("%s names the Recipe arm/%s, which the hub holds no version of", row,
+				recipe))
 		}
 	}
 	featureRecipes := map[string]bool{}
@@ -230,40 +243,52 @@ func missingEntities(h *hubCatalog, table cloudimport.Table) ([]string, error) {
 			out = append(out, "notImported lists "+n.Recipe+", which the hub holds no arm Recipe or FeatureRecipe of")
 		}
 	}
-	return out, nil
+	return out
 }
 
 // TestEveryHandRowNamesAHubEntity requires every Component and Recipe a hand
 // row of the arm table names, and every Recipe its notImported lists, to be
-// one the hub holds, and every hand row's category to be its Component's
-// category label, which the importer scores a candidate by.
+// one the hub holds, and every hand row's category and traits to be its
+// Component's labels, which the importer scores a candidate by.
 //
-// 🔴 PLANTED DEFECT: name a Component the hub does not hold in a hand row — the
-// case below adds one to a copy of the table — and the check names it.
+// 🔴 PLANTED DEFECTS: name a Component the hub does not hold in a hand row,
+// give one a category other than its Component's, or a trait its Component
+// does not carry — the cases below add each to a copy of the table — and the
+// check names it.
 func TestEveryHandRowNamesAHubEntity(t *testing.T) {
 	t.Parallel()
 	h := loadHubOrFail(t)
 	table := armimport.Table()
-	findings, err := missingEntities(h, table)
-	if err != nil {
-		t.Fatalf("read the arm table's rows: %v", err)
-	}
-	for _, f := range findings {
+	for _, f := range missingEntities(h, table) {
 		t.Errorf("%s: correct plugins/internal/armimport/table.go", f)
 	}
 
 	recipes := h.recipeNames()
-	if len(recipes) == 0 {
-		t.Fatalf("the hub holds no arm Recipe, so the planted row would name none")
+	const component = "core/datastore/postgres"
+	labels, ok := h.labels[component]
+	if len(recipes) == 0 || !ok || labels[schemadraft.LabelCategory] != "datastore" {
+		t.Fatalf("the hub holds no arm Recipe, or no %s in the datastore category, so the planted rows would "+
+			"plant nothing", component)
 	}
-	planted := table
-	planted.Hand = append(slices.Clone(table.Hand), cloudimport.Row{Key: "Microsoft.Planted/needles",
-		Component: "core/planted/needle", Category: "datastore", Recipe: recipes[0]})
-	findings, err = missingEntities(h, planted)
-	if err != nil {
-		t.Fatalf("read the planted table's rows: %v", err)
-	}
-	if !slices.ContainsFunc(findings, func(f string) bool { return strings.Contains(f, "core/planted/needle") }) {
-		t.Errorf("a hand row naming a Component the hub does not hold passes the existence check: %v", findings)
+	for _, c := range []struct {
+		name string
+		row  cloudimport.Row
+		want string
+	}{
+		{"a Component the hub does not hold", cloudimport.Row{Component: "core/planted/needle",
+			Category: "datastore"}, `the Component "core/planted/needle"`},
+		{"a category not its Component's", cloudimport.Row{Component: component, Category: "planted-needle"},
+			`the category "planted-needle"`},
+		{"a trait its Component does not carry", cloudimport.Row{Component: component, Category: "datastore",
+			Traits: map[string]string{"component.aggrega.ai/type": "planted-needle"}},
+			`the trait component.aggrega.ai/type="planted-needle"`},
+	} {
+		planted := table
+		c.row.Key, c.row.Recipe = "Microsoft.Planted/needles", recipes[0]
+		planted.Hand = append(slices.Clone(table.Hand), c.row)
+		findings := missingEntities(h, planted)
+		if !slices.ContainsFunc(findings, func(f string) bool { return strings.Contains(f, c.want) }) {
+			t.Errorf("a hand row with %s passes the existence check: %v", c.name, findings)
+		}
 	}
 }

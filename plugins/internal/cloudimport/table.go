@@ -191,7 +191,7 @@ type Contradiction struct {
 func (c *Contradiction) Error() string {
 	return fmt.Sprintf("the hand row of %s%s sets %s to %q where the generated row sets %q, with no reason in its "+
 		"Supersedes: write under Supersedes[%q] why the hand value supersedes the generated one, or remove it",
-		c.Key, whenText(c.When), c.Field, c.Hand, c.Generated, c.Field)
+		c.Key, WhenText(c.When), c.Field, c.Hand, c.Generated, c.Field)
 }
 
 // DuplicateRow is a key and When two rows of one origin share, so the second
@@ -206,7 +206,7 @@ type DuplicateRow struct {
 // Error names the key, the When and the rows' origin.
 func (d *DuplicateRow) Error() string {
 	return fmt.Sprintf("two %s rows map %s%s: keep one row for each key and When", d.Origin, d.Key,
-		whenText(d.When))
+		WhenText(d.When))
 }
 
 // Rows returns the table's rows: each generated row in order, the hand row of
@@ -238,12 +238,12 @@ func (t Table) Rows() ([]Row, error) {
 	}
 	handAt := make(map[string]int, len(t.Hand))
 	for i, h := range t.Hand {
-		handAt[identity(h)] = i
+		handAt[h.Identity()] = i
 	}
 	merged := make([]bool, len(t.Hand))
 	out := make([]Row, 0, len(t.Generated)+len(t.Hand))
 	for _, g := range t.Generated {
-		i, ok := handAt[identity(g)]
+		i, ok := handAt[g.Identity()]
 		if !ok {
 			out = append(out, g)
 			continue
@@ -268,7 +268,7 @@ func (t Table) Rows() ([]Row, error) {
 func duplicates(rows []Row, origin string) error {
 	seen := make(map[string]bool, len(rows))
 	for _, r := range rows {
-		id := identity(r)
+		id := r.Identity()
 		if seen[id] {
 			return &DuplicateRow{Key: r.Key, When: r.When, Origin: origin}
 		}
@@ -277,10 +277,13 @@ func duplicates(rows []Row, origin string) error {
 	return nil
 }
 
-// identity is the text of a row's key and When, lowercased, its predicates in
-// sorted order, so two rows whose keys, paths and values differ only in case,
-// and whose Whens hold the same predicates in any order, share one identity.
-func identity(r Row) string {
+// Identity is the text of the row's key and When, lowercased, its predicates
+// in sorted order, so two rows whose keys, paths and values differ only in
+// case, and whose Whens hold the same predicates in any order, share one
+// identity. Two rows of one identity are one row to [Table.Rows]: a hand row
+// merges into the generated row of its identity, and two rows of one origin
+// sharing it are a [*DuplicateRow].
+func (r Row) Identity() string {
 	preds := make([]string, len(r.When))
 	for i, p := range r.When {
 		preds[i] = strings.ToLower(strings.Join(p.Path, "\x1f")) + "\x1e" + string(p.Op) + "\x1e" +
@@ -521,8 +524,9 @@ func pathText(path []string) string {
 	return strings.Join(path, ".")
 }
 
-// whenText writes a When as report text, empty for none.
-func whenText(when []Pred) string {
+// WhenText writes a When as report text — " when " and its predicates joined
+// by "and", in the order written — and empty for none.
+func WhenText(when []Pred) string {
 	if len(when) == 0 {
 		return ""
 	}

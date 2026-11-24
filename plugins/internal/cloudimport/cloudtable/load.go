@@ -128,8 +128,9 @@ func (e *importError) Unwrap() error { return e.err }
 
 // read returns what an extractor reads of r, its valuesMapping and every file
 // of its artifacts resolved as a build resolves them: a library entry through
-// the catalog's libraries, a file beside the Recipe from disk. An import that
-// does not resolve is refused, naming r and the reference.
+// the catalog's libraries, and a file at the path the catalog's load anchored
+// to the Recipe's directory. An import that does not resolve is refused,
+// naming r and the reference.
 func (h *hubCatalog) read(r types.Recipe) (recipeSource, error) {
 	identity := h.capability + "/" + r.Metadata.Name + ":" + r.Metadata.Version
 	rel := filepath.Join(recipeDir(h.capability), r.Metadata.Name, r.Metadata.Version, "recipe.yaml")
@@ -166,7 +167,7 @@ func (h *hubCatalog) read(r types.Recipe) (recipeSource, error) {
 		}
 		out.valuesMapping = text
 	case vm.Import != "":
-		text, err := os.ReadFile(h.besideRecipe(rel, vm.Import))
+		text, err := os.ReadFile(vm.Import)
 		if err != nil {
 			return refuse(vm.Import, err)
 		}
@@ -176,10 +177,7 @@ func (h *hubCatalog) read(r types.Recipe) (recipeSource, error) {
 	artifacts := r.Spec.Artifacts
 	for _, k := range artifacts.Keys() {
 		a, _ := artifacts.Get(k)
-		switch {
-		case a.Inline != "":
-			out.fragments = append(out.fragments, a.Inline)
-		case a.IsLibraryImport() || a.HasOCIPrefix():
+		if a.IsLibraryImport() || a.HasOCIPrefix() {
 			bundle, err := libraryimport.Artifact(a.Import, h.libs.Artifacts)
 			if err != nil {
 				return refuse(a.Import, err)
@@ -188,12 +186,14 @@ func (h *hubCatalog) read(r types.Recipe) (recipeSource, error) {
 				body, _ := bundle.Files.Get(name)
 				out.fragments = append(out.fragments, body)
 			}
-		case a.Import != "":
-			text, err := os.ReadFile(h.besideRecipe(rel, a.Import))
-			if err != nil {
-				return refuse(a.Import, err)
-			}
-			out.fragments = append(out.fragments, string(text))
+			continue
+		}
+		text, err := a.Text()
+		if err != nil {
+			return refuse(a.Import, err)
+		}
+		if text != "" {
+			out.fragments = append(out.fragments, text)
 		}
 	}
 
@@ -201,13 +201,4 @@ func (h *hubCatalog) read(r types.Recipe) (recipeSource, error) {
 		out.document = string(document)
 	}
 	return out, nil
-}
-
-// besideRecipe returns the file a Recipe's file import names: the path the
-// catalog's load anchored, or one relative to the Recipe's own directory.
-func (h *hubCatalog) besideRecipe(recipe, ref string) string {
-	if filepath.IsAbs(ref) {
-		return ref
-	}
-	return filepath.Join(h.root, filepath.Dir(recipe), filepath.FromSlash(ref))
 }

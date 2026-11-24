@@ -137,11 +137,12 @@ func TestAModuleIsKnownByItsAzureVerifiedModulesIdentity(t *testing.T) {
 
 // TestAModulesParametersAreReadFromItsValuesMapping reads a module Recipe's
 // valuesMapping: a parameter written as one action reading a value or an infra
-// key whole is placed under that key, beneath a list item by its index and
-// inside a conditional branch alike; a parameter composed, read from locals,
-// from infra.overrides or inside a range, and a line of a block scalar, give
-// nothing; the literal kind written outside any branch is the When, and one
-// inside a branch is not.
+// key whole is placed under that key, beneath a list item by its index, inside
+// an if branch and in the else branch of a with alike; a parameter composed,
+// read from locals, from infra.overrides, inside a range, or inside a with's
+// body, where the dot is the with's value and not the data, and a line of a
+// block scalar, give nothing; the literal kind written outside any branch is
+// the When, and one inside a branch is not.
 func TestAModulesParametersAreReadFromItsValuesMapping(t *testing.T) {
 	t.Parallel()
 	mapping := "{{- $o := .infra.overrides }}\n" +
@@ -168,6 +169,12 @@ func TestAModulesParametersAreReadFromItsValuesMapping(t *testing.T) {
 		"  {{- end }}\n" +
 		"policy: |\n" +
 		"  login: {{ .values.user }}\n" +
+		"{{- with .values.x }}\n" +
+		"rebound: \"{{ .values.y }}\"\n" +
+		"{{- else }}\n" +
+		"fallback: \"{{ .values.z }}\"\n" +
+		"{{- end }}\n" +
+		"inline: {{ with .values.x }}{{ .values.y }}{{ end }}\n" +
 		"enableTelemetry: false\n"
 	row, why := extractARM(recipeSource{name: "r", valuesMapping: mapping,
 		source: map[string]any{"kind": "bicep-module-oci", "url": "oci://mcr.microsoft.com/bicep/avm/res/cognitive-services/account"}})
@@ -177,7 +184,8 @@ func TestAModulesParametersAreReadFromItsValuesMapping(t *testing.T) {
 	want := cloudimport.Row{Key: "avm/res/cognitive-services/account", Form: cloudimport.FormAVM,
 		When: []cloudimport.Pred{{Path: []string{"kind"}, Op: cloudimport.OpEquals, Value: "OpenAI"}},
 		Values: []cloudimport.Placement{place("user", "administratorLogin"),
-			place("deployment_name", "deployments", "0", "name"), place("model", "deployments", "0", "model", "name")},
+			place("deployment_name", "deployments", "0", "name"), place("model", "deployments", "0", "model", "name"),
+			place("z", "fallback")},
 		Infra: []cloudimport.Placement{place("region", "region"), place("ha.replicas", "replicas"),
 			place("capacity", "deployments", "1", "capacity")}}
 	if !reflect.DeepEqual(row, want) {

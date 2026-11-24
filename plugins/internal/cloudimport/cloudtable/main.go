@@ -19,7 +19,7 @@
 //
 // The generator reads the format's hand-written table, in the importer's
 // package, for what it accounts for: a Recipe its notImported lists generates
-// no row. Two Recipes claiming one key and When are refused, naming both, and
+// no row, though its imports are resolved like every other's. Two Recipes claiming one key and When are refused, naming both, and
 // no table is written, since a table naming one of them would decide which
 // Component a resource of that kind is — unless the hand table writes the
 // rows of all of them but one itself, each Recipe it names then generating no
@@ -216,13 +216,13 @@ func generate(h *hubCatalog, f format, hand cloudimport.Table) ([]cloudimport.Ro
 			continue
 		}
 		identity := f.capability + "/" + name + ":" + r.Metadata.Version
-		if notImported[name] {
-			notes = append(notes, identity+": no row, since the hand table lists it in notImported")
-			continue
-		}
 		src, err := h.read(r)
 		if err != nil {
 			return nil, notes, err
+		}
+		if notImported[name] {
+			notes = append(notes, identity+": no row, since the hand table lists it in notImported")
+			continue
 		}
 		row, why := f.extract(src)
 		if row.Key == "" {
@@ -238,7 +238,7 @@ func generate(h *hubCatalog, f format, hand cloudimport.Table) ([]cloudimport.Ro
 		row.Component, row.Recipe, row.Origin = src.component, name, "generated "+src.path
 		row.Category, row.Traits = labelsOf(labels)
 		claims = append(claims, claim{row: row, identity: identity})
-		notes = append(notes, identity+": "+row.Key+whenNote(row)+" -> "+row.Component)
+		notes = append(notes, identity+": "+row.Key+cloudimport.WhenText(row.When)+" -> "+row.Component)
 	}
 	if len(missing.recipes) > 0 {
 		return nil, notes, &missing
@@ -249,7 +249,7 @@ func generate(h *hubCatalog, f format, hand cloudimport.Table) ([]cloudimport.Ro
 	}
 	slices.SortFunc(rows, func(a, b cloudimport.Row) int {
 		return cmp.Or(cmp.Compare(strings.ToLower(a.Key), strings.ToLower(b.Key)),
-			cmp.Compare(claimText(a), claimText(b)), cmp.Compare(a.Recipe, b.Recipe))
+			cmp.Compare(a.Identity(), b.Identity()), cmp.Compare(a.Recipe, b.Recipe))
 	})
 	if _, err := (cloudimport.Table{Generated: rows}).Rows(); err != nil {
 		return nil, notes, err
@@ -264,7 +264,7 @@ func settle(claims []claim, handNamed map[string]bool) ([]cloudimport.Row, *clai
 	var order []string
 	groups := map[string][]claim{}
 	for _, c := range claims {
-		id := strings.ToLower(c.row.Key) + claimText(c.row)
+		id := c.row.Identity()
 		if _, seen := groups[id]; !seen {
 			order = append(order, id)
 		}
@@ -289,30 +289,6 @@ func settle(claims []claim, handNamed map[string]bool) ([]cloudimport.Row, *clai
 		return nil, &conflict
 	}
 	return rows, nil
-}
-
-// claimText writes a row's When as one text whatever the order of its
-// predicates and the case of their paths and values, empty for none, as the
-// table matches two Whens.
-func claimText(r cloudimport.Row) string {
-	return strings.ToLower(whenNote(r))
-}
-
-// whenNote writes a row's When as report text, its predicates sorted, empty
-// for none.
-func whenNote(r cloudimport.Row) string {
-	preds := make([]string, len(r.When))
-	for i, p := range r.When {
-		preds[i] = strings.Join(p.Path, ".") + " " + string(p.Op)
-		if p.Op != cloudimport.OpPresent && p.Op != cloudimport.OpAbsent {
-			preds[i] += fmt.Sprintf(" %q", p.Value)
-		}
-	}
-	slices.SortFunc(preds, func(a, b string) int { return cmp.Compare(strings.ToLower(a), strings.ToLower(b)) })
-	if len(preds) == 0 {
-		return ""
-	}
-	return " when " + strings.Join(preds, " and ")
 }
 
 // labelsOf returns a Component's category label and every other label, nil

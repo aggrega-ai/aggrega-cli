@@ -514,7 +514,7 @@ func (c *classifier) mapped(n *Node, a assessment) {
 	if a.byRow() {
 		cl.Row = a.row
 		d.Rationale = fmt.Sprintf("mapped: the row of %s%s (%s) maps it to %s, realized on %s by the Recipe %s",
-			a.row.Key, whenText(a.row.When), origin(a.row), a.row.Component, c.f.Target, a.row.Recipe)
+			a.row.Key, WhenText(a.row.When), origin(a.row), a.row.Component, c.f.Target, a.row.Recipe)
 	} else {
 		over := "no row of the table maps " + n.Type + ", and the mapping_overrides setting maps it to " + a.entity.Name
 		if a.row != nil {

@@ -201,23 +201,78 @@ func TestTheRenderedTableIsGoOfTheFormatsPackage(t *testing.T) {
 // TestAnUnresolvableImportIsRefused generates from the miniature hub with a
 // Recipe whose valuesMapping imports a MappingLibrary the hub does not hold,
 // and requires the refusal to name the Recipe and the reference and to carry
-// the library import's own condition, with no rows.
+// the library import's own condition, with no rows — whether or not the hand
+// table lists the Recipe in notImported, since a build reaching it would halt
+// there too.
 func TestAnUnresolvableImportIsRefused(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	copyTree(t, miniatureHub, root)
 	copyTree(t, "testdata/unresolvable-import", root)
-	rows, _, err := generateFromHub(root, armFormatOrFail(t), cloudimport.Table{})
-	if err == nil || rows != nil {
-		t.Fatalf("a Recipe importing an absent library generated %v, %v; want a refusal", rows, err)
-	}
-	if !errors.Is(err, libraryimport.ErrMappingLibraryNotFound()) {
-		t.Errorf("the refusal does not carry the absent library's condition: %v", err)
-	}
-	for _, want := range []string{"arm/broken-import:1.0.0", "AcmeAbsentParameters#/mappings/App"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal does not name %q: %v", want, err)
+	for _, hand := range []cloudimport.Table{{}, {NotImported: []cloudimport.NotImported{{Recipe: "broken-import",
+		Reason: "r"}}}} {
+		rows, _, err := generateFromHub(root, armFormatOrFail(t), hand)
+		if err == nil || rows != nil {
+			t.Fatalf("a Recipe importing an absent library, notImported %v, generated %v, %v; want a refusal",
+				hand.NotImported, rows, err)
 		}
+		if !errors.Is(err, libraryimport.ErrMappingLibraryNotFound()) {
+			t.Errorf("the refusal does not carry the absent library's condition: %v", err)
+		}
+		for _, want := range []string{"arm/broken-import:1.0.0", "AcmeAbsentParameters#/mappings/App"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the refusal does not name %q: %v", want, err)
+			}
+		}
+	}
+}
+
+// TestAFileImportIsReadAsTheBuildReadsIt generates from the miniature hub with
+// a module Recipe whose valuesMapping, and a Recipe whose fragment, are files
+// beside it, and requires the rows each file's text gives: the catalog's load
+// anchors the path to the Recipe's directory, as a build reads it. A file
+// import naming no file is refused, naming the Recipe.
+func TestAFileImportIsReadAsTheBuildReadsIt(t *testing.T) {
+	t.Parallel()
+	f := armFormatOrFail(t)
+	recipe := func(name, component, body string) string {
+		return "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: " + name + "\n  version: 1.0.0\n" +
+			"spec:\n  capability: arm\n  implements: " + component + ":1.0.0\n" + body
+	}
+	dir := "aggrega-catalog/recipe/arm/"
+	root := hubWith(t, map[string]string{
+		dir + "file-module/1.0.0/recipe.yaml": recipe("file-module", "core/compute/acme-legacy-app",
+			"  source:\n    kind: bicep-module-oci\n    url: oci://mcr.microsoft.com/bicep/avm/res/acme/file-app\n"+
+				"    version: 0.1.0\n  valuesMapping:\n    $import: ./mapping.tmpl\n"),
+		dir + "file-module/1.0.0/mapping.tmpl": "name: \"{{ .context.instance_id }}\"\nlogin: \"{{ .values.user }}\"\n",
+		dir + "file-fragment/1.0.0/recipe.yaml": recipe("file-fragment", "core/ai-model/acme-endpoint",
+			"  artifacts:\n    vault.yaml:\n      $import: ./vault.yaml\n"),
+		dir + "file-fragment/1.0.0/vault.yaml": "resources:\n  {{ capitalizedWords .context.instance_id }}:\n" +
+			"    type: Microsoft.Acme/vaults\n    kind: Standard\n",
+	})
+	rows, notes, err := generateFromHub(root, f, cloudimport.Table{})
+	if err != nil {
+		t.Fatalf("generate: %v (%v)", err, notes)
+	}
+	got := map[string]cloudimport.Row{}
+	for _, r := range rows {
+		got[r.Recipe] = r
+	}
+	if r := got["file-module"]; r.Key != "avm/res/acme/file-app" || !reflect.DeepEqual(r.Values,
+		[]cloudimport.Placement{{From: []string{"login"}, Key: "user"}}) {
+		t.Errorf("the module Recipe whose valuesMapping is a file gave %#v", r)
+	}
+	if r := got["file-fragment"]; r.Key != "Microsoft.Acme/vaults" || len(r.When) != 1 || r.When[0].Value != "Standard" {
+		t.Errorf("the Recipe whose fragment is a file gave %#v", r)
+	}
+
+	if err := os.Remove(filepath.Join(root, filepath.FromSlash(dir+"file-fragment/1.0.0/vault.yaml"))); err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err = generateFromHub(root, f, cloudimport.Table{})
+	var refused *importError
+	if !errors.As(err, &refused) || rows != nil || !strings.Contains(err.Error(), "arm/file-fragment:1.0.0") {
+		t.Errorf("a fragment file naming no file gave %v, %v; want a refusal naming the Recipe", rows, err)
 	}
 }
 

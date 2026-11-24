@@ -91,7 +91,7 @@ func extractARM(r recipeSource) (cloudimport.Row, string) {
 		}
 		doc := readTemplateYAML(r.valuesMapping)
 		row := cloudimport.Row{Key: module, Form: cloudimport.FormAVM, When: kindWhen(doc.leaves)}
-		row.Values, row.Infra = wholeValues(doc.leaves)
+		row.Values, row.Infra = wholeValues(doc, doc.leaves)
 		row.Overrides = headerOverrides(r.document)
 		row.Provides = moduleOutputs(r.provides, symbols)
 		return row, ""
@@ -209,7 +209,7 @@ func fragmentResource(text string, symbols []string) resource {
 			whole = &doc.leaves[i]
 			continue
 		}
-		beneath = append(beneath, leaf{path: l.path[2:], value: l.value, conditional: l.conditional})
+		beneath = append(beneath, leaf{path: l.path[2:], value: l.value, at: l.at, conditional: l.conditional})
 	}
 	switch {
 	case whole != nil:
@@ -218,18 +218,18 @@ func fragmentResource(text string, symbols []string) resource {
 			return resource{why: "its fragment writes the resource keyed by the instance's symbol as " +
 				fmt.Sprintf("%q", whole.value) + ", neither lines nor a dict written with toJson"}
 		}
-		return dictResource(text)
+		return dictResource(doc)
 	case len(beneath) > 0:
-		return lineResource(beneath)
+		return lineResource(doc, beneath)
 	case empty:
 		return resource{why: "its fragment writes no resource"}
 	}
 	return resource{why: "its fragment keys no resource by the instance's symbol alone"}
 }
 
-// lineResource reads a resource written as lines, its leaves' paths beneath
-// the resource.
-func lineResource(leaves []leaf) resource {
+// lineResource reads a resource of doc written as lines, its leaves' paths
+// beneath the resource.
+func lineResource(doc templateDoc, leaves []leaf) resource {
 	var typ string
 	for _, l := range leaves {
 		switch {
@@ -244,7 +244,7 @@ func lineResource(leaves []leaf) resource {
 			"type %q, which is no literal resource type", typ)}
 	}
 	out := resource{key: typ, when: kindWhen(leaves)}
-	out.values, out.infra = wholeValues(leaves)
+	out.values, out.infra = wholeValues(doc, leaves)
 	return out
 }
 
@@ -253,13 +253,12 @@ func lineResource(leaves []leaf) resource {
 type dictCall map[string]string
 
 // dictResource reads the resource a fragment builds with dict calls.
-func dictResource(text string) resource {
-	tree, err := parseTemplate(text)
-	if err != nil {
-		return resource{why: "its fragment does not parse as a template: " + err.Error()}
+func dictResource(doc templateDoc) resource {
+	if doc.root == nil {
+		return resource{why: "its fragment does not parse as a template"}
 	}
 	var calls []dictCall
-	walkCommands(tree.Root, func(args []argument) {
+	eachCommand(doc.root, func(args []argument) {
 		if len(args) == 0 || args[0].kind != argIdentifier || args[0].text != "dict" {
 			return
 		}
@@ -332,16 +331,18 @@ func kindWhen(leaves []leaf) []cloudimport.Pred {
 	return nil
 }
 
-// wholeValues returns each leaf written as one action reading a value of the
-// Component whole, placed under that value's key, and each written as one
-// action reading an infra key whole other than an override, placed under that
-// key, both in the order written. A path written as two keys gives neither.
-func wholeValues(leaves []leaf) (values, infra []cloudimport.Placement) {
+// wholeValues returns each leaf of doc written as one action reading a value
+// of the Component whole, placed under that value's key, and each written as
+// one action reading an infra key whole other than an override, placed under
+// that key, both in the order written. A value written where the dot is not
+// the data the template is handed — inside a with or a range — reads no value
+// of the Component, and a path written as two keys gives neither.
+func wholeValues(doc templateDoc, leaves []leaf) (values, infra []cloudimport.Placement) {
 	var all []cloudimport.Placement
 	var pillar []bool
 	for _, l := range leaves {
 		field, ok := wholeField(l.value)
-		if !ok {
+		if !ok || !doc.readsData(l) {
 			continue
 		}
 		var key string
@@ -385,7 +386,7 @@ var moduleOutput = regexp.MustCompile(`^\[reference\('\x00'\)\.outputs\.([A-Za-z
 func moduleOutputs(provides []entry, symbols []string) []cloudimport.Placement {
 	var out []cloudimport.Placement
 	for _, e := range provides {
-		shape, ok := pointerShape(e.value, symbols)
+		shape, ok := shapeOf(e.value, symbols)
 		if !ok {
 			continue
 		}
@@ -409,7 +410,7 @@ var (
 func resourceIdentifiers(provides []entry, symbols []string, key string) []cloudimport.Placement {
 	var out []cloudimport.Placement
 	for _, e := range provides {
-		shape, ok := pointerShape(e.value, symbols)
+		shape, ok := shapeOf(e.value, symbols)
 		if !ok {
 			continue
 		}
@@ -427,17 +428,6 @@ const (
 	symbolMark = "\x00"
 	actionMark = "\x01"
 )
-
-// pointerShape returns value's text with each action writing a symbol
-// spelling written as symbolMark and every other action as actionMark; false
-// where the value does not parse, or branches.
-func pointerShape(value string, symbols []string) (string, bool) {
-	tree, err := parseTemplate(value)
-	if err != nil {
-		return "", false
-	}
-	return shapeOf(tree, symbols)
-}
 
 // overridesHeader is the comment line opening the block in which a Recipe
 // lists the infra.overrides keys it reads.

@@ -9,13 +9,15 @@ import (
 	"strconv"
 	"strings"
 	"text/template/parse"
+
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 )
 
 // A Recipe's fragments and valuesMapping are YAML written as Go templates. The
 // readers below read such text as it is written and evaluate nothing: the
 // structure the YAML lines give, the actions a value is written with, and the
-// calls an action makes, parsed by the standard library's template parser with
-// the functions a build supplies left unchecked.
+// calls an action makes, parsed with the build's own function set and walked
+// by the walk every reader of a template's pipelines shares.
 
 // span is one action of a line: where it starts and ends, and its text less
 // its delimiters and trim markers.
@@ -82,19 +84,49 @@ func unquote(value string) string {
 }
 
 // leaf is one value a template writes at a path: each mapping key, and each
-// list item by its index in decimal. conditional reports that an if or with
-// branch writes it.
+// list item by its index in decimal. at is where the value starts in the
+// template's text, and conditional reports that an if, with or range branch
+// writes it.
 type leaf struct {
 	path        []string
 	value       string
+	at          int
 	conditional bool
 }
 
 // templateDoc is what readTemplateYAML reads of a template: its leaves in the
-// order written, and the text of each of its actions.
+// order written, the text of each of its actions, its parse tree's root, nil
+// where the text does not parse, and, for each pipeline by where it starts,
+// whether the dot there is the data the template is handed.
 type templateDoc struct {
 	leaves  []leaf
 	actions []string
+	root    parse.Node
+	pipes   []pipeAt
+}
+
+// pipeAt is one pipeline of a template: where it starts in the text, and
+// whether the dot there is the data the template is handed.
+type pipeAt struct {
+	pos       int
+	dotIsData bool
+}
+
+// readsData reports whether every action l's value is written with sees the
+// dot as the data the template is handed — outside the body of a with or a
+// range, which rebind it — so a field the value reads is the field of that
+// data. false where the template does not parse, or the value holds no action.
+func (d templateDoc) readsData(l leaf) bool {
+	seen := false
+	for _, p := range d.pipes {
+		if p.pos >= l.at && p.pos < l.at+len(l.value) {
+			if !p.dotIsData {
+				return false
+			}
+			seen = true
+		}
+	}
+	return seen
 }
 
 // blockScalar matches a YAML block scalar's indicator, after which the more
@@ -106,7 +138,8 @@ var blockScalar = regexp.MustCompile(`^[|>][-+0-9]*(\s+#.*)?$`)
 // other line is a mapping key or a list item placed by its indentation. A
 // value written inside a range, a define or a block is not a leaf: which key
 // or index it is written at is the template's to decide. A line within a block
-// scalar is the scalar's text and nothing more.
+// scalar is the scalar's text and nothing more. The whole text is parsed with
+// the build's function set, and each pipeline's dot read from the shared walk.
 func readTemplateYAML(text string) templateDoc {
 	type frame struct {
 		indent int
@@ -129,7 +162,10 @@ func readTemplateYAML(text string) templateDoc {
 		}
 		return append(out, last)
 	}
+	offset := 0
 	for _, raw := range strings.Split(text, "\n") {
+		lineStart := offset
+		offset += len(raw) + 1
 		line := strings.TrimRight(raw, " \t\r")
 		spans := scanActions(line)
 		for _, s := range spans {
@@ -154,6 +190,7 @@ func readTemplateYAML(text string) templateDoc {
 		}
 		hidden := slices.ContainsFunc(control, func(c string) bool { return c != "if" && c != "with" })
 		conditional := len(control) > 0
+		restAt := lineStart + indent
 		rest := line[indent:]
 		item := false
 		for rest == "-" || strings.HasPrefix(rest, "- ") {
@@ -171,17 +208,19 @@ func readTemplateYAML(text string) templateDoc {
 			stack = append(stack, frame{indent: indent, seg: strconv.Itoa(index), item: true, id: ids})
 			after := strings.TrimLeft(rest[1:], " ")
 			indent += len(rest) - len(after)
+			restAt += len(rest) - len(after)
 			rest, item = after, true
 		}
 		if rest == "" {
 			continue
 		}
-		key, value, isKey := splitKey(rest)
+		key, value, valueAt, isKey := splitKey(rest)
 		if !isKey {
 			if item && !hidden {
 				top := stack[len(stack)-1]
 				stack = stack[:len(stack)-1]
-				doc.leaves = append(doc.leaves, leaf{path: pathOf(top.seg), value: rest, conditional: conditional})
+				doc.leaves = append(doc.leaves, leaf{path: pathOf(top.seg), value: rest, at: restAt,
+					conditional: conditional})
 				stack = append(stack, top)
 			}
 			continue
@@ -196,8 +235,15 @@ func readTemplateYAML(text string) templateDoc {
 		case blockScalar.MatchString(value):
 			scalar = indent
 		case !hidden:
-			doc.leaves = append(doc.leaves, leaf{path: pathOf(key), value: value, conditional: conditional})
+			doc.leaves = append(doc.leaves, leaf{path: pathOf(key), value: value, at: restAt + valueAt,
+				conditional: conditional})
 		}
+	}
+	if root, err := gotmpl.ParseTree(text, "{{", "}}"); err == nil {
+		doc.root = root
+		gotmpl.WalkPipelines(root, func(p *parse.PipeNode, dotIsData bool) {
+			doc.pipes = append(doc.pipes, pipeAt{pos: int(p.Pos), dotIsData: dotIsData})
+		})
 	}
 	return doc
 }
@@ -235,8 +281,9 @@ func branch(open []string, inner string) []string {
 // splitKey splits a YAML line, less its indentation and any list dash, into a
 // mapping key and its value at the first colon outside an action that a space
 // or the line's end follows; a key written in quotes is read up to its closing
-// quote. false where the line is a scalar.
-func splitKey(rest string) (key, value string, ok bool) {
+// quote. valueAt is where the value starts in rest. false where the line is a
+// scalar.
+func splitKey(rest string) (key, value string, valueAt int, ok bool) {
 	spans := scanActions(rest)
 	skip := func(i int) int {
 		for _, s := range spans {
@@ -266,28 +313,37 @@ func splitKey(rest string) (key, value string, ok bool) {
 			continue
 		}
 		if rest[i] == ':' && (i+1 == len(rest) || rest[i+1] == ' ') {
-			return unquote(strings.TrimSpace(rest[:i])), strings.TrimSpace(rest[i+1:]), true
+			after := rest[i+1:]
+			value := strings.TrimSpace(after)
+			return unquote(strings.TrimSpace(rest[:i])), value, i + 1 + len(after) - len(strings.TrimLeft(after, " ")),
+				true
 		}
 	}
-	return "", "", false
+	return "", "", 0, false
 }
 
-// parseTemplate parses text as a template, leaving the functions it calls
-// unchecked, since the generator holds none of the functions a build supplies.
-func parseTemplate(text string) (*parse.Tree, error) {
-	t := parse.New("recipe")
-	t.Mode = parse.SkipFuncCheck
-	return t.Parse(text, "", "", map[string]*parse.Tree{})
+// rootNodes returns the nodes of text's parse tree's root, parsed with the
+// build's function set; false where text does not parse.
+func rootNodes(text string) ([]parse.Node, bool) {
+	root, err := gotmpl.ParseTree(text, "{{", "}}")
+	if err != nil {
+		return nil, false
+	}
+	list, ok := root.(*parse.ListNode)
+	if !ok || list == nil {
+		return nil, false
+	}
+	return list.Nodes, true
 }
 
 // wholeField returns the field a value reads where it is one action reading
 // that field whole and nothing else, quoted or not, such as .values.user.
 func wholeField(value string) (string, bool) {
-	tree, err := parseTemplate(unquote(strings.TrimSpace(value)))
-	if err != nil || tree.Root == nil || len(tree.Root.Nodes) != 1 {
+	nodes, ok := rootNodes(unquote(strings.TrimSpace(value)))
+	if !ok || len(nodes) != 1 {
 		return "", false
 	}
-	action, ok := tree.Root.Nodes[0].(*parse.ActionNode)
+	action, ok := nodes[0].(*parse.ActionNode)
 	if !ok || len(action.Pipe.Decl) != 0 || len(action.Pipe.Cmds) != 1 || len(action.Pipe.Cmds[0].Args) != 1 {
 		return "", false
 	}
@@ -298,15 +354,16 @@ func wholeField(value string) (string, bool) {
 	return "." + strings.Join(field.Ident, "."), true
 }
 
-// shapeOf returns the text tree writes with each action writing a symbol
+// shapeOf returns the text value writes with each action writing a symbol
 // spelling written as symbolMark and every other action as actionMark; false
-// where the tree branches or ranges.
-func shapeOf(tree *parse.Tree, symbols []string) (string, bool) {
-	if tree.Root == nil {
+// where the value does not parse, or branches or ranges.
+func shapeOf(value string, symbols []string) (string, bool) {
+	nodes, ok := rootNodes(value)
+	if !ok {
 		return "", false
 	}
 	var b strings.Builder
-	for _, n := range tree.Root.Nodes {
+	for _, n := range nodes {
 		switch n := n.(type) {
 		case *parse.TextNode:
 			b.Write(n.Text)
@@ -341,60 +398,28 @@ type argument struct {
 	kind argKind
 }
 
-// walkCommands calls visit with the arguments of every command node beneath n,
-// a command's own before those of the commands its arguments hold, in the order
-// the template writes them.
-func walkCommands(n parse.Node, visit func([]argument)) {
-	switch n := n.(type) {
-	case *parse.ListNode:
-		if n == nil {
-			return
-		}
-		for _, c := range n.Nodes {
-			walkCommands(c, visit)
-		}
-	case *parse.ActionNode:
-		walkCommands(n.Pipe, visit)
-	case *parse.PipeNode:
-		if n == nil {
-			return
-		}
-		for _, c := range n.Cmds {
-			walkCommands(c, visit)
-		}
-	case *parse.CommandNode:
-		args := make([]argument, len(n.Args))
-		for i, a := range n.Args {
-			switch a := a.(type) {
-			case *parse.IdentifierNode:
-				args[i] = argument{text: a.Ident, kind: argIdentifier}
-			case *parse.StringNode:
-				args[i] = argument{text: a.Text, kind: argString}
-			case *parse.BoolNode:
-				if a.True {
-					args[i] = argument{text: "true", kind: argTrue}
+// eachCommand calls visit with the arguments of every command of every
+// pipeline beneath root, in the order the shared walk visits the pipelines.
+func eachCommand(root parse.Node, visit func([]argument)) {
+	gotmpl.WalkPipelines(root, func(p *parse.PipeNode, _ bool) {
+		for _, cmd := range p.Cmds {
+			if cmd == nil {
+				continue
+			}
+			args := make([]argument, len(cmd.Args))
+			for i, a := range cmd.Args {
+				switch a := a.(type) {
+				case *parse.IdentifierNode:
+					args[i] = argument{text: a.Ident, kind: argIdentifier}
+				case *parse.StringNode:
+					args[i] = argument{text: a.Text, kind: argString}
+				case *parse.BoolNode:
+					if a.True {
+						args[i] = argument{text: "true", kind: argTrue}
+					}
 				}
 			}
+			visit(args)
 		}
-		visit(args)
-		for _, a := range n.Args {
-			walkCommands(a, visit)
-		}
-	case *parse.ChainNode:
-		walkCommands(n.Node, visit)
-	case *parse.IfNode:
-		walkCommands(n.Pipe, visit)
-		walkCommands(n.List, visit)
-		walkCommands(n.ElseList, visit)
-	case *parse.RangeNode:
-		walkCommands(n.Pipe, visit)
-		walkCommands(n.List, visit)
-		walkCommands(n.ElseList, visit)
-	case *parse.WithNode:
-		walkCommands(n.Pipe, visit)
-		walkCommands(n.List, visit)
-		walkCommands(n.ElseList, visit)
-	case *parse.TemplateNode:
-		walkCommands(n.Pipe, visit)
-	}
+	})
 }
