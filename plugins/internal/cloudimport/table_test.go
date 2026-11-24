@@ -143,3 +143,18 @@ func TestHandRowsNeverContradictSilently(t *testing.T) {
 		}
 	})
 }
+
+func TestHandRowsMergeWithTheirGeneratedRowRegardlessOfCase(t *testing.T) {
+	gen := generatedSitesRow()
+	gen.When = []Pred{{Path: []string{"kind"}, Op: OpContains, Value: "functionapp"}}
+	hand := Row{Key: "microsoft.web/sites", Origin: "hand",
+		When: []Pred{{Path: []string{"Kind"}, Op: OpContains, Value: "FunctionApp"}},
+		Env:  &EnvList{Path: []string{"properties", "siteConfig", "appSettings"}, Name: "name", Value: "value"}}
+	rows, err := Table{Generated: []Row{gen}, Hand: []Row{hand}}.Rows()
+	if err != nil {
+		t.Fatalf("Rows() error = %v", err)
+	}
+	if len(rows) != 1 || rows[0].Key != sitesType || rows[0].Env != hand.Env {
+		t.Fatalf("rows = %+v, want the generated row of %s with the hand row's Env merged into it", rows, sitesType)
+	}
+}

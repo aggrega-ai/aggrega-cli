@@ -38,6 +38,12 @@ func (r Row) Mapping() importer.Mapping {
 // mapping_overrides entry can map its type. ref names n in the decision and
 // the entity.
 //
+// The kit looks a type up exactly as it is written. The one-row arm is keyed
+// by n's type as the source writes it, not by the row's Key, so a row that
+// [Table.Resolve] matched to a type written in another case maps n. A
+// mapping_overrides entry is matched as the kit matches it: keyed by the type
+// exactly as the source writes it.
+//
 // It returns the decision, the entity — the reference to the chosen
 // Component, or the kit's draft — and whether n is mapped: whether the
 // decision references a Component. A catalog view lacking the row's Component

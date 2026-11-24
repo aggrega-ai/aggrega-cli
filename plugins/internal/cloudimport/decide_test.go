@@ -114,3 +114,16 @@ func TestDecideWithNoRowDrafts(t *testing.T) {
 		t.Errorf("Decide mapped no node")
 	}
 }
+
+func TestDecideReferencesARowOfTheTypeWrittenInAnotherCase(t *testing.T) {
+	n := &Node{ID: "flexibleServer", Type: "Microsoft.DBForPostgreSQL/flexibleServers", Form: FormRaw}
+	row, _, ok := Table{Generated: []Row{*postgresRow()}}.Resolve(n, &Graph{})
+	if !ok {
+		t.Fatalf("Resolve found no row of %s for the type %s", serverType, n.Type)
+	}
+	in := request("", component(postgres, datastoreLabels("postgres")))
+	_, entity, mapped := Decide(in, n, &row, "flexibleServer")
+	if !mapped || entity.Mode != "reference" || entity.Name != postgres {
+		t.Fatalf("Decide = %+v, mapped %v; want a reference to %s", entity, mapped, postgres)
+	}
+}

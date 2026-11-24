@@ -6,27 +6,35 @@ package cloudimport
 import (
 	"bytes"
 	"encoding/json"
+	"maps"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 )
 
-// Resolve returns the row of t that maps n. The rows keyed by n's type are
-// tried most predicates first, rows of as many predicates in the order
-// [Table.Rows] returns them, and the first whose When holds of n is n's row,
-// returned with true. A predicate reads the value n writes at its path, and a
-// parameter there as its literal default, through a default naming another
-// parameter; a value the import cannot read — a parameter with no literal
-// default, a reference, deploy-time text — leaves the predicate undecided, as
-// does a path no equivalence of the row translates into the form n is written
-// in. Where a row tried before the one that holds is undecided, or no row
-// holds and one is undecided, which row maps n depends on a value set only
-// when the source deploys: Resolve returns no row, and the rows n could take
-// in the order tried, for the caller to report the discriminator unresolved.
-// A type no row keys, or whose every row's When fails, returns no row and no
-// candidate. A table whose rows Rows refuses resolves no node. The rows are
-// returned as the table holds them; [Row.For] reads one in n's form.
+// Resolve returns the row of t that maps n. The rows keyed by n's type,
+// regardless of case, are tried most predicates first, rows of as many
+// predicates in the order [Table.Rows] returns them, and the first whose When
+// holds of n is n's row, returned with true. A predicate reads the value n
+// writes at its path, and a parameter there as its literal default, through a
+// default naming another parameter; a value the import cannot read — a
+// parameter with no literal default, a reference, deploy-time text — leaves
+// the predicate undecided, as does a path no equivalence of the row
+// translates into the form n is written in. Where a row tried before the one
+// that holds is undecided, or no row holds and one is undecided, which row
+// maps n depends on a value set only when the source deploys: Resolve returns
+// no row, and the rows n could take in the order tried, for the caller to
+// report the discriminator unresolved. A type no row keys, or whose every
+// row's When fails, returns no row and no candidate. A table whose rows Rows
+// refuses resolves no node. The rows are returned as the table holds them,
+// sharing its slices and maps; [Row.For] reads one in n's form.
+//
+// Types, property names and the values a predicate tests are matched
+// regardless of case, as Azure Resource Manager compares them: a template may
+// write Microsoft.DBForPostgreSQL/flexibleServers for a row keyed
+// Microsoft.DBforPostgreSQL/flexibleServers, or FunctionApp for a predicate
+// testing functionapp.
 func (t Table) Resolve(n *Node, g *Graph) (Row, []Row, bool) {
 	if n == nil {
 		return Row{}, nil, false
@@ -37,7 +45,7 @@ func (t Table) Resolve(n *Node, g *Graph) (Row, []Row, bool) {
 	}
 	var keyed []Row
 	for _, r := range rows {
-		if r.Key == n.Type {
+		if strings.EqualFold(r.Key, n.Type) {
 			keyed = append(keyed, r)
 		}
 	}
@@ -67,7 +75,8 @@ func (t Table) Resolve(n *Node, g *Graph) (Row, []Row, bool) {
 // environment list whose path no equivalence covers is left out of the row
 // returned. Where form and r.Form are both raw, or both module forms, r is
 // returned as is, Form set to form. An empty Form is the raw form. The row r
-// is left as it is.
+// is left as it is, and the row returned shares with it the slices and maps
+// For does not translate.
 func (r Row) For(form Form) Row {
 	out := r
 	out.Form = form
@@ -114,7 +123,8 @@ func translatePlacements(ps []Placement, eqs []Equivalence, toModule bool) []Pla
 
 // translate returns path in the module form where toModule is true, and in
 // the raw form otherwise, through the equivalence whose path in path's own
-// form is the longest path begins with; the first of equal length is taken.
+// form is the longest path begins with, its segments compared regardless of
+// case; the first of equal length is taken.
 func translate(path []string, eqs []Equivalence, toModule bool) ([]string, bool) {
 	best, length := -1, 0
 	for i, e := range eqs {
@@ -122,7 +132,7 @@ func translate(path []string, eqs []Equivalence, toModule bool) ([]string, bool)
 		if !toModule {
 			from = e.Module
 		}
-		if len(from) > length && len(from) <= len(path) && slices.Equal(path[:len(from)], from) {
+		if len(from) > length && len(from) <= len(path) && slices.EqualFunc(path[:len(from)], from, strings.EqualFold) {
 			best, length = i, len(from)
 		}
 	}
@@ -190,8 +200,9 @@ func (rd reader) row(r Row, n *Node) truth {
 	return result
 }
 
-// pred returns whether p holds of the value body writes at p's path. An
-// operator outside the vocabulary never holds.
+// pred returns whether p holds of the value body writes at p's path, the text
+// compared with p's Value regardless of case. An operator outside the
+// vocabulary never holds.
 func (rd reader) pred(p Pred, body []Prop) truth {
 	st, v := rd.at(body, p.Path)
 	if st == stateUndecided {
@@ -208,17 +219,20 @@ func (rd reader) pred(p Pred, body []Prop) truth {
 			return truthFails
 		}
 		text, read := rd.text(v, 0)
-		switch {
-		case read == stateUndecided:
+		switch read {
+		case stateUndecided:
 			return truthUndecided
-		case read == stateNone:
+		case stateNone:
 			return truthFails
-		case p.Op == OpEquals:
-			return truthOf(text == p.Value)
-		case p.Op == OpPrefix:
-			return truthOf(strings.HasPrefix(text, p.Value))
+		}
+		text, want := strings.ToLower(text), strings.ToLower(p.Value)
+		switch p.Op {
+		case OpEquals:
+			return truthOf(text == want)
+		case OpPrefix:
+			return truthOf(strings.HasPrefix(text, want))
 		default:
-			return truthOf(strings.Contains(text, p.Value))
+			return truthOf(strings.Contains(text, want))
 		}
 	}
 	return truthFails
@@ -234,8 +248,8 @@ func truthOf(b bool) truth {
 // at returns what body writes at path: stateRead and the leaf value there, nil
 // for an object or an array; stateNone where nothing is written there; and
 // stateUndecided where the path runs through a value the import cannot read.
-// A member is found by its name, the first of that name, and an array's item
-// by its index in decimal. A path running through a literal, or a parameter
+// A member is found by its name regardless of case, and an array's item by
+// its index in decimal. A path running through a literal, or a parameter
 // whose default is one, is read inside the literal's JSON.
 func (rd reader) at(body []Prop, path []string) (state, Value) {
 	if len(path) == 0 {
@@ -266,11 +280,17 @@ func (rd reader) at(body []Prop, path []string) (state, Value) {
 	return stateNone, nil
 }
 
-// child returns the member of props named seg, or where props is empty the
-// item of items at the index seg writes in decimal.
+// child returns the member of props named seg — the first of exactly that
+// name, else the first whose name differs from it only in case — or where
+// props is empty the item of items at the index seg writes in decimal.
 func child(props, items []Prop, seg string) (Prop, bool) {
 	for _, p := range props {
 		if p.Name == seg {
+			return p, true
+		}
+	}
+	for _, p := range props {
+		if strings.EqualFold(p.Name, seg) {
 			return p, true
 		}
 	}
@@ -289,12 +309,13 @@ func index(seg string, n int) (int, bool) {
 	return i, true
 }
 
-// descend returns the JSON at path inside raw.
+// descend returns the JSON at path inside raw, an object's member found as
+// member finds it.
 func descend(raw json.RawMessage, path []string) (json.RawMessage, bool) {
 	for _, seg := range path {
 		var object map[string]json.RawMessage
 		if json.Unmarshal(raw, &object) == nil && object != nil {
-			next, ok := object[seg]
+			next, ok := member(object, seg)
 			if !ok {
 				return nil, false
 			}
@@ -312,6 +333,21 @@ func descend(raw json.RawMessage, path []string) (json.RawMessage, bool) {
 		raw = array[i]
 	}
 	return raw, true
+}
+
+// member returns the member of object named seg: the member of exactly that
+// name, else the first in sorted order whose name differs from it only in
+// case.
+func member(object map[string]json.RawMessage, seg string) (json.RawMessage, bool) {
+	if v, ok := object[seg]; ok {
+		return v, true
+	}
+	for _, name := range slices.Sorted(maps.Keys(object)) {
+		if strings.EqualFold(name, seg) {
+			return object[name], true
+		}
+	}
+	return nil, false
 }
 
 // literal returns the JSON v holds: a literal's, or a parameter's literal

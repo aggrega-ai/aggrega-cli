@@ -233,3 +233,52 @@ func TestRowForDropsWhatNoEquivalenceCovers(t *testing.T) {
 		t.Errorf("For changed the row it was called on: %+v", raw)
 	}
 }
+
+func TestResolveMatchesTheTypeRegardlessOfCase(t *testing.T) {
+	table := Table{Generated: []Row{*postgresRow()}}
+	n := &Node{ID: "flexibleServer", Type: "Microsoft.DBForPostgreSQL/flexibleServers", Form: FormRaw}
+	row, could, ok := table.Resolve(n, &Graph{})
+	if !ok || row.Key != serverType || could != nil {
+		t.Fatalf("Resolve = %q, %q, %v; want the %s row", row.Key, recipes(could), ok, serverType)
+	}
+}
+
+func TestResolveMatchesAValueRegardlessOfCase(t *testing.T) {
+	for _, tc := range []struct {
+		op          PredOp
+		value, kind string
+	}{
+		{OpContains, "functionapp", `"FunctionApp,Linux"`},
+		{OpPrefix, "functionapp", `"FunctionApp,Linux"`},
+		{OpEquals, "functionapp,linux", `"FunctionApp,Linux"`},
+	} {
+		table := sitesTable()
+		table.Generated[1].When = []Pred{{Path: []string{"kind"}, Op: tc.op, Value: tc.value}}
+		row, _, ok := table.Resolve(site(literal(tc.kind)), &Graph{})
+		if !ok || row.Recipe != "function-azure-functions" {
+			t.Errorf("kind %s %s %q: Resolve = %q, %v; want function-azure-functions", tc.kind, tc.op, tc.value,
+				row.Recipe, ok)
+		}
+	}
+}
+
+func TestResolveMatchesAPathRegardlessOfCase(t *testing.T) {
+	when := []Pred{{Path: []string{"properties", "siteConfig", "linuxFxVersion"}, Op: OpPrefix, Value: "DOCKER|"}}
+	table := sitesTable()
+	table.Generated[1].When = when
+	for _, tc := range []struct {
+		name string
+		body []Prop
+	}{
+		{"a member", []Prop{{Name: "Properties", Props: []Prop{{Name: "SiteConfig", Props: []Prop{
+			{Name: "LinuxFxVersion", Value: literal(`"DOCKER|nginx"`)}}}}}}},
+		{"inside a literal", []Prop{{Name: "Properties",
+			Value: literal(`{"SiteConfig": {"LinuxFxVersion": "DOCKER|nginx"}}`)}}},
+	} {
+		name, n := tc.name, &Node{ID: "web", Type: sitesType, Form: FormRaw, Body: tc.body}
+		if row, _, ok := table.Resolve(n, &Graph{}); !ok || row.Recipe != "function-azure-functions" {
+			t.Errorf("%s: Resolve = %q, %v; want the row whose When reads properties.siteConfig.linuxFxVersion",
+				name, row.Recipe, ok)
+		}
+	}
+}

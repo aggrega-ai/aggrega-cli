@@ -98,8 +98,13 @@ type EnvList struct {
 // where the node's properties go in the instance. Every path of a row — of its
 // When, its placements and its Env — is written in Form; [Row.For] reads them
 // in another.
+//
+// A row is read and never changed: the rows [Table.Rows], [Table.Resolve] and
+// [Row.For] return share slices and maps with the table's own rows and with
+// each other.
 type Row struct {
-	// Key is the vendor type of the nodes the row maps.
+	// Key is the vendor type of the nodes the row maps, matched against a
+	// node's type regardless of case.
 	Key string
 	// Component is the catalog Component the nodes are instances of.
 	Component string
@@ -202,15 +207,19 @@ func (d *DuplicateRow) Error() string {
 
 // Rows returns the table's rows: each generated row in order, the hand row of
 // its key and When merged into it, then each hand row no generated row shares
-// a key and When with, in order. Two Whens are one where they hold the same
-// predicates, in any order. A merged row takes, field by field, the hand
-// value where the hand row sets one and the generated value otherwise; a list
-// field is merged entry by entry, an entry matched by its key, and a hand
-// entry of a key the generated row does not set is added after the generated
-// ones. A hand value set over a different generated one needs a written reason
-// in the hand row's Supersedes: without one, Rows returns a [*Contradiction]
-// naming the key, the field and both values. Two rows of one origin sharing a
-// key and When return a [*DuplicateRow].
+// a key and When with, in order. Two keys are one where they differ only in
+// case, and two Whens are one where they hold the same predicates in any
+// order, their paths and values differing only in case. A merged row takes,
+// field by field, the hand value where the hand row sets one and the
+// generated value otherwise; a list field is merged entry by entry, an entry
+// matched by its key, and a hand entry of a key the generated row does not
+// set is added after the generated ones. A hand value set over a different
+// generated one needs a written reason in the hand row's Supersedes: without
+// one, Rows returns a [*Contradiction] naming the key, the field and both
+// values. Two rows of one origin sharing a key and When return a
+// [*DuplicateRow]. A merged row shares the slices and maps of the fields it
+// takes with the generated and the hand row, and a row left unmerged is the
+// table's own: none is to be changed.
 func (t Table) Rows() ([]Row, error) {
 	if err := duplicates(t.Generated, "generated"); err != nil {
 		return nil, err
@@ -259,15 +268,17 @@ func duplicates(rows []Row, origin string) error {
 	return nil
 }
 
-// identity is the text of a row's key and When, its predicates in sorted
-// order, so two Whens holding the same predicates share one identity.
+// identity is the text of a row's key and When, lowercased, its predicates in
+// sorted order, so two rows whose keys, paths and values differ only in case,
+// and whose Whens hold the same predicates in any order, share one identity.
 func identity(r Row) string {
 	preds := make([]string, len(r.When))
 	for i, p := range r.When {
-		preds[i] = strings.Join(p.Path, "\x1f") + "\x1e" + string(p.Op) + "\x1e" + p.Value
+		preds[i] = strings.ToLower(strings.Join(p.Path, "\x1f")) + "\x1e" + string(p.Op) + "\x1e" +
+			strings.ToLower(p.Value)
 	}
 	slices.Sort(preds)
-	return r.Key + "\x1d" + strings.Join(preds, "\x1d")
+	return strings.ToLower(r.Key) + "\x1d" + strings.Join(preds, "\x1d")
 }
 
 // merger merges the fields of a hand row into the generated row of its key
