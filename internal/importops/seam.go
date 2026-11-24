@@ -46,7 +46,10 @@ import (
 // Recipes is the same catalog view's Recipes, FeatureRecipes and Aggregates,
 // which an import given a target drafts its Manifest from. A nil Recipes is a
 // catalog holding no Recipe, so a harness standing in for the catalog that
-// supplies none refuses every target.
+// supplies none refuses every target. Where the import's own entry in the record
+// beside the drafts lists files, Catalog and Recipes are both taken from one view
+// leaving out the Components and Recipes authored in them (viewWithout) once the
+// target, the format and the importer are settled.
 type Seam struct {
 	ImporterRes  ImporterResolver
 	ImporterLoad importersocket.ImporterLoader
@@ -74,13 +77,15 @@ type Seam struct {
 	// it nil, and nothing is fetched for it.
 	readSnapshot func(ctx context.Context, read catalogSnapshotRead) (Seam, catalogSnapshot, error)
 
-	// projectWithout is set on every real seam: it projects the same catalog view
-	// Catalog is projected from, leaving out every Component authored in a document
-	// leaveOut reports true for — the drafts an earlier import of the same format
-	// wrote into a catalog folder the view reads, which are that import's drafts
-	// rather than catalog facts ([Import]). A harness standing in for the seam
-	// leaves it nil, and its Catalog is handed to the importer as it is.
-	projectWithout func(leaveOut func(document string) bool) *abi.CatalogProjection
+	// viewWithout is set on every real seam: it returns, of one view of the same
+	// catalog Catalog and Recipes are taken from, the projection the importer is
+	// handed and the Recipe index read over it, the view leaving out every
+	// Component and Recipe authored in a document leaveOut reports true for — the
+	// drafts an earlier import of the same format wrote into a catalog folder the
+	// view reads, which are that import's drafts rather than catalog facts
+	// ([Import]). A harness standing in for the seam leaves it nil, and its Catalog
+	// and Recipes are read as they are.
+	viewWithout func(leaveOut func(document string) bool) (*abi.CatalogProjection, RecipeIndex)
 }
 
 // importerLoader returns the loader an import under ctx runs its importer
@@ -349,8 +354,9 @@ func seamOver(rw *workspaceconfig.ResolvedWorkspace, resolvePlugin PluginBytesRe
 		Importers:   cat.ImporterPlugins(),
 		Recipes:     cat,
 		loadIn:      loadIn,
-		projectWithout: func(leaveOut func(document string) bool) *abi.CatalogProjection {
-			return importersocket.ProjectCatalog(cat.WithoutComponentsAuthoredIn(leaveOut))
+		viewWithout: func(leaveOut func(document string) bool) (*abi.CatalogProjection, RecipeIndex) {
+			view := cat.WithoutEntitiesAuthoredIn(leaveOut)
+			return importersocket.ProjectCatalog(view), view
 		},
 	}
 }

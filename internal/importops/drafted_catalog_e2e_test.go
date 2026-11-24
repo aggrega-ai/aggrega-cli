@@ -92,9 +92,14 @@ spec:
 // target, with the one entry store realized by realization, none where it is
 // empty.
 func kitRelease(target, realization string) []abi.ScaffoldFile {
+	return kitReleaseOf(target, importer.ReleaseEntry{Key: "store", Realization: realization})
+}
+
+// kitReleaseOf is kitRelease with the one entry the kit writes being entry.
+func kitReleaseOf(target string, entry importer.ReleaseEntry) []abi.ScaffoldFile {
 	in := aggrega.ImportInput{Format: importopstest.DraftSetFormat, Name: "drafts.txt", Target: target}
 	entities := importer.DraftRelease(in, aggrega.EmittedEntity{Kind: "Aggregate", Name: "drafted", Mode: "draft"},
-		importer.ReleaseDraft{Entries: []importer.ReleaseEntry{{Key: "store", Realization: realization}}})
+		importer.ReleaseDraft{Entries: []importer.ReleaseEntry{entry}})
 	out := []abi.ScaffoldFile{{Path: "release.yaml", Content: entities[0].Body}}
 	if len(entities) > 1 {
 		out = append(out, abi.ScaffoldFile{Path: ManifestFileName, Content: entities[1].Body})
@@ -102,11 +107,10 @@ func kitRelease(target, realization string) []abi.ScaffoldFile {
 	return out
 }
 
-// draftedCatalogImport imports the draft set files for target over a workspace
-// whose catalog folder holds the draft-composition catalog and catalogArmRecipe,
-// into a directory of its own under a reporting delivery, failing the test where
-// the import is refused.
-func draftedCatalogImport(t *testing.T, target string, files ...abi.ScaffoldFile) Result {
+// draftedCatalogWorkspace is a workspace whose catalog folder holds the
+// draft-composition catalog and catalogArmRecipe, and which names no default
+// registry.
+func draftedCatalogWorkspace(t *testing.T) *workspaceconfig.ResolvedWorkspace {
 	t.Helper()
 	wsDir := aWorkspaceDir(t)
 	importopstest.WriteConfiguration(t, wsDir)
@@ -119,7 +123,15 @@ func draftedCatalogImport(t *testing.T, target string, files ...abi.ScaffoldFile
 	if err := os.WriteFile(filepath.Join(armDir, "x-arm.yaml"), []byte(catalogArmRecipe), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rw := resolveWorkspaceAt(t, wsDir)
+	return resolveWorkspaceAt(t, wsDir)
+}
+
+// draftedCatalogImport imports the draft set files for target over a
+// draftedCatalogWorkspace, into a directory of its own under a reporting
+// delivery, failing the test where the import is refused.
+func draftedCatalogImport(t *testing.T, target string, files ...abi.ScaffoldFile) Result {
+	t.Helper()
+	rw := draftedCatalogWorkspace(t)
 	source := importopstest.WriteSource(t, filepath.Join(t.TempDir(), "drafts.txt"),
 		importopstest.DraftSetBody(files...))
 	res, err := Import(context.Background(), rw, Options{

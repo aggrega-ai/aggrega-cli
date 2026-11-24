@@ -2580,23 +2580,35 @@ func (c *Catalog) componentOfType(typeURI string) (types.Component, bool) {
 	return c.Components[key], true
 }
 
-// WithoutComponentsAuthoredIn returns a view of c whose Component index leaves
-// out every Component authored in a catalog-directory document leaveOut reports
-// true for, so a reader of it resolves a Component name among the versions that
-// remain. A Component authored in no such document — read from a cache slot, or
-// placed in a Catalog literal — stays in view. Every other index is c's own,
-// shared rather than copied, so the view is for reading: nothing is written to it
-// or through it. c is not changed.
-func (c *Catalog) WithoutComponentsAuthoredIn(leaveOut func(document string) bool) *Catalog {
+// WithoutEntitiesAuthoredIn returns a view of c whose Component and Recipe indexes
+// leave out every entity authored in a catalog-directory document leaveOut reports
+// true for, so a reader of it resolves a Component name, a Recipe reference and
+// the Recipes implementing a component type among the entities that remain. An
+// entity authored in no such document — read from a cache slot, or placed in a
+// Catalog literal — stays in view. Every other index is c's own, shared rather
+// than copied, so the view is for reading: nothing is written to it or through
+// it. c is not changed.
+func (c *Catalog) WithoutEntitiesAuthoredIn(leaveOut func(document string) bool) *Catalog {
 	view := *c
-	view.Components = make(map[string]types.Component, len(c.Components))
-	for key, comp := range c.Components {
-		if document, ok := c.authoredDocumentOf(entityBytesKey("Component", key)); ok && leaveOut(document) {
+	view.Components = withoutAuthoredIn(c, "Component", c.Components, leaveOut)
+	view.Recipes = withoutAuthoredIn(c, "Recipe", c.Recipes, leaveOut)
+	return &view
+}
+
+// withoutAuthoredIn returns a copy of index, c's index of kind, leaving out every
+// entity c records as authored in a document leaveOut reports true for: the
+// document authoredDocumentOf answers for the entity's identity, recorded alike
+// for every kind.
+func withoutAuthoredIn[T any](c *Catalog, kind string, index map[string]T,
+	leaveOut func(document string) bool) map[string]T {
+	out := make(map[string]T, len(index))
+	for key, entity := range index {
+		if document, ok := c.authoredDocumentOf(entityBytesKey(kind, key)); ok && leaveOut(document) {
 			continue
 		}
-		view.Components[key] = comp
+		out[key] = entity
 	}
-	return &view
+	return out
 }
 
 // featureOfType is componentOfType for the Feature index: the Feature this

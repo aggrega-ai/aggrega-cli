@@ -680,11 +680,16 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	// facts: where they lie in a catalog folder the view reads — drafts an importer
 	// lays out under catalog/ beneath the workspace root — the importer would read its
 	// own earlier Component as one the catalog holds, and judge the draft against
-	// it. So the view it is handed leaves out every Component authored in a file
-	// this import's entry lists, by place alone; every other Component stays in
-	// view, one a catalog folder holds that no entry lists included.
-	if own := ownEntry(opts.Sync, rec); own != nil && seam.projectWithout != nil && len(own.Files) > 0 {
-		seam.Catalog = seam.projectWithout(listedDrafts(outputDir, *own))
+	// it, and the composition and the owed-value reading, which consult the catalog
+	// before the drafts, would read its earlier Component and Recipe in place of the
+	// ones it drafts now. So one view leaves out every Component and Recipe
+	// authored in a file this import's entry lists, by place alone, and is both
+	// handed to the importer and read by the composition and the owed-value
+	// reading; every other entity stays in view, one a catalog folder holds that no
+	// entry lists or that another format's entry lists included. The target, the
+	// format and the importer are settled above over the whole view.
+	if own := ownEntry(opts.Sync, rec); own != nil && seam.viewWithout != nil && len(own.Files) > 0 {
+		seam.Catalog, seam.Recipes = seam.viewWithout(listedDrafts(outputDir, *own))
 	}
 
 	imported, err := importersocket.ImportArtifact(ctx, resolvedImporter{plugin: importer, err: resolveErr},
