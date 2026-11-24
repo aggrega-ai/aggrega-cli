@@ -330,9 +330,9 @@ name: Publish and sign core plugins
 #                        but gh, git and the shell's own utilities. The token
 #                        reaches gh and git through their environment and is
 #                        never written to disk.
-#   publish-downloads    Once sign-and-publish has succeeded, for every release
-#                        tag, a pre-release's included, publishes the Windows
-#                        installer that release attached to the public R2
+#   publish-downloads    Once sign-and-publish has succeeded, for a final
+#                        release tag (a pre-release is skipped), publishes
+#                        the Windows installer that release attached to the public R2
 #                        bucket aggrega-downloads, at the address the Microsoft
 #                        Store listing installs from,
 #                        https://download.aggrega.ai/aggrega-cli/v<version>/aggrega-<version>-windows-amd64-setup.exe,
@@ -397,11 +397,12 @@ name: Publish and sign core plugins
 #                        It may delete the run's artifacts (actions: write) and
 #                        holds nothing else: no checkout, no action, no secret.
 #
-# publish-skills, publish-package-channels and open-winget-pull-request publish
-# final releases alone. For a tag carrying a pre-release suffix (v0.9.0-rc.1),
+# publish-skills, publish-package-channels, open-winget-pull-request and
+# publish-downloads publish final releases alone. For a tag carrying a
+# pre-release suffix (v0.9.0-rc.1),
 # a dry run's included, each is skipped by its if:, which reads
 # sign-and-publish's prerelease output, and sign-and-publish's release step
-# names the three in its log; so a pre-release run shows them skipped, not
+# names the four in its log; so a pre-release run shows them skipped, not
 # failed. On a real publish each still refuses, in its own step, any other tag
 # that is not a release tag.
 #
@@ -569,8 +570,8 @@ name: Publish and sign core plugins
 # the organization's fork of microsoft/winget-pkgs, a new branch holding one
 # commit that adds the winget manifest's three files, from which it opens a pull
 # request on microsoft/winget-pkgs. A real publish of a pre-release makes
-# record-published's write alone: the three jobs after it are skipped.
-# Beside those, a real publish writes one object, a pre-release's included:
+# record-published's write alone: the four jobs after it are skipped.
+# Beside those, a real publish of a final release writes one object:
 # publish-downloads' copy of the Windows installer in the download bucket,
 # created under the release's version and never replaced.
 #
@@ -597,8 +598,9 @@ name: Publish and sign core plugins
 # token: GitHub must accept it, and it must carry the public_repo scope; with
 # no token set, it refuses when that variable is true and otherwise says so
 # and passes — save for a tag carrying a pre-release suffix, for which
-# publish-skills, publish-package-channels and open-winget-pull-request
-# are skipped, as on a real run, so the dry run shows the run graph the real
+# publish-skills, publish-package-channels, open-winget-pull-request and
+# publish-downloads are skipped, as on a real run, so the dry run shows the
+# run graph the real
 # run would; publish-downloads refuses, naming each, an R2 setting that is not
 # set, and prints the address it would publish the Windows installer at,
 # uploading nothing; last, notarization-check reads
@@ -3259,8 +3261,9 @@ jobs:
     #
     # Whether the tag carries a pre-release suffix, true or false, as the
     # release step decides it, on a dry run too: publish-skills,
-    # publish-package-channels and open-winget-pull-request are skipped when
-    # it is true. Each reads it as not true rather than as false, so were it
+    # publish-package-channels, open-winget-pull-request and publish-downloads
+    # are skipped when it is true. Each reads it as not true rather than as
+    # false, so were it
     # ever missing, each would run as on a final release, and on a real
     # publish its own refusal of a tag that is not a release tag would fail a
     # pre-release loudly rather than a final release's channels being skipped.
@@ -3964,8 +3967,9 @@ jobs:
           # keep naming the newest final one. This is the one place the run
           # decides whether its tag is a pre-release. The step hands that on as
           # its prerelease output, true or false, written before a dry run stops
-          # so a dry run writes it too; publish-skills, publish-package-channels
-          # and open-winget-pull-request, which publish final releases alone, are
+          # so a dry run writes it too; publish-skills, publish-package-channels,
+          # open-winget-pull-request and publish-downloads, which publish final
+          # releases alone, are
           # skipped by their if: when it is true, and the log says so here.
           RELEASE_KIND=()
           PRERELEASE=false
@@ -3974,7 +3978,7 @@ jobs:
           esac
           printf 'prerelease=%s\n' "$PRERELEASE" >> "$GITHUB_OUTPUT"
           if [ "$PRERELEASE" = "true" ]; then
-            echo "publish-plugins: '$TAG' carries a pre-release suffix, so publish-skills, publish-package-channels and open-winget-pull-request are skipped on this run: aggrega-skills, the Homebrew tap and the Scoop bucket, and winget take final releases alone"
+            echo "publish-plugins: '$TAG' carries a pre-release suffix, so publish-skills, publish-package-channels, open-winget-pull-request and publish-downloads are skipped on this run: aggrega-skills, the Homebrew tap and the Scoop bucket, winget and the Microsoft Store download take final releases alone"
           fi
 
           if [ "$DRY" = "true" ]; then
@@ -4913,10 +4917,12 @@ jobs:
     # not a redirect, with a Content-Length equal to the installer's size and
     # the bytes SHA256SUMS lists.
     #
-    # It runs once sign-and-publish has succeeded, for every release tag, a
-    # pre-release's included: the address carries the version, so each
-    # release's installer takes an address of its own and leaves every other
-    # as it is. On a dry run, where no release exists, it prints the address
+    # It runs once sign-and-publish has succeeded, for a final release tag
+    # alone, like the other public channels: a pre-release is skipped by its
+    # if:, which reads sign-and-publish's prerelease output. The address
+    # carries the version, so each release's installer takes an address of its
+    # own and leaves every other as it is. On a dry run, where no release
+    # exists, it prints the address
     # it would publish and uploads nothing. On a dry run and a real publish
     # alike its first step refuses, naming each, a setting it needs that is not
     # set — the endpoint variable and the two R2 secrets — so a release never
@@ -4939,7 +4945,7 @@ jobs:
     # sign-and-publish may run beside a sign-macos skipped while macOS signing
     # is off.
     needs: [build, sign-and-publish]
-    if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' }}
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' && needs.sign-and-publish.outputs.prerelease != 'true' }}
     runs-on: ubuntu-latest
     environment: release
     timeout-minutes: 20
