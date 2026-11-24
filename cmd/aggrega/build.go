@@ -248,6 +248,7 @@ func dispatchBuildWithDiag(ctx context.Context, rw *workspaceconfig.ResolvedWork
 
 	result, err := buildops.Run(ctx, buildDispatchConfig(rw, releasePath, catalogFlagDirs, traceEnabled, run, progress, diagOut, out))
 	if err != nil {
+		progress.finishFailed()
 		return err
 	}
 

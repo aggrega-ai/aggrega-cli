@@ -333,6 +333,9 @@ type progressReporter struct {
 	// stepFailed holds, keyed by spine index, the steps their operation ended
 	// with a failure, whose rows keep the pending marker.
 	stepFailed map[int]bool
+	// failed is true once the run ended in an error (finishFailed): the bar stays
+	// where the run stopped and the step it stopped in is marked failed.
+	failed bool
 	// held is true while the drawn block is erased for a person (hold) and not yet
 	// drawn again.
 	held bool
@@ -761,6 +764,8 @@ var spinnerTickInterval = 100 * time.Millisecond
 const (
 	markDone    = "[✓] " // the check mark is U+2713
 	markPending = "[ ] "
+	// markFailed marks the step a run stopped in (finishFailed); the cross is U+2717.
+	markFailed = "[✗] "
 )
 
 func markActive(frame rune) string { return fmt.Sprintf("[%c] ", frame) }
@@ -915,9 +920,10 @@ func (p *progressReporter) pluginCompileGuestDone(done int) {
 // phase's share scaled by its internal fraction. Pre-render phases have no sub-
 // progress, so each credits its full share only once the next phase begins; the
 // plugin-compilation step and the render phase carry their own fractions. finish
-// forces 1.0 so the bar completes only when the whole build does.
+// forces 1.0 so the bar completes only when the whole build does; a run that
+// ended in an error (finishFailed) keeps the fraction it had reached.
 func (p *progressReporter) globalFraction() float64 {
-	if p.finished {
+	if p.finished && !p.failed {
 		return 1
 	}
 	// Pre-render phases credited as done: those strictly before the active spinner
@@ -1330,6 +1336,9 @@ func (p *progressReporter) rows() []string {
 		marker := markDone
 		if p.compileActive && !p.compileDone {
 			marker = markActive(frame)
+			if p.finished && p.failed {
+				marker = markFailed
+			}
 		}
 		rows = append(rows, p.composeRow(marker+compilePhaseLabel, p.elapsedStr(compileTimerKey)))
 	}
@@ -1352,6 +1361,8 @@ func (p *progressReporter) phaseRow(i int, frame rune) string {
 	switch {
 	case p.stepFailed[i]:
 		return markPending
+	case p.finished && p.failed && i == p.active && !p.stepEnded && !p.inRenderStage:
+		return markFailed
 	case p.finished:
 		if (i <= p.active || p.inRenderStage) && !p.countShort(i) {
 			return markDone
@@ -1389,6 +1400,11 @@ func (p *progressReporter) renderRowBody(frame rune) string {
 	label := p.renderLabel()
 	rendered := p.renderDone > 0 || p.inRenderStage
 	switch {
+	case p.finished && p.failed && rendered:
+		if p.compileActive && !p.compileDone {
+			return markPending + label
+		}
+		return markFailed + label
 	case p.finished && rendered:
 		return markDone + label
 	case !p.finished && rendered && !p.compileActive:
@@ -1470,6 +1486,23 @@ func (p *progressReporter) debugRenderNode(done int, nodeID string) {
 		p.renderNext += renderThrottleStep(p.renderTotal)
 	}
 	fmt.Fprintf(p.out, "  [debug]   %s %d/%d (%s)\n", label, done, p.renderTotal, nodeID)
+}
+
+// finishFailed is finish for a run that ended in an error: the checklist is left
+// standing with the step the run stopped in marked failed and the bar at the
+// fraction the run had reached, so the final block never claims a completion the
+// run did not reach. A run already finished, or one with no surface, is left as
+// it is.
+func (p *progressReporter) finishFailed() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	if !p.finished {
+		p.failed = true
+	}
+	p.mu.Unlock()
+	p.finish()
 }
 
 // finish finalizes the surface: it ticks the active phase done and redraws the
