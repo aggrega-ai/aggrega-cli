@@ -4,6 +4,7 @@
 package schemadraft
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -134,6 +135,19 @@ type Resource struct {
 // take names other than theirs: overrides_this_recipe_reads,
 // required_overrides_set and secrets_are_parameters.
 type Writer func(r Resource) (importer.RecipeDraft, []aggrega.Diagnostic)
+
+// NestedInputRefused halts on the input in of a resource of the type t, at a
+// path of more than one segment, which a target writer cannot set at that path,
+// saying why: the writer drafts nothing rather than set the input anywhere else.
+func NestedInputRefused(t *Type, in Input, why string) aggrega.Diagnostic {
+	return aggrega.Diagnostic{
+		Severity: aggrega.SeverityHalt,
+		Code:     CodeResourceTypeRefused,
+		Message: fmt.Sprintf("the Recipe drafted for %s cannot set the input %s at its path: %s", typeName(t),
+			vendorPath(in.Property), why),
+		SourceRef: t.Source,
+	}
+}
 
 // SecretParameter is what follows the instance's name in the name of the
 // deploy-time parameter a Recipe declares for the secret p, on a format that

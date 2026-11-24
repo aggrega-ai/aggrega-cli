@@ -81,6 +81,11 @@ type Rules struct {
 	// vendor reads back, members and all, or "" to place it as rule 1 does; a
 	// nil rule leaves out none.
 	NotProvided func(t *Type, p *Property) string
+	// LeftOut returns why a draft from a source leaves out a property the
+	// source writes, the format knowing it as a state its service reports
+	// rather than a setting, or "" to carry it; a nil rule leaves out none.
+	// Split does not read it: DraftResource applies it before placing.
+	LeftOut func(t *Type, p *Property) string
 }
 
 // overridesKey is the infra key holding every writable property no other rule

@@ -81,7 +81,8 @@ func (s InputSource) readFromText() string {
 // identity into values and placement into typed infra under their snake_case
 // keys, a secret as a secret, an injected property off the property mechanism
 // under its key, and every other under infra.overrides in the vendor's
-// spelling, each typed from the value written.
+// spelling, each typed from the value written. It applies no format's rule, so
+// the provisioning state is carried as written.
 func TestFromWrittenPlacesEachRule(t *testing.T) {
 	typ, inputs := FromWritten(appWritten())
 	if typ.Name != "Microsoft.Example/apps" || typ.APIVersion != "2025-01-01" {
@@ -95,6 +96,7 @@ func TestFromWrittenPlacesEachRule(t *testing.T) {
 		"name <- values.name string required",
 		"location <- infra.location string required",
 		"tags <- infra.overrides.tags object",
+		"properties.provisioningState <- infra.overrides.provisioningState string",
 		"properties.tier <- infra.overrides.tier string",
 		"properties.replicas <- infra.overrides.replicas integer",
 		"properties.weight <- infra.overrides.weight number",
@@ -131,7 +133,8 @@ func TestFromWrittenPlacesEachRule(t *testing.T) {
 		}
 		paths = append(paths, path)
 	}
-	wantPaths := []string{"name", "location", "tags", "properties.tier", "properties.replicas", "properties.weight",
+	wantPaths := []string{"name", "location", "tags", "properties.provisioningState", "properties.tier",
+		"properties.replicas", "properties.weight",
 		"properties.enabled", "properties.zones", "properties.configuration",
 		"properties.configuration.registries.0.server", "properties.adminPassword", "id (read back)",
 		"properties.configuration.ingress.fqdn (read back)"}
@@ -140,35 +143,6 @@ func TestFromWrittenPlacesEachRule(t *testing.T) {
 	}
 	if !reflect.DeepEqual(typ.PrimaryIdentifier, [][]string{{"id"}}) {
 		t.Errorf("primary identifier %v", typ.PrimaryIdentifier)
-	}
-}
-
-// TestFromWrittenDropsProvisioningStateOnly leaves out the provisioning state
-// an export writes under properties, in any case, and carries every other
-// written property, one of that name elsewhere included.
-func TestFromWrittenDropsProvisioningStateOnly(t *testing.T) {
-	w := appWritten()
-	w.Properties = append(w.Properties,
-		WrittenProperty{Path: []string{"Properties", "ProvisioningState"}, Value: json.RawMessage(`"Succeeded"`)},
-		WrittenProperty{Path: []string{"provisioningState"}, Value: json.RawMessage(`"kept"`)},
-		WrittenProperty{Path: []string{"properties", "status", "provisioningState"}, Value: json.RawMessage(`"kept"`)},
-		WrittenProperty{Path: []string{"properties", "provisioningStates"}, Value: json.RawMessage(`"kept"`)})
-	typ, inputs := FromWritten(w)
-	read := map[string]bool{}
-	for _, in := range inputs {
-		read[strings.Join(in.Property.Path, ".")] = true
-	}
-	for _, p := range typ.Properties {
-		if strings.EqualFold(strings.Join(p.Path, "."), "properties.provisioningState") {
-			t.Errorf("the type carries %v", p.Path)
-		}
-	}
-	for _, wp := range w.Properties {
-		path := strings.Join(wp.Path, ".")
-		dropped := strings.EqualFold(path, "properties.provisioningState")
-		if read[path] == dropped {
-			t.Errorf("%s is read: %v, want %v", path, read[path], !dropped)
-		}
 	}
 }
 

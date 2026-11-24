@@ -120,9 +120,10 @@ type Module struct {
 // variable unset. No value is written into the module.
 //
 // It warns provider-version-unconstrained where m names a provider at no
-// version, naming the provider and where its version goes. It halts
-// resource-type-refused, drafting nothing, on an input at a deeper path that no
-// block of the module holds, naming it.
+// version, naming the provider and where its version goes. A nested input is
+// placed only inside a block another input writes: on one at a deeper path
+// that no block of the module holds it halts with
+// schemadraft.NestedInputRefused, drafting nothing, naming it and why.
 func WriteModule(m Module) (importer.RecipeDraft, []aggrega.Diagnostic) {
 	names, renamed := variableNames(m.Inputs)
 	d := importer.RecipeDraft{
@@ -402,7 +403,8 @@ func (w *bodyWriter) member(body map[string]any, p *schemadraft.Property, value 
 // nested sets in, at a path of more than one segment, from the expression value
 // inside the dynamic block the input at its first segment writes into body, as
 // WriteModule describes, and returns "", or returns why it cannot.
-func (w *bodyWriter) nested(body map[string]any, inputs []schemadraft.Input, in schemadraft.Input, value string) string {
+func (w *bodyWriter) nested(body map[string]any, inputs []schemadraft.Input, in schemadraft.Input,
+	value string) string {
 	path := in.Property.Path
 	i := slices.IndexFunc(inputs, func(c schemadraft.Input) bool { return !isNested(c) && c.Property.Name == path[0] })
 	if i < 0 {
@@ -488,14 +490,8 @@ func itemCondition(nesting, it, segment string) (string, bool) {
 // nestedRefused halts on the input in of m, at a path of more than one segment,
 // which the module cannot set, saying why.
 func nestedRefused(m Module, in schemadraft.Input, why string) aggrega.Diagnostic {
-	return aggrega.Diagnostic{
-		Severity: aggrega.SeverityHalt,
-		Code:     schemadraft.CodeResourceTypeRefused,
-		Message: fmt.Sprintf("the module drafted for %s sets the input %s inside the block holding it, and %s: an "+
-			"input at a nested path is set only inside a block another input of the module writes", m.Type.Name,
-			dotted(in.Property.Path), why),
-		SourceRef: m.Type.Source,
-	}
+	return schemadraft.NestedInputRefused(m.Type, in, why+"; the module sets an input at a nested path only "+
+		"inside a block another input of the module writes")
 }
 
 // identifier matches a name Terraform reads as an attribute after a dot.

@@ -19,6 +19,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cfncore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 const (
@@ -497,5 +498,27 @@ func TestCloudFormationWriteQuotesNames(t *testing.T) {
 	got, err := render(d.Provides[0].Value, map[string]any{"locals": map[string]any{"logical_id": "Q"}})
 	if err != nil || got != "!GetAtt Q.Odd {{x}}.Inner" {
 		t.Errorf("the Recipe's provides renders %q, %v", got, err)
+	}
+}
+
+// TestCloudFormationWriteRefusesANestedInput halts resource-type-refused on an
+// input at a path of more than one segment, naming it, and drafts nothing,
+// since the writer sets each input as a member of Properties under its name.
+func TestCloudFormationWriteRefusesANestedInput(t *testing.T) {
+	typ := &schemadraft.Type{Name: "AWS::Example::Queue", Source: "queue.json"}
+	nested := &schemadraft.Property{Name: "Arn", Path: []string{"RedrivePolicy", "Arn"},
+		Kinds: []schemadraft.Kind{schemadraft.KindString}}
+	d, ds := Write(schemadraft.Resource{Type: typ, Inputs: []schemadraft.Input{
+		{Property: str("QueueName"), Required: true,
+			Source: schemadraft.InputSource{Pillar: schemadraft.PillarValues, Key: "queue_name"}},
+		{Property: nested, Required: true, Source: schemadraft.InputSource{Pillar: schemadraft.PillarInject,
+			Key: "redrive_policy_arn", Mechanism: schemadraft.MechanismProperty}},
+	}})
+	h := onlyHalt(t, ds, codeRefused)
+	if len(ds) != 1 || !strings.Contains(h.Message, "RedrivePolicy.Arn") || h.SourceRef != "queue.json" {
+		t.Errorf("diagnostics %+v, want one halt naming RedrivePolicy.Arn", ds)
+	}
+	if !reflect.DeepEqual(d, importer.RecipeDraft{}) {
+		t.Errorf("a halted writer drafted %+v", d)
 	}
 }

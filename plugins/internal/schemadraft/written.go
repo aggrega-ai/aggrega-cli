@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"slices"
-	"strings"
 
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
@@ -58,14 +57,13 @@ type WrittenResource struct {
 // The inputs are the properties Split places, in w's order, followed by those
 // a neighbour supplies, in w's order. The Type holds every property it reads
 // and, read back as strings and marked Written, each attribute w provides that
-// w does not write;
-// its primary identifier is the attribute of the first provide marked as the
-// identifier. A property with no path is no property and is left out, as is
-// properties.provisioningState, in any case: the state Azure Resource Manager
-// reports of a deployed resource, which an export of the resource writes and a
-// template does not set. Every other written property is carried.
+// w does not write; its primary identifier is the attribute of the first
+// provide marked as the identifier. FromWritten applies no format's rule: every
+// property with a path is carried, and one with none, which names no property,
+// is left out. DraftResource applies the format's Rules.LeftOut, and halts on a
+// resource FromWritten would read past.
 func FromWritten(w WrittenResource) (*Type, []Input) {
-	d := placeWritten(w, false)
+	d := placeWritten(w, Rules{})
 	res, _ := resourceFor(d.t, d.placed)
 	return d.t, res.Inputs
 }
@@ -74,26 +72,26 @@ func FromWritten(w WrittenResource) (*Type, []Input) {
 type writtenDraft struct {
 	t      *Type
 	placed []Placed
-	// left holds the dotted path of each written property left out.
-	left []string
+	// left holds each written property the format's Rules.LeftOut leaves out,
+	// with why.
+	left []leftProperty
 	// diags are what Split reports of placing the properties.
 	diags []aggrega.Diagnostic
 }
 
-// leftOut are the paths a draft from the source leaves out though the source
-// writes them, each matched without regard to case, as Azure Resource Manager
-// reads a property's name.
-var leftOut = [][]string{{"properties", "provisioningState"}}
+// leftProperty is a written property a draft leaves out: its dotted path and
+// why.
+type leftProperty struct{ path, why string }
 
-// leftOutWhy says why each path of leftOut is left out.
-const leftOutWhy = "it is the state Azure Resource Manager reports of a deployed resource, which an export of the " +
-	"resource writes and a template does not set"
+// note is the composed text naming l and why it is left out.
+func (l leftProperty) note() string { return l.path + " is left out: " + l.why }
 
 // placeWritten builds the type of w and places its properties as FromWritten
 // describes, through Split for every property but those a neighbour supplies,
-// with secretSlots passed to it. It places each provide under its own key and
-// the rule Split gives a property read back.
-func placeWritten(w WrittenResource, secretSlots bool) writtenDraft {
+// with the secret rule of rules, leaving out each property rules.LeftOut gives a
+// reason for. It places each provide under its own key and the rule Split gives
+// a property read back.
+func placeWritten(w WrittenResource, rules Rules) writtenDraft {
 	d := writtenDraft{t: &Type{Name: w.Type, APIVersion: w.APIVersion}}
 	placeable := &Type{Name: w.Type, APIVersion: w.APIVersion}
 	flags := map[*Property]WrittenProperty{}
@@ -102,13 +100,15 @@ func placeWritten(w WrittenResource, secretSlots bool) writtenDraft {
 		if len(wp.Path) == 0 {
 			continue
 		}
-		if isLeftOut(wp.Path) {
-			d.left = append(d.left, strings.Join(wp.Path, "."))
-			continue
-		}
 		kind := kindOf(wp.Value)
 		p := &Property{Name: wp.Path[len(wp.Path)-1], Path: slices.Clone(wp.Path), Kinds: []Kind{kind},
 			Sensitive: wp.Secret, Open: kind == KindObject, Written: true}
+		if rules.LeftOut != nil {
+			if why := rules.LeftOut(d.t, p); why != "" {
+				d.left = append(d.left, leftProperty{path: vendorPath(p), why: why})
+				continue
+			}
+		}
 		d.t.Properties = append(d.t.Properties, p)
 		if wp.Inject != "" {
 			p.Required = true
@@ -124,7 +124,7 @@ func placeWritten(w WrittenResource, secretSlots bool) writtenDraft {
 		Placement:   func(_ *Type, p *Property) bool { return flags[p].Placement },
 		Identity:    func(_ *Type, p *Property) bool { return flags[p].Identity },
 		Secret:      func(_ *Type, p *Property) bool { return flags[p].Secret },
-		SecretSlots: secretSlots,
+		SecretSlots: rules.SecretSlots,
 	})
 	d.placed = append(d.placed, injects...)
 
@@ -154,13 +154,6 @@ func (d *writtenDraft) attribute(path []string) *Property {
 		Written: true}
 	d.t.Properties = append(d.t.Properties, p)
 	return p
-}
-
-// isLeftOut reports whether path is one of leftOut.
-func isLeftOut(path []string) bool {
-	return slices.ContainsFunc(leftOut, func(l []string) bool {
-		return slices.EqualFunc(l, path, strings.EqualFold)
-	})
 }
 
 // kindOf is the kind of the JSON value raw, as FromWritten types a property.

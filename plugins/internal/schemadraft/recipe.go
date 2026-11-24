@@ -5,6 +5,7 @@ package schemadraft
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -53,15 +54,24 @@ func recipeDraft(f Format, s recipeSpec, d importer.RecipeDraft) importer.Recipe
 
 // recipeHeader lists every key the Recipe reads, each on one line with its type,
 // whether it is required and its rule, followed by a line quoting the first
-// sentence of the vendor's description, marked, or saying the vendor schema
-// gives none; on a Recipe drafted for a catalog Component, each of its values
-// keys the Recipe reads nothing for, and each of its provides keys that halts
-// until it is mapped.
+// sentence of the vendor's description, marked, or saying the vendor schema, or
+// the source writing the resource, gives none; on a Recipe drafted for a catalog
+// Component, each of its values keys the Recipe reads nothing for, and each of
+// its provides keys that halts until it is mapped. It opens saying what each
+// line gives: for a resource read from a source writing it, whose properties
+// are Written, no vendor's description.
 func recipeHeader(s recipeSpec) []string {
 	t := s.res.Type
-	lines := []string{fmt.Sprintf("This Recipe realizes %s with one resource of the type %s. It reads the keys "+
-		"below, each with its type, its rule and the first sentence of the vendor's description; any other key "+
-		"under infra.overrides halts the build naming it.", s.component, typeName(t))}
+	opening := fmt.Sprintf("This Recipe realizes %s with one resource of the type %s. It reads the keys below, "+
+		"each with its type, its rule and the first sentence of the vendor's description; any other key under "+
+		"infra.overrides halts the build naming it.", s.component, typeName(t))
+	if slices.ContainsFunc(t.Properties, func(p *Property) bool { return p.Written }) {
+		opening = fmt.Sprintf("This Recipe realizes %s with one resource of the type %s, drafted from the "+
+			"resource as a source writes it. It reads the keys below, each with its type and its rule, and none "+
+			"with a vendor's description, which a source does not state; any other key under infra.overrides "+
+			"halts the build naming it.", s.component, typeName(t))
+	}
+	lines := []string{opening}
 	for _, in := range s.res.Inputs {
 		if in.Source.Pillar == PillarSecret && !s.secretSlots {
 			lines = append(lines, "A secret is a deploy-time parameter whose name is the instance's name in "+

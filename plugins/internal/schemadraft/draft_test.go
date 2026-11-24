@@ -111,7 +111,8 @@ func TestDraftResourceAndImportDraftOneSequence(t *testing.T) {
 
 	// With a property a neighbour supplies, the writer is handed the type and
 	// the inputs FromWritten builds.
-	w.Properties = append(w.Properties, WrittenProperty{Path: []string{"Policy", "TargetArn"}, Inject: "policy_target_arn"})
+	w.Properties = append(w.Properties,
+		WrittenProperty{Path: []string{"Policy", "TargetArn"}, Inject: "policy_target_arn"})
 	captured, handed := fxCapturing(writtenFormat(w))
 	_, diags := DraftResource(writtenInput(""), captured, w)
 	noHaltIn(t, diags)
@@ -121,16 +122,29 @@ func TestDraftResourceAndImportDraftOneSequence(t *testing.T) {
 	}
 }
 
+// statusLeftOut is the reason the sample format's rule gives for leaving out
+// the Status a source writes.
+const statusLeftOut = "the sample service reports it"
+
 // TestDraftResourceReportsDraftedFromSource records the draft in an info
-// naming the resource, the Component, the Recipe and each written property
-// left out, and decides it in draft mode with a swap hint naming the schema
-// import of the format and its resource_types setting.
+// naming the resource, the Component, the Recipe and each written property the
+// format's rule leaves out, and decides it in draft mode with a rationale
+// naming each property left out and each key renamed, and a swap hint naming
+// the schema import of the format and its resource_types setting.
 func TestDraftResourceReportsDraftedFromSource(t *testing.T) {
 	w := queueWritten()
 	w.ID = "ordersQueue"
 	w.Properties = append(w.Properties,
-		WrittenProperty{Path: []string{"properties", "provisioningState"}, Value: json.RawMessage(`"Succeeded"`)})
-	drafted, diags := DraftResource(writtenInput(""), writtenFormat(w), w)
+		WrittenProperty{Path: []string{"Status"}, Value: json.RawMessage(`"Ready"`)},
+		WrittenProperty{Path: []string{"Policy", "Tags"}, Value: json.RawMessage(`{"scope": "queue"}`)})
+	f := writtenFormat(w)
+	f.Rules.LeftOut = func(_ *Type, p *Property) string {
+		if slices.Equal(p.Path, []string{"Status"}) {
+			return statusLeftOut
+		}
+		return ""
+	}
+	drafted, diags := DraftResource(writtenInput(""), f, w)
 	noHaltIn(t, diags)
 	var info []aggrega.Diagnostic
 	for _, d := range diags {
@@ -142,7 +156,7 @@ func TestDraftResourceReportsDraftedFromSource(t *testing.T) {
 		t.Fatalf("diagnostics %+v, want one info %s on ordersQueue", diags, CodeResourceDraftedFromSource)
 	}
 	for _, named := range []string{"ordersQueue", fxQueue, "imported/messaging/sample-store-queue",
-		"sample-store-queue", "properties.provisioningState"} {
+		"sample-store-queue", "Status is left out: " + statusLeftOut} {
 		if !strings.Contains(info[0].Message, named) {
 			t.Errorf("the info %q does not name %s", info[0].Message, named)
 		}
@@ -155,13 +169,15 @@ func TestDraftResourceReportsDraftedFromSource(t *testing.T) {
 	if d.Chosen == nil || d.Chosen.Target != "imported/messaging/sample-store-queue" || d.Chosen.Mode != "draft" {
 		t.Errorf("chosen %+v", d.Chosen)
 	}
-	for _, named := range []string{"aggrega import --format " + fxFormatName + " <sample-types.json>", "resource_types", fxQueue} {
+	for _, named := range []string{"aggrega import --format " + fxFormatName + " <sample-types.json>",
+		"resource_types", fxQueue} {
 		if !strings.Contains(d.SwapHint, named) {
 			t.Errorf("the swap hint %q does not name %s", d.SwapHint, named)
 		}
 	}
 	for _, named := range []string{"1 identity key in values", "1 placement key in infra",
-		"2 overrides under infra.overrides", "AuthToken", "properties.provisioningState"} {
+		"3 overrides under infra.overrides", "AuthToken", "Status is left out: " + statusLeftOut,
+		"Policy.Tags is read under its path, since the override Tags holds its name"} {
 		if !strings.Contains(d.Rationale, named) {
 			t.Errorf("the rationale %q does not say %s", d.Rationale, named)
 		}
@@ -226,5 +242,83 @@ func TestNameForIsTheNameImportAndDraftResourceGive(t *testing.T) {
 	fxNoHalt(t, out)
 	if want := NameFor(in, f, fxQueue); out.Entities[0].Name != want {
 		t.Errorf("Import names %s, NameFor %s", out.Entities[0].Name, want)
+	}
+}
+
+// TestDraftResourceWithoutALeftOutRuleKeepsProvisioningState carries the
+// provisioning state a source writes where the format has no rule leaving
+// properties out, and names nothing left out.
+func TestDraftResourceWithoutALeftOutRuleKeepsProvisioningState(t *testing.T) {
+	w := queueWritten()
+	w.Properties = append(w.Properties,
+		WrittenProperty{Path: []string{"properties", "provisioningState"}, Value: json.RawMessage(`"Succeeded"`)})
+	f, handed := fxCapturing(writtenFormat(w))
+	if f.Rules.LeftOut != nil {
+		t.Fatal("the sample format has a rule leaving properties out")
+	}
+	drafted, diags := DraftResource(writtenInput(""), f, w)
+	noHaltIn(t, diags)
+	if len(*handed) != 1 || !slices.ContainsFunc((*handed)[0].Inputs, func(in Input) bool {
+		return slices.Equal(in.Property.Path, []string{"properties", "provisioningState"}) &&
+			in.Source == InputSource{Pillar: PillarOverrides, Key: "provisioningState"}
+	}) {
+		t.Fatalf("the writer is handed %+v, want properties.provisioningState under infra.overrides", *handed)
+	}
+	for _, text := range append([]string{drafted.Decision.Rationale}, diags[len(diags)-1].Message) {
+		if strings.Contains(text, "left out") {
+			t.Errorf("%q names a property left out", text)
+		}
+	}
+}
+
+// TestDraftResourceHaltsOnAMalformedResource halts resource-schema-unreadable,
+// once and naming the resource and the fault, on a resource with no type, a
+// property or provide at a path with an empty segment or none, and a provide
+// with no key, and drafts nothing.
+func TestDraftResourceHaltsOnAMalformedResource(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		fault func(w *WrittenResource)
+		names string
+	}{
+		{"no type", func(w *WrittenResource) { w.Type = "" }, "has no type"},
+		{"an empty segment", func(w *WrittenResource) {
+			w.Properties = append(w.Properties, WrittenProperty{Path: []string{"Policy", "", "Arn"}, Inject: "policy_arn"})
+		}, `"Policy..Arn"`},
+		{"no path", func(w *WrittenResource) {
+			w.Properties = append(w.Properties, WrittenProperty{Value: json.RawMessage(`1`)})
+		}, `the path ""`},
+		{"a provide with no key", func(w *WrittenResource) {
+			w.Provides = append(w.Provides, Provide{Attribute: []string{"Endpoint"}})
+		}, `the attribute "Endpoint" under no key`},
+		{"a provide at an empty segment", func(w *WrittenResource) {
+			w.Provides = append(w.Provides, Provide{Key: "endpoint", Attribute: []string{"Endpoint", ""}})
+		}, `endpoint from the attribute "Endpoint."`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			w := queueWritten()
+			w.ID = "ordersQueue"
+			f := writtenFormat(queueWritten())
+			c.fault(&w)
+			var drafted Drafted
+			var diags []aggrega.Diagnostic
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Fatalf("panics: %v", r)
+					}
+				}()
+				drafted, diags = DraftResource(writtenInput(""), f, w)
+			}()
+			if len(diags) != 1 || diags[0].Severity != aggrega.SeverityHalt ||
+				diags[0].Code != CodeResourceSchemaUnreadable || !strings.Contains(diags[0].Message, `"ordersQueue"`) ||
+				!strings.Contains(diags[0].Message, c.names) {
+				t.Fatalf("diagnostics %+v, want one %s naming ordersQueue and %s", diags, CodeResourceSchemaUnreadable,
+					c.names)
+			}
+			if !reflect.DeepEqual(drafted, Drafted{}) {
+				t.Errorf("a malformed resource drafts %+v", drafted)
+			}
+		})
 	}
 }

@@ -62,7 +62,8 @@ func TestInjectedPropertyIsReadOnThePropertyMechanism(t *testing.T) {
 	if err != nil || got != reference {
 		t.Errorf("the input reads %q, %v, want %q", got, err, reference)
 	}
-	if _, err := run(map[string]any{"context": map[string]any{"inject": map[string]any{"property": map[string]any{}}}}); err == nil || !strings.Contains(err.Error(), appInject) {
+	_, err = run(map[string]any{"context": map[string]any{"inject": map[string]any{"property": map[string]any{}}}})
+	if err == nil || !strings.Contains(err.Error(), appInject) {
 		t.Errorf("an absent key reads %v, want a halt naming %s", err, appInject)
 	}
 }

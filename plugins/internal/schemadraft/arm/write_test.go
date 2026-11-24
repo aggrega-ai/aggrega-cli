@@ -821,6 +821,12 @@ func TestArmDraftedFromSourceRules(t *testing.T) {
 			t.Errorf("a key is not described as one the source writes:\n%s", text)
 		}
 	}
+	if !strings.Contains(recipe, "# This Recipe realizes "+appComponentName+" with one resource of the type "+
+		containerApps+"@2024-03-01, drafted from the resource as a source writes it. It reads the keys below, each "+
+		"with its type and its rule, and none with a vendor's description") ||
+		strings.Contains(recipe, "the first sentence of the vendor's description") {
+		t.Errorf("the Recipe's header does not open saying it is drafted from the source:\n%s", recipe)
+	}
 
 	// Each override is read under the vendor's spelling, typed as written.
 	for _, line := range []string{
@@ -993,7 +999,7 @@ func TestDraftResourceOnArmNamesTheSchemaImport(t *testing.T) {
 	drafted, diags, _, _ := draftedApp(t, appWritten())
 	var info *aggrega.Diagnostic
 	for i := range diags {
-		if diags[i].Code == "resource-drafted-from-source" {
+		if diags[i].Code == schemadraft.CodeResourceDraftedFromSource {
 			info = &diags[i]
 		}
 	}
@@ -1025,5 +1031,40 @@ func TestDraftResourceOnArmNamesTheSchemaImport(t *testing.T) {
 	}
 	if !reflect.DeepEqual(halted, schemadraft.Drafted{}) {
 		t.Errorf("a halt drafted %+v", halted)
+	}
+}
+
+// TestDraftResourceOnArmDropsProvisioningStateOnly leaves out the provisioning
+// state a portal export writes under properties, in any case, naming it and
+// why, and carries every other written property, one of that name elsewhere
+// included.
+func TestDraftResourceOnArmDropsProvisioningStateOnly(t *testing.T) {
+	w := appWritten()
+	w.Properties = append(w.Properties,
+		schemadraft.WrittenProperty{Path: []string{"Properties", "ProvisioningState"}, Value: json.RawMessage(`"Succeeded"`)},
+		schemadraft.WrittenProperty{Path: []string{"provisioningState"}, Value: json.RawMessage(`"kept"`)},
+		schemadraft.WrittenProperty{Path: []string{"properties", "status", "provisioningState"},
+			Value: json.RawMessage(`"kept"`)},
+		schemadraft.WrittenProperty{Path: []string{"properties", "provisioningStates"}, Value: json.RawMessage(`"kept"`)})
+	drafted, diags, _, recipe := draftedApp(t, w)
+	parts := partsOf(t, recipe)
+	if want := `(list "tags" "workloadProfileName" "configuration" "template" "provisioningState" ` +
+		`"properties.status.provisioningState" "provisioningStates")`; !strings.Contains(parts.assertions[0], want) {
+		t.Errorf("the overrides read are not every written property but the provisioning state, %s:\n%s", want,
+			parts.assertions[0])
+	}
+	if strings.Contains(recipe, `set $properties "provisioningState"`) || strings.Contains(recipe, `"ProvisioningState"`) {
+		t.Errorf("template.yaml writes the provisioning state:\n%s", parts.template)
+	}
+	note := "properties.provisioningState is left out: " + provisioningStateWhy
+	noteUpper := "Properties.ProvisioningState is left out: " + provisioningStateWhy
+	info := diags[len(diags)-1]
+	for _, text := range []string{info.Message, drafted.Decision.Rationale} {
+		if !strings.Contains(text, note) || !strings.Contains(text, noteUpper) {
+			t.Errorf("%q does not name both spellings left out, and why", text)
+		}
+	}
+	if info.Code != schemadraft.CodeResourceDraftedFromSource {
+		t.Errorf("the last diagnostic is %+v, want the info %s", info, schemadraft.CodeResourceDraftedFromSource)
 	}
 }

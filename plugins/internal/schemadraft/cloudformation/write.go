@@ -43,7 +43,21 @@ const (
 // any other its !GetAtt by the attribute's dotted path; a key mapped to no
 // attribute is written as the fail Unmapped.Value gives, in both places. No
 // other resource is written.
+//
+// Each input is a member of Properties under its name, so an input at a path of
+// more than one segment halts with schemadraft.NestedInputRefused, drafting
+// nothing, rather than be set at the top of Properties.
 func Write(r schemadraft.Resource) (importer.RecipeDraft, []aggrega.Diagnostic) {
+	var halts []aggrega.Diagnostic
+	for _, in := range r.Inputs {
+		if len(in.Property.Path) > 1 {
+			halts = append(halts, schemadraft.NestedInputRefused(r.Type, in, "the writer sets each input as a "+
+				"member of the resource's Properties under its name, and sets none inside one"))
+		}
+	}
+	if len(halts) > 0 {
+		return importer.RecipeDraft{}, halts
+	}
 	d := importer.RecipeDraft{
 		Header: []string{"template.yaml declares the resource under the logical id in locals, and the " +
 			"cloudformation provider projects its provides block into the stack's Outputs."},

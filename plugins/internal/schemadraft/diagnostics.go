@@ -33,7 +33,8 @@ const (
 // The codes a format's reader halts with, which the core raises too.
 const (
 	// CodeResourceSchemaUnreadable halts on a source that parses but is not the
-	// format's schema shape, naming what it lacks.
+	// format's schema shape, or on a resource as a source writes it that a
+	// draft cannot be named or placed with, naming what it lacks.
 	CodeResourceSchemaUnreadable = "resource-schema-unreadable"
 	// CodeResourceTypeRefused halts on a requested type the format's provider
 	// cannot realize, naming why.

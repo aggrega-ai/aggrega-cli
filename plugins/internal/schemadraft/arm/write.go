@@ -73,12 +73,14 @@ const (
 // A provides key the type's identifier carries is the resource ID, built for the
 // fragment's scope from the type and the resource's name split at each slash;
 // a key reading the root name is the name as the fragment writes it, which ARM
-// reads as the resource's name does; a key read back below properties is
+// reads as the resource's name does, a child type's name written whole as
+// parent/child; a key read back below properties is
 // reference() of the symbol and the path below it; any other read-back key is
 // the full reference() of the symbol at the apiVersion, and its path. A key
-// mapped to no attribute is written as the fail Unmapped.Value gives. An input read from the inject pipe other than at or
-// under properties halts resource-type-refused naming it, since ARM evaluates a
-// reference to another resource only there.
+// mapped to no attribute is written as the fail Unmapped.Value gives. An input
+// read from the inject pipe other than at or under properties halts
+// resource-type-refused naming it, since ARM evaluates a reference to another
+// resource only there.
 func Write(r schemadraft.Resource) (importer.RecipeDraft, []aggrega.Diagnostic) {
 	if halts := injectOutsideProperties(r); len(halts) > 0 {
 		return importer.RecipeDraft{}, halts
@@ -433,8 +435,9 @@ func readsName(p schemadraft.Provide) bool {
 }
 
 // nameOf is the provides value of p, the resource's name: the value of the input
-// writing it, as template.yaml writes it. Where no input writes the name, the
-// value halts saying so.
+// writing it, as template.yaml writes it, so a child type's name is the whole
+// parent/child the template writes. Where no input writes the name, the value
+// halts saying so.
 func nameOf(r schemadraft.Resource, p schemadraft.Provide) string {
 	i := nameInput(r)
 	if i < 0 {

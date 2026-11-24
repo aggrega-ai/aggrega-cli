@@ -36,7 +36,8 @@ const (
 // location; identity is the root name; a secret is a sensitive property,
 // declared as a deploy-time parameter; a read-back scalar nested in objects is
 // provided, since reference reads it by a dotted path, except within the root
-// systemData, which is not provided. A type writable at no scope the provider
+// systemData, which is not provided. A draft from a source leaves out the
+// provisioning state an export writes. A type writable at no scope the provider
 // deploys at is refused.
 var Format = schemadraft.Format{
 	Name:       formatName,
@@ -52,6 +53,7 @@ var Format = schemadraft.Format{
 		Secret:         secret,
 		NestedProvides: true,
 		NotProvided:    notProvided,
+		LeftOut:        leftOut,
 	},
 	Category:   category,
 	Write:      Write,
@@ -81,6 +83,25 @@ const systemDataWhy = "it is the metadata Azure Resource Manager keeps on every 
 func notProvided(_ *schemadraft.Type, p *schemadraft.Property) string {
 	if slices.Equal(p.Path, []string{keySystemData}) {
 		return systemDataWhy
+	}
+	return ""
+}
+
+// keyProvisioningState is the member of properties holding the state Azure
+// Resource Manager reports of a deployed resource.
+const keyProvisioningState = "provisioningState"
+
+// provisioningStateWhy says why a draft from a source leaves the provisioning
+// state out.
+const provisioningStateWhy = "it is the state Azure Resource Manager reports of a deployed resource, which an " +
+	"export of the resource writes and a template does not set"
+
+// leftOut says why a draft from a source leaves out p, a property the source
+// writes: properties.provisioningState, matched without regard to case as Azure
+// Resource Manager reads a property's name; "" for any other property.
+func leftOut(_ *schemadraft.Type, p *schemadraft.Property) string {
+	if slices.EqualFunc(p.Path, []string{keyProperties, keyProvisioningState}, strings.EqualFold) {
+		return provisioningStateWhy
 	}
 	return ""
 }

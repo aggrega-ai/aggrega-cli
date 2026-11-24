@@ -41,7 +41,8 @@ type Format struct {
 	Rules Rules
 	// Category guesses the category of a type: one of Categories, or "" where
 	// it has none, which names the Component under the kit's fallback segment.
-	// Nil guesses none.
+	// It reads only the type's name, which is all NameFor hands it. Nil guesses
+	// none.
 	Category func(t *Type) string
 	// Write drafts the target parts of a type's Recipe.
 	Write Writer
@@ -234,10 +235,23 @@ func (r *importRun) draft(sel Selected, selected []Selected) {
 		decision.Rationale = draftRationale(r.f, t, name, placed, refresh, category == fallbackCategory)
 	}
 	r.decisions = append(r.decisions, decision)
-	for _, draft := range drafts {
-		draft.Entity.SourceRef, draft.Entity.DecisionRef = id, "decision:"+id
-		r.drafts = append(r.drafts, draft)
+	referTo(drafts, id)
+	r.drafts = append(r.drafts, drafts...)
+}
+
+// referTo points each of drafts at the source node id and the decision drafting
+// it.
+func referTo(drafts []importer.CatalogDraft, id string) {
+	for i := range drafts {
+		drafts[i].Entity.SourceRef, drafts[i].Entity.DecisionRef = id, "decision:"+id
 	}
+}
+
+// fallbackNote says the format names no category for t, so the Component takes
+// the fallback segment.
+func fallbackNote(t *Type) string {
+	return fmt.Sprintf("the format names no category for %s, so the Component takes the category segment %s",
+		typeName(t), fallbackCategory)
 }
 
 // componentName is the name of the Component a type t requested with no
@@ -385,8 +399,7 @@ func draftRationale(f Format, t *Type, name string, placed []Placed, refresh, fa
 		text += fmt.Sprintf("; the catalog holds %s with the same values keys, so the draft refreshes it", name)
 	}
 	if fallback {
-		text += fmt.Sprintf("; the format names no category for %s, so the Component takes the category segment %s",
-			typeName(t), fallbackCategory)
+		text += "; " + fallbackNote(t)
 	}
 	for _, r := range append(leftOut, renamed...) {
 		text += "; " + r
