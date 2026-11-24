@@ -158,3 +158,99 @@ func TestHandRowsMergeWithTheirGeneratedRowRegardlessOfCase(t *testing.T) {
 		t.Fatalf("rows = %+v, want the generated row of %s with the hand row's Env merged into it", rows, sitesType)
 	}
 }
+
+// databasesFold folds the databases of a flexible server, the child type
+// written as typ, writing the child's from into values.database.
+func databasesFold(typ string, from ...string) Fold {
+	return Fold{Type: typ, Key: []string{"values", "database"}, From: from, One: true}
+}
+
+func TestHandRowsMergeFoldsAndEquivalencesRegardlessOfCase(t *testing.T) {
+	const (
+		genChild  = "Microsoft.DBforPostgreSQL/flexibleServers/databases"
+		handChild = "Microsoft.DBForPostgreSQL/flexibleServers/databases"
+	)
+	rows := func(gen, hand Row) ([]Row, error) {
+		gen.Key, gen.Component, gen.Recipe, gen.Origin = serverType, postgres, "postgres-flexible-server", "generated"
+		hand.Key, hand.Origin = serverType, "hand"
+		return Table{Generated: []Row{gen}, Hand: []Row{hand}}.Rows()
+	}
+	genFold, handFold := databasesFold(genChild, "name"), databasesFold(handChild, "properties", "charset")
+	genEq := Equivalence{Raw: []string{"properties", "version"}, Module: []string{"version"}}
+	handEq := Equivalence{Raw: []string{"Properties", "Version"}, Module: []string{"serverVersion"}}
+
+	t.Run("a hand fold over the generated fold of its child type without a reason is refused", func(t *testing.T) {
+		_, err := rows(Row{Folds: []Fold{genFold}}, Row{Folds: []Fold{handFold}})
+		var c *Contradiction
+		if !errors.As(err, &c) {
+			t.Fatalf("Rows() error = %v, want a *Contradiction", err)
+		}
+		want := Contradiction{Key: serverType, Field: "Folds." + genChild,
+			Generated: "into values.database from name, one value",
+			Hand:      "into values.database from properties.charset, one value"}
+		if !reflect.DeepEqual(*c, want) {
+			t.Fatalf("contradiction = %+v, want %+v", *c, want)
+		}
+	})
+
+	t.Run("a hand fold with a reason supersedes the generated fold of its child type", func(t *testing.T) {
+		got, err := rows(Row{Folds: []Fold{genFold}}, Row{Folds: []Fold{handFold},
+			Supersedes: map[string]string{"Folds." + handChild: "the Recipe names the database by its charset"}})
+		if err != nil {
+			t.Fatalf("Rows() error = %v", err)
+		}
+		if want := []Fold{handFold}; len(got) != 1 || !reflect.DeepEqual(got[0].Folds, want) {
+			t.Fatalf("rows = %+v, want one row folding %+v", got, want)
+		}
+	})
+
+	t.Run("a hand fold differing from the generated one only in case is the same fold", func(t *testing.T) {
+		same := databasesFold(handChild, "Name")
+		got, err := rows(Row{Folds: []Fold{genFold}}, Row{Folds: []Fold{same}})
+		if err != nil {
+			t.Fatalf("Rows() error = %v", err)
+		}
+		if len(got) != 1 || len(got[0].Folds) != 1 {
+			t.Fatalf("rows = %+v, want one row holding one fold", got)
+		}
+	})
+
+	t.Run("a hand equivalence over the generated one of its raw path without a reason is refused", func(t *testing.T) {
+		_, err := rows(Row{Equivalences: []Equivalence{genEq}}, Row{Equivalences: []Equivalence{handEq}})
+		var c *Contradiction
+		if !errors.As(err, &c) {
+			t.Fatalf("Rows() error = %v, want a *Contradiction", err)
+		}
+		want := Contradiction{Key: serverType, Field: "Equivalences.properties.version", Generated: "version",
+			Hand: "serverVersion"}
+		if !reflect.DeepEqual(*c, want) {
+			t.Fatalf("contradiction = %+v, want %+v", *c, want)
+		}
+	})
+
+	t.Run("a hand equivalence with a reason supersedes the generated one of its raw path", func(t *testing.T) {
+		got, err := rows(Row{Equivalences: []Equivalence{genEq}}, Row{Equivalences: []Equivalence{handEq},
+			Supersedes: map[string]string{"Equivalences.Properties.Version": "the module names it serverVersion"}})
+		if err != nil {
+			t.Fatalf("Rows() error = %v", err)
+		}
+		if want := []Equivalence{handEq}; len(got) != 1 || !reflect.DeepEqual(got[0].Equivalences, want) {
+			t.Fatalf("rows = %+v, want one row holding %+v", got, want)
+		}
+	})
+}
+
+func TestHandRowsOfOneOriginDifferingOnlyInCaseAreDuplicates(t *testing.T) {
+	table := Table{Generated: []Row{
+		{Key: sitesType, Component: "core/compute/server", Origin: "generated"},
+		{Key: "microsoft.web/sites", Component: "core/compute/server", Origin: "generated"},
+	}}
+	_, err := table.Rows()
+	var d *DuplicateRow
+	if !errors.As(err, &d) {
+		t.Fatalf("Rows() error = %v, want a *DuplicateRow", err)
+	}
+	if d.Key != "microsoft.web/sites" || d.Origin != "generated" || d.When != nil {
+		t.Fatalf("duplicate = %+v, want the second generated row, microsoft.web/sites", *d)
+	}
+}

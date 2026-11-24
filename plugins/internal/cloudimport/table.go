@@ -137,7 +137,9 @@ type Row struct {
 	// generated one. A field is named as Rows names it in a [Contradiction]:
 	// Component, Category, Recipe, Form or Env; Traits.<label>; Values.<key>,
 	// Infra.<key>, Overrides.<key>, Secrets.<slot> or Provides.<key>;
-	// Folds.<type>; Equivalences.<raw path>, its segments joined by dots.
+	// Folds.<type>; Equivalences.<raw path>, its segments joined by dots. The
+	// type of Folds.<type> and the path of Equivalences.<raw path> are matched
+	// regardless of case, as the merge matches the entries they name.
 	Supersedes map[string]string
 	// Origin is where the row comes from: "generated <Recipe path>", "hand",
 	// or a generated row's origin followed by "and hand" where Rows merged a
@@ -213,7 +215,12 @@ func (d *DuplicateRow) Error() string {
 // field by field, the hand value where the hand row sets one and the
 // generated value otherwise; a list field is merged entry by entry, an entry
 // matched by its key, and a hand entry of a key the generated row does not
-// set is added after the generated ones. A hand value set over a different
+// set is added after the generated ones. A fold's child type and an
+// equivalence's raw path are matched regardless of case, as a node's type and
+// properties are; an instance's own key — of values, infra, overrides, a
+// slot, provides — is matched exactly. Two entries of one key are the same
+// where they differ only in the case of a type, a property path or a member
+// name. A hand value set over a different
 // generated one needs a written reason in the hand row's Supersedes: without
 // one, Rows returns a [*Contradiction] naming the key, the field and both
 // values. Two rows of one origin sharing a key and When return a
@@ -324,14 +331,15 @@ func merge(g, h Row) (Row, error) {
 		{"Provides", g.Provides, h.Provides, &out.Provides},
 	}
 	for _, l := range lists {
-		if *l.into, err = mergeEntries(m, l.field, l.gen, l.hand, placementKey, placementsSame, placementText); err != nil {
+		*l.into, err = mergeEntries(m, l.field, l.gen, l.hand, placementKey, false, placementsSame, placementText)
+		if err != nil {
 			return Row{}, err
 		}
 	}
-	if out.Folds, err = mergeEntries(m, "Folds", g.Folds, h.Folds, foldKey, foldsSame, foldText); err != nil {
+	if out.Folds, err = mergeEntries(m, "Folds", g.Folds, h.Folds, foldKey, true, foldsSame, foldText); err != nil {
 		return Row{}, err
 	}
-	if out.Equivalences, err = mergeEntries(m, "Equivalences", g.Equivalences, h.Equivalences, equivalenceKey,
+	if out.Equivalences, err = mergeEntries(m, "Equivalences", g.Equivalences, h.Equivalences, equivalenceKey, true,
 		equivalencesSame, equivalenceText); err != nil {
 		return Row{}, err
 	}
@@ -349,6 +357,24 @@ func merge(g, h Row) (Row, error) {
 // reasoned reports that the hand row writes a reason for superseding field.
 func (m merger) reasoned(field string) bool {
 	return m.hand.Supersedes[field] != ""
+}
+
+// reasonedEntry reports that the hand row writes a reason for superseding the
+// entry of list field keyed entry: under the name field.entry, or where
+// foldCase is set, under field. followed by entry written in any case.
+func (m merger) reasonedEntry(field, entry string, foldCase bool) bool {
+	if m.reasoned(field + "." + entry) {
+		return true
+	}
+	if !foldCase {
+		return false
+	}
+	for _, name := range slices.Sorted(maps.Keys(m.hand.Supersedes)) {
+		if rest, ok := strings.CutPrefix(name, field+"."); ok && strings.EqualFold(rest, entry) && m.reasoned(name) {
+			return true
+		}
+	}
+	return false
 }
 
 // contradiction returns the *Contradiction of field.
@@ -387,37 +413,44 @@ func (m merger) traits() (map[string]string, error) {
 }
 
 // mergeEntries merges the hand entries of a list field into the generated
-// ones, an entry matched to another by its key: a generated entry the hand
-// row sets no entry of its key for stays, one it sets is replaced by the
-// first hand entry of that key, and the hand entries of a key no generated
-// entry has follow, in order.
-func mergeEntries[T any](m merger, field string, gen, hand []T, key func(T) string, same func(a, b T) bool,
-	text func(T) string) ([]T, error) {
+// ones, an entry matched to another by its key — regardless of case where
+// foldCase is set, for a key that is a vendor type or a property path, and
+// exactly otherwise: a generated entry the hand row sets no entry of its key
+// for stays, one it sets is replaced by the first hand entry of that key, and
+// the hand entries of a key no generated entry has follow, in order. A
+// contradiction names the entry by the generated entry's key.
+func mergeEntries[T any](m merger, field string, gen, hand []T, key func(T) string, foldCase bool,
+	same func(a, b T) bool, text func(T) string) ([]T, error) {
 	if len(hand) == 0 {
 		return gen, nil
 	}
+	match := func(entry T) string {
+		if foldCase {
+			return strings.ToLower(key(entry))
+		}
+		return key(entry)
+	}
 	handAt := make(map[string]int, len(hand))
 	for i := len(hand) - 1; i >= 0; i-- {
-		handAt[key(hand[i])] = i
+		handAt[match(hand[i])] = i
 	}
 	generated := make(map[string]bool, len(gen))
 	out := make([]T, 0, len(gen)+len(hand))
 	for _, g := range gen {
-		k := key(g)
-		generated[k] = true
-		i, set := handAt[k]
+		generated[match(g)] = true
+		i, set := handAt[match(g)]
 		if !set {
 			out = append(out, g)
 			continue
 		}
 		h := hand[i]
-		if !same(g, h) && !m.reasoned(field+"."+k) {
-			return nil, m.contradiction(field+"."+k, text(g), text(h))
+		if !same(g, h) && !m.reasonedEntry(field, key(g), foldCase) {
+			return nil, m.contradiction(field+"."+key(g), text(g), text(h))
 		}
 		out = append(out, h)
 	}
 	for _, h := range hand {
-		if !generated[key(h)] {
+		if !generated[match(h)] {
 			out = append(out, h)
 		}
 	}
@@ -427,7 +460,7 @@ func mergeEntries[T any](m merger, field string, gen, hand []T, key func(T) stri
 func placementKey(p Placement) string { return p.Key }
 
 func placementsSame(a, b Placement) bool {
-	return slices.Equal(a.From, b.From) && a.Key == b.Key && a.Conv == b.Conv
+	return samePath(a.From, b.From) && a.Key == b.Key && a.Conv == b.Conv
 }
 
 func placementText(p Placement) string {
@@ -440,8 +473,8 @@ func placementText(p Placement) string {
 func foldKey(f Fold) string { return f.Type }
 
 func foldsSame(a, b Fold) bool {
-	return a.Type == b.Type && slices.Equal(a.Key, b.Key) && slices.Equal(a.From, b.From) && a.One == b.One &&
-		a.Instances == b.Instances && a.NotCarried == b.NotCarried
+	return strings.EqualFold(a.Type, b.Type) && slices.Equal(a.Key, b.Key) && samePath(a.From, b.From) &&
+		a.One == b.One && a.Instances == b.Instances && a.NotCarried == b.NotCarried
 }
 
 func foldText(f Fold) string {
@@ -461,13 +494,20 @@ func foldText(f Fold) string {
 func equivalenceKey(e Equivalence) string { return pathText(e.Raw) }
 
 func equivalencesSame(a, b Equivalence) bool {
-	return slices.Equal(a.Raw, b.Raw) && slices.Equal(a.Module, b.Module)
+	return samePath(a.Raw, b.Raw) && samePath(a.Module, b.Module)
 }
 
 func equivalenceText(e Equivalence) string { return pathText(e.Module) }
 
 func envSame(a, b EnvList) bool {
-	return slices.Equal(a.Path, b.Path) && a.Name == b.Name && a.Value == b.Value
+	return samePath(a.Path, b.Path) && strings.EqualFold(a.Name, b.Name) && strings.EqualFold(a.Value, b.Value)
+}
+
+// samePath reports whether two property or attribute paths name one place:
+// the same segments, compared regardless of case as a node's properties are
+// read.
+func samePath(a, b []string) bool {
+	return slices.EqualFunc(a, b, strings.EqualFold)
 }
 
 func envText(e EnvList) string {
