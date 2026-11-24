@@ -150,7 +150,37 @@ func TestWrappedDraftIsDeterministicAndFixedWins(t *testing.T) {
 			t.Errorf("the writer is handed the fixed parameter as an input")
 		}
 	}
+	var warns []aggrega.Diagnostic
+	for _, d := range da {
+		if d.Code == CodeValueNotCarried {
+			warns = append(warns, d)
+		}
+	}
+	if len(warns) != 1 || warns[0].Severity != aggrega.SeverityWarn ||
+		!strings.Contains(warns[0].Message, queueModuleURL) || !strings.Contains(warns[0].Message, "parameter telemetry ") ||
+		!strings.Contains(warns[0].Message, "binds that parameter itself") {
+		t.Errorf("diagnostics %+v, want one warn value-not-carried naming the module and telemetry", da)
+	}
+	if !strings.Contains(a.Decision.Rationale, "telemetry is not carried") {
+		t.Errorf("the rationale %q does not mention the superseded input", a.Decision.Rationale)
+	}
 	if len(m.Inputs) != 3 {
 		t.Errorf("the caller's module is changed")
+	}
+}
+
+// TestWrappedFixedValueOnOneLine halts, drafting nothing, on a fixed parameter
+// whose value runs over more than one line.
+func TestWrappedFixedValueOnOneLine(t *testing.T) {
+	m := queueModule("1")
+	m.Fixed = []importer.Entry{{Key: "telemetry", Value: "a\nb"}}
+	var handed []WrappedModule
+	drafted, diags := DraftWrapped(writtenInput(""), fxFormat(), m, moduleWriter(&handed))
+	if len(diags) != 1 || diags[0].Code != CodeResourceSchemaUnreadable || diags[0].Severity != aggrega.SeverityHalt ||
+		!strings.Contains(diags[0].Message, "telemetry") || !strings.Contains(diags[0].Message, "more than one line") {
+		t.Errorf("diagnostics %+v", diags)
+	}
+	if !reflect.DeepEqual(drafted, Drafted{}) || len(handed) != 0 {
+		t.Errorf("drafted %+v, writer called %d times", drafted, len(handed))
 	}
 }

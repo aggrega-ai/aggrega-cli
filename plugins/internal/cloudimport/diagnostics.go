@@ -42,7 +42,7 @@ const (
 	CodeReferenceNotWired Code = "reference-not-wired"
 	// CodeValueNotCarried warns of a value or expression the draft does not
 	// carry.
-	CodeValueNotCarried Code = "value-not-carried"
+	CodeValueNotCarried = Code(schemadraft.CodeValueNotCarried)
 	// CodeCredentialFlow warns of a credential read from another resource.
 	CodeCredentialFlow Code = "credential-flow"
 	// CodeDiscriminatorUnresolved warns that the property choosing a resource's

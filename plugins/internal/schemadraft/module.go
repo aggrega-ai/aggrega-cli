@@ -12,6 +12,11 @@ import (
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
+// CodeValueNotCarried warns of a value or expression a draft does not carry; for
+// a module-wrapping draft, of a parameter the source sets that the drafted
+// Recipe binds itself.
+const CodeValueNotCarried = "value-not-carried"
+
 // CodeModuleVersionUnpinned warns of a module-wrapping draft whose exact module
 // version the source does not state: the drafted Recipe's spec.source.version is
 // left empty for the author to write.
@@ -34,7 +39,9 @@ type WrappedModule struct {
 	// properties are marked Written, since no vendor schema describes them.
 	Inputs []Input
 	// Fixed are the parameters the Recipe binds itself, in order, which no
-	// Release sets; an input of the same name is left out.
+	// Release sets; an input of the same name is left out and reported
+	// value-not-carried. Each Value is a single-line YAML scalar the caller
+	// composes, written as it is; a value on more than one line halts.
 	Fixed []importer.Entry
 	// Outputs are the module outputs a neighbour reads, each published under
 	// its key from the attribute that names the output.
@@ -64,7 +71,7 @@ func DraftWrapped(in aggrega.ImportInput, f Format, m WrappedModule, w ModuleWri
 	if halts := malformedModule(m); len(halts) > 0 {
 		return Drafted{}, halts
 	}
-	m = withoutFixed(m)
+	m, superseded := withoutFixed(m)
 	id := m.Type.Source
 	if id == "" {
 		id = typeName(m.Type)
@@ -82,6 +89,10 @@ func DraftWrapped(in aggrega.ImportInput, f Format, m WrappedModule, w ModuleWri
 	if hasHalt(diags) {
 		return Drafted{}, diags
 	}
+	// The kit's RecipeDraft.Source writes spec.source as a scalar, so the
+	// mapping form of a module's source is written here, after implements:
+	// where the kit places source. This is a deliberate second writer of that
+	// one key; a kit field for a mapping source would replace it.
 	source := body.Source
 	body.Source = ""
 	component := importer.DraftComponent(ComponentFor(name, m.Type, placed, format, f.Rules))
@@ -89,9 +100,12 @@ func DraftWrapped(in aggrega.ImportInput, f Format, m WrappedModule, w ModuleWri
 	recipe.Entity.Body = withSource(recipe.Entity.Body, source)
 
 	decision := draftDecision(in.Catalog, f, id, m.Type, name, placed, res)
-	decision.Rationale = moduleRationale(f, m, name, placed, category == fallbackCategory)
+	decision.Rationale = moduleRationale(f, m, superseded, name, placed, category == fallbackCategory)
 	drafts := []importer.CatalogDraft{component, recipe}
 	referTo(drafts, id)
+	for _, in := range superseded {
+		diags = append(diags, inputBoundByRecipe(m, in, id))
+	}
 	if m.Version == "" {
 		diags = append(diags, moduleVersionUnpinned(m, id))
 	}
@@ -119,6 +133,12 @@ func malformedModule(m WrappedModule) []aggrega.Diagnostic {
 	if m.SourceKind == "" {
 		halt("has no source kind")
 	}
+	for _, e := range m.Fixed {
+		if strings.Contains(e.Value, "\n") {
+			halt(fmt.Sprintf("binds the parameter %s itself to a value on more than one line, and the Recipe writes it "+
+				"as one line", e.Key))
+		}
+	}
 	return out
 }
 
@@ -133,16 +153,31 @@ func (in Input) Parameter() string {
 }
 
 // withoutFixed returns m without the inputs a Fixed parameter of the same name
-// binds.
-func withoutFixed(m WrappedModule) WrappedModule {
-	var kept []Input
+// binds, and those inputs, in m's order.
+func withoutFixed(m WrappedModule) (WrappedModule, []Input) {
+	var kept, superseded []Input
 	for _, in := range m.Inputs {
-		if !slices.ContainsFunc(m.Fixed, func(e importer.Entry) bool { return e.Key == in.Parameter() }) {
-			kept = append(kept, in)
+		if slices.ContainsFunc(m.Fixed, func(e importer.Entry) bool { return e.Key == in.Parameter() }) {
+			superseded = append(superseded, in)
+			continue
 		}
+		kept = append(kept, in)
 	}
 	m.Inputs = kept
-	return m
+	return m, superseded
+}
+
+// inputBoundByRecipe warns that the source sets the parameter of in, which the
+// Recipe drafted for the module m binds itself, so the source's value is not
+// carried.
+func inputBoundByRecipe(m WrappedModule, in Input, id string) aggrega.Diagnostic {
+	return aggrega.Diagnostic{
+		Severity: aggrega.SeverityWarn,
+		Code:     CodeValueNotCarried,
+		Message: fmt.Sprintf("the source sets the parameter %s of the module %s, and the drafted Recipe binds that "+
+			"parameter itself, so the value the source sets is not carried", in.Parameter(), m.URL),
+		SourceRef: id,
+	}
 }
 
 // placedModule places the inputs and outputs of m as Split places a type's
@@ -214,7 +249,7 @@ func moduleVersionUnpinned(m WrappedModule, id string) aggrega.Diagnostic {
 // hold, counting the inputs by where they are read, naming the module and each
 // input and output, and where they hold, that the category is the fallback
 // segment.
-func moduleRationale(f Format, m WrappedModule, name string, placed []Placed, fallback bool) string {
+func moduleRationale(f Format, m WrappedModule, superseded []Input, name string, placed []Placed, fallback bool) string {
 	var overrides, injected, provided []string
 	for _, pl := range placed {
 		switch pl.Pillar {
@@ -242,6 +277,13 @@ func moduleRationale(f Format, m WrappedModule, name string, placed []Placed, fa
 		"and reads no vendor schema: %s", name, f.Capability, m.URL, counts)
 	if len(fixed) > 0 {
 		text += "; the Recipe binds " + andList(fixed) + " itself, which no Release sets"
+	}
+	if len(superseded) > 0 {
+		var names []string
+		for _, in := range superseded {
+			names = append(names, in.Parameter())
+		}
+		text += "; the source's value of " + andList(names) + " is not carried, since the Recipe binds it itself"
 	}
 	if fallback {
 		text += "; " + fallbackNote(m.Type)
