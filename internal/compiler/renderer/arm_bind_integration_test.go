@@ -296,15 +296,22 @@ func armAssembledTemplate(t *testing.T, files map[string]renderer.AssembledFile)
 // template.
 func armNested(t *testing.T, files map[string]renderer.AssembledFile) map[string]any {
 	t.Helper()
+	return armNestedAs(t, files, armSourcedSymbol)
+}
+
+// armNestedAs returns the properties object of the nested deployment the given
+// symbolic name declares.
+func armNestedAs(t *testing.T, files map[string]renderer.AssembledFile, symbol string) map[string]any {
+	t.Helper()
 	doc := armAssembledTemplate(t, files)
 	resources, _ := doc["resources"].(map[string]any)
-	body, ok := resources[armSourcedSymbol].(map[string]any)
+	body, ok := resources[symbol].(map[string]any)
 	if !ok {
-		t.Fatalf("the template declares no nested deployment %q; it declares %v", armSourcedSymbol, slices.Sorted(maps.Keys(resources)))
+		t.Fatalf("the template declares no nested deployment %q; it declares %v", symbol, slices.Sorted(maps.Keys(resources)))
 	}
 	properties, ok := body["properties"].(map[string]any)
 	if !ok {
-		t.Fatalf("the nested deployment %q has no properties: %v", armSourcedSymbol, body)
+		t.Fatalf("the nested deployment %q has no properties: %v", symbol, body)
 	}
 	return properties
 }
@@ -313,7 +320,14 @@ func armNested(t *testing.T, files map[string]renderer.AssembledFile) map[string
 // deployment.
 func armParametersOf(t *testing.T, files map[string]renderer.AssembledFile) map[string]any {
 	t.Helper()
-	parameters, ok := armNested(t, files)["parameters"].(map[string]any)
+	return armParametersOfAs(t, files, armSourcedSymbol)
+}
+
+// armParametersOfAs returns the properties.parameters block of the nested
+// deployment the given symbolic name declares.
+func armParametersOfAs(t *testing.T, files map[string]renderer.AssembledFile, symbol string) map[string]any {
+	t.Helper()
+	parameters, ok := armNestedAs(t, files, symbol)["parameters"].(map[string]any)
 	if !ok {
 		t.Fatalf("the nested deployment carries no parameters block")
 	}

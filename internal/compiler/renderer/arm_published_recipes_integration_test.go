@@ -120,6 +120,69 @@ func armPublishedCases() []armPublishedCase {
 			values:  `{"maxmemory_policy":"allkeys-lru","appendonly":false,"persistence":{"enabled":false}}`,
 		},
 		{
+			recipe:   "sql-server-azure-sql-database",
+			fixture:  "sql-server-azure-sql-database",
+			password: true,
+			infra:    `{"port":1433,"engine_version":"2022","storage":{"size":"32Gi"},"ha":{"enabled":false},"overrides":{}}`,
+			values:   `{"database":"orders","user":"appadmin"}`,
+		},
+		{
+			recipe:  "cosmos-db",
+			fixture: "cosmos-db",
+			infra:   `{"ha":{"enabled":false},"overrides":{}}`,
+			values:  `{"database":"orders","containers":{"items":{"partition_key_paths":["/tenantId"]}},"consistency_level":"Session"}`,
+		},
+		{
+			recipe:  "azure-ai-search",
+			fixture: "azure-ai-search",
+			infra:   `{"overrides":{}}`,
+			values:  `{"semantic_search":"free"}`,
+		},
+		{
+			recipe:  "azure-application-insights",
+			fixture: "azure-application-insights",
+			infra:   `{"overrides":{"workspace_id":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-logs/providers/Microsoft.OperationalInsights/workspaces/logs-shared"}}`,
+			values:  `{}`,
+		},
+		{
+			recipe:  "azure-container-registry",
+			fixture: "azure-container-registry",
+			node:    "ordersregistry",
+			infra:   `{"overrides":{}}`,
+			values:  `{}`,
+		},
+		{
+			recipe:  "azure-databricks",
+			fixture: "azure-databricks",
+			infra:   `{"overrides":{}}`,
+			values:  `{}`,
+		},
+		{
+			recipe:  "azure-event-grid",
+			fixture: "azure-event-grid",
+			infra:   `{"overrides":{}}`,
+			values:  `{"input_schema":"EventGridSchema"}`,
+		},
+		{
+			recipe:  "azure-key-vault",
+			fixture: "azure-key-vault",
+			infra:   `{"overrides":{}}`,
+			values:  `{}`,
+		},
+		{
+			recipe:  "azure-logic-apps",
+			fixture: "azure-logic-apps",
+			infra:   `{"overrides":{}}`,
+			values:  `{"definition":{}}`,
+		},
+		{
+			recipe:  "azure-service-bus",
+			fixture: "azure-service-bus",
+			node:    "ordersbus",
+			infra:   `{"overrides":{}}`,
+			values:  `{"queues":{"orders":{"max_delivery_count":5}},"topics":{"events":{"subscriptions":{"audit":{}}}}}`,
+		},
+		{
 			recipe:  "azure-openai",
 			fixture: "cognitive-services-account",
 			infra:   `{"overrides":{"custom_subdomain_name":"orders-openai","sku_name":"Standard","sku_capacity":10,"model_version":"2024-11-20","public_network_access_enabled":false}}`,
@@ -299,7 +362,8 @@ func TestRenderAll_ArmPublishedRecipesRender(t *testing.T) {
 			for _, name := range armFixtureParameters(t, c.fixture) {
 				declared[strings.ToLower(name)] = true
 			}
-			bound := armParametersOf(t, files)
+			node := cmp.Or(c.node, "api")
+			bound := armParametersOfAs(t, files, strings.ToUpper(node[:1])+node[1:])
 			if len(bound) == 0 {
 				t.Fatalf("the nested deployment of %s binds no parameter", c.recipe)
 			}
