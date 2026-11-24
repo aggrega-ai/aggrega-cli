@@ -35,8 +35,9 @@ const (
 	// instance.
 	CodeResourceFolded Code = "resource-folded"
 	// CodeResourceDraftedFromSource records a resource no Recipe maps, drafted
-	// as a Component and a Recipe from the source.
-	CodeResourceDraftedFromSource Code = "resource-drafted-from-source"
+	// as a Component and a Recipe from the source: the code the drafting step
+	// raises its record under.
+	CodeResourceDraftedFromSource = Code(schemadraft.CodeResourceDraftedFromSource)
 	// CodeReferenceNotWired warns of a reference no inject carries.
 	CodeReferenceNotWired Code = "reference-not-wired"
 	// CodeValueNotCarried warns of a value or expression the draft does not
