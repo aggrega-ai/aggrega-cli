@@ -21,9 +21,10 @@ import (
 type Class int
 
 // The classes. A node takes the first of folded, substrate, existing, mapped
-// and drafted that applies to it; a fold or a type rule carrying none of it
-// makes it not carried, and a node whose drafted Component would take a name
-// the catalog holds already is held back.
+// and drafted that applies to it, except that a node the source reads and does
+// not create is never folded; a fold or a type rule carrying none of it makes
+// it not carried, and a node whose drafted Component would take a name the
+// catalog holds already is held back.
 const (
 	// ClassFolded is a child or extension resource a fold of another node's
 	// row writes into that node's instance, or a parent a fold writes into
@@ -129,6 +130,8 @@ type Classified struct {
 //     carries none of its type leaves each not carried. A parent whose row
 //     makes each child of a type an instance of its own is written into each
 //     such instance, and each such child is mapped as an instance of that row.
+//     A node the source reads and does not create is never folded: it is
+//     substrate where a type rule says so, and existing otherwise.
 //  2. substrate, or not carried: a type the format's type rules leave to the
 //     operator or carry none of;
 //  3. existing: a node the source reads and does not create;
@@ -150,26 +153,34 @@ type Classified struct {
 // id and name. Each node is an instance of the Component with a decision of its
 // own. A node of a module form is classed drafted and named, and nothing is
 // drafted for it here: its Recipe sources the module whole and is drafted with
-// the format's module writer. Where a draft halts, its nodes are classed
-// drafted with nothing drafted, and the halt is returned.
+// the format's module writer. A node no row maps for which the format has no
+// writer — no Recipe writer for a resource, no module writer for a module —
+// halts source-refused, the format being misconfigured, and nothing is
+// classified. Where a draft halts, its nodes are classed drafted with nothing
+// drafted, and the halt is returned.
 //
 // A child that is an instance of its own — mapped or drafted, not an instance
 // a fold of its parent's row makes — gains its parent in its DependsOn, so the
 // edge to its parent is a dependency and its parent is ordered before it. A
 // parent, a reference or a dependency naming a repeated node names the
 // instances g.Expanded records for it, and one deploying no instance names
-// none. A child folds into a parent only where its parent names one node.
+// none. A child folds into a parent only where its parent names one node; a
+// child whose parent repeats into several instances, or into none, is an
+// instance of its own, and its decision says why.
 //
 // Each decision's rationale opens with the class and names the rule that gave
 // it. Folded children are reported resource-folded; a not-carried resource
 // resource-not-carried; the substrate resources the source creates
 // substrate-left-to-operator, in one warning listing each; a held-back
 // resource component-exists, naming the Component and the mapping_overrides
-// entry that maps the type to it; a node whose row depends on a value set when
-// the source deploys discriminator-unresolved. The decision and the warning
-// on a resource a type rule classes substrate or not carried name each node
-// and parameter it reads, by the property path it reads it at; no message
-// quotes a value the source writes.
+// entry that maps the type to it, built from the Component's labels in the
+// catalog view, so the import applying it references the Component; a node
+// whose row depends on a value set when the source deploys, and no
+// mapping_overrides entry maps, discriminator-unresolved. A type rule's Says
+// is added to the decision on each node of its type, whatever its class. The
+// decision and the warning on a resource a type rule classes substrate or not
+// carried name each node and parameter it reads, by the property path it reads
+// it at; no message quotes a value the source writes.
 //
 // The table's rows are merged once: a table [Table.Rows] refuses halts
 // source-refused, as do two nodes of g sharing one ID, and nothing is
@@ -195,7 +206,9 @@ func Classify(in aggrega.ImportInput, f Format, g *Graph) ([]Classified, []aggre
 		c.classify(n)
 	}
 	c.settleOneValueFolds()
-	c.settleUnmatched()
+	if refused := c.settleUnmatched(); refused != nil {
+		return nil, append([]aggrega.Diagnostic(nil), *refused)
+	}
 	c.dependOnParents()
 	undeclared := c.undeclared()
 	return c.result(undeclared)
@@ -385,7 +398,7 @@ func (c *classifier) classify(n *Node) {
 		c.instance(n, inst)
 		return
 	}
-	if c.fold(n) {
+	if !n.Existing && c.fold(n) {
 		return
 	}
 	a := c.own[n.ID]
@@ -393,11 +406,10 @@ func (c *classifier) classify(n *Node) {
 	case a.classing():
 		c.typed(n, a.rule)
 	case n.Existing:
-		c.set(n, &Classified{Class: ClassExisting, Decision: decisionFor(n, "existing: the source reads "+n.ID+
-			" as a resource it does not create; nothing is drafted for it, and a value read from it is a "+
-			"pointer the Release holds")})
+		c.set(n, &Classified{Class: ClassExisting, Decision: decisionFor(n, joinNonEmpty("; ", "existing: the "+
+			"source reads "+n.ID+" as a resource it does not create; nothing is drafted for it, and a value read "+
+			"from it is a pointer the Release holds", c.says(n)))})
 	case a.mapped:
-		c.unresolved(n, a)
 		if !c.foldIntoInstances(n, a) {
 			c.mapped(n, a)
 		}
@@ -473,7 +485,7 @@ func (c *classifier) mapped(n *Node, a assessment) {
 		d.Rationale = "mapped: " + over + ", so the Release entry's comment lists the properties the source " +
 			"writes for the author to place: " + andList(writtenPaths(n))
 	}
-	d.Rationale = joinNonEmpty("; ", d.Rationale, c.says(n), a.decision.Rationale)
+	d.Rationale = joinNonEmpty("; ", d.Rationale, c.parentNote(n), c.says(n), a.decision.Rationale)
 	cl.Decision = d
 	c.set(n, cl)
 }
@@ -487,19 +499,23 @@ func (c *classifier) says(n *Node) string {
 }
 
 // settleUnmatched holds back each node no Component maps whose draft's name
-// the catalog holds, and drafts the others, once for each name.
-func (c *classifier) settleUnmatched() {
-	var names []string
+// the catalog holds, and drafts the others, once for each name. It returns a
+// halt where the format has no writer for a node it would draft.
+func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
+	var names, unwritable []string
 	groups := map[string][]*Node{}
 	for _, n := range c.nodes {
 		if !c.pending[n.ID] {
 			continue
 		}
 		name := schemadraft.NameFor(c.in, c.f.Draft, n.Type)
+		held, holds := c.held(name)
 		switch {
-		case c.holds(name):
-			c.heldBack(n, name)
-		case isModule(n.Form) || c.f.Draft.Write == nil:
+		case holds:
+			c.heldBack(n, held)
+		case isModule(n.Form) && c.f.Wrap == nil, !isModule(n.Form) && c.f.Draft.Write == nil:
+			unwritable = append(unwritable, n.ID+" ("+n.Type+")")
+		case isModule(n.Form):
 			c.unwritten(n, name)
 		default:
 			if _, ok := groups[name]; !ok {
@@ -508,9 +524,31 @@ func (c *classifier) settleUnmatched() {
 			groups[name] = append(groups[name], n)
 		}
 	}
+	if len(unwritable) > 0 {
+		d := Report(CodeSourceRefused, "the importer's format has no writer drafting "+andList(unwritable)+
+			", which no row maps: a format drafting a resource from its source needs a Recipe writer, and one "+
+			"keeping a module whole a module writer; the format is the importer's own, so report it to the "+
+			"importer's authors")
+		return &d
+	}
 	for _, name := range names {
 		c.draft(name, groups[name])
 	}
+	return nil
+}
+
+// parentNote says why n, a child whose parent repeats into several instances
+// or into none, folds into no instance of it; empty for any other node.
+func (c *classifier) parentNote(n *Node) string {
+	ids, repeated := c.g.Expanded[n.Parent]
+	if n.Parent == "" || n.Parent == n.ID || c.byID[n.Parent] != nil || !repeated || len(ids) == 1 {
+		return ""
+	}
+	if len(ids) == 0 {
+		return "its parent " + n.Parent + " deploys no instance, so it folds into none and is an instance of its own"
+	}
+	return fmt.Sprintf("its parent %s repeats as %s, so it folds into no one of them and is an instance of its "+
+		"own, depending on each", n.Parent, andList(ids))
 }
 
 // why is the rule that leaves n unmatched.
@@ -528,8 +566,8 @@ func (c *classifier) why(n *Node) string {
 }
 
 // unwritten classes n drafted under name with no draft written here: a node
-// of a module form, whose Recipe the format's module writer drafts, or one of
-// a format that writes no Recipe, or one whose draft halted.
+// of a module form, whose Recipe the format's module writer drafts, or one
+// whose draft halted.
 func (c *classifier) unwritten(n *Node, name string) {
 	d := c.own[n.ID].decision
 	d.SourceNode.ParamsSummary = summary(n)
@@ -542,7 +580,7 @@ func (c *classifier) unwritten(n *Node, name string) {
 	if isModule(n.Form) {
 		module = "its Recipe sources the module whole, drafted with the format's module writer"
 	}
-	d.Rationale = joinNonEmpty("; ", "drafted: "+c.why(n), module, c.says(n))
+	d.Rationale = joinNonEmpty("; ", "drafted: "+c.why(n), c.parentNote(n), module, c.says(n))
 	c.set(n, &Classified{Class: ClassDrafted, Name: name, Decision: d})
 }
 
@@ -561,7 +599,13 @@ func (c *classifier) draft(name string, nodes []*Node) {
 	for i, n := range nodes {
 		d := drafted.Decision
 		d.SourceNode.ID, d.SourceNode.Type = n.ID, n.Type
-		d.Rationale = joinNonEmpty("; ", "drafted: "+c.why(n), notes, c.says(n), drafted.Decision.Rationale)
+		d.Candidates = slices.Clone(d.Candidates)
+		if d.Chosen != nil {
+			chosen := *d.Chosen
+			d.Chosen = &chosen
+		}
+		d.Rationale = joinNonEmpty("; ", "drafted: "+c.why(n), c.parentNote(n), notes, c.says(n),
+			drafted.Decision.Rationale)
 		entity := drafted.Entities[0].Entity
 		entity.SourceRef, entity.DecisionRef = n.ID, "decision:"+n.ID
 		cl := &Classified{Class: ClassDrafted, Name: drafted.Name, Decision: d, Entity: entity}

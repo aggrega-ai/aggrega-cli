@@ -4,6 +4,8 @@
 package cloudimport
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
@@ -83,4 +85,61 @@ func TestOverriddenTypeReferencesTheComponent(t *testing.T) {
 		}
 	}
 	mentions(t, "the rationale", c.Decision.Rationale, append([]string{"mapping_overrides", held}, want...)...)
+}
+
+// remedyEntry returns the settings entry a component-exists warning prints.
+func remedyEntry(t *testing.T, message string) string {
+	t.Helper()
+	_, rest, ok := strings.Cut(message, "the entry ")
+	entry, _, closed := strings.Cut(rest, ", then fill")
+	if !ok || !closed || !json.Valid([]byte(entry)) {
+		t.Fatalf("the warning %q prints no settings entry", message)
+	}
+	return entry
+}
+
+// TestHeldBackRemedyReferencesTheComponentOnceApplied applies exactly the
+// entry a held-back resource's warning prints, and the resource is mapped to
+// the Component it names.
+func TestHeldBackRemedyReferencesTheComponentOnceApplied(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		labels map[string]string
+	}{
+		{"category and type", cacheLabels},
+		{"category alone", map[string]string{"component.aggrega.ai/category": "datastore"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := fixtureFormat()
+			held := component(schemadraft.NameFor(fixtureView(""), f.Draft, cacheType), tc.labels)
+			_, diags := Classify(fixtureView("", held), f, cacheGraph())
+			exists := withCode(diags, CodeComponentExists)
+			if len(exists) != 1 {
+				t.Fatalf("component-exists %+v, want one", exists)
+			}
+			entry := remedyEntry(t, exists[0].Message)
+			out, diags := Classify(fixtureView(entry, held), f, cacheGraph())
+			noHalt(t, diags)
+			c := classOf(t, out, "cache")
+			if c.Class != ClassMapped || c.Entity.Mode != "reference" || c.Entity.Name != held.Name {
+				t.Fatalf("with %s, cache is %s as %+v, want mapped referencing %s", entry, c.Class, c.Entity, held.Name)
+			}
+			if again := withCode(diags, CodeComponentExists); len(again) != 0 {
+				t.Errorf("with the printed entry applied, component-exists %+v", again)
+			}
+		})
+	}
+
+	t.Run("no category label", func(t *testing.T) {
+		f := fixtureFormat()
+		held := component(schemadraft.NameFor(fixtureView(""), f.Draft, cacheType),
+			map[string]string{"component.aggrega.ai/type": "cache"})
+		_, diags := Classify(fixtureView("", held), f, cacheGraph())
+		exists := withCode(diags, CodeComponentExists)
+		if len(exists) != 1 {
+			t.Fatalf("component-exists %+v, want one", exists)
+		}
+		mentions(t, "the warning", exists[0].Message, "carries no component.aggrega.ai/category label")
+		remedyEntry(t, exists[0].Message)
+	})
 }

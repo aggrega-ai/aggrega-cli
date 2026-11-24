@@ -287,7 +287,10 @@ func TestEveryNodeOfOneUnmatchedTypeTakesOneDraft(t *testing.T) {
 				leaf(literal("true"), "properties", "zoneRedundant"),
 			}},
 	}}
-	out, diags := Classify(fixtureView(""), f, g)
+	// A Component of the queues' shape, so each decision weighs a candidate.
+	shaped := component("acme/messaging/queue", nil)
+	shaped.Values = []string{"location", "name"}
+	out, diags := Classify(fixtureView("", shaped), f, g)
 	noHalt(t, diags)
 	if len(written) != 1 {
 		t.Fatalf("the writer drafted %d Recipes, want one for both queues", len(written))
@@ -326,14 +329,22 @@ func TestEveryNodeOfOneUnmatchedTypeTakesOneDraft(t *testing.T) {
 		}
 		mentions(t, c.Node.ID+"'s rationale", c.Decision.Rationale, "billing and orders", "2022-10-01")
 	}
+	if billing.Decision.Chosen == nil || billing.Decision.Chosen == orders.Decision.Chosen ||
+		len(billing.Decision.Candidates) == 0 || &billing.Decision.Candidates[0] == &orders.Decision.Candidates[0] {
+		t.Errorf("billing and orders share their decision's choice or candidates: %+v, %+v", billing.Decision.Chosen,
+			billing.Decision.Candidates)
+	}
 	if got := withCode(diags, CodeResourceDraftedFromSource); len(got) != 1 {
 		t.Errorf("drafted-from-source records %+v, want one for the one draft", got)
 	}
 }
 
 func TestTypeRuleOfClassDraftedAddsItsNote(t *testing.T) {
-	g := &Graph{Nodes: []*Node{{ID: "migrate", Type: scriptType, Form: FormRaw, Name: text("migrate"),
-		Body: []Prop{leaf(text("AzureCLI"), "kind"), leaf(text("westeurope"), "location")}}}}
+	g := &Graph{Nodes: []*Node{
+		{ID: "migrate", Type: scriptType, Form: FormRaw, Name: text("migrate"),
+			Body: []Prop{leaf(text("AzureCLI"), "kind"), leaf(text("westeurope"), "location")}},
+		{ID: "seeded", Type: scriptType, Form: FormRaw, Existing: true},
+	}}
 	out, diags := Classify(fixtureView(""), fixtureFormat(), g)
 	noHalt(t, diags)
 	c := classOf(t, out, "migrate")
@@ -341,6 +352,11 @@ func TestTypeRuleOfClassDraftedAddsItsNote(t *testing.T) {
 		t.Fatalf("migrate is %s with %d drafts, want drafted", c.Class, len(c.Drafts))
 	}
 	mentions(t, "the rationale", c.Decision.Rationale, scriptSays)
+	if s := classOf(t, out, "seeded"); s.Class != ClassExisting {
+		t.Errorf("seeded is %s, want existing", s.Class)
+	} else {
+		mentions(t, "seeded's rationale", s.Decision.Rationale, scriptSays)
+	}
 }
 
 func TestExistingNodeAndUndeclaredReferenceAreExisting(t *testing.T) {
@@ -436,6 +452,48 @@ func TestDiscriminatorUnresolvedIsReported(t *testing.T) {
 	}
 	mentions(t, "the warning", got[0].Message, "web", "core/compute/function", "core/compute/server",
 		"mapping_overrides")
+
+	// A mapping_overrides entry of the type maps it whatever the rows say, so
+	// no row's discriminator is reported.
+	site := component("acme/compute/site", map[string]string{
+		"component.aggrega.ai/category": "compute",
+		"component.aggrega.ai/type":     "server",
+	})
+	settings := `{"mapping_overrides": {"arm": {"` + sitesType + `": {"component": "acme/compute/site",
+		"category": "compute", "traits": {"component.aggrega.ai/type": "server"}}}}}`
+	out, diags = Classify(fixtureView(settings, site), f, g)
+	noHalt(t, diags)
+	if c := classOf(t, out, "web"); c.Class != ClassMapped || c.Entity.Name != site.Name {
+		t.Fatalf("web is %s as %+v, want mapped to %s by the override", c.Class, c.Entity, site.Name)
+	}
+	if got := withCode(diags, CodeDiscriminatorUnresolved); len(got) != 0 {
+		t.Errorf("discriminator warnings %+v for a type mapping_overrides maps, want none", got)
+	}
+}
+
+// TestClassifyHaltsOnAFormatThatDraftsNoRecipe halts on a resource no row
+// maps where the format has no writer for its form: a format refusing to draft
+// is misconfigured, and nothing is classified.
+func TestClassifyHaltsOnAFormatThatDraftsNoRecipe(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		node *Node
+		f    func() Format
+	}{
+		{"a raw resource and no Recipe writer", &Node{ID: "queue", Type: namespaceType, Form: FormRaw},
+			func() Format { f := fixtureFormat(); f.Draft.Write = nil; return f }},
+		{"a module and no module writer", &Node{ID: "queue", Type: namespaceType, Form: FormAVM,
+			Module: &ModuleRef{Path: "avm/res/service-bus/namespace"}}, fixtureFormat},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, diags := Classify(fixtureView(""), tc.f(), &Graph{Nodes: []*Node{pgServer(), tc.node}})
+			if out != nil || len(diags) != 1 || diags[0].Code != string(CodeSourceRefused) ||
+				diags[0].Severity != aggrega.SeverityHalt {
+				t.Fatalf("Classify = %v, %+v; want one source-refused halt and nothing classified", classes(out), diags)
+			}
+			mentions(t, "the halt", diags[0].Message, "queue", namespaceType)
+		})
+	}
 }
 
 func TestClassifyHaltsOnATableThatContradictsItself(t *testing.T) {

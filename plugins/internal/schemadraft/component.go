@@ -26,10 +26,12 @@ func Marked(text string) string {
 // draftVersion is the version of every entity a schema import drafts.
 const draftVersion = "0.1.0"
 
+// LabelCategory is the label naming a Component's category.
+const LabelCategory = "component.aggrega.ai/category"
+
 // The labels of a drafted Component and the shape of its secret slots.
 const (
 	labelType      = "component.aggrega.ai/type"
-	labelCategory  = "component.aggrega.ai/category"
 	labelHosting   = "component.aggrega.ai/hosting"
 	typeResource   = "resource"
 	hostingManaged = "managed"
@@ -59,7 +61,7 @@ func ComponentFor(name string, t *Type, placed []Placed, format string, r Rules)
 		Labels:      []importer.Label{{Key: labelType, Value: typeResource}},
 	}
 	if category := categoryOf(name); category != "" {
-		d.Labels = append(d.Labels, importer.Label{Key: labelCategory, Value: category})
+		d.Labels = append(d.Labels, importer.Label{Key: LabelCategory, Value: category})
 	}
 	d.Labels = append(d.Labels, importer.Label{Key: labelHosting, Value: hostingManaged})
 

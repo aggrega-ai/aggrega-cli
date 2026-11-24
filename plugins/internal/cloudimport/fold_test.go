@@ -178,3 +178,53 @@ func TestFoldAccountWithTwoModelDeploymentsIsTwoInstances(t *testing.T) {
 	}
 	mentions(t, "the record", folded[0].Message, "account", "chat and embed", "creates its own")
 }
+
+// TestFoldExistingChildStaysExisting keeps a child the source reads out of a
+// fold of its parent's row: it is existing, and the fold takes the child the
+// source creates.
+func TestFoldExistingChildStaysExisting(t *testing.T) {
+	g := &Graph{Nodes: []*Node{
+		pgServer(),
+		{ID: "aDefault", Type: databaseType, Form: FormRaw, Parent: "server", Existing: true, Name: text("postgres")},
+		{ID: "ordersDb", Type: databaseType, Form: FormRaw, Parent: "server", Name: text("orders")},
+	}}
+	out, diags := Classify(fixtureView(""), fixtureFormat(), g)
+	noHalt(t, diags)
+	if c := classOf(t, out, "aDefault"); c.Class != ClassExisting {
+		t.Errorf("aDefault is %s, want existing: the source reads it and creates none", c.Class)
+	}
+	if c := classOf(t, out, "ordersDb"); c.Class != ClassFolded || c.Into != "server" {
+		t.Errorf("ordersDb is %s into %q, want folded into server", c.Class, c.Into)
+	}
+	if got := withCode(diags, CodeResourceNotCarried); len(got) != 0 {
+		t.Errorf("not-carried warnings %+v, want none", got)
+	}
+}
+
+// TestFoldChildOfARepeatedParentIsDraftedOnItsOwn classes a child whose
+// parent repeats into two instances, or into none, as an instance of its own,
+// its decision saying why.
+func TestFoldChildOfARepeatedParentIsDraftedOnItsOwn(t *testing.T) {
+	pair := &Node{ID: "server", Type: serverType, Form: FormRaw, Repeat: &Repetition{Keys: []string{"0", "1"},
+		Instance: func(string) *Node { return pgServer() }}}
+	spare := &Node{ID: "spare", Type: serverType, Form: FormRaw, Repeat: &Repetition{Keys: []string{}}}
+	g := &Graph{Nodes: []*Node{pair, spare,
+		{ID: "logConnections", Type: configType, Form: FormRaw, Parent: "server", Body: []Prop{leaf(text("on"), "properties", "value")}},
+		{ID: "orphan", Type: configType, Form: FormRaw, Parent: "spare", Body: []Prop{leaf(text("on"), "properties", "value")}},
+	}}
+	Expand(g)
+	out, diags := Classify(fixtureView(""), fixtureFormat(), g)
+	noHalt(t, diags)
+	c := classOf(t, out, "logConnections")
+	if c.Class != ClassDrafted || !slices.Contains(c.Node.DependsOn, "server-0") ||
+		!slices.Contains(c.Node.DependsOn, "server-1") {
+		t.Fatalf("logConnections is %s depending on %q, want drafted depending on both servers", c.Class,
+			c.Node.DependsOn)
+	}
+	mentions(t, "logConnections' rationale", c.Decision.Rationale, "server-0 and server-1")
+	o := classOf(t, out, "orphan")
+	if o.Class != ClassDrafted || len(o.Node.DependsOn) != 0 {
+		t.Fatalf("orphan is %s depending on %q, want drafted depending on nothing", o.Class, o.Node.DependsOn)
+	}
+	mentions(t, "orphan's rationale", o.Decision.Rationale, "spare deploys no instance")
+}
