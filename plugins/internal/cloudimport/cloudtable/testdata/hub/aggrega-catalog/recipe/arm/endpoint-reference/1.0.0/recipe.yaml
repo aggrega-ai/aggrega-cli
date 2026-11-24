@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: endpoint-reference
+  version: 1.0.0
+spec:
+  capability: arm
+  implements: core/ai-model/acme-endpoint:1.0.0
+
+  provides:
+    endpoint: "{{ .infra.endpoint }}"
+
+  artifacts:
+    endpoint.yaml: |
+      resources: {}
+      outputs:
+        endpoint:
+          type: string
+          value: {{ toJson .infra.endpoint }}

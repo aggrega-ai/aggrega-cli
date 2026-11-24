@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: broken-import
+  version: 1.0.0
+spec:
+  capability: arm
+  implements: core/datastore/acme-cache:1.0.0
+
+  source:
+    kind: bicep-module-oci
+    url: oci://mcr.microsoft.com/bicep/avm/res/acme/broken
+    version: 0.1.0
+
+  valuesMapping:
+    $import: AcmeAbsentParameters#/mappings/App

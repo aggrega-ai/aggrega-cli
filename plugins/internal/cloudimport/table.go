@@ -123,6 +123,8 @@ type Row struct {
 	// Values and Infra place properties under values and infra keys,
 	// Overrides under infra.overrides keys, and Secrets under credential
 	// slots; Provides place attributes a consumer reads under provides keys.
+	// A Provides placement with an empty From publishes the resource's
+	// identifier, which a reference to the resource itself reads.
 	Values, Infra, Overrides, Secrets, Provides []Placement
 	// Folds are the child and extension resources the row folds.
 	Folds []Fold

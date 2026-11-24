@@ -1,0 +1,59 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: store-inline
+  version: 1.0.0
+spec:
+  capability: arm
+  implements: core/datastore/acme-store:1.0.0
+
+  locals:
+    operator_host: '{{ optional (optional .infra "overrides" dict) "host" "" }}'
+
+  # This Recipe reads from infra.overrides:
+  #   subnet_id      - string (properties.network.subnetId), required
+  #   replicas       - integer (properties.replicaCount; default 1)
+  #   public_access  - bool (properties.publicNetworkAccess, Enabled or Disabled)
+  #   zones          - []string (zones[0]: one zone)
+  #   host           - string (published as provides.host; not written into the
+  #                    template)
+  #   tier           - refused: the tier follows values.tier
+  #
+  # A remark after the block is not one of its entries:
+  #   network        - string (properties.network.name)
+  provides:
+    id: "[resourceId('Microsoft.Acme/stores', '{{ .context.instance_id }}')]"
+    host: "{{ if .locals.operator_host }}{{ .locals.operator_host }}{{ else }}[reference('{{ capitalizedWords .context.instance_id }}').hostName]{{ end }}"
+    region: "[split(reference('{{ capitalizedWords .context.instance_id }}').region, '/')[0]]"
+    tier: "{{ .values.tier }}"
+
+  artifacts:
+    store.yaml: |
+      resources:
+        {{ capitalizedWords .context.instance_id }}Network:
+          existing: true
+          type: Microsoft.Network/virtualNetworks
+          apiVersion: "2024-05-01"
+          name: "{{ .infra.overrides.network }}"
+        {{ capitalizedWords .context.instance_id }}:
+          type: Microsoft.Acme/stores
+          apiVersion: "2025-01-01"
+          name: "{{ .context.instance_id }}"
+          kind: Premium
+          properties:
+            tier: "{{ .values.tier }}"
+            capacityGB: {{ .infra.storage_size }}
+            {{- if .values.label }}
+            label: "{{ .values.label }}"
+            {{- end }}
+            zones:
+              - "{{ .infra.zone }}"
+            {{- range $k, $v := .values.extra }}
+            {{ $k }}: "{{ $v }}"
+            {{- end }}
+            policy: |
+              tier: {{ .values.tier }}
+        {{ capitalizedWords .context.instance_id }}Child:
+          type: Microsoft.Acme/stores/children
+          apiVersion: "2025-01-01"
+          name: "[format('{0}/child', '{{ .context.instance_id }}')]"

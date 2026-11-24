@@ -1,0 +1,43 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: cache-module
+  version: 1.0.0
+spec:
+  capability: arm
+  implements: core/datastore/acme-cache:1.0.0
+
+  source:
+    kind: bicep-module-oci
+    url: oci://mcr.microsoft.com/bicep/avm/res/acme/cache
+    version: 0.4.0
+
+  locals:
+    symbol: '{{ capitalizedWords .context.instance_id }}'
+
+  # This Recipe reads from infra.overrides:
+  #   sku_name          - string (skuName; default "Basic")
+  #   location          - string (location; the module's default is the resource group's)
+  #   network           - object of these fields and no other:
+  #     subnet_id       - string (networkConfig.subnetResourceId)
+  #     private_access  - bool (admitted, renders nothing)
+  #   enable_telemetry  - false alone (enableTelemetry, always false)
+  #   default_access_policy_enabled
+  #                     - bool (accessPolicy.enabled)
+  provides:
+    host: "[reference('{{ .locals.symbol }}').outputs.hostName.value]"
+    port: "6380"
+    endpoint: "[format('rediss://{0}:6380', reference('{{ .locals.symbol }}').outputs.hostName.value)]"
+    user: "{{ .values.user }}"
+
+  valuesMapping: |
+    {{- $o := default dict .infra.overrides }}
+    name: "{{ .context.instance_id }}"
+    kind: Standard
+    skuName: "{{ optional $o "sku_name" "Basic" }}"
+    evictionPolicy: "{{ .values.eviction_policy }}"
+    memoryGB: {{ .infra.memory_gb }}
+    {{- if .infra.ha.enabled }}
+    replicas: {{ .infra.ha.replicas }}
+    {{- end }}
+    enableTelemetry: false

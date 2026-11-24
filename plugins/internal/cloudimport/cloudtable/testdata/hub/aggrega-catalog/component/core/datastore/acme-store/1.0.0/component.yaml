@@ -1,0 +1,10 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: core/datastore/acme-store
+  version: 1.0.0
+  labels:
+    component.aggrega.ai/category: datastore
+    component.aggrega.ai/type: stateful-server
+    acme.aggrega.ai/engine: kv
+spec: {}

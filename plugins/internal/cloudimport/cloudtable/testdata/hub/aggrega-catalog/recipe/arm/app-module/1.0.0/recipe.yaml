@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: app-module
+  version: 1.0.0
+spec:
+  capability: arm
+  implements: core/compute/acme-app:1.0.0
+
+  source:
+    kind: git-repository
+    url: https://github.com/Azure/bicep-registry-modules.git
+    ref: avm/res/acme/web-app/0.1.0
+    module_subdir: avm/res/acme/web-app
+
+  valuesMapping: |
+    name: "{{ .context.instance_id }}"
+    image: "{{ .infra.image }}"

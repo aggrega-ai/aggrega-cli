@@ -1,0 +1,20 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: queue-library
+  version: 1.0.0
+spec:
+  capability: arm
+  implements: core/messaging/acme-queue:1.0.0
+
+  locals:
+    symbol: '{{ capitalizedWords .context.instance_id }}'
+
+  # This Recipe reads from infra.overrides:
+  #   tags  - map[string]string (tags)
+  provides:
+    endpoint: "[reference('{{ .locals.symbol }}').outputs.endpoint.value]"
+
+  artifacts:
+    queue.yaml:
+      $import: AcmeQueueFragments#/artifacts/Queue

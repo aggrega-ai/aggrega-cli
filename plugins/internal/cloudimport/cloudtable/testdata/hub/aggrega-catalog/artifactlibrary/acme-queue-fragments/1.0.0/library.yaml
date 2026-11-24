@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1beta1
+kind: ArtifactLibrary
+metadata:
+  name: AcmeQueueFragments
+  version: 1.0.0
+spec:
+  artifacts:
+    Queue:
+      queue.yaml: |
+        {{- $sym := .locals.symbol }}
+        {{- $queue := dict "type" "Microsoft.Acme/namespaces" "apiVersion" "2025-01-01" "name" .context.instance_id "kind" "Messaging" "identity" (dict "type" "UserAssigned") "properties" (dict "tier" .values.tier) }}
+        {{- $topic := dict "type" "Microsoft.Acme/namespaces/topics" "apiVersion" "2025-01-01" "name" (printf "%s/events" .context.instance_id) }}
+        {{- $rule := dict "type" "rules" "name" "all" }}
+        {{- $network := dict "existing" true "type" "Microsoft.Network/virtualNetworks" "name" .infra.overrides.network }}
+        {{- $template := dict "contentVersion" "1.0.0.0" "resources" (list $queue $topic $rule $network) }}
+        {{- $nested := dict "type" "Microsoft.Resources/deployments" "apiVersion" "2025-04-01" "name" $sym "properties" (dict "mode" "Incremental" "template" $template) }}
+        resources:
+          {{ $sym }}: {{ toJson $nested }}

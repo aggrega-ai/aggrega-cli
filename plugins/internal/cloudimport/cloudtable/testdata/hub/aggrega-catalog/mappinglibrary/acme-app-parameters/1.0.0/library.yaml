@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1beta1
+kind: MappingLibrary
+metadata:
+  name: AcmeAppParameters
+  version: 1.0.0
+spec:
+  mappings:
+    Alias: |
+      $import: AcmeAppParameters#/mappings/App
+    App: |
+      name: "{{ .context.instance_id }}"
+      image: "{{ .infra.image }}"
+      port: {{ .infra.port }}
+      displayName: "{{ .values.display_name }}"
