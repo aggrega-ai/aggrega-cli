@@ -35,8 +35,9 @@ const (
 	// PillarNotProvided is a property the vendor reads back that is not a
 	// scalar, which provides do not carry.
 	PillarNotProvided
-	// PillarInject is an input the Recipe reads off the instance's inject pipe.
-	// Split places none.
+	// PillarInject is an input the Recipe reads off the instance's inject pipe:
+	// a property a neighbour supplies, placed by a draft from the source and
+	// read on the property mechanism. Split places none.
 	PillarInject
 )
 

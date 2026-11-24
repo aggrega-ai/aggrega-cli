@@ -64,7 +64,9 @@ type Module struct {
 	Type     *schemadraft.Type
 	// Inputs are top-level attributes and blocks of the resource, each pillar-
 	// or inject-sourced and set from one module variable (VariableNames); a
-	// member of a block is set from within its block's variable.
+	// member of a block is set from within its block's variable, and an input
+	// at a deeper path from its own variable, inside the block an input at its
+	// first segment writes.
 	Inputs []schemadraft.Input
 	// Outputs are attributes read back, one output each, at the top level of
 	// the resource as the terraform-schema format drafts them. An output is
@@ -95,22 +97,32 @@ type Module struct {
 // read from the iterator of its depth with try(…, null), so an absent member
 // leaves the argument unset; a member read back alone is not set, and a block
 // the reader cut is left out and named in the Header. A resource whose name
-// does not open with its provider's type is bound to that provider. Each
-// output publishes an attribute read back, sensitive where the attribute is,
-// under the name outputNames gives it.
+// does not open with its provider's type is bound to that provider. An input at
+// a path of more than one segment, such as a property a neighbour supplies, is
+// set inside the dynamic block the input at its first segment writes, at its
+// path, the Header naming its variable and the path: the segment after a block
+// names the item of a list in decimal, the key of a map or the item 0 of a
+// single block, in which alone the attribute is set, the other items keeping
+// the value their block's variable gives it, or else a member of the block's
+// content; the last segment names an attribute. Each output publishes an
+// attribute read back, sensitive where the attribute is, under the name
+// outputNames gives it.
 //
 // The valuesMapping sets one module argument for each input with a value: a
 // required input always, an optional one where its source holds it, so one set
-// to false, 0 or "" is written. A value is written with toJson, whole; a values
-// or infra input is rebuilt under the vendor's names, as schemadraft.Respell
-// writes it. A secret is the value its slot's attachment delivers on the env
-// inject mechanism, under the key the attachment's values name; a slot whose
-// attachment delivers nothing there halts naming the slot, and an optional
-// slot holding no attachment leaves its variable unset. No value is written
-// into the module.
+// to false, 0 or "" is written. An input at a deeper path halts where the
+// optional input whose block it is set inside is not set, naming its path. A
+// value is written with toJson, whole; a values or infra input is rebuilt under
+// the vendor's names, as schemadraft.Respell writes it. A secret is the value
+// its slot's attachment delivers on the env inject mechanism, under the key the
+// attachment's values name; a slot whose attachment delivers nothing there
+// halts naming the slot, and an optional slot holding no attachment leaves its
+// variable unset. No value is written into the module.
 //
 // It warns provider-version-unconstrained where m names a provider at no
-// version, naming the provider and where its version goes.
+// version, naming the provider and where its version goes. It halts
+// resource-type-refused, drafting nothing, on an input at a deeper path that no
+// block of the module holds, naming it.
 func WriteModule(m Module) (importer.RecipeDraft, []aggrega.Diagnostic) {
 	names, renamed := variableNames(m.Inputs)
 	d := importer.RecipeDraft{
@@ -130,14 +142,34 @@ func WriteModule(m Module) (importer.RecipeDraft, []aggrega.Diagnostic) {
 	w := &bodyWriter{}
 	body := map[string]any{}
 	variables := map[string]any{}
+	var nested []int
 	for i, in := range m.Inputs {
 		variables[names[i]] = variable(in)
+		if isNested(in) {
+			nested = append(nested, i)
+			continue
+		}
 		w.member(body, in.Property, "var."+names[i], 1)
+	}
+	var halts []aggrega.Diagnostic
+	var placed []string
+	for _, i := range nested {
+		in := m.Inputs[i]
+		if why := w.nested(body, m.Inputs, in, "var."+names[i]); why != "" {
+			halts = append(halts, nestedRefused(m, in, why))
+			continue
+		}
+		placed = append(placed, fmt.Sprintf("The module variable %s sets %s, inside the block %s.", names[i],
+			dotted(in.Property.Path), in.Property.Path[0]))
+	}
+	if len(halts) > 0 {
+		return importer.RecipeDraft{}, halts
 	}
 	for _, path := range w.omitted {
 		d.Header = append(d.Header, fmt.Sprintf("The module does not set the block %s: it nests deeper than %d "+
 			"levels, below which the draft does not read the vendor schema.", path, schemadraft.MaxDepth))
 	}
+	d.Header = append(d.Header, placed...)
 
 	var diags []aggrega.Diagnostic
 	doc := map[string]any{}
@@ -212,7 +244,10 @@ func VariableName(vendor string, used map[string]bool) string {
 
 // VariableNames returns the module variable WriteModule declares for each of
 // m.Inputs, in their order: the variable the module sets the input's attribute
-// or block from, and the key the valuesMapping sets it under.
+// or block from, and the key the valuesMapping sets it under. An input at a path
+// of more than one segment takes the variable VariableName gives its source's
+// key, the property inject key of one a neighbour supplies, rather than its
+// name.
 func VariableNames(m Module) []string {
 	names, _ := variableNames(m.Inputs)
 	return names
@@ -230,18 +265,18 @@ func variableNames(inputs []schemadraft.Input) ([]string, []string) {
 	names := make([]string, len(inputs))
 	used := map[string]bool{}
 	reserved := func(in schemadraft.Input) bool {
-		return slices.Contains(reservedVariables, underscored(importer.Slug(in.Property.Name)))
+		return slices.Contains(reservedVariables, underscored(importer.Slug(variableBase(in))))
 	}
 	for _, pass := range []bool{false, true} {
 		for i, in := range inputs {
 			if reserved(in) == pass {
-				names[i] = VariableName(in.Property.Name, used)
+				names[i] = VariableName(variableBase(in), used)
 			}
 		}
 	}
 	var lines []string
 	for i, in := range inputs {
-		if names[i] == in.Property.Name {
+		if isNested(in) || names[i] == in.Property.Name {
 			continue
 		}
 		why := "since another attribute's variable takes its name"
@@ -253,6 +288,23 @@ func variableNames(inputs []schemadraft.Input) ([]string, []string) {
 	}
 	return names, lines
 }
+
+// variableBase is the name the variable of in is named after: the source's key
+// of an input at a path of more than one segment, the property's name of any
+// other.
+func variableBase(in schemadraft.Input) string {
+	if isNested(in) {
+		return in.Source.Key
+	}
+	return in.Property.Name
+}
+
+// isNested reports whether in sits at a path of more than one segment, which
+// the module sets inside a block another input writes.
+func isNested(in schemadraft.Input) bool { return len(in.Property.Path) > 1 }
+
+// dotted is path joined by dots.
+func dotted(path []string) string { return strings.Join(path, ".") }
 
 // variable is the module variable declaring in.
 func variable(in schemadraft.Input) map[string]any {
@@ -345,6 +397,105 @@ func (w *bodyWriter) member(body map[string]any, p *schemadraft.Property, value 
 		body["dynamic"] = dynamic
 	}
 	dynamic[p.Name] = block
+}
+
+// nested sets in, at a path of more than one segment, from the expression value
+// inside the dynamic block the input at its first segment writes into body, as
+// WriteModule describes, and returns "", or returns why it cannot.
+func (w *bodyWriter) nested(body map[string]any, inputs []schemadraft.Input, in schemadraft.Input, value string) string {
+	path := in.Property.Path
+	i := slices.IndexFunc(inputs, func(c schemadraft.Input) bool { return !isNested(c) && c.Property.Name == path[0] })
+	if i < 0 {
+		return "no input of the module writes " + path[0]
+	}
+	p, content := inputs[i].Property, body
+	var conditions []string
+	for k := 0; ; {
+		if p.Block == nil || p.Block.Attribute || p.Cut != "" {
+			return dotted(path[:k+1]) + " is not a block the module writes"
+		}
+		dynamic, _ := content["dynamic"].(map[string]any)
+		block, _ := dynamic[path[k]].(map[string]any)
+		inner, _ := block["content"].(map[string]any)
+		it, _ := block["iterator"].(string)
+		if inner == nil {
+			return dotted(path[:k+1]) + " is not a block the module writes"
+		}
+		element := p
+		if p.Items != nil && p.Block.Nesting != nestingSingle && p.Block.Nesting != nestingGroup {
+			element = p.Items
+		}
+		k++
+		if condition, ok := itemCondition(p.Block.Nesting, it, path[k]); ok {
+			conditions = append(conditions, condition)
+			k++
+		}
+		if k == len(path) {
+			return dotted(path) + " names an item of a block, not an attribute in it"
+		}
+		j := slices.IndexFunc(element.Properties, func(m *schemadraft.Property) bool {
+			return m.Name == path[k] && !m.ReadOnly
+		})
+		if j < 0 {
+			return fmt.Sprintf("the block %s holds no attribute %s the module sets", dotted(path[:k]), path[k])
+		}
+		m := element.Properties[j]
+		if k < len(path)-1 {
+			p, content = m, inner
+			continue
+		}
+		if m.Block != nil && !m.Block.Attribute {
+			return dotted(path) + " is a block, not an attribute"
+		}
+		expression := value
+		if len(conditions) > 0 {
+			kept := "null"
+			if text, ok := inner[m.Name].(string); ok {
+				kept = strings.TrimSuffix(strings.TrimPrefix(text, "${"), "}")
+				if strings.Contains(kept, " ? ") {
+					kept = "(" + kept + ")"
+				}
+			}
+			expression = strings.Join(conditions, " && ") + " ? " + value + " : " + kept
+		}
+		inner[m.Name] = "${" + expression + "}"
+		return ""
+	}
+}
+
+// itemCondition is the condition holding for the item segment names of a
+// dynamic block of the nesting given, whose iterator is it, where segment names
+// an item: an index in decimal of a list, any key of a map, and 0 of a single
+// block; ok is false where segment names no item.
+func itemCondition(nesting, it, segment string) (string, bool) {
+	index, err := strconv.Atoi(segment)
+	isIndex := err == nil && strings.Trim(segment, "0123456789") == ""
+	switch nesting {
+	case nestingList:
+		if isIndex {
+			return it + ".key == " + strconv.Itoa(index), true
+		}
+	case nestingMap:
+		return it + ".key == " + strconv.Quote(segment), true
+	case nestingSingle, nestingGroup:
+		if segment == "0" {
+			return it + ".key == 0", true
+		}
+	}
+	return "", false
+}
+
+// nestedRefused halts on the input in of m, at a path of more than one segment,
+// which the module cannot set, saying why.
+func nestedRefused(m Module, in schemadraft.Input, why string) aggrega.Diagnostic {
+	return aggrega.Diagnostic{
+		Severity: aggrega.SeverityHalt,
+		Code:     schemadraft.CodeResourceTypeRefused,
+		Message: fmt.Sprintf("the module drafted for %s sets the input %s inside the block holding it, and %s: an "+
+			"input at a nested path is set only inside a block another input of the module writes", m.Type.Name,
+			dotted(in.Property.Path), why),
+		SourceRef: m.Type.Source,
+	}
 }
 
 // identifier matches a name Terraform reads as an attribute after a dot.
@@ -473,19 +624,42 @@ func valuesMapping(inputs []schemadraft.Input, names []string) string {
 	var lines []string
 	for i, in := range inputs {
 		key := yamlKey(names[i])
+		guard := blockGuard(inputs, in)
 		switch {
 		case in.Source.Pillar == schemadraft.PillarSecret:
-			lines = append(lines, secretLines(in, names[i], key)...)
+			lines = append(append(lines, guard...), secretLines(in, names[i], key)...)
 		case in.Required:
-			lines = append(lines, key+": "+inputValue(in))
+			lines = append(append(lines, guard...), key+": "+inputValue(in))
 		default:
-			lines = append(lines, "{{- if "+in.Source.Present()+" }}", key+": "+inputValue(in), "{{- end }}")
+			lines = append(append(append(lines, "{{- if "+in.Source.Present()+" }}"), guard...),
+				key+": "+inputValue(in), "{{- end }}")
 		}
 	}
 	if len(lines) == 0 {
 		return ""
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// blockGuard is the lines halting where in, at a path of more than one segment,
+// is set inside the block of an optional input that is not set, naming in's
+// path; none for any other in.
+func blockGuard(inputs []schemadraft.Input, in schemadraft.Input) []string {
+	if !isNested(in) {
+		return nil
+	}
+	i := slices.IndexFunc(inputs, func(c schemadraft.Input) bool {
+		return !isNested(c) && c.Property.Name == in.Property.Path[0]
+	})
+	if i < 0 || inputs[i].Required {
+		return nil
+	}
+	return []string{
+		"{{- if not " + inputs[i].Source.Present() + " }}",
+		"{{- fail " + strconv.Quote(fmt.Sprintf("the module sets %s inside the block %s, and %s is not set: set it, "+
+			"holding the item the path names", dotted(in.Property.Path), in.Property.Path[0], in.Property.Path[0])) + " }}",
+		"{{- end }}",
+	}
 }
 
 // inputValue is the template text writing in's value as JSON: a values or infra

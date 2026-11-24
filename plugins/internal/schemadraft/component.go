@@ -105,10 +105,14 @@ func pillarNode(pl Placed) importer.SchemaNode {
 }
 
 // describedBy is p's vendor description, marked, or composed text saying the
-// vendor schema gives none.
+// vendor schema gives none, or for a property read from a source writing the
+// resource, that the source gives none.
 func describedBy(p *Property) string {
-	if p.Description != "" {
+	switch {
+	case p.Description != "":
 		return Marked(p.Description)
+	case p.Written:
+		return "The source writing the resource gives no description of " + vendorPath(p) + "."
 	}
 	return "The vendor schema gives no description of " + vendorPath(p) + "."
 }

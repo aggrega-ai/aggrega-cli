@@ -139,16 +139,23 @@ type Writer func(r Resource) (importer.RecipeDraft, []aggrega.Diagnostic)
 // deploy-time parameter a Recipe declares for the secret p, on a format that
 // declares secrets as parameters: p's name in capitalized words, so the
 // parameter's whole name, the instance's name in capitalized words followed by
-// it, holds letters and digits alone.
+// it, holds letters and digits alone. For a property nested deeper than a
+// member of an object at the top of the resource, a path of more than two
+// segments, it is the path below the first segment in capitalized words, so two
+// secrets of one name at two such paths take two parameters.
 func SecretParameter(p *Property) string {
+	if len(p.Path) > 2 {
+		return alphanumeric.CapitalizedWords(strings.Join(p.Path[1:], "."))
+	}
 	return alphanumeric.CapitalizedWords(p.Name)
 }
 
 // resourceFor is the resource a Recipe writes for the type t, whose properties
-// placed holds as Split placed them: one input per property placed in values,
-// infra, infra.overrides or as a secret, and one provide per scalar read back,
-// each in the order placed holds it. It returns beside it the rule of each
-// input, in the inputs' order.
+// placed holds as they are placed: one input per property placed in values,
+// infra, infra.overrides, as a secret or read off the inject pipe, on the
+// property mechanism, and one provide per attribute read back, each in the
+// order placed holds it. It returns beside it the rule of each input, in the
+// inputs' order.
 func resourceFor(t *Type, placed []Placed) (Resource, []string) {
 	r := Resource{Type: t}
 	var rules []string
@@ -157,6 +164,10 @@ func resourceFor(t *Type, placed []Placed) (Resource, []string) {
 		case PillarValues, PillarInfra, PillarOverrides, PillarSecret:
 			r.Inputs = append(r.Inputs, Input{Property: pl.Property, Source: InputSource{Pillar: pl.Pillar, Key: pl.Key},
 				Required: pl.Required, Secret: pl.Pillar == PillarSecret})
+			rules = append(rules, pl.Rule)
+		case PillarInject:
+			r.Inputs = append(r.Inputs, Input{Property: pl.Property,
+				Source: InputSource{Pillar: PillarInject, Key: pl.Key, Mechanism: MechanismProperty}, Required: pl.Required})
 			rules = append(rules, pl.Rule)
 		case PillarProvides:
 			r.Provides = append(r.Provides, provideOf(t, pl.Key, pl.Property))

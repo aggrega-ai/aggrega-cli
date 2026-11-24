@@ -24,7 +24,10 @@ type recipeSpec struct {
 	name, implements string
 	// component is the Component the Recipe implements.
 	component string
-	res       Resource
+	// format is the format of the source the Recipe is drafted from, which its
+	// description names.
+	format string
+	res    Resource
 	// rules holds the rule of each input of res, in the inputs' order.
 	rules []string
 	// secretSlots reports that a secret is delivered on a featuresSchema slot
@@ -42,7 +45,7 @@ type recipeSpec struct {
 func recipeDraft(f Format, s recipeSpec, d importer.RecipeDraft) importer.RecipeDraft {
 	d.Name, d.Version, d.Capability, d.Implements = s.name, draftVersion, f.Capability, s.implements
 	d.Description = fmt.Sprintf("Draft Recipe realizing %s on %s with one resource of the type %s, imported from a "+
-		"source in the %s format.", s.component, f.Capability, typeName(s.res.Type), f.Name)
+		"source in the %s format.", s.component, f.Capability, typeName(s.res.Type), s.format)
 	d.Header = append(recipeHeader(s), d.Header...)
 	d.Assertions = append(sharedAssertions(s), d.Assertions...)
 	return d

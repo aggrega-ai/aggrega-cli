@@ -695,3 +695,335 @@ func TestArmRealFileDrafts(t *testing.T) {
 	}
 	assemble(t, nil, []string{"orders-identity", "orders-github"}, identityText, credText)
 }
+
+// The container app a template writes, drafted from the source.
+const (
+	containerApps     = "Microsoft.App/containerApps"
+	registryInject    = "properties_configuration_registries_0_server"
+	registryReference = "[reference('Registry').loginServer]"
+	appComponentName  = "imported/compute/microsoft-app-containerapps"
+	appRecipeName     = "microsoft-app-containerapps"
+	// registryFragment declares the registry the app's server refers to.
+	registryFragment = "resources:\n  Registry:\n    type: Microsoft.ContainerRegistry/registries\n" +
+		"    apiVersion: \"2023-07-01\"\n    name: ordersreg\n    location: westeurope\n    sku:\n      name: Basic\n"
+)
+
+// appWritten is a container app as a template writes it: its name and
+// location, tags, a workload profile and replica count, its configuration less
+// the registry server a neighbour supplies, that server, its template, an
+// administrator password fed by a secure parameter, the provisioning state a
+// portal export writes, and the keys its neighbours read.
+func appWritten() schemadraft.WrittenResource {
+	raw := func(s string) json.RawMessage { return json.RawMessage(s) }
+	return schemadraft.WrittenResource{
+		ID: "app", Type: containerApps, APIVersion: "2024-03-01",
+		Properties: []schemadraft.WrittenProperty{
+			{Path: []string{"name"}, Value: raw(`"orders-app"`), Identity: true},
+			{Path: []string{"location"}, Value: raw(`"westeurope"`), Placement: true},
+			{Path: []string{"tags"}, Value: raw(`{"team": "orders"}`)},
+			{Path: []string{"properties", "provisioningState"}, Value: raw(`"Succeeded"`)},
+			{Path: []string{"properties", "workloadProfileName"}, Value: raw(`"Consumption"`)},
+			{Path: []string{"properties", "configuration"}, Value: raw(`{"registries": [{"identity": "system"}], ` +
+				`"ingress": {"external": true, "targetPort": 8080}}`)},
+			{Path: []string{"properties", "configuration", "registries", "0", "server"}, Inject: registryInject},
+			{Path: []string{"properties", "template"}, Value: raw(`{"containers": [{"name": "api", "image": "orders:1"}], ` +
+				`"scale": {"minReplicas": 1}}`)},
+			{Path: []string{"properties", "adminPassword"}, Secret: true},
+		},
+		Provides: []schemadraft.Provide{
+			{Key: "id", Attribute: []string{"id"}, Identifier: true},
+			{Key: "name", Attribute: []string{"name"}},
+			{Key: "fqdn", Attribute: []string{"properties", "configuration", "ingress", "fqdn"}},
+		},
+	}
+}
+
+// templateInput is an import of an ARM template.
+func templateInput() aggrega.ImportInput {
+	return aggrega.ImportInput{Format: "arm", Name: "main.json"}
+}
+
+// draftedApp drafts w from the source with the arm format, which must raise no
+// halt, and returns its Component and its Recipe.
+func draftedApp(t *testing.T, w schemadraft.WrittenResource) (schemadraft.Drafted, []aggrega.Diagnostic, string, string) {
+	t.Helper()
+	drafted, diags := schemadraft.DraftResource(templateInput(), Format, w)
+	noHalt(t, diags)
+	if len(drafted.Entities) != 2 {
+		t.Fatalf("drafted %+v, want a Component and a Recipe", drafted.Entities)
+	}
+	return drafted, diags, drafted.Entities[0].Entity.Body, drafted.Entities[1].Entity.Body
+}
+
+// appContext is the context the drafted Recipe renders in for the instance
+// orders-app, with the overrides given and the registry's server injected.
+func appContext(overrides map[string]any) map[string]any {
+	return map[string]any{
+		"context": map[string]any{"instance_id": "orders-app", "inject": map[string]any{
+			"property": map[string]any{registryInject: registryReference}}},
+		"metadata": map[string]any{"instance_id": "orders-app"},
+		"values":   map[string]any{"name": "orders-app"},
+		"infra":    map[string]any{"location": "westeurope", "overrides": overrides},
+		"features": map[string]any{},
+	}
+}
+
+// appOverrides are the overrides a Release sets for the app: each property the
+// template writes, in the vendor's spelling, the configuration less the server.
+func appOverrides() map[string]any {
+	return map[string]any{
+		"tags":                map[string]any{"team": "orders"},
+		"workloadProfileName": "Consumption",
+		"configuration": map[string]any{"registries": []any{map[string]any{"identity": "system"}},
+			"ingress": map[string]any{"external": true, "targetPort": 8080}},
+		"template": map[string]any{"containers": []any{map[string]any{"name": "api", "image": "orders:1"}},
+			"scale": map[string]any{"minReplicas": 1}},
+	}
+}
+
+// TestArmDraftedFromSourceRules drafts a container app from the source and
+// renders it: the name is values.name and the location typed infra, every other
+// property an override under the vendor's spelling typed as written, the
+// administrator password the deploy-time securestring parameter, the server a
+// neighbour supplies at its path, and the provides the resource ID, the name and
+// the attribute a neighbour reads.
+func TestArmDraftedFromSourceRules(t *testing.T) {
+	drafted, _, component, recipe := draftedApp(t, appWritten())
+	if drafted.Name != appComponentName || drafted.Recipe != appRecipeName {
+		t.Errorf("drafted %s and %s", drafted.Name, drafted.Recipe)
+	}
+
+	// Identity and placement are typed and required; overrides are open.
+	for _, c := range []struct {
+		path []string
+		want string
+	}{
+		{[]string{"spec", "schema", "values", "properties", "name", "type"}, "string"},
+		{[]string{"spec", "schema", "values", "properties", "name", "required"}, "true"},
+		{[]string{"spec", "schema", "infra", "properties", "location", "type"}, "string"},
+		{[]string{"spec", "schema", "infra", "properties", "location", "required"}, "true"},
+		{[]string{"spec", "schema", "infra", "properties", "overrides", "type"}, "object"},
+		{[]string{"spec", "schema", "provides", "properties", "fqdn", "type"}, "string"},
+		{[]string{"spec", "schema", "provides", "properties", "id", "type"}, "string"},
+		{[]string{"spec", "schema", "provides", "properties", "name", "type"}, "string"},
+		{[]string{"metadata", "labels", "component.aggrega.ai/category"}, "compute"},
+	} {
+		if got := mappingAt(t, component, c.path...).Value; got != c.want {
+			t.Errorf("%s = %q, want %q", strings.Join(c.path, "."), got, c.want)
+		}
+	}
+	if strings.Contains(component, "featuresSchema") || strings.Contains(component, "provisioning") {
+		t.Errorf("the Component declares a slot or the provisioning state:\n%s", component)
+	}
+	for _, text := range []string{component, recipe} {
+		if !strings.Contains(text, "# The source writing the resource gives no description of name.") ||
+			strings.Contains(text, "vendor schema gives no description") {
+			t.Errorf("a key is not described as one the source writes:\n%s", text)
+		}
+	}
+
+	// Each override is read under the vendor's spelling, typed as written.
+	for _, line := range []string{
+		"# values.name: string, required; identity",
+		"# infra.location: string, required; placement",
+		"# infra.overrides.tags: object; override",
+		"# infra.overrides.workloadProfileName: string; override",
+		"# infra.overrides.configuration: object; override",
+		"# infra.overrides.template: object; override",
+		"# parameter <instance>AdminPassword: string, required; secret: declared by the Recipe as a deploy-time parameter",
+		"# context.inject.property." + registryInject + ": string, required; inject",
+	} {
+		if !strings.Contains(recipe, line) {
+			t.Errorf("the Recipe's header has no line %q:\n%s", line, recipe)
+		}
+	}
+	parts := partsOf(t, recipe)
+	if want := []string{"overrides_this_recipe_reads", "secrets_are_parameters"}; !reflect.DeepEqual(parts.assertionKeys, want) {
+		t.Errorf("assertions %v, want %v", parts.assertionKeys, want)
+	}
+	if !strings.Contains(parts.assertions[0], `(list "tags" "workloadProfileName" "configuration" "template")`) {
+		t.Errorf("the overrides assertion does not admit exactly the overrides written:\n%s", parts.assertions[0])
+	}
+
+	// Rendered, the resource is the one the template writes, the server in place.
+	overrides := appOverrides()
+	ctx := appContext(overrides)
+	text, doc := renderFragment(t, parts, ctx)
+	want := `{"type": "` + containerApps + `", "apiVersion": "2024-03-01", "name": "orders-app", ` +
+		`"location": "westeurope", "tags": {"team": "orders"}, "properties": {"workloadProfileName": "Consumption", ` +
+		`"configuration": {"registries": [{"identity": "system", "server": "` + registryReference + `"}], ` +
+		`"ingress": {"external": true, "targetPort": 8080}}, "adminPassword": "[parameters('OrdersAppAdminPassword')]", ` +
+		`"template": {"containers": [{"name": "api", "image": "orders:1"}], "scale": {"minReplicas": 1}}}}`
+	if got := canon(t, resourceOf(t, doc, "OrdersApp")); got != canonText(t, want) {
+		t.Errorf("resource %s, want %s\n%s", got, canonText(t, want), text)
+	}
+	if got := canon(t, doc["parameters"]); got != `{"OrdersAppAdminPassword":{"type":"securestring"}}` {
+		t.Errorf("parameters %s", got)
+	}
+	ctx["features"] = map[string]any{"admin_password": map[string]any{}}
+	if _, err := render(parts.assertions[1], ctx); err == nil || !strings.Contains(err.Error(), "OrdersAppAdminPassword") {
+		t.Errorf("an attachment on the secret renders %v, want a halt naming the parameter", err)
+	}
+
+	provided := renderProvides(t, parts, ctx)
+	for key, want := range map[string]string{
+		"id":   "[resourceId('" + containerApps + "', 'orders-app')]",
+		"name": "orders-app",
+		"fqdn": "[reference('OrdersApp').configuration.ingress.fqdn]",
+	} {
+		if provided[key] != want {
+			t.Errorf("provides.%s renders %q, want %q", key, provided[key], want)
+		}
+	}
+	template := assemble(t, nil, []string{"orders-app", "registry", "reader"}, text, registryFragment,
+		reader([]string{"id", "name", "fqdn"}, []string{provided["id"], provided["name"], provided["fqdn"]}))
+	if _, ok := template["resources"].(map[string]any)["OrdersApp"]; !ok {
+		t.Errorf("the template holds no OrdersApp: %v", template)
+	}
+}
+
+// TestInjectedPropertyAtANestedPathOnArm writes a property a neighbour
+// supplies at its whole path, inside the override object that carries the rest
+// of it, leaving the Release's value as it is; root keys and members of
+// properties are written by name as before.
+func TestInjectedPropertyAtANestedPathOnArm(t *testing.T) {
+	_, _, _, recipe := draftedApp(t, appWritten())
+	parts := partsOf(t, recipe)
+	for _, set := range []string{`set $resource "name"`, `set $resource "tags"`, `set $properties "workloadProfileName"`,
+		`set $properties "configuration"`} {
+		if !strings.Contains(parts.template, set) {
+			t.Errorf("template.yaml does not %s:\n%s", set, parts.template)
+		}
+	}
+	overrides := appOverrides()
+	before := canon(t, overrides)
+	_, doc := renderFragment(t, parts, appContext(overrides))
+	props, _ := resourceOf(t, doc, "OrdersApp")["properties"].(map[string]any)
+	want := `{"ingress":{"external":true,"targetPort":8080},"registries":[{"identity":"system","server":"` +
+		registryReference + `"}]}`
+	if got := canon(t, props["configuration"]); got != canonText(t, want) {
+		t.Errorf("configuration %s, want %s", got, want)
+	}
+	if after := canon(t, overrides); after != before {
+		t.Errorf("rendering changed the Release's overrides:\n%s\nwas\n%s", after, before)
+	}
+
+	// The writer places an input at a nested path on its own: under the root,
+	// under properties creating the objects it passes through, and into an item
+	// of a list, which it replaces whole at the path's end.
+	typ, name := keyType()
+	nested := func(path []string, key string) schemadraft.Input {
+		return schemadraft.Input{Property: &schemadraft.Property{Name: path[len(path)-1], Path: path,
+			Kinds: []schemadraft.Kind{schemadraft.KindString}}, Required: true,
+			Source: schemadraft.InputSource{Pillar: schemadraft.PillarOverrides, Key: key}}
+	}
+	r := schemadraft.Resource{Type: typ, Inputs: []schemadraft.Input{name,
+		nested([]string{"properties", "rules", "1"}, "second_rule"),
+		nested([]string{"sku", "name"}, "sku_name"),
+		nested([]string{"properties", "network", "subnet", "id"}, "subnet_id"),
+		nested([]string{"properties", "rules"}, "rules"),
+	}}
+	p, _ := partsOfDraft(t, r)
+	ctx := map[string]any{"context": map[string]any{"instance_id": "key"}, "values": map[string]any{"name": "v/k"},
+		"infra": map[string]any{"overrides": map[string]any{"second_rule": "b2", "sku_name": "Premium", "subnet_id": "s",
+			"rules": []any{"a", "b", "c"}}}}
+	text, doc := renderFragment(t, p, ctx)
+	res := resourceOf(t, doc, "Key")
+	if got := canon(t, res["properties"]); got != `{"network":{"subnet":{"id":"s"}},"rules":["a","b2","c"]}` {
+		t.Errorf("properties %s\n%s", got, text)
+	}
+	if got := canon(t, res["sku"]); got != `{"name":"Premium"}` {
+		t.Errorf("sku %s\n%s", got, text)
+	}
+}
+
+// TestArmNestedInputHaltsWhereTheListHoldsNoItem halts rendering where the list
+// a nested input is written into holds no item at its index, naming the path.
+func TestArmNestedInputHaltsWhereTheListHoldsNoItem(t *testing.T) {
+	_, _, _, recipe := draftedApp(t, appWritten())
+	parts := partsOf(t, recipe)
+	overrides := appOverrides()
+	overrides["configuration"] = map[string]any{"registries": []any{}}
+	ctx := appContext(overrides)
+	symbol, err := render(parts.symbol, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx["locals"] = map[string]any{"symbol": symbol}
+	_, err = render(parts.template, ctx)
+	if err == nil || !strings.Contains(err.Error(), "properties.configuration.registries") ||
+		!strings.Contains(err.Error(), "item 0") {
+		t.Errorf("an empty list renders %v, want a halt naming properties.configuration.registries and its item 0", err)
+	}
+}
+
+// TestArmNestedSecretsTakeDistinctParameters declares two secrets of one name
+// at two paths as two parameters, each named after its path below properties.
+func TestArmNestedSecretsTakeDistinctParameters(t *testing.T) {
+	w := appWritten()
+	w.Properties = append(w.Properties,
+		schemadraft.WrittenProperty{Path: []string{"properties", "configuration", "secrets", "0", "value"}, Secret: true},
+		schemadraft.WrittenProperty{Path: []string{"properties", "configuration", "secrets", "1", "value"}, Secret: true})
+	_, _, _, recipe := draftedApp(t, w)
+	for _, line := range []string{"# parameter <instance>ConfigurationSecrets0Value: string, required; secret",
+		"# parameter <instance>ConfigurationSecrets1Value: string, required; secret"} {
+		if !strings.Contains(recipe, line) {
+			t.Errorf("the Recipe's header has no line %q:\n%s", line, recipe)
+		}
+	}
+	parts := partsOf(t, recipe)
+	overrides := appOverrides()
+	overrides["configuration"].(map[string]any)["secrets"] = []any{map[string]any{"name": "a"}, map[string]any{"name": "b"}}
+	_, doc := renderFragment(t, parts, appContext(overrides))
+	if got := canon(t, doc["parameters"]); got != `{"OrdersAppAdminPassword":{"type":"securestring"},`+
+		`"OrdersAppConfigurationSecrets0Value":{"type":"securestring"},"OrdersAppConfigurationSecrets1Value":{"type":"securestring"}}` {
+		t.Errorf("parameters %s", got)
+	}
+	config, _ := resourceOf(t, doc, "OrdersApp")["properties"].(map[string]any)["configuration"].(map[string]any)
+	if got := canon(t, config["secrets"]); got != `[{"name":"a","value":"[parameters('OrdersAppConfigurationSecrets0Value')]"},`+
+		`{"name":"b","value":"[parameters('OrdersAppConfigurationSecrets1Value')]"}]` {
+		t.Errorf("secrets %s", got)
+	}
+}
+
+// TestDraftResourceOnArmNamesTheSchemaImport records the draft in an info
+// naming the provisioning state it leaves out, and offers the arm-schema import
+// of the type in the decision's swap hint; two runs draft one byte sequence.
+func TestDraftResourceOnArmNamesTheSchemaImport(t *testing.T) {
+	drafted, diags, _, _ := draftedApp(t, appWritten())
+	var info *aggrega.Diagnostic
+	for i := range diags {
+		if diags[i].Code == "resource-drafted-from-source" {
+			info = &diags[i]
+		}
+	}
+	if info == nil || info.Severity != aggrega.SeverityInfo || !strings.Contains(info.Message, "properties.provisioningState") {
+		t.Fatalf("diagnostics %+v, want an info resource-drafted-from-source naming properties.provisioningState", diags)
+	}
+	for _, named := range []string{"aggrega import --format arm-schema <types.json>", "resource_types",
+		containerApps + "@2024-03-01"} {
+		if !strings.Contains(drafted.Decision.SwapHint, named) {
+			t.Errorf("the swap hint %q does not name %s", drafted.Decision.SwapHint, named)
+		}
+	}
+	for _, named := range []string{"AdminPassword", "properties.configuration.registries.0.server"} {
+		if !strings.Contains(drafted.Decision.Rationale, named) {
+			t.Errorf("the rationale %q does not name %s", drafted.Decision.Rationale, named)
+		}
+	}
+	again, againDiags := schemadraft.DraftResource(templateInput(), Format, appWritten())
+	if !reflect.DeepEqual(drafted, again) || !reflect.DeepEqual(diags, againDiags) {
+		t.Errorf("two runs differ")
+	}
+
+	// A property a neighbour supplies outside properties halts naming it.
+	w := appWritten()
+	w.Properties = append(w.Properties, schemadraft.WrittenProperty{Path: []string{"tags", "owner"}, Inject: "tags_owner"})
+	halted, ds := schemadraft.DraftResource(templateInput(), Format, w)
+	if h := onlyHalt(t, ds, codeRefused); !strings.Contains(h.Message, "tags.owner") {
+		t.Errorf("halt %q does not name tags.owner", h.Message)
+	}
+	if !reflect.DeepEqual(halted, schemadraft.Drafted{}) {
+		t.Errorf("a halt drafted %+v", halted)
+	}
+}

@@ -53,8 +53,9 @@ var Format = schemadraft.Format{
 		NestedProvides: true,
 		NotProvided:    notProvided,
 	},
-	Category: category,
-	Write:    Write,
+	Category:   category,
+	Write:      Write,
+	SchemaFile: "types.json",
 }
 
 // placement reports whether p is the root location, where the resource is

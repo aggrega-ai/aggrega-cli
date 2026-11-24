@@ -25,6 +25,9 @@ const (
 	CodeComponentExists     = "component-exists"
 	codeComponentDraftedNew = "component-drafted-new"
 	codeProvidesUnmapped    = "provides-unmapped"
+	// CodeResourceDraftedFromSource records a resource drafted as a Component
+	// and a Recipe from the resource as its source writes it.
+	CodeResourceDraftedFromSource = "resource-drafted-from-source"
 )
 
 // The codes a format's reader halts with, which the core raises too.

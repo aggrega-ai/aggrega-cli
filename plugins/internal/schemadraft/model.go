@@ -52,6 +52,9 @@ type Property struct {
 	Description string
 
 	Required, Identifier, CreateOnly, ReadOnly, WriteOnly, Sensitive, Deprecated bool
+	// Written is set for a property read from a source that writes the
+	// resource, rather than from a vendor schema, which gives no description.
+	Written bool
 
 	Enum                 []json.RawMessage
 	Pattern, Format      string

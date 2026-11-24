@@ -46,8 +46,16 @@ const (
 // The fragment builds the resource as a dict, from its type, the apiVersion
 // the file names and each input, and writes it with toJson: a root key on the
 // resource, and a member of properties, its path opening with properties,
-// under the resource's properties, which is written where it holds one. An
-// input read from values or infra is rebuilt under the vendor's names
+// under the resource's properties, which is written where it holds one, each by
+// its name. An input at a deeper path is written after them, the shallower
+// first, at its whole path inside the value written there: the member of the
+// root key or of properties it opens with is copied, so the Release's value is
+// left as it is, each object the path passes through and the value lacks is
+// created, each array item it names in decimal must be in the list, the
+// rendering halting naming the path where it is not, and the value replaces the
+// member or the item the path ends at. So an override writes a property whole
+// and an inject input sets one member of it. An input read from values or infra
+// is rebuilt under the vendor's names
 // (schemadraft.Respeller), and one read from infra.overrides or the inject pipe
 // is written as it is read, so a neighbour's reference on the pipe lands in
 // place as the expression it is. An input that is not required is written only
@@ -64,10 +72,11 @@ const (
 //
 // A provides key the type's identifier carries is the resource ID, built for the
 // fragment's scope from the type and the resource's name split at each slash;
-// a key read back below properties is reference() of the symbol and the path
-// below it; any other read-back key is the full reference() of the symbol at
-// the apiVersion, and its path. A key mapped to no attribute is written as the
-// fail Unmapped.Value gives. An input read from the inject pipe other than at or
+// a key reading the root name is the name as the fragment writes it, which ARM
+// reads as the resource's name does; a key read back below properties is
+// reference() of the symbol and the path below it; any other read-back key is
+// the full reference() of the symbol at the apiVersion, and its path. A key
+// mapped to no attribute is written as the fail Unmapped.Value gives. An input read from the inject pipe other than at or
 // under properties halts resource-type-refused naming it, since ARM evaluates a
 // reference to another resource only there.
 func Write(r schemadraft.Resource) (importer.RecipeDraft, []aggrega.Diagnostic) {
@@ -93,6 +102,11 @@ func Write(r schemadraft.Resource) (importer.RecipeDraft, []aggrega.Diagnostic) 
 	if len(d.Provides) > 0 {
 		d.Provides[0].Comment = []string{"The String Pipe: each value is one whole ARM expression, piped as written " +
 			"into a consumer's context; ARM evaluates it when the template is deployed."}
+		if slices.ContainsFunc(r.Provides, readsName) {
+			d.Provides[0].Comment = []string{"The String Pipe: each value is one whole ARM expression, or the " +
+				"resource's name as template.yaml writes it, piped as written into a consumer's context; ARM " +
+				"evaluates it when the template is deployed."}
+		}
 	}
 	d.Artifacts = []importer.Entry{{Key: templateArtifact, Value: fragment(r, scope)}}
 	return d, nil
@@ -144,12 +158,17 @@ func fragment(r schemadraft.Resource, scope armcore.Scope) string {
 		if in.Secret {
 			secrets = append(secrets, in)
 		}
+	}
+	for n, in := range placementOrder(r.Inputs) {
 		target := resourceVar
 		if underProperties(in.Property) {
 			target = propertiesVar
 		}
 		statements, value := inputValue(&respeller, in)
 		set := "{{ $_ := set " + target + " " + strconv.Quote(in.Property.Name) + " " + value + " }}"
+		if target, below, ok := nestedPath(in.Property); ok {
+			set = setAt(target, below, value, n)
+		}
 		if in.Required || in.Secret {
 			b.WriteString(statements + strings.TrimSuffix(set, " }}") + " -}}\n")
 			continue
@@ -178,6 +197,126 @@ func fragment(r schemadraft.Resource, scope armcore.Scope) string {
 // written under it.
 func underProperties(p *schemadraft.Property) bool {
 	return len(p.Path) > 1 && p.Path[0] == keyProperties
+}
+
+// nestedPath returns, for p at a path deeper than a root key or a member of
+// properties, the variable holding the object its path opens in and its path
+// below that object; ok is false for any other p.
+func nestedPath(p *schemadraft.Property) (target string, below []string, ok bool) {
+	switch {
+	case underProperties(p) && len(p.Path) > 2:
+		return propertiesVar, p.Path[1:], true
+	case !underProperties(p) && len(p.Path) > 1:
+		return resourceVar, p.Path, true
+	}
+	return "", nil, false
+}
+
+// placementOrder is inputs in the order the fragment writes them: each root key
+// and member of properties in the inputs' order, then each input at a deeper
+// path, the shallower first and in the inputs' order among paths of one depth,
+// so a value is written before a member set inside it.
+func placementOrder(inputs []schemadraft.Input) []schemadraft.Input {
+	var out, nested []schemadraft.Input
+	for _, in := range inputs {
+		if _, _, ok := nestedPath(in.Property); ok {
+			nested = append(nested, in)
+		} else {
+			out = append(out, in)
+		}
+	}
+	slices.SortStableFunc(nested, func(a, b schemadraft.Input) int {
+		return len(a.Property.Path) - len(b.Property.Path)
+	})
+	return append(out, nested...)
+}
+
+// setAt is the template text setting the value value evaluates to at the path
+// below inside the object the variable target holds, its variables numbered n.
+// The first segment of below is a member of target, whose value is copied, or
+// created as an object where target lacks it; a later segment of decimal digits
+// is an item of the list it reads, any other a member of the object it reads,
+// created where the object lacks it. Where a value on the path is not the list
+// or object a segment reads, or the list holds no such item, it halts naming the
+// path. The value replaces the member or item the path ends at; a list whose
+// item it replaces is rebuilt and set where the list was read, up to the first
+// object. Its last action is a set, ending " }}".
+func setAt(target string, below []string, value string, n int) string {
+	where := func(i int) string {
+		path := below[:i]
+		if target == propertiesVar {
+			path = append([]string{keyProperties}, path...)
+		}
+		return strings.Join(path, ".")
+	}
+	whole := where(len(below))
+	suffix := strconv.Itoa(n)
+	held := func(i int) string { // the variable holding the value at below[:i]
+		if i == 0 {
+			return target
+		}
+		return "$at" + suffix + "_" + strconv.Itoa(i)
+	}
+	set := "$set" + suffix
+	fail := func(text string) string { return "{{ fail " + strconv.Quote(text) + " }}" }
+	isMap := func(i int) string {
+		return "{{ if not (kindIs \"map\" " + held(i) + ") }}" + fail(fmt.Sprintf("%s is not an object, and this "+
+			"Recipe writes %s inside it", where(i), whole)) + "{{ end }}"
+	}
+	isList := func(i, item int) string {
+		return "{{ if not (and (kindIs \"slice\" " + held(i) + ") (gt (len " + held(i) + ") " + strconv.Itoa(item) +
+			")) }}" + fail(fmt.Sprintf("%s is not a list holding the item %d, and this Recipe writes %s into that "+
+			"item: keep the item in the value the Release sets", where(i), item, whole)) + "{{ end }}"
+	}
+
+	var b strings.Builder
+	b.WriteString("{{ " + set + " := " + value + " }}")
+	first := strconv.Quote(below[0])
+	b.WriteString("{{ if hasKey " + target + " " + first + " }}{{ $_ := set " + target + " " + first +
+		" (deepCopy (index " + target + " " + first + ")) }}{{ else }}{{ $_ := set " + target + " " + first +
+		" dict }}{{ end }}{{ " + held(1) + " := index " + target + " " + first + " }}")
+	last := len(below) - 1
+	for i := 1; i < last; i++ {
+		if item, ok := itemIndex(below[i]); ok {
+			b.WriteString(isList(i, item) + "{{ " + held(i+1) + " := index " + held(i) + " " + strconv.Itoa(item) + " }}")
+			continue
+		}
+		member := strconv.Quote(below[i])
+		b.WriteString(isMap(i) + "{{ if not (hasKey " + held(i) + " " + member + ") }}{{ $_ := set " + held(i) + " " +
+			member + " dict }}{{ end }}{{ " + held(i+1) + " := index " + held(i) + " " + member + " }}")
+	}
+
+	// From the path's end up: an object takes its member in place and ends the
+	// walk; a list is rebuilt with its item replaced, and the rebuilt list is
+	// set where the list was read.
+	replacing := set
+	for i := last; ; i-- {
+		item, ok := itemIndex(below[i])
+		if !ok || i == 0 {
+			if i > 0 {
+				b.WriteString(isMap(i))
+			}
+			b.WriteString("{{ $_ := set " + held(i) + " " + strconv.Quote(below[i]) + " " + replacing + " }}")
+			return b.String()
+		}
+		list := "$list" + suffix + "_" + strconv.Itoa(i)
+		if i == last {
+			b.WriteString(isList(i, item))
+		}
+		b.WriteString("{{ " + list + " := list }}{{ range $i, $item := " + held(i) + " }}{{ if eq $i " +
+			strconv.Itoa(item) + " }}{{ " + list + " = append " + list + " " + replacing + " }}{{ else }}{{ " + list +
+			" = append " + list + " $item }}{{ end }}{{ end }}")
+		replacing = list
+	}
+}
+
+// itemIndex reads segment as the index of an array item, written in decimal.
+func itemIndex(segment string) (int, bool) {
+	if segment == "" || strings.Trim(segment, "0123456789") != "" {
+		return 0, false
+	}
+	n, err := strconv.Atoi(segment)
+	return n, err == nil
 }
 
 // inputValue returns the statements building in's value and the expression
@@ -229,6 +368,8 @@ func readBack(r schemadraft.Resource, p schemadraft.Provide, scope armcore.Scope
 	switch {
 	case p.Identifier:
 		return resourceID(r, p, scope)
+	case readsName(p):
+		return nameOf(r, p)
 	case len(p.Attribute) > 1 && p.Attribute[0] == keyProperties:
 		return "[reference('" + symbol + "')" + access(p.Attribute[1:]) + "]"
 	}
@@ -260,9 +401,7 @@ func access(path []string) string {
 // management group at a management group. Where no input holds the name, the
 // value halts saying so.
 func resourceID(r schemadraft.Resource, p schemadraft.Provide, scope armcore.Scope) string {
-	i := slices.IndexFunc(r.Inputs, func(in schemadraft.Input) bool {
-		return slices.Equal(in.Property.Path, []string{keyName}) && !in.Secret
-	})
+	i := nameInput(r)
 	if i < 0 {
 		return "{{ fail " + strconv.Quote(fmt.Sprintf("provides.%s is the resource ID of %s@%s, built from the "+
 			"resource's name, and this Recipe writes no name", p.Key, r.Type.Name, r.Type.APIVersion)) + " }}"
@@ -277,4 +416,30 @@ func resourceID(r schemadraft.Resource, p schemadraft.Provide, scope armcore.Sco
 	return "[" + function + importer.EscapeTemplateText(armcore.StringLiteral(r.Type.Name)) +
 		"{{ range splitList \"/\" (toString " + r.Inputs[i].Source.Template() + ") }}, " +
 		"'{{ replace \"'\" \"''\" . }}'{{ end }})]"
+}
+
+// nameInput is the index of the input of r writing the resource's name, -1
+// where none does.
+func nameInput(r schemadraft.Resource) int {
+	return slices.IndexFunc(r.Inputs, func(in schemadraft.Input) bool {
+		return slices.Equal(in.Property.Path, []string{keyName}) && !in.Secret
+	})
+}
+
+// readsName reports whether p publishes the resource's root name, which is no
+// identifier.
+func readsName(p schemadraft.Provide) bool {
+	return !p.Identifier && slices.Equal(p.Attribute, []string{keyName})
+}
+
+// nameOf is the provides value of p, the resource's name: the value of the input
+// writing it, as template.yaml writes it. Where no input writes the name, the
+// value halts saying so.
+func nameOf(r schemadraft.Resource, p schemadraft.Provide) string {
+	i := nameInput(r)
+	if i < 0 {
+		return "{{ fail " + strconv.Quote(fmt.Sprintf("provides.%s is the name of %s@%s, and this Recipe writes no "+
+			"name", p.Key, r.Type.Name, r.Type.APIVersion)) + " }}"
+	}
+	return "{{ toString " + r.Inputs[i].Source.Template() + " }}"
 }

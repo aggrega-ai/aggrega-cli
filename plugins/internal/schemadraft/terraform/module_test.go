@@ -929,3 +929,92 @@ func TestVariableNamesAreTheModulesVariables(t *testing.T) {
 		}
 	}
 }
+
+// appResource is an app of the synthetic type example_app, as the core hands it
+// to the writer: its name, its registry block written whole as an override
+// less the server, and that server, which a neighbour supplies at its path
+// inside the block's first item.
+func appResource() schemadraft.Resource {
+	name := prop(kString, "name")
+	name.Required = true
+	registry := block(nestingList, []string{"registry"}, prop(kString, "registry", "identity"),
+		prop(kString, "registry", "server"))
+	server := prop(kString, "registry", "0", "server")
+	m := moduleOf("example_app", address(terraformHost, "example", "app", "1.0.0"), []schemadraft.Input{
+		in(name, schemadraft.PillarValues, "name", true),
+		in(registry, schemadraft.PillarOverrides, "registry", false),
+		injected(server, schemadraft.MechanismProperty, "registry_0_server", true),
+	})
+	return schemadraft.Resource{Type: m.Type, Inputs: m.Inputs}
+}
+
+// TestInjectedPropertyOnTerraformIsAModuleVariable drafts a property a
+// neighbour supplies inside a block as one module variable named after its
+// inject key, set at its path inside the block's item, and its valuesMapping
+// entry reading .context.inject.property under that key.
+func TestInjectedPropertyOnTerraformIsAModuleVariable(t *testing.T) {
+	d, diags := Write(appResource())
+	if halts := haltsOf(diags); len(halts) != 0 {
+		t.Fatalf("writing raised %+v", halts)
+	}
+	doc := mainTF(t, d)
+	if got := keysOf(doc, "variable"); !reflect.DeepEqual(got, []string{"name", "registry", "registry_0_server"}) {
+		t.Fatalf("variables %v, want one for the injected server", got)
+	}
+	if got := canon(t, at(doc, "variable", "registry_0_server")); got != `{"type":"string"}` {
+		t.Errorf("variable registry_0_server is %s, want a required string", got)
+	}
+	want := `{"content":{"identity":"${try(it1.value.identity, null)}",` +
+		`"server":"${it1.key == 0 ? var.registry_0_server : try(it1.value.server, null)}"},` +
+		`"for_each":"${var.registry[*]}","iterator":"it1"}`
+	if got := canon(t, at(doc, "resource", "example_app", "this", "dynamic", "registry")); got != want {
+		t.Errorf("the registry block is\n%s\nwant\n%s", got, want)
+	}
+	if at(doc, "resource", "example_app", "this", "registry_0_server") != nil {
+		t.Errorf("the injected server is set as an attribute of the resource")
+	}
+	const line = `registry_0_server: {{ toJson (index (default dict .context.inject) "property" "registry_0_server") }}`
+	if !strings.Contains(d.ValuesMapping, line) {
+		t.Errorf("the valuesMapping has no line %q:\n%s", line, d.ValuesMapping)
+	}
+	if !slices.ContainsFunc(d.Header, func(h string) bool {
+		return strings.Contains(h, "registry_0_server") && strings.Contains(h, "registry.0.server")
+	}) {
+		t.Errorf("the header does not name the variable and the path it sets: %q", d.Header)
+	}
+
+	// The neighbour's published reference passes whole into the variable.
+	ctx := mappingContext(map[string]any{"name": "orders"},
+		map[string]any{"overrides": map[string]any{"registry": []any{map[string]any{"identity": "system"}}}},
+		map[string]any{"property": map[string]any{"registry_0_server": "${module.registry.login_server}"}}, nil)
+	got, err := renderMapping(t, d.ValuesMapping, ctx)
+	if err != nil {
+		t.Fatalf("the valuesMapping halts: %v", err)
+	}
+	if want := `{"name":"orders","registry":[{"identity":"system"}],"registry_0_server":"${module.registry.login_server}"}`; canon(t, got) != want {
+		t.Errorf("the valuesMapping renders %s, want %s", canon(t, got), want)
+	}
+
+	// A Release leaving out the block the server is set inside halts naming it.
+	ctx["infra"] = map[string]any{}
+	if _, err := renderMapping(t, d.ValuesMapping, ctx); err == nil || !strings.Contains(err.Error(), "registry.0.server") {
+		t.Errorf("an absent registry renders %v, want a halt naming registry.0.server", err)
+	}
+}
+
+// TestModuleNestedInputOutsideABlockHalts refuses an input at a nested path
+// that no block the module writes holds, naming it.
+func TestModuleNestedInputOutsideABlockHalts(t *testing.T) {
+	r := appResource()
+	tags := prop(kObject, "tags")
+	r.Inputs = append(r.Inputs, in(tags, schemadraft.PillarOverrides, "tags", false),
+		injected(prop(kString, "tags", "owner"), schemadraft.MechanismProperty, "tags_owner", true))
+	d, diags := Write(r)
+	halts := haltsOf(diags)
+	if len(halts) != 1 || halts[0].Code != schemadraft.CodeResourceTypeRefused || !strings.Contains(halts[0].Message, "tags.owner") {
+		t.Fatalf("diagnostics %+v, want one resource-type-refused naming tags.owner", diags)
+	}
+	if len(d.Files) != 0 || d.ValuesMapping != "" {
+		t.Errorf("a halted writer drafted %+v", d)
+	}
+}

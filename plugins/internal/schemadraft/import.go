@@ -45,6 +45,10 @@ type Format struct {
 	Category func(t *Type) string
 	// Write drafts the target parts of a type's Recipe.
 	Write Writer
+	// SchemaFile names the file a schema import of the format reads, as a
+	// message offering that import writes it in angle brackets for the author
+	// to replace; empty writes schema file.
+	SchemaFile string
 }
 
 // fallbackCategory is the segment a drafted Component is named under where the
@@ -167,13 +171,7 @@ func (r *importRun) draft(sel Selected, selected []Selected) {
 
 	name, category := sel.Component, ""
 	if name == "" {
-		category = fallbackCategory
-		if r.f.Category != nil {
-			if guessed := r.f.Category(t); slices.Contains(Categories, guessed) {
-				category = guessed
-			}
-		}
-		name = r.settings.TargetNamespace + "/" + category + "/" + slug
+		name, category = componentName(r.settings.TargetNamespace, r.f, t)
 	}
 	held, holds := heldComponent(r.in.Catalog, name)
 	recipeOnly := sel.Component != "" && holds
@@ -189,9 +187,10 @@ func (r *importRun) draft(sel Selected, selected []Selected) {
 		r.diags = append(r.diags, componentDraftedNew(name, t))
 	}
 
-	spec := recipeSpec{component: name, secretSlots: r.f.Rules.SecretSlots}
+	var spec recipeSpec
 	var drafts []importer.CatalogDraft
 	if recipeOnly {
+		spec = recipeSpec{component: name, format: r.f.Name, secretSlots: r.f.Rules.SecretSlots}
 		res, rules, match := recipeOnlyResource(t, placed, held)
 		spec.res, spec.rules, spec.recipeOnly = res, rules, &match
 		spec.name = lastSegment(name) + "-" + slug
@@ -202,19 +201,21 @@ func (r *importRun) draft(sel Selected, selected []Selected) {
 		for _, u := range res.Unmapped {
 			r.diags = append(r.diags, providesUnmapped(name, t, u))
 		}
+		recipe, d := writeRecipe(r.f, spec)
+		r.diags = append(r.diags, d...)
+		if hasHalt(d) {
+			return
+		}
+		drafts = append(drafts, recipe)
 	} else {
 		r.diags = append(r.diags, splitDiags...)
-		spec.res, spec.rules = resourceFor(t, placed)
-		spec.name = lastSegment(name)
-		spec.implements = name + ":" + draftVersion
-		drafts = append(drafts, importer.DraftComponent(ComponentFor(name, t, placed, r.f.Name, r.f.Rules)))
+		var d []aggrega.Diagnostic
+		spec, drafts, d = draftType(r.f, r.f.Name, name, t, placed)
+		r.diags = append(r.diags, d...)
+		if hasHalt(d) {
+			return
+		}
 	}
-	body, d := r.f.Write(spec.res)
-	r.diags = append(r.diags, d...)
-	if hasHalt(d) {
-		return
-	}
-	drafts = append(drafts, importer.DraftRecipe(recipeDraft(r.f, spec, body)))
 
 	for _, draft := range drafts {
 		path := draftedPath(draft)
@@ -226,7 +227,7 @@ func (r *importRun) draft(sel Selected, selected []Selected) {
 	}
 
 	id := decisionID(t, sel, name, selected)
-	decision := r.decide(id, t, name, placed, spec)
+	decision := draftDecision(r.in.Catalog, r.f, id, t, name, placed, spec.res)
 	if recipeOnly {
 		decision.Rationale = recipeOnlyRationale(r.f, t, name, spec)
 	} else {
@@ -239,24 +240,74 @@ func (r *importRun) draft(sel Selected, selected []Selected) {
 	}
 }
 
-// decide is the decision for the type t, drafted as the Component name or as a
-// Recipe implementing it, under the identifier id: the kit's Decide against the
-// catalog the request carries, less name itself, with no mapping arm and no
+// componentName is the name of the Component a type t requested with no
+// component is drafted as, under the target namespace namespace:
+// <namespace>/<category>/<slug>, the category the one f guesses where it is one
+// of Categories and the fallback segment otherwise, the slug t's name through
+// the kit's Slug. It returns the category beside it.
+func componentName(namespace string, f Format, t *Type) (name, category string) {
+	category = fallbackCategory
+	if f.Category != nil {
+		if guessed := f.Category(t); slices.Contains(Categories, guessed) {
+			category = guessed
+		}
+	}
+	return namespace + "/" + category + "/" + importer.Slug(t.Name), category
+}
+
+// draftType is the step drafting one type as a Component and its Recipe, which
+// Import and DraftResource both take: the Component name of the type t, whose
+// properties placed holds as they are placed, described by ComponentFor, and
+// its Recipe on f.Capability, named after the Component's last segment and
+// implementing it at the draft version, written by writeRecipe. format names the
+// format of the source both are drafted from. It returns the drafts, the
+// Component then the Recipe, the spec the Recipe was written from, and what the
+// writer reports; where the writer halts it drafts nothing.
+func draftType(f Format, format, name string, t *Type, placed []Placed) (recipeSpec, []importer.CatalogDraft,
+	[]aggrega.Diagnostic) {
+	spec := recipeSpec{component: name, format: format, secretSlots: f.Rules.SecretSlots}
+	spec.res, spec.rules = resourceFor(t, placed)
+	spec.name = lastSegment(name)
+	spec.implements = name + ":" + draftVersion
+	component := importer.DraftComponent(ComponentFor(name, t, placed, format, f.Rules))
+	recipe, diags := writeRecipe(f, spec)
+	if hasHalt(diags) {
+		return spec, nil, diags
+	}
+	return spec, []importer.CatalogDraft{component, recipe}, diags
+}
+
+// writeRecipe drafts the Recipe spec describes: the target parts f.Write drafts
+// for its resource, completed by recipeDraft, with what the writer reports.
+// Where the writer halts it drafts nothing.
+func writeRecipe(f Format, spec recipeSpec) (importer.CatalogDraft, []aggrega.Diagnostic) {
+	body, diags := f.Write(spec.res)
+	if hasHalt(diags) {
+		return importer.CatalogDraft{}, diags
+	}
+	return importer.DraftRecipe(recipeDraft(f, spec, body)), diags
+}
+
+// draftDecision is the decision for the type t, drafted as the Component name or
+// as a Recipe implementing it from the resource res, under the identifier id:
+// the kit's Decide against view, less name itself, with no mapping arm and no
 // setting of the request, so it weighs the catalog by category and shape alone
-// and references nothing. Its chosen target is name, in draft mode.
-func (r *importRun) decide(id string, t *Type, name string, placed []Placed, spec recipeSpec) aggrega.ImportDecision {
+// and references nothing. Its chosen target is name, in draft mode; its swap
+// hint names the candidate it resembles most, where there is one.
+func draftDecision(view *aggrega.CatalogProjection, f Format, id string, t *Type, name string, placed []Placed,
+	res Resource) aggrega.ImportDecision {
 	node := importer.Node{ID: id, Type: t.Name}
 	node.Fields = append(placedKeys(placed, PillarValues), placedKeys(placed, PillarInfra)...)
 	node.Secrets = placedKeys(placed, PillarSecret)
-	in := aggrega.ImportInput{Format: r.f.Name, Catalog: without(r.in.Catalog, name)}
-	decision, _, _ := importer.Decide(in, importer.Format{Name: r.f.Name}, node, id)
+	in := aggrega.ImportInput{Format: f.Name, Catalog: without(view, name)}
+	decision, _, _ := importer.Decide(in, importer.Format{Name: f.Name}, node, id)
 
 	tier := ""
 	if decision.Chosen != nil {
 		tier = decision.Chosen.Tier
 	}
 	decision.Chosen = &aggrega.DecisionChoice{Target: name, Mode: "draft", Tier: tier}
-	decision.SourceNode.ParamsSummary = paramsSummary(spec.res)
+	decision.SourceNode.ParamsSummary = paramsSummary(res)
 	decision.SwapHint = ""
 	if len(decision.Candidates) > 0 {
 		decision.SwapHint = fmt.Sprintf("resembles %s; draft a Recipe implementing it with `component`",
@@ -265,14 +316,19 @@ func (r *importRun) decide(id string, t *Type, name string, placed []Placed, spe
 	return decision
 }
 
-// paramsSummary counts the inputs of res by pillar, and the keys it provides.
+// paramsSummary counts the inputs of res by pillar, and the keys it provides,
+// and where it reads any off the inject pipe, those.
 func paramsSummary(res Resource) string {
 	counts := map[Pillar]int{}
 	for _, in := range res.Inputs {
 		counts[in.Source.Pillar]++
 	}
-	return fmt.Sprintf("%d values, %d infra, %d overrides, %d secrets, %d provides", counts[PillarValues],
+	summary := fmt.Sprintf("%d values, %d infra, %d overrides, %d secrets, %d provides", counts[PillarValues],
 		counts[PillarInfra], counts[PillarOverrides], counts[PillarSecret], len(res.Provides))
+	if counts[PillarInject] > 0 {
+		summary += fmt.Sprintf(", %d injected", counts[PillarInject])
+	}
+	return summary
 }
 
 // draftRationale states what a Component drafted for t holds, counting its keys
