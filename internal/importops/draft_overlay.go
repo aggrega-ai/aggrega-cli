@@ -25,20 +25,33 @@ import (
 // Component's schema declares are asked, exactly as they are for a catalog
 // Component.
 //
-// Of a drafted file only its kind is read to choose it, and a file that does not
-// read as its kind is not consulted. Of a drafted entity the view reads what the
-// catalog reads of its own: its identity, a Recipe's capability and
-// spec.implements, a Component's extends and schema. What an entity renders,
-// templates or means is never read.
+// Of a drafted file only its kind is read to choose it. Of a drafted entity the
+// view reads what the catalog reads of its own: its identity, a Recipe's
+// capability and spec.implements, a Component's extends and schema. What an
+// entity renders, templates or means is never read.
 //
-// A drafted entity of an identity base holds is not consulted: the catalog's
-// entity wins, as a catalog folder's entity shadows a published one of its
-// identity. Of two drafted entities of one identity, the first drafted is the one
-// consulted. A drafted Recipe whose spec.implements names a Component neither the
-// drafts nor base hold is not consulted, and a warning names the Recipe, its file
-// and the type; where base resolves no Component — a harness standing in for the
-// catalog, which answers no catalog lookup — only the drafts' Components are
-// known, and such a Recipe is consulted.
+// A drafted Component or Recipe is left out of the view, with a warning naming
+// its file, where:
+//
+//   - it does not read as its kind, the warning carrying why;
+//   - an earlier drafted file declares an entity of its kind and identity, the
+//     warning naming that file too, whose entity is the one the view reads;
+//   - it is a Recipe whose spec.implements names a Component neither the drafts
+//     nor base hold, the warning naming the Recipe and the type. Where base
+//     resolves no Component — a harness standing in for the catalog, which
+//     answers no catalog lookup — only the drafts' Components are known, and
+//     such a Recipe is kept.
+//
+// A drafted entity of an identity base holds is left out with no warning: the
+// view answers base's entity of that identity.
+//
+// A component type naming no version resolves to base's version wherever base
+// holds a Component of that name, and to a drafted one only where base holds
+// none. A build resolves such a type to the highest version among every catalog
+// it reads — the workspace's catalog folders and the published catalog — so
+// where the drafts are written into a catalog folder at a version above any the
+// catalog holds, a build of them resolves the type to the drafted version while
+// this view resolves it to the catalog's.
 //
 // The view answers every [RecipeIndex] method and, where base answers a catalog
 // lookup ([owedCatalog]), that lookup too: base's, its Component, Recipe and
@@ -46,7 +59,11 @@ import (
 // no Component or Recipe the view would consult, it is base itself; a nil base, a
 // harness holding no catalog, which no target is composed against, stays nil.
 //
-// It is a function of base and files alone, so whichever catalog view an import
+// It reads base and files, and one thing more: the catalog's parse of a drafted
+// Component resolves a schema `$import:` against the file's drafted path, which
+// names no written file yet, so the imported file is read relative to the working
+// directory the import runs in — where it is usually absent, and the Component is
+// then left out as one that does not read. Whichever catalog view an import
 // composes over, the drafts are read after it the same way.
 func overlayDrafts(base RecipeIndex, files []abi.ScaffoldFile) (RecipeIndex, []abi.Diagnostic) {
 	if base == nil {
@@ -62,48 +79,58 @@ func overlayDrafts(base RecipeIndex, files []abi.ScaffoldFile) (RecipeIndex, []a
 	}
 
 	type draftedRecipe struct {
-		path   string
-		recipe types.Recipe
+		path, key string
+		recipe    types.Recipe
 	}
 	var recipes []draftedRecipe
+	var diags []abi.Diagnostic
+	// Where each identity was first drafted, one index per kind, since a Component
+	// and a Recipe may spell one identity alike.
+	componentAt, recipeAt := map[string]string{}, map[string]string{}
 	for _, f := range files {
-		switch draftKind(f.Content) {
+		switch kind := draftKind(f.Content); kind {
 		case entitykind.Component:
 			c, err := catalog.ParseComponentEntity([]byte(f.Content), f.Path)
 			if err != nil {
+				diags = append(diags, unreadDraft(kind, f.Path, err))
 				continue
 			}
 			key := catalog.RecipeMappingURI(c.Metadata.Name, c.Metadata.Version)
-			if _, held := o.drafts.Components[key]; held || o.baseHoldsComponent(c) {
+			if twice, ok := twiceDrafted(kind, key, f.Path, componentAt); ok {
+				diags = append(diags, twice)
 				continue
 			}
-			o.drafts.Components[key] = c
+			if !o.baseHoldsComponent(c) {
+				o.drafts.Components[key] = c
+			}
 		case entitykind.Recipe:
 			r, err := catalog.ParseRecipeEntity([]byte(f.Content), f.Path)
 			if err != nil {
+				diags = append(diags, unreadDraft(kind, f.Path, err))
 				continue
 			}
-			recipes = append(recipes, draftedRecipe{path: f.Path, recipe: r})
+			key := catalog.RecipeIdentityURI(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
+			if twice, ok := twiceDrafted(kind, key, f.Path, recipeAt); ok {
+				diags = append(diags, twice)
+				continue
+			}
+			recipes = append(recipes, draftedRecipe{path: f.Path, key: key, recipe: r})
 		}
 	}
 
 	// The Recipes are judged once every drafted Component is in view, so a Recipe
 	// drafted before the Component it implements finds it.
-	var diags []abi.Diagnostic
 	for _, d := range recipes {
-		r := d.recipe
-		key := catalog.RecipeIdentityURI(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
-		if _, held := o.drafts.Recipes[key]; held || o.baseHoldsRecipe(key) {
+		if o.baseHoldsRecipe(d.key) {
 			continue
 		}
-		if _, ok := o.component(r.Spec.Implements); !ok && o.baseComponent != nil {
-			diags = append(diags, warnDiagnostic(fmt.Sprintf("the drafted Recipe %s in %s realizes no Component the "+
-				"import can map an instance to: it implements the component type %s, which neither the drafts nor "+
-				"the workspace's catalog hold", strconv.Quote(key), strconv.Quote(d.path),
-				strconv.Quote(r.Spec.Implements))))
+		if _, ok := o.component(d.recipe.Spec.Implements); !ok && o.baseComponent != nil {
+			diags = append(diags, warnDiagnostic(fmt.Sprintf("the import does not read the drafted Recipe %s in %s: "+
+				"it implements the component type %s, which neither the drafts nor the workspace's catalog hold",
+				strconv.Quote(d.key), strconv.Quote(d.path), strconv.Quote(d.recipe.Spec.Implements))))
 			continue
 		}
-		o.drafts.Recipes[key] = r
+		o.drafts.Recipes[d.key] = d.recipe
 	}
 
 	switch {
@@ -113,6 +140,25 @@ func overlayDrafts(base RecipeIndex, files []abi.ScaffoldFile) (RecipeIndex, []a
 		return draftOverlayLookup{o}, diags
 	}
 	return o, diags
+}
+
+// unreadDraft is the warning a drafted file of kind at path draws where the
+// catalog's parse of it fails with err.
+func unreadDraft(kind entitykind.Kind, path string, err error) abi.Diagnostic {
+	return warnDiagnostic(fmt.Sprintf("the drafted %s in %s does not read as a %s, so the import neither maps "+
+		"instances through it nor asks values of it: %v", kind, strconv.Quote(path), kind, err))
+}
+
+// twiceDrafted reports whether an earlier drafted file, recorded in first,
+// declares an entity of kind with the identity key, and the warning naming both
+// files where one does; otherwise it records path as where key is first drafted.
+func twiceDrafted(kind entitykind.Kind, key, path string, first map[string]string) (abi.Diagnostic, bool) {
+	if at, ok := first[key]; ok {
+		return warnDiagnostic(fmt.Sprintf("the drafts declare the %s %s in both %s and %s; the import leaves the one "+
+			"in %s out", kind, strconv.Quote(key), strconv.Quote(at), strconv.Quote(path), strconv.Quote(path))), true
+	}
+	first[key] = path
+	return abi.Diagnostic{}, false
 }
 
 // draftOverlay is the view [overlayDrafts] returns over a base that answers no
@@ -249,6 +295,16 @@ func (o *draftOverlay) FeatureRecipeByURI(uri string) (types.FeatureRecipe, bool
 // inheritance merge takes ([validator.ComponentAncestry]), nearest base first and
 // each written as a mapping key names that type; a chain that cannot be walked
 // answers its fault.
+//
+// 🔴 DELIBERATE NEAR-DUPLICATE of the catalog's componentAncestryOver
+// (pkg/catalog): the same walk, rendered the same way. The catalog's form also
+// asks a version select over its one Component index why a link it could not
+// serve missed, to report a parent held at other versions only as the version no
+// entry satisfies; the view resolves each link across two catalogs and has no one
+// select to ask, so a link it cannot serve is answered as the walk reports it, as
+// a parent nothing provides. Exporting the catalog's form for this one reader
+// would add a public symbol to pkg/catalog and a select-less path to the
+// refusal it refines.
 func (o *draftOverlay) ComponentAncestry(componentType string) ([]string, error) {
 	comp, drafted, ok := o.resolve(componentType)
 	if !ok || !drafted {

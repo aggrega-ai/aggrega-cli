@@ -199,9 +199,9 @@ spec:
 	res := draftedCatalogImport(t, "arm", files...)
 
 	want := []abi.Diagnostic{
-		{Severity: abi.SeverityWarn, Message: `the drafted Recipe "arm/y:0.1.0" in "catalog/recipes/arm/y.yaml" ` +
-			`realizes no Component the import can map an instance to: it implements the component type ` +
-			`"ws/none/y:0.1.0", which neither the drafts nor the workspace's catalog hold`},
+		{Severity: abi.SeverityWarn, Message: `the import does not read the drafted Recipe "arm/y:0.1.0" in ` +
+			`"catalog/recipes/arm/y.yaml": it implements the component type "ws/none/y:0.1.0", which neither the ` +
+			`drafts nor the workspace's catalog hold`},
 		{Severity: abi.SeverityWarn, Message: `the drafted Manifest leaves the component type "ws/none/y:0.1.0" ` +
 			`unmapped: no Recipe in the workspace's catalog binds to the target "arm" and implements it, so a build ` +
 			`of the drafts halts naming each instance of it until a mapping is added`},

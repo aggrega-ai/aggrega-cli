@@ -125,12 +125,13 @@ func recipeCapabilities(recipes RecipeIndex) []string {
 // For each type it asks the catalog for the Recipes implementing it — or, for a
 // feature type, the FeatureRecipes — through the enumeration the build's
 // unmapped-instance refusal lists its pin candidates from, which asks for a type
-// naming no version at the version a build resolves it to, and keeps those whose
-// bare spec.capability is the target. Several versions of one Recipe are one
-// Recipe. Exactly one Recipe maps the type, by its capability-qualified reference
-// with no version, which the dependency resolution pins at the version it
-// resolves. Recipes of more than one name map the type to the one named after the
-// type's own last segment — compose/postgres for core/datastore/postgres — where
+// naming no version at the version the view resolves it to (see mappingFor), and
+// keeps those whose bare spec.capability is the target. Several versions of one
+// Recipe are one Recipe. Exactly one Recipe maps the type, by its
+// capability-qualified reference with no version, which the dependency resolution
+// pins at the version it resolves. Recipes of more than one name map the type to
+// the one named after the type's own last segment — compose/postgres for
+// core/datastore/postgres — where
 // there is one: the catalog's standard realization of that type, beside variants
 // that wrap a chart or need a control plane. None, or several with none so named,
 // leave the type unmapped and say so in a warning naming the type and why — the
@@ -516,12 +517,14 @@ func allNamed(names []string, byName *types.OrderedMap[string]) bool {
 // named after the type's own last segment — or, where there is none, or several
 // with none so named, the warning saying so and nothing to map.
 //
-// typ is handed to the catalog's enumeration exactly as the drafts write it: the
-// enumeration resolves a type naming no version to the version a build resolves
-// it to, so no version is chosen here — a type the import drafted as a new
-// Component at the version that Component declares. A type neither the catalog nor
-// the drafts hold a Component of finds a realization only where one implements
-// that unversioned type itself.
+// typ is handed to the view's enumeration exactly as the drafts write it, so no
+// version is chosen here: the enumeration resolves a type naming no version to the
+// catalog's version where the catalog holds a Component of that name — the version
+// a build over that catalog resolves it to — and otherwise to the version the
+// drafted Component declares. A build that reads the drafts from a catalog folder
+// may resolve it to a higher drafted version instead, as [overlayDrafts] states. A
+// type neither the catalog nor the drafts hold a Component of finds a realization
+// only where one implements that unversioned type itself.
 func mappingFor(target string, kind realizationKind, typ string) (reference, unmapped string) {
 	var references []string
 	for _, r := range kind.offered(typ) {
