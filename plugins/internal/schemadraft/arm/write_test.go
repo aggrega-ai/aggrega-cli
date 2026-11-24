@@ -632,6 +632,33 @@ func TestArmInjectOnlyUnderProperties(t *testing.T) {
 	}
 }
 
+// TestArmNotInjectedIsWhereTheWriterHalts: the format's rule says why a
+// neighbour's value is not written outside properties and nothing at or under
+// them, so an importer reading it never hands the writer an inject input the
+// writer halts on.
+func TestArmNotInjectedIsWhereTheWriterHalts(t *testing.T) {
+	typ, name := keyType()
+	for _, path := range [][]string{{"tags", "owner"}, {"location"}, {"properties"}, {"properties", "targetId"}} {
+		p := &schemadraft.Property{Name: path[len(path)-1], Path: path, Kinds: []schemadraft.Kind{schemadraft.KindString}}
+		why := Format.Rules.NotInjected(typ, p)
+		r := schemadraft.Resource{Type: typ, Inputs: []schemadraft.Input{name, {Property: p, Required: true,
+			Source: schemadraft.InputSource{Pillar: schemadraft.PillarInject, Key: "k",
+				Mechanism: schemadraft.MechanismProperty}}}}
+		_, diags := Write(r)
+		halted := false
+		for _, d := range diags {
+			halted = halted || d.Severity == aggrega.SeverityHalt
+		}
+		if halted != (why != "") {
+			t.Errorf("at %v the rule says %q and the writer halts %v: want a reason exactly where it halts", path,
+				why, halted)
+		}
+		if why != "" && !strings.Contains(why, "properties") {
+			t.Errorf("the rule's reason %q does not say where a neighbour's value is written", why)
+		}
+	}
+}
+
 // TestArmRealFileDrafts drafts the two types of the file from
 // Azure/bicep-types-az the provider deploys, renders them over sample values
 // and assembles them into one template.

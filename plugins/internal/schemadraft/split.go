@@ -86,6 +86,12 @@ type Rules struct {
 	// rather than a setting, or "" to carry it; a nil rule leaves out none.
 	// Split does not read it: DraftResource applies it before placing.
 	LeftOut func(t *Type, p *Property) string
+	// NotInjected returns why the format's Recipe writer cannot write a value
+	// a neighbour delivers on the inject pipe at p, or "" where it can; a nil
+	// rule refuses none. Neither Split nor DraftResource reads it: an importer
+	// wiring a neighbour's reference into a property it drafts from a source
+	// reads it before marking the property injected.
+	NotInjected func(t *Type, p *Property) string
 }
 
 // overridesKey is the infra key holding every writable property no other rule

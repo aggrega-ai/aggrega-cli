@@ -348,7 +348,7 @@ func secretType(p *schemadraft.Property) string {
 func injectOutsideProperties(r schemadraft.Resource) []aggrega.Diagnostic {
 	var out []aggrega.Diagnostic
 	for _, in := range r.Inputs {
-		if in.Source.Pillar != schemadraft.PillarInject || len(in.Property.Path) > 0 && in.Property.Path[0] == keyProperties {
+		if in.Source.Pillar != schemadraft.PillarInject || atOrUnderProperties(in.Property) {
 			continue
 		}
 		out = append(out, aggrega.Diagnostic{

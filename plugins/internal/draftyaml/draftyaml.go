@@ -72,19 +72,31 @@ type Injected struct {
 	In, From string
 }
 
+// MechanismEnv is the inject mechanism delivering a value into the consumer's
+// environment, under the variable's name.
+const MechanismEnv = "env"
+
 // InjectEnv writes the inject block a connection of a drafted Aggregate delivers
-// entries through, at indent, the indentation of the connection's own keys: its
-// env list, one entry per item in the order given, each name written as String
-// writes it, escaped first so it reads back as itself once the Aggregate is
-// evaluated as a template. It writes nothing for no entry. Every importer drafting
-// a connection's inject block writes it through this, so one is written one way.
+// entries into its consumer's environment through, as Inject writes the block of
+// MechanismEnv.
 func InjectEnv(indent string, entries []Injected) string {
+	return Inject(indent, MechanismEnv, entries)
+}
+
+// Inject writes the inject block a connection of a drafted Aggregate delivers
+// entries through on the mechanism named mechanism, at indent, the indentation of
+// the connection's own keys: the mechanism's list, one entry per item in the order
+// given, each name written as String writes it, escaped first so it reads back as
+// itself once the Aggregate is evaluated as a template, and each provides key it
+// is read from as it is. It writes nothing for no entry. Every importer drafting
+// a connection's inject block writes it through this, so one is written one way.
+func Inject(indent, mechanism string, entries []Injected) string {
 	if len(entries) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString(indent + "inject:\n")
-	b.WriteString(indent + "  env:\n")
+	b.WriteString(indent + "  " + mechanism + ":\n")
 	for _, e := range entries {
 		b.WriteString(indent + "    - in: " + String(importer.EscapeTemplateText(e.In)) + "\n")
 		b.WriteString(indent + "      from: " + e.From + "\n")

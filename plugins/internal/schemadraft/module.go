@@ -109,7 +109,7 @@ func DraftWrapped(in aggrega.ImportInput, f Format, m WrappedModule, w ModuleWri
 	if m.Version == "" {
 		diags = append(diags, moduleVersionUnpinned(m, id))
 	}
-	return Drafted{Name: name, Recipe: spec.name, Entities: drafts, Decision: decision}, diags
+	return Drafted{Name: name, Recipe: spec.name, Entities: drafts, Decision: decision, Inputs: res.Inputs}, diags
 }
 
 // malformedModule halts on a module a draft cannot be written for: no type, no

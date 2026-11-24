@@ -37,8 +37,9 @@ const (
 // declared as a deploy-time parameter; a read-back scalar nested in objects is
 // provided, since reference reads it by a dotted path, except within the root
 // systemData, which is not provided. A draft from a source leaves out the
-// provisioning state an export writes. A type writable at no scope the provider
-// deploys at is refused.
+// provisioning state an export writes. A neighbour's value is written at or
+// under the resource's properties alone. A type writable at no scope the
+// provider deploys at is refused.
 var Format = schemadraft.Format{
 	Name:       formatName,
 	Capability: capability,
@@ -54,6 +55,7 @@ var Format = schemadraft.Format{
 		NestedProvides: true,
 		NotProvided:    notProvided,
 		LeftOut:        leftOut,
+		NotInjected:    notInjected,
 	},
 	Category:   category,
 	Write:      Write,
@@ -104,6 +106,27 @@ func leftOut(_ *schemadraft.Type, p *schemadraft.Property) string {
 		return provisioningStateWhy
 	}
 	return ""
+}
+
+// notInjectedWhy says why a neighbour's value is not written outside the
+// resource's properties.
+const notInjectedWhy = "ARM evaluates a reference to another resource only in a resource's properties, so a " +
+	"neighbour's value is written at or under properties alone"
+
+// notInjected says why a Recipe drafted for a type cannot write a neighbour's
+// value at p: p lies outside the root properties, where the writer halts on an
+// input read from the inject pipe; "" at or under properties.
+func notInjected(_ *schemadraft.Type, p *schemadraft.Property) string {
+	if atOrUnderProperties(p) {
+		return ""
+	}
+	return notInjectedWhy
+}
+
+// atOrUnderProperties reports whether p is the resource's root properties or
+// lies under them.
+func atOrUnderProperties(p *schemadraft.Property) bool {
+	return len(p.Path) > 0 && p.Path[0] == keyProperties
 }
 
 // The scopes a Bicep type file states a type is writable at, by the bit of

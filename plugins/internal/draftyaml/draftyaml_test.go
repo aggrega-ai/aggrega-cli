@@ -54,3 +54,27 @@ func TestCommentLineReadsBackAsWrittenOnceEvaluated(t *testing.T) {
 		})
 	}
 }
+
+// TestInjectWritesOneMechanismsEntries writes an inject block of one
+// mechanism, each name escaped so it reads back once evaluated, and InjectEnv
+// as the block of the env mechanism; no entry writes nothing.
+func TestInjectWritesOneMechanismsEntries(t *testing.T) {
+	t.Parallel()
+	entries := []Injected{{In: "properties_target_id", From: "id"}, {In: "DB_{{HOST}}", From: "host"}}
+	want := "      inject:\n" +
+		"        property:\n" +
+		"          - in: \"properties_target_id\"\n" +
+		"            from: id\n" +
+		"          - in: \"DB_{{`{{`}}HOST}}\"\n" +
+		"            from: host\n"
+	if got := Inject("      ", "property", entries); got != want {
+		t.Errorf("Inject wrote\n%s\nwant\n%s", got, want)
+	}
+	if got := InjectEnv("  ", entries[:1]); got != Inject("  ", MechanismEnv, entries[:1]) ||
+		!strings.HasPrefix(got, "  inject:\n    env:\n") {
+		t.Errorf("InjectEnv wrote\n%s\nwant the block of the env mechanism", got)
+	}
+	if got := Inject("  ", "property", nil); got != "" {
+		t.Errorf("no entry wrote %q, want nothing", got)
+	}
+}

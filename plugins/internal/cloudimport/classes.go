@@ -118,6 +118,28 @@ type Classified struct {
 	// others, so the Drafts of a classification, laid out in order, draft each
 	// Component once.
 	Drafts []importer.CatalogDraft
+	// Key is the instance key of a mapped or drafted node, [Keys] of those
+	// nodes in the order Classify returns them; empty for every other class.
+	Key string
+	// Uses are the connections the instance of a mapped or drafted node draws
+	// to other instances, in the order of their keys.
+	Uses []Use
+	// Comments are the comment lines written above the instance of a mapped or
+	// drafted node: each held-back resource it reads, named.
+	Comments []string
+	// Inputs are the inputs of a drafted node's Recipe, each with the pillar
+	// and the key it is read from: for a resource, those of the Recipe its
+	// Drafts hold; for a module, each parameter a neighbour's value is
+	// delivered into, which the Recipe the format's module writer drafts reads
+	// off the inject pipe beside the parameters it carries.
+	Inputs []schemadraft.Input
+	// Provides are what a drafted node's Recipe publishes, each attribute
+	// under its provides key: for a resource its id and name, and for a
+	// resource and a module alike each attribute another node references.
+	Provides []schemadraft.Provide
+	// Credentials are the credentials the instance of a mapped or drafted
+	// node reads from other resources, in the order the source writes them.
+	Credentials []CredentialRead
 }
 
 // Classify gives each node of g one class and one decision, and each resource
@@ -141,6 +163,13 @@ type Classified struct {
 //     it; where the catalog holds the Component name its draft takes, it is
 //     held back instead.
 //
+// Each mapped and drafted node is an instance of the drafted Aggregate, keyed
+// by [Keys] in the order Classify returns them, and the instances are wired as
+// the wiring rule states before any Component is drafted: each instance's
+// Uses, Comments and Credentials record what it draws, a reference not wired
+// is reported reference-not-wired and a credential read credential-flow, on
+// the node reading it.
+//
 // The nodes of one Component name — two resources of one type no row maps —
 // take one Component and one Recipe, drafted once with
 // [schemadraft.DraftResource] from every property any of them writes: each
@@ -149,11 +178,13 @@ type Classified struct {
 // writes whole read as that object. The draft's resource takes the type and
 // apiVersion of the first node by ID, its name as its identity, the properties
 // the format's rules place as placement, identity and secret so, every
-// property a secure parameter or a credential feeds as a secret, and provides
-// id and name. Each node is an instance of the Component with a decision of its
-// own. A node of a module form is classed drafted and named, and nothing is
-// drafted for it here: its Recipe sources the module whole and is drafted with
-// the format's module writer. A node no row maps for which the format has no
+// property a secure parameter or a credential feeds as a secret, each property
+// a neighbour's value is delivered into read off the inject pipe, and provides
+// its Provides. Each node is an instance of the Component with a decision of
+// its own, and its Inputs are those of the drafted Recipe. A node of a module
+// form is classed drafted and named, and nothing is drafted for it here: its
+// Recipe sources the module whole and is drafted with the format's module
+// writer. A node no row maps for which the format has no
 // writer — no Recipe writer for a resource, no module writer for a module —
 // halts source-refused, the format being misconfigured, and nothing is
 // classified. Where a draft halts, its nodes are classed drafted with nothing
@@ -211,6 +242,8 @@ func Classify(in aggrega.ImportInput, f Format, g *Graph) ([]Classified, []aggre
 	}
 	c.dependOnParents()
 	undeclared := c.undeclared()
+	c.wire(c.ordered(undeclared))
+	c.draftGroups()
 	return c.result(undeclared)
 }
 
@@ -240,7 +273,13 @@ type classifier struct {
 	// pending are the nodes no Component maps, drafted or held back once
 	// every node is classed.
 	pending map[string]bool
-	out     map[string]*Classified
+	// groups are the nodes drafted together, one group for each Component
+	// name and form, in the order first met, and groupOf each such node's.
+	groups  []*draftGroup
+	groupOf map[string]*draftGroup
+	// cs reads the classes of the nodes as the wiring reaches them.
+	cs  classLookup
+	out map[string]*Classified
 	// notes are the diagnostics naming one node, by its ID; diags those of a
 	// draft.
 	notes map[string][]aggrega.Diagnostic
@@ -275,8 +314,8 @@ func (a assessment) byRow() bool {
 func newClassifier(in aggrega.ImportInput, f Format, g *Graph, rows []Row) *classifier {
 	c := &classifier{in: in, f: f, g: g, table: Table{Generated: rows}, nodes: byID(g), byID: map[string]*Node{},
 		kids: map[string][]*Node{}, own: map[string]assessment{}, instances: map[string]instanceOf{},
-		ones: map[string]*oneFold{}, pending: map[string]bool{}, out: map[string]*Classified{},
-		notes: map[string][]aggrega.Diagnostic{}}
+		ones: map[string]*oneFold{}, pending: map[string]bool{}, groupOf: map[string]*draftGroup{},
+		out: map[string]*Classified{}, notes: map[string][]aggrega.Diagnostic{}}
 	for _, n := range c.nodes {
 		if _, held := c.byID[n.ID]; !held {
 			c.byID[n.ID] = n
@@ -498,12 +537,33 @@ func (c *classifier) says(n *Node) string {
 	return ""
 }
 
+// draftGroup is the nodes no Component maps that take one Component name and
+// one form, drafted once.
+type draftGroup struct {
+	name string
+	// module is set for nodes of a module form, whose Recipe the format's
+	// module writer drafts.
+	module bool
+	nodes  []*Node
+	// props are the properties the nodes of a resource form write, as their
+	// draft reads them.
+	props []*writtenProp
+	// provides are what the group's Recipe publishes.
+	provides []schemadraft.Provide
+	// injected holds the inject key of each property a neighbour's value is
+	// delivered into, by its path as foldedPath writes it; injectKeys the path
+	// of each such key, and injectPaths those paths in the order delivered.
+	injected    map[string]string
+	injectKeys  map[string][]string
+	injectPaths [][]string
+}
+
 // settleUnmatched holds back each node no Component maps whose draft's name
-// the catalog holds, and drafts the others, once for each name. It returns a
-// halt where the format has no writer for a node it would draft.
+// the catalog holds, and groups the others by name and form, each group to be
+// drafted once its instances are wired. It returns a halt where the format has
+// no writer for a node it would draft.
 func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
-	var names, unwritable []string
-	groups := map[string][]*Node{}
+	var unwritable []string
 	for _, n := range c.nodes {
 		if !c.pending[n.ID] {
 			continue
@@ -515,13 +575,8 @@ func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 			c.heldBack(n, held)
 		case isModule(n.Form) && c.f.Wrap == nil, !isModule(n.Form) && c.f.Draft.Write == nil:
 			unwritable = append(unwritable, n.ID+" ("+n.Type+")")
-		case isModule(n.Form):
-			c.unwritten(n, name)
 		default:
-			if _, ok := groups[name]; !ok {
-				names = append(names, name)
-			}
-			groups[name] = append(groups[name], n)
+			c.group(n, name)
 		}
 	}
 	if len(unwritable) > 0 {
@@ -531,10 +586,51 @@ func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 			"importer's authors")
 		return &d
 	}
-	for _, name := range names {
-		c.draft(name, groups[name])
+	for _, grp := range c.groups {
+		if !grp.module {
+			grp.props = c.union(grp.nodes)
+		}
 	}
 	return nil
+}
+
+// group adds n, drafted as the Component name, to the group of its name and
+// form, and names it.
+func (c *classifier) group(n *Node, name string) {
+	module := isModule(n.Form)
+	i := slices.IndexFunc(c.groups, func(g *draftGroup) bool { return g.name == name && g.module == module })
+	if i < 0 {
+		c.groups = append(c.groups, &draftGroup{name: name, module: module})
+		i = len(c.groups) - 1
+	}
+	c.groups[i].nodes = append(c.groups[i].nodes, n)
+	c.groupOf[n.ID] = c.groups[i]
+	c.out[n.ID].Name = name
+}
+
+// draftGroups drafts each group once its instances are wired: the Component
+// and the Recipe of a resource group, and for a module group, whose Recipe the
+// format's module writer drafts, the decision on each of its nodes.
+func (c *classifier) draftGroups() {
+	for _, grp := range c.groups {
+		if grp.module {
+			for _, n := range grp.nodes {
+				c.unwritten(n, grp.name)
+			}
+			continue
+		}
+		c.draft(grp)
+	}
+}
+
+// ordered returns the classified nodes in the order Classify returns them:
+// g's nodes in Order, then undeclared.
+func (c *classifier) ordered(undeclared []*Node) []*Classified {
+	var out []*Classified
+	for _, n := range append(Order(c.g), undeclared...) {
+		out = append(out, c.out[n.ID])
+	}
+	return out
 }
 
 // parentNote says why n, a child whose parent repeats into several instances
@@ -581,18 +677,32 @@ func (c *classifier) unwritten(n *Node, name string) {
 		module = "its Recipe sources the module whole, drafted with the format's module writer"
 	}
 	d.Rationale = joinNonEmpty("; ", "drafted: "+c.why(n), c.parentNote(n), module, c.says(n))
-	c.set(n, &Classified{Class: ClassDrafted, Name: name, Decision: d})
+	cl := c.drafted(n)
+	cl.Name, cl.Decision = name, d
 }
 
-// draft drafts the Component name and its Recipe once for nodes, the nodes no
-// Component maps that take it, in ID order.
-func (c *classifier) draft(name string, nodes []*Node) {
-	w, notes := c.written(nodes)
+// drafted returns the classified node n, drafted, keeping what the wiring
+// recorded of its instance.
+func (c *classifier) drafted(n *Node) *Classified {
+	cl := c.out[n.ID]
+	if cl == nil {
+		cl = &Classified{}
+		c.set(n, cl)
+	}
+	cl.Class = ClassDrafted
+	return cl
+}
+
+// draft drafts the Component and the Recipe of grp once, for its nodes, the
+// nodes no Component maps that take its name, in ID order.
+func (c *classifier) draft(grp *draftGroup) {
+	nodes := grp.nodes
+	w, notes := c.written(grp)
 	drafted, diags := schemadraft.DraftResource(c.in, c.f.Draft, w)
 	c.diags = append(c.diags, diags...)
 	if halts(diags) || len(drafted.Entities) == 0 {
 		for _, n := range nodes {
-			c.unwritten(n, name)
+			c.unwritten(n, grp.name)
 		}
 		return
 	}
@@ -608,11 +718,11 @@ func (c *classifier) draft(name string, nodes []*Node) {
 			drafted.Decision.Rationale)
 		entity := drafted.Entities[0].Entity
 		entity.SourceRef, entity.DecisionRef = n.ID, "decision:"+n.ID
-		cl := &Classified{Class: ClassDrafted, Name: drafted.Name, Decision: d, Entity: entity}
+		cl := c.drafted(n)
+		cl.Name, cl.Decision, cl.Entity, cl.Inputs = drafted.Name, d, entity, drafted.Inputs
 		if i == 0 {
 			cl.Drafts = drafted.Entities
 		}
-		c.set(n, cl)
 	}
 }
 
@@ -623,12 +733,9 @@ type writtenProp struct {
 	secret, identity bool
 }
 
-// written returns the resource the Component and the Recipe of nodes are
-// drafted from — every property any of them writes, as Classify states — and
-// what the decision on each says of drafting them together.
-func (c *classifier) written(nodes []*Node) (schemadraft.WrittenResource, string) {
-	first := nodes[0]
-	w := schemadraft.WrittenResource{ID: first.ID, Type: first.Type, APIVersion: first.APIVersion}
+// union returns every property any of nodes writes, as Classify states: the
+// properties the Component and the Recipe of nodes are drafted from.
+func (c *classifier) union(nodes []*Node) []*writtenProp {
 	var props []*writtenProp
 	at := map[string]*writtenProp{}
 	spelled := map[string]string{}
@@ -651,8 +758,17 @@ func (c *classifier) written(nodes []*Node) (schemadraft.WrittenResource, string
 			add(l.path, l.value, false)
 		}
 	}
-	props = outermost(props)
+	return outermost(props)
+}
 
+// written returns the resource the Component and the Recipe of grp are
+// drafted from — every property any of its nodes writes, each a neighbour's
+// value is delivered into read off the inject pipe, and the group's provides —
+// and what the decision on each node says of drafting them together.
+func (c *classifier) written(grp *draftGroup) (schemadraft.WrittenResource, string) {
+	nodes, props := grp.nodes, grp.props
+	first := nodes[0]
+	w := schemadraft.WrittenResource{ID: first.ID, Type: first.Type, APIVersion: first.APIVersion}
 	plain := schemadraft.WrittenResource{Type: w.Type, APIVersion: w.APIVersion}
 	for _, p := range props {
 		plain.Properties = append(plain.Properties, schemadraft.WrittenProperty{Path: p.path, Value: p.value})
@@ -666,15 +782,15 @@ func (c *classifier) written(nodes []*Node) (schemadraft.WrittenResource, string
 			wp.Identity = wp.Identity || rules.Identity != nil && rules.Identity(typ, prop)
 			wp.Secret = wp.Secret || rules.Secret != nil && rules.Secret(typ, prop)
 		}
-		if wp.Secret {
+		if key := grp.injected[foldedPath(p.path)]; key != "" {
+			wp.Inject, wp.Secret = key, false
+		}
+		if wp.Secret || wp.Inject != "" {
 			wp.Value = nil
 		}
 		w.Properties = append(w.Properties, wp)
 	}
-	w.Provides = []schemadraft.Provide{
-		{Key: "id", Attribute: []string{"id"}, Identifier: true},
-		{Key: "name", Attribute: []string{"name"}},
-	}
+	w.Provides = slices.Clone(grp.provides)
 	return w, together(nodes)
 }
 

@@ -200,6 +200,31 @@ func TestDraftResourceTwoRunsEqual(t *testing.T) {
 	}
 }
 
+// TestDraftResourceReturnsTheInputsItsRecipeReads returns the inputs of the
+// drafted Recipe's resource, as the writer is handed them, each with the
+// pillar and key it is read from, an injected property's included.
+func TestDraftResourceReturnsTheInputsItsRecipeReads(t *testing.T) {
+	w := queueWritten()
+	w.Properties = append(w.Properties, WrittenProperty{Path: []string{"Policy", "TargetArn"},
+		Inject: InjectKey([]string{"Policy", "TargetArn"})})
+	f := writtenFormat(w)
+	var handed []Resource
+	write := f.Write
+	f.Write = func(r Resource) (importer.RecipeDraft, []aggrega.Diagnostic) {
+		handed = append(handed, r)
+		return write(r)
+	}
+	drafted, diags := DraftResource(writtenInput(""), f, w)
+	noHaltIn(t, diags)
+	if len(handed) != 1 || len(drafted.Inputs) == 0 || !reflect.DeepEqual(drafted.Inputs, handed[0].Inputs) {
+		t.Fatalf("drafted inputs %+v, want those the writer is handed %+v", drafted.Inputs, handed)
+	}
+	last := drafted.Inputs[len(drafted.Inputs)-1]
+	if last.Source != (InputSource{Pillar: PillarInject, Key: "policy_target_arn", Mechanism: MechanismProperty}) {
+		t.Errorf("the injected property is read from %+v", last.Source)
+	}
+}
+
 // TestDraftResourceHaltDraftsNothing returns the writer's halt and nothing
 // drafted.
 func TestDraftResourceHaltDraftsNothing(t *testing.T) {

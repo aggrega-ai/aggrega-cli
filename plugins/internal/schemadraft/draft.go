@@ -23,6 +23,10 @@ type Drafted struct {
 	Entities []importer.CatalogDraft
 	// Decision is the decision drafting them.
 	Decision aggrega.ImportDecision
+	// Inputs are the inputs of the Recipe's resource, as its writer is handed
+	// them: each property it reads, with the pillar and the key it is read
+	// from, in the order the Recipe reads them.
+	Inputs []Input
 }
 
 // NameFor is the Component name a draft of typeName takes in the import in, for
@@ -93,7 +97,7 @@ func DraftResource(in aggrega.ImportInput, f Format, w WrittenResource) (Drafted
 	decision.SwapHint = schemaImportHint(f, d.t)
 	referTo(drafts, id)
 	diags = append(diags, draftedFromSource(f, d, id, name, spec.name))
-	return Drafted{Name: name, Recipe: spec.name, Entities: drafts, Decision: decision}, diags
+	return Drafted{Name: name, Recipe: spec.name, Entities: drafts, Decision: decision, Inputs: spec.res.Inputs}, diags
 }
 
 // malformed halts on each fault of w a draft cannot be named or placed with: no
