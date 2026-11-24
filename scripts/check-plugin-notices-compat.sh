@@ -50,7 +50,7 @@ set -euo pipefail
 
 CLI_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export GOWORK=off
-# shellcheck source=lib/first-line.sh
+# shellcheck source-path=SCRIPTDIR source=lib/first-line.sh
 source "$CLI_ROOT/scripts/lib/first-line.sh"
 
 RELEASE_TAG="v0.9.3"
