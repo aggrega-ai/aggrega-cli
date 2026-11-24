@@ -1,0 +1,119 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio s.r.l.
+
+package cloudimport
+
+import (
+	"sort"
+
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+)
+
+// Expand writes each repeated node of g as the nodes it deploys. Where the
+// source states the instances literally, the node is replaced by one node per
+// key, in key order: the node Repetition.Instance returns for the key, its ID
+// "<id>-<key>", taking the repeated node's Source where it names none; and a
+// dependency of any node on the repeated node becomes a dependency on each of
+// its instances. Where the source computes the instances when it deploys, the
+// node stays one node, with a repetition-not-expanded warning naming it. No
+// node of g repeats afterwards, and g.Nodes stays ordered by ID.
+func Expand(g *Graph) []aggrega.Diagnostic {
+	if g == nil {
+		return nil
+	}
+	var diags []aggrega.Diagnostic
+	var nodes []*Node
+	instances := map[string][]string{}
+	for _, n := range g.Nodes {
+		switch {
+		case n == nil || n.Repeat == nil:
+			nodes = append(nodes, n)
+		case n.Repeat.Keys == nil:
+			n.Repeat = nil
+			nodes = append(nodes, n)
+			diags = append(diags, repetitionNotExpanded(n))
+		default:
+			ids := make([]string, 0, len(n.Repeat.Keys))
+			for _, key := range n.Repeat.Keys {
+				inst := instance(n, key)
+				ids = append(ids, inst.ID)
+				nodes = append(nodes, inst)
+			}
+			instances[n.ID] = ids
+		}
+	}
+	if len(instances) == 0 {
+		return diags
+	}
+	for _, n := range nodes {
+		if n != nil {
+			n.DependsOn = dependencies(n.DependsOn, instances)
+		}
+	}
+	sort.SliceStable(nodes, func(i, j int) bool { return idOf(nodes[i]) < idOf(nodes[j]) })
+	g.Nodes = nodes
+	return diags
+}
+
+// instance returns the node n deploys for key: a node of its own, so no two
+// instances share one, with no repetition left.
+func instance(n *Node, key string) *Node {
+	var inst Node
+	if made := callInstance(n.Repeat, key); made != nil {
+		inst = *made
+	} else {
+		inst = *n
+	}
+	inst.ID = n.ID + "-" + key
+	inst.Repeat = nil
+	if inst.Source == "" {
+		inst.Source = n.Source
+	}
+	return &inst
+}
+
+// callInstance returns r's node for key, nil where r has no Instance.
+func callInstance(r *Repetition, key string) *Node {
+	if r.Instance == nil {
+		return nil
+	}
+	return r.Instance(key)
+}
+
+// dependencies returns deps with every ID of an expanded node replaced by the
+// IDs of its instances.
+func dependencies(deps []string, instances map[string][]string) []string {
+	var out []string
+	for i, dep := range deps {
+		ids, expanded := instances[dep]
+		if expanded && out == nil {
+			out = append(make([]string, 0, len(deps)+len(ids)), deps[:i]...)
+		}
+		switch {
+		case expanded:
+			out = append(out, ids...)
+		case out != nil:
+			out = append(out, dep)
+		}
+	}
+	if out == nil {
+		return deps
+	}
+	return out
+}
+
+// idOf returns n's ID, empty for no node.
+func idOf(n *Node) string {
+	if n == nil {
+		return ""
+	}
+	return n.ID
+}
+
+// repetitionNotExpanded warns that n is drafted once.
+func repetitionNotExpanded(n *Node) aggrega.Diagnostic {
+	d := Report(CodeRepetitionNotExpanded, n.ID+" is repeated as many times as the source computes when it "+
+		"deploys, and is drafted once: write in the Aggregate an instance for each further copy the source deploys")
+	d.SourceRef = n.Source
+	return d
+}

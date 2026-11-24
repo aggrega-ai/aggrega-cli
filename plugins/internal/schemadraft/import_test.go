@@ -608,7 +608,7 @@ func TestImportHaltDraftsNothing(t *testing.T) {
 			sources:  []aggrega.ImportSource{{Name: "a.json"}, module}},
 		{name: "an ambiguous type", code: codeAmbiguous, settings: both, format: &ambiguous,
 			sources: []aggrega.ImportSource{{Name: "a.json"}, again}},
-		{name: "a Component held with other keys", code: codeComponentExists, settings: both,
+		{name: "a Component held with other keys", code: CodeComponentExists, settings: both,
 			view: fxView(aggrega.CatalogComponent{Name: "imported/component/sample-store-bucket", Version: "0.1.0",
 				Values: []string{"name"}})},
 		{name: "a writer's halt", code: codeRefused, settings: both, format: &halting},
@@ -765,7 +765,7 @@ func TestComponentExistsHaltsOnOtherValuesKeys(t *testing.T) {
 	in.Catalog = fxView(aggrega.CatalogComponent{Name: "imported/messaging/sample-store-queue", Version: "0.1.0",
 		Values: []string{"name", "tier"}})
 	out := Import(in, fxFormat(), fxParse)
-	d := fxDiagnostic(t, out, "halt", codeComponentExists)
+	d := fxDiagnostic(t, out, "halt", CodeComponentExists)
 	for _, want := range []string{"imported/messaging/sample-store-queue", "name and tier", "queue_name", "component",
 		fxQueue} {
 		if !strings.Contains(d.Message, want) {
@@ -797,7 +797,7 @@ func TestComponentExistsRefreshesOnEqualKeys(t *testing.T) {
 func TestComponentExistsHaltsOnTwoRequestsDraftingOnePath(t *testing.T) {
 	out := Import(fxInput(t, `{"resource_types": [{"type": "Sample::Store::Queue", "component": "acme/messaging/store"},
 		{"type": "Sample::Store::Bucket", "component": "acme/storage/store"}]}`), fxFormat(), fxParse)
-	d := fxDiagnostic(t, out, "halt", codeComponentExists)
+	d := fxDiagnostic(t, out, "halt", CodeComponentExists)
 	for _, want := range []string{"acme/messaging/store", "acme/storage/store", fxQueue, fxBucket,
 		"catalog/recipe/sample/store"} {
 		if !strings.Contains(d.Message, want) {

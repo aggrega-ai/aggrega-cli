@@ -19,7 +19,10 @@ const (
 
 // The codes of the diagnostics an import raises once a type is selected.
 const (
-	codeComponentExists     = "component-exists"
+	// CodeComponentExists reports a Component or path a draft would take that
+	// is taken already: by a Component the catalog holds with other values
+	// keys, or by another draft of the same import.
+	CodeComponentExists     = "component-exists"
 	codeComponentDraftedNew = "component-drafted-new"
 	codeProvidesUnmapped    = "provides-unmapped"
 )

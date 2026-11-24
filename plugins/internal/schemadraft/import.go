@@ -531,7 +531,7 @@ func draftedPath(d importer.CatalogDraft) string {
 func componentExists(name string, held, drafted []string, t *Type) aggrega.Diagnostic {
 	return aggrega.Diagnostic{
 		Severity: aggrega.SeverityHalt,
-		Code:     codeComponentExists,
+		Code:     CodeComponentExists,
 		Message: fmt.Sprintf("the catalog holds the Component %s with the values keys %s, and the draft of %s would "+
 			"give it the values keys %s: write {type: %s, component: <namespace>/<category>/<name>} in "+
 			"resource_types to draft it under another name, or name %s as its component to draft a Recipe alone "+
@@ -545,7 +545,7 @@ func componentExists(name string, held, drafted []string, t *Type) aggrega.Diagn
 func twoRequestsDraftOnePath(earlier, later, path string) aggrega.Diagnostic {
 	return aggrega.Diagnostic{
 		Severity: aggrega.SeverityHalt,
-		Code:     codeComponentExists,
+		Code:     CodeComponentExists,
 		Message: fmt.Sprintf("%s and %s both draft %s: give one of them another component in resource_types",
 			earlier, later, path),
 	}
