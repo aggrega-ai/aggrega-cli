@@ -34,8 +34,10 @@ import (
 // its file, where:
 //
 //   - it does not read as its kind, the warning carrying why;
-//   - an earlier drafted file declares an entity of its kind and identity, the
-//     warning naming that file too, whose entity is the one the view reads;
+//   - a drafted file at an earlier path declares an entity of its kind and
+//     identity, the warning naming that file too, whose entity is the one the
+//     view reads. One path the importer hands more than once is one drafted file,
+//     read with the content written there last, as the import writes it;
 //   - it is a Recipe whose spec.implements names a Component neither the drafts
 //     nor base hold, the warning naming the Recipe and the type. Where base
 //     resolves no Component — a harness standing in for the catalog, which
@@ -87,16 +89,18 @@ func overlayDrafts(base RecipeIndex, files []abi.ScaffoldFile) (RecipeIndex, []a
 	// Where each identity was first drafted, one index per kind, since a Component
 	// and a Recipe may spell one identity alike.
 	componentAt, recipeAt := map[string]string{}, map[string]string{}
-	for _, f := range files {
-		switch kind := draftKind(f.Content); kind {
+	// An importer may hand one path more than once; it is one drafted file, read
+	// with the content written there last (draftedFiles).
+	for _, f := range draftedFiles(files) {
+		switch kind := draftKind(f.content); kind {
 		case entitykind.Component:
-			c, err := catalog.ParseComponentEntity([]byte(f.Content), f.Path)
+			c, err := catalog.ParseComponentEntity([]byte(f.content), f.path)
 			if err != nil {
-				diags = append(diags, unreadDraft(kind, f.Path, err))
+				diags = append(diags, unreadDraft(kind, f.path, err))
 				continue
 			}
 			key := catalog.RecipeMappingURI(c.Metadata.Name, c.Metadata.Version)
-			if twice, ok := twiceDrafted(kind, key, f.Path, componentAt); ok {
+			if twice, ok := twiceDrafted(kind, key, f.path, componentAt); ok {
 				diags = append(diags, twice)
 				continue
 			}
@@ -104,17 +108,17 @@ func overlayDrafts(base RecipeIndex, files []abi.ScaffoldFile) (RecipeIndex, []a
 				o.drafts.Components[key] = c
 			}
 		case entitykind.Recipe:
-			r, err := catalog.ParseRecipeEntity([]byte(f.Content), f.Path)
+			r, err := catalog.ParseRecipeEntity([]byte(f.content), f.path)
 			if err != nil {
-				diags = append(diags, unreadDraft(kind, f.Path, err))
+				diags = append(diags, unreadDraft(kind, f.path, err))
 				continue
 			}
 			key := catalog.RecipeIdentityURI(r.Spec.Capability, r.Metadata.Name, r.Metadata.Version)
-			if twice, ok := twiceDrafted(kind, key, f.Path, recipeAt); ok {
+			if twice, ok := twiceDrafted(kind, key, f.path, recipeAt); ok {
 				diags = append(diags, twice)
 				continue
 			}
-			recipes = append(recipes, draftedRecipe{path: f.Path, key: key, recipe: r})
+			recipes = append(recipes, draftedRecipe{path: f.path, key: key, recipe: r})
 		}
 	}
 

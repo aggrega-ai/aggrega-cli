@@ -201,7 +201,10 @@ spec:
 // refuses at the envelope check, and two Components and two Recipes each declaring
 // one identity twice. Each row's warning is held exactly: the file, its kind and
 // the parse's own failure; or both files, the second left out. The view reads
-// the first of a doubled identity.
+// the first of a doubled identity. Beside them, one path handed twice — as an
+// importer hands the file of a Component two of its nodes share — is one draft
+// and draws no warning, whether its two contents are one or differ, and the view
+// reads the content written there last.
 //
 // 🔴 PLANTED DEFECTS (internal/importops/draft_overlay.go):
 //   - leave an unreadable draft out without its warning (continue without
@@ -209,6 +212,9 @@ spec:
 //   - have twiceDrafted find nothing (record the path and return false): the
 //     doubled rows redden with no report, the second file read in place of the
 //     first.
+//   - range over files rather than draftedFiles(files) in overlayDrafts: the
+//     one-path rows redden with a warning naming one file twice, and the view
+//     reads the first content.
 func TestDraftedEntityLeftOutIsReported(t *testing.T) {
 	t.Parallel()
 	component := func(path, version, key string) abi.ScaffoldFile {
@@ -288,6 +294,28 @@ spec:
 			check: func(t *testing.T, view RecipeIndex) {
 				if got := infraKeys(t, overlayLookup(t, view), "ws/storage/x:0.1.0"); !slices.Equal(got, []string{"first"}) {
 					t.Errorf("the view's ws/storage/x declares %v; want the first draft's [first]", got)
+				}
+			},
+		},
+		{
+			name: "one Component file handed twice alike",
+			files: []abi.ScaffoldFile{component("catalog/a/x.yaml", "0.1.0", "first"),
+				component("catalog/a/x.yaml", "0.1.0", "first")},
+			want: func(*testing.T, []abi.ScaffoldFile) []abi.Diagnostic { return nil },
+			check: func(t *testing.T, view RecipeIndex) {
+				if got := infraKeys(t, overlayLookup(t, view), "ws/storage/x:0.1.0"); !slices.Equal(got, []string{"first"}) {
+					t.Errorf("the view's ws/storage/x declares %v; want [first]", got)
+				}
+			},
+		},
+		{
+			name: "one Component file handed twice, written last as the second",
+			files: []abi.ScaffoldFile{component("catalog/a/x.yaml", "0.1.0", "first"),
+				component("catalog/a/x.yaml", "0.1.0", "second")},
+			want: func(*testing.T, []abi.ScaffoldFile) []abi.Diagnostic { return nil },
+			check: func(t *testing.T, view RecipeIndex) {
+				if got := infraKeys(t, overlayLookup(t, view), "ws/storage/x:0.1.0"); !slices.Equal(got, []string{"second"}) {
+					t.Errorf("the view's ws/storage/x declares %v; want the content written last, [second]", got)
 				}
 			},
 		},
