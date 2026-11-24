@@ -13,19 +13,27 @@ package jsonc
 
 import "bytes"
 
+// byteOrderMark is the UTF-8 encoding of U+FEFF, which a source may open with.
+const byteOrderMark = "\xef\xbb\xbf"
+
 // Strip returns src with what JSON with comments admits and JSON does not
 // written as spaces: each comment — from // to the end of its line, and from /*
 // to the next */ — and each trailing comma, a comma followed by nothing but
 // whitespace and comments before the } or ] closing its object or list. Every
 // line break is kept and every other byte is left where it is, so the text keeps
-// its length and its lines, and a parser refusing it names the line and column
-// the source itself has there. A byte inside a string is never changed, so a
-// value holding // or /* is read as written, and a source that is JSON already
-// is returned byte for byte.
+// its lines, and a parser refusing it names the line and column the source
+// itself has there. A byte inside a string is never changed, so a value holding
+// // or /* is read as written, and a source that is JSON already is returned
+// byte for byte.
+//
+// A UTF-8 byte-order mark opening src is removed, as RFC 8259 section 8.1 permits
+// an implementation to ignore it, so the text after the mark starts at line one,
+// column one. A mark anywhere else is left as written.
 //
 // A comment opened with /* and never closed is left as written, so a parser
 // refuses the source rather than reading a document cut short.
 func Strip(src []byte) []byte {
+	src = bytes.TrimPrefix(src, []byte(byteOrderMark))
 	out := append([]byte(nil), src...)
 	blank := func(from, to int) {
 		for i := from; i < to; i++ {

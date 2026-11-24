@@ -25,3 +25,24 @@ func TestStrip(t *testing.T) {
 		}
 	}
 }
+
+// TestJSONCIgnoresALeadingByteOrderMark proves a source opening with the UTF-8
+// byte-order mark reads as the same source without it, while a mark anywhere
+// else stays in the text for the JSON reader to refuse. The mark occupies no
+// column: the text after it starts at column one.
+func TestJSONCIgnoresALeadingByteOrderMark(t *testing.T) {
+	t.Parallel()
+	const bom = "\xef\xbb\xbf"
+	for _, row := range []struct{ name, in, want string }{
+		{"mark before a document", bom + `{"a":1}`, `{"a":1}`},
+		{"mark before a commented document", bom + "{\n// note\n\"a\": [1,],\n}", "{\n       \n\"a\": [1 ] \n}"},
+		{"mark alone", bom, ""},
+		{"mark before a later refusal", bom + "{\n  \"a\": }", "{\n  \"a\": }"},
+		{"mark after a document start", "{" + bom + `"a":1}`, "{" + bom + `"a":1}`},
+		{"doubled mark", bom + bom + `{"a":1}`, bom + `{"a":1}`},
+	} {
+		if got := string(Strip([]byte(row.in))); got != row.want {
+			t.Errorf("%s: Strip(%q) = %q, want %q", row.name, row.in, got, row.want)
+		}
+	}
+}
