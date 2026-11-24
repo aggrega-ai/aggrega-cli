@@ -26,8 +26,8 @@
 #                                   builds it for (THIRD_PARTY_HOST_TARGETS)
 #   - the Go standard library, compiled into the host and every Go plugin
 #   - the Azure Verified Modules module index, whose rows the arm importer embeds
-#     (plugins/internal/armimport/avmindex_gen.go), as data compiled into
-#     importer/arm
+#     (plugins/internal/armimport/avmindex_gen.go), as data in the ARM importer's
+#     source, plugins/internal/armimport
 #   - for the embedded Rust guests, what their wasm32-wasip1 builds link in from
 #     the toolchain: the Rust standard library and wasi-libc (with the third-party
 #     works it carries), one entry per toolchain channel and per wasi-libc commit
@@ -788,7 +788,7 @@ if [ -z "$GUEST" ]; then
 	printf 'aggrega\t%s\n' "$WORK/sets/host.txt" >> "$WORK/go-sets.list"
 	printf -- '- the Go host binary (`cmd/aggrega`), for %s\n' "${THIRD_PARTY_HOST_TARGETS// /, }" >> "$WORK/covered.md"
 	printf -- '- the Go standard library, compiled into the host binary and every Go plugin below\n' >> "$WORK/covered.md"
-	printf -- '- the Azure Verified Modules module index, compiled into `importer/arm` as data\n' >> "$WORK/covered.md"
+	printf -- '- the Azure Verified Modules module index, embedded in the ARM importer'\''s source, `plugins/internal/armimport`\n' >> "$WORK/covered.md"
 	if [ "$(awk -F'\x1f' '$4 == "rust" && $6 == "yes"' <<< "$rows" | wc -l)" -gt 0 ]; then
 		printf -- '- the Rust standard library and wasi-libc, compiled into every Rust plugin below\n' >> "$WORK/covered.md"
 	fi
@@ -1091,7 +1091,7 @@ if [ -z "$GUEST" ]; then
 	EMIT_NOTICES=("$avm_license")
 	emit_pkg "data" "Azure Verified Modules module index" "$avm_commit" "MIT" "MIT" \
 		"https://github.com/Azure/Azure-Verified-Modules/blob/$avm_commit/docs/static/module-indexes/BicepResourceModules.csv" \
-		"pkg:github/azure/azure-verified-modules@$avm_commit" "importer/arm" "$avm_license"
+		"pkg:github/azure/azure-verified-modules@$avm_commit" "the ARM importer's source, plugins/internal/armimport" "$avm_license"
 	EMIT_NOTICES=(); unset EMIT_NOTE EMIT_NO_SRC
 fi
 

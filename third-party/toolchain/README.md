@@ -42,7 +42,7 @@ The runtime's other Rust crates are not listed: the release tag carries no lockf
 ## Azure Verified Modules
 
 The arm importer embeds the rows of Microsoft's Azure Verified Modules module index
-(`plugins/internal/armimport/avmindex_gen.go`), which is listed in the notices as data compiled into `importer/arm`.
+(`plugins/internal/armimport/avmindex_gen.go`), which is listed in the notices as data in the ARM importer's source.
 
 - `azure-verified-modules-<commit>/LICENSE`: the `LICENSE` of `github.com/Azure/Azure-Verified-Modules` at the commit
   the generated index names as `AVMIndexCommit`. Regenerating the index at another commit needs this file pinned for

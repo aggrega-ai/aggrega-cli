@@ -160,7 +160,8 @@ func renderAVMIndex(mods []armimport.AVMModule, commit string) ([]byte, error) {
 	b.WriteString("// aggrega-cli module root; no test fetches it:\n//\n")
 	b.WriteString("//\tgo run ./plugins/internal/cloudimport/cloudtable -avm-index BicepResourceModules.csv " +
 		"-avm-commit COMMIT -out plugins/internal/armimport/avmindex_gen.go\n//\n")
-	b.WriteString("// The index's rows are taken from that file, which its repository licenses under the MIT licence:\n//\n")
+	b.WriteString("// This file is generated and licensed Apache-2.0; the rows below are derived from an MIT-licensed file,\n")
+	b.WriteString("// whose notice follows:\n//\n")
 	for _, line := range strings.Split(avmLicense, "\n") {
 		if line == "" {
 			b.WriteString("//\n")

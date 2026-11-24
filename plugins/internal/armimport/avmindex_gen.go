@@ -12,7 +12,8 @@
 //
 //	go run ./plugins/internal/cloudimport/cloudtable -avm-index BicepResourceModules.csv -avm-commit COMMIT -out plugins/internal/armimport/avmindex_gen.go
 //
-// The index's rows are taken from that file, which its repository licenses under the MIT licence:
+// This file is generated and licensed Apache-2.0; the rows below are derived from an MIT-licensed file,
+// whose notice follows:
 //
 //	MIT License
 //

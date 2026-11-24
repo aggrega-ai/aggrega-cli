@@ -20,7 +20,7 @@ Go standard library go1.26.11
 
 Azure Verified Modules module index ef1f2199f8c29d5489261aff8d4b5dc92178d1b8
   License: MIT
-  Compiled into: importer/arm
+  Compiled into: the ARM importer's source, plugins/internal/armimport
   Note: the module paths, telemetry prefixes, provider namespaces and resource types of plugins/internal/armimport/avmindex_gen.go, read from docs/static/module-indexes/BicepResourceModules.csv at commit ef1f2199f8c29d5489261aff8d4b5dc92178d1b8
   Copyright:
     Copyright (c) Microsoft Corporation.
