@@ -7,7 +7,7 @@ package armimport
 
 import "github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 
-// TableRevision is the aggrega-hub revision whose arm Recipes, and the
+// TableRevision is the last aggrega-hub commit that changed the arm Recipes, or the
 // Components and libraries they read, the generated rows were read from.
 const TableRevision = "fd634a486ca93f6a18a897f4179e0197bbdc0e4e"
 
@@ -16,7 +16,7 @@ const TableRevision = "fd634a486ca93f6a18a897f4179e0197bbdc0e4e"
 // Recipe.
 var generatedRows = []cloudimport.Row{
 	{
-		Key:       "avm/res/app/job",
+		Key:       "Microsoft.App/Jobs",
 		Component: "core/compute/task",
 		Category:  "compute",
 		Recipe:    "task-container-apps",
@@ -37,7 +37,7 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/task-container-apps/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/cache/redis-enterprise",
+		Key:       "Microsoft.Cache/redisEnterprise",
 		Component: "core/datastore/redis",
 		Category:  "datastore",
 		Recipe:    "redis-azure-managed",
@@ -59,7 +59,20 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/redis-azure-managed/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/container-registry/registry",
+		Key:       "Microsoft.Cdn/profiles",
+		Component: "core/network/azure-front-door",
+		Category:  "network",
+		Recipe:    "azure-front-door",
+		Traits: map[string]string{
+			"component.aggrega.ai/hosting":            "managed",
+			"component.aggrega.ai/type":               "resource",
+			"component.aggrega.ai/upstream-licensing": "proprietary",
+		},
+		Form:   cloudimport.FormRaw,
+		Origin: "generated aggrega-catalog/recipe/arm/azure-front-door/1.0.0/recipe.yaml",
+	},
+	{
+		Key:       "Microsoft.ContainerRegistry/registries",
 		Component: "core/devtool/azure-container-registry",
 		Category:  "devtool",
 		Recipe:    "azure-container-registry",
@@ -80,7 +93,7 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/azure-container-registry/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/databricks/workspace",
+		Key:       "Microsoft.Databricks/workspaces",
 		Component: "core/bigdata/azure-databricks",
 		Category:  "bigdata",
 		Recipe:    "azure-databricks",
@@ -102,7 +115,20 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/azure-databricks/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/db-for-my-sql/flexible-server",
+		Key:       "Microsoft.DataFactory/factories",
+		Component: "core/bigdata/azure-data-factory",
+		Category:  "bigdata",
+		Recipe:    "azure-data-factory",
+		Traits: map[string]string{
+			"component.aggrega.ai/hosting":            "managed",
+			"component.aggrega.ai/type":               "resource",
+			"component.aggrega.ai/upstream-licensing": "proprietary",
+		},
+		Form:   cloudimport.FormRaw,
+		Origin: "generated aggrega-catalog/recipe/arm/azure-data-factory/1.0.0/recipe.yaml",
+	},
+	{
+		Key:       "Microsoft.DBforMySQL/flexibleServers",
 		Component: "core/datastore/mysql",
 		Category:  "datastore",
 		Recipe:    "mysql-flexible-server",
@@ -128,7 +154,7 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/mysql-flexible-server/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/db-for-postgre-sql/flexible-server",
+		Key:       "Microsoft.DBforPostgreSQL/flexibleServers",
 		Component: "core/datastore/postgres",
 		Category:  "datastore",
 		Recipe:    "postgres-flexible-server",
@@ -152,7 +178,7 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/postgres-flexible-server/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/document-db/database-account",
+		Key:       "Microsoft.DocumentDB/databaseAccounts",
 		Component: "core/datastore/cosmos-db",
 		Category:  "datastore",
 		Recipe:    "cosmos-db",
@@ -173,7 +199,21 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/cosmos-db/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/event-grid/topic",
+		Key:       "Microsoft.DocumentDB/mongoClusters",
+		Component: "core/datastore/azure-documentdb",
+		Category:  "datastore",
+		Recipe:    "azure-documentdb",
+		Traits: map[string]string{
+			"component.aggrega.ai/hosting":            "managed",
+			"component.aggrega.ai/type":               "stateful-server",
+			"component.aggrega.ai/upstream-licensing": "proprietary",
+			"datastore.aggrega.ai/engine":             "document",
+		},
+		Form:   cloudimport.FormRaw,
+		Origin: "generated aggrega-catalog/recipe/arm/azure-documentdb/1.0.0/recipe.yaml",
+	},
+	{
+		Key:       "Microsoft.EventGrid/topics",
 		Component: "core/messaging/azure-event-grid",
 		Category:  "messaging",
 		Recipe:    "azure-event-grid",
@@ -190,7 +230,20 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/azure-event-grid/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/insights/component",
+		Key:       "Microsoft.EventHub/namespaces",
+		Component: "core/messaging/azure-event-hubs",
+		Category:  "messaging",
+		Recipe:    "azure-event-hubs",
+		Traits: map[string]string{
+			"component.aggrega.ai/hosting":            "managed",
+			"component.aggrega.ai/type":               "resource",
+			"component.aggrega.ai/upstream-licensing": "proprietary",
+		},
+		Form:   cloudimport.FormRaw,
+		Origin: "generated aggrega-catalog/recipe/arm/azure-event-hubs/1.0.0/recipe.yaml",
+	},
+	{
+		Key:       "Microsoft.Insights/components",
 		Component: "core/observability/azure-application-insights",
 		Category:  "observability",
 		Recipe:    "azure-application-insights",
@@ -212,7 +265,7 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/azure-application-insights/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/key-vault/vault",
+		Key:       "Microsoft.KeyVault/vaults",
 		Component: "core/security/azure-key-vault",
 		Category:  "security",
 		Recipe:    "azure-key-vault",
@@ -232,7 +285,7 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/azure-key-vault/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/logic/workflow",
+		Key:       "Microsoft.Logic/workflows",
 		Component: "core/ai-pipeline/azure-logic-apps",
 		Category:  "ai-pipeline",
 		Recipe:    "azure-logic-apps",
@@ -250,7 +303,7 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/azure-logic-apps/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/search/search-service",
+		Key:       "Microsoft.Search/searchServices",
 		Component: "core/datastore/azure-ai-search",
 		Category:  "datastore",
 		Recipe:    "azure-ai-search",
@@ -274,7 +327,7 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/azure-ai-search/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/service-bus/namespace",
+		Key:       "Microsoft.ServiceBus/namespaces",
 		Component: "core/messaging/azure-service-bus",
 		Category:  "messaging",
 		Recipe:    "azure-service-bus",
@@ -291,7 +344,20 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/azure-service-bus/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "avm/res/sql/server",
+		Key:       "Microsoft.Sql/managedInstances",
+		Component: "core/datastore/sql-server",
+		Category:  "datastore",
+		Recipe:    "sql-server-azure-sql-managed-instance",
+		Traits: map[string]string{
+			"component.aggrega.ai/hosting":            "managed",
+			"component.aggrega.ai/type":               "stateful-server",
+			"component.aggrega.ai/upstream-licensing": "proprietary",
+		},
+		Form:   cloudimport.FormRaw,
+		Origin: "generated aggrega-catalog/recipe/arm/sql-server-azure-sql-managed-instance/1.0.0/recipe.yaml",
+	},
+	{
+		Key:       "Microsoft.Sql/servers",
 		Component: "core/datastore/sql-server",
 		Category:  "datastore",
 		Recipe:    "sql-server-azure-sql-database",
@@ -311,72 +377,6 @@ var generatedRows = []cloudimport.Row{
 			{From: []string{"tags"}, Key: "tags"},
 		},
 		Origin: "generated aggrega-catalog/recipe/arm/sql-server-azure-sql-database/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "Microsoft.Cdn/profiles",
-		Component: "core/network/azure-front-door",
-		Category:  "network",
-		Recipe:    "azure-front-door",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "resource",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form:   cloudimport.FormRaw,
-		Origin: "generated aggrega-catalog/recipe/arm/azure-front-door/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "Microsoft.DataFactory/factories",
-		Component: "core/bigdata/azure-data-factory",
-		Category:  "bigdata",
-		Recipe:    "azure-data-factory",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "resource",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form:   cloudimport.FormRaw,
-		Origin: "generated aggrega-catalog/recipe/arm/azure-data-factory/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "Microsoft.DocumentDB/mongoClusters",
-		Component: "core/datastore/azure-documentdb",
-		Category:  "datastore",
-		Recipe:    "azure-documentdb",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "stateful-server",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-			"datastore.aggrega.ai/engine":             "document",
-		},
-		Form:   cloudimport.FormRaw,
-		Origin: "generated aggrega-catalog/recipe/arm/azure-documentdb/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "Microsoft.EventHub/namespaces",
-		Component: "core/messaging/azure-event-hubs",
-		Category:  "messaging",
-		Recipe:    "azure-event-hubs",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "resource",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form:   cloudimport.FormRaw,
-		Origin: "generated aggrega-catalog/recipe/arm/azure-event-hubs/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "Microsoft.Sql/managedInstances",
-		Component: "core/datastore/sql-server",
-		Category:  "datastore",
-		Recipe:    "sql-server-azure-sql-managed-instance",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "stateful-server",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form:   cloudimport.FormRaw,
-		Origin: "generated aggrega-catalog/recipe/arm/sql-server-azure-sql-managed-instance/1.0.0/recipe.yaml",
 	},
 	{
 		Key:       "Microsoft.Storage/storageAccounts",
@@ -425,3 +425,7 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/function-azure-functions/1.0.0/recipe.yaml",
 	},
 }
+
+// generatedImages are the mapping table's container product rows read from the hub's arm
+// Recipes, one per Recipe whose locals name a literal image default, ordered by repository.
+var generatedImages = []cloudimport.ImageRow{}

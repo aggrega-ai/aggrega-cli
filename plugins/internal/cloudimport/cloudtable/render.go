@@ -22,11 +22,11 @@ var (
 		cloudimport.OpContains: "OpContains", cloudimport.OpPresent: "OpPresent", cloudimport.OpAbsent: "OpAbsent"}
 )
 
-// render writes rows as the Go source f's package embeds, naming revision as
-// the revision they were read from, formatted as gofmt formats it. A row's
-// traits are written ordered by label, so one set of rows always writes the
-// same bytes.
-func render(rows []cloudimport.Row, revision string, f format) ([]byte, error) {
+// render writes rows and the image rows as the Go source f's package embeds,
+// naming revision as the revision they were read from, formatted as gofmt
+// formats it. A row's traits are written ordered by label, so one set of rows
+// always writes the same bytes.
+func render(rows []cloudimport.Row, images []cloudimport.ImageRow, revision string, f format) ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteString("// SPDX-License-Identifier: Apache-2.0\n")
 	b.WriteString("// Copyright 2026 Cognitio s.r.l.\n\n")
@@ -34,7 +34,7 @@ func render(rows []cloudimport.Row, revision string, f format) ([]byte, error) {
 		"libraries they read. DO NOT EDIT.\n\n", f.capability)
 	fmt.Fprintf(&b, "package %s\n\n", f.pkg)
 	b.WriteString("import \"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport\"\n\n")
-	fmt.Fprintf(&b, "// TableRevision is the aggrega-hub revision whose %s Recipes, and the\n", f.capability)
+	fmt.Fprintf(&b, "// TableRevision is the last aggrega-hub commit that changed the %s Recipes, or the\n", f.capability)
 	b.WriteString("// Components and libraries they read, the generated rows were read from.\n")
 	fmt.Fprintf(&b, "const TableRevision = %q\n\n", revision)
 	fmt.Fprintf(&b, "// generatedRows are the mapping table's rows read from the hub's %s Recipes,\n", f.capability)
@@ -84,6 +84,17 @@ func render(rows []cloudimport.Row, revision string, f format) ([]byte, error) {
 			writePlacements(&b, l.field, l.ps)
 		}
 		writeText(&b, "Origin", r.Origin)
+		b.WriteString("},\n")
+	}
+	b.WriteString("}\n\n")
+	fmt.Fprintf(&b, "// generatedImages are the mapping table's container product rows read from the hub's %s\n", f.capability)
+	b.WriteString("// Recipes, one per Recipe whose locals name a literal image default, ordered by repository.\n")
+	b.WriteString("var generatedImages = []cloudimport.ImageRow{\n")
+	for _, r := range images {
+		fmt.Fprintf(&b, "{Repository: %q, Component: %q, Recipe: %q", r.Repository, r.Component, r.Recipe)
+		if r.TagKey != "" {
+			fmt.Fprintf(&b, ", TagKey: %q", r.TagKey)
+		}
 		b.WriteString("},\n")
 	}
 	b.WriteString("}\n")

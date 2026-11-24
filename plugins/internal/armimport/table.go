@@ -48,6 +48,6 @@ var notImported = []cloudimport.NotImported{
 // hub's arm Recipes at TableRevision, the hand rows, and the Recipes and
 // FeatureRecipes no row reaches. Its rows are read and never changed.
 func Table() cloudimport.Table {
-	return cloudimport.Table{Revision: TableRevision, Generated: generatedRows, Hand: handRows,
+	return cloudimport.Table{Revision: TableRevision, Generated: generatedRows, Hand: handRows, Images: generatedImages,
 		NotImported: notImported}
 }

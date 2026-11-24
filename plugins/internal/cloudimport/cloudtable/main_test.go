@@ -81,12 +81,21 @@ func moduleRecipe(name, component, module, kind string) string {
 		"  valuesMapping: |\n    name: \"{{ .context.instance_id }}\"\n    kind: " + kind + "\n"
 }
 
-// armFormatOrFail returns the arm format.
+// armFormatOrFail returns the arm format, its index of Azure Verified Modules
+// extended with the modules under avm/res/acme/ the fixtures source, each of
+// the type Microsoft.Acme/<its name>.
 func armFormatOrFail(t *testing.T) format {
 	t.Helper()
 	f, ok := formatNamed("arm")
 	if !ok {
 		t.Fatal("no format is named arm")
+	}
+	index := f.moduleType
+	f.moduleType = func(module string) (string, bool) {
+		if name, ok := strings.CutPrefix(module, "avm/res/acme/"); ok {
+			return "Microsoft.Acme/" + name, true
+		}
+		return index(module)
 	}
 	return f
 }
@@ -115,12 +124,12 @@ func TestTheMiniatureHubGeneratesItsRows(t *testing.T) {
 		return cloudimport.Placement{From: from, Key: key}
 	}
 	want := []cloudimport.Row{
-		{Key: "avm/res/acme/app", Component: "core/compute/acme-app", Category: "compute", Recipe: "app-module",
+		{Key: "Microsoft.Acme/app", Component: "core/compute/acme-app", Category: "compute", Recipe: "app-module",
 			Traits: map[string]string{"component.aggrega.ai/type": "server"}, Form: cloudimport.FormAVM,
 			Values: []cloudimport.Placement{place("display_name", "displayName")},
 			Infra:  []cloudimport.Placement{place("image", "image"), place("port", "port")},
 			Origin: "generated aggrega-catalog/recipe/arm/app-module/1.1.0/recipe.yaml"},
-		{Key: "avm/res/acme/cache", Component: "core/datastore/acme-cache", Category: "datastore", Recipe: "cache-module",
+		{Key: "Microsoft.Acme/cache", Component: "core/datastore/acme-cache", Category: "datastore", Recipe: "cache-module",
 			When: pred(cloudimport.OpEquals, "Standard", "kind"),
 			Traits: map[string]string{"component.aggrega.ai/type": "stateful-server",
 				"acme.aggrega.ai/engine": "memory"}, Form: cloudimport.FormAVM,
@@ -154,7 +163,7 @@ func TestTheMiniatureHubGeneratesItsRows(t *testing.T) {
 	if !strings.Contains(strings.Join(notes, "\n"), "endpoint-reference") {
 		t.Errorf("no note says why the reference realization gives no row: %v", notes)
 	}
-	first, err := render(rows, "r", f)
+	first, err := render(rows, nil, "r", f)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -162,7 +171,7 @@ func TestTheMiniatureHubGeneratesItsRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate again: %v", err)
 	}
-	second, err := render(again, "r", f)
+	second, err := render(again, nil, "r", f)
 	if err != nil {
 		t.Fatalf("render again: %v", err)
 	}
@@ -179,7 +188,9 @@ func TestTheRenderedTableIsGoOfTheFormatsPackage(t *testing.T) {
 	content, err := render([]cloudimport.Row{{Key: "Microsoft.Acme/stores", Component: "core/datastore/acme-store",
 		Recipe: "store-inline", When: []cloudimport.Pred{{Path: []string{"kind"}, Op: cloudimport.OpEquals,
 			Value: "Premium"}}, Form: cloudimport.FormRaw, Provides: []cloudimport.Placement{{Key: "id"}},
-		Traits: map[string]string{"b": "2", "a": "1"}, Origin: "generated x"}}, "abc123", f)
+		Traits: map[string]string{"b": "2", "a": "1"}, Origin: "generated x"}},
+		[]cloudimport.ImageRow{{Repository: "ghcr.io/acme/product", Component: "core/compute/acme-app",
+			Recipe: "acme-product", TagKey: "image_tag"}}, "abc123", f)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -191,7 +202,8 @@ func TestTheRenderedTableIsGoOfTheFormatsPackage(t *testing.T) {
 		t.Errorf("the rendered table is of package %s, want %s", parsed.Name.Name, f.pkg)
 	}
 	for _, want := range []string{`const TableRevision = "abc123"`, "DO NOT EDIT",
-		`"a": "1",` + "\n\t\t\t\"b\": \"2\","} {
+		`"a": "1",` + "\n\t\t\t\"b\": \"2\",", "var generatedImages = []cloudimport.ImageRow{",
+		`{Repository: "ghcr.io/acme/product", Component: "core/compute/acme-app", Recipe: "acme-product", TagKey: "image_tag"},`} {
 		if !bytes.Contains(content, []byte(want)) {
 			t.Errorf("the rendered table does not hold %q:\n%s", want, content)
 		}
@@ -258,7 +270,7 @@ func TestAFileImportIsReadAsTheBuildReadsIt(t *testing.T) {
 	for _, r := range rows {
 		got[r.Recipe] = r
 	}
-	if r := got["file-module"]; r.Key != "avm/res/acme/file-app" || !reflect.DeepEqual(r.Values,
+	if r := got["file-module"]; r.Key != "Microsoft.Acme/file-app" || !reflect.DeepEqual(r.Values,
 		[]cloudimport.Placement{{From: []string{"login"}, Key: "user"}}) {
 		t.Errorf("the module Recipe whose valuesMapping is a file gave %#v", r)
 	}
@@ -292,7 +304,7 @@ func TestTwoRecipesClaimingOneKeyAndWhenAreRefused(t *testing.T) {
 	if !errors.As(err, &conflict) || rows != nil {
 		t.Fatalf("two Recipes claiming one key and When generated %v, %v; want a claim conflict", rows, err)
 	}
-	for _, want := range []string{"avm/res/acme/cache", `kind equals "Standard"`, "cache-module", "core/datastore/acme-cache",
+	for _, want := range []string{"Microsoft.Acme/cache", `kind equals "Standard"`, "cache-module", "core/datastore/acme-cache",
 		"cache-legacy", "core/compute/acme-legacy-app", "notImported"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not name %q: %v", want, err)
@@ -302,7 +314,7 @@ func TestTwoRecipesClaimingOneKeyAndWhenAreRefused(t *testing.T) {
 	recipesOf := func(rows []cloudimport.Row) []string {
 		var out []string
 		for _, r := range rows {
-			if r.Key == "avm/res/acme/cache" {
+			if r.Key == "Microsoft.Acme/cache" {
 				out = append(out, r.Recipe)
 			}
 		}
@@ -430,5 +442,51 @@ func TestTheRevisionIsACommitHoldingWhatTheTableReads(t *testing.T) {
 	}
 	if got, err := hubRevision(root, f); err == nil {
 		t.Errorf("an untracked library gave %q; want a refusal", got)
+	}
+}
+
+// TestTheRevisionIsTheLastCommitThatChangedWhatTheTableReads commits the
+// miniature hub, then a file the generator does not read, then a change to a
+// Recipe it reads, and requires the revision to stay the first commit across
+// the second and to become the third, though the checkout's HEAD is the
+// second's or the third's.
+func TestTheRevisionIsTheLastCommitThatChangedWhatTheTableReads(t *testing.T) {
+	t.Parallel()
+	f := armFormatOrFail(t)
+	root := t.TempDir()
+	copyTree(t, miniatureHub, root)
+	git(t, root, "init", "-q")
+	git(t, root, "add", "-A")
+	git(t, root, "commit", "-q", "-m", "hub")
+	first := git(t, root, "rev-parse", "HEAD")
+
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("elsewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, root, "add", "README.md")
+	git(t, root, "commit", "-q", "-m", "elsewhere")
+	if head := git(t, root, "rev-parse", "HEAD"); head == first {
+		t.Fatal("the second commit did not move HEAD")
+	}
+	if got, err := hubRevision(root, f); err != nil || got != first {
+		t.Errorf("after a commit outside what the table reads the revision is %q, %v; want %s", got, err, first)
+	}
+
+	recipe := filepath.Join(root, "aggrega-catalog", "recipe", "arm", "store-inline", "1.0.0", "recipe.yaml")
+	body, err := os.ReadFile(recipe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(recipe, append(body, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, root, "add", recipe)
+	git(t, root, "commit", "-q", "-m", "recipe")
+	third := git(t, root, "rev-parse", "HEAD")
+	if got, err := hubRevision(root, f); err != nil || got != third {
+		t.Errorf("after a commit to an arm Recipe the revision is %q, %v; want %s", got, err, third)
+	}
+	if got, err := lastReadCommit(root, f); err != nil || got != third {
+		t.Errorf("the last commit that changed what the table reads is %q, %v; want %s", got, err, third)
 	}
 }

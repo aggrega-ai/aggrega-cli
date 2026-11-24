@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -39,6 +40,13 @@ func loadHubOrFail(t *testing.T) *hubCatalog {
 	return h
 }
 
+// shallow reports whether the checkout at dir holds only part of its history.
+func shallow(t *testing.T, dir string) bool {
+	t.Helper()
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "--is-shallow-repository").Output()
+	return err == nil && strings.TrimSpace(string(out)) == "true"
+}
+
 // drift returns where committed differs from regenerated, the first line that
 // differs named with both its versions, and empty where the two are one.
 func drift(committed, regenerated []byte) string {
@@ -63,8 +71,9 @@ func drift(committed, regenerated []byte) string {
 
 // TestTheArmTableIsWhatTheHubGenerates regenerates the arm importer's table
 // from the hub's arm Recipes and what they read, with the hand file as it is
-// committed, naming the revision the committed table names, and requires the
-// committed table to be exactly what the regeneration writes — so a Recipe
+// committed, naming the last commit of the hub that changed what the table
+// reads, and requires the committed table to be exactly what the regeneration
+// writes, its revision included — so a Recipe
 // added, removed or changed, a Component's labels changed, or a library a
 // Recipe imports changed fails here until the table is regenerated with
 // `go generate ./plugins/internal/armimport`.
@@ -79,7 +88,18 @@ func TestTheArmTableIsWhatTheHubGenerates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate the arm table from %s: %v\n%s", hub(t), err, strings.Join(notes, "\n"))
 	}
-	want, err := render(rows, armimport.TableRevision, f)
+	images, err := generateImagesFromHub(hub(t), f)
+	if err != nil {
+		t.Fatalf("generate the arm image rows from %s: %v", hub(t), err)
+	}
+	revision := armimport.TableRevision
+	if !shallow(t, hub(t)) {
+		// A checkout without its history names no commit the table can be held to.
+		if revision, err = lastReadCommit(hub(t), f); err != nil {
+			t.Fatalf("read the revision of %s: %v", hub(t), err)
+		}
+	}
+	want, err := render(rows, images, revision, f)
 	if err != nil {
 		t.Fatalf("render the arm table: %v", err)
 	}
