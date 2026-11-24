@@ -487,6 +487,13 @@ func (r Result) Halted() bool {
 // reporting delivery. A target no Recipe of the catalog binds to is refused once
 // the catalog is loaded, before the source is recognised or the importer runs.
 //
+// The Components and Recipes the importer drafted are consulted after the
+// catalog's own, by that composition and by the reading of what the drafts owe
+// alike (see overlayDrafts): an instance of a drafted Component maps to the
+// drafted Recipe implementing it, and the values that Component's schema declares
+// are asked; a drafted Recipe implementing a Component neither the drafts nor the
+// catalog hold is reported and maps nothing.
+//
 // Every import that drafts anything writes, beside its drafts, its entry in the
 // record of what imports wrote there ([RecordFileName]), which holds one entry
 // per import format, sorted by format: the format, the target it was given, where
@@ -687,14 +694,21 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		return Result{}, err
 	}
 
+	// The Components and Recipes the importer drafted are read beside the catalog,
+	// after it, into the one view the composition and the owed-value reading both
+	// consult (overlayDrafts): an instance of a drafted Component maps to the
+	// drafted Recipe realizing it, and the values its schema declares are asked.
+	recipes, overlaid := overlayDrafts(seam.Recipes, imported.Files)
+
 	// The draft set is composed from what the importer drafted, here and nowhere
 	// else, before the record of it is written and before any path is judged — so
 	// a drafted Manifest and an edited Release are recorded, contained and
 	// reported exactly as the importer's own drafts are.
-	draft, composed, err := composeDraftSet(target, seam.Recipes, imported.Files)
+	draft, composed, err := composeDraftSet(target, recipes, imported.Files)
 	if err != nil {
 		return Result{}, err
 	}
+	composed = append(overlaid, composed...)
 	diagnostics := imported.Diagnostics
 	if snapshot.notice != "" {
 		diagnostics = append([]abi.Diagnostic{warnDiagnostic(snapshot.notice)}, diagnostics...)
@@ -724,7 +738,7 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	if opts.Delivery.Reports() || (opts.Sync && (Result{Diagnostics: diagnostics}).Halted()) {
 		ask = nil
 	}
-	owing, err := answerDrafts(rw.Root(), outputDir, ownEntry(opts.Sync, rec), opts, ask, seam.Recipes, draft)
+	owing, err := answerDrafts(rw.Root(), outputDir, ownEntry(opts.Sync, rec), opts, ask, recipes, draft)
 	if err != nil {
 		return Result{}, err
 	}

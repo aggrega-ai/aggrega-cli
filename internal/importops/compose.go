@@ -100,6 +100,13 @@ func recipeCapabilities(recipes RecipeIndex) []string {
 //
 // Without a target the importer's files are returned exactly as drafted.
 //
+// recipes is the catalog view the import loaded with the Components and Recipes
+// its importer drafted read after it ([overlayDrafts]), so wherever the catalog is
+// asked below, the drafted entities are consulted too: a type the import drafted
+// as a new Component maps to the Recipe it drafted implementing it, and an
+// importer's mapping to a drafted Recipe is kept on the terms one to a catalog
+// Recipe is.
+//
 // With one, it drafts the Manifest the drafted Release needs, and adds no
 // Component, no Feature and no instance: only a mapping file the operator reviews
 // and owns. What it maps is every type the drafts need realized (draftNeeds):
@@ -511,9 +518,10 @@ func allNamed(names []string, byName *types.OrderedMap[string]) bool {
 //
 // typ is handed to the catalog's enumeration exactly as the drafts write it: the
 // enumeration resolves a type naming no version to the version a build resolves
-// it to, so no version is chosen here. A type the catalog holds no entity of —
-// one the import drafted new — finds a realization only where one implements that
-// unversioned type itself.
+// it to, so no version is chosen here — a type the import drafted as a new
+// Component at the version that Component declares. A type neither the catalog nor
+// the drafts hold a Component of finds a realization only where one implements
+// that unversioned type itself.
 func mappingFor(target string, kind realizationKind, typ string) (reference, unmapped string) {
 	var references []string
 	for _, r := range kind.offered(typ) {
