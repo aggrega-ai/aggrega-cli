@@ -140,6 +140,11 @@ type Graph struct {
 	// Read and NotRead are the names of the sources the import read and of
 	// those it was handed and did not read.
 	Read, NotRead []string
+	// Expanded holds, for each repeated node [Expand] replaced by its
+	// instances or removed, the IDs of the nodes it deploys, in key order:
+	// none for a node that deploys no instance. A Ref, Credential, dependency
+	// or parent naming such a node names these.
+	Expanded map[string][]string
 }
 
 // EdgeKind is what makes a node consume another.

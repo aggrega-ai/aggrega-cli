@@ -82,3 +82,19 @@ func TestExpandZeroInstancesReportsTheResource(t *testing.T) {
 		t.Fatalf("diagnostics = %+v, want one resource-not-carried warning naming db", diags)
 	}
 }
+
+func TestExpandRecordsWhatEachRepeatedNodeDeploys(t *testing.T) {
+	gone := repeated([]string{})
+	gone.ID = "gone"
+	computed := repeated(nil)
+	computed.ID = "computed"
+	g := &Graph{Nodes: []*Node{{ID: "app"}, computed, repeated([]string{"0", "1"}), gone}}
+	Expand(g)
+	want := map[string][]string{"db": {"db-0", "db-1"}, "gone": nil}
+	if !reflect.DeepEqual(g.Expanded, want) {
+		t.Fatalf("expanded = %q, want %q", g.Expanded, want)
+	}
+	if ids, ok := g.Expanded["gone"]; !ok || ids != nil {
+		t.Fatalf("gone is recorded as %q, %v; want recorded as deploying no instance", ids, ok)
+	}
+}

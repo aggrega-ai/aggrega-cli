@@ -24,6 +24,10 @@
 //   - [SelectRoot] chooses the source an import starts from among several the
 //     import is handed, and [Expand] writes a repeated resource as one node per
 //     copy where the source states the copies literally.
+//   - [Classify] gives each resource one class and one decision: folded into
+//     another resource's instance, substrate left to the operator, existing,
+//     mapped to a catalog Component through the format's [Table], drafted as
+//     a Component and a Recipe from the source, held back, or not carried.
 //
 // Every diagnostic the core and its formats raise is made by [Report], which
 // gives each code of the vocabulary its one severity.

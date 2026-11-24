@@ -4,6 +4,7 @@
 package cloudimport
 
 import (
+	"maps"
 	"sort"
 
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
@@ -19,8 +20,10 @@ import (
 // it. Where the source computes the instances when it deploys, the node stays
 // one node, with a repetition-not-expanded warning naming it. A Ref or
 // Credential elsewhere in g that names a repeated node keeps naming that
-// node's own ID; a reader of the edges resolves such an ID to the node's
-// instances. No node of g repeats afterwards, and g.Nodes stays ordered by ID.
+// node's own ID; g.Expanded records the IDs of the instances each node
+// replaced or removed deploys, none for a removed node, and a reader of the
+// edges resolves such an ID to them. No node of g repeats afterwards, and
+// g.Nodes stays ordered by ID.
 func Expand(g *Graph) []aggrega.Diagnostic {
 	if g == nil {
 		return nil
@@ -52,6 +55,10 @@ func Expand(g *Graph) []aggrega.Diagnostic {
 	if len(instances) == 0 {
 		return diags
 	}
+	if g.Expanded == nil {
+		g.Expanded = make(map[string][]string, len(instances))
+	}
+	maps.Copy(g.Expanded, instances)
 	for _, n := range nodes {
 		if n != nil {
 			n.DependsOn = dependencies(n.DependsOn, instances)
