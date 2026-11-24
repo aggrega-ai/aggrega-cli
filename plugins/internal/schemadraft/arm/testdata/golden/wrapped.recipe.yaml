@@ -1,0 +1,43 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: microsoft-app-containerapps
+  version: 0.1.0
+  description: "Draft Recipe realizing imported/compute/microsoft-app-containerapps on arm that sources the published module oci://mcr.microsoft.com/bicep/avm/res/app/container-app whole, imported from a source in the arm format."
+spec:
+  # This Recipe realizes imported/compute/microsoft-app-containerapps by sourcing the published module oci://mcr.microsoft.com/bicep/avm/res/app/container-app whole; no vendor schema was read. It reads the keys below, each with its type and its rule; any other key under infra.overrides halts the build naming it.
+  # infra.overrides.environmentResourceId: string, required; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of environmentResourceId.
+  # infra.overrides.tags: object; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of tags.
+  # context.inject.property.properties_configuration_registries_0_server: string, required; inject: a value a neighbour publishes, delivered by the Aggregate's uses edge on the property mechanism and written at registryServer
+  # The source writing the resource gives no description of registryServer.
+  # The arm provider fetches the published module, nests its template as one nested template named by locals.symbol, and binds the parameters valuesMapping writes; a parameter it leaves out takes the module's own default.
+  capability: arm
+  implements: imported/compute/microsoft-app-containerapps:0.1.0
+  source:
+    kind: bicep-module-oci
+    url: oci://mcr.microsoft.com/bicep/avm/res/app/container-app
+    version: 0.23.1
+  locals:
+    # The nested template's symbolic name: the instance's name in capitalized words, letters and digits alone, so two instances in one template declare two nested templates.
+    symbol: "{{ capitalizedWords .context.instance_id }}"
+  provides:
+    # The String Pipe: each value is one whole ARM expression reading an output of the module's nested template, piped as written into a consumer's context; ARM evaluates it when the template is deployed.
+    fqdn: "[reference('{{ .locals.symbol }}').outputs.fqdn.value]"
+  assertions:
+    # Halts naming any key under infra.overrides this Recipe does not read.
+    overrides_this_recipe_reads: |
+      {{- $o := optional .infra "overrides" dict -}}
+      {{- range $k, $v := $o -}}
+      {{- if not (has $k (list "environmentResourceId" "tags")) -}}
+      {{- fail (printf "infra.overrides.%s is not a setting this Recipe reads: it reads %s from infra.overrides; remove infra.overrides.%s from the Release" $k "environmentResourceId and tags" $k) -}}
+      {{- end -}}
+      {{- end -}}
+  valuesMapping: |
+    environmentResourceId: {{ toJson (index .infra "overrides" "environmentResourceId") }}
+    {{- if (hasKey (optional .infra "overrides" dict) "tags") }}
+    tags: {{ toJson (index .infra "overrides" "tags") }}
+    {{- end }}
+    registryServer: {{ toJson (index (default dict .context.inject) "property" "properties_configuration_registries_0_server") }}
+    enableTelemetry: false

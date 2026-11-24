@@ -61,7 +61,7 @@ const (
 	CodeAVMModuleRecognised Code = "avm-module-recognised"
 	// CodeModuleVersionUnpinned warns of a module-wrapping draft whose exact
 	// module version the source does not state.
-	CodeModuleVersionUnpinned Code = "module-version-unpinned"
+	CodeModuleVersionUnpinned = Code(schemadraft.CodeModuleVersionUnpinned)
 	// CodeComponentExists warns of a resource held back because the Component
 	// name its draft would take is taken already: the resource-schema drafting
 	// code's component-exists, raised here as a warning.

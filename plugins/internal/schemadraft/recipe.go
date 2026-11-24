@@ -37,6 +37,9 @@ type recipeSpec struct {
 	// recipeOnly holds what a Recipe drafted for a catalog Component matched of
 	// it; nil for a Recipe drafted beside its Component.
 	recipeOnly *recipeOnlyMatch
+	// module is the published module a Recipe sourcing one whole is drafted
+	// for; nil for a Recipe declaring a resource.
+	module *WrappedModule
 }
 
 // recipeDraft completes the target parts d a writer drafted for s into the
@@ -47,6 +50,10 @@ func recipeDraft(f Format, s recipeSpec, d importer.RecipeDraft) importer.Recipe
 	d.Name, d.Version, d.Capability, d.Implements = s.name, draftVersion, f.Capability, s.implements
 	d.Description = fmt.Sprintf("Draft Recipe realizing %s on %s with one resource of the type %s, imported from a "+
 		"source in the %s format.", s.component, f.Capability, typeName(s.res.Type), s.format)
+	if s.module != nil {
+		d.Description = fmt.Sprintf("Draft Recipe realizing %s on %s that sources the published module %s whole, "+
+			"imported from a source in the %s format.", s.component, f.Capability, s.module.URL, s.format)
+	}
 	d.Header = append(recipeHeader(s), d.Header...)
 	d.Assertions = append(sharedAssertions(s), d.Assertions...)
 	return d
@@ -65,7 +72,12 @@ func recipeHeader(s recipeSpec) []string {
 	opening := fmt.Sprintf("This Recipe realizes %s with one resource of the type %s. It reads the keys below, "+
 		"each with its type, its rule and the first sentence of the vendor's description; any other key under "+
 		"infra.overrides halts the build naming it.", s.component, typeName(t))
-	if slices.ContainsFunc(t.Properties, func(p *Property) bool { return p.Written }) {
+	switch {
+	case s.module != nil:
+		opening = fmt.Sprintf("This Recipe realizes %s by sourcing the published module %s whole; no vendor schema "+
+			"was read. It reads the keys below, each with its type and its rule; any other key under "+
+			"infra.overrides halts the build naming it.", s.component, s.module.URL)
+	case slices.ContainsFunc(t.Properties, func(p *Property) bool { return p.Written }):
 		opening = fmt.Sprintf("This Recipe realizes %s with one resource of the type %s, drafted from the "+
 			"resource as a source writes it. It reads the keys below, each with its type and its rule, and none "+
 			"with a vendor's description, which a source does not state; any other key under infra.overrides "+
