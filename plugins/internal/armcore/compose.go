@@ -118,7 +118,9 @@ func formatExpression(text string, values []deliveredValue) string {
 	prev := 0
 	for i, v := range values {
 		format.WriteString(FormatLiteral(text[prev:v.start]))
-		format.WriteString("{" + strconv.Itoa(i) + "}")
+		format.WriteByte('{')
+		format.WriteString(strconv.Itoa(i))
+		format.WriteByte('}')
 		args.WriteString(", ")
 		args.WriteString(v.argument)
 		prev = v.end

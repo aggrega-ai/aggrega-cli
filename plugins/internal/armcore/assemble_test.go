@@ -273,7 +273,12 @@ func TestAssembleRunsLimitsAfterComposition(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("parameters:\n")
 	for i := 0; i < 257; i++ {
-		b.WriteString("  p" + strings.Repeat("a", i%7) + string(rune('a'+i/26%26)) + string(rune('a'+i%26)) + string(rune('a'+i/676)) + ":\n    type: string\n")
+		b.WriteString("  p")
+		b.WriteString(strings.Repeat("a", i%7))
+		b.WriteRune(rune('a' + i/26%26))
+		b.WriteRune(rune('a' + i%26))
+		b.WriteRune(rune('a' + i/676))
+		b.WriteString(":\n    type: string\n")
 	}
 	_, err := Assemble([]Contribution{contributes("n", 0, b.String())})
 	if !errors.Is(err, plugincondition.ErrPluginCannotExpressInput()) || !strings.Contains(err.Error(), "split the boundary") {
