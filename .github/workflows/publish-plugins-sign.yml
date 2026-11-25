@@ -4004,14 +4004,15 @@ jobs:
           **Signing:** Windows files carry a timestamped Authenticode signature from Cognitio S.r.l.; $MACOS_NOTE.
           EOF
           )"
-          # What changed in this release, above how to install it: the release's
-          # changelog section, which the release commit carries as
-          # .github/release-notes/<tag>.md in the checkout of the commit the build
-          # job built. A commit with no such file gets no Changes section; nothing
-          # is written in its place.
-          CHANGES_FILE="aggrega-cli/.github/release-notes/$TAG.md"
-          if [ -f "$CHANGES_FILE" ]; then
-            NOTES="$(printf '## Changes\n\n%s\n\n%s' "$(cat "$CHANGES_FILE")" "$NOTES")"
+          # What changed in this release, above how to install it: the tag's
+          # section of CHANGELOG.md in the checkout of the commit the build job
+          # built, taken by release-changes.sh. A commit whose CHANGELOG.md has no
+          # section for the tag gets no Changes section; nothing is written in its
+          # place. A section holding an HTML comment fails this step, a dry run
+          # included, before anything is published.
+          CHANGES="$(aggrega-cli/.github/scripts/release-changes.sh "$TAG" aggrega-cli/CHANGELOG.md)"
+          if [ -n "$CHANGES" ]; then
+            NOTES="$(printf '## Changes\n\n%s\n\n%s' "$CHANGES" "$NOTES")"
           fi
 
           # A tag carrying a pre-release suffix (v0.9.0-rc.1) is published as a
