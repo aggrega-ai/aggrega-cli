@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: imported/flow
+  version: 0.1.0
+spec:
+  mappings:
+    components:
+      name:
+        kv-app: arm/azure-key-vault
+        seed-vault: arm/microsoft-resources-deploymentscripts
+        site-docs: arm/microsoft-web-staticsites

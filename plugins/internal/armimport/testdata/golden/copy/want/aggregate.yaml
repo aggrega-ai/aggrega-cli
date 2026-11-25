@@ -1,0 +1,16 @@
+# Sources read: main.json.
+# Parameters the draft carries nowhere: namespaceCount.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the arm format.
+spec:
+  components:
+    namespaces:
+      type: core/messaging/azure-service-bus
+    storageaccounts-0:
+      type: core/storage/azure-blob-storage
+    storageaccounts-1:
+      type: core/storage/azure-blob-storage

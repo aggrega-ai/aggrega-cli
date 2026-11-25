@@ -18,6 +18,27 @@ Every template here is written for these tests, except those under `avm/`, which
 | `refused/keyed-resources.json` | A template of language version 1.0 whose resources are keyed by name, as only 2.0 keys them. |
 | `refused/multiline.json` | A template holding a raw line break inside a string, which JSON does not admit. |
 
+## Goldens
+
+Each `golden/<case>/source/` holds the sources of one import, and `golden/<case>/want/` what the import of them for
+the arm target writes: the Aggregate, the Release, the Manifest and the catalog entities drafted, as the importer
+lays them out, its diagnostics in `diagnostics.txt` and its decisions in `decisions.txt`. A member written
+`{"$avm": "<module>/<version>"}` stands for the compiled template of that Azure Verified Modules module, which the
+test writes in its place from `avm/<module>/<version>/main.json`. Run the tests with `UPDATE_GOLDEN=1` to rewrite
+`want/`.
+
+| Case | What its sources hold |
+|---|---|
+| `raw-topology` | A PostgreSQL flexible server holding a database nested in its resources and placed in a subnet of a virtual network the template creates, and a container app reading the server's address into its environment; a parameters file naming the server. |
+| `avm-topology` | The topology of `raw-topology` with the server deployed through the Azure Verified Modules module `avm/res/db-for-postgre-sql/flexible-server` 0.16.2, the app reading the module's `fqdn` output. |
+| `drafted-from-source` | A Key Vault, a static web app no row maps, and a deployment script reading the vault's address. |
+| `wrapped-module` | An Azure Data Explorer cluster deployed through the module `avm/res/kusto/cluster` 0.11.1, whose resource type no row maps. |
+| `existing` | A template of language version 2.0 reading a subnet and a Log Analytics workspace it does not create, from a PostgreSQL flexible server, an Application Insights component and a workbook no row maps. |
+| `copy` | Storage accounts repeated a literal number of times, and Service Bus namespaces repeated as many times as a parameter says. |
+| `condition` | A Redis cache deployed where one boolean parameter is true, and a Key Vault deployed under another condition. |
+| `list-keys` | A storage account and a container app reading the account's key with `listKeys` and its blob endpoint with `reference`. |
+| `key-vault-reference` | An Azure SQL logical server and its database written beside it, the administrator's password a secure parameter the parameters file reads from a Key Vault secret. |
+
 ## Azure Verified Modules
 
 Each `avm/<module>/<version>/main.json` is the compiled template of an Azure Verified Modules module as the Microsoft

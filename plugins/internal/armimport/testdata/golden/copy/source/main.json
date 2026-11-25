@@ -1,0 +1,31 @@
+{
+  // Two storage accounts written as one resource repeated a literal number of
+  // times, and a Service Bus namespace repeated as many times as a parameter
+  // says, which the import drafts once.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "westeurope" },
+    "namespaceCount": { "type": "int", "defaultValue": 2 }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-01-01",
+      "name": "[format('stdata{0}', copyIndex())]",
+      "location": "[parameters('location')]",
+      "kind": "StorageV2",
+      "sku": { "name": "Standard_LRS" },
+      "properties": { "accessTier": "Hot" },
+      "copy": { "name": "accounts", "count": 2 }
+    },
+    {
+      "type": "Microsoft.ServiceBus/namespaces",
+      "apiVersion": "2022-10-01-preview",
+      "name": "[format('sb-orders-{0}', copyIndex())]",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Standard", "tier": "Standard" },
+      "copy": { "name": "namespaces", "count": "[parameters('namespaceCount')]" }
+    }
+  ]
+}

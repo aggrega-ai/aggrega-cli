@@ -1,0 +1,1 @@
+info resource-drafted-from-source: the resource workbook of the type Microsoft.Insights/workbooks@2023-06-01 is drafted from the source as the Component imported/observability/microsoft-insights-workbooks and the Recipe microsoft-insights-workbooks on arm, carrying the properties the source writes; the decision's swap hint names the import drafting it from the vendor's schema

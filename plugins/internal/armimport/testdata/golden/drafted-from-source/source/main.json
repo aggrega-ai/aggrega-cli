@@ -1,0 +1,45 @@
+{
+  // A Key Vault the catalog maps, a static web app no row maps, drafted from
+  // the source, and a deployment script reading the vault's address, drafted
+  // from the source with its decision saying when the script runs.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "westeurope" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "kv-app",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "sku": { "family": "A", "name": "standard" },
+        "enableRbacAuthorization": true,
+        "softDeleteRetentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Web/staticSites",
+      "apiVersion": "2023-01-01",
+      "name": "site-docs",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Free", "tier": "Free" },
+      "properties": { "buildProperties": { "appLocation": "/", "outputLocation": "dist" } }
+    },
+    {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "seed-vault",
+      "location": "[parameters('location')]",
+      "kind": "AzureCLI",
+      "properties": {
+        "azCliVersion": "2.52.0",
+        "retentionInterval": "PT1H",
+        "arguments": "[reference(resourceId('Microsoft.KeyVault/vaults', 'kv-app')).vaultUri]",
+        "scriptContent": "echo seeding $1"
+      }
+    }
+  ]
+}

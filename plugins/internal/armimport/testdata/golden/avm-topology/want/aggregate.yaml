@@ -1,0 +1,25 @@
+# Sources read: main.json.
+# Parameters the draft carries nowhere: environmentName.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the arm format.
+spec:
+  components:
+    pgmodule:
+      type: core/datastore/postgres
+      values:
+        user: "pgadmin"
+        database: "appdb"
+    web:
+      type: core/compute/server
+      uses:
+        pgmodule:
+          pgmodule:
+            target: pgmodule
+            inject:
+              env:
+                - in: "DB_HOST"
+                  from: host

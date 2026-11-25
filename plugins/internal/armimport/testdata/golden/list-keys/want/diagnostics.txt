@@ -1,0 +1,1 @@
+warn credential-flow: worker reads a credential of stqueue (listKeys) at properties.template.containers.0.env.0.value, and the draft never carries a credential's value: the Recipe of core/compute/worker takes it in no slot: supply it where the instance worker is configured

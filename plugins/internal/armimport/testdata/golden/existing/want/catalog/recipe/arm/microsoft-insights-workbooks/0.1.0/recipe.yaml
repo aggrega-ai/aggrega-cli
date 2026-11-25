@@ -1,0 +1,55 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: microsoft-insights-workbooks
+  version: 0.1.0
+  description: "Draft Recipe realizing imported/observability/microsoft-insights-workbooks on arm with one resource of the type Microsoft.Insights/workbooks@2023-06-01, imported from a source in the arm format."
+spec:
+  # This Recipe realizes imported/observability/microsoft-insights-workbooks with one resource of the type Microsoft.Insights/workbooks@2023-06-01, drafted from the resource as a source writes it. It reads the keys below, each with its type and its rule, and none with a vendor's description, which a source does not state; any other key under infra.overrides halts the build naming it.
+  # values.name: string, required; identity: the resource's own name or identifier
+  # The source writing the resource gives no description of name.
+  # infra.overrides.kind: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of kind.
+  # infra.location: string, required; placement: where the resource is deployed
+  # The source writing the resource gives no description of location.
+  # infra.overrides.category: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of properties.category.
+  # infra.overrides.displayName: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of properties.displayName.
+  # infra.overrides.serializedData: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of properties.serializedData.
+  # infra.overrides.sourceId: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of properties.sourceId.
+  # template.yaml declares the resource under the symbolic name locals.symbol holds, and the arm provider merges it into the template of the instance's boundary.
+  capability: arm
+  implements: imported/observability/microsoft-insights-workbooks:0.1.0
+  locals:
+    # The resource's symbolic name: the instance's name in capitalized words, letters and digits alone, so two instances in one template declare two resources.
+    symbol: "{{ capitalizedWords .context.instance_id }}"
+  provides:
+    # The String Pipe: each value is one whole ARM expression, or the resource's name as template.yaml writes it, piped as written into a consumer's context; ARM evaluates it when the template is deployed.
+    id: "[resourceId('Microsoft.Insights/workbooks'{{ range splitList \"/\" (toString (index .values \"name\")) }}, '{{ replace \"'\" \"''\" . }}'{{ end }})]"
+    name: "{{ toString (index .values \"name\") }}"
+  assertions:
+    # Halts naming any key under infra.overrides this Recipe does not read.
+    overrides_this_recipe_reads: |
+      {{- $o := optional .infra "overrides" dict -}}
+      {{- range $k, $v := $o -}}
+      {{- if not (has $k (list "kind" "category" "displayName" "serializedData" "sourceId")) -}}
+      {{- fail (printf "infra.overrides.%s is not a setting this Recipe reads: it reads %s from infra.overrides; remove infra.overrides.%s from the Release" $k "kind, category, displayName, serializedData and sourceId" $k) -}}
+      {{- end -}}
+      {{- end -}}
+  artifacts:
+    template.yaml: |
+      {{- $resource := dict "type" "Microsoft.Insights/workbooks" "apiVersion" "2023-06-01" -}}
+      {{- $properties := dict -}}
+      {{ $_ := set $resource "name" (index .values "name") -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "kind") }}{{ $_ := set $resource "kind" (index .infra "overrides" "kind") }}{{ end -}}
+      {{ $_ := set $resource "location" (index .infra "location") -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "category") }}{{ $_ := set $properties "category" (index .infra "overrides" "category") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "displayName") }}{{ $_ := set $properties "displayName" (index .infra "overrides" "displayName") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "serializedData") }}{{ $_ := set $properties "serializedData" (index .infra "overrides" "serializedData") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "sourceId") }}{{ $_ := set $properties "sourceId" (index .infra "overrides" "sourceId") }}{{ end -}}
+      {{ if $properties }}{{ $_ := set $resource "properties" $properties }}{{ end -}}
+      resources:
+        {{ .locals.symbol }}: {{ toJson $resource }}

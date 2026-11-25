@@ -1,0 +1,12 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: imported/flow
+  version: 0.1.0
+spec:
+  mappings:
+    components:
+      name:
+        namespaces: arm/azure-service-bus
+        storageaccounts-0: arm/azure-blob-storage
+        storageaccounts-1: arm/azure-blob-storage

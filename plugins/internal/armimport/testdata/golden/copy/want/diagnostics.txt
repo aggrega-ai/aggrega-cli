@@ -1,0 +1,1 @@
+warn repetition-not-expanded: namespaces is repeated as many times as the source computes when it deploys, and is drafted once: write in the Aggregate an instance for each further copy the source deploys

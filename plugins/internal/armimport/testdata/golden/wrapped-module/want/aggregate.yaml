@@ -1,0 +1,13 @@
+# Sources read: main.json.
+# Outputs of the source:
+#   - clusterUri: carried by no instance
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the arm format.
+spec:
+  components:
+    cluster:
+      type: imported/bigdata/microsoft-kusto-clusters

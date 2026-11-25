@@ -1,0 +1,32 @@
+{
+  // An Azure SQL logical server holding one database, its administrator's
+  // password a secure parameter the parameters file reads from a Key Vault
+  // secret.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "westeurope" },
+    "administratorPassword": { "type": "securestring" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Sql/servers",
+      "apiVersion": "2023-08-01-preview",
+      "name": "sql-orders",
+      "location": "[parameters('location')]",
+      "properties": {
+        "administratorLogin": "sqladmin",
+        "administratorLoginPassword": "[parameters('administratorPassword')]",
+        "publicNetworkAccess": "Disabled"
+      }
+    },
+    {
+      "type": "Microsoft.Sql/servers/databases",
+      "apiVersion": "2023-08-01-preview",
+      "name": "[format('{0}/{1}', 'sql-orders', 'orders')]",
+      "location": "[parameters('location')]",
+      "sku": { "name": "S0", "tier": "Standard" },
+      "dependsOn": [ "[resourceId('Microsoft.Sql/servers', 'sql-orders')]" ]
+    }
+  ]
+}

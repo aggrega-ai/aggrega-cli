@@ -1,0 +1,1 @@
+info resource-folded: sql-orders (Microsoft.Sql/servers) is folded into each instance its children of Microsoft.Sql/servers/databases take, orders: each instance's Recipe creates its own Microsoft.Sql/servers, where the source shares one

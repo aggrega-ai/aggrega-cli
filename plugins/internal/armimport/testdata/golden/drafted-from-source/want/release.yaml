@@ -1,0 +1,38 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
+  version: 0.1.0
+  description: Draft Release imported from a source in the arm format.
+spec:
+  aggregate: imported/flow
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
+  components:
+    kv-app:
+      infra:
+        overrides:
+          sku_name: "standard"
+          soft_delete_retention_days: 30
+          # From the template parameter location, its literal default.
+          location: "westeurope"
+    seed-vault:
+      infra:
+        overrides:
+          kind: "AzureCLI"
+          azCliVersion: "2.52.0"
+          retentionInterval: "PT1H"
+          scriptContent: "echo seeding $1"
+        # From the template parameter location, its literal default.
+        location: "westeurope"
+    site-docs:
+      infra:
+        # From the template parameter location, its literal default.
+        location: "westeurope"
+        overrides:
+          appLocation: "/"
+          outputLocation: "dist"
+          name: "Free"
+          tier: "Free"

@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
+  version: 0.1.0
+  description: Draft Release imported from a source in the arm format.
+spec:
+  aggregate: imported/flow
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
+  components:
+    orders:
+      infra:
+        overrides:
+          sku_name: "S0"
+          # From the template parameter location, its literal default.
+          location: "westeurope"
+          public_network_access_enabled: false
+      features:
+        password:
+          type: core/referenced-secret
+          infra:
+            # Attached by reference, never as a value: the template parameter administratorPassword, at the locator the source states.
+            origin: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shared/providers/Microsoft.KeyVault/vaults/kv-shared/secrets/sql-admin-password"

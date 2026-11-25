@@ -1,0 +1,32 @@
+{
+  // An Azure Data Explorer cluster deployed through the Azure Verified Modules
+  // module, whose compiled template the test writes in place of the $avm
+  // member: no row maps its resource type, so its Recipe sources the module
+  // whole, with its telemetry off.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "westeurope" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "cluster",
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": { "scope": "inner" },
+        "parameters": {
+          "name": { "value": "adx-core" },
+          "location": { "value": "[parameters('location')]" },
+          "sku": { "value": "Standard_E2ads_v5" },
+          "enableTelemetry": { "value": true }
+        },
+        "template": { "$avm": "kusto/cluster/0.11.1" }
+      }
+    }
+  ],
+  "outputs": {
+    "clusterUri": { "type": "string", "value": "[reference('cluster').outputs.uri.value]" }
+  }
+}

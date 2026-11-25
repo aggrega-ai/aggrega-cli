@@ -1,0 +1,60 @@
+{
+  // The topology of raw-topology with the PostgreSQL flexible server deployed
+  // through the Azure Verified Modules module, whose compiled template the test
+  // writes in place of the $avm member, and the container app reading the
+  // module's fqdn output.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "administratorPassword": { "type": "securestring" },
+    "location": { "type": "string", "defaultValue": "westeurope" },
+    "environmentName": { "type": "string", "defaultValue": "cae-shared" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "pgModule",
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": { "scope": "inner" },
+        "parameters": {
+          "name": { "value": "pg-main" },
+          "location": { "value": "[parameters('location')]" },
+          "skuName": { "value": "Standard_B1ms" },
+          "tier": { "value": "Burstable" },
+          "availabilityZone": { "value": -1 },
+          "version": { "value": "16" },
+          "administratorLogin": { "value": "pgadmin" },
+          "administratorLoginPassword": { "value": "[parameters('administratorPassword')]" },
+          "delegatedSubnetResourceId": { "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'vnet-core', 'snet-db')]" },
+          "databases": { "value": [ { "name": "appdb" } ] },
+          "enableTelemetry": { "value": true }
+        },
+        "template": { "$avm": "db-for-postgre-sql/flexible-server/0.16.2" }
+      }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "web",
+      "location": "[parameters('location')]",
+      "dependsOn": [ "[resourceId('Microsoft.Resources/deployments', 'pgModule')]" ],
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('environmentName'))]",
+        "configuration": { "ingress": { "external": false, "targetPort": 8080 } },
+        "template": {
+          "containers": [
+            {
+              "name": "web",
+              "image": "ghcr.io/example/web:1.4.2",
+              "env": [
+                { "name": "DB_HOST", "value": "[reference('pgModule').outputs.fqdn.value]" }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

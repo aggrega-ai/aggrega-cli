@@ -1,0 +1,20 @@
+# Sources read: main.json.
+# Parameters the draft carries nowhere: environment.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the arm format.
+spec:
+  parameters:
+    # The template parameter deployCache.
+    deploy_cache:
+      type: boolean
+      default: true
+  components:
+    kv-orders:
+      type: core/security/azure-key-vault
+    redis-orders:
+      type: core/datastore/redis
+      active: "{{ .parameters.deploy_cache }}"

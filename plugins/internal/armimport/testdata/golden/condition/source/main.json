@@ -1,0 +1,34 @@
+{
+  // A Redis cache deployed where one boolean parameter is true, and a Key Vault
+  // deployed under a condition that is no one boolean parameter.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "westeurope" },
+    "deployCache": { "type": "bool", "defaultValue": true },
+    "environment": { "type": "string", "defaultValue": "dev", "allowedValues": [ "dev", "prod" ] }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Cache/redisEnterprise",
+      "apiVersion": "2025-04-01",
+      "name": "redis-orders",
+      "condition": "[parameters('deployCache')]",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Balanced_B1" },
+      "properties": { "highAvailability": "Disabled", "publicNetworkAccess": "Enabled" }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "kv-orders",
+      "condition": "[equals(parameters('environment'), 'prod')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "sku": { "family": "A", "name": "standard" },
+        "publicNetworkAccess": "Disabled"
+      }
+    }
+  ]
+}

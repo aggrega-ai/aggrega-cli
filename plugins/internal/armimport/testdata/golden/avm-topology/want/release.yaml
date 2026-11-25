@@ -1,0 +1,35 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
+  version: 0.1.0
+  description: Draft Release imported from a source in the arm format.
+spec:
+  aggregate: imported/flow
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
+  components:
+    # Module parameters the source sets and the draft does not translate: availabilityZone, name, skuName, tier.
+    pgmodule:
+      infra:
+        engine_version: "16"
+        overrides:
+          # From the template parameter location, its literal default.
+          location: "westeurope"
+          # Left for the Release, since the source cannot supply it: infra.overrides.delegated_subnet_id, the pointer to the resource "resourceId('Microsoft.Network/virtualNetworks/subnets', 'vnet-core', 'snet-db')", which the draft leaves to the operator and the source names as "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'vnet-core', 'snet-db')]"; the catalog Recipe takes the resource's literal identifier: write it
+          delegated_subnet_id: ""
+      features:
+        password:
+          type: core/referenced-secret
+          infra:
+            # Left for the Release, since the source cannot supply it: the resource ID of the Azure Key Vault secret holding the template parameter administratorPassword, /subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.KeyVault/vaults/<vault>/secrets/<secret>; the value the template parameter administratorPassword receives goes into that secret.
+            origin: ""
+    web:
+      infra:
+        image: "ghcr.io/example/web:1.4.2"
+        port: 8080
+        overrides:
+          # Left for the Release, since the source cannot supply it: infra.overrides.container_app_environment_id, the pointer to the resource "resourceId('Microsoft.App/managedEnvironments', parameters('environmentName'))", which the draft leaves to the operator and the source names as "[resourceId('Microsoft.App/managedEnvironments', 'cae-shared')]"; the catalog Recipe takes the resource's literal identifier: write it
+          container_app_environment_id: ""

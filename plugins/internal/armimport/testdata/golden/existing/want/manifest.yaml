@@ -1,0 +1,15 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: imported/flow
+  version: 0.1.0
+spec:
+  mappings:
+    components:
+      name:
+        server: arm/postgres-flexible-server
+        insights: arm/azure-application-insights
+        workbook: arm/microsoft-insights-workbooks
+    features:
+      type:
+        core/referenced-secret: arm/key-vault-secret

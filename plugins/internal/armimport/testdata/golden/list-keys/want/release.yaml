@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
+  version: 0.1.0
+  description: Draft Release imported from a source in the arm format.
+spec:
+  aggregate: imported/flow
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
+  components:
+    stqueue:
+      infra:
+        overrides:
+          sku_name: "Standard_LRS"
+          # From the template parameter location, its literal default.
+          location: "westeurope"
+    worker:
+      infra:
+        image: "ghcr.io/example/worker:2.0.0"
+        overrides:
+          container_app_environment_id: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shared/providers/Microsoft.App/managedEnvironments/cae-shared"

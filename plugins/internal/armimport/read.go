@@ -62,7 +62,11 @@ const (
 // each by a symbol derived from its name — the literal text its name ends
 // with, else the last segment of its type — keyed as the importer kit keys a
 // node, and a child resource nested in its parent's resources is read as a
-// resource of its own, with its full type and name. Every string Azure
+// resource of its own, with its full type and name. A child's name, written
+// nested in its parent or in full beside it, is the full name the template
+// composes, and its own name within its parent is kept beside it — for one
+// written in full, the part after its last slash written as literal text —
+// which a fold reads as the child's name. Every string Azure
 // Resource Manager reads as an expression is read with armexpr and lowered
 // into the core's values; a reference naming a resource of the template names
 // its node, and one naming none names a resource the template reads and does
@@ -543,7 +547,9 @@ func (l *lowerer) build() *cloudimport.Node {
 	if res.module != nil {
 		l.moduleNode(n)
 	} else {
-		n.Name = l.name()
+		full, own := l.names()
+		n.Name = full
+		n.Composed, n.Leaf = res.ownName(full, own)
 		n.Body = l.body()
 	}
 	n.Parent = l.t.parentOf(res)

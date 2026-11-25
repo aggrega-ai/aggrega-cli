@@ -1,0 +1,27 @@
+# Sources read: main.json.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the arm format.
+spec:
+  components:
+    kv-app:
+      type: core/security/azure-key-vault
+    seed-vault:
+      type: imported/component/microsoft-resources-deploymentscripts
+      values:
+        name: "seed-vault"
+      uses:
+        kv-app:
+          kv-app:
+            target: kv-app
+            inject:
+              property:
+                - in: "properties_arguments"
+                  from: endpoint
+    site-docs:
+      type: imported/compute/microsoft-web-staticsites
+      values:
+        name: "site-docs"

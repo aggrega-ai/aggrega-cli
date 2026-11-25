@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: imported/bigdata/microsoft-kusto-clusters
+  version: 0.1.0
+  description: "Draft Component of the resource type Microsoft.Kusto/clusters, imported from a source in the arm format."
+  labels:
+    component.aggrega.ai/type: resource
+    component.aggrega.ai/category: bigdata
+    component.aggrega.ai/hosting: managed
+spec:
+  schema:
+    infra:
+      type: object
+      properties:
+        # override: every writable property no other rule places, each under the vendor's own name
+        overrides:
+          type: object
+          description: "Writable settings of Microsoft.Kusto/clusters, each under the vendor's own name, which the Recipe passes to the resource as written; its header lists the names it reads."
+          additionalProperties: true
+      additionalProperties: false

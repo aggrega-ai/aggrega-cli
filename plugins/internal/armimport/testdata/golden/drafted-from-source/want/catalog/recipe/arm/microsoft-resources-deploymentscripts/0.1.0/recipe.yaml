@@ -1,0 +1,55 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: microsoft-resources-deploymentscripts
+  version: 0.1.0
+  description: "Draft Recipe realizing imported/component/microsoft-resources-deploymentscripts on arm with one resource of the type Microsoft.Resources/deploymentScripts@2023-08-01, imported from a source in the arm format."
+spec:
+  # This Recipe realizes imported/component/microsoft-resources-deploymentscripts with one resource of the type Microsoft.Resources/deploymentScripts@2023-08-01, drafted from the resource as a source writes it. It reads the keys below, each with its type and its rule, and none with a vendor's description, which a source does not state; any other key under infra.overrides halts the build naming it.
+  # values.name: string, required; identity: the resource's own name or identifier
+  # The source writing the resource gives no description of name.
+  # infra.overrides.kind: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of kind.
+  # infra.location: string, required; placement: where the resource is deployed
+  # The source writing the resource gives no description of location.
+  # infra.overrides.azCliVersion: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of properties.azCliVersion.
+  # infra.overrides.retentionInterval: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of properties.retentionInterval.
+  # infra.overrides.scriptContent: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of properties.scriptContent.
+  # context.inject.property.properties_arguments: string, required; inject: a value a neighbour publishes, delivered by the Aggregate's uses edge on the property mechanism and written at properties.arguments
+  # The source writing the resource gives no description of properties.arguments.
+  # template.yaml declares the resource under the symbolic name locals.symbol holds, and the arm provider merges it into the template of the instance's boundary.
+  capability: arm
+  implements: imported/component/microsoft-resources-deploymentscripts:0.1.0
+  locals:
+    # The resource's symbolic name: the instance's name in capitalized words, letters and digits alone, so two instances in one template declare two resources.
+    symbol: "{{ capitalizedWords .context.instance_id }}"
+  provides:
+    # The String Pipe: each value is one whole ARM expression, or the resource's name as template.yaml writes it, piped as written into a consumer's context; ARM evaluates it when the template is deployed.
+    id: "[resourceId('Microsoft.Resources/deploymentScripts'{{ range splitList \"/\" (toString (index .values \"name\")) }}, '{{ replace \"'\" \"''\" . }}'{{ end }})]"
+    name: "{{ toString (index .values \"name\") }}"
+  assertions:
+    # Halts naming any key under infra.overrides this Recipe does not read.
+    overrides_this_recipe_reads: |
+      {{- $o := optional .infra "overrides" dict -}}
+      {{- range $k, $v := $o -}}
+      {{- if not (has $k (list "kind" "azCliVersion" "retentionInterval" "scriptContent")) -}}
+      {{- fail (printf "infra.overrides.%s is not a setting this Recipe reads: it reads %s from infra.overrides; remove infra.overrides.%s from the Release" $k "kind, azCliVersion, retentionInterval and scriptContent" $k) -}}
+      {{- end -}}
+      {{- end -}}
+  artifacts:
+    template.yaml: |
+      {{- $resource := dict "type" "Microsoft.Resources/deploymentScripts" "apiVersion" "2023-08-01" -}}
+      {{- $properties := dict -}}
+      {{ $_ := set $resource "name" (index .values "name") -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "kind") }}{{ $_ := set $resource "kind" (index .infra "overrides" "kind") }}{{ end -}}
+      {{ $_ := set $resource "location" (index .infra "location") -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "azCliVersion") }}{{ $_ := set $properties "azCliVersion" (index .infra "overrides" "azCliVersion") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "retentionInterval") }}{{ $_ := set $properties "retentionInterval" (index .infra "overrides" "retentionInterval") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "scriptContent") }}{{ $_ := set $properties "scriptContent" (index .infra "overrides" "scriptContent") }}{{ end -}}
+      {{ $_ := set $properties "arguments" (index (default dict .context.inject) "property" "properties_arguments") -}}
+      {{ if $properties }}{{ $_ := set $resource "properties" $properties }}{{ end -}}
+      resources:
+        {{ .locals.symbol }}: {{ toJson $resource }}

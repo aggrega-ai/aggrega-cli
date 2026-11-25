@@ -230,21 +230,76 @@ func (l *lowerer) unparsed(at string, err error) {
 // name returns the resource's name: the names it and the resources it is
 // nested in write, joined by slashes; nil where one of them is not carried.
 func (l *lowerer) name() cloudimport.Value {
+	full, _ := l.names()
+	return full
+}
+
+// names returns the resource's name, as name returns it, and its own: the
+// name it writes itself, the last of those joined. Both are nil where one of
+// the names joined is not carried.
+func (l *lowerer) names() (full, own cloudimport.Value) {
 	var parts []cloudimport.Value
 	for i, raw := range l.res.names {
 		if raw == nil {
-			return nil
+			return nil, nil
 		}
 		if i > 0 {
 			parts = append(parts, str("/"))
 		}
 		v := l.leaf(raw, l.res.nameAt[i], "the name of "+l.res.symbol)
 		if v == nil {
-			return nil
+			return nil, nil
 		}
 		parts = append(parts, v)
+		own = v
 	}
-	return compose(parts)
+	return compose(parts), own
+}
+
+// ownName returns whether the name full of res is the full name the template
+// composes of its parent's name and its own, as Azure Resource Manager names a
+// child resource, and its own name within its parent: the name own it writes
+// in its parent's resources where it is nested there; for a resource of a
+// child type written beside its parent and naming no parent, the part of full
+// after its last slash written as literal text, nil where no literal text of
+// it holds one. A resource naming its parent, as language version 2.0 names
+// one, writes its own name alone.
+func (res *resource) ownName(full, own cloudimport.Value) (bool, cloudimport.Value) {
+	switch {
+	case full == nil:
+		return false, nil
+	case len(res.names) > 1:
+		return true, own
+	case res.parent != "" || strings.Count(res.typ, "/") < 2:
+		return false, nil
+	}
+	return true, afterLastSlash(full)
+}
+
+// afterLastSlash returns the part of the name v after its last slash written
+// as literal text, nil where no literal text of v holds a slash, or nothing
+// follows the last one.
+func afterLastSlash(v cloudimport.Value) cloudimport.Value {
+	parts := []cloudimport.Value{v}
+	if c, ok := v.(cloudimport.Compose); ok {
+		parts = c.Parts
+	}
+	for i := len(parts) - 1; i >= 0; i-- {
+		lit, isLit := parts[i].(cloudimport.Literal)
+		s, isText := text(lit.JSON)
+		j := strings.LastIndex(s, "/")
+		if !isLit || !isText || j < 0 {
+			continue
+		}
+		tail := compose(append([]cloudimport.Value{str(s[j+1:])}, parts[i+1:]...))
+		if t, ok := tail.(cloudimport.Literal); ok {
+			if rest, _ := text(t.JSON); rest == "" {
+				return nil
+			}
+		}
+		return tail
+	}
+	return nil
 }
 
 // body returns the resource's body lowered. The template a

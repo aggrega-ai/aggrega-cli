@@ -552,3 +552,58 @@ func TestReadChildrenItCannotReachAreNotCarried(t *testing.T) {
 		t.Errorf("the graph holds %d nodes, want the %d levels the import follows", len(g.Nodes), maxNesting+1)
 	}
 }
+
+// TestReadKeepsAChildsOwnName keeps, beside the full name the template
+// composes for a child resource, its own name within its parent: the name it
+// writes nested in its parent's resources; for one written in full beside its
+// parent, the part after its last slash written as literal text, none where
+// no literal text holds the slash. A child of language version 2.0 naming its
+// parent writes its own name alone.
+func TestReadKeepsAChildsOwnName(t *testing.T) {
+	g, diags := readTemplate(`{` + schema + `, "contentVersion": "1.0.0.0",
+		"parameters": {"serverName": {"type": "string"}, "dbName": {"type": "string"}, "fullName": {"type": "string"}},
+		"variables": {"databaseName": "appdb"},
+		"resources": [
+			{"type": "Microsoft.DBforPostgreSQL/flexibleServers", "apiVersion": "2022-12-01",
+				"name": "[parameters('serverName')]",
+				"resources": [{"type": "databases", "apiVersion": "2022-12-01", "name": "[variables('databaseName')]"}]},
+			{"type": "Microsoft.DBforPostgreSQL/flexibleServers/databases", "apiVersion": "2022-12-01",
+				"name": "[concat(parameters('serverName'), '/orders')]"},
+			{"type": "Microsoft.DBforPostgreSQL/flexibleServers/databases", "apiVersion": "2022-12-01",
+				"name": "[format('{0}/{1}', parameters('serverName'), parameters('dbName'))]"},
+			{"type": "Microsoft.DBforPostgreSQL/flexibleServers/databases", "apiVersion": "2022-12-01",
+				"name": "[parameters('fullName')]"}
+		]}`)
+	if len(diags) > 0 {
+		t.Fatalf("the template reads with %+v", diags)
+	}
+	for id, want := range map[string]cloudimport.Value{
+		"appdb":     str("appdb"),
+		"orders":    str("orders"),
+		"databases": cloudimport.Param{Name: "dbName"},
+	} {
+		n := node(t, g, id)
+		if !n.Composed || !reflect.DeepEqual(n.Leaf, want) {
+			t.Errorf("%s keeps its own name %#v (composed %v), want %#v", id, n.Leaf, n.Composed, want)
+		}
+	}
+	if n := node(t, g, "databases-2"); !n.Composed || n.Leaf != nil {
+		t.Errorf("databases-2 keeps its own name %#v (composed %v), want none told apart", n.Leaf, n.Composed)
+	}
+	if n := node(t, g, "flexibleservers"); n.Composed || n.Leaf != nil {
+		t.Errorf("the server keeps an own name %#v (composed %v), want its name its own", n.Leaf, n.Composed)
+	}
+
+	g2, diags := readTemplate(`{` + schema + `, "languageVersion": "2.0", "contentVersion": "1.0.0.0",
+		"resources": {
+			"server": {"type": "Microsoft.DBforPostgreSQL/flexibleServers", "apiVersion": "2022-12-01", "name": "pg"},
+			"db": {"type": "Microsoft.DBforPostgreSQL/flexibleServers/databases", "apiVersion": "2022-12-01",
+				"parent": "server", "name": "appdb"}}}`)
+	if len(diags) > 0 {
+		t.Fatalf("the 2.0 template reads with %+v", diags)
+	}
+	if n := node(t, g2, "db"); n.Composed || n.Leaf != nil || !reflect.DeepEqual(n.Name, str("appdb")) {
+		t.Errorf("the 2.0 child naming its parent is %#v, composed %v, own %#v; want its own name alone", n.Name,
+			n.Composed, n.Leaf)
+	}
+}

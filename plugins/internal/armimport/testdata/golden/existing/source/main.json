@@ -1,0 +1,64 @@
+{
+  // A template of language version 2.0 reading a subnet and a Log Analytics
+  // workspace it does not create: a PostgreSQL flexible server the catalog
+  // maps reads the subnet, and an Application Insights component the catalog
+  // maps and a workbook drafted from the source read the workspace.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "languageVersion": "2.0",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "westeurope" },
+    "administratorPassword": { "type": "securestring" }
+  },
+  "resources": {
+    "subnet": {
+      "existing": true,
+      "type": "Microsoft.Network/virtualNetworks/subnets",
+      "apiVersion": "2023-09-01",
+      "name": "vnet-core/snet-db"
+    },
+    "workspace": {
+      "existing": true,
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "log-shared"
+    },
+    "server": {
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+      "apiVersion": "2022-12-01",
+      "name": "pg-orders",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Standard_B1ms", "tier": "Burstable" },
+      "properties": {
+        "version": "16",
+        "administratorLogin": "pgadmin",
+        "administratorLoginPassword": "[parameters('administratorPassword')]",
+        "network": { "delegatedSubnetResourceId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'vnet-core', 'snet-db')]" }
+      }
+    },
+    "insights": {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "appi-orders",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', 'log-shared')]"
+      }
+    },
+    "workbook": {
+      "type": "Microsoft.Insights/workbooks",
+      "apiVersion": "2023-06-01",
+      "name": "11111111-2222-3333-4444-555555555555",
+      "location": "[parameters('location')]",
+      "kind": "shared",
+      "properties": {
+        "displayName": "Orders",
+        "category": "workbook",
+        "serializedData": "{}",
+        "sourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', 'log-shared')]"
+      }
+    }
+  }
+}

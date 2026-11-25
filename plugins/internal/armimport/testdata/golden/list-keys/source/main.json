@@ -1,0 +1,48 @@
+{
+  // A storage account and a worker container app reading the account's key
+  // with listKeys into its environment: the key is a credential the draft
+  // never carries.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "westeurope" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-01-01",
+      "name": "stqueue",
+      "location": "[parameters('location')]",
+      "kind": "StorageV2",
+      "sku": { "name": "Standard_LRS" }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "worker",
+      "location": "[parameters('location')]",
+      "dependsOn": [ "[resourceId('Microsoft.Storage/storageAccounts', 'stqueue')]" ],
+      "properties": {
+        "environmentId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shared/providers/Microsoft.App/managedEnvironments/cae-shared",
+        "template": {
+          "containers": [
+            {
+              "name": "worker",
+              "image": "ghcr.io/example/worker:2.0.0",
+              "env": [
+                {
+                  "name": "STORAGE_KEY",
+                  "value": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', 'stqueue'), '2023-01-01').keys[0].value]"
+                },
+                {
+                  "name": "STORAGE_ENDPOINT",
+                  "value": "[reference(resourceId('Microsoft.Storage/storageAccounts', 'stqueue')).primaryEndpoints.blob]"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

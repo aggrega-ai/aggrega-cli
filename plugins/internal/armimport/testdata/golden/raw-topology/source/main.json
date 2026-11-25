@@ -1,0 +1,77 @@
+{
+  // A PostgreSQL flexible server holding one database nested in its
+  // resources, placed in a subnet of a virtual network the template creates,
+  // and a container app reading the server's address into its environment.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "serverName": { "type": "string", "defaultValue": "pg-main" },
+    "administratorPassword": { "type": "securestring" },
+    "location": { "type": "string", "defaultValue": "westeurope" },
+    "environmentName": { "type": "string", "defaultValue": "cae-shared" }
+  },
+  "variables": { "databaseName": "appdb" },
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2023-09-01",
+      "name": "vnet-core",
+      "location": "[parameters('location')]",
+      "properties": {
+        "addressSpace": { "addressPrefixes": [ "10.0.0.0/16" ] },
+        "subnets": [ { "name": "snet-db", "properties": { "addressPrefix": "10.0.1.0/24" } } ]
+      }
+    },
+    {
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+      "apiVersion": "2022-12-01",
+      "name": "[parameters('serverName')]",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Standard_B1ms", "tier": "Burstable" },
+      "dependsOn": [ "[resourceId('Microsoft.Network/virtualNetworks', 'vnet-core')]" ],
+      "properties": {
+        "version": "16",
+        "administratorLogin": "pgadmin",
+        "administratorLoginPassword": "[parameters('administratorPassword')]",
+        "network": {
+          "delegatedSubnetResourceId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'vnet-core', 'snet-db')]"
+        }
+      },
+      "resources": [
+        {
+          "type": "databases",
+          "apiVersion": "2022-12-01",
+          "name": "[variables('databaseName')]",
+          "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('serverName'))]" ],
+          "properties": { "charset": "UTF8", "collation": "en_US.utf8" }
+        }
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "web",
+      "location": "[parameters('location')]",
+      "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('serverName'))]" ],
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('environmentName'))]",
+        "configuration": { "ingress": { "external": false, "targetPort": 8080 } },
+        "template": {
+          "containers": [
+            {
+              "name": "web",
+              "image": "ghcr.io/example/web:1.4.2",
+              "env": [
+                {
+                  "name": "DB_HOST",
+                  "value": "[reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('serverName'))).fullyQualifiedDomainName]"
+                },
+                { "name": "DB_NAME", "value": "[variables('databaseName')]" }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

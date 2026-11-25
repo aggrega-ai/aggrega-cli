@@ -1,0 +1,28 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
+  version: 0.1.0
+  description: Draft Release imported from a source in the arm format.
+spec:
+  aggregate: imported/flow
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
+  components:
+    kv-orders:
+      infra:
+        overrides:
+          sku_name: "standard"
+          # From the template parameter location, its literal default.
+          location: "westeurope"
+          public_network_access_enabled: false
+    redis-orders:
+      infra:
+        overrides:
+          # From the template parameter location, its literal default.
+          location: "westeurope"
+          sku_name: "Balanced_B1"
+          high_availability_enabled: false
+          public_network_access: "Enabled"
