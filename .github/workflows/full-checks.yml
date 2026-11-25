@@ -1,0 +1,383 @@
+name: Full checks
+
+# The checks too long for every push, on GitHub-hosted runners: nightly, when
+# main has moved since the last successful run of this workflow on main, and
+# whenever started by hand. A red run is reported through GitHub's notification
+# of a failed workflow run.
+#
+#   main-moved       reads the commit the last successful run of this workflow
+#                    on main checked and, on a nightly run, skips every other
+#                    job when main is still at that commit. A run started by
+#                    hand runs every job.
+#   guests           builds the WebAssembly guests and the binary that embeds
+#                    them with scripts/build.sh, which also holds the guests to
+#                    their sources, to aggrega-hub's plugin overlays and to
+#                    their generated entities, and the attribution to its
+#                    inputs; the Rust toolchains the guests pin are installed
+#                    as the release workflow installs them. It then checks that
+#                    the released 0.9.3 binary installs a plugin published with
+#                    its notices (scripts/check-plugin-notices-compat.sh), and
+#                    hands the guests, their entities and the binary to the
+#                    jobs below.
+#   test             every test of the module, in six parts side by side, with
+#                    the guests in place and aggrega-hub, aggrega-docs, and
+#                    aggrega-pdk and aggrega-abi at the releases go.mod requires,
+#                    checked out beside this repository, as the README's Testing
+#                    section describes. Three parts are package groups: cmd
+#                    holds the largest package on its own; compiler holds the
+#                    compiler, the import, language-server and serve packages
+#                    and the plugins' shared code; rest holds every other
+#                    package, so a package added anywhere is tested. Each builds
+#                    its test binaries at full width, then runs two at a time,
+#                    so two of the largest fit the runner's memory together.
+#                    The other three are a third each of the
+#                    integration-tagged tests, which run one after another, as
+#                    scripts/select-integration-tests.sh selects them, so the
+#                    untagged tests in their packages do not run twice.
+#   plugin-crates    cargo test of every Rust guest crate under plugins/, each
+#                    with the release its rust-toolchain.toml names.
+#   import-examples  every import example of aggrega-docs
+#                    (aggrega-docs/scripts/check-import-examples.sh --isolated;
+#                    the header of check-import-example.sh says what each check
+#                    does), with the binary and the core importers built here
+#                    and aggrega-hub's catalog, off the network.
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GOWORK: 'off'
+
+jobs:
+  main-moved:
+    name: Decide whether main moved since the last successful run
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read # lists this workflow's earlier runs on main
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - name: Compare main with the commit the last successful run checked
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" != schedule ]; then
+            echo "a run started by hand runs every job"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          workflow="${GITHUB_WORKFLOW_REF%@*}"
+          workflow="${workflow##*/}"
+          last="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].head_sha // ""')"
+          if [ "$last" = "$HEAD_SHA" ]; then
+            echo "main is at $HEAD_SHA, the commit the last successful run checked: nothing to run"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "main is at $HEAD_SHA; the last successful run checked ${last:-no commit yet}"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  guests:
+    name: Build the guests and the binary that embeds them
+    needs: main-moved
+    if: needs.main-moved.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the CLI with its history and tags
+        # The build stamps the version git describe gives the commit.
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          path: aggrega-cli
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Check out aggrega-hub beside it
+        # The build holds the guests to the plugin overlays there and generates
+        # their entities from them.
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: aggrega-ai/aggrega-hub
+          ref: main
+          path: aggrega-hub
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: aggrega-cli/go.mod
+          cache: false
+
+      - name: Install the Rust toolchains the guests pin
+        # scripts/install-guest-rust-toolchains.sh, as the release workflow
+        # runs it: a pinned and verified rustup under the runner's temporary
+        # directory, installing the release each guest's rust-toolchain.toml
+        # names, with its targets.
+        run: aggrega-cli/scripts/install-guest-rust-toolchains.sh --github-env "$RUNNER_TEMP/rust"
+
+      - name: Build the guests and the binary
+        run: aggrega-cli/scripts/build.sh
+
+      - name: Install oras for the released-binary compatibility check
+        uses: oras-project/setup-oras@ac735097e22fe643015b0d19645f7c9a69942128 # v2.0.4
+
+      - name: Check that the released 0.9.3 binary installs a plugin published with its notices
+        run: aggrega-cli/scripts/check-plugin-notices-compat.sh
+
+      - name: Hand the guests, their entities and the binary to the jobs below
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: embedded-guests
+          path: |
+            aggrega-cli/aggrega
+            aggrega-cli/internal/wasm/embedded/plugins/
+            aggrega-cli/internal/wasm/embedded/published-only/
+            aggrega-cli/internal/wasm/embedded/published-selection/
+          retention-days: 1
+          if-no-files-found: error
+
+  test:
+    name: Run the tests (${{ matrix.part }})
+    needs: guests
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [cmd, compiler, rest, integration-1, integration-2, integration-3]
+    steps:
+      - name: Check out the CLI with its history and tags
+        # Tests that build the binary stamp the version git describe gives.
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          path: aggrega-cli
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: aggrega-cli/go.mod
+          cache: false
+
+      - name: Read the aggrega-pdk and aggrega-abi releases go.mod requires
+        # The tests read the plugin kit's examples and the shared wire vectors
+        # at the release of each this module builds against.
+        id: siblings
+        working-directory: aggrega-cli
+        run: |
+          set -euo pipefail
+          echo "pdk=$(go list -m -f '{{.Version}}' github.com/aggrega-ai/aggrega-pdk/go)" >> "$GITHUB_OUTPUT"
+          echo "abi=$(go list -m -f '{{.Version}}' github.com/aggrega-ai/aggrega-abi/go)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out aggrega-hub beside it
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: aggrega-ai/aggrega-hub
+          ref: main
+          path: aggrega-hub
+          persist-credentials: false
+
+      - name: Check out aggrega-docs beside it
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: aggrega-ai/aggrega-docs
+          ref: main
+          path: aggrega-docs
+          persist-credentials: false
+
+      - name: Check out aggrega-pdk beside it
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: aggrega-ai/aggrega-pdk
+          ref: ${{ steps.siblings.outputs.pdk }}
+          path: aggrega-pdk
+          persist-credentials: false
+
+      - name: Check out aggrega-abi beside it
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: aggrega-ai/aggrega-abi
+          ref: ${{ steps.siblings.outputs.abi }}
+          path: aggrega-abi
+          persist-credentials: false
+
+      - name: Install the Rust toolchains the tests build with
+        # The kits' 1.85 floor with both WebAssembly targets as the default, for
+        # a crate with no toolchain file of its own (the plugin kit's examples
+        # the tests build), then, in each directory holding a
+        # rust-toolchain.toml, the release that file names with its targets.
+        # RUSTUP_TOOLCHAIN would outrank every toolchain file, so it is cleared.
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.85 --profile minimal --target wasm32-unknown-unknown --target wasm32-wasip1
+          rustup default 1.85
+          find aggrega-cli aggrega-pdk -name rust-toolchain.toml -not -path '*/target/*' -print0 \
+            | while IFS= read -r -d '' file; do
+                (cd "$(dirname "$file")" && env -u RUSTUP_TOOLCHAIN rustup toolchain install --profile minimal --no-self-update)
+              done
+
+      - name: Take the guests and the binary the guests job built
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: embedded-guests
+          path: aggrega-cli
+
+      - name: Select the packages and the tests of this part
+        # cmd and compiler are named by their patterns; rest is every package of
+        # the module in neither, so each package is in exactly one group. The
+        # integration parts are a third each of the integration-tagged tests,
+        # selected by scripts/select-integration-tests.sh (its --help is the
+        # contract), which also refuses a selection go test does not list; its
+        # listing builds those parts' test binaries.
+        working-directory: aggrega-cli
+        env:
+          PART: ${{ matrix.part }}
+        run: |
+          set -euo pipefail
+          cmd=(./cmd/...)
+          compiler=(./internal/compiler/... ./internal/importops/... ./internal/mcp/... ./internal/serve/... ./plugins/...)
+          : > "$RUNNER_TEMP/run"
+          case "$PART" in
+            cmd) go list "${cmd[@]}" > "$RUNNER_TEMP/packages" ;;
+            compiler) go list "${compiler[@]}" > "$RUNNER_TEMP/packages" ;;
+            rest)
+              go list "${cmd[@]}" "${compiler[@]}" | LC_ALL=C sort -u > "$RUNNER_TEMP/named"
+              go list ./... | LC_ALL=C sort -u | LC_ALL=C comm -23 - "$RUNNER_TEMP/named" > "$RUNNER_TEMP/packages" ;;
+            integration-[1-3])
+              mkdir -p "$RUNNER_TEMP/selection"
+              scripts/select-integration-tests.sh --part "${PART#integration-}/3" "$RUNNER_TEMP/selection"
+              cp "$RUNNER_TEMP/selection/packages" "$RUNNER_TEMP/packages"
+              cp "$RUNNER_TEMP/selection/run" "$RUNNER_TEMP/run" ;;
+            *) echo "::error::no test part is named $PART"; exit 1 ;;
+          esac
+          echo "$PART: $(wc -l < "$RUNNER_TEMP/packages") packages"
+
+      - name: Build the test binaries
+        # At full width, running no test, so the step below runs two test
+        # binaries at a time without building two at a time. The integration
+        # parts' binaries were built by the selection's listing.
+        if: ${{ !startsWith(matrix.part, 'integration-') }}
+        working-directory: aggrega-cli
+        run: |
+          set -euo pipefail
+          mapfile -t packages < "$RUNNER_TEMP/packages"
+          go test -count=1 -run '^$' "${packages[@]}"
+
+      - name: Run the tests
+        working-directory: aggrega-cli
+        run: |
+          set -euo pipefail
+          mapfile -t packages < "$RUNNER_TEMP/packages"
+          run="$(cat "$RUNNER_TEMP/run")"
+          if [ -n "$run" ]; then
+            go test -tags integration -count=1 -p 2 -timeout 120m -run "$run" "${packages[@]}"
+          else
+            go test -count=1 -p 2 -timeout 90m "${packages[@]}"
+          fi
+
+  plugin-crates:
+    name: Test the Rust guest crates
+    needs: main-moved
+    if: needs.main-moved.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the CLI
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Test every Rust crate under plugins/ with the release its toolchain file names
+        # rustup installs the release a crate's rust-toolchain.toml names from
+        # the directory it runs in; RUSTUP_TOOLCHAIN would outrank the file, so
+        # it is cleared. A crate with a committed lockfile is tested --locked.
+        run: |
+          set -euo pipefail
+          status=0
+          for manifest in plugins/*/Cargo.toml; do
+            crate="$(dirname "$manifest")"
+            echo "::group::$crate"
+            locked=()
+            if [ -f "$crate/Cargo.lock" ]; then locked=(--locked); fi
+            if ! (cd "$crate" \
+                  && env -u RUSTUP_TOOLCHAIN rustup toolchain install --profile minimal --no-self-update \
+                  && env -u RUSTUP_TOOLCHAIN cargo test "${locked[@]}"); then
+              echo "::error::cargo test failed in $crate"
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$status"
+
+  import-examples:
+    name: Check every import example of aggrega-docs
+    needs: guests
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the CLI
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          path: aggrega-cli
+          persist-credentials: false
+
+      - name: Check out aggrega-docs beside it
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: aggrega-ai/aggrega-docs
+          ref: main
+          path: aggrega-docs
+          persist-credentials: false
+
+      - name: Check out aggrega-hub beside it
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: aggrega-ai/aggrega-hub
+          ref: main
+          path: aggrega-hub
+          persist-credentials: false
+
+      - name: Take the guests and the binary the guests job built
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: embedded-guests
+          path: aggrega-cli
+
+      - name: Check every import example, off the network
+        # aggrega-docs' runner with --isolated (its --help says what each check
+        # is handed): nothing of this job's environment but PATH and the binary,
+        # importers and catalog named here, and HTTP proxies at a closed
+        # loopback port, which it first confirms nothing listens on.
+        run: |
+          set -euo pipefail
+          chmod +x aggrega-cli/aggrega
+          importers="$(mktemp -d "$RUNNER_TEMP/importers.XXXXXX")"
+          aggrega-cli/scripts/gen-colocated-plugin-catalog.sh "$importers"
+          AGGREGA_BIN="$PWD/aggrega-cli/aggrega" AGGREGA_IMPORTER_CATALOG="$importers" \
+            AGGREGA_CATALOG_DIRS="$PWD/aggrega-hub/aggrega-catalog" \
+            aggrega-docs/scripts/check-import-examples.sh --isolated \
+            --examples "$PWD/aggrega-docs/language-reference/examples"
