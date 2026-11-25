@@ -15,7 +15,8 @@
 #
 # A run, in order:
 #   1. refuses, naming each and where it lives, a setting below that is not
-#      set (its outcome line names them too), and a seller ID that is not a number, before any request;
+#      set (its outcome line names them too), a seller ID that is not a number and
+#      a product ID that is not a GUID, before any request;
 #   2. on a real run, refuses a version that is not MAJOR.MINOR.PATCH: a
 #      pre-release or a build is never submitted;
 #   3. reads the release v<version> with gh and holds the installer's address to
@@ -96,8 +97,12 @@
 #   MICROSOFT_STORE_CLIENT_SECRET  secret: a client secret of that registration
 #   MICROSOFT_STORE_SELLER_ID      variable: the seller ID, a number, from Partner
 #                                  Center's Account settings, Legal info
-#   MICROSOFT_STORE_PRODUCT_ID     variable: the listing's Store ID, from the
-#                                  app's overview in Partner Center
+#   MICROSOFT_STORE_PRODUCT_ID     variable: the app's Partner Center product
+#                                  ID, a GUID, shown in the app's address in
+#                                  Partner Center
+#                                  (partner.microsoft.com/.../products/<GUID>/overview);
+#                                  the Store ID that starts XP is a different
+#                                  identifier
 # gh reads the release with GH_TOKEN, the run's own token, and GH_REPO, this
 # repository. The tenant ID, the client ID and the client secret reach curl on
 # its standard input, as lines of curl's configuration, as does the access
@@ -285,6 +290,8 @@ if [ "${#missing[@]}" -gt 0 ]; then
 fi
 [[ "$SELLER" =~ ^[0-9]+$ ]] \
   || refuse "the variable MICROSOFT_STORE_SELLER_ID is '$SELLER', not a seller ID: Partner Center gives it as a number, under Account settings, Legal info; nothing was sent"
+[[ "$PRODUCT" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] \
+  || refuse "the variable MICROSOFT_STORE_PRODUCT_ID is '$PRODUCT', not a product ID: it holds the Partner Center product ID, a GUID shown in the app's address in Partner Center, not the Store ID; nothing was sent"
 
 # --- 2. Version --------------------------------------------------------------
 

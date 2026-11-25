@@ -276,7 +276,7 @@ CLIENT=stub-client-id
 SECRET='stub-"secret\value~'
 TOKEN=stub-access-token
 SELLER=12345678
-PRODUCT=9NSTUBPRODUCT1
+PRODUCT=3e31a9f9-84e8-4d2d-9eba-487878d02ebf
 SUB=1152921505690000001
 ONGOING=1152921505690000777
 P="/submission/v1/product/$PRODUCT"
@@ -563,6 +563,16 @@ want_text "MICROSOFT_STORE_SELLER_ID"
 want_text "12x"
 want_nothing_sent
 end_case refuses_seller_id_not_number
+
+begin_case
+serve_case
+run_case MICROSOFT_STORE_PRODUCT_ID=XP87ZX8LW9T2W3 -- --version "$VERSION" --dry-run true
+want_exit 1
+want_text "MICROSOFT_STORE_PRODUCT_ID"
+want_text "XP87ZX8LW9T2W3"
+want_text "not the Store ID"
+want_nothing_sent
+end_case refuses_store_id_as_product
 
 begin_case
 serve_case

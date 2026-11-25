@@ -45,8 +45,10 @@ name: Submit to the Microsoft Store
 #   variables
 #     MICROSOFT_STORE_SELLER_ID      the seller ID, a number (Partner Center,
 #                                    Account settings, Legal info)
-#     MICROSOFT_STORE_PRODUCT_ID     the listing's Store ID (Partner Center,
-#                                    the app's overview)
+#     MICROSOFT_STORE_PRODUCT_ID     the app's Partner Center product ID, a
+#                                    GUID, shown in the app's address in
+#                                    Partner Center (not the Store ID that
+#                                    starts XP, a different identifier)
 
 on:
   workflow_dispatch:

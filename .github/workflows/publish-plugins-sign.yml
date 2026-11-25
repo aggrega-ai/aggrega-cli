@@ -889,8 +889,10 @@ name: Publish and sign core plugins
 #                                        Partner Center, Account settings,
 #                                        Legal info)
 #              MICROSOFT_STORE_PRODUCT_ID
-#                                        the listing's Store ID (variable;
-#                                        Partner Center, the app's overview)
+#                                        the app's Partner Center product ID,
+#                                        a GUID (variable; shown in the app's
+#                                        address in Partner Center, not the
+#                                        Store ID that starts XP)
 #                                        The tenant ID, the client ID and the
 #                                        client secret reach curl on its
 #                                        standard input alone; each setting is
