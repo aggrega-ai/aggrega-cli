@@ -1516,44 +1516,11 @@ jobs:
         # one exact toolchain in its rust-toolchain.toml, with every target it is
         # compiled for: the guest build compiles it with that release and refuses
         # any other, so a guest published from here is byte-identical to the same
-        # commit built anywhere else. In each Rust guest's source directory, named
-        # by the core-plugin list's one reader, rustup is asked to install with no
-        # toolchain named, and so installs the release that directory's file pins
-        # together with every target the file lists. No release and no target is
-        # written here: a pin or a target changed in the tree is the one
-        # installed. RUSTUP_TOOLCHAIN is cleared for the call because it outranks
-        # every toolchain file. The release build only compiles the guests, so it
-        # needs no component beyond the minimal profile's.
-        #
-        # The rustup that installs them is this job's own: pinned-rustup.sh
-        # fetches rustup-init at the one release it pins, refuses it unless its
-        # SHA-256 is the one pinned for this machine's platform, and installs
-        # rustup with it into a directory under the runner's temporary directory,
-        # which the runner empties at the start and end of every job. So a release
-        # needs no Rust on the runner, uses none the runner's user has installed,
-        # and installs no Rust into that user's home. The script refuses a directory
-        # that is not empty, so a leftover is never used. RUSTUP_HOME and
-        # CARGO_HOME name that directory's two halves for this step and, through
-        # the job's environment file, for every step after it: the cargo and
-        # rustc there find their toolchains through RUSTUP_HOME, and the guest
-        # build remaps CARGO_HOME out of the guests' bytes. The cargo home's bin
-        # directory is put ahead of the path of the steps after this one, so the
-        # cargo and rustc they run are this rustup's. Installing from a toolchain
-        # file with no toolchain named needs rustup 1.28.0 or newer, which the
-        # pinned release is.
-        # The install is `scripts/install-guest-rust-toolchains.sh`, which a local
-        # check of the staging steps runs too.
-        run: |
-          set -euo pipefail
-          homes="$(aggrega-cli/scripts/install-guest-rust-toolchains.sh "$RUNNER_TEMP/rust")"
-          while IFS= read -r line; do
-            case "$line" in
-              RUSTUP_HOME=?*|CARGO_HOME=?*) export "${line?}" ;;
-              *) echo "rust: install-guest-rust-toolchains.sh printed $line, not a RUSTUP_HOME or CARGO_HOME setting" >&2; exit 1 ;;
-            esac
-          done <<< "$homes"
-          printf '%s\n' "$homes" >> "$GITHUB_ENV"
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+        # commit built anywhere else. The installer reads the pins from the tree,
+        # puts a pinned and verified rustup of its own under the runner's
+        # temporary directory, and sets RUSTUP_HOME, CARGO_HOME and the path for
+        # every step after this one (see its --help).
+        run: aggrega-cli/scripts/install-guest-rust-toolchains.sh --github-env "$RUNNER_TEMP/rust"
 
       - name: Build the binary and embedded guests
         # Regenerates the Wasm guests and their descriptors and produces the
