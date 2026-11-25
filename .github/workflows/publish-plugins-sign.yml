@@ -364,10 +364,44 @@ name: Publish and sign core plugins
 #                        but gh, curl and the shell's own utilities. The key
 #                        pair reaches curl on its standard input and is never
 #                        written to disk.
+#   microsoft-store-submission
+#                        Once publish-downloads has succeeded, for a final
+#                        release tag (a pre-release is skipped), submits the
+#                        release's Windows installer to Aggrega's Microsoft
+#                        Store listing, with
+#                        .github/scripts/microsoft-store-submission.sh: it
+#                        points the listing's one package at the installer's
+#                        public address, which it first holds to the SHA-256
+#                        the release's SHA256SUMS lists, commits the draft and
+#                        submits it for certification, then reads the
+#                        submission's status and passes while it is in
+#                        certification or published. It refuses, changing
+#                        nothing, a submission already in progress, a draft
+#                        that holds a newer version, and a draft that does not
+#                        hold exactly one package. On a dry run it reads the
+#                        release, the address, the draft's status and its
+#                        packages, and prints the change, writing nothing. It
+#                        runs on a GitHub-hosted runner, checks out this
+#                        repository at the commit the build job built for the
+#                        script and needs nothing from the hand-over folder. It
+#                        names the environment microsoft-store, not release, so
+#                        its credentials are the Store's alone: the three
+#                        secrets MICROSOFT_STORE_TENANT_ID,
+#                        MICROSOFT_STORE_CLIENT_ID and
+#                        MICROSOFT_STORE_CLIENT_SECRET and the two variables
+#                        MICROSOFT_STORE_SELLER_ID and
+#                        MICROSOFT_STORE_PRODUCT_ID, beside the run's own
+#                        read-only token; it may not mint an OIDC token, and
+#                        runs no action but checkout and no program but curl,
+#                        jq, gh and the shell's own utilities. The three
+#                        secrets reach curl on its standard input and are never
+#                        written to disk. The microsoft-store-submission
+#                        workflow runs the same script by hand for a released
+#                        version.
 #   notarization-check   Once sign-and-publish, record-published,
 #                        publish-skills, publish-package-channels,
-#                        open-winget-pull-request and publish-downloads have
-#                        ended, whatever each
+#                        open-winget-pull-request, publish-downloads and
+#                        microsoft-store-submission have ended, whatever each
 #                        did, on a real publish and a dry run alike, whenever
 #                        sign-macos succeeded and gave a submission ID: asks
 #                        Apple's notary service, once, with Apple's own
@@ -398,12 +432,12 @@ name: Publish and sign core plugins
 #                        It may delete the run's artifacts (actions: write) and
 #                        holds nothing else: no checkout, no action, no secret.
 #
-# publish-skills, publish-package-channels, open-winget-pull-request and
-# publish-downloads publish final releases alone. For a tag carrying a
-# pre-release suffix (v0.9.0-rc.1),
+# publish-skills, publish-package-channels, open-winget-pull-request,
+# publish-downloads and microsoft-store-submission publish final releases alone.
+# For a tag carrying a pre-release suffix (v0.9.0-rc.1),
 # a dry run's included, each is skipped by its if:, which reads
 # sign-and-publish's prerelease output, and sign-and-publish's release step
-# names the four in its log; so a pre-release run shows them skipped, not
+# names the first four in its log; so a pre-release run shows them skipped, not
 # failed. On a real publish each still refuses, in its own step, any other tag
 # that is not a release tag.
 #
@@ -574,7 +608,9 @@ name: Publish and sign core plugins
 # record-published's write alone: the four jobs after it are skipped.
 # Beside those, a real publish of a final release writes one object:
 # publish-downloads' copy of the Windows installer in the download bucket,
-# created under the release's version and never replaced.
+# created under the release's version and never replaced; and
+# microsoft-store-submission's update of the Microsoft Store listing's package
+# to that installer's address, which it submits for certification.
 #
 # A manual dispatch, from a release/* branch or a v* tag (the refs the release
 # environment admits), defaults to a dry run; the dry run before a release tag
@@ -600,12 +636,14 @@ name: Publish and sign core plugins
 # token: GitHub must accept it, and it must carry the public_repo scope; with
 # no token set, it refuses when that variable is true and otherwise says so
 # and passes — save for a tag carrying a pre-release suffix, for which
-# publish-skills, publish-package-channels, open-winget-pull-request and
-# publish-downloads are skipped, as on a real run, so the dry run shows the
-# run graph the real
+# publish-skills, publish-package-channels, open-winget-pull-request,
+# publish-downloads and microsoft-store-submission are skipped, as on a real
+# run, so the dry run shows the run graph the real
 # run would; publish-downloads refuses, naming each, an R2 setting that is not
 # set, and prints the address it would publish the Windows installer at,
-# uploading nothing; last, notarization-check reads
+# uploading nothing; microsoft-store-submission refuses, naming each, a Store
+# setting that is not set, reads the listing's draft and prints the change it
+# would make, writing nothing; last, notarization-check reads
 # Apple's answer to the submission as on a real run, which publishes nothing.
 #
 # The release credentials are held by the GitHub environment named release,
@@ -613,7 +651,12 @@ name: Publish and sign core plugins
 # sign-windows-installer, sign-macos, sign-and-publish, record-published,
 # publish-skills, publish-package-channels, open-winget-pull-request,
 # publish-downloads and notarization-check. Its branch and tag rule admits the
-# branches matching release/* and the tags matching v*. On a run from any other
+# branches matching release/* and the tags matching v*. The one job of this
+# workflow that holds other credentials, microsoft-store-submission, names the
+# GitHub environment microsoft-store instead, which holds the Store's and
+# whose branch and tag rule admits main, the branches matching release/* and the
+# tags matching v*; the release credentials never reach it, and the Store's
+# reach no job that names release. On a run from any other
 # ref, registry-credential, the run's first job, fails before any step of it
 # runs, and every other job is skipped but clean-up, which names no environment
 # and holds no secret: nothing is checked out, built, signed or published.
@@ -819,6 +862,33 @@ name: Publish and sign core plugins
 #                                        run and a real publish alike, and
 #                                        reaching curl on its standard input
 #                                        alone)
+#   the microsoft-store environment's, which only microsoft-store-submission
+#   (and the microsoft-store-submission workflow) reads:
+#              MICROSOFT_STORE_TENANT_ID the Microsoft Entra tenant of the
+#                                        Partner Center account (secret; Entra
+#                                        admin center, Overview of the tenant)
+#              MICROSOFT_STORE_CLIENT_ID the application (client) ID of the
+#                                        Entra app registration that Partner
+#                                        Center lists with the Manager role
+#                                        (secret; Partner Center, Account
+#                                        settings, Tenant administration,
+#                                        Microsoft Entra applications)
+#              MICROSOFT_STORE_CLIENT_SECRET
+#                                        a client secret of that registration
+#                                        (secret; Entra admin center, the
+#                                        registration's Certificates &
+#                                        secrets), renewed before it expires
+#              MICROSOFT_STORE_SELLER_ID the seller ID, a number (variable;
+#                                        Partner Center, Account settings,
+#                                        Legal info)
+#              MICROSOFT_STORE_PRODUCT_ID
+#                                        the listing's Store ID (variable;
+#                                        Partner Center, the app's overview)
+#                                        The tenant ID, the client ID and the
+#                                        client secret reach curl on its
+#                                        standard input alone; each setting is
+#                                        refused, named, when unset on a dry
+#                                        run and a real publish alike.
 #
 # Before AGGREGA_WINGET_PULL_REQUEST is set to true, once:
 #   1. fork microsoft/winget-pkgs into this organization, keeping the name
@@ -4945,8 +5015,7 @@ jobs:
     # if:, which reads sign-and-publish's prerelease output. The address
     # carries the version, so each release's installer takes an address of its
     # own and leaves every other as it is. On a dry run, where no release
-    # exists, it prints the address
-    # it would publish and uploads nothing. On a dry run and a real publish
+    # exists, it prints the address it would publish and uploads nothing. On a dry run and a real publish
     # alike its first step refuses, naming each, a setting it needs that is not
     # set — the endpoint variable and the two R2 secrets — so a release never
     # skips the Store's download.
@@ -4954,21 +5023,21 @@ jobs:
     # A job of its own, on a GitHub-hosted runner, so the R2 key pair shares a
     # job with no other credential but the run's own token, which here reads
     # this repository and its release and nothing more. It checks out this
-    # repository at the commit the build job built, for the smoke library,
-    # whose namer gives the installer's name, whose functions give its object
-    # key and public address and hold that address to what the Store needs, and
-    # whose reader of SHA-256 lists gives its digest, as in the release step and
-    # the package-channel render; it runs no action but checkout and no program but gh, curl and the
-    # shell's own utilities. The key pair reaches curl on its standard input,
-    # as a line of curl's configuration that the library's
-    # smoke_curl_config_quote writes, so it is never placed on a command line
-    # or written to disk.
+    # repository at the commit the build job built, for the smoke library, whose
+    # namer gives the installer's name, whose functions give its object key and
+    # public address and hold that address to what the Store needs, and whose
+    # reader of SHA-256 lists gives its digest, as in the release step and the
+    # package-channel render; it runs no action but checkout and no program but
+    # gh, curl and the shell's own utilities. The key pair reaches curl on its
+    # standard input, as a line of curl's configuration that the library's
+    # smoke_curl_config_quote writes, so it is never placed on a command line or
+    # written to disk.
     #
     # The bucket and the installer's media type are written once, in this job's
-    # env; the object key and the public address are the smoke library's. The if: names both jobs it needs as
-    # having succeeded rather than leaving it to the default, since
-    # sign-and-publish may run beside a sign-macos skipped while macOS signing
-    # is off.
+    # env; the object key and the public address are the smoke library's. The
+    # if: names both jobs it needs as having succeeded rather than leaving it to
+    # the default, since sign-and-publish may run beside a sign-macos skipped
+    # while macOS signing is off.
     needs: [build, sign-and-publish]
     if: ${{ !cancelled() && needs.build.result == 'success' && needs.sign-and-publish.result == 'success' && needs.sign-and-publish.outputs.prerelease != 'true' }}
     runs-on: ubuntu-latest
@@ -5031,8 +5100,8 @@ jobs:
         # gives it, or nothing is uploaded. The PUT names the installer's media
         # type and If-None-Match: *; R2 answers 200 when it created the object
         # and 412 when the key was taken, and any other answer fails the step,
-        # printing it. Which of the two it was, the installer's name, digest
-        # and size, and its public address reach the next step through the
+        # printing it. Which of the two it was, the installer's name and
+        # digest, and its public address reach the next step through the
         # job's environment.
         env:
           DOWNLOADS_R2_ENDPOINT: ${{ vars.DOWNLOADS_R2_ENDPOINT }}
@@ -5122,8 +5191,8 @@ jobs:
               exit 1
               ;;
           esac
-          printf 'INSTALLER=%s\nINSTALLER_KEY=%s\nINSTALLER_URL=%s\nINSTALLER_SHA256=%s\nINSTALLER_SIZE=%s\nUPLOAD_OUTCOME=%s\n' \
-            "$installer" "$key" "$url" "$digest" "$size" "$outcome" >> "$GITHUB_ENV"
+          printf 'INSTALLER=%s\nINSTALLER_KEY=%s\nINSTALLER_URL=%s\nINSTALLER_SHA256=%s\nUPLOAD_OUTCOME=%s\n' \
+            "$installer" "$key" "$url" "$digest" "$outcome" >> "$GITHUB_ENV"
 
       - name: Check the installer at its public address
         # On a real publish, the address the Microsoft Store downloads from,
@@ -5149,7 +5218,7 @@ jobs:
             echo "publish-downloads: dry run: nothing was uploaded, so no address is checked"
             exit 0
           fi
-          for name in INSTALLER INSTALLER_KEY INSTALLER_URL INSTALLER_SHA256 INSTALLER_SIZE UPLOAD_OUTCOME; do
+          for name in INSTALLER INSTALLER_KEY INSTALLER_URL INSTALLER_SHA256 UPLOAD_OUTCOME; do
             if [ -z "${!name:-}" ]; then
               echo "publish-downloads: the upload step recorded no $name; nothing is checked" >&2
               exit 1
@@ -5163,6 +5232,84 @@ jobs:
             fi
             exit 1
           fi
+
+  microsoft-store-submission:
+    # Submits the Windows installer of the release to Aggrega's Microsoft Store
+    # listing, through the Store's submission API for MSI/EXE apps: the
+    # listing's one package is pointed at the installer's public address, the
+    # one publish-downloads has just checked, and the listing is submitted for
+    # certification. The listing's text, images and markets stay as Partner
+    # Center holds them. Whether a certified submission goes live by itself or
+    # waits for Partner Center's Publish button is the listing's setting, not
+    # this job's.
+    #
+    # It runs .github/scripts/microsoft-store-submission.sh, whose --help gives
+    # the whole contract, with the release's version, as sign-and-publish
+    # hands it on, and this run's dry-run decision, the one publish-downloads
+    # takes. On a dry run it reads the release, the installer's address, the
+    # draft's status and its packages, and prints the change it would make,
+    # sending no request that writes anything. On a real publish it refuses,
+    # naming what to fix, a submission already in progress, a draft that holds
+    # a newer version, and a draft that does not hold exactly one package,
+    # changing nothing.
+    #
+    # It runs once publish-downloads has succeeded, for a final release tag
+    # alone: a pre-release is skipped by its if:, which reads sign-and-publish's
+    # prerelease output, and so is a run in which publish-downloads did not
+    # succeed, since the Store must find the installer at its address.
+    #
+    # A job of its own, on a GitHub-hosted runner, naming the environment
+    # microsoft-store rather than release, so the Store credentials share a job
+    # with no other credential but the run's own token, which here reads this
+    # repository and its release and nothing more. It checks out this
+    # repository at the commit the build job built, for the script and the
+    # smoke library it reads; it runs no action but checkout and no program but
+    # curl, jq, gh and the shell's own utilities, and may not mint an OIDC
+    # token. The tenant ID, the client ID and the client secret reach curl on
+    # its standard input and are never placed on a command line or written to
+    # disk. Two submissions never run at once: the concurrency group is shared
+    # with the dispatch workflow, and a waiting one is never cancelled.
+    needs: [build, sign-and-publish, publish-downloads]
+    if: ${{ !cancelled() && needs.publish-downloads.result == 'success' && needs.sign-and-publish.outputs.prerelease != 'true' }}
+    runs-on: ubuntu-latest
+    environment: microsoft-store
+    timeout-minutes: 50
+    concurrency:
+      group: microsoft-store-submission
+      cancel-in-progress: false
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the CLI at the commit the build job built
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+
+      - name: Submit the release's installer to the Microsoft Store
+        env:
+          MICROSOFT_STORE_TENANT_ID: ${{ secrets.MICROSOFT_STORE_TENANT_ID }}
+          MICROSOFT_STORE_CLIENT_ID: ${{ secrets.MICROSOFT_STORE_CLIENT_ID }}
+          MICROSOFT_STORE_CLIENT_SECRET: ${{ secrets.MICROSOFT_STORE_CLIENT_SECRET }}
+          MICROSOFT_STORE_SELLER_ID: ${{ vars.MICROSOFT_STORE_SELLER_ID }}
+          MICROSOFT_STORE_PRODUCT_ID: ${{ vars.MICROSOFT_STORE_PRODUCT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.sign-and-publish.outputs.release_version }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          DRY="false"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            DRY="$DISPATCH_DRY_RUN"
+          fi
+          if [ -z "$RELEASE_VERSION" ]; then
+            echo "microsoft-store-submission: sign-and-publish handed on no version; nothing was submitted" >&2
+            exit 1
+          fi
+          bash .github/scripts/microsoft-store-submission.sh --version "$RELEASE_VERSION" --dry-run "$DRY"
 
   smoke-binaries:
     # Fetches, on a dry run naming smoke_binaries_from, that release's Windows
@@ -5700,7 +5847,7 @@ jobs:
     # job name another Apple secret or run anything but Apple's programs, the
     # shell's own utilities and the artifact download pinned by commit.
     # clean-up waits for it, so the artifacts it reads are still there.
-    needs: [sign-macos, sign-and-publish, record-published, publish-skills, publish-package-channels, open-winget-pull-request, publish-downloads]
+    needs: [sign-macos, sign-and-publish, record-published, publish-skills, publish-package-channels, open-winget-pull-request, publish-downloads, microsoft-store-submission]
     if: >-
       ${{ !cancelled()
       && needs.sign-macos.result == 'success'
@@ -5948,7 +6095,7 @@ jobs:
     # emulation's installer image once the image is built, and
     # sign-and-publish's publish script removes every image and reference it
     # loads when it exits, a refusal included.
-    needs: [registry-credential, sources, build, sign-windows, windows-installer, sign-windows-installer, sign-macos, sign-and-publish, attest, record-published, publish-skills, publish-package-channels, open-winget-pull-request, publish-downloads, notarization-check, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
+    needs: [registry-credential, sources, build, sign-windows, windows-installer, sign-windows-installer, sign-macos, sign-and-publish, attest, record-published, publish-skills, publish-package-channels, open-winget-pull-request, publish-downloads, microsoft-store-submission, notarization-check, smoke-binaries, windows-smoke, macos-smoke, linux-smoke]
     if: ${{ always() && vars.AGGREGA_RUNNER != '' }}
     runs-on: ${{ vars.AGGREGA_RUNNER }}
     timeout-minutes: 15

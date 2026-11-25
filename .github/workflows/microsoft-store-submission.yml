@@ -1,0 +1,93 @@
+name: Submit to the Microsoft Store
+
+# Submits one released version's Windows installer to Aggrega's Microsoft Store
+# listing, by hand: points the listing's one package at the installer's public
+# address, https://download.aggrega.ai/aggrega-cli/v<version>/aggrega-<version>-windows-amd64-setup.exe,
+# and submits the listing for certification, as the release workflow does for
+# each final release. It is the way to submit a version whose release run
+# stopped before the submission, or to run the submission again, and the way to
+# see what a submission would change before one is made.
+#
+# The one job runs .github/scripts/microsoft-store-submission.sh, the script
+# the release workflow's microsoft-store-submission job runs, with the version
+# and the dry_run input; the script's --help gives its contract. With dry_run
+# true, the default, it reads the release, the installer's address, the draft's
+# status and its packages, and prints the change it would make, sending no
+# request that writes anything. With dry_run false it replaces the draft's
+# package, commits the draft and submits it.
+#
+# The job names the GitHub environment microsoft-store, which holds the Store
+# credentials: only its jobs read them. The environment's branch and tag rule
+# admits main, the branches matching release/* and the tags matching v*; a
+# dispatch from any other ref fails before a step runs. The job reads this
+# repository and its releases with the run's own read-only token, runs no
+# action but checkout and no program but curl, jq, gh and the shell's own
+# utilities, and may not mint an OIDC token. The tenant ID, client ID and client
+# secret reach curl on its standard input alone.
+#
+# Settings of the environment microsoft-store, each read by the script:
+#   secrets
+#     MICROSOFT_STORE_TENANT_ID      the Microsoft Entra tenant of the Partner
+#                                    Center account (Entra admin center,
+#                                    Overview of the tenant)
+#     MICROSOFT_STORE_CLIENT_ID      the application (client) ID of the Entra
+#                                    app registration that Partner Center lists
+#                                    with the Manager role (Partner Center,
+#                                    Account settings, Tenant administration,
+#                                    Microsoft Entra applications)
+#     MICROSOFT_STORE_CLIENT_SECRET  a client secret of that registration
+#                                    (Entra admin center, the registration's
+#                                    Certificates & secrets), renewed before it
+#                                    expires
+#   variables
+#     MICROSOFT_STORE_SELLER_ID      the seller ID, a number (Partner Center,
+#                                    Account settings, Legal info)
+#     MICROSOFT_STORE_PRODUCT_ID     the listing's Store ID (Partner Center,
+#                                    the app's overview)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The released version to submit, without the tag's v, for example 0.10.3
+        required: true
+        type: string
+      dry_run:
+        description: Read the listing's draft and print the change, writing nothing
+        required: false
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    environment: microsoft-store
+    timeout-minutes: 50
+    concurrency:
+      group: microsoft-store-submission
+      cancel-in-progress: false
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out this repository at the dispatching ref
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Submit the release's installer to the Microsoft Store
+        env:
+          MICROSOFT_STORE_TENANT_ID: ${{ secrets.MICROSOFT_STORE_TENANT_ID }}
+          MICROSOFT_STORE_CLIENT_ID: ${{ secrets.MICROSOFT_STORE_CLIENT_ID }}
+          MICROSOFT_STORE_CLIENT_SECRET: ${{ secrets.MICROSOFT_STORE_CLIENT_SECRET }}
+          MICROSOFT_STORE_SELLER_ID: ${{ vars.MICROSOFT_STORE_SELLER_ID }}
+          MICROSOFT_STORE_PRODUCT_ID: ${{ vars.MICROSOFT_STORE_PRODUCT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          bash .github/scripts/microsoft-store-submission.sh --version "$RELEASE_VERSION" --dry-run "$DRY_RUN"
