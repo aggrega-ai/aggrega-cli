@@ -412,7 +412,10 @@ func TestMigratePromptNamesTheImportToolBeforeTheHandPath(t *testing.T) {
 	if _, ok := lookupTool("import"); !ok {
 		t.Fatal("the prompt names the import tool, which no registry resolves")
 	}
-	for _, denied := range []string{"no tool on this surface", "rather than among these tools", "not a score", "no score"} {
+	if !strings.Contains(body, "the part you do by hand for a format no importer covers") {
+		t.Error("the body's first step does not say the reading is the hand path's own part")
+	}
+	for _, denied := range []string{"the part no tool does", "no tool on this surface", "rather than among these tools", "not a score", "no score"} {
 		if strings.Contains(body, denied) {
 			t.Errorf("the body still says %q", denied)
 		}

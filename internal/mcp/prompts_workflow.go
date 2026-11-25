@@ -103,7 +103,7 @@ For a source in a format no importer covers, the translation is yours to perform
 
 ` + fourDomainFraming + `
 
-1. Read the source and write down what it actually deploys: each unit of compute, the configuration each one takes, and which units talk to which. This is the part no tool does, and everything after it rests on getting it right.
+1. Read the source and write down what it actually deploys: each unit of compute, the configuration each one takes, and which units talk to which. This is the part you do by hand for a format no importer covers, and everything after it rests on getting it right.
 2. Look for catalog components that already cover those units. Call describe with a candidate's type URI to read its contract, and judge the fit against what you wrote down. A component that covers the unit is worth more than a faithful transcription of the original.
 3. Decide per unit between reusing a catalog Component and authoring a new one. Reuse where the contract covers the unit's real inputs and outputs; author a new Component where the unit is specific to this application.
 4. Author the Aggregate over the units you settled on, wiring them the way the source wires them. Every value that differed between the source's environments becomes a parameter the Aggregate declares.

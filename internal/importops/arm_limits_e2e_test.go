@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -37,6 +38,16 @@ const (
 
 	// minimumArmTemplateBytes is the smallest template the case imports.
 	minimumArmTemplateBytes = 700 << 10
+
+	// The floors of the importer's limits, and the margins its overlay keeps
+	// over what the case's template measured: the pages are the smallest
+	// memory limit under which the template imports, found by lowering the
+	// limit until the guest trapped, and the time is the slowest of the
+	// runs, in milliseconds. The runtime reports no peak, so the measured
+	// values are recorded here and the limits are held to the margins over them.
+	armMinimumPages, armMinimumTimeoutMs = 2048, 60000
+	armMeasuredPeakPages                 = 336
+	armMeasuredGuestMs                   = 16240
 )
 
 // avmModules are the compiled templates of the Azure Verified Modules the case
@@ -142,6 +153,20 @@ func TestArmImportLargeTemplateWithinLimits(t *testing.T) {
 			got.MaxMemoryPages, got.TimeoutMs, want.MaxMemoryPages, want.TimeoutMs)
 	}
 
+	limits := *overlay.Spec.Runtime
+	if limits.MaxMemoryPages < armMinimumPages || limits.TimeoutMs < armMinimumTimeoutMs {
+		t.Errorf("the overlay states %d pages and %d ms; the floors are %d pages and %d ms",
+			limits.MaxMemoryPages, limits.TimeoutMs, armMinimumPages, armMinimumTimeoutMs)
+	}
+	if float64(limits.MaxMemoryPages) < 1.25*armMeasuredPeakPages {
+		t.Errorf("the overlay states %d pages, under 1.25 times the %d the template measured",
+			limits.MaxMemoryPages, armMeasuredPeakPages)
+	}
+	if limits.TimeoutMs < 4*armMeasuredGuestMs {
+		t.Errorf("the overlay states %d ms, under 4 times the %d ms the template measured",
+			limits.TimeoutMs, armMeasuredGuestMs)
+	}
+
 	template := largeArmTemplate(t)
 	if len(template) < minimumArmTemplateBytes {
 		t.Fatalf("the template is %d bytes, below the %d the case imports", len(template), minimumArmTemplateBytes)
@@ -155,10 +180,14 @@ func TestArmImportLargeTemplateWithinLimits(t *testing.T) {
 	rw := resolveWorkspaceAt(t, wsDir)
 	src := writeFormatSource(t, "main.json", string(template))
 
+	started := time.Now()
 	res, err := Import(context.Background(), rw, Options{
 		SourcePath: src.path, SourceName: src.name, OutputDir: filepath.Join(t.TempDir(), "drafts"),
 		ResolvePlugin: (&recordingCascade{}).resolve,
 	})
+	if took := time.Since(started); took.Milliseconds() >= int64(limits.TimeoutMs) {
+		t.Errorf("the import took %v, not within the importer's %d ms", took, limits.TimeoutMs)
+	}
 	if err != nil {
 		t.Fatalf("the import was refused: %v", err)
 	}
