@@ -437,8 +437,14 @@ const overridesHeader = "This Recipe reads from infra.overrides:"
 // after its dash, which a key too long for its column writes on the next line.
 var headerEntry = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)(?:\s+-\s+(.*))?$`)
 
-// headerPath matches the path a description's parenthesis opens with.
-var headerPath = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*(?:\[[0-9]+\]|\.[A-Za-z_$][A-Za-z0-9_$]*)*`)
+// headerPath matches the path a description's parenthesis opens with: a
+// member name, then any run of a list index in brackets or a dot and a member
+// name; and headerSegment each of its segments, a member name or a bracketed
+// index.
+var (
+	headerPath    = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*(?:\[[0-9]+\]|\.[A-Za-z_$][A-Za-z0-9_$]*)*`)
+	headerSegment = regexp.MustCompile(`[A-Za-z_$][A-Za-z0-9_$]*|\[[0-9]+\]`)
+)
 
 // headerOverrides returns each key the document's overrides header names a
 // path for, placed from that path, in the order listed. The block is the
@@ -554,6 +560,16 @@ func descriptionPath(desc string) []string {
 	if rest := inner[len(path):]; rest != "" && rest[0] != ';' && rest[0] != ':' {
 		return nil
 	}
-	path = strings.NewReplacer("[", ".", "]", "").Replace(path)
-	return strings.Split(path, ".")
+	// Each segment is read whole: a member name as written, and a bracketed
+	// index as the index's digits, the segment a list item is placed at. A
+	// member name never begins with a digit, so an index segment is never the
+	// spelling of a member's.
+	var out []string
+	for _, seg := range headerSegment.FindAllString(path, -1) {
+		if index, ok := strings.CutPrefix(seg, "["); ok {
+			seg = strings.TrimSuffix(index, "]")
+		}
+		out = append(out, seg)
+	}
+	return out
 }
