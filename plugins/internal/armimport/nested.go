@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore/armexpr"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
@@ -20,11 +21,11 @@ const (
 	// takes into the graph, so templates linking one another many times over
 	// cannot grow it without bound; past it a nested template is not read.
 	maxNestedResources = 10000
-	// annotationResourceGroup is the annotation naming the resource group a
-	// boundary's template deploys into. DELIBERATE NEAR-DUPLICATE of
-	// armcore.AnnotationResourceGroup: armcore links host packages an
-	// importer's guest cannot link, and a test requires the two to agree.
-	annotationResourceGroup = "aggrega.ai/azure-resource-group"
+	// maxValueSize bounds the size of the value one output or one parameter of
+	// a nested template holds, in bytes of text and parts, so outputs or
+	// parameters composing each other cannot grow it without bound; past it
+	// the value is not carried.
+	maxValueSize = 1 << 16
 )
 
 // frame is one Microsoft.Resources/deployments resource deploying a nested
@@ -210,7 +211,9 @@ func (t *template) bound(name string, l *lowerer, st *inlining) (armexpr.Node, b
 // writes as the expression: a member of a root parameter, a parameter no
 // template declares, a path the value holds nothing at, or a parameter
 // reading itself. A parameter given no value and declaring no default is not
-// carried, with a value-not-carried warning.
+// carried, with a value-not-carried warning, and so is one whose value is
+// larger than maxValueSize. A parameter read whole is lowered once for the
+// lowerer of the resource deploying its template.
 func (l *lowerer) parameter(name string, path []string) (cloudimport.Prop, json.RawMessage, bool) {
 	sl := l.scoped()
 	s := sl.t
@@ -226,10 +229,44 @@ func (l *lowerer) parameter(name string, path []string) (cloudimport.Prop, json.
 	case sl.via == nil:
 		return cloudimport.Prop{}, nil, false
 	}
+	if len(path) == 0 {
+		if known, done := sl.via.known[declared]; done {
+			return known.prop, known.raw, known.handled
+		}
+	}
 	if !sl.spend(1) || !sl.enter(parameterKey(declared)) {
 		return cloudimport.Prop{}, nil, false
 	}
 	defer sl.leave()
+	p, raw, handled := sl.parameterValue(declared, path)
+	if handled && propSize(p) > maxValueSize {
+		sl.warn(s.at+importer.Pointer("parameters", declared), fmt.Sprintf("the template %s takes at %s a value of "+
+			"its parameter %s larger than the %d bytes the draft carries of one value, its parts composing one "+
+			"another, so what reads it is not carried", s.file, s.at+importer.Pointer("parameters", declared),
+			declared, maxValueSize))
+		p, raw = cloudimport.Prop{}, nil
+	}
+	if len(path) == 0 {
+		if sl.via.known == nil {
+			sl.via.known = map[string]taken{}
+		}
+		sl.via.known[declared] = taken{prop: p, raw: raw, handled: handled}
+	}
+	return p, raw, handled
+}
+
+// taken is what a parameter of a nested template takes, lowered once for
+// the lowerer of the resource deploying the template.
+type taken struct {
+	prop    cloudimport.Prop
+	raw     json.RawMessage
+	handled bool
+}
+
+// parameterValue returns what the parameter declared of the nested template
+// sl lowers holds at path, as [lowerer.parameter] says.
+func (sl *lowerer) parameterValue(declared string, path []string) (cloudimport.Prop, json.RawMessage, bool) {
+	s := sl.t
 	args, at := s.dep.arguments()
 	if key, given := args.member(declared); given != nil {
 		return sl.via.argument(given, at+importer.Pointer(key), path)
@@ -366,9 +403,7 @@ func (l *lowerer) output(dep *resource, attr []string, whole armexpr.Node) cloud
 	case slices.Contains(l.r.resolving, dep.symbol):
 		return l.opaque(whole)
 	}
-	l.r.resolving = append(l.r.resolving, dep.symbol)
-	defer func() { l.r.resolving = l.r.resolving[:len(l.r.resolving)-1] }()
-	v := l.r.lowererAt(inner, nil, -1, 0).leaf(value, at+importer.Pointer("value"), "the output "+key)
+	v := l.r.outputValue(dep, key, value, at)
 	rest := attr[3:]
 	if len(rest) == 0 || v == nil {
 		return v
@@ -384,6 +419,127 @@ func (l *lowerer) output(dep *resource, attr []string, whole armexpr.Node) cloud
 	l.warn(l.site(), fmt.Sprintf("the template %s reads at %s into the output %s of %s a member its value holds "+
 		"as no one value, so it is not carried: read the output whole", l.t.file, l.site(), key, dep.symbol))
 	return nil
+}
+
+// outputValue returns the value the output key of the template dep deploys
+// holds, value written at the JSON pointer at, lowered in that template once
+// for the whole read: an output read again is the value lowered the first
+// time. A value larger than maxValueSize is not carried, with a
+// value-not-carried warning.
+func (r *reader) outputValue(dep *resource, key string, value json.RawMessage, at string) cloudimport.Value {
+	memo := dep.symbol + "\x00" + key
+	if v, done := r.known[memo]; done {
+		return v
+	}
+	r.resolving = append(r.resolving, dep.symbol)
+	inner := dep.nested
+	v := r.lowererAt(inner, nil, -1, 0).leaf(value, at+importer.Pointer("value"), "the output "+key)
+	r.resolving = r.resolving[:len(r.resolving)-1]
+	if size(v) > maxValueSize {
+		d := cloudimport.Report(cloudimport.CodeValueNotCarried, fmt.Sprintf("the template %s computes the output "+
+			"%s at %s as a value larger than the %d bytes the draft carries of one value, its parts composing "+
+			"one another, so what reads it is not carried", inner.file, key, at, maxValueSize))
+		d.SourceRef = inner.file + "#" + at
+		r.note(d)
+		v = nil
+	}
+	r.known[memo] = v
+	return v
+}
+
+// size returns how large v is: the bytes of the text and JSON it holds, and
+// one for each part of composed text.
+func size(v cloudimport.Value) int {
+	switch v := v.(type) {
+	case cloudimport.Literal:
+		return len(v.JSON)
+	case cloudimport.Param:
+		return len(v.Name)
+	case cloudimport.Compose:
+		n := 0
+		for _, p := range v.Parts {
+			n += 1 + size(p)
+		}
+		return n
+	case cloudimport.Ref:
+		n := len(v.Node)
+		for _, a := range v.Attr {
+			n += len(a)
+		}
+		return n
+	case cloudimport.Credential:
+		return len(v.Node) + len(v.What)
+	case cloudimport.Opaque:
+		return len(v.Text)
+	}
+	return 0
+}
+
+// propSize returns how large p is: the size of its value, and one for each
+// member and item below it with theirs.
+func propSize(p cloudimport.Prop) int {
+	n := size(p.Value)
+	for _, c := range p.Props {
+		n += 1 + propSize(c)
+	}
+	for _, c := range p.Items {
+		n += 1 + propSize(c)
+	}
+	return n
+}
+
+// resourceAcross returns the resource whose symbol is id, with the template
+// holding it: of the template t, else of any template the read holds; nil
+// where none is.
+func (r *reader) resourceAcross(t *template, id string) (*template, *resource) {
+	if res := t.resourceOf(id); res != nil {
+		return t, res
+	}
+	for _, f := range r.families {
+		for _, m := range f.members {
+			if res := m.resourceOf(id); res != nil {
+				return m, res
+			}
+		}
+	}
+	return nil, nil
+}
+
+// noNode reports whether res is no node of the graph: a resource whose
+// template is flattened, or one by which a module sends its telemetry.
+func (res *resource) noNode() bool {
+	return res != nil && (res.nested != nil || res.telemetry)
+}
+
+// reference returns what the reference whole, naming the resource id and
+// reading attr of it, lowers to: a Ref to the node id names; the value an
+// output of the template id deploys holds, where that template is flattened
+// and attr reads one of its outputs; and otherwise, where id names a resource
+// that is no node, the expression whole as deploy-time text, with a
+// value-not-carried warning, as the draft writes no such resource.
+func (l *lowerer) reference(id string, attr []string, whole armexpr.Node) cloudimport.Value {
+	_, res := l.r.resourceAcross(l.t, id)
+	switch {
+	case !res.noNode():
+		return cloudimport.Ref{Node: id, Attr: attr}
+	case res.nested != nil && len(attr) >= 3 && strings.EqualFold(attr[0], "outputs") &&
+		strings.EqualFold(attr[2], "value"):
+		return l.output(res, attr, whole)
+	}
+	l.warn(l.site(), fmt.Sprintf("the template %s reads at %s %s of %s, a %s resource the draft writes no "+
+		"resource for, as it is read as the resources it deploys, or sends a module's telemetry; the expression "+
+		"%s is kept as text evaluated when the template deploys, naming a resource the draft does not hold: "+
+		"read an output of its template, or the resources it deploys", l.t.file, l.site(), readText(attr), id,
+		deploymentsType, armexpr.Expression(whole)))
+	return l.opaque(whole)
+}
+
+// readText says what attr reads of a resource, for a message.
+func readText(attr []string) string {
+	if len(attr) == 0 {
+		return "the identifier"
+	}
+	return "the attribute " + strings.Join(attr, ".")
 }
 
 // site is the JSON pointer of what the lowerer lowers: its resource, else its
@@ -411,20 +567,21 @@ func (l *lowerer) outputNotCarried(inner *template, at, message string) {
 // Modules module sends its telemetry is never a node: where t is not the
 // module's own template, already reported, it is not carried, with a
 // resource-not-carried warning. A Microsoft.Resources/deployments resource
-// deploying a resource module is one node where [reader.oneNode] keeps it one.
-// Every other holding its template inline, or linking by a relative path a
-// template the import holds, has that template flattened: read as a template
-// of its own, its resources joining the graph with their symbols behind the
+// deploying a resource module is one node where [reader.oneNode] keeps it one,
+// unless t is, or is nested in, a resource module's template, whose child
+// modules are read as their resources and never reported as modules. Every
+// other holding its template inline, or linking by a relative path a template
+// the import holds, has that template flattened: read as a template of its
+// own, its resources joining the graph with their symbols behind the
 // deploying resource's and a slash. Its parameters take the values the
 // deploying resource gives them under properties.parameters, read where that
 // resource is written, else their defaults; under the outer expression scope,
-// which a template held inline takes unless its
-// properties.expressionEvaluationOptions.scope is inner, its expressions read
-// the parameters and variables of the template holding it instead. A
-// reference to an output of the template reads the value the output holds. A
-// template deployed into another resource group or subscription is flattened
-// the same way, with a deployment-scope-merged warning naming the annotation
-// a boundary of its own would take. A nested template the import refuses,
+// as [evaluatedOuter] says, its expressions read the parameters and variables
+// of the template holding it instead. A reference to an output of the
+// template reads the value the output holds. A template, or a module kept one
+// node, deployed into another resource group or subscription is read the same
+// way, with a deployment-scope-merged warning naming the annotation a
+// boundary of its own would take. A nested template the import refuses,
 // read as a template it is handed is, halts source-refused; one nested deeper
 // than the import follows, past the resources the import reads of nested
 // templates, or linking a template that deploys it is not read, with a
@@ -465,11 +622,15 @@ func (r *reader) planNested(t *template, res *resource) {
 		r.note(d)
 		return
 	}
+	props, _ := objectOf(res.body.get("properties"))
+	outer, scope := inline && evaluatedOuter(t, top, props), t.otherScope(res)
 	rec := recognise(top)
+	inModule := t.withinResourceModule()
 	why := ""
-	if rec != nil && rec.kind() == resourceModule {
+	if rec != nil && rec.kind() == resourceModule && !inModule {
 		var one bool
-		if one, why = r.oneNode(t, res, file, at, top, rec); one {
+		if one, why = r.oneNode(t, res, file, at, top, rec, outer); one {
+			r.scopeMerged(t, res, scope)
 			return
 		}
 	}
@@ -487,28 +648,18 @@ func (r *reader) planNested(t *template, res *resource) {
 		return
 	}
 	r.nestedRead += count
-	fam, scope := t.family, t.otherScope(res)
+	fam := t.family
 	if scope != "" {
 		fam = &family{}
 		r.families = append(r.families, fam)
 	}
-	props, _ := objectOf(res.body.get("properties"))
-	inner := r.template(file, at, top, &nesting{up: t, dep: res, outer: inline && evaluatedOuter(props),
-		family: fam})
+	inner := r.template(file, at, top, &nesting{up: t, dep: res, outer: outer, family: fam})
 	inner.module = rec
 	res.nested = inner
-	if rec != nil {
+	if rec != nil && !inModule {
 		r.recognisedFlattened(t, res, rec, why)
 	}
-	if scope != "" {
-		d := cloudimport.Report(cloudimport.CodeDeploymentScopeMerged, fmt.Sprintf("%s is a %s resource of %s "+
-			"deploying its template into %s, another scope than the template's own; its resources are drafted "+
-			"into the one boundary the import writes, whose template deploys into one scope: to deploy them "+
-			"into %s, move the Components drafted from them into a boundary of their own annotated %s", res.symbol,
-			deploymentsType, t.file, scope, scope, annotationResourceGroup))
-		d.SourceRef = t.file + "#" + res.at
-		r.note(d)
-	}
+	r.scopeMerged(t, res, scope)
 	if props.get("parametersLink") != nil {
 		d := cloudimport.Report(cloudimport.CodeValueNotCarried, res.symbol+" is a "+deploymentsType+
 			" resource of "+t.file+" reading the values of its template's parameters from the parameters file "+
@@ -518,6 +669,35 @@ func (r *reader) planNested(t *template, res *resource) {
 		r.note(d)
 	}
 	r.plan(inner)
+}
+
+// scopeMerged warns deployment-scope-merged where res of t deploys into scope,
+// another scope than t's own, naming the annotation a boundary of its own
+// would take; it does nothing where scope is empty.
+func (r *reader) scopeMerged(t *template, res *resource, scope string) {
+	if scope == "" {
+		return
+	}
+	d := cloudimport.Report(cloudimport.CodeDeploymentScopeMerged, fmt.Sprintf("%s is a %s resource of %s "+
+		"deploying into %s, another scope than the template's own; what it deploys is drafted into the one "+
+		"boundary the import writes, whose template deploys into one scope: to deploy it into %s, move the "+
+		"Components drafted from it into a boundary of their own annotated %s", res.symbol, deploymentsType, t.file,
+		scope, scope, armcore.AnnotationResourceGroup))
+	d.SourceRef = t.file + "#" + res.at
+	r.note(d)
+}
+
+// withinResourceModule reports whether t is, or is nested in, the template of
+// an Azure Verified Modules resource module: the child modules of such a
+// template are read as the resources they deploy, never as modules of their
+// own.
+func (t *template) withinResourceModule() bool {
+	for x := t; x != nil; x = x.up {
+		if x.module != nil && x.module.kind() == resourceModule {
+			return true
+		}
+	}
+	return false
 }
 
 // nestedTemplate returns the template res deploys where the import reads it
@@ -544,11 +724,16 @@ func (r *reader) nestedTemplate(t *template, res *resource) (file, at string, to
 	return h.name, "", h.top, false, true
 }
 
-// evaluatedOuter reports whether a template held inline under props is
-// evaluated in the scope of the template holding it: unless its
-// expressionEvaluationOptions.scope is inner, outer being Azure Resource
-// Manager's default.
-func evaluatedOuter(props obj) bool {
+// evaluatedOuter reports whether a template held inline — with the top-level
+// object top, by a resource of t whose properties are props — is evaluated in
+// the scope of t: where neither t nor the template is of language version 2.0
+// and its properties.expressionEvaluationOptions.scope is not inner. Under
+// language version 1.0 Azure Resource Manager's default is outer; under 2.0
+// it is inner, and outer is not admitted.
+func evaluatedOuter(t *template, top, props obj) bool {
+	if t.v2 || isTwoZero(top) {
+		return false
+	}
 	opts, _ := objectOf(props.get("expressionEvaluationOptions"))
 	scope, ok := text(opts.get("scope"))
 	return !ok || !strings.EqualFold(scope, "inner")

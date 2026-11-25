@@ -78,19 +78,22 @@ const (
 // symbol of the resource deploying them and a slash, reading the values that
 // resource gives the template's parameters — or, evaluated in the outer
 // scope, the holding template's parameters and variables — and a reference to
-// one of the template's outputs reads the value the output holds. A
-// template deployed into another resource group or subscription is read the
-// same way, with a deployment-scope-merged warning. One deploying an Azure
-// Verified Modules resource module — a template Bicep generated, holding the
-// resource by which the module sends its telemetry under a name opening
-// 46d3xbcp.res. — is one node of the module's resource type instead, in the
-// module form, its body the parameters given, where the module index lists
-// its telemetry prefix or a row of the table maps that type; it is reported
-// avm-module-recognised, and its lock, role assignments, diagnostic settings
-// and private endpoints are left out and reported resource-not-carried unless
-// the Recipe's override header lists them. Any other module — a pattern or a
-// utility module, or a resource module kept no one node — is read as its
-// resources. The resource by which a module sends its telemetry is never a
+// one of the template's outputs reads the value the output holds; a
+// reference to the deploying resource itself is kept as deploy-time text,
+// with a value-not-carried warning, the draft writing no such resource. One
+// deploying an Azure Verified Modules resource module — a template Bicep
+// generated, holding the resource by which the module sends its telemetry
+// under a name opening 46d3xbcp.res. — is one node of the module's resource
+// type instead, in the module form, its body the parameters given, where the
+// module index lists its telemetry prefix or a row of the table maps that
+// type, and where it is not a child module of another resource module; it is
+// reported avm-module-recognised, and its lock, role assignments, diagnostic
+// settings and private endpoints are left out and reported
+// resource-not-carried unless the Recipe's override header lists them. Any
+// other module — a pattern or a utility module, a child module of a resource
+// module, or a resource module kept no one node — is read as its resources.
+// What is deployed into another resource group or subscription is read the
+// same way, with a deployment-scope-merged warning. The resource by which a module sends its telemetry is never a
 // node, whatever template holds it, and enableTelemetry is never carried.
 func Read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.ParseFunc) (*cloudimport.Graph,
 	[]aggrega.Diagnostic) {
@@ -101,7 +104,8 @@ func Read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.Pars
 // staying one node where a row of table maps its resource type.
 func read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.ParseFunc, table cloudimport.Table) (
 	*cloudimport.Graph, []aggrega.Diagnostic) {
-	r := &reader{in: in, parse: parse, table: table, yields: map[string][]string{}}
+	r := &reader{in: in, parse: parse, table: table, yields: map[string][]string{},
+		known: map[string]cloudimport.Value{}}
 	srcs, unreadable := r.sources()
 	if r.halted {
 		return nil, r.diags
@@ -165,8 +169,11 @@ type reader struct {
 	// template is flattened, the IDs of the nodes that template yields.
 	yields map[string][]string
 	// resolving names the resources whose template's outputs are being read,
-	// so an output reading itself ends.
+	// so an output reading itself ends; known holds the value of each output
+	// of a flattened template read, by its deploying resource's symbol and the
+	// output's name.
 	resolving []string
+	known     map[string]cloudimport.Value
 	// nestedRead counts the resources of the nested templates read.
 	nestedRead int
 	diags      []aggrega.Diagnostic
@@ -178,7 +185,7 @@ type reader struct {
 // discarded: what it reads is read again, and reported, by r.
 func (r *reader) quiet() *reader {
 	return &reader{in: r.in, parse: r.parse, sel: r.sel, table: r.table, root: r.root, defaults: r.defaults,
-		yields: r.yields}
+		families: r.families, yields: r.yields, known: map[string]cloudimport.Value{}}
 }
 
 // halt records a diagnostic that halts the import.

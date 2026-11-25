@@ -21,7 +21,8 @@ func lowered(t *testing.T, variables, properties string) (*cloudimport.Node, []s
 		{"type": "Microsoft.Storage/storageAccounts", "apiVersion": "2023-01-01", "name": "stcore"},
 		{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "inner",
 			"properties": {"mode": "Incremental", "template": {"resources": [], "outputs": {"endpoint": {
-				"type": "string", "value": "[reference('stcore').primaryEndpoints.web]"}}}}},
+				"type": "string", "value": "[reference('stcore').primaryEndpoints.web]"}, "password": {
+				"type": "securestring", "value": "[listKeys('stcore', '2023-01-01').keys[0].value]"}}}}},
 		{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "web", "properties": {`+properties+`}}`))
 	if g == nil {
 		t.Fatalf("no graph: %+v", diags)
@@ -176,7 +177,9 @@ func TestLowerResourceInfoNamesASymbol(t *testing.T) {
 }
 
 // TestLowerListFunctionsAreCredentials reads each list function as the
-// credential it reads from its resource, also where another call holds it.
+// credential it reads from its resource, also where another call holds it; a
+// secure output of a template read as its resources is the credential the
+// output holds.
 func TestLowerListFunctionsAreCredentials(t *testing.T) {
 	t.Parallel()
 	web, diags := lowered(t, "", `
@@ -193,7 +196,7 @@ func TestLowerListFunctionsAreCredentials(t *testing.T) {
 		want cloudimport.Value
 	}{
 		{"key", keys},
-		{"outputs", cloudimport.Credential{Node: "inner", What: "listOutputsWithSecureValues"}},
+		{"outputs", keys},
 		{"nested", keys},
 		{"connection", cloudimport.Compose{Parts: []cloudimport.Value{str("AccountKey="), keys}}},
 	} {

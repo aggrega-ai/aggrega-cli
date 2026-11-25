@@ -244,8 +244,8 @@ func moduleResources(at string, top obj) []ownResource {
 
 // oneNode decides whether res of t, deploying the Azure Verified Modules
 // resource module rec — its template held in file at the JSON pointer at,
-// with the top-level object top — is one node, and says why not where it is
-// not. The node's resource type is the one the module index gives rec's
+// with the top-level object top, evaluated in t's scope where outer is set —
+// is one node, and says why not where it is not. The node's resource type is the one the module index gives rec's
 // prefix; where the index lists no module of it, the type of the module's one
 // resource of its own, as [moduleResources] reads them, and a module creating
 // none or several is not one node. A module the index lists is one node; one
@@ -253,7 +253,8 @@ func moduleResources(at string, top obj) []ownResource {
 // type, and not otherwise. A module kept one node is reported
 // avm-module-recognised; its parameters are as [reader.foldParameters] keeps
 // them.
-func (r *reader) oneNode(t *template, res *resource, file, at string, top obj, rec *recognised) (bool, string) {
+func (r *reader) oneNode(t *template, res *resource, file, at string, top obj, rec *recognised,
+	outer bool) (bool, string) {
 	m := &avmModule{recognised: *rec}
 	if listed, ok := AVMModuleByPrefix(rec.prefix); ok {
 		m.path, m.typ = listed.Module, listed.ResourceType()
@@ -273,9 +274,8 @@ func (r *reader) oneNode(t *template, res *resource, file, at string, top obj, r
 			break
 		}
 	}
-	props, _ := objectOf(res.body.get("properties"))
 	m.tmpl = header(file, at, top)
-	m.tmpl.nestUnder(&nesting{up: t, dep: res, outer: at != "" && evaluatedOuter(props)})
+	m.tmpl.nestUnder(&nesting{up: t, dep: res, outer: outer})
 	rows := r.rows(t, res, m)
 	if m.path == "" && len(rows) == 0 {
 		return false, "the module index lists no module of its telemetry prefix, so the import cannot name the " +
@@ -328,8 +328,8 @@ var folded = []struct{ name, deploys string }{
 
 // foldParameters returns the parameters of folded that res sets and that no
 // override header of rows lists, each left out of the node res deploys m as.
-// Each that sets more than an empty value is reported resource-not-carried,
-// naming the parameter.
+// Each by which the module deploys something is reported
+// resource-not-carried, naming the parameter.
 func (r *reader) foldParameters(t *template, res *resource, m *avmModule, rows []cloudimport.Row) []string {
 	args, at := res.arguments()
 	var dropped []string
@@ -339,7 +339,7 @@ func (r *reader) foldParameters(t *template, res *resource, m *avmModule, rows [
 			continue
 		}
 		dropped = append(dropped, key)
-		if setsNothing(raw) {
+		if setsNothing(f.name, raw) {
 			continue
 		}
 		taken := "no Recipe it may map to lists it among the overrides it reads"
@@ -369,8 +369,9 @@ func listsOverride(rows []cloudimport.Row, key string) bool {
 }
 
 // setsNothing reports whether the member of properties.parameters raw gives
-// its parameter null, an empty object or an empty array.
-func setsNothing(raw json.RawMessage) bool {
+// the parameter name null, an empty object or an empty array, or, for the
+// lock, a lock of the kind None, by which the module deploys no lock.
+func setsNothing(name string, raw json.RawMessage) bool {
 	o, _ := objectOf(raw)
 	v := o.get("value")
 	switch jsonKind(v) {
@@ -378,7 +379,8 @@ func setsNothing(raw json.RawMessage) bool {
 		return true
 	case '{':
 		members, _ := objectOf(v)
-		return len(members) == 0
+		kind, _ := text(members.get("kind"))
+		return len(members) == 0 || (name == "lock" && strings.EqualFold(kind, "None"))
 	case '[':
 		items, _ := arrayOf(v)
 		return len(items) == 0

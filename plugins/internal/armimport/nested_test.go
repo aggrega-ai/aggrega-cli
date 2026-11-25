@@ -8,8 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
@@ -112,39 +112,63 @@ func TestFlattenInnerResourcesJoinTheGraph(t *testing.T) {
 }
 
 // TestFlattenOuterScopeResolvesInTheOuterTemplate reads templates held inline
-// that are evaluated in the outer scope — by default and by name — whose
-// expressions read the outer template's parameters and variables, the inner
-// template's own declarations unread; one evaluated in its own scope reads its
-// own.
+// that are evaluated in the outer scope — under language version 1.0, by
+// default and by name — whose expressions read the outer template's
+// parameters and variables, the inner template's own declarations and the
+// value the deploying resource gives unread. One evaluated in its own scope —
+// by name, or by default where the holding or the nested template is of
+// language version 2.0, under which outer is not admitted — reads its own and
+// the value given.
 func TestFlattenOuterScopeResolvesInTheOuterTemplate(t *testing.T) {
 	t.Parallel()
+	outer := cloudimport.Compose{Parts: []cloudimport.Value{str("app-"), cloudimport.Param{Name: "name"}}}
+	inner := str("inner-bound")
+	nested := func(options, version string) string {
+		resources := `[{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01",
+			"name": "[concat(variables('prefix'), '-', parameters('name'))]"}]`
+		if version != "" {
+			resources = `{"site": {"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01",
+				"name": "[concat(variables('prefix'), '-', parameters('name'))]"}}`
+		}
+		return `"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "nest",
+			"properties": {"mode": "Incremental", ` + options + `
+				"parameters": {"name": {"value": "bound"}},
+				"template": {` + schema + `, ` + version + ` "contentVersion": "1.0.0.0",
+					"parameters": {"name": {"type": "string", "defaultValue": "inner-default"}},
+					"variables": {"prefix": "inner"},
+					"resources": ` + resources + `}}`
+	}
+	twoZeroHolding := func(resource string) string {
+		return `{` + schema + `, "languageVersion": "2.0", "contentVersion": "1.0.0.0",
+			"parameters": {"name": {"type": "string"}}, "variables": {"prefix": "app"},
+			"resources": {"nest": {` + resource + `}}}`
+	}
 	for _, row := range []struct {
-		options string
-		want    cloudimport.Value
+		name, source string
+		want         cloudimport.Value
 	}{
-		{``, cloudimport.Compose{Parts: []cloudimport.Value{str("app-"), cloudimport.Param{Name: "name"}}}},
-		{`"expressionEvaluationOptions": {"scope": "outer"},`,
-			cloudimport.Compose{Parts: []cloudimport.Value{str("app-"), cloudimport.Param{Name: "name"}}}},
-		{`"expressionEvaluationOptions": {"scope": "inner"},`, str("inner-inner-default")},
+		{"1.0 in 1.0, by default", oneZero(`{"prefix": "app"}`, `{`+nested(``, ``)+`}`), outer},
+		{"1.0 in 1.0, outer", oneZero(`{"prefix": "app"}`,
+			`{`+nested(`"expressionEvaluationOptions": {"scope": "outer"},`, ``)+`}`), outer},
+		{"1.0 in 1.0, inner", oneZero(`{"prefix": "app"}`,
+			`{`+nested(`"expressionEvaluationOptions": {"scope": "inner"},`, ``)+`}`), inner},
+		{"2.0 in 1.0, by default", oneZero(`{"prefix": "app"}`, `{`+nested(``, `"languageVersion": "2.0",`)+`}`),
+			inner},
+		{"1.0 in 2.0, by default", twoZeroHolding(nested(``, ``)), inner},
+		{"2.0 in 2.0, outer", twoZeroHolding(nested(`"expressionEvaluationOptions": {"scope": "outer"},`,
+			`"languageVersion": "2.0",`)), inner},
 	} {
-		g, diags := readTemplate(oneZero(`{"prefix": "app"}`, `
-			{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "nest",
-				"properties": {"mode": "Incremental", `+row.options+`
-					"template": {`+schema+`, "contentVersion": "1.0.0.0",
-						"parameters": {"name": {"type": "string", "defaultValue": "inner-default"}},
-						"variables": {"prefix": "inner"},
-						"resources": [{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01",
-							"name": "[concat(variables('prefix'), '-', parameters('name'))]"}]}}}`))
+		g, diags := readTemplate(row.source)
 		if g == nil || len(diags) != 0 {
-			t.Errorf("%s: diagnostics %+v", row.options, diags)
+			t.Errorf("%s: diagnostics %+v", row.name, diags)
 			continue
 		}
 		if len(g.Nodes) != 1 || !strings.HasPrefix(g.Nodes[0].ID, "nest/") {
-			t.Errorf("%s: nodes %v, want the inner site alone", row.options, ids(g))
+			t.Errorf("%s: nodes %v, want the inner site alone", row.name, ids(g))
 			continue
 		}
 		if !reflect.DeepEqual(g.Nodes[0].Name, row.want) {
-			t.Errorf("%s: the site is named %+v, want %+v", row.options, g.Nodes[0].Name, row.want)
+			t.Errorf("%s: the site is named %+v, want %+v", row.name, g.Nodes[0].Name, row.want)
 		}
 	}
 }
@@ -157,10 +181,6 @@ func TestFlattenOuterScopeResolvesInTheOuterTemplate(t *testing.T) {
 // is not.
 func TestDeploymentScopeMergedNamesTheAnnotation(t *testing.T) {
 	t.Parallel()
-	if annotationResourceGroup != armcore.AnnotationResourceGroup {
-		t.Fatalf("the importer names the annotation %q, the arm provider reads %q", annotationResourceGroup,
-			armcore.AnnotationResourceGroup)
-	}
 	for _, row := range []struct {
 		scope, says, nodeScope string
 	}{
@@ -195,6 +215,21 @@ func TestDeploymentScopeMergedNamesTheAnnotation(t *testing.T) {
 			!strings.Contains(merged[0].Message, "aggrega.ai/azure-resource-group") {
 			t.Errorf("%s: diagnostics %+v", row.scope, diags)
 		}
+	}
+
+	cluster := strings.Replace(deployer("cluster", layer(t, "kusto/cluster", "0.11.1"),
+		`"name": {"value": "adx-core"}, "sku": {"value": "Standard_E2ads_v5"}`), `"name": "cluster",`,
+		`"name": "cluster", "resourceGroup": "rg-other",`, 1)
+	g, diags := readTemplate(deploying(cluster))
+	if g == nil || !slices.Equal(ids(g), []string{"cluster"}) || g.Nodes[0].Form != cloudimport.FormAVM ||
+		g.Nodes[0].Scope != "resource group rg-other" {
+		t.Fatalf("a module kept one node in another resource group: nodes %v, diagnostics %+v", ids(g), diags)
+	}
+	merged := withCode(diags, cloudimport.CodeDeploymentScopeMerged)
+	if len(merged) != 1 || merged[0].SourceRef != "main.json#/resources/0" ||
+		!strings.Contains(merged[0].Message, "the resource group 'rg-other'") ||
+		!strings.Contains(merged[0].Message, "aggrega.ai/azure-resource-group") {
+		t.Errorf("a module kept one node in another resource group: diagnostics %+v", diags)
 	}
 }
 
@@ -444,5 +479,155 @@ func TestNestedReadsAreDeterministic(t *testing.T) {
 		if dump(g1) != dump(g2) || !reflect.DeepEqual(d1, d2) {
 			t.Errorf("%s reads differently twice", row.name)
 		}
+	}
+}
+
+// TestFlattenedResourcesAreNoNodes reads what other templates read of a
+// resource whose template is flattened: an output a sibling template reads —
+// one evaluated in the outer scope, and one reading the secure outputs — is
+// the value the output holds; the resource's identifier, read by reference,
+// resourceId or resourceInfo, and its credential read whole, are no reference
+// to a node, each with a value-not-carried warning, the identifier kept as
+// deploy-time text.
+func TestFlattenedResourcesAreNoNodes(t *testing.T) {
+	t.Parallel()
+	g, diags := readTemplate(oneZero("", `
+		{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "net",
+			"properties": {"mode": "Incremental", "expressionEvaluationOptions": {"scope": "inner"},
+				"template": {`+schema+`, "contentVersion": "1.0.0.0", "resources": [
+					{"type": "Microsoft.Network/virtualNetworks", "apiVersion": "2023-09-01", "name": "vnet"}],
+					"outputs": {"vnetId": {"type": "string",
+						"value": "[resourceId('Microsoft.Network/virtualNetworks', 'vnet')]"}}}}},
+		{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "reader",
+			"properties": {"mode": "Incremental", "template": {`+schema+`, "contentVersion": "1.0.0.0", "resources": [
+				{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "site",
+					"properties": {"vnet": "[reference('net').outputs.vnetId.value]",
+						"secure": "[listOutputsWithSecureValues('net', '2022-09-01').vnetId]"}}]}}},
+		{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "web", "properties": {
+			"byReference": "[reference('net').id]",
+			"byResourceId": "[resourceId('Microsoft.Resources/deployments', 'net')]",
+			"whole": "[listOutputsWithSecureValues('net', '2022-09-01')]"}}`))
+	if g == nil {
+		t.Fatalf("diagnostics %+v", diags)
+	}
+	if want := []string{"net/vnet", "reader/site", "web"}; !slices.Equal(ids(g), want) {
+		t.Fatalf("nodes %v, want %v", ids(g), want)
+	}
+	site := node(t, g, "reader/site")
+	for _, path := range []string{"vnet", "secure"} {
+		if got := at(t, site, "properties", path); !reflect.DeepEqual(got, cloudimport.Ref{Node: "net/vnet"}) {
+			t.Errorf("the sibling's %s reads %+v, want the network's identifier", path, got)
+		}
+	}
+	web := node(t, g, "web")
+	for _, row := range []struct {
+		path string
+		want cloudimport.Value
+	}{
+		{"byReference", cloudimport.Opaque{Text: "[reference('net').id]", Target: "arm"}},
+		{"byResourceId", cloudimport.Opaque{Text: "[resourceId('Microsoft.Resources/deployments', 'net')]",
+			Target: "arm"}},
+		{"whole", nil},
+	} {
+		if got := at(t, web, "properties", row.path); !reflect.DeepEqual(got, row.want) {
+			t.Errorf("%s reads %+v, want %+v", row.path, got, row.want)
+		}
+	}
+	notCarried := withCode(diags, cloudimport.CodeValueNotCarried)
+	if len(diags) != 3 || len(notCarried) != 3 {
+		t.Fatalf("diagnostics %+v, want three value-not-carried", diags)
+	}
+	for i, says := range []string{"the identifier of net", "the identifier of net", "a credential of net"} {
+		if notCarried[i].SourceRef != "main.json#/resources/2" || !strings.Contains(notCarried[i].Message, says) {
+			t.Errorf("diagnostic %d is %+v, want it to say %q", i, notCarried[i], says)
+		}
+	}
+
+	g, diags = readTemplate(twoZero(`
+		"net": {"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "net",
+			"properties": {"mode": "Incremental", "expressionEvaluationOptions": {"scope": "inner"},
+				"template": {` + schema + `, "contentVersion": "1.0.0.0", "resources": []}}},
+		"web": {"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "web",
+			"properties": {"byInfo": "[resourceInfo('net').id]"}}`))
+	if got := at(t, node(t, g, "web"), "properties", "byInfo"); !reflect.DeepEqual(got,
+		cloudimport.Opaque{Text: "[resourceInfo('net').id]", Target: "arm"}) || len(diags) != 1 ||
+		!strings.Contains(diags[0].Message, "the identifier of net") {
+		t.Errorf("resourceInfo of a flattened resource reads %+v; diagnostics %+v", got, diags)
+	}
+}
+
+// TestNestedOutputsComposingEachOtherAreBounded reads thirty nested templates,
+// each output composing the output of the template it deploys twice over:
+// each output is lowered once, and the read ends promptly, the outputs past
+// the size the draft carries not carried, with a value-not-carried warning.
+func TestNestedOutputsComposingEachOtherAreBounded(t *testing.T) {
+	t.Parallel()
+	const levels = 30
+	template := `{` + schema + `, "contentVersion": "1.0.0.0", "resources": [],
+		"outputs": {"x": {"type": "string", "value": "abcd"}}}`
+	for i := 0; i < levels; i++ {
+		template = `{` + schema + `, "contentVersion": "1.0.0.0", "resources": [
+			{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "d",
+				"properties": {"mode": "Incremental", "expressionEvaluationOptions": {"scope": "inner"},
+					"template": ` + template + `}}],
+			"outputs": {"x": {"type": "string",
+				"value": "[concat(reference('d').outputs.x.value, reference('d').outputs.x.value)]"}}}`
+	}
+	source := oneZero("", `{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "top",
+		"properties": {"mode": "Incremental", "expressionEvaluationOptions": {"scope": "inner"},
+			"template": `+template+`}},
+		{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "web",
+			"properties": {"x": "[reference('top').outputs.x.value]"}}`)
+	start := time.Now()
+	g, diags := readTemplate(source)
+	if elapsed := time.Since(start); elapsed > 20*time.Second {
+		t.Errorf("the read took %s", elapsed)
+	}
+	if g == nil {
+		t.Fatalf("diagnostics %+v", diags)
+	}
+	if got := at(t, node(t, g, "web"), "properties", "x"); got != nil {
+		t.Errorf("the outermost output reads a value of %d bytes, want none carried", size(got))
+	}
+	notCarried := withCode(diags, cloudimport.CodeValueNotCarried)
+	if len(notCarried) != 1 || !strings.Contains(notCarried[0].Message, "larger than") {
+		t.Errorf("diagnostics %+v, want the one output past the size the draft carries", diags)
+	}
+}
+
+// TestNestedParametersComposingEachOtherAreBounded reads thirty nested
+// templates, each giving the template it deploys a parameter composing its
+// own parameter twice over: each parameter is lowered once, and the read ends
+// promptly, the values past the size the draft carries not carried, with a
+// value-not-carried warning.
+func TestNestedParametersComposingEachOtherAreBounded(t *testing.T) {
+	t.Parallel()
+	const levels = 30
+	template := `{` + schema + `, "contentVersion": "1.0.0.0", "parameters": {"p": {"type": "string"}},
+		"resources": [{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "site",
+			"properties": {"p": "[parameters('p')]"}}]}`
+	for i := 0; i < levels; i++ {
+		template = `{` + schema + `, "contentVersion": "1.0.0.0", "parameters": {"p": {"type": "string"}},
+			"resources": [{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "d",
+				"properties": {"mode": "Incremental", "expressionEvaluationOptions": {"scope": "inner"},
+					"parameters": {"p": {"value": "[concat(parameters('p'), parameters('p'))]"}},
+					"template": ` + template + `}}]}`
+	}
+	start := time.Now()
+	g, diags := readTemplate(oneZero("", `{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01",
+		"name": "top", "properties": {"mode": "Incremental", "expressionEvaluationOptions": {"scope": "inner"},
+			"parameters": {"p": {"value": "abcd"}}, "template": `+template+`}}`))
+	if elapsed := time.Since(start); elapsed > 20*time.Second {
+		t.Errorf("the read took %s", elapsed)
+	}
+	if g == nil || len(g.Nodes) != 1 {
+		t.Fatalf("nodes %v, diagnostics %+v", ids(g), diags)
+	}
+	if got := at(t, g.Nodes[0], "properties", "p"); got != nil {
+		t.Errorf("the innermost parameter reads a value of %d bytes, want none carried", size(got))
+	}
+	notCarried := withCode(diags, cloudimport.CodeValueNotCarried)
+	if len(notCarried) != 1 || !strings.Contains(notCarried[0].Message, "larger than") {
+		t.Errorf("diagnostics %+v, want the one parameter past the size the draft carries", diags)
 	}
 }

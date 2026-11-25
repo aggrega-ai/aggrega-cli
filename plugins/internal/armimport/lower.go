@@ -170,6 +170,10 @@ type lowerer struct {
 	// deploying the lowerer's template, through which the template's
 	// parameters are read; nil for the root template.
 	via *lowerer
+	// known holds, for the lowerer of a Microsoft.Resources/deployments
+	// resource, what each parameter of the template it deploys takes, read
+	// whole, by the parameter's declared name.
+	known map[string]taken
 }
 
 // maxExpansion bounds the variables one lowerer follows and the property
@@ -599,9 +603,30 @@ func (l *lowerer) access(n armexpr.Node) cloudimport.Value {
 		}
 	}
 	if armexpr.IsListFunction(root.Name) {
+		if v, ok := l.secureOutput(root, path, n); ok {
+			return v
+		}
 		return l.credential(root)
 	}
 	return l.opaque(n)
+}
+
+// secureOutput returns what listOutputsWithSecureValues call c, read at path
+// by the expression whole, reads where it names a resource whose template is
+// flattened: the value the output path names holds, read further at the rest
+// of path; false where c reads no such output.
+func (l *lowerer) secureOutput(c armexpr.Call, path []string, whole armexpr.Node) (cloudimport.Value, bool) {
+	if !strings.EqualFold(c.Name, "listOutputsWithSecureValues") || len(c.Args) == 0 || len(path) == 0 {
+		return nil, false
+	}
+	id, _, ok := l.t.target(c.Args[0])
+	if !ok {
+		return nil, false
+	}
+	if _, res := l.r.resourceAcross(l.t, id); res == nil || res.nested == nil {
+		return nil, false
+	}
+	return l.reference(id, append([]string{"outputs", path[0], "value"}, path[1:]...), whole), true
 }
 
 // variable lowers what the variable name holds at path, read by the
@@ -894,7 +919,7 @@ func (l *lowerer) refer(c armexpr.Call, whole armexpr.Node, path []string) cloud
 			return l.opaque(whole)
 		}
 		id, _ := l.t.byResourceID(canon)
-		return cloudimport.Ref{Node: id}
+		return l.reference(id, nil, whole)
 	case "resourceinfo":
 		name, ok := oneTextArgument(c, "resourceInfo")
 		res := l.t.bySymbol(name)
@@ -902,9 +927,9 @@ func (l *lowerer) refer(c armexpr.Call, whole armexpr.Node, path []string) cloud
 		case !ok || res == nil || len(path) == 0:
 			return l.opaque(whole)
 		case isID:
-			return cloudimport.Ref{Node: res.symbol}
+			return l.reference(res.symbol, nil, whole)
 		}
-		return cloudimport.Ref{Node: res.symbol, Attr: append([]string(nil), path...)}
+		return l.reference(res.symbol, append([]string(nil), path...), whole)
 	}
 	if len(c.Args) == 0 {
 		return l.opaque(whole)
@@ -914,7 +939,7 @@ func (l *lowerer) refer(c armexpr.Call, whole armexpr.Node, path []string) cloud
 		return l.opaque(whole)
 	}
 	if isID {
-		return cloudimport.Ref{Node: id}
+		return l.reference(id, nil, whole)
 	}
 	full := false
 	if len(c.Args) >= 3 {
@@ -933,22 +958,21 @@ func (l *lowerer) refer(c armexpr.Call, whole armexpr.Node, path []string) cloud
 	if len(attr) == 0 {
 		return l.opaque(whole)
 	}
-	if res := l.t.resourceOf(id); res != nil && res.nested != nil {
-		return l.output(res, attr, whole)
-	}
-	return cloudimport.Ref{Node: id, Attr: attr}
+	return l.reference(id, attr, whole)
 }
 
 // unread reports whether id is a Microsoft.Resources/deployments resource of
 // the template linking a template the import does not read.
 func (l *lowerer) unread(id string) bool {
-	res := l.t.resourceOf(id)
-	return res != nil && l.r.unreadLink(l.t, res) != ""
+	t, res := l.r.resourceAcross(l.t, id)
+	return res != nil && l.r.unreadLink(t, res) != ""
 }
 
 // credential lowers a call of a list function to the credential it reads from
 // the resource its first argument names; a resource it cannot tell is named
-// by that argument printed canonically, and a call naming none by the call.
+// by that argument printed canonically, and a call naming none by the call. A
+// credential of a resource that is no node of the graph is not carried, with
+// a value-not-carried warning.
 func (l *lowerer) credential(c armexpr.Call) cloudimport.Value {
 	if len(c.Args) == 0 {
 		return cloudimport.Credential{Node: armexpr.Print(c), What: c.Name}
@@ -956,6 +980,13 @@ func (l *lowerer) credential(c armexpr.Call) cloudimport.Value {
 	id, _, ok := l.t.target(c.Args[0])
 	if !ok {
 		id = armexpr.Print(l.t.canonical(c.Args[0]))
+	}
+	if _, res := l.r.resourceAcross(l.t, id); res.noNode() {
+		l.warn(l.site(), fmt.Sprintf("the template %s reads at %s a credential of %s with %s, a %s resource the "+
+			"draft writes no resource for, as it is read as the resources it deploys, or sends a module's "+
+			"telemetry, so the credential is not carried: read the output holding it", l.t.file, l.site(), id,
+			c.Name, deploymentsType))
+		return nil
 	}
 	return cloudimport.Credential{Node: id, What: c.Name}
 }

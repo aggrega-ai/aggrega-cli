@@ -125,9 +125,9 @@ func TestAVMRecognisedByLiteralAndByVariablePrefix(t *testing.T) {
 // flexible server module whose own child modules each send telemetry under a
 // prefix the module index lists, stating no version: the module is one node,
 // and no child module is a node or recognised. Read as the root template, the
-// same module's child modules are recognised one by one, and no resource
-// sending telemetry is a node at any depth, in a module kept one node or in
-// one read as its resources.
+// same module's child modules — its own and the public private-endpoint
+// module — are read as the resources they deploy, never recognised as modules
+// of their own, and no resource sending telemetry is a node at any depth.
 func TestAVMChildModulesStayInsideTheModule(t *testing.T) {
 	t.Parallel()
 	module := layer(t, "db-for-postgre-sql/flexible-server", "0.16.2")
@@ -152,19 +152,20 @@ func TestAVMChildModulesStayInsideTheModule(t *testing.T) {
 			t.Errorf("%s is a %s node", n.ID, n.Type)
 		}
 	}
-	databases := node(t, g, "flexibleServer_databases")
-	if want := (cloudimport.ModuleRef{Path: "avm/res/db-for-postgre-sql/flexible-server/database",
-		Prefix: "46d3xbcp.res.a5f6742"}); databases.Form != cloudimport.FormAVM || databases.Module == nil ||
-		*databases.Module != want || databases.Type != "Microsoft.DBforPostgreSQL/flexibleServers/databases" {
-		t.Errorf("the databases module reads form %s, type %s, module %+v", databases.Form, databases.Type,
-			databases.Module)
+	for _, n := range g.Nodes {
+		if n.Form != cloudimport.FormRaw {
+			t.Errorf("%s is a node of the %s form", n.ID, n.Form)
+		}
 	}
-	if pe := node(t, g, "server_privateEndpoints/privateEndpoint"); pe.Form != cloudimport.FormRaw ||
-		pe.Type != "Microsoft.Network/privateEndpoints" {
-		t.Errorf("the private endpoint module's resource reads form %s, type %s", pe.Form, pe.Type)
+	if database := node(t, g, "flexibleServer_databases/database"); database.Type !=
+		"Microsoft.DBforPostgreSQL/flexibleServers/databases" || database.Parent != "flexibleServer" {
+		t.Errorf("the database module's resource reads type %s, parent %q", database.Type, database.Parent)
 	}
-	if root := withCode(diags, cloudimport.CodeAVMModuleRecognised); len(root) == 0 || root[0].SourceRef != "main.json" {
-		t.Errorf("the root template is not reported as the module it is: %+v", root)
+	if pe := node(t, g, "server_privateEndpoints/privateEndpoint"); pe.Type != "Microsoft.Network/privateEndpoints" {
+		t.Errorf("the private endpoint module's resource reads type %s", pe.Type)
+	}
+	if root := withCode(diags, cloudimport.CodeAVMModuleRecognised); len(root) != 1 || root[0].SourceRef != "main.json" {
+		t.Errorf("avm-module-recognised %+v, want the root template alone, as the module it is", root)
 	}
 }
 
@@ -329,8 +330,8 @@ func TestAVMPatternAndUtilityModulesAreFlattened(t *testing.T) {
 // TestAVMFoldedParametersAreNotCarried deploys a module setting its lock,
 // role assignments, diagnostic settings and private endpoints: each is left
 // out of the node, with a resource-not-carried warning naming it, unless the
-// override header of a row the node may take lists it, and one set to
-// nothing is left out unreported.
+// override header of a row the node may take lists it; one set to nothing —
+// an empty list, a lock of the kind None — is left out unreported.
 func TestAVMFoldedParametersAreNotCarried(t *testing.T) {
 	t.Parallel()
 	args := `"name": {"value": "adx-core"}, "sku": {"value": "Standard_E2ads_v5"},
@@ -379,10 +380,12 @@ func TestAVMFoldedParametersAreNotCarried(t *testing.T) {
 		}
 	}
 
-	g, diags := readTemplate(deploying(deployer("cluster", layer(t, "kusto/cluster", "0.11.1"),
-		`"name": {"value": "adx-core"}, "sku": {"value": "Standard_E2ads_v5"}, "roleAssignments": {"value": []}`)))
-	if g == nil || len(g.Nodes) != 1 || !slices.Equal(bodyNames(g.Nodes[0]), []string{"name", "sku"}) ||
-		len(withCode(diags, cloudimport.CodeResourceNotCarried)) != 0 {
-		t.Errorf("role assignments set to nothing: nodes %v, diagnostics %+v", ids(g), diags)
+	for _, nothing := range []string{`"roleAssignments": {"value": []}`, `"lock": {"value": {"kind": "None"}}`} {
+		g, diags := readTemplate(deploying(deployer("cluster", layer(t, "kusto/cluster", "0.11.1"),
+			`"name": {"value": "adx-core"}, "sku": {"value": "Standard_E2ads_v5"}, `+nothing)))
+		if g == nil || len(g.Nodes) != 1 || !slices.Equal(bodyNames(g.Nodes[0]), []string{"name", "sku"}) ||
+			len(withCode(diags, cloudimport.CodeResourceNotCarried)) != 0 {
+			t.Errorf("%s: nodes %v, diagnostics %+v", nothing, ids(g), diags)
+		}
 	}
 }
