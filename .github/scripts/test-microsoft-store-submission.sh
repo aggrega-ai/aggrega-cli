@@ -1,16 +1,34 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
 #
-# test-microsoft-store-submission.sh — checks the download-address functions of
-# scripts/lib/platform-smoke-common.sh against a local HTTPS stub that serves canned answers and logs each
-# request. The stub listens on 127.0.0.1 with a self-signed certificate; nothing
-# else on the network is reached, and every temporary file lives in one
-# directory removed on exit.
+# test-microsoft-store-submission.sh — checks microsoft-store-submission.sh and
+# the download-address functions of scripts/lib/platform-smoke-common.sh it
+# uses, against a local HTTPS stub that serves canned answers and logs each
+# request. The stub listens on 127.0.0.1 with a self-signed certificate and
+# plays the download address, Microsoft Entra ID's token endpoint and the
+# Store's submission API; gh is a stub on PATH that serves a release's
+# SHA256SUMS. Nothing else on the network is reached, and every temporary file
+# lives in one directory removed on exit.
 #
-# The cases cover smoke_download_key and smoke_download_url (the object key, the
-# address, the trailing slash of the base, an empty version) and
+# The download cases cover smoke_download_key and smoke_download_url (the object
+# key, the address, the trailing slash of the base, an empty version) and
 # smoke_check_download (200 with the right bytes, a redirect, a digest that
 # differs, a response without Content-Length).
+#
+# The submission cases run the script with every wait set to 0 seconds and
+# cover: a real run end to end, each request's method, path, headers and body
+# held to the API's documentation; a submission that is published; a dry run,
+# which sends nothing that changes the draft, with and without a release; each
+# setting missing; a pre-release version on a real run; a malformed version; a
+# seller ID that is not a number; a real run with no release; an installer
+# whose digest differs from the release's list; a submission already in
+# progress; a draft holding two packages or a newer version; a draft already
+# holding the version; a package upload error and an error outside the
+# packages while the draft gets ready; a draft never ready, before the change
+# and after it; a refused update, submit and submission; a submission whose
+# status stays unknown; a refused token; a rate-limited read retried; the token
+# masked under GitHub Actions; and, over every run, that no credential and no
+# token reaches the output and every line names the script.
 #
 # Exit: 0 when every case passes; 1 with the failing cases named.
 
@@ -224,6 +242,545 @@ stub_start "$WORK/routes-nolength.json" || exit 1
 expect download_no_length 1 "no Content-Length" smoke_check_download "$STUB_BASE/$KEY" "$DIGEST"
 expect download_no_length_names_address 1 "$STUB_BASE/$KEY" smoke_check_download "$STUB_BASE/$KEY" "$DIGEST"
 stub_stop
+
+# ---------------------------------------------------------------------------
+# microsoft-store-submission.sh
+
+SCRIPT="$HERE/microsoft-store-submission.sh"
+VERSION=0.10.3
+TENANT=stub-tenant-id
+CLIENT=stub-client-id
+SECRET=stub-secret-value
+TOKEN=stub-access-token
+SELLER=12345678
+PRODUCT=9NSTUBPRODUCT1
+SUB=1152921505690000001
+ONGOING=1152921505690000777
+P="/submission/v1/product/$PRODUCT"
+TOKEN_PATH="/$TENANT/oauth2/v2.0/token"
+NEW_KEY="$(smoke_download_key "$VERSION")"
+INSTALLER_NAME="${NEW_KEY##*/}"
+PREFIX="microsoft-store-submission: "
+
+export MICROSOFT_STORE_TENANT_ID="$TENANT" MICROSOFT_STORE_CLIENT_ID="$CLIENT"
+export MICROSOFT_STORE_CLIENT_SECRET="$SECRET" MICROSOFT_STORE_SELLER_ID="$SELLER"
+export MICROSOFT_STORE_PRODUCT_ID="$PRODUCT" MICROSOFT_STORE_POLL_SECONDS=0
+export GH_STUB="$WORK/gh" GH_REPO=aggrega-ai/aggrega-cli
+unset GITHUB_ACTIONS GITHUB_STEP_SUMMARY
+mkdir -p "$WORK/bin" "$GH_STUB"
+
+# The gh stub: "release view <tag>" exits 0 when <tag> is a line of
+# $GH_STUB/releases and otherwise exits 1 saying "release not found", as gh
+# does; "release download <tag> --dir <dir> --pattern SHA256SUMS" copies
+# $GH_STUB/SHA256SUMS into <dir>. Every call is appended to $GH_STUB/calls, and
+# the name of each credential setting gh finds in its environment to
+# $GH_STUB/inherited.
+cat >"$WORK/bin/gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$GH_STUB/calls"
+for name in MICROSOFT_STORE_TENANT_ID MICROSOFT_STORE_CLIENT_ID MICROSOFT_STORE_CLIENT_SECRET; do
+  [ -z "${!name+set}" ] || printf '%s\n' "$name" >>"$GH_STUB/inherited"
+done
+case "${1:-} ${2:-}" in
+  "release view")
+    if grep -qxF -- "${3:-}" "$GH_STUB/releases"; then
+      printf '{"tagName":"%s"}\n' "$3"
+      exit 0
+    fi
+    echo "release not found" >&2
+    exit 1
+    ;;
+  "release download")
+    tag="${3:-}" dir="" pattern=""
+    shift 3
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --dir) dir="$2"; shift 2 ;;
+        --pattern) pattern="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    grep -qxF -- "$tag" "$GH_STUB/releases" || { echo "release not found" >&2; exit 1; }
+    [ "$pattern" = SHA256SUMS ] || { echo "gh stub: no asset matches $pattern" >&2; exit 1; }
+    mkdir -p "$dir" && cp "$GH_STUB/SHA256SUMS" "$dir/SHA256SUMS"
+    ;;
+  *)
+    echo "gh stub: unexpected call: $*" >&2
+    exit 2
+    ;;
+esac
+SH
+chmod +x "$WORK/bin/gh"
+
+# answer <responseData> [<errors>] — one stub response: HTTP 200 with the
+# Store's envelope, isSuccess true.
+answer() {
+  jq -cn --argjson data "$1" --argjson errors "${2:-[]}" \
+    '{status: 200, json: {isSuccess: true, errors: $errors, responseData: $data}}'
+}
+# refusal <status> <correlation> <errors> — one stub response: the Store's
+# envelope with isSuccess false, carrying an X-Correlation-ID.
+refusal() {
+  jq -cn --argjson status "$1" --arg corr "$2" --argjson errors "$3" \
+    '{status: $status, headers: {"X-Correlation-ID": $corr}, json: {isSuccess: false, errors: $errors, responseData: {}}}'
+}
+STATUS_READY="$(answer '{"isReady": true, "ongoingSubmissionId": ""}')"
+STATUS_BUSY="$(answer '{"isReady": false, "ongoingSubmissionId": ""}')"
+PACKAGES_DRAFT="$(jq -cn --arg file "$WORK/packages.json" \
+  '{status: 200, headers: {"Content-Type": "application/json"}, body_file: $file}')"
+WARNING='[{"code": "warning", "target": "packages", "message": "stub: the package keeps its languages"}]'
+
+# begin_case — resets the answers to those of a real run end to end, the
+# release v$VERSION to existing with SHA256SUMS listing the stub installer, and
+# the draft to 0.10.2's installer. A case then changes the one thing it is about.
+begin_case() {
+  R_TOKEN="[$(jq -cn --arg token "$TOKEN" '{status: 200, json: {token_type: "Bearer", expires_in: 3599, access_token: $token}}')]"
+  R_STATUS="[$STATUS_READY, $STATUS_BUSY, $STATUS_READY]"
+  R_PACKAGES="[$PACKAGES_DRAFT]"
+  R_PUT="[$(answer "{\"pollingUrl\": \"$P/status\", \"ongoingSubmissionId\": \"\"}" "$WARNING")]"
+  R_COMMIT="[$(answer "{\"pollingUrl\": \"$P/status\", \"ongoingSubmissionId\": \"\"}")]"
+  R_SUBMIT="[$(answer "{\"submissionId\": \"$SUB\", \"pollingUrl\": \"$P/submission/$SUB/status\", \"ongoingSubmissionId\": \"\"}")]"
+  R_SUBMISSION="[$(answer '{"publishingStatus": "INPROGRESS", "hasFailed": false}')]"
+  R_ONGOING="[$(answer '{"publishingStatus": "INPROGRESS", "hasFailed": false}')]"
+  DRAFT_VERSIONS=(0.10.2)
+  printf 'v%s\n' "$VERSION" >"$GH_STUB/releases"
+  printf '%s  %s\n%s  %s\n' "$DIGEST" "$INSTALLER_NAME" "$WRONG" "aggrega-$VERSION-linux-amd64" >"$GH_STUB/SHA256SUMS"
+  : >"$GH_STUB/calls"
+}
+
+# serve_case — starts the stub on the R_* answers and writes the draft, one
+# package per DRAFT_VERSIONS entry, each installing from that version's address
+# at the stub, as the fixture answer to GET /packages.
+serve_case() {
+  local version
+  jq -n --arg dl "/$NEW_KEY" --arg installer "$INSTALLER" --arg token "$TOKEN_PATH" --arg p "$P" \
+    --arg sub "$SUB" --arg ongoing "$ONGOING" --argjson rtoken "$R_TOKEN" --argjson rstatus "$R_STATUS" \
+    --argjson rpackages "$R_PACKAGES" --argjson rput "$R_PUT" --argjson rcommit "$R_COMMIT" \
+    --argjson rsubmit "$R_SUBMIT" --argjson rsubmission "$R_SUBMISSION" --argjson rongoing "$R_ONGOING" \
+    '{routes: [
+      {method: "GET", path: $dl, responses: [{status: 200, body_file: $installer}]},
+      {method: "POST", path: $token, responses: $rtoken},
+      {method: "GET", path: ($p + "/status"), responses: $rstatus},
+      {method: "GET", path: ($p + "/packages"), responses: $rpackages},
+      {method: "PUT", path: ($p + "/packages"), responses: $rput},
+      {method: "POST", path: ($p + "/packages/commit"), responses: $rcommit},
+      {method: "POST", path: ($p + "/submit"), responses: $rsubmit},
+      {method: "GET", path: ($p + "/submission/" + $sub + "/status"), responses: $rsubmission},
+      {method: "GET", path: ($p + "/submission/" + $ongoing + "/status"), responses: $rongoing}
+    ]}' >"$WORK/routes.json"
+  stub_start "$WORK/routes.json" || exit 1
+  export MICROSOFT_STORE_LOGIN_BASE="$STUB_BASE" MICROSOFT_STORE_API_BASE="$STUB_BASE" DOWNLOADS_PUBLIC_BASE="$STUB_BASE"
+  local -a urls=()
+  for version in "${DRAFT_VERSIONS[@]}"; do
+    urls+=("$STUB_BASE/$(smoke_download_key "$version")")
+  done
+  jq -n '{isSuccess: true, errors: [], responseData: {packages: [$ARGS.positional | to_entries[] | {
+      packageId: "pkg-\(.key + 1)", packageUrl: .value, languages: ["en-us"], architectures: ["X64"],
+      isSilentInstall: true, installerParameters: "/S",
+      genericDocUrl: "https://nsis.sourceforge.io/Docs/AppendixD.html#errorlevels",
+      packageType: "exe", extraField: "kept"}]}}' --args "${urls[@]}" >"$WORK/packages.json"
+  OLD_URL="${urls[0]}"
+  NEW_URL="$STUB_BASE/$NEW_KEY"
+}
+
+# run_case [<env argument>...] -- <script argument>... — runs the script on the
+# stub's settings, env applying each <env argument> (NAME=value, or -u NAME);
+# sets OUT (standard output and standard error together) and RC, and appends
+# OUT to the record every run's output is checked over at the end.
+run_case() {
+  local -a mods=()
+  while [ "$1" != -- ]; do
+    mods+=("$1")
+    shift
+  done
+  shift
+  OUT="$(env ${mods[@]+"${mods[@]}"} PATH="$WORK/bin:$PATH" bash "$SCRIPT" "$@" 2>&1)"
+  RC=$?
+  printf '%s\n' "$OUT" >>"$WORK/script-output"
+  FAULTS=()
+}
+
+# The checks a case makes on the last run; each fault is recorded and the case
+# fails naming every one. The searches of the request log that a case expects
+# to find nothing are the same searches real_run_end_to_end expects to find
+# each request with.
+requests() { jq -r '"\(.method) \(.path)"' "$STUB_LOG"; }
+want_exit() { [ "$RC" -eq "$1" ] || FAULTS+=("exit $RC, want $1"); }
+want_text() { [[ $OUT == *"$1"* ]] || FAULTS+=("the output lacks [$1]"); }
+want_count() {
+  local n
+  n="$(requests | grep -Ec -- "$2")"
+  [ "$n" -eq "$1" ] || FAULTS+=("$n request(s) match [$2], want $1")
+}
+want_no_store_request() { want_count 0 "^[A-Z]+ /submission/"; }
+want_nothing_sent() {
+  [ ! -s "$STUB_LOG" ] || FAULTS+=("the stub received [$(requests | paste -sd, -)]")
+  [ ! -s "$GH_STUB/calls" ] || FAULTS+=("gh was called: [$(paste -sd, - <"$GH_STUB/calls")]")
+}
+want_true() { # want_true <what> <jq filter over the request log, slurped>
+  jq -es "$2" "$STUB_LOG" >/dev/null || FAULTS+=("$1")
+}
+end_case() {
+  if [ "${#FAULTS[@]}" -eq 0 ]; then
+    pass "$1"
+  else
+    local fault text=""
+    for fault in "${FAULTS[@]}"; do text+="$fault; "; done
+    fail "$1: ${text}output [$OUT]"
+  fi
+  stub_stop
+}
+
+begin_case
+serve_case
+run_case GITHUB_STEP_SUMMARY="$WORK/summary.md" -- --version "$VERSION" --dry-run false
+want_exit 0
+want_text "is in certification"
+want_text "no request that publishes"
+want_text "warning / packages / stub: the package keeps its languages"
+got="$(requests | paste -sd'|' -)"
+want="GET /$NEW_KEY|POST $TOKEN_PATH|GET $P/status|GET $P/packages|PUT $P/packages|POST $P/packages/commit|GET $P/status|GET $P/status|POST $P/submit|GET $P/submission/$SUB/status"
+[ "$got" = "$want" ] || FAULTS+=("requests [$got], want [$want]")
+want_true "the token request is not a form" \
+  "map(select(.path == \"$TOKEN_PATH\")) | length == 1 and all(.headers[\"content-type\"] | startswith(\"application/x-www-form-urlencoded\")) and all(.headers.authorization == null)"
+form="$(jq -j --arg p "$TOKEN_PATH" 'select(.path == $p) | .body' "$STUB_LOG" \
+  | python3 -I -c 'import json, sys, urllib.parse; print(json.dumps(sorted(urllib.parse.parse_qsl(sys.stdin.read(), keep_blank_values=True, strict_parsing=True)), separators=(",", ":")))')"
+want_form="$(jq -cn --arg c "$CLIENT" --arg s "$SECRET" \
+  '[["client_id", $c], ["client_secret", $s], ["grant_type", "client_credentials"], ["scope", "https://api.store.microsoft.com/.default"]]')"
+[ "$form" = "$want_form" ] || FAULTS+=("the token request's form fields differ from the four documented ones")
+want_true "a Store request lacks the bearer token or the seller header" \
+  "map(select(.path | startswith(\"/submission/\"))) | length == 8 and all(.headers.authorization == \"Bearer $TOKEN\" and .headers[\"x-seller-account-id\"] == \"$SELLER\")"
+want_true "the PUT is not application/json" \
+  "map(select(.method == \"PUT\")) | length == 1 and all(.headers[\"content-type\"] == \"application/json\")"
+want_true "a Store request without a body carries a body or a Content-Type" \
+  "map(select((.path | startswith(\"/submission/\")) and .method != \"PUT\")) | all(.body == \"\" and .headers[\"content-type\"] == null)"
+put_body="$(jq -r 'select(.method == "PUT") | .body' "$STUB_LOG" | jq -S . 2>/dev/null)"
+want_body="$(jq -Sn --arg url "$NEW_URL" '{packages: [{
+    packageId: "pkg-1", packageUrl: $url, languages: ["en-us"], architectures: ["X64"],
+    isSilentInstall: true, installerParameters: "/S",
+    genericDocUrl: "https://nsis.sourceforge.io/Docs/AppendixD.html#errorlevels",
+    packageType: "exe", extraField: "kept"}]}')"
+[ "$put_body" = "$want_body" ] || FAULTS+=("the PUT body [$put_body] is not the draft with packageUrl $NEW_URL")
+grep -qF "is in certification" "$WORK/summary.md" 2>/dev/null || FAULTS+=("the step summary lacks the outcome line")
+end_case real_run_end_to_end
+
+begin_case
+R_SUBMISSION="[$(answer '{"publishingStatus": "PUBLISHED", "hasFailed": false}')]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 0
+want_text "is published"
+end_case real_run_published
+
+begin_case
+R_SUBMISSION="[$(answer '{"publishingStatus": "PUBLISHED", "hasFailed": false}')]"
+serve_case
+run_case GITHUB_ACTIONS=true -- --version "$VERSION" --dry-run false
+want_exit 0
+masks="$(grep -c "^::add-mask::$TOKEN\$" <<<"$OUT")"
+[ "$masks" -eq 1 ] || FAULTS+=("$masks ::add-mask:: line(s) for the token, want 1")
+grep -v '^::add-mask::' <<<"$OUT" | grep -qF "$TOKEN" && FAULTS+=("the token appears outside its ::add-mask:: line")
+end_case masks_token_under_actions
+
+begin_case
+serve_case
+run_case -- --version "$VERSION" --dry-run true
+want_exit 0
+want_text "dry run"
+want_text "$OLD_URL"
+want_text "$NEW_URL"
+want_count 0 "^PUT "
+want_count 0 "^POST /submission/"
+want_count 1 "^GET $P/packages\$"
+end_case dry_run_reads_only
+
+begin_case
+: >"$GH_STUB/releases"
+serve_case
+BUILD_VERSION=0.10.4-3-gabc1234
+run_case -- --version "$BUILD_VERSION" --dry-run true
+want_exit 0
+want_text "does not exist yet"
+want_text "$OLD_URL"
+want_text "$STUB_BASE/$(smoke_download_key "$BUILD_VERSION")"
+want_count 0 "^GET /aggrega-cli/"
+want_count 0 "^PUT "
+want_count 0 "^POST /submission/"
+grep -q '^release download' "$GH_STUB/calls" && FAULTS+=("gh downloaded from a release that does not exist")
+end_case dry_run_no_release
+
+for setting in MICROSOFT_STORE_TENANT_ID MICROSOFT_STORE_CLIENT_ID MICROSOFT_STORE_CLIENT_SECRET \
+  MICROSOFT_STORE_SELLER_ID MICROSOFT_STORE_PRODUCT_ID; do
+  begin_case
+  serve_case
+  run_case -u "$setting" -- --version "$VERSION" --dry-run true
+  want_exit 1
+  want_text "$setting"
+  want_text "is not set"
+  want_nothing_sent
+  end_case "refuses_missing_settings $setting"
+done
+
+begin_case
+serve_case
+run_case MICROSOFT_STORE_SELLER_ID=12x -- --version "$VERSION" --dry-run true
+want_exit 1
+want_text "MICROSOFT_STORE_SELLER_ID"
+want_text "12x"
+want_nothing_sent
+end_case refuses_seller_id_not_number
+
+begin_case
+serve_case
+run_case -- --version 0.10.4-rc.1 --dry-run false
+want_exit 1
+want_text "0.10.4-rc.1"
+want_text "MAJOR.MINOR.PATCH"
+want_nothing_sent
+end_case refuses_prerelease_version
+
+begin_case
+serve_case
+run_case -- --version "v$VERSION" --dry-run true
+want_exit 2
+want_text "v$VERSION"
+want_nothing_sent
+end_case refuses_malformed_version
+
+# The header is not a run's message, so this run stays out of the record of runs.
+begin_case
+serve_case
+OUT="$(PATH="$WORK/bin:$PATH" bash "$SCRIPT" --help 2>&1)"
+RC=$?
+FAULTS=()
+want_exit 0
+want_text "microsoft-store-submission.sh — "
+want_text "MICROSOFT_STORE_CLIENT_SECRET"
+want_text "2 on a usage error"
+want_nothing_sent
+end_case help_prints_header
+
+begin_case
+: >"$GH_STUB/releases"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "v$VERSION does not exist"
+want_count 0 "."
+end_case refuses_real_run_no_release
+
+begin_case
+printf '%s  %s\n' "$WRONG" "$INSTALLER_NAME" >"$GH_STUB/SHA256SUMS"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "serves SHA-256 $DIGEST, but $WRONG was expected"
+want_count 0 "^POST $TOKEN_PATH\$"
+want_no_store_request
+end_case refuses_installer_digest
+
+begin_case
+R_STATUS="[$(answer "{\"isReady\": false, \"ongoingSubmissionId\": \"$ONGOING\"}")]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "$ONGOING"
+want_text "in progress"
+want_text "publishingStatus INPROGRESS, hasFailed false"
+want_count 1 "^GET $P/submission/$ONGOING/status\$"
+want_count 0 "^PUT "
+want_count 0 "^POST /submission/"
+end_case refuses_ongoing_submission
+
+begin_case
+R_STATUS="[$(answer "{\"isReady\": false, \"ongoingSubmissionId\": \"$ONGOING\"}")]"
+serve_case
+run_case -- --version "$VERSION" --dry-run true
+want_exit 0
+want_text "$ONGOING"
+want_text "a real run would refuse"
+want_count 1 "^GET $P/status\$"
+want_count 0 "^PUT "
+want_count 0 "^POST /submission/"
+end_case refuses_ongoing_submission_dry_run_reports
+
+begin_case
+DRAFT_VERSIONS=(0.10.2 0.10.1)
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "$OLD_URL"
+want_text "$STUB_BASE/$(smoke_download_key 0.10.1)"
+want_count 0 "^PUT "
+want_count 0 "^POST /submission/"
+end_case refuses_two_packages
+
+begin_case
+DRAFT_VERSIONS=(0.10.5)
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "0.10.5"
+want_text "newer than $VERSION"
+want_count 0 "^PUT "
+want_count 0 "^POST /submission/"
+end_case refuses_newer_draft
+
+begin_case
+DRAFT_VERSIONS=(0.10.5)
+serve_case
+run_case -- --version "$VERSION" --dry-run true
+want_exit 0
+want_text "newer than $VERSION"
+want_text "a real run would refuse"
+want_count 0 "^PUT "
+want_count 0 "^POST /submission/"
+end_case refuses_newer_draft_dry_run_reports
+
+begin_case
+DRAFT_VERSIONS=("$VERSION")
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 0
+want_text "already the draft's package"
+want_text "is in certification"
+want_count 0 "^PUT "
+want_count 1 "^POST $P/packages/commit\$"
+want_count 1 "^POST $P/submit\$"
+end_case draft_already_current
+
+begin_case
+R_STATUS="[$STATUS_READY, $(answer '{"isReady": false, "ongoingSubmissionId": ""}' \
+  '[{"code": "packageuploaderror", "target": "packages", "message": "stub: the package could not be downloaded"}]')]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "packageuploaderror / packages / stub: the package could not be downloaded"
+want_count 2 "^GET $P/status\$"
+want_count 0 "^POST $P/submit\$"
+end_case refuses_upload_error
+
+begin_case
+R_STATUS="[$STATUS_READY, $(answer '{"isReady": false, "ongoingSubmissionId": ""}' \
+  '[{"code": "invalidinput", "target": "listings", "message": "stub: a listing field is missing"}]')]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "invalidinput / listings / stub: a listing field is missing"
+want_count 2 "^GET $P/status\$"
+want_count 0 "^POST $P/submit\$"
+end_case refuses_status_error_outside_packages
+
+begin_case
+R_STATUS="[$STATUS_BUSY]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "not ready"
+want_count 60 "^GET $P/status\$"
+want_count 0 "^GET $P/packages\$"
+end_case refuses_not_ready_before_change
+
+begin_case
+R_STATUS="[$STATUS_READY, $STATUS_BUSY]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "not ready"
+want_count 91 "^GET $P/status\$"
+want_count 0 "^POST $P/submit\$"
+end_case refuses_not_ready_after_commit
+
+begin_case
+# A 503 is an answer curl --retry would ask again after; a write is sent once,
+# so the second answer, a success, is never served.
+R_PUT="[$(refusal 503 corr-put-1 '[{"code": "serviceunavailable", "target": "packages", "message": "stub: the update is not available"}]'), ${R_PUT#[}"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "serviceunavailable / packages / stub: the update is not available"
+want_text "corr-put-1"
+want_text "HTTP 503"
+want_count 1 "^PUT $P/packages\$"
+want_count 0 "^POST $P/packages/commit\$"
+end_case refuses_failed_put
+
+begin_case
+R_SUBMIT="[$(refusal 200 corr-submit-1 '[{"code": "invalidstate", "target": "submission", "message": "stub: a module is not ready"}]')]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "invalidstate / submission / stub: a module is not ready"
+want_text "corr-submit-1"
+want_count 0 "^GET $P/submission/"
+end_case refuses_failed_submit
+
+begin_case
+R_SUBMISSION="[$(answer '{"publishingStatus": "FAILED", "hasFailed": true}' \
+  '[{"code": "certificationfailed", "target": "submission", "message": "stub: the installer did not install silently"}]')]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "FAILED"
+want_text "certificationfailed / submission / stub: the installer did not install silently"
+end_case refuses_failed_submission
+
+begin_case
+R_SUBMISSION="[$(answer '{"publishingStatus": "UNKNOWN", "hasFailed": false}')]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "UNKNOWN"
+want_text "$SUB"
+want_count 20 "^GET $P/submission/$SUB/status\$"
+end_case refuses_unknown_submission
+
+begin_case
+# Entra ID's description names the client ID and the tenant; the run prints
+# each as ***, which no_credential_in_output holds over every run.
+R_TOKEN="[$(jq -cn --arg c "$CLIENT" --arg t "$TENANT" '{status: 400, json: {error: "unauthorized_client",
+  error_description: "AADSTS700016: Application with identifier \u0027\($c)\u0027 was not found in the directory \u0027\($t)\u0027.\r\nTrace ID: stub-trace"}}')]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "unauthorized_client"
+want_text "AADSTS700016: Application with identifier '***' was not found in the directory '***'."
+want_no_store_request
+end_case refuses_token_error
+
+begin_case
+R_PACKAGES="[$(refusal 429 corr-busy-1 '[{"code": "toomanyrequests", "target": "", "message": "stub: slow down"}]' \
+  | jq -c '.headers["Retry-After"] = "1"'), $PACKAGES_DRAFT]"
+serve_case
+run_case -- --version "$VERSION" --dry-run true
+want_exit 0
+want_text "$NEW_URL"
+want_count 2 "^GET $P/packages\$"
+end_case retries_rate_limited_read
+
+FAULTS=()
+OUT="$(cat "$WORK/script-output")"
+for value in "$SECRET" "$TENANT" "$CLIENT"; do
+  grep -qF -- "$value" "$WORK/script-output" && FAULTS+=("a run printed a credential")
+done
+grep -v '^::add-mask::' "$WORK/script-output" | grep -qF -- "$TOKEN" && FAULTS+=("a run printed the token outside its ::add-mask:: line")
+[ -s "$WORK/script-output" ] || FAULTS+=("no run's output was recorded")
+[ ! -s "$GH_STUB/inherited" ] || FAULTS+=("gh inherited [$(sort -u "$GH_STUB/inherited" | paste -sd, -)]")
+# The planted match: gh started straight from this suite, whose environment
+# holds the settings, records them, so an empty record above means something.
+mkdir -p "$WORK/gh-planted"
+: >"$WORK/gh-planted/releases"
+GH_STUB="$WORK/gh-planted" "$WORK/bin/gh" release view v0 2>/dev/null
+[ -s "$WORK/gh-planted/inherited" ] || FAULTS+=("the gh stub records no inherited setting even when it has one")
+grep -qF -- "::add-mask::$TOKEN" "$WORK/script-output" || FAULTS+=("the record lacks the masked run, so the token search proves nothing")
+OUT="(every run's output)"
+end_case no_credential_in_output
+
+FAULTS=()
+unprefixed="$(grep -v -e '^$' -e "^$PREFIX" -e '^::add-mask::' "$WORK/script-output" | head -n 5 | paste -sd'|' -)"
+[ -z "$unprefixed" ] || FAULTS+=("lines not beginning with [$PREFIX]: [$unprefixed]")
+OUT="(every run's output)"
+end_case every_line_names_the_script
 
 if [ "$FAIL" -ne 0 ]; then
   printf '%d case(s) failed\n' "$FAIL" >&2
