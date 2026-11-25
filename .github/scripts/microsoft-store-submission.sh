@@ -137,10 +137,10 @@
 # Store refuses an answer, the draft does not hold exactly one package, the
 # draft does not become ready, or the submission fails or stays unknown; 2 on a
 # usage error; 3 when a real run changed nothing because a submission is in
-# progress or the draft's package is the installer of a newer version, its
-# outcome line naming that submission or version and saying to dispatch "Submit
-# to the Microsoft Store" with this version once the submission in progress
-# ends.
+# progress, its outcome line naming that submission and saying to dispatch
+# "Submit to the Microsoft Store" with this version once it ends, or because the
+# draft's package is the installer of a newer version, its outcome line naming
+# that version and saying the listing is left unchanged.
 set -euo pipefail
 # The credentials and the token must never reach the log, so tracing stays off
 # even when the caller turned it on.
@@ -160,7 +160,7 @@ PREFIX="microsoft-store-submission: "
 SCOPE="https://api.store.microsoft.com/.default"
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  sed -n '/^# microsoft-store-submission\.sh — /,/^# ends\.$/p' \
+  sed -n '/^# microsoft-store-submission\.sh — /,/^# that version and saying the listing is left unchanged\.$/p' \
     "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 0
 fi
@@ -555,7 +555,7 @@ elif [ -n "$draft_version" ]; then
       say "dry run: the draft's package is the installer of $draft_version, newer than $VERSION; a real run would refuse, changing nothing"
       WOULD_REFUSE+=("the draft's package is the installer of $draft_version, newer than $VERSION")
     else
-      defer "the draft's package, $OLD_URL, is the installer of $draft_version, newer than $VERSION, so nothing was changed; dispatch \"Submit to the Microsoft Store\" with $VERSION once the submission in progress ends"
+      defer "the draft's package, $OLD_URL, is the installer of $draft_version, newer than $VERSION, so the draft already holds the installer of a newer version and the listing is left unchanged"
     fi
   fi
 fi

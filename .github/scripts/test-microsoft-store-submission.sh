@@ -590,7 +590,7 @@ FAULTS=()
 want_exit 0
 want_text "microsoft-store-submission.sh — "
 want_text "MICROSOFT_STORE_CLIENT_SECRET"
-want_text "usage error; 3 when a real run changed nothing"
+want_text "draft's package is the installer of a newer version, its outcome line naming"
 want_nothing_sent
 end_case help_prints_header
 
@@ -661,10 +661,10 @@ serve_case
 CASE=defers_newer_draft
 run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$VERSION" --dry-run false
 want_exit 3
-want_outcome "is the installer of 0.10.5, newer than $VERSION, so nothing was changed; dispatch \"Submit to the Microsoft Store\" with $VERSION"
+want_outcome "is the installer of 0.10.5, newer than $VERSION, so the draft already holds the installer of a newer version and the listing is left unchanged"
 want_text "0.10.5"
 want_text "newer than $VERSION"
-want_text "dispatch \"Submit to the Microsoft Store\" with $VERSION once the submission in progress ends"
+want_no_text "dispatch"
 want_count 0 "^PUT "
 want_count 0 "^POST /submission/"
 end_case defers_newer_draft

@@ -378,8 +378,9 @@ name: Publish and sign core plugins
 #                        certification or published. A submission already in
 #                        progress and a draft that holds a newer version leave
 #                        the listing unchanged and the job passing, with a
-#                        warning naming the Submit to the Microsoft Store
-#                        dispatch to run once the submission in progress ends;
+#                        warning, whose summary line says why and, for a
+#                        submission in progress, names the Submit to the
+#                        Microsoft Store dispatch to run once it ends;
 #                        a draft that does not hold exactly one package is
 #                        refused, changing nothing. On a dry run it reads the
 #                        release, the address, the draft's status and its
@@ -5260,10 +5261,10 @@ jobs:
     # naming what to fix, a draft that does not hold exactly one package,
     # changing nothing. A submission already in progress and a draft that holds
     # a newer version also change nothing; the script exits 3 for them, and
-    # the job passes with a warning annotation and a line in the run's summary
-    # naming this version and the Submit to the Microsoft Store dispatch to
-    # run once the submission in progress ends. Every other non-zero status
-    # fails the job.
+    # the job passes with a warning annotation naming this version and a line
+    # in the run's summary saying why, and, for a submission in progress, the
+    # Submit to the Microsoft Store dispatch to run once it ends. Every other
+    # non-zero status fails the job.
     #
     # It runs once publish-downloads has succeeded, for a final release tag
     # alone: a pre-release is skipped by its if:, which reads sign-and-publish's
@@ -5327,7 +5328,7 @@ jobs:
           status=0
           bash .github/scripts/microsoft-store-submission.sh --version "$RELEASE_VERSION" --dry-run "$DRY" || status=$?
           if [ "$status" -eq 3 ]; then
-            message="the Microsoft Store listing was not updated to $RELEASE_VERSION: a submission is in progress, or the draft holds a newer version; dispatch \"Submit to the Microsoft Store\" with $RELEASE_VERSION once the submission in progress ends"
+            message="the Microsoft Store listing was not updated to $RELEASE_VERSION; the step summary says why; when a submission is in progress, dispatch \"Submit to the Microsoft Store\" with $RELEASE_VERSION once it ends"
             echo "::warning title=Microsoft Store listing not updated::$message"
             echo "$message" >>"$GITHUB_STEP_SUMMARY"
             exit 0
