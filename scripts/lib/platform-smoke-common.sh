@@ -31,7 +31,9 @@
 # smoke_check_tree_sums has held the list to the files. The job that publishes
 # the Windows installer to the download bucket names it through
 # smoke_release_asset_name and holds the copy it downloads from the release to
-# the digest smoke_listed_digest reads from the release's list. The smoke
+# the digest smoke_listed_digest reads from the release's list, gives it its
+# object key and public address through smoke_download_key and smoke_download_url,
+# and holds the address to smoke_check_download. The smoke
 # run's install step lays out a release the same way, with the same two
 # functions, so the install scripts are proven against the names and the list a
 # release carries.
@@ -75,6 +77,30 @@
 #     after the target: aggrega-windows-amd64-setup.exe becomes
 #     aggrega-<version>-windows-amd64-setup.exe. Returns 2, printing nothing, when
 #     an argument is empty.
+#
+#   smoke_download_key <version>
+#     Prints the object key the Windows installer of the release <version> has in
+#     the download bucket: aggrega-cli/v<version>/ and the installer's release
+#     name, so aggrega-cli/v1.2.3/aggrega-1.2.3-windows-amd64-setup.exe for 1.2.3.
+#     Returns 2, printing nothing, when <version> is empty.
+#
+#   smoke_download_url <version>
+#     Prints the public address of that object: the base address
+#     DOWNLOADS_PUBLIC_BASE names, https://download.aggrega.ai when it is unset or
+#     empty, with one trailing / dropped, then / and smoke_download_key's key.
+#     Returns 2, printing nothing, when <version> is empty.
+#
+#   smoke_check_download <url> <sha256>
+#     Holds the address <url> to what the Microsoft Store needs of an installer's
+#     download address: one GET of it in full, following no redirect, answers 200
+#     with a Content-Length equal to the number of bytes received and with the
+#     SHA-256 <sha256>. An answer of 404 is asked again, every 30 seconds, up to
+#     eight tries in all, since a cached domain may still hold an answer given
+#     before the object existed. Prints one line naming the address, the length
+#     and the digest when all hold. Returns 1, naming the address and the fault
+#     (the status and the redirect's target; the Content-Length, or its absence,
+#     and the bytes received; the digest served and the digest expected),
+#     otherwise. It sets no variable and leaves no file.
 #
 #   smoke_native_path <path>
 #     Prints <path> in the form a native program on this system reads: the Windows
@@ -398,6 +424,69 @@ smoke_release_asset_name() {
   variant="${variant%"-$goos-$goarch"}"
   printf '%s-%s-%s-%s%s%s\n' "$variant" "$version" "$goos" "$goarch" "$kind" "$ext"
 }
+
+smoke_download_key() {
+  local version="$1" installer
+  [ -n "$version" ] || return 2
+  installer="$(smoke_target_installer windows/amd64)" || return 2
+  installer="$(smoke_release_asset_name windows/amd64 "$version" "$installer")" || return 2
+  printf 'aggrega-cli/v%s/%s\n' "$version" "$installer"
+}
+
+smoke_download_url() {
+  local version="$1" base="${DOWNLOADS_PUBLIC_BASE:-https://download.aggrega.ai}" key
+  key="$(smoke_download_key "$version")" || return 2
+  printf '%s/%s\n' "${base%/}" "$key"
+}
+
+# The body is a subshell so its work directory is removed on every way out and
+# no variable reaches the caller.
+smoke_check_download() (
+  local url="$1" want="$2" tries=8 try answer status redirect work length size actual
+  work="$(mktemp -d)" || exit 1
+  trap 'rm -rf -- "$work"' EXIT
+  for try in $(seq 1 "$tries"); do
+    rm -f -- "$work/headers" "$work/body"
+    answer="$(curl --silent --show-error --proto '=https' --connect-timeout 30 --max-time 900 --retry 3 \
+      --dump-header "$work/headers" --output "$work/body" \
+      --write-out '%{http_code} %{redirect_url}' "$url")" || {
+      printf 'smoke: %s could not be fetched: curl exited %s\n' "$url" "$?" >&2
+      exit 1
+    }
+    status="${answer%% *}"
+    redirect="${answer#* }"
+    if [ "$status" != 404 ] || [ "$try" -eq "$tries" ]; then
+      break
+    fi
+    printf 'smoke: %s answered 404 (try %s of %s); asking again in 30 seconds\n' "$url" "$try" "$tries"
+    sleep 30
+  done
+  if [ "$status" != 200 ] || [ -n "$redirect" ]; then
+    printf 'smoke: %s answered HTTP %s%s; the address itself must answer 200\n' \
+      "$url" "$status" "${redirect:+, redirecting to $redirect}" >&2
+    exit 1
+  fi
+  length="$(tr -d '\r' <"$work/headers" | awk -F': *' 'tolower($1) == "content-length" { value = $2 } END { print value }')"
+  size="$(wc -c <"$work/body")"
+  size="${size//[[:space:]]/}"
+  if [ -z "$length" ]; then
+    printf 'smoke: %s answered 200 with no Content-Length, and %s bytes were received\n' "$url" "$size" >&2
+    exit 1
+  fi
+  if [ "$length" != "$size" ]; then
+    printf "smoke: %s answered with Content-Length '%s', but %s bytes were received\n" "$url" "$length" "$size" >&2
+    exit 1
+  fi
+  local -a sha256
+  smoke_sha256_command sha256 || exit 1
+  actual="$("${sha256[@]}" <"$work/body")"
+  actual="${actual%% *}"
+  if [ "$actual" != "$want" ]; then
+    printf 'smoke: %s serves SHA-256 %s, but %s was expected\n' "$url" "$actual" "$want" >&2
+    exit 1
+  fi
+  printf 'smoke: %s answers 200 itself, with Content-Length %s and SHA-256 %s\n' "$url" "$length" "$actual"
+)
 
 smoke_native_path() {
   if command -v cygpath >/dev/null 2>&1; then

@@ -4955,15 +4955,16 @@ jobs:
     # job with no other credential but the run's own token, which here reads
     # this repository and its release and nothing more. It checks out this
     # repository at the commit the build job built, for the smoke library,
-    # whose namer gives the installer's name and whose reader of SHA-256 lists
-    # gives its digest, as in the release step and the package-channel render;
-    # it runs no action but checkout and no program but gh, curl and the
+    # whose namer gives the installer's name, whose functions give its object
+    # key and public address and hold that address to what the Store needs, and
+    # whose reader of SHA-256 lists gives its digest, as in the release step and
+    # the package-channel render; it runs no action but checkout and no program but gh, curl and the
     # shell's own utilities. The key pair reaches curl on its standard input,
     # as a line of curl's configuration, so it is never placed on a command
     # line or written to disk.
     #
-    # The bucket, the public address and the installer's media type are
-    # written once, in this job's env. The if: names both jobs it needs as
+    # The bucket and the installer's media type are written once, in this job's
+    # env; the object key and the public address are the smoke library's. The if: names both jobs it needs as
     # having succeeded rather than leaving it to the default, since
     # sign-and-publish may run beside a sign-macos skipped while macOS signing
     # is off.
@@ -4976,7 +4977,6 @@ jobs:
       contents: read
     env:
       DOWNLOADS_BUCKET: aggrega-downloads
-      DOWNLOADS_PUBLIC_BASE: https://download.aggrega.ai
       INSTALLER_MEDIA_TYPE: application/vnd.microsoft.portable-executable
 
     steps:
@@ -5020,9 +5020,9 @@ jobs:
           persist-credentials: false
 
       - name: Publish the Windows installer to the download bucket
-        # The installer's name is the smoke library's, for the version the
-        # release's files carry, and its object key is
-        # aggrega-cli/v<version>/<installer>. On a dry run the step prints the
+        # The installer's name, its object key, aggrega-cli/v<version>/<installer>,
+        # and its public address are the smoke library's, for the version the
+        # release's files carry. On a dry run the step prints the
         # address it would publish and exits before it reads the release or the
         # key pair. On a real publish the tag must be v<version>; the installer
         # and SHA256SUMS are downloaded from the tag's release into a directory
@@ -5061,8 +5061,8 @@ jobs:
           . aggrega-cli/scripts/lib/platform-smoke-common.sh
           smoke_require_bash
           installer="$(smoke_release_asset_name windows/amd64 "$RELEASE_VERSION" "$(smoke_target_installer windows/amd64)")"
-          key="aggrega-cli/v$RELEASE_VERSION/$installer"
-          url="$DOWNLOADS_PUBLIC_BASE/$key"
+          key="$(smoke_download_key "$RELEASE_VERSION")"
+          url="$(smoke_download_url "$RELEASE_VERSION")"
 
           if [ "$DRY" = "true" ]; then
             echo "publish-downloads: dry run: would publish $installer from the release $TAG to the bucket $DOWNLOADS_BUCKET as $key, served at $url; nothing is uploaded."
@@ -5127,14 +5127,16 @@ jobs:
             "$installer" "$key" "$url" "$digest" "$size" "$outcome" >> "$GITHUB_ENV"
 
       - name: Check the installer at its public address
-        # On a real publish, the address the Microsoft Store downloads from:
-        # one GET of it in full, following no redirect, which must answer 200,
-        # with the bytes SHA256SUMS lists and a Content-Length equal to their
-        # size. An answer of 404 is asked again, every 30 seconds for up to
-        # eight tries, since the bucket's domain is cached and may still hold
-        # an answer given before the object existed. When the upload found the
+        # On a real publish, the address the Microsoft Store downloads from,
+        # held by the smoke library's smoke_check_download to one GET of it in
+        # full, following no redirect, which must answer 200, with the bytes
+        # SHA256SUMS lists and a Content-Length equal to their number. An
+        # answer of 404 is asked again, every 30 seconds for up to eight
+        # tries, since the bucket's domain is cached and may still hold an
+        # answer given before the object existed. When the upload found the
         # key taken, the digest compared here is the object's that was already
-        # there.
+        # there, and a failed check says the bucket already held the key and
+        # nothing was replaced.
         env:
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_DRY_RUN: ${{ inputs.dry_run }}
@@ -5154,41 +5156,14 @@ jobs:
               exit 1
             fi
           done
-          work="$(mktemp -d "$RUNNER_TEMP/downloads-check.XXXXXX")"
-          trap 'rm -rf -- "$work"' EXIT
-          tries=8
-          for try in $(seq 1 "$tries"); do
-            answer="$(curl --silent --show-error --proto '=https' --connect-timeout 30 --max-time 900 --retry 3 \
-              --dump-header "$work/headers" --output "$work/installer" \
-              --write-out '%{http_code} %{redirect_url}' "$INSTALLER_URL")"
-            status="${answer%% *}"
-            redirect="${answer#* }"
-            if [ "$status" != 404 ] || [ "$try" -eq "$tries" ]; then
-              break
-            fi
-            echo "publish-downloads: $INSTALLER_URL answered 404 (try $try of $tries); asking again in 30 seconds"
-            sleep 30
-          done
-          if [ "$status" != 200 ] || [ -n "$redirect" ]; then
-            echo "publish-downloads: $INSTALLER_URL answered HTTP $status${redirect:+, redirecting to $redirect}; the Microsoft Store needs 200 from the address itself" >&2
-            exit 1
-          fi
-          actual="$(sha256sum < "$work/installer")"
-          actual="${actual%% *}"
-          if [ "$actual" != "$INSTALLER_SHA256" ]; then
+          . aggrega-cli/scripts/lib/platform-smoke-common.sh
+          smoke_require_bash
+          if ! smoke_check_download "$INSTALLER_URL" "$INSTALLER_SHA256"; then
             if [ "$UPLOAD_OUTCOME" = taken ]; then
-              echo "publish-downloads: the bucket $DOWNLOADS_BUCKET already held $INSTALLER_KEY, and $INSTALLER_URL serves SHA-256 $actual, while this release's $INSTALLER has SHA-256 $INSTALLER_SHA256. The upload creates an object only where none is, so it replaced nothing: the address serves bytes other than this release's installer." >&2
-            else
-              echo "publish-downloads: $INSTALLER_URL serves SHA-256 $actual, but the release's SHA256SUMS lists $INSTALLER_SHA256 for $INSTALLER" >&2
+              echo "publish-downloads: the bucket $DOWNLOADS_BUCKET already held $INSTALLER_KEY, and the address does not serve this release's $INSTALLER, whose SHA-256 is $INSTALLER_SHA256. The upload creates an object only where none is, so it replaced nothing." >&2
             fi
             exit 1
           fi
-          length="$(tr -d '\r' < "$work/headers" | awk -F': *' 'tolower($1) == "content-length" { value = $2 } END { print value }')"
-          if [ "$length" != "$INSTALLER_SIZE" ]; then
-            echo "publish-downloads: $INSTALLER_URL answered with Content-Length '$length', but $INSTALLER is $INSTALLER_SIZE bytes" >&2
-            exit 1
-          fi
-          echo "publish-downloads: $INSTALLER_URL answers 200 itself, with Content-Length $length and SHA-256 $actual, as the release's SHA256SUMS lists"
 
   smoke-binaries:
     # Fetches, on a dry run naming smoke_binaries_from, that release's Windows
