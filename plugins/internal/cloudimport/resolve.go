@@ -214,6 +214,14 @@ func (rd reader) pred(p Pred, body []Prop) truth {
 		return truthOf(present)
 	case OpAbsent:
 		return truthOf(!present)
+	case OpLacks:
+		switch t := rd.pred(Pred{Path: p.Path, Op: OpContains, Value: p.Value}, body); t {
+		case truthUndecided:
+			return t
+		case truthHolds:
+			return truthFails
+		}
+		return truthHolds
 	case OpEquals, OpPrefix, OpContains:
 		if st != stateRead || v == nil {
 			return truthFails

@@ -22,6 +22,9 @@ spec:
   locals:
     # The nested template's symbolic name: the instance's name in capitalized words, letters and digits alone, so two instances in one template declare two nested templates.
     symbol: "{{ capitalizedWords .context.instance_id }}"
+  provides:
+    # The String Pipe: each value is one whole ARM expression reading an output of the module's nested template, piped as written into a consumer's context; ARM evaluates it when the template is deployed.
+    outputs_uri_value: "[reference('{{ .locals.symbol }}').outputs.uri.value]"
   assertions:
     # Halts naming any key under infra.overrides this Recipe does not read.
     overrides_this_recipe_reads: |

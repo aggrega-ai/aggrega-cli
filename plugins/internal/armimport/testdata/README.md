@@ -32,7 +32,7 @@ test writes in its place from `avm/<module>/<version>/main.json`. Run the tests 
 | `raw-topology` | A PostgreSQL flexible server holding a database nested in its resources and placed in a subnet of a virtual network the template creates, and a container app reading the server's address into its environment; a parameters file naming the server. |
 | `avm-topology` | The topology of `raw-topology` with the server deployed through the Azure Verified Modules module `avm/res/db-for-postgre-sql/flexible-server` 0.16.2, the app reading the module's `fqdn` output. |
 | `drafted-from-source` | A Key Vault, a static web app no row maps, and a deployment script reading the vault's address. |
-| `wrapped-module` | An Azure Data Explorer cluster deployed through the module `avm/res/kusto/cluster` 0.11.1, whose resource type no row maps. |
+| `wrapped-module` | An Azure Data Explorer cluster deployed through the module `avm/res/kusto/cluster` 0.11.1, whose resource type no row maps, and a container app reading the module's `uri` output into its environment. |
 | `existing` | A template of language version 2.0 reading a subnet and a Log Analytics workspace it does not create, from a PostgreSQL flexible server, an Application Insights component and a workbook no row maps. |
 | `copy` | Storage accounts repeated a literal number of times, and Service Bus namespaces repeated as many times as a parameter says. |
 | `condition` | A Redis cache deployed where one boolean parameter is true, and a Key Vault deployed under another condition. |

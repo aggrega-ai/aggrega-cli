@@ -25,6 +25,10 @@ const (
 	// OpContains holds where the value at the path reads as text containing
 	// the predicate's Value.
 	OpContains PredOp = "contains"
+	// OpLacks holds where OpContains does not, the value at the path read: the
+	// node writes no text there containing the predicate's Value, nothing or
+	// null included.
+	OpLacks PredOp = "lacks"
 	// OpPresent holds where the node writes a value other than null at the
 	// path.
 	OpPresent PredOp = "present"

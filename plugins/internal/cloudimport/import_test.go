@@ -271,7 +271,7 @@ func toyString(raw json.RawMessage) string {
 
 // toyPointer is the toy target's pointer to an attribute of a resource the
 // draft leaves to the operator.
-func toyPointer(v Value) (string, bool) {
+func toyPointer(v Value, _ *Graph) (string, bool) {
 	r, ok := v.(Ref)
 	if !ok {
 		return "", false

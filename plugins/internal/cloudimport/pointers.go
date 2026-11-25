@@ -69,7 +69,7 @@ func (w *aggregateWriter) pointerText(v Value) (string, outcome) {
 	}
 	expression := ""
 	if w.f.Pointer != nil {
-		if text, ok := w.f.Pointer(v); ok {
+		if text, ok := w.f.Pointer(v, w.g); ok {
 			expression = text
 		}
 	}

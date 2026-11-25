@@ -19,7 +19,10 @@
 //
 // The generator reads the format's hand-written table, in the importer's
 // package, for what it accounts for: a Recipe its notImported lists generates
-// no row, though its imports are resolved like every other's. Two Recipes claiming one key and When are refused, naming both, and
+// no row, though its imports are resolved like every other's. A Recipe a hand
+// row written whole names — a hand row of another key and When than the
+// Recipe's text gives — generates no row either, the hand row standing in its
+// place. Two Recipes claiming one key and When are refused, naming both, and
 // no table is written, since a table naming one of them would decide which
 // Component a resource of that kind is — unless the hand table writes the
 // rows of all of them but one itself, each Recipe it names then generating no
@@ -263,10 +266,6 @@ func generate(h *hubCatalog, f format, hand cloudimport.Table) ([]cloudimport.Ro
 	for _, n := range hand.NotImported {
 		notImported[n.Recipe] = true
 	}
-	handNamed := map[string]bool{}
-	for _, r := range hand.Hand {
-		handNamed[r.Recipe] = true
-	}
 	var (
 		claims  []claim
 		notes   []string
@@ -318,7 +317,7 @@ func generate(h *hubCatalog, f format, hand cloudimport.Table) ([]cloudimport.Ro
 	if len(lacking.recipes) > 0 {
 		return nil, notes, &lacking
 	}
-	rows, conflict := settle(claims, handNamed)
+	rows, conflict := settle(claims, hand.Hand)
 	if conflict != nil {
 		return nil, notes, conflict
 	}
@@ -332,10 +331,22 @@ func generate(h *hubCatalog, f format, hand cloudimport.Table) ([]cloudimport.Ro
 	return rows, notes, nil
 }
 
-// settle returns the claims' rows, two or more claims of one key and When
-// settled: a claim whose Recipe a hand row names gives no row, and where two
-// or more remain they are a conflict.
-func settle(claims []claim, handNamed map[string]bool) ([]cloudimport.Row, *claimConflict) {
+// settle returns the claims' rows, settled against the hand rows. A claim
+// whose Recipe a hand row of another key and When names gives no row: that
+// hand row is the Recipe's row, written whole, and stands in the claim's
+// place. A claim whose key and When a hand row shares stays, the hand row
+// merging into it. Where two or more claims share one key and When, each
+// whose Recipe any hand row names gives no row, and where two or more remain
+// they are a conflict.
+func settle(claims []claim, hand []cloudimport.Row) ([]cloudimport.Row, *claimConflict) {
+	named := map[string]bool{}
+	merging := map[string]bool{}
+	for _, r := range hand {
+		if r.Recipe != "" {
+			named[r.Recipe] = true
+		}
+		merging[r.Identity()] = true
+	}
 	var order []string
 	groups := map[string][]claim{}
 	for _, c := range claims {
@@ -350,7 +361,9 @@ func settle(claims []claim, handNamed map[string]bool) ([]cloudimport.Row, *clai
 	for _, id := range order {
 		g := groups[id]
 		if len(g) > 1 {
-			g = slices.DeleteFunc(slices.Clone(g), func(c claim) bool { return handNamed[c.row.Recipe] })
+			g = slices.DeleteFunc(slices.Clone(g), func(c claim) bool { return named[c.row.Recipe] })
+		} else if named[g[0].row.Recipe] && !merging[id] {
+			g = nil
 		}
 		switch len(g) {
 		case 0:

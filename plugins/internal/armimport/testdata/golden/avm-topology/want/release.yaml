@@ -26,6 +26,7 @@ spec:
           infra:
             # Left for the Release, since the source cannot supply it: the resource ID of the Azure Key Vault secret holding the template parameter administratorPassword, /subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.KeyVault/vaults/<vault>/secrets/<secret>; the value the template parameter administratorPassword receives goes into that secret.
             origin: ""
+    # Properties the source writes and the draft does not place: location, properties.configuration.ingress.external, properties.template.containers.0.name.
     web:
       infra:
         image: "ghcr.io/example/web:1.4.2"

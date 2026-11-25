@@ -4,7 +4,9 @@
 package cloudimport
 
 import (
+	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
@@ -41,8 +43,13 @@ import (
 //     target, which the host confirms against that target's Recipes; a drafted
 //     instance names its drafted Recipe, which exists on the format's own
 //     target alone, where the import's target is that one;
-//   - a module-form instance's comment names each parameter the node sets that
-//     its row does not translate.
+//   - a mapped instance's comment names each property its node writes that its
+//     row does not place — a module-form node's parameters its row does not
+//     translate — and each property a child folded into it writes that its
+//     fold does not; then each entry of its environment list the draft does
+//     not deliver from a connection, the variable and its value as the source
+//     writes it, or the variable alone where the value is secret, each also
+//     warned value-not-carried.
 func Release(in aggrega.ImportInput, f Format, g *Graph, classified []Classified,
 	aggregate aggrega.EmittedEntity) ([]aggrega.EmittedEntity, []aggrega.Diagnostic) {
 	analysis := newAggregateWriter(in, f, g, classified, false)
@@ -100,12 +107,8 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 		}
 		b.e.Secrets = w.mappedSecrets(cl)
 		b.e.Realization = cl.Row.Recipe
-		if isModule(n.Form) {
-			if names := untranslated(n, cl.Row); len(names) > 0 {
-				b.e.Comments = append(b.e.Comments, "Module parameters the source sets and the draft does not translate: "+
-					draftyaml.CommentList(names)+".")
-			}
-		}
+		b.e.Comments = append(b.e.Comments, w.unplacedComments(cl)...)
+		b.e.Comments = append(b.e.Comments, w.unwiredEnv(cl)...)
 	case cl.Class == ClassDrafted:
 		for _, in := range cl.Inputs {
 			if in.Property == nil {
@@ -126,21 +129,205 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 	return b.done()
 }
 
-// untranslated returns the names of the parameters the module node n sets that
-// no placement of row reads, in the order the node writes them.
-func untranslated(n *Node, row *Row) []string {
-	paths := rowPaths(row)
-	var out []string
-	for _, p := range n.Body {
-		covered := false
-		for _, path := range paths {
-			covered = covered || overlaps(path, []string{p.Name})
+// unplaced returns the paths body writes that no path of paths places, in the
+// order body writes them, each at the outermost member or item nothing under
+// which is placed: a member a path names or lies inside is placed, one a path
+// lies under is read member by member, and one holding a literal a path lies
+// inside is placed.
+func unplaced(body []Prop, paths [][]string) [][]string {
+	var out [][]string
+	for _, p := range body {
+		out = unplacedIn(out, p, []string{p.Name}, paths)
+	}
+	return out
+}
+
+func unplacedIn(out [][]string, p Prop, at []string, paths [][]string) [][]string {
+	under := false
+	for _, path := range paths {
+		switch {
+		case len(path) <= len(at):
+			if samePath(path, at[:len(path)]) {
+				return out
+			}
+		case samePath(path[:len(at)], at):
+			under = true
 		}
-		if !covered {
-			out = append(out, p.Name)
+	}
+	switch {
+	case !under:
+		return append(out, at)
+	case p.Value != nil:
+		return out
+	}
+	for _, m := range p.Props {
+		out = unplacedIn(out, m, extend(at, m.Name), paths)
+	}
+	for i, item := range p.Items {
+		out = unplacedIn(out, item, extend(at, strconv.Itoa(i)), paths)
+	}
+	return out
+}
+
+// unplacedComments are the comment lines of the mapped instance cl naming what
+// the draft does not place: the properties its node writes that its row
+// neither places nor fixes by a predicate of its When testing it equals a
+// value, which the row's Recipe writes, or for a node of a module form the
+// parameters its row does not translate; and for each child folded into it,
+// the properties the child writes that its fold does not.
+func (w *aggregateWriter) unplacedComments(cl *Classified) []string {
+	var out []string
+	n := cl.Node
+	placed := rowPaths(cl.Row)
+	for _, p := range cl.Row.When {
+		if p.Op == OpEquals {
+			placed = append(placed, p.Path)
+		}
+	}
+	if paths := unplaced(n.Body, placed); len(paths) > 0 {
+		lead := "Properties the source writes and the draft does not place: "
+		if isModule(n.Form) {
+			lead = "Module parameters the source sets and the draft does not translate: "
+		}
+		out = append(out, lead+draftyaml.CommentList(pathTexts(paths))+".")
+	}
+	for _, child := range w.out {
+		if child.Class != ClassFolded || child.Into != n.ID || len(w.cs.folding[child.Node.ID]) > 0 {
+			continue
+		}
+		fold := childFold(cl.Row, child.Node.Type)
+		if fold == nil {
+			continue
+		}
+		if paths := unplaced(child.Node.Body, [][]string{fold.From}); len(paths) > 0 {
+			out = append(out, "Properties "+draftyaml.Comment(child.Node.ID)+", folded into this instance, writes "+
+				"and the draft does not place: "+draftyaml.CommentList(pathTexts(paths))+".")
 		}
 	}
 	return out
+}
+
+// pathTexts writes each of paths as text.
+func pathTexts(paths [][]string) []string {
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = pathText(p)
+	}
+	return out
+}
+
+// unwiredEnv returns the comment line naming each entry of the mapped
+// instance cl's environment list the draft does not deliver, and warns
+// value-not-carried of each, once: an entry whose value reads no other
+// resource, which no connection delivers. An entry reading another resource is
+// a connection's, reported where it is wired or why it is not. A secret value
+// — a secure parameter's, a credential's, or text naming a secure parameter —
+// is never written: its variable alone is named.
+func (w *aggregateWriter) unwiredEnv(cl *Classified) []string {
+	env := cl.Row.Env
+	if env == nil {
+		return nil
+	}
+	r := w.readOff(cl, env.Path)
+	if !r.ok {
+		return nil
+	}
+	var named []string
+	for i, item := range r.prop.Items {
+		variable := "the entry " + strconv.Itoa(i)
+		if p, ok := child(item.Props, nil, env.Name); ok {
+			if text, st := literalText(literalJSON(p.Value)); st == stateRead && text != "" {
+				variable = text
+			}
+		}
+		value, _ := child(item.Props, nil, env.Value)
+		v := value.Value
+		if len(refsOf(v)) > 0 || holdsCredential(v) {
+			continue
+		}
+		text, secret := w.sourceText(v)
+		entry := draftyaml.Comment(variable)
+		switch {
+		case secret:
+			entry += ", a secret value the draft never writes"
+		case text == "":
+			entry += ", whose value the draft does not read"
+		default:
+			entry += " = " + draftyaml.Comment(text)
+		}
+		named = append(named, entry)
+		w.diags = append(w.diags, Report(CodeValueNotCarried, fmt.Sprintf("%s sets the variable %s in the "+
+			"environment of the instance %s, and the draft delivers an instance's environment from its "+
+			"connections alone, so the variable is not carried: the instance's Release entry names it, for the "+
+			"author to set where the instance is configured", r.node.ID, variable, cl.Key)))
+	}
+	if len(named) == 0 {
+		return nil
+	}
+	return []string{"Environment variables the source sets and no connection delivers: " +
+		strings.Join(named, "; ") + "."}
+}
+
+// literalJSON is the JSON of a literal v, nil for any other value.
+func literalJSON(v Value) []byte {
+	if l, ok := v.(Literal); ok {
+		return l.JSON
+	}
+	return nil
+}
+
+// holdsCredential reports whether v is, or composes, a credential.
+func holdsCredential(v Value) bool {
+	switch v := v.(type) {
+	case Credential:
+		return true
+	case Compose:
+		for _, part := range v.Parts {
+			if holdsCredential(part) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// sourceText writes v as the source writes it, for a comment: a literal
+// scalar as its text and any other literal as its JSON, a parameter as the
+// template parameter it names in braces, text the source evaluates when it
+// deploys as written, and a composition as the text of its parts. secret is
+// set where v is a secret value, whose text is not written.
+func (w *aggregateWriter) sourceText(v Value) (text string, secret bool) {
+	switch v := v.(type) {
+	case nil:
+		return "", false
+	case Literal:
+		if s, st := literalText(v.JSON); st == stateRead {
+			return s, false
+		}
+		return string(bytes.TrimSpace(v.JSON)), false
+	case Param:
+		p := w.param(v.Name)
+		return "{the template parameter " + v.Name + "}", p != nil && p.Secure
+	case Opaque:
+		return v.Text, len(w.secureReads(v.Text)) > 0
+	case Compose:
+		var b strings.Builder
+		for _, part := range v.Parts {
+			if l, ok := part.(Literal); ok {
+				if s, st := literalText(l.JSON); st == stateRead {
+					b.WriteString(s)
+					continue
+				}
+			}
+			t, s := w.sourceText(part)
+			if s {
+				return "", true
+			}
+			b.WriteString(t)
+		}
+		return b.String(), false
+	}
+	return "", false
 }
 
 // entryBuilder is one Release entry being written.

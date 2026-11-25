@@ -1,6 +1,6 @@
 # Sources read: main.json.
 # Outputs of the source:
-#   - clusterUri: carried by no instance
+#   - clusterUri: carried by the instance cluster, provides key outputs_uri_value
 apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
@@ -11,3 +11,13 @@ spec:
   components:
     cluster:
       type: imported/bigdata/microsoft-kusto-clusters
+    ingest:
+      type: core/compute/worker
+      uses:
+        cluster:
+          cluster:
+            target: cluster
+            inject:
+              env:
+                - in: "CLUSTER_URI"
+                  from: outputs_uri_value

@@ -2,13 +2,33 @@
   // An Azure Data Explorer cluster deployed through the Azure Verified Modules
   // module, whose compiled template the test writes in place of the $avm
   // member: no row maps its resource type, so its Recipe sources the module
-  // whole, with its telemetry off.
+  // whole, with its telemetry off, and provides the module's uri output a
+  // worker container app reads into its environment.
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
     "location": { "type": "string", "defaultValue": "westeurope" }
   },
   "resources": [
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "ingest",
+      "location": "[parameters('location')]",
+      "dependsOn": [ "[resourceId('Microsoft.Resources/deployments', 'cluster')]" ],
+      "properties": {
+        "environmentId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shared/providers/Microsoft.App/managedEnvironments/cae-shared",
+        "template": {
+          "containers": [
+            {
+              "name": "ingest",
+              "image": "ghcr.io/example/ingest:3.1.0",
+              "env": [ { "name": "CLUSTER_URI", "value": "[reference('cluster').outputs.uri.value]" } ]
+            }
+          ]
+        }
+      }
+    },
     {
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2022-09-01",

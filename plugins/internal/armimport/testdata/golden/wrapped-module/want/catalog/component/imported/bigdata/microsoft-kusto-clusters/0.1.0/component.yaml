@@ -19,3 +19,10 @@ spec:
           description: "Writable settings of Microsoft.Kusto/clusters, each under the vendor's own name, which the Recipe passes to the resource as written; its header lists the names it reads."
           additionalProperties: true
       additionalProperties: false
+    provides:
+      type: object
+      properties:
+        # read back: published under provides
+        # The source writing the resource gives no description of outputs.uri.value.
+        outputs_uri_value: { type: string }
+      additionalProperties: false

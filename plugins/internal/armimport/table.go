@@ -45,6 +45,8 @@ var (
 		"component.aggrega.ai/upstream-licensing": "not-applicable"}
 	dnsRecordTraits = map[string]string{"component.aggrega.ai/type": "resource",
 		"component.aggrega.ai/hosting": "managed", "component.aggrega.ai/upstream-licensing": "proprietary"}
+	frontDoorTraits = map[string]string{"component.aggrega.ai/type": "resource",
+		"component.aggrega.ai/hosting": "managed", "component.aggrega.ai/upstream-licensing": "proprietary"}
 	apiManagementTraits = map[string]string{"component.aggrega.ai/type": "resource",
 		"component.aggrega.ai/hosting": "mixed", "component.aggrega.ai/upstream-licensing": "proprietary",
 		"gateway.aggrega.ai/intelligence": "semantic", "dataplane.aggrega.ai/period-budget": "tokens"}
@@ -102,6 +104,46 @@ func site(r cloudimport.Row) cloudimport.Row {
 	return r
 }
 
+// notWorkflow holds of an App Service site that is no Logic Apps Standard
+// app, which the catalog maps to no Component.
+var notWorkflow = cloudimport.Pred{Path: propPath("kind"), Op: cloudimport.OpLacks, Value: "workflowapp"}
+
+// flexibleServer is the row merged into the generated row of an Azure
+// Database flexible server of the provider namespace, whose administrator's
+// password the Recipe takes in the credential slot given and whose module
+// names its private DNS zone's parameter dnsZone: its engine version, its
+// password, its address, the database folded into values.database, its
+// server parameters and firewall rules not carried, and the module's
+// parameters named as the resource writes them.
+func flexibleServer(namespace, slot, dnsZone string) cloudimport.Row {
+	typ := namespace + "/flexibleServers"
+	return cloudimport.Row{
+		Key: typ, Category: "datastore",
+		Infra:    []cloudimport.Placement{{From: propPath("version"), Key: "engine_version", Conv: "string"}},
+		Secrets:  []cloudimport.Placement{{From: propPath("administratorLoginPassword"), Key: slot}},
+		Provides: []cloudimport.Placement{{From: propPath("outputs", "fqdn", "value"), Key: "host"}},
+		Folds: []cloudimport.Fold{
+			{Type: typ + "/databases", Key: propPath("values", "database"), From: propPath("name"), One: true},
+			notCarried(typ+"/configurations", mapEntries("infra.overrides.server_configuration",
+				"the server parameters")),
+			notCarried(typ+"/firewallRules", "the Recipe places the server in the operator's virtual network, "+
+				"where it takes no firewall rule"),
+		},
+		Equivalences: alike(
+			cloudimport.Equivalence{Raw: propPath("properties", "administratorLogin"),
+				Module: propPath("administratorLogin")},
+			cloudimport.Equivalence{Raw: propPath("properties", "administratorLoginPassword"),
+				Module: propPath("administratorLoginPassword")},
+			cloudimport.Equivalence{Raw: propPath("properties", "version"), Module: propPath("version")},
+			cloudimport.Equivalence{Raw: propPath("properties", "network", "delegatedSubnetResourceId"),
+				Module: propPath("delegatedSubnetResourceId")},
+			cloudimport.Equivalence{Raw: propPath("properties", "network", dnsZone), Module: propPath(dnsZone)},
+			cloudimport.Equivalence{Raw: propPath("properties", "fullyQualifiedDomainName"),
+				Module: propPath("outputs", "fqdn", "value")},
+		),
+	}
+}
+
 // dnsRecord is the row of a record set of the type typ in an Azure DNS zone,
 // the zone the operator's.
 func dnsRecord(typ string) cloudimport.Row {
@@ -157,65 +199,12 @@ var handRows = append([]cloudimport.Row{
 		},
 	},
 	site(cloudimport.Row{Component: "core/compute/function", Recipe: "function-azure-functions",
-		When:   []cloudimport.Pred{{Path: propPath("kind"), Op: cloudimport.OpContains, Value: "functionapp"}},
-		Traits: functionTraits}),
-	site(cloudimport.Row{When: []cloudimport.Pred{{Path: propPath("kind"), Op: cloudimport.OpEquals,
-		Value: "functionapp,linux,container"}}}),
-	site(cloudimport.Row{Component: "core/compute/server", Recipe: "server-app-service", Traits: serverTraits}),
-	site(cloudimport.Row{When: []cloudimport.Pred{{Path: propPath("kind"), Op: cloudimport.OpEquals,
-		Value: "app,linux,container"}}}),
-	{
-		Key: "Microsoft.DBforPostgreSQL/flexibleServers", Category: "datastore",
-		Infra:    []cloudimport.Placement{{From: propPath("version"), Key: "engine_version", Conv: "string"}},
-		Secrets:  []cloudimport.Placement{{From: propPath("administratorLoginPassword"), Key: "password"}},
-		Provides: []cloudimport.Placement{{From: propPath("outputs", "fqdn", "value"), Key: "host"}},
-		Folds: []cloudimport.Fold{
-			{Type: "Microsoft.DBforPostgreSQL/flexibleServers/databases", Key: propPath("values", "database"),
-				From: propPath("name"), One: true},
-			notCarried("Microsoft.DBforPostgreSQL/flexibleServers/configurations", mapEntries(
-				"infra.overrides.server_configuration", "the server parameters")),
-			notCarried("Microsoft.DBforPostgreSQL/flexibleServers/firewallRules", "the Recipe places the "+
-				"server in the operator's virtual network, where it takes no firewall rule"),
-		},
-		Equivalences: alike(
-			cloudimport.Equivalence{Raw: propPath("properties", "administratorLogin"), Module: propPath("administratorLogin")},
-			cloudimport.Equivalence{Raw: propPath("properties", "administratorLoginPassword"),
-				Module: propPath("administratorLoginPassword")},
-			cloudimport.Equivalence{Raw: propPath("properties", "version"), Module: propPath("version")},
-			cloudimport.Equivalence{Raw: propPath("properties", "network", "delegatedSubnetResourceId"),
-				Module: propPath("delegatedSubnetResourceId")},
-			cloudimport.Equivalence{Raw: propPath("properties", "network", "privateDnsZoneArmResourceId"),
-				Module: propPath("privateDnsZoneArmResourceId")},
-			cloudimport.Equivalence{Raw: propPath("properties", "fullyQualifiedDomainName"),
-				Module: propPath("outputs", "fqdn", "value")},
-		),
-	},
-	{
-		Key: "Microsoft.DBforMySQL/flexibleServers", Category: "datastore",
-		Infra:    []cloudimport.Placement{{From: propPath("version"), Key: "engine_version", Conv: "string"}},
-		Secrets:  []cloudimport.Placement{{From: propPath("administratorLoginPassword"), Key: "root_password"}},
-		Provides: []cloudimport.Placement{{From: propPath("outputs", "fqdn", "value"), Key: "host"}},
-		Folds: []cloudimport.Fold{
-			{Type: "Microsoft.DBforMySQL/flexibleServers/databases", Key: propPath("values", "database"),
-				From: propPath("name"), One: true},
-			notCarried("Microsoft.DBforMySQL/flexibleServers/configurations", mapEntries(
-				"infra.overrides.server_configuration", "the server parameters")),
-			notCarried("Microsoft.DBforMySQL/flexibleServers/firewallRules", "the Recipe places the "+
-				"server in the operator's virtual network, where it takes no firewall rule"),
-		},
-		Equivalences: alike(
-			cloudimport.Equivalence{Raw: propPath("properties", "administratorLogin"), Module: propPath("administratorLogin")},
-			cloudimport.Equivalence{Raw: propPath("properties", "administratorLoginPassword"),
-				Module: propPath("administratorLoginPassword")},
-			cloudimport.Equivalence{Raw: propPath("properties", "version"), Module: propPath("version")},
-			cloudimport.Equivalence{Raw: propPath("properties", "network", "delegatedSubnetResourceId"),
-				Module: propPath("delegatedSubnetResourceId")},
-			cloudimport.Equivalence{Raw: propPath("properties", "network", "privateDnsZoneResourceId"),
-				Module: propPath("privateDnsZoneResourceId")},
-			cloudimport.Equivalence{Raw: propPath("properties", "fullyQualifiedDomainName"),
-				Module: propPath("outputs", "fqdn", "value")},
-		),
-	},
+		When: []cloudimport.Pred{{Path: propPath("kind"), Op: cloudimport.OpContains, Value: "functionapp"},
+			notWorkflow}, Traits: functionTraits}),
+	site(cloudimport.Row{Component: "core/compute/server", Recipe: "server-app-service", Traits: serverTraits,
+		When: []cloudimport.Pred{notWorkflow}}),
+	flexibleServer("Microsoft.DBforPostgreSQL", "password", "privateDnsZoneArmResourceId"),
+	flexibleServer("Microsoft.DBforMySQL", "root_password", "privateDnsZoneResourceId"),
 	{
 		Key: "Microsoft.Cache/redisEnterprise", Category: "datastore",
 		Values: []cloudimport.Placement{
@@ -229,8 +218,9 @@ var handRows = append([]cloudimport.Row{
 		Provides: []cloudimport.Placement{{From: propPath("outputs", "hostName", "value"), Key: "host"}},
 		Folds: []cloudimport.Fold{
 			notCarried("Microsoft.Cache/redisEnterprise/databases", "the Recipe creates the instance's one "+
-				"database itself, with the eviction policy, the persistence and the protocol the instance's "+
-				"values and infra set, so the database's own settings are set there"),
+				"database itself, its eviction policy from values.maxmemory_policy, its persistence from "+
+				"values.appendonly and values.persistence, and its protocol from infra.client_tls: set the "+
+				"database's settings there"),
 		},
 		Equivalences: alike(
 			cloudimport.Equivalence{Raw: propPath("sku", "name"), Module: propPath("skuName")},
@@ -436,7 +426,9 @@ var handRows = append([]cloudimport.Row{
 		),
 	},
 	{
-		Key: "Microsoft.Cdn/profiles", Category: "network",
+		Key: "Microsoft.Cdn/profiles", Component: "core/network/azure-front-door", Category: "network",
+		Recipe: "azure-front-door", Traits: frontDoorTraits, Form: cloudimport.FormRaw, Origin: "hand",
+		When: []cloudimport.Pred{{Path: propPath("sku", "name"), Op: cloudimport.OpContains, Value: "AzureFrontDoor"}},
 		Overrides: []cloudimport.Placement{
 			{From: propPath("sku", "name"), Key: "sku_name"},
 			{From: propPath("tags"), Key: "tags"},

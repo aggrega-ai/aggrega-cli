@@ -66,8 +66,10 @@ import (
 //
 // A parameter is carried where a node the draft writes an instance for, or
 // folds into one, reads it at a path the draft carries: any property of a
-// drafted node, its name included; a property a mapped instance's row places
-// or lists its environment at; the path a fold writes of a folded child. The
+// drafted node, its name included; a property a mapped instance's row places;
+// the path a fold writes of a folded child. An entry of a mapped instance's
+// environment list carries no parameter: the draft delivers the environment
+// from connections, and names each entry it does not deliver in the Release. The
 // Aggregate is named as importer.DraftName names it. Two runs over one input
 // give one byte sequence.
 func Aggregate(in aggrega.ImportInput, f Format, g *Graph, classified []Classified) (aggrega.EmittedEntity,
@@ -253,7 +255,7 @@ func (w *aggregateWriter) carriedValues(cl *Classified) []Value {
 			out = append(out, l.value)
 		}
 	case cl.Class == ClassMapped && cl.Row != nil:
-		paths := rowPaths(cl.Row)
+		paths := placedPaths(cl.Row)
 		if fold := instancesFold(cl.Row, n.Type); fold != nil {
 			paths = append(paths, fold.From)
 		}
@@ -265,10 +267,7 @@ func (w *aggregateWriter) carriedValues(cl *Classified) []Value {
 				continue
 			}
 			child := inst.Node
-			at(nodeRead, func(path []string) bool {
-				r := childRead(child, path)
-				return !r.ok && r.why == ""
-			}, rowPaths(inst.Row)...)
+			at(nodeRead, func(path []string) bool { return !childWrites(child, path) }, placedPaths(inst.Row)...)
 		}
 	case cl.Class == ClassFolded:
 		if fold := childFold(cl.Row, n.Type); fold != nil {
@@ -278,9 +277,20 @@ func (w *aggregateWriter) carriedValues(cl *Classified) []Value {
 	return out
 }
 
-// rowPaths are the paths r carries of its node: each placement's and the
-// environment list's.
+// rowPaths are the paths r reads of its node: each placement's and the
+// environment list's, whose entries the draft wires or names.
 func rowPaths(r *Row) [][]string {
+	out := placedPaths(r)
+	if r != nil && r.Env != nil {
+		out = append(out, r.Env.Path)
+	}
+	return out
+}
+
+// placedPaths are the paths r carries of its node, each placement's. The
+// environment list's entries are not among them: an entry the draft carries
+// is a connection's delivery, and one it does not is named in the Release.
+func placedPaths(r *Row) [][]string {
 	if r == nil {
 		return nil
 	}
@@ -289,9 +299,6 @@ func rowPaths(r *Row) [][]string {
 		for _, p := range ps {
 			out = append(out, p.From)
 		}
-	}
-	if r.Env != nil {
-		out = append(out, r.Env.Path)
 	}
 	return out
 }
@@ -446,19 +453,26 @@ func childRead(n *Node, path []string) read {
 	return nodeRead(n, path)
 }
 
+// childWrites reports whether the child n writes path, its name read as
+// childRead reads it: the test that reads an instance a fold makes of a child
+// off the child rather than off the parent folded into it.
+func childWrites(n *Node, path []string) bool {
+	r := childRead(n, path)
+	return r.ok || r.why != ""
+}
+
 // readOff reads what the mapped instance cl's row reads at path: off the
 // instance's node, its name read as childRead reads it; for an instance a fold
-// of its row makes of a child, off the child where the child writes path, and
-// off the parent folded into it otherwise.
+// of its row makes of a child, off the child where childWrites holds of path,
+// and off the parent folded into it otherwise.
 func (w *aggregateWriter) readOff(cl *Classified, path []string) read {
-	r := childRead(cl.Node, path)
-	if r.ok || r.why != "" || instancesFold(cl.Row, cl.Node.Type) == nil {
-		return r
+	if instancesFold(cl.Row, cl.Node.Type) == nil || childWrites(cl.Node, path) {
+		return childRead(cl.Node, path)
 	}
 	if parent := w.foldedParent(cl); parent != nil {
 		return nodeRead(parent, path)
 	}
-	return r
+	return childRead(cl.Node, path)
 }
 
 // foldedParent returns the parent folded into cl, an instance a fold of its

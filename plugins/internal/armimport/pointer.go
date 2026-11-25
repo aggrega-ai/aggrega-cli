@@ -11,20 +11,20 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 )
 
-// pointer returns the pointer the arm target holds for v, a value reading a
-// resource the Release points at: a resourceId expression naming the
-// resource by its type and its name, which Azure Resource Manager resolves
-// when the Release's template deploys, written whole. v is a reference to the
-// resource's identifier — a resourceId call, or reference(…).id — and its
-// resource is either one the template reads and does not declare, named by
-// the resourceId call it is written as, or, where g is the template read, a
-// node of g, named by its type and name. Each argument naming the resource is
+// pointer returns the pointer the arm target holds for v, a value of the
+// template read into g reading a resource the Release points at: a resourceId
+// expression naming the resource by its type and its name, which Azure
+// Resource Manager resolves when the Release's template deploys, written
+// whole. v is a reference to the resource's identifier — a resourceId call, or
+// reference(…).id — and its resource is either one the template reads and
+// does not declare, named by the resourceId call it is written as, or a node
+// of g, named by its type and name. Each argument naming the resource is
 // literal text or a parameter given a value — by the parameters file, else by
 // a literal default — written as that value. Any other value has no pointer:
 // an attribute of a resource is read when the template deploys, and a name
 // the template computes when it deploys, or a resource it deploys into another
 // scope, names no resource deterministically.
-func pointer(g *cloudimport.Graph, v cloudimport.Value) (string, bool) {
+func pointer(v cloudimport.Value, g *cloudimport.Graph) (string, bool) {
 	ref, ok := v.(cloudimport.Ref)
 	if !ok || len(ref.Attr) > 0 || ref.Node == "" {
 		return "", false

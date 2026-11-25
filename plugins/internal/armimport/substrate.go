@@ -67,10 +67,8 @@ var rules = []cloudimport.TypeRule{
 	{Type: "Microsoft.Network/privateDnsZones", Class: cloudimport.ClassSubstrate, Says: networkSays},
 	{Type: "Microsoft.Network/privateDnsZones/virtualNetworkLinks", Class: cloudimport.ClassSubstrate,
 		Says: networkSays},
-	{Type: "Microsoft.Network/privateDnsZones/A", Class: cloudimport.ClassSubstrate, Says: networkSays},
-	{Type: "Microsoft.Network/privateDnsZones/AAAA", Class: cloudimport.ClassSubstrate, Says: networkSays},
-	{Type: "Microsoft.Network/privateDnsZones/CNAME", Class: cloudimport.ClassSubstrate, Says: networkSays},
 	{Type: "Microsoft.Network/dnsZones", Class: cloudimport.ClassSubstrate, Says: networkSays},
+	{Type: "Microsoft.Network/dnsZones/SOA", Class: cloudimport.ClassSubstrate, Says: networkSays},
 	{Type: "Microsoft.Network/publicIPAddresses", Class: cloudimport.ClassSubstrate, Says: networkSays},
 	{Type: "Microsoft.Network/publicIPPrefixes", Class: cloudimport.ClassSubstrate, Says: networkSays},
 	{Type: "Microsoft.Network/applicationGateways", Class: cloudimport.ClassSubstrate, Says: networkSays},
@@ -135,12 +133,28 @@ var rules = []cloudimport.TypeRule{
 
 // typeRules are the arm format's type rules: the substrate a template may
 // create, which the draft leaves to the operator — the networks, identities,
-// resource groups, workspaces and environments a component runs in, and the
-// hosts it runs on, and the API Management service an API is added to — the
-// resources no Recipe carries, and what the decision on a resource of a type
-// says beside its class: a deployment script, an API added to a service, and a
-// DNS record set.
-var typeRules = append(append([]cloudimport.TypeRule(nil), rules...), dnsRecordRules()...)
+// resource groups, workspaces and environments a component runs in, the record
+// sets of a private DNS zone and a public zone's start of authority, the hosts
+// a component runs on, and the API Management service an API is added to —
+// the resources no Recipe carries, and what the decision on a resource of a
+// type says beside its class: a deployment script, an API added to a service,
+// and a DNS record set.
+var typeRules = append(append(append([]cloudimport.TypeRule(nil), rules...), privateDNSRecordRules()...),
+	dnsRecordRules()...)
+
+// privateDNSRecordTypes are the record types of an Azure Private DNS zone.
+var privateDNSRecordTypes = []string{"A", "AAAA", "CNAME", "MX", "PTR", "SRV", "TXT", "SOA"}
+
+// privateDNSRecordRules leave each record set of a private DNS zone to the
+// operator, as the zone is.
+func privateDNSRecordRules() []cloudimport.TypeRule {
+	out := make([]cloudimport.TypeRule, len(privateDNSRecordTypes))
+	for i, typ := range privateDNSRecordTypes {
+		out[i] = cloudimport.TypeRule{Type: "Microsoft.Network/privateDnsZones/" + typ,
+			Class: cloudimport.ClassSubstrate, Says: networkSays}
+	}
+	return out
+}
 
 // dnsRecordRules say, of a DNS record set of each type the dns-record
 // Component takes, what its row does not place.

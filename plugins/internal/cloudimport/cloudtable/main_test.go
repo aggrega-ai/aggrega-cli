@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -488,5 +489,50 @@ func TestTheRevisionIsTheLastCommitThatChangedWhatTheTableReads(t *testing.T) {
 	}
 	if got, err := lastReadCommit(root, f); err != nil || got != third {
 		t.Errorf("the last commit that changed what the table reads is %q, %v; want %s", got, err, third)
+	}
+}
+
+// TestAHandRowWrittenWholeStandsInForItsRecipesClaim generates no row for a
+// Recipe a hand row of another key and When names, the hand row standing in
+// its place, and keeps the generated row a hand row of its own key and When
+// merges into.
+func TestAHandRowWrittenWholeStandsInForItsRecipesClaim(t *testing.T) {
+	t.Parallel()
+	f := armFormatOrFail(t)
+	root := hubWith(t, nil)
+	rows, notes, err := generateFromHub(root, f, cloudimport.Table{})
+	if err != nil {
+		t.Fatalf("generate: %v (%v)", err, notes)
+	}
+	var claim cloudimport.Row
+	for _, r := range rows {
+		if r.Recipe == "cache-module" {
+			claim = r
+		}
+	}
+	if claim.Recipe == "" {
+		t.Fatalf("the miniature hub generates no row of cache-module: %v", rows)
+	}
+	has := func(rows []cloudimport.Row) bool {
+		return slices.ContainsFunc(rows, func(r cloudimport.Row) bool { return r.Recipe == "cache-module" })
+	}
+
+	whole := cloudimport.Row{Key: claim.Key, Recipe: "cache-module", Component: claim.Component,
+		When: []cloudimport.Pred{{Path: []string{"sku", "name"}, Op: cloudimport.OpContains, Value: "Premium"}}}
+	rows, notes, err = generateFromHub(root, f, cloudimport.Table{Hand: []cloudimport.Row{whole}})
+	if err != nil {
+		t.Fatalf("generate with a whole hand row: %v (%v)", err, notes)
+	}
+	if has(rows) {
+		t.Errorf("a hand row of another When naming cache-module leaves its generated row: %v", rows)
+	}
+
+	merged := cloudimport.Row{Key: claim.Key, When: claim.When, Recipe: "cache-module"}
+	rows, notes, err = generateFromHub(root, f, cloudimport.Table{Hand: []cloudimport.Row{merged, whole}})
+	if err != nil {
+		t.Fatalf("generate with a merging hand row: %v (%v)", err, notes)
+	}
+	if !has(rows) {
+		t.Errorf("a hand row of the claim's own key and When drops the generated row it merges into: %v", rows)
 	}
 }

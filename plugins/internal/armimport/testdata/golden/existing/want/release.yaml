@@ -11,6 +11,7 @@ spec:
   # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
   manifest: ""
   components:
+    # Properties the source writes and the draft does not place: sku.
     server:
       infra:
         engine_version: "16"
@@ -25,6 +26,7 @@ spec:
           infra:
             # Left for the Release, since the source cannot supply it: the resource ID of the Azure Key Vault secret holding the template parameter administratorPassword, /subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.KeyVault/vaults/<vault>/secrets/<secret>; the value the template parameter administratorPassword receives goes into that secret.
             origin: ""
+    # Properties the source writes and the draft does not place: kind.
     insights:
       infra:
         overrides:

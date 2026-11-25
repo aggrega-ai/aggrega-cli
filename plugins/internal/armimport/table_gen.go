@@ -59,19 +59,6 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/arm/redis-azure-managed/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "Microsoft.Cdn/profiles",
-		Component: "core/network/azure-front-door",
-		Category:  "network",
-		Recipe:    "azure-front-door",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "resource",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form:   cloudimport.FormRaw,
-		Origin: "generated aggrega-catalog/recipe/arm/azure-front-door/1.0.0/recipe.yaml",
-	},
-	{
 		Key:       "Microsoft.ContainerRegistry/registries",
 		Component: "core/devtool/azure-container-registry",
 		Category:  "devtool",
@@ -393,36 +380,6 @@ var generatedRows = []cloudimport.Row{
 		},
 		Form:   cloudimport.FormRaw,
 		Origin: "generated aggrega-catalog/recipe/arm/azure-blob-storage/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "Microsoft.Web/sites",
-		Component: "core/compute/server",
-		Category:  "compute",
-		Recipe:    "server-app-service",
-		When: []cloudimport.Pred{
-			{Path: []string{"kind"}, Op: cloudimport.OpEquals, Value: "app,linux,container"},
-		},
-		Traits: map[string]string{
-			"component.aggrega.ai/type":               "server",
-			"component.aggrega.ai/upstream-licensing": "not-applicable",
-		},
-		Form:   cloudimport.FormRaw,
-		Origin: "generated aggrega-catalog/recipe/arm/server-app-service/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "Microsoft.Web/sites",
-		Component: "core/compute/function",
-		Category:  "compute",
-		Recipe:    "function-azure-functions",
-		When: []cloudimport.Pred{
-			{Path: []string{"kind"}, Op: cloudimport.OpEquals, Value: "functionapp,linux,container"},
-		},
-		Traits: map[string]string{
-			"component.aggrega.ai/type":               "function",
-			"component.aggrega.ai/upstream-licensing": "not-applicable",
-		},
-		Form:   cloudimport.FormRaw,
-		Origin: "generated aggrega-catalog/recipe/arm/function-azure-functions/1.0.0/recipe.yaml",
 	},
 }
 

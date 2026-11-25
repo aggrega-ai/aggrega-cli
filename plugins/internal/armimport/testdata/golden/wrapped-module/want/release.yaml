@@ -18,3 +18,9 @@ spec:
           location: "westeurope"
           name: "adx-core"
           sku: "Standard_E2ads_v5"
+    # Properties the source writes and the draft does not place: location, properties.template.containers.0.name.
+    ingest:
+      infra:
+        image: "ghcr.io/example/ingest:3.1.0"
+        overrides:
+          container_app_environment_id: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-shared/providers/Microsoft.App/managedEnvironments/cae-shared"

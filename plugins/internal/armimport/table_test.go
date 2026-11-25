@@ -76,15 +76,18 @@ func TestArmContainerAppIngressChoosesItsComponent(t *testing.T) {
 
 // TestArmSiteKindChoosesItsComponent maps an App Service site whose kind
 // names a function app to the function Component, and a site of any other
-// kind to the server Component.
+// kind to the server Component, but a Logic Apps Standard site, whose kind
+// names a workflow app, to none: it is drafted from the source.
 func TestArmSiteKindChoosesItsComponent(t *testing.T) {
 	for kind, want := range map[string]string{
-		"functionapp,linux,container": "function-azure-functions",
-		"functionapp,linux":           "function-azure-functions",
-		"FunctionApp":                 "function-azure-functions",
-		"app,linux,container":         "server-app-service",
-		"app,linux":                   "server-app-service",
-		"app":                         "server-app-service",
+		"functionapp,linux,container":   "function-azure-functions",
+		"functionapp,linux":             "function-azure-functions",
+		"FunctionApp":                   "function-azure-functions",
+		"app,linux,container":           "server-app-service",
+		"app,linux":                     "server-app-service",
+		"app":                           "server-app-service",
+		"functionapp,workflowapp":       "",
+		"functionapp,linux,WorkflowApp": "",
 	} {
 		n := &cloudimport.Node{ID: "site", Type: "Microsoft.Web/sites", Form: cloudimport.FormRaw,
 			Body: []cloudimport.Prop{prop(`"`+kind+`"`, "kind")}}
@@ -120,5 +123,23 @@ func TestArmRedisSwitchesAreReadAsBooleans(t *testing.T) {
 	}
 	if len(want) > 0 {
 		t.Errorf("the redis row places none of %v", want)
+	}
+}
+
+// TestArmFrontDoorSkuChoosesTheRow maps a CDN profile of a Front Door SKU to
+// the Front Door Component, and a classic CDN profile to none: it is drafted
+// from the source.
+func TestArmFrontDoorSkuChoosesTheRow(t *testing.T) {
+	for sku, want := range map[string]string{
+		"Standard_AzureFrontDoor": "azure-front-door",
+		"Premium_AzureFrontDoor":  "azure-front-door",
+		"Standard_Microsoft":      "",
+		"Standard_Verizon":        "",
+	} {
+		n := &cloudimport.Node{ID: "profile", Type: "Microsoft.Cdn/profiles", Form: cloudimport.FormRaw,
+			Body: []cloudimport.Prop{prop(`"`+sku+`"`, "sku", "name")}}
+		if _, r, _ := resolved(n); r != want {
+			t.Errorf("a profile of the SKU %s maps by %q, want %q", sku, r, want)
+		}
 	}
 }

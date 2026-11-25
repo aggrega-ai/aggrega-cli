@@ -50,7 +50,7 @@ func releaseFormat() Format {
 		{Raw: pathSkuName, Module: []string{"skuName"}}, {Raw: pathSkuTier, Module: []string{"tier"}},
 		{Raw: pathStorage, Module: []string{"storageSizeInGB"}}, {Raw: pathVersion, Module: []string{"version"}}}
 	f.Table.Generated[0] = pg
-	f.Pointer = func(v Value) (string, bool) {
+	f.Pointer = func(v Value, _ *Graph) (string, bool) {
 		if r, ok := v.(Ref); ok && r.Node == "subnet" && len(r.Attr) == 0 {
 			return subnetPointer, true
 		}
@@ -297,5 +297,106 @@ func TestPointerOfADraftedInstanceIsWrittenWhole(t *testing.T) {
 	_, _, release, _, _ := released(t, in, releaseFormat(), &Graph{Nodes: []*Node{site, subnetNode()}})
 	if !strings.Contains(release, `: "`+subnetPointer+`"`) {
 		t.Errorf("the drafted instance's entry does not hold the pointer whole:\n%s", release)
+	}
+}
+
+// TestReleaseNamesEnvironmentEntriesNoConnectionDelivers names in a mapped
+// instance's Release entry each entry of its environment list no connection
+// delivers — the variable and its value as the source writes it, the variable
+// alone where the value is a secret — and warns value-not-carried of each
+// once; an entry reading another resource is the wiring's, and a parameter
+// read only in such an entry is carried nowhere.
+func TestReleaseNamesEnvironmentEntriesNoConnectionDelivers(t *testing.T) {
+	in := edgeView()
+	in.Target = "arm"
+	a := app(envOf(
+		envEntry("DB_HOST", fqdn),
+		envEntry("DB_NAME", text("appdb")),
+		envEntry("LOG_LEVEL", Param{Name: "logLevel"}),
+		envEntry("API_KEY", Param{Name: "apiKey"}),
+		envEntry("BASE_URL", Compose{Parts: []Value{text("https://"), Param{Name: "logLevel"}}}),
+		envEntry("STORAGE_KEY", Credential{Node: "server", What: "listKeys"}),
+	))
+	g := &Graph{Nodes: []*Node{pgServer(), a}, Params: []Parameter{
+		{Name: "logLevel", Type: "string", Default: text("info")},
+		{Name: "apiKey", Type: "securestring", Secure: true},
+	}}
+	_, aggregate, release, _, diags := released(t, in, edgeFormat(nil), g)
+	want := `Environment variables the source sets and no connection delivers: DB_NAME = appdb; ` +
+		`LOG_LEVEL = {the template parameter logLevel}; API_KEY, a secret value the draft never writes; ` +
+		`BASE_URL = https://{the template parameter logLevel}.`
+	if !strings.Contains(release, "    # "+want+"\n    app:") {
+		t.Errorf("the app's Release entry does not name its environment entries as\n%s\n%s", want, release)
+	}
+	if strings.Contains(release, "DB_HOST") || strings.Contains(release, "STORAGE_KEY") {
+		t.Errorf("the Release names an entry the wiring reports:\n%s", release)
+	}
+	notCarried := withCode(diags, CodeValueNotCarried)
+	for _, variable := range []string{"DB_NAME", "LOG_LEVEL", "API_KEY", "BASE_URL"} {
+		n := 0
+		for _, d := range notCarried {
+			if strings.Contains(d.Message, "the variable "+variable+" ") {
+				n++
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s is warned value-not-carried %d times, want once: %+v", variable, n, notCarried)
+		}
+	}
+	if !strings.Contains(aggregate, "# Parameters the draft carries nowhere: logLevel, apiKey.\n") {
+		t.Errorf("the parameters an environment entry reads are counted as carried:\n%s", aggregate)
+	}
+}
+
+// TestReleaseEntryNamesPropertiesTheRowDoesNotPlace names in a mapped
+// instance's Release entry each property its node writes that its row does
+// not place, at the outermost member nothing under which is placed — a
+// property its When tests equal to a value being the row's — and each
+// property a child folded into it writes that its fold does not.
+func TestReleaseEntryNamesPropertiesTheRowDoesNotPlace(t *testing.T) {
+	in := edgeView()
+	in.Target = "arm"
+	f := releaseFormat()
+	f.Table.Generated[0].When = []Pred{{Path: []string{"kind"}, Op: OpEquals, Value: "flexible"}}
+	s := mappedServer(leaf(text("Disabled"), "properties", "network", "publicNetworkAccess"),
+		leaf(text("orders"), "tags", "team"), leaf(text("flexible"), "kind"))
+	db := &Node{ID: "ordersDb", Type: databaseType, Form: FormRaw, Parent: "server", Name: text("orders"),
+		Body: []Prop{leaf(text("UTF8"), "properties", "charset")}}
+	_, _, release, _, _ := released(t, in, f, &Graph{Nodes: []*Node{s, db}})
+	block := instanceBlock(t, release, "server")
+	for _, want := range []string{
+		"# Properties the source writes and the draft does not place: properties.network.publicNetworkAccess, tags.\n",
+		"# Properties ordersDb, folded into this instance, writes and the draft does not place: properties.\n",
+	} {
+		if !strings.Contains(block, want) {
+			t.Errorf("the server's Release entry does not hold %q:\n%s", want, block)
+		}
+	}
+}
+
+// TestPointerReadsTheGraph hands the format's pointer writer the graph the
+// value is read from, so it names a resource the source declares by what the
+// source writes of it.
+func TestPointerReadsTheGraph(t *testing.T) {
+	f := releaseFormat()
+	f.Pointer = func(v Value, g *Graph) (string, bool) {
+		r, ok := v.(Ref)
+		if !ok || g == nil {
+			return "", false
+		}
+		for _, n := range g.Nodes {
+			if n.ID == r.Node {
+				name, _ := literalText(n.Name.(Literal).JSON)
+				return "subnet:" + name, true
+			}
+		}
+		return "", false
+	}
+	in := edgeView()
+	in.Target = "arm"
+	site := staticSite(leaf(Ref{Node: "subnet"}, "properties", "subnetId"))
+	_, _, release, _, _ := released(t, in, f, &Graph{Nodes: []*Node{site, subnetNode()}})
+	if !strings.Contains(release, `: "subnet:snet-db"`) {
+		t.Errorf("the pointer writer is not handed the graph:\n%s", release)
 	}
 }

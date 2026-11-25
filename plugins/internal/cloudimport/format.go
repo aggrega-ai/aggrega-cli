@@ -32,9 +32,10 @@ type Format struct {
 	// resource of a type says beside its class.
 	Types []TypeRule
 	// Pointer returns the target's deterministic pointer text for a value
-	// referencing a substrate or existing resource, false where the target has
+	// referencing a substrate or existing resource, read in g, the graph the
+	// value is read from, its repetitions expanded; false where the target has
 	// none for it.
-	Pointer func(v Value) (string, bool)
+	Pointer func(v Value, g *Graph) (string, bool)
 	// Text writes a literal string as the target's text; nil writes it as is.
 	Text func(s string) string
 	// Draft is how the format drafts a Component and a Recipe for a resource

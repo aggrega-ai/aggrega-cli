@@ -282,3 +282,29 @@ func TestResolveMatchesAPathRegardlessOfCase(t *testing.T) {
 		}
 	}
 }
+
+// TestResolveLacksHoldsWhereContainsDoesNot reads a predicate of OpLacks as
+// the negation of OpContains, the value read as text: it holds of a kind not
+// holding its value, of no kind written and of null, fails of a kind holding
+// it regardless of case, and is undecided where the kind is set when the
+// source deploys.
+func TestResolveLacksHoldsWhereContainsDoesNot(t *testing.T) {
+	lacks := Table{Generated: []Row{{Key: sitesType, Component: "core/compute/server", Recipe: "server-app-service",
+		Form: FormRaw, When: []Pred{{Path: []string{"kind"}, Op: OpLacks, Value: "workflowapp"}}}}}
+	g := &Graph{Params: []Parameter{{Name: "siteKind", Type: "string"}}}
+	for _, c := range []struct {
+		name string
+		node *Node
+		want truth
+	}{
+		{"a kind not holding it", site(literal(`"app,linux"`)), truthHolds},
+		{"no kind", &Node{ID: "web", Type: sitesType, Form: FormRaw}, truthHolds},
+		{"a null kind", site(literal(`null`)), truthHolds},
+		{"a kind holding it", site(literal(`"functionapp,WorkflowApp"`)), truthFails},
+		{"a kind set when the source deploys", site(Param{Name: "siteKind"}), truthUndecided},
+	} {
+		if got := (reader{g: g}).row(lacks.Generated[0], c.node); got != c.want {
+			t.Errorf("%s: lacks reads %v, want %v", c.name, got, c.want)
+		}
+	}
+}

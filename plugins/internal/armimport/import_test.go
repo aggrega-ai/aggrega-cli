@@ -267,8 +267,9 @@ func TestArmImportGoldenDraftedFromSource(t *testing.T) {
 
 // TestArmImportGoldenWrappedModule drafts an Azure Verified Modules module no
 // row maps as a Recipe sourcing the module whole from the Microsoft Container
-// Registry, at the version it states, its telemetry off, and the module's
-// output the template reads provided.
+// Registry, at the version it states, its telemetry off, providing the
+// module's output a container app reads, which the app's connection delivers
+// into its environment.
 func TestArmImportGoldenWrappedModule(t *testing.T) {
 	out := importGolden(t, "wrapped-module")
 	var recipe string
@@ -278,7 +279,63 @@ func TestArmImportGoldenWrappedModule(t *testing.T) {
 		}
 	}
 	holds(t, "the wrapped module's Recipe", recipe, "kind: bicep-module-oci",
-		"url: oci://mcr.microsoft.com/bicep/avm/res/kusto/cluster", "0.11.1", "enableTelemetry: false")
+		"url: oci://mcr.microsoft.com/bicep/avm/res/kusto/cluster", "0.11.1", "enableTelemetry: false",
+		"outputs_uri_value: \"[reference('{{ .locals.symbol }}').outputs.uri.value]\"")
+	holds(t, "the Aggregate", fileText(t, out, "aggregate.yaml"), "- in: \"CLUSTER_URI\"")
+}
+
+// containerAppModule is a template in the shape Bicep compiles an Azure
+// Verified Modules container app module to, written for these tests: Bicep's
+// metadata, the module's parameters, the container app, and the telemetry
+// resource named by the prefix the module index lists for
+// avm/res/app/container-app at version 0.23.1.
+const containerAppModule = `{"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"metadata": {"_generator": {"name": "bicep", "version": "0.38.33.27573"}, "name": "Container Apps"},
+	"parameters": {"name": {"type": "string"}, "location": {"type": "string", "defaultValue": "[resourceGroup().location]"},
+		"environmentResourceId": {"type": "string"}, "containers": {"type": "array"},
+		"disableIngress": {"type": "bool", "defaultValue": false}, "enableTelemetry": {"type": "bool", "defaultValue": true}},
+	"resources": [
+		{"condition": "[parameters('enableTelemetry')]", "type": "Microsoft.Resources/deployments",
+			"apiVersion": "2024-03-01",
+			"name": "[format('46d3xbcp.res.b757ba7.{0}.{1}', replace('0.23.1', '.', '-'), substring(uniqueString(deployment().name, parameters('location')), 0, 4))]",
+			"properties": {"mode": "Incremental", "template": {"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+				"contentVersion": "1.0.0.0", "resources": []}}},
+		{"type": "Microsoft.App/containerApps", "apiVersion": "2025-01-01", "name": "[parameters('name')]",
+			"location": "[parameters('location')]",
+			"properties": {"environmentId": "[parameters('environmentResourceId')]",
+				"template": {"containers": "[parameters('containers')]"}}}
+	]}`
+
+// TestArmContainerAppModuleIsUndecidedAndWrapped imports a container app
+// deployed through the Azure Verified Modules module, which states its
+// ingress by parameters neither container app row reads: the import warns
+// discriminator-unresolved, naming the server and the worker Components the
+// app could take, and drafts it as a Recipe sourcing the module whole.
+func TestArmContainerAppModuleIsUndecidedAndWrapped(t *testing.T) {
+	template := deploying(deployer("app", []byte(containerAppModule), `"name": {"value": "web"},
+		"environmentResourceId": {"value": "/subscriptions/s/resourceGroups/g/providers/Microsoft.App/managedEnvironments/e"},
+		"containers": {"value": [{"name": "web", "image": "ghcr.io/example/web:1.0.0"}]},
+		"disableIngress": {"value": true}`))
+	out := Import(aggrega.ImportInput{Format: formatName, Target: target, Catalog: goldenView(t),
+		Sources: []aggrega.ImportSource{src("main.json", []byte(template))}}, parse)
+	unresolved := coded(out, cloudimport.CodeDiscriminatorUnresolved)
+	if len(unresolved) != 1 {
+		t.Fatalf("the module is warned discriminator-unresolved %d times, want once: %+v", len(unresolved),
+			out.Diagnostics)
+	}
+	holds(t, "the warning", unresolved[0].Message, "core/compute/server", "core/compute/worker")
+	if d := decisionOn(t, out, "app"); d.Chosen == nil || d.Chosen.Mode != "draft" {
+		t.Errorf("the module is decided %+v, want drafted", d.Chosen)
+	}
+	var recipe string
+	for _, f := range out.Files {
+		if strings.HasPrefix(f.Path, "catalog/recipe/arm/") {
+			recipe = f.Content
+		}
+	}
+	holds(t, "the wrapped Recipe", recipe, "kind: bicep-module-oci",
+		"url: oci://mcr.microsoft.com/bicep/avm/res/app/container-app", "version: 0.23.1", "enableTelemetry: false")
 }
 
 // TestArmImportGoldenExisting reads resources the template does not create:
@@ -401,12 +458,12 @@ func TestArmPointerNamesAResourceByItsTypeAndName(t *testing.T) {
 		{cloudimport.Ref{Node: "subnet", Attr: []string{"properties", "addressPrefix"}}, ""},
 		{str("vnet-core"), ""},
 	} {
-		got, ok := pointer(g, c.v)
+		got, ok := pointer(c.v, g)
 		if got != c.want || ok != (c.want != "") {
 			t.Errorf("pointer(%#v) = %q, %v; want %q", c.v, got, ok, c.want)
 		}
 	}
-	if got, ok := Format.Pointer(cloudimport.Ref{Node: "subnet"}); ok {
+	if got, ok := Format.Pointer(cloudimport.Ref{Node: "subnet"}, nil); ok {
 		t.Errorf("Format's pointer, reading no template, names the declared subnet as %q", got)
 	}
 }

@@ -11,6 +11,7 @@ spec:
   # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
   manifest: ""
   components:
+    # Properties the source writes and the draft does not place: sku.tier.
     namespaces:
       infra:
         overrides:

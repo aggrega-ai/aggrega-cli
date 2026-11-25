@@ -8,3 +8,4 @@ spec:
     components:
       name:
         cluster: arm/microsoft-kusto-clusters
+        ingest: arm/worker-container-apps
