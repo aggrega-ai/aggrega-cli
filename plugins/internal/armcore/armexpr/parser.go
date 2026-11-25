@@ -3,6 +3,8 @@
 
 package armexpr
 
+import "strings"
+
 // maxDepth bounds nesting so hostile input cannot exhaust the stack.
 const maxDepth = 200
 
@@ -10,6 +12,17 @@ const maxDepth = 200
 // starts with "[", does not start with "[[", and ends with "]".
 func IsExpression(s string) bool {
 	return len(s) >= 2 && s[0] == '[' && s[1] != '[' && s[len(s)-1] == ']'
+}
+
+// LiteralText returns the text ARM reads from a string that is not an
+// expression: a string that opens with a doubled bracket and closes with a
+// bracket loses its first bracket, the escape that keeps a literal bracket; any
+// other string is read as written.
+func LiteralText(s string) string {
+	if strings.HasPrefix(s, "[[") && strings.HasSuffix(s, "]") {
+		return s[1:]
+	}
+	return s
 }
 
 // Parse reads s, the whole string value with its brackets, as one expression.

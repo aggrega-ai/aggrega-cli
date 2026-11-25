@@ -5,6 +5,7 @@ package armimport
 
 import (
 	"encoding/json"
+	"fmt"
 	"path"
 	"sort"
 	"strconv"
@@ -42,8 +43,10 @@ const (
 // core's graph, with what it reports of them. It is the arm format's reader.
 //
 // Each source is parsed as JSON with comments, so a template written with
-// comments, or opening with a byte-order mark, is read; a source the parser
-// refuses halts parse-failed. A template is a source whose $schema begins
+// comments, or opening with a byte-order mark, is read. A source the parser
+// refuses halts parse-failed where the import was handed it alone or its text
+// names the template schema; any other is a file of the directory that is no
+// template, named among the sources not read. A template is a source whose $schema begins
 // with the Azure Resource Manager schema prefix and that holds resources; a
 // parameters file has the prefix, a parameters object and no resources; every
 // other source is named among those not read. The root template is chosen by
@@ -193,6 +196,10 @@ type template struct {
 	// template writes them: by symbolic name under 2.0, by position under 1.0,
 	// a child after the resource it is nested in.
 	resources []*resource
+	// ambiguous holds, for each reference matched since the lowerer last
+	// settled, that several resources matched, their symbols in the order the
+	// template writes them.
+	ambiguous [][]string
 }
 
 // resource is one resource of a template, normalised.
@@ -326,13 +333,33 @@ func (r *reader) resource(t *template, raw json.RawMessage, at, symbol string, p
 	}
 	t.resources = append(t.resources, res)
 
-	if depth >= maxNesting {
+	nested := o.get("resources")
+	if nested == nil || isNull(nested) {
 		return
 	}
-	children, _ := arrayOf(o.get("resources"))
-	for i, child := range children {
-		r.resource(t, child, at+importer.Pointer("resources", strconv.Itoa(i)), "", res, used, depth+1)
+	childrenAt := at + importer.Pointer("resources")
+	children, listed := arrayOf(nested)
+	switch {
+	case !listed:
+		r.childrenNotCarried(t, res, childrenAt, "the child resources are not written as an array")
+	case depth >= maxNesting && len(children) > 0:
+		r.childrenNotCarried(t, res, childrenAt, fmt.Sprintf("they are nested deeper than the %d levels the "+
+			"import follows", maxNesting))
+	default:
+		for i, child := range children {
+			r.resource(t, child, childrenAt+importer.Pointer(strconv.Itoa(i)), "", res, used, depth+1)
+		}
 	}
+}
+
+// childrenNotCarried warns that no child resource of res, written at the JSON
+// pointer at, is drafted, and why.
+func (r *reader) childrenNotCarried(t *template, res *resource, at, why string) {
+	d := cloudimport.Report(cloudimport.CodeResourceNotCarried, "the template "+t.file+" writes the child "+
+		"resources of "+res.symbol+" at "+at+", and "+why+", so none of them is drafted: write each child beside "+
+		"its parent, with its full type and name")
+	d.SourceRef = t.file + "#" + at
+	r.note(d)
 }
 
 // isConsumed reports whether a resource's member named key is read into its
@@ -382,8 +409,9 @@ func (l *lowerer) build() *cloudimport.Node {
 	n.Name = l.name()
 	n.Body = l.body()
 	n.Parent = l.t.parentOf(res)
-	n.Condition = l.condition()
 	n.Scope = l.scopeText()
+	l.settle(res.at)
+	n.Condition = l.condition()
 	n.DependsOn = l.dependencies()
 	return n
 }
@@ -454,9 +482,15 @@ func (r *reader) unreadLink(t *template, res *resource) string {
 		switch {
 		case !literal || armexpr.IsExpression(path):
 			return "a relative path the template computes when it deploys"
+		case strings.Contains(path, `\`):
+			return "a relative path written with a backslash, which the import does not read as a path separator"
 		case r.sel == nil || r.sel.linkedTemplate(t.file, path) == nil:
-			if _, inside := linked(t.file, path); !inside {
+			target, inside := linked(t.file, path)
+			switch {
+			case !inside:
 				return "a relative path leaving the imported directory"
+			case r.sel != nil && r.sel.handed[target]:
+				return "a relative path naming a file the import holds that is no template"
 			}
 			return "a relative path naming no file the import holds"
 		}

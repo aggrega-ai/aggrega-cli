@@ -6,6 +6,7 @@ package armimport
 import (
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
@@ -69,7 +70,7 @@ func TestMatchDependsOnByNameResourceIdAndSymbol(t *testing.T) {
 	if len(diags) != 0 {
 		t.Fatalf("diagnostics %+v", diags)
 	}
-	want := []string{"stcore", "serverfarms", "resourceId('Microsoft.Network/virtualNetworks', 'vnet-hub')", "logs"}
+	want := []string{"stcore", "serverfarms", "resourceId('Microsoft.Network/virtualNetworks', 'vnet-hub')", "'logs'"}
 	if got := node(t, g, "web").DependsOn; !slices.Equal(got, want) {
 		t.Errorf("web depends on %v, want %v", got, want)
 	}
@@ -108,5 +109,62 @@ func TestMatchAChildFindsItsParentByTypeAndName(t *testing.T) {
 		if got := node(t, g, row.id).Parent; got != row.parent {
 			t.Errorf("%s's parent is %q, want %q", row.id, got, row.parent)
 		}
+	}
+}
+
+// TestMatchSeveralResourcesOneReferenceNamesWarn reads references that several
+// resources of the template match — two sites of one name, each deployed under
+// its own condition: the reference names the first in the order the template
+// writes them, and a reference-not-wired warning names where it is written and
+// every resource it matches.
+func TestMatchSeveralResourcesOneReferenceNamesWarn(t *testing.T) {
+	t.Parallel()
+	sites := `
+		{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "web", "condition": "[equals(parameters('name'), 'a')]"},
+		{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "web", "condition": "[equals(parameters('name'), 'b')]"},`
+	for _, row := range []struct{ name, consumer, at string }{
+		{"dependsOn", `{"type": "Microsoft.Insights/components", "apiVersion": "2020-02-02", "name": "insights",
+			"dependsOn": ["[resourceId('Microsoft.Web/sites', 'web')]"]}`, "main.json#/resources/2/dependsOn/0"},
+		{"reference", `{"type": "Microsoft.Insights/components", "apiVersion": "2020-02-02", "name": "insights",
+			"properties": {"host": "[reference('web').defaultHostName]"}}`, "main.json#/resources/2/properties/host"},
+	} {
+		g, diags := readTemplate(oneZero("", sites+row.consumer))
+		if g == nil || len(diags) != 1 || diags[0].Code != "reference-not-wired" || diags[0].Severity != "warn" ||
+			diags[0].SourceRef != row.at || !strings.Contains(diags[0].Message, "web and web-2") {
+			t.Errorf("%s: diagnostics %+v", row.name, diags)
+			continue
+		}
+		insights := node(t, g, "insights")
+		if row.name == "dependsOn" && !slices.Equal(insights.DependsOn, []string{"web"}) {
+			t.Errorf("insights depends on %v, want the first site", insights.DependsOn)
+		}
+		if row.name == "reference" && !reflect.DeepEqual(at(t, insights, "properties", "host"),
+			cloudimport.Ref{Node: "web", Attr: []string{"properties", "defaultHostName"}}) {
+			t.Errorf("the host reads %+v, want the first site's", at(t, insights, "properties", "host"))
+		}
+	}
+}
+
+// TestMatchAnUnmatchedNameNeverNamesADeclaredSymbol reads a reference and a
+// dependsOn entry by a name no resource of the template has, equal to the
+// symbol a resource's own name derives: they name a resource the template
+// reads, written as the quoted name, never the declared node of that symbol.
+func TestMatchAnUnmatchedNameNeverNamesADeclaredSymbol(t *testing.T) {
+	t.Parallel()
+	g, diags := readTemplate(oneZero("", `
+		{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "[parameters('name')]"},
+		{"type": "Microsoft.Insights/components", "apiVersion": "2020-02-02", "name": "insights", "dependsOn": ["sites"],
+			"properties": {"host": "[reference('sites').defaultHostName]"}}`))
+	if g == nil || len(diags) != 0 {
+		t.Fatalf("diagnostics %+v", diags)
+	}
+	node(t, g, "sites")
+	insights := node(t, g, "insights")
+	if !slices.Equal(insights.DependsOn, []string{"'sites'"}) {
+		t.Errorf("insights depends on %v", insights.DependsOn)
+	}
+	if got := at(t, insights, "properties", "host"); !reflect.DeepEqual(got, cloudimport.Ref{Node: "'sites'",
+		Attr: []string{"properties", "defaultHostName"}}) {
+		t.Errorf("the host reads %+v", got)
 	}
 }

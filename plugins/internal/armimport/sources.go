@@ -134,7 +134,8 @@ func resourceValues(raw json.RawMessage) []json.RawMessage {
 }
 
 // linked resolves a link written in the template at from to the path it names
-// inside the imported directory, false where it leaves that directory.
+// inside the imported directory, false where it leaves that directory or is
+// written with a backslash.
 func linked(from, link string) (string, bool) {
 	if strings.HasPrefix(link, "/") || strings.Contains(link, `\`) {
 		return "", false
@@ -155,6 +156,9 @@ type selection struct {
 	templates map[string]*handed
 	// params is the one parameters file read, nil where none is.
 	params *handed
+	// handed marks the path of each source the import is handed, whatever it
+	// holds.
+	handed map[string]bool
 	// read and notRead name the sources read and those handed and not read,
 	// in path order.
 	read, notRead []string
@@ -197,7 +201,13 @@ func (r *reader) selectSources(srcs []*handed, unreadable []string, s cloudimpor
 		return nil
 	}
 
-	sel := &selection{root: byPath[path.Clean(root.Path)], templates: map[string]*handed{}}
+	sel := &selection{root: byPath[path.Clean(root.Path)], templates: map[string]*handed{}, handed: map[string]bool{}}
+	for _, h := range srcs {
+		sel.handed[path.Clean(h.name)] = true
+	}
+	for _, name := range unreadable {
+		sel.handed[path.Clean(name)] = true
+	}
 	queue := []*handed{sel.root}
 	for len(queue) > 0 {
 		h := queue[0]

@@ -99,13 +99,6 @@ func str(s string) cloudimport.Literal {
 	return cloudimport.Literal{JSON: importer.String(s)}
 }
 
-// isEscaped reports whether s is a literal written with a doubled opening
-// bracket, which Azure Resource Manager reads as the text without the first
-// bracket rather than as an expression.
-func isEscaped(s string) bool {
-	return strings.HasPrefix(s, "[[") && strings.HasSuffix(s, "]")
-}
-
 // hasExpression reports whether a string raw holds, at any depth, is read as
 // an expression or escapes a bracket.
 func hasExpression(raw json.RawMessage, depth int) bool {
@@ -115,7 +108,7 @@ func hasExpression(raw json.RawMessage, depth int) bool {
 	switch jsonKind(raw) {
 	case '"':
 		s, _ := text(raw)
-		return armexpr.IsExpression(s) || isEscaped(s)
+		return armexpr.IsExpression(s) || armexpr.LiteralText(s) != s
 	case '{':
 		o, _ := objectOf(raw)
 		for _, e := range o {
@@ -234,7 +227,7 @@ func (l *lowerer) name() cloudimport.Value {
 		if i > 0 {
 			parts = append(parts, str("/"))
 		}
-		v := l.leaf(raw, l.res.nameAt[i])
+		v := l.leaf(raw, l.res.nameAt[i], "the name of "+l.res.symbol)
 		if v == nil {
 			return nil
 		}
@@ -291,7 +284,7 @@ func (l *lowerer) condition() cloudimport.Value {
 	if raw == nil || strings.TrimSpace(string(raw)) == "true" {
 		return nil
 	}
-	v := l.leaf(raw, l.res.at+importer.Pointer("condition"))
+	v := l.leaf(raw, l.res.at+importer.Pointer("condition"), "the condition of "+l.res.symbol)
 	if lit, ok := v.(cloudimport.Literal); ok && string(lit.JSON) == "true" {
 		return nil
 	}
@@ -299,17 +292,45 @@ func (l *lowerer) condition() cloudimport.Value {
 }
 
 // leaf returns the value raw, written at the JSON pointer at, lowered as one
-// value: an object or an array holding no expression is its literal; one
-// holding an expression has no one value, and is nil.
-func (l *lowerer) leaf(raw json.RawMessage, at string) cloudimport.Value {
+// value: an object or an array holding no expression — written in place, or
+// held whole by a variable — is its literal. One holding an expression has no
+// one value: it is nil, with a value-not-carried warning naming what, the
+// value it is, and where it is written.
+func (l *lowerer) leaf(raw json.RawMessage, at, what string) cloudimport.Value {
 	p := l.prop(raw, at)
-	if p.Value != nil {
+	if p.Value != nil || (len(p.Props) == 0 && len(p.Items) == 0) {
 		return p.Value
 	}
-	if (len(p.Props) > 0 || len(p.Items) > 0) && !hasExpression(raw, 0) {
-		return cloudimport.Literal{JSON: raw}
+	source := raw
+	if held, ok := l.t.heldWhole(raw); ok {
+		source = held
 	}
+	if !hasExpression(source, 0) {
+		return cloudimport.Literal{JSON: source}
+	}
+	l.warn(at, fmt.Sprintf("the template %s writes %s at %s as an object or a list holding an expression, "+
+		"which the draft carries as no one value, so it is not carried: write it in the draft by hand", l.t.file,
+		what, at))
 	return nil
+}
+
+// heldWhole returns the value of the variable the string raw reads whole, as
+// [variables('v')], false where raw is no such string.
+func (t *template) heldWhole(raw json.RawMessage) (json.RawMessage, bool) {
+	s, ok := text(raw)
+	if !ok || !armexpr.IsExpression(s) {
+		return nil, false
+	}
+	n, err := armexpr.Parse(s)
+	if err != nil {
+		return nil, false
+	}
+	name, ok := oneTextArgument(n, "variables")
+	if !ok {
+		return nil, false
+	}
+	_, held, found := t.variable(name)
+	return held, found
 }
 
 // prop lowers the JSON value raw, written at the JSON pointer at, into a
@@ -351,7 +372,9 @@ func (l *lowerer) prop(raw json.RawMessage, at string) cloudimport.Prop {
 		return p
 	case '"':
 		s, _ := text(raw)
-		return l.text(s, at)
+		p := l.text(s, at)
+		l.settle(at)
+		return p
 	}
 	return cloudimport.Prop{Value: cloudimport.Literal{JSON: raw}}
 }
@@ -407,11 +430,8 @@ func (l *lowerer) propertyLoops(raw json.RawMessage, at string) []cloudimport.Pr
 // object or an array is that object or array. An expression that does not
 // parse is not carried, with a value-not-carried warning.
 func (l *lowerer) text(s, at string) cloudimport.Prop {
-	if isEscaped(s) {
-		return cloudimport.Prop{Value: str(s[1:])}
-	}
 	if !armexpr.IsExpression(s) {
-		return cloudimport.Prop{Value: str(s)}
+		return cloudimport.Prop{Value: str(armexpr.LiteralText(s))}
 	}
 	n, err := armexpr.Parse(s)
 	if err != nil {
@@ -510,7 +530,7 @@ func (l *lowerer) call(c armexpr.Call) cloudimport.Value {
 			return cloudimport.Literal{JSON: json.RawMessage(strings.ToLower(c.Name))}
 		}
 	}
-	if armexpr.IsListFunction(c.Name) && len(c.Args) > 0 {
+	if armexpr.IsListFunction(c.Name) {
 		return l.credential(c)
 	}
 	return l.opaque(c)
@@ -558,7 +578,7 @@ func (l *lowerer) access(n armexpr.Node) cloudimport.Value {
 			return l.variable(name, path, n)
 		}
 	}
-	if armexpr.IsListFunction(root.Name) && len(root.Args) > 0 {
+	if armexpr.IsListFunction(root.Name) {
 		return l.credential(root)
 	}
 	return l.opaque(n)
@@ -904,8 +924,11 @@ func (l *lowerer) unread(id string) bool {
 
 // credential lowers a call of a list function to the credential it reads from
 // the resource its first argument names; a resource it cannot tell is named
-// by that argument printed canonically.
+// by that argument printed canonically, and a call naming none by the call.
 func (l *lowerer) credential(c armexpr.Call) cloudimport.Value {
+	if len(c.Args) == 0 {
+		return cloudimport.Credential{Node: armexpr.Print(c), What: c.Name}
+	}
 	id, _, ok := l.t.target(c.Args[0])
 	if !ok {
 		id = armexpr.Print(l.t.canonical(c.Args[0]))
@@ -915,21 +938,106 @@ func (l *lowerer) credential(c armexpr.Call) cloudimport.Value {
 
 // opaque returns the expression n as deploy-time text for the arm target,
 // printed canonically with every variable it reads written in place where it
-// can be, and every copy index the lowerer knows. An expression calling a
-// list function is the credential that function reads.
+// can be, and every copy index the lowerer knows. An expression reaching a
+// list function — itself, through a variable written in place, or through a
+// variable holding an object or a list — is the credential that function
+// reads, so no credential is carried as text.
 func (l *lowerer) opaque(n armexpr.Node) cloudimport.Value {
-	var list *armexpr.Call
-	armexpr.Walk(n, func(m armexpr.Node) bool {
-		if c, ok := m.(armexpr.Call); ok && list == nil && c.Namespace == "" && armexpr.IsListFunction(c.Name) &&
-			len(c.Args) > 0 {
-			list = &c
-		}
-		return list == nil
-	})
-	if list != nil {
-		return l.credential(*list)
+	inlined := l.t.inline(n, l.copyIndex)
+	if list, ok := l.t.listCallIn(inlined); ok {
+		return l.credential(list)
 	}
-	return cloudimport.Opaque{Text: armexpr.Expression(l.t.inline(n, l.copyIndex)), Target: target}
+	return cloudimport.Opaque{Text: armexpr.Expression(inlined), Target: target}
+}
+
+// listCallIn returns the first call of the list family n reaches: in n, or in
+// an object or a list a variable n reads holds; false where it reaches none.
+// Each variable is searched once.
+func (t *template) listCallIn(n armexpr.Node) (armexpr.Call, bool) {
+	return t.listCall(n, map[string]bool{})
+}
+
+// listCall returns the first list call n reaches, the variables in seen
+// searched already.
+func (t *template) listCall(n armexpr.Node, seen map[string]bool) (armexpr.Call, bool) {
+	if c, ok := armexpr.ListCall(n); ok {
+		return c, true
+	}
+	var found armexpr.Call
+	ok := false
+	armexpr.Walk(n, func(m armexpr.Node) bool {
+		name, isVariable := oneTextArgument(m, "variables")
+		if ok || !isVariable {
+			return !ok
+		}
+		if key, raw, declared := t.variable(name); declared && !seen[key] {
+			seen[key] = true
+			found, ok = t.listCallInValue(raw, seen, 0)
+		}
+		return false
+	})
+	return found, ok
+}
+
+// listCallInValue returns the first list call an expression in the JSON value
+// raw reaches, read canonically.
+func (t *template) listCallInValue(raw json.RawMessage, seen map[string]bool, depth int) (armexpr.Call, bool) {
+	if depth > maxNesting {
+		return armexpr.Call{}, false
+	}
+	var values []json.RawMessage
+	switch jsonKind(raw) {
+	case '"':
+		s, _ := text(raw)
+		if !armexpr.IsExpression(s) {
+			return armexpr.Call{}, false
+		}
+		n, err := armexpr.Parse(s)
+		if err != nil {
+			return armexpr.Call{}, false
+		}
+		return t.listCall(t.canonical(n), seen)
+	case '{':
+		o, _ := objectOf(raw)
+		for _, e := range o {
+			values = append(values, e.Value)
+		}
+	case '[':
+		values, _ = arrayOf(raw)
+	}
+	for _, v := range values {
+		if c, ok := t.listCallInValue(v, seen, depth+1); ok {
+			return c, true
+		}
+	}
+	return armexpr.Call{}, false
+}
+
+// settle reports each reference lowered at the JSON pointer at that several
+// resources of the template matched, and forgets them: an instance of a
+// repeated resource forgets them unreported, its resource having reported
+// them once.
+func (l *lowerer) settle(at string) {
+	for _, ids := range l.t.ambiguous {
+		if l.quiet {
+			continue
+		}
+		d := cloudimport.Report(cloudimport.CodeReferenceNotWired, fmt.Sprintf("the template %s references at %s "+
+			"a resource that %s each match, and the draft reads the first of them, %s, as the template writes "+
+			"them: give each resource a name of its own, or reference the one meant by its symbolic name",
+			l.t.file, at, andList(ids), ids[0]))
+		d.SourceRef = l.t.file + "#" + at
+		l.r.note(d)
+	}
+	l.t.ambiguous = nil
+}
+
+// andList joins names as a sentence lists them: "a", "a and b", "a, b and c".
+func andList(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
 
 // scopeText returns, as report text, the scope the resource is declared in

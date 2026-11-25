@@ -66,3 +66,18 @@ func IsTemplateFunction(name string) bool {
 func IsListFunction(name string) bool {
 	return len(name) >= len("list") && strings.EqualFold(name[:len("list")], "list")
 }
+
+// ListCall returns the first call of the list{Value} family n holds — n itself
+// or a node below it, in the order Walk visits them — false where it holds
+// none. A call of a function a namespace declares is never one.
+func ListCall(n Node) (Call, bool) {
+	var found Call
+	ok := false
+	Walk(n, func(m Node) bool {
+		if c, isCall := m.(Call); isCall && !ok && c.Namespace == "" && IsListFunction(c.Name) {
+			found, ok = c, true
+		}
+		return !ok
+	})
+	return found, ok
+}

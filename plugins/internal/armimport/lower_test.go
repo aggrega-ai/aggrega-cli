@@ -281,3 +281,25 @@ func TestLowerCopyLoopsRepeat(t *testing.T) {
 		t.Errorf("the second part reads %+v", got)
 	}
 }
+
+// TestLowerAListCallBehindAVariableIsACredential reads a list function reached
+// only through a variable inside another call: a variable holding the call as
+// text, and one holding it in an object. Each value is the credential the call
+// reads, never deploy-time text carrying it.
+func TestLowerAListCallBehindAVariableIsACredential(t *testing.T) {
+	t.Parallel()
+	web, diags := lowered(t, `{
+		"key": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', 'stcore'), '2023-01-01').keys[0].value]",
+		"settings": {"connection": "[concat('AccountKey=', listKeys('stcore', '2023-01-01').keys[0].value)]"}}`,
+		`"chosen": "[if(true(), variables('key'), 'none')]",
+		"merged": "[union(variables('settings'), createObject('x', 'y'))]"`)
+	if len(diags) != 0 {
+		t.Fatalf("diagnostics %v", diags)
+	}
+	keys := cloudimport.Credential{Node: "stcore", What: "listKeys"}
+	for _, path := range []string{"chosen", "merged"} {
+		if got := at(t, web, "properties", path); !reflect.DeepEqual(got, keys) {
+			t.Errorf("%s reads %+v, want %+v", path, got, keys)
+		}
+	}
+}

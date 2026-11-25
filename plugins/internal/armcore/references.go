@@ -386,19 +386,13 @@ func firstTextArgument(c armexpr.Call) (string, bool) {
 // secureObject parameters. Parameter names match without regard to case, as ARM
 // reads them.
 func IsSecretExpression(n armexpr.Node, secureParameters map[string]bool) bool {
+	if _, list := armexpr.ListCall(n); list {
+		return true
+	}
 	secret := false
 	armexpr.Walk(n, func(node armexpr.Node) bool {
-		if secret {
-			return false
-		}
 		c, ok := node.(armexpr.Call)
-		if !ok || c.Namespace != "" {
-			return true
-		}
-		switch {
-		case armexpr.IsListFunction(c.Name):
-			secret = true
-		case strings.EqualFold(c.Name, "parameters"):
+		if !secret && ok && c.Namespace == "" && strings.EqualFold(c.Name, "parameters") {
 			if p, literal := firstTextArgument(c); literal && isSecureParameter(p, secureParameters) {
 				secret = true
 			}

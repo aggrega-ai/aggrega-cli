@@ -129,11 +129,8 @@ func (t *template) inlined(name string, inside *[]string, walk func(armexpr.Node
 	switch jsonKind(raw) {
 	case '"':
 		s, _ := text(raw)
-		switch {
-		case isEscaped(s):
-			return armexpr.String{Value: s[1:]}, true
-		case !armexpr.IsExpression(s):
-			return armexpr.String{Value: s}, true
+		if !armexpr.IsExpression(s) {
+			return armexpr.String{Value: armexpr.LiteralText(s)}, true
 		}
 		n, err := armexpr.Parse(s)
 		if err != nil {
@@ -291,10 +288,8 @@ func (t *template) node(raw json.RawMessage) (armexpr.Node, bool) {
 	switch {
 	case !ok:
 		return nil, false
-	case isEscaped(s):
-		return armexpr.String{Value: s[1:]}, true
 	case !armexpr.IsExpression(s):
-		return armexpr.String{Value: s}, true
+		return armexpr.String{Value: armexpr.LiteralText(s)}, true
 	}
 	n, err := armexpr.Parse(s)
 	if err != nil {
@@ -373,11 +368,11 @@ func (t *template) resourceOf(id string) *resource {
 func (t *template) match(typ string, segs [][]armexpr.Node, sub, group string, scope []armexpr.Node) (string,
 	string) {
 	want := printed(segs)
-	for _, res := range t.resources {
-		if strings.EqualFold(res.typ, typ) && sameText(res.id.segs, want) && strings.EqualFold(res.id.sub, sub) &&
-			strings.EqualFold(res.id.group, group) {
-			return res.symbol, res.typ
-		}
+	if res := t.first(func(res *resource) bool {
+		return strings.EqualFold(res.typ, typ) && sameText(res.id.segs, want) && strings.EqualFold(res.id.sub, sub) &&
+			strings.EqualFold(res.id.group, group)
+	}); res != nil {
+		return res.symbol, res.typ
 	}
 	args := []armexpr.Node{}
 	if sub != "" || group != "" {
@@ -388,6 +383,30 @@ func (t *template) match(typ string, segs [][]armexpr.Node, sub, group string, s
 		args = append(args, segmentNode(seg))
 	}
 	return armexpr.Print(armexpr.Call{Name: "resourceId", Args: args}), typ
+}
+
+// first returns the first resource, in the order the template writes them,
+// that matches; where several match, their symbols are recorded as ambiguous
+// for the lowerer to report where the reference is written. It is nil where
+// none matches.
+func (t *template) first(matches func(*resource) bool) *resource {
+	var found []*resource
+	for _, res := range t.resources {
+		if matches(res) {
+			found = append(found, res)
+		}
+	}
+	if len(found) > 1 {
+		ids := make([]string, len(found))
+		for i, res := range found {
+			ids[i] = res.symbol
+		}
+		t.ambiguous = append(t.ambiguous, ids)
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	return found[0]
 }
 
 // sameText reports whether a and b hold the same texts, regardless of case.
@@ -475,33 +494,35 @@ func literalSegment(seg []armexpr.Node) (string, bool) {
 // names: under 2.0 a symbolic name; where loops is set, the name of a
 // resource's copy loop; the full name of a resource of the template's own
 // scope; or a type and a name spelled together. Where it names none, the
-// identifier is s itself, or the resourceId call a type and name spelled
-// together name; known reports that s names a resource of the template or
-// spells a type and a name.
+// identifier is s printed as a string literal, quoted, which no symbol of a
+// node takes, or the resourceId call a type and name spelled together name;
+// known reports that s names a resource of the template or spells a type and
+// a name.
 func (t *template) byLiteral(s string, loops bool) (id, typ string, known bool) {
 	if res := t.bySymbol(s); res != nil {
 		return res.symbol, res.typ, true
 	}
 	if loops {
-		for _, res := range t.resources {
+		if res := t.first(func(res *resource) bool {
 			loop, _ := objectOf(res.copy)
-			if name, ok := text(loop.get("name")); ok && strings.EqualFold(name, s) {
-				return res.symbol, res.typ, true
-			}
+			name, ok := text(loop.get("name"))
+			return ok && strings.EqualFold(name, s)
+		}); res != nil {
+			return res.symbol, res.typ, true
 		}
 	}
 	segs := segments([]armexpr.Node{armexpr.String{Value: s}})
 	want := printed(segs)
-	for _, res := range t.resources {
-		if res.id.sub == "" && res.id.group == "" && sameText(res.id.segs, want) {
-			return res.symbol, res.typ, true
-		}
+	if res := t.first(func(res *resource) bool {
+		return res.id.sub == "" && res.id.group == "" && sameText(res.id.segs, want)
+	}); res != nil {
+		return res.symbol, res.typ, true
 	}
 	if typ, names, ok := typed(segs); ok {
 		id, typ := t.match(typ, names, "", "", nil)
 		return id, typ, true
 	}
-	return s, "", false
+	return armexpr.Print(armexpr.String{Value: s}), "", false
 }
 
 // target returns the symbol and type of the resource the expression n names
@@ -589,10 +610,8 @@ func (l *lowerer) dependencies() []string {
 		}
 		var id string
 		switch {
-		case isEscaped(s):
-			id, _, _ = l.t.byLiteral(s[1:], true)
 		case !armexpr.IsExpression(s):
-			id, _, _ = l.t.byLiteral(s, true)
+			id, _, _ = l.t.byLiteral(armexpr.LiteralText(s), true)
 		default:
 			n, err := armexpr.Parse(s)
 			if err != nil {
@@ -608,6 +627,7 @@ func (l *lowerer) dependencies() []string {
 				id = armexpr.Print(canon)
 			}
 		}
+		l.settle(l.res.at + "/dependsOn/" + strconv.Itoa(i))
 		if id != "" && !contains(out, id) {
 			out = append(out, id)
 		}

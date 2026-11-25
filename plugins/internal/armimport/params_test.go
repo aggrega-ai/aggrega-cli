@@ -151,3 +151,28 @@ func TestParamsOutputsAreLowered(t *testing.T) {
 		t.Fatalf("outputs %+v, want %+v", g, want)
 	}
 }
+
+// TestParamsAValueNoOneValueCarriesIsNamed reads, one fault apiece, a
+// parameter default and an output that are objects holding an expression, and
+// an output a copy loop computes: none is carried as one value, and each is
+// reported value-not-carried naming the parameter or the output and where it
+// is written.
+func TestParamsAValueNoOneValueCarriesIsNamed(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct{ section, at, names string }{
+		{`"parameters": {"tags": {"type": "object", "defaultValue": {"owner": "[parameters('name')]"}}}`,
+			"main.json#/parameters/tags/defaultValue", "the default of the parameter tags"},
+		{`"outputs": {"endpoints": {"type": "object", "value": {"blob": "[reference('stcore').primaryEndpoints.blob]"}}}`,
+			"main.json#/outputs/endpoints/value", "the output endpoints"},
+		{`"outputs": {"names": {"type": "array", "copy": {"count": 2, "input": "[concat('n', copyIndex())]"}}}`,
+			"main.json#/outputs/names/copy", "the output names"},
+	} {
+		g, diags := readTemplate(`{"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+			` + row.section + `, "resources": [{"type": "Microsoft.Storage/storageAccounts", "apiVersion": "2023-01-01",
+			"name": "stcore"}]}`)
+		if g == nil || len(diags) != 1 || diags[0].Code != "value-not-carried" || diags[0].SourceRef != row.at ||
+			!strings.Contains(diags[0].Message, row.names) {
+			t.Errorf("%s: diagnostics %+v", row.names, diags)
+		}
+	}
+}

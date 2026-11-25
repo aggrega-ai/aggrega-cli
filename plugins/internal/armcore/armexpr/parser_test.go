@@ -129,3 +129,15 @@ func TestParseAccessorChainsAreBounded(t *testing.T) {
 	Walk(n, func(Node) bool { return true })
 	_ = Print(n)
 }
+
+// TestLiteralText reads the text ARM reads from a string that is not an
+// expression: a doubled opening bracket before a closing one loses its first
+// bracket, and any other string is read as written.
+func TestLiteralText(t *testing.T) {
+	for in, want := range map[string]string{"[[x]": "[x]", "[[a][b]": "[a][b]", "[[x": "[[x", "x]": "x]",
+		"plain": "plain", "": ""} {
+		if got := LiteralText(in); got != want {
+			t.Errorf("LiteralText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

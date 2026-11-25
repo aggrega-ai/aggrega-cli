@@ -408,18 +408,27 @@ func TestSourcesSeveralRootsHaltWithoutTheRootSetting(t *testing.T) {
 // the template reads is deploy-time text.
 func TestSourcesLinkedTemplatesTheImportDoesNotHoldWarn(t *testing.T) {
 	t.Parallel()
-	for _, row := range []struct{ link, how string }{
-		{`{"uri": "https://example.com/templates/net.json"}`, "its URI"},
+	notes := src("modules/notes.json", fixture(t, "linked/notes.json"))
+	for _, row := range []struct {
+		link, how string
+		beside    []aggrega.ImportSource
+	}{
+		{`{"uri": "https://example.com/templates/net.json"}`, "its URI", nil},
 		{`{"id": "/subscriptions/0000/resourceGroups/rg/providers/Microsoft.Resources/templateSpecs/net/versions/1.0"}`,
-			"its template spec ID"},
-		{`{"relativePath": "../shared/net.json"}`, "a relative path leaving the imported directory"},
-		{`{"relativePath": "modules/net.json"}`, "a relative path naming no file the import holds"},
+			"its template spec ID", nil},
+		{`{"relativePath": "../shared/net.json"}`, "a relative path leaving the imported directory", nil},
+		{`{"relativePath": "modules/net.json"}`, "a relative path naming no file the import holds", nil},
+		{`{"relativePath": "modules/notes.json"}`, "a relative path naming a file the import holds that is no " +
+			"template", []aggrega.ImportSource{notes}},
+		{`{"relativePath": "modules\\net.json"}`, "a relative path written with a backslash, which the import " +
+			"does not read as a path separator", nil},
 	} {
-		g, diags := readTemplate(oneZero("", `
+		main := src("main.json", []byte(oneZero("", `
 			{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "net",
 				"properties": {"mode": "Incremental", "templateLink": `+row.link+`}},
 			{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "web",
-				"properties": {"subnet": "[reference('net').outputs.subnetId.value]"}}`))
+				"properties": {"subnet": "[reference('net').outputs.subnetId.value]"}}`)))
+		g, diags := readAll("", append([]aggrega.ImportSource{main}, row.beside...)...)
 		if g == nil || len(diags) != 1 || diags[0].Code != "linked-source-not-read" || diags[0].Severity != "warn" ||
 			!strings.HasPrefix(diags[0].Message, "net is a Microsoft.Resources/deployments resource of main.json whose "+
 				"template is linked by "+row.how+",") || diags[0].SourceRef != "main.json#/resources/0" {
@@ -515,5 +524,35 @@ func TestReadAResourceWithoutALiteralTypeIsNotCarried(t *testing.T) {
 	}
 	if len(g.Nodes) != 1 || g.Nodes[0].ID != "web" {
 		t.Errorf("the graph holds %d nodes, want web alone", len(g.Nodes))
+	}
+}
+
+// TestReadChildrenItCannotReachAreNotCarried reads resources whose children the
+// import cannot reach, one fault apiece: a resources member that is not an
+// array, and children nested deeper than the import follows. Each is not
+// carried, with a resource-not-carried warning naming where it is written.
+func TestReadChildrenItCannotReachAreNotCarried(t *testing.T) {
+	t.Parallel()
+	g, diags := readTemplate(oneZero("", `{"type": "Microsoft.Sql/servers", "apiVersion": "2023-05-01-preview",
+		"name": "sql", "resources": {"db": {"type": "databases", "name": "db"}}}`))
+	if g == nil || len(diags) != 1 || diags[0].Code != "resource-not-carried" ||
+		diags[0].SourceRef != "main.json#/resources/0/resources" ||
+		!strings.Contains(diags[0].Message, "child resources are not written as an array") {
+		t.Errorf("children keyed by name: diagnostics %+v", diags)
+	}
+
+	nested := fmt.Sprintf(`{"type": "c", "apiVersion": "2024-01-01", "name": "l%d"}`, maxNesting+1)
+	for depth := maxNesting; depth >= 1; depth-- {
+		nested = fmt.Sprintf(`{"type": "c", "apiVersion": "2024-01-01", "name": "l%d", "resources": [%s]}`, depth, nested)
+	}
+	nested = `{"type": "Microsoft.Example/level", "apiVersion": "2024-01-01", "name": "l0", "resources": [` + nested + `]}`
+	g, diags = readTemplate(oneZero("", nested))
+	cut := "main.json#" + strings.Repeat("/resources/0", maxNesting+1) + "/resources"
+	if g == nil || len(diags) != 1 || diags[0].Code != "resource-not-carried" || diags[0].SourceRef != cut ||
+		!strings.Contains(diags[0].Message, "nested deeper than") {
+		t.Errorf("children nested too deep: diagnostics %+v, want one at %s", diags, cut)
+	}
+	if g != nil && len(g.Nodes) != maxNesting+1 {
+		t.Errorf("the graph holds %d nodes, want the %d levels the import follows", len(g.Nodes), maxNesting+1)
 	}
 }

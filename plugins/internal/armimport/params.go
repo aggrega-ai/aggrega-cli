@@ -35,7 +35,7 @@ func (r *reader) parameters(t *template) []cloudimport.Parameter {
 		p.Min, p.Max = number(o.get("minValue")), number(o.get("maxValue"))
 		p.MinLength, p.MaxLength = length(o.get("minLength")), length(o.get("maxLength"))
 		if raw := o.get("defaultValue"); raw != nil {
-			p.Default = l.leaf(raw, at+importer.Pointer("defaultValue"))
+			p.Default = l.leaf(raw, at+importer.Pointer("defaultValue"), "the default of the parameter "+e.Key)
 		}
 		out = append(out, p)
 	}
@@ -98,15 +98,19 @@ func length(raw json.RawMessage) *int {
 }
 
 // outputs returns the outputs t declares, each with its value lowered; an
-// output a copy loop computes has none.
+// output a copy loop computes has none, with a value-not-carried warning.
 func (r *reader) outputs(t *template) []cloudimport.Output {
 	l := r.lowerer(t, nil)
 	var out []cloudimport.Output
 	for _, e := range t.outputs {
 		o, _ := objectOf(e.Value)
 		output := cloudimport.Output{Name: e.Key}
-		if raw := o.get("value"); raw != nil && o.get("copy") == nil {
-			output.Value = l.leaf(raw, t.at+importer.Pointer("outputs", e.Key, "value"))
+		if o.get("copy") != nil {
+			at := t.at + importer.Pointer("outputs", e.Key, "copy")
+			l.warn(at, "the template "+t.file+" computes the output "+e.Key+" at "+at+" with a copy loop, "+
+				"which the draft carries as no one value, so it is not carried")
+		} else if raw := o.get("value"); raw != nil {
+			output.Value = l.leaf(raw, t.at+importer.Pointer("outputs", e.Key, "value"), "the output "+e.Key)
 		}
 		out = append(out, output)
 	}

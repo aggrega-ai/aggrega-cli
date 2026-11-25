@@ -136,3 +136,24 @@ func TestTemplateFunctionsCoverAVMFlexibleServer(t *testing.T) {
 		}
 	}
 }
+
+// TestListCallFindsTheFirstOfTheFamily finds the first call of the list family
+// an expression holds, in walk order, and none in an expression holding only a
+// namespace's function of a list name.
+func TestListCallFindsTheFirstOfTheFamily(t *testing.T) {
+	for _, row := range []struct{ expr, want string }{
+		{"[concat('k=', listKeys('a', '1').keys[0].value, listSecrets('b', '1').value)]", "listKeys('a', '1')"},
+		{"[if(true(), first(LISTKEYS('a', '1').keys), 'x')]", "LISTKEYS('a', '1')"},
+		{"[my.listKeys('a')]", ""},
+		{"[reference('a').keys]", ""},
+	} {
+		n, err := Parse(row.expr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c, ok := ListCall(n)
+		if got := Print(c); ok != (row.want != "") || (ok && got != row.want) {
+			t.Errorf("ListCall(%s) = %s, %v; want %q", row.expr, got, ok, row.want)
+		}
+	}
+}

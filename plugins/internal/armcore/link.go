@@ -342,21 +342,10 @@ func linkKeysOf(edge rendercore.LinkEdge) (linkKeys, error) {
 			keys.referenced = append(keys.referenced, key)
 			continue
 		}
-		keys.literal = append(keys.literal, literalKey{key: key, value: literalText(text)})
+		keys.literal = append(keys.literal, literalKey{key: key, value: armexpr.LiteralText(text)})
 	}
 	slices.Sort(keys.referenced)
 	return keys, nil
-}
-
-// literalText returns the text ARM reads from a string that is not an
-// expression. A string that opens with a doubled bracket and closes with a
-// bracket loses its first bracket, the escape ArmLiteral writes; any other string
-// is read as written.
-func literalText(s string) string {
-	if strings.HasPrefix(s, "[[") && strings.HasSuffix(s, "]") {
-		return s[1:]
-	}
-	return s
 }
 
 // refuseSplicedCalls halts wrapping ErrPluginValueNotRepresentable on the first
