@@ -355,8 +355,10 @@ func TestEdgeDependsOnOnlyDrawsATarget(t *testing.T) {
 
 // TestEdgeToSubstrateOrExistingDrawsNone: a reference or a dependency to a
 // substrate resource, to one the source reads and does not create, or to one
-// it does not declare draws no connection and warns nothing: the Release holds
-// a pointer for it.
+// it does not declare draws no connection. A dependency warns nothing, since
+// the Release holds a pointer; an environment entry reading one warns
+// reference-not-wired, since the Recipe takes its environment only through
+// inject and no Release key holds the pointer.
 func TestEdgeToSubstrateOrExistingDrawsNone(t *testing.T) {
 	subnet := &Node{ID: "subnet", Type: subnetType, Form: FormRaw, Name: text("snet")}
 	vault := &Node{ID: "vault", Type: vaultType, Form: FormRaw, Existing: true, Name: text("kv-shared")}
@@ -367,7 +369,13 @@ func TestEdgeToSubstrateOrExistingDrawsNone(t *testing.T) {
 	g := &Graph{Nodes: []*Node{subnet, vault, a}}
 	_, text, diags := drafted(t, edgeView(), edgeFormat(nil), g)
 	wantBlock(t, text, "app", "    app:\n      type: core/compute/server\n")
-	onlyCode(t, diags, CodeReferenceNotWired, 0)
+	warned := onlyCode(t, diags, CodeReferenceNotWired, 3)
+	for i, variable := range []string{"SUBNET_ID", "VAULT_URI", "LOGS"} {
+		if !strings.Contains(warned[i].Message, variable) || !strings.Contains(warned[i].Message, "only through inject") {
+			t.Errorf("warning %d is %q, want it naming %s and saying the environment takes inject only", i,
+				warned[i].Message, variable)
+		}
+	}
 }
 
 // TestEdgeCredentialFlowsToAReferencedSecret: a credential read from another

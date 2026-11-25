@@ -133,6 +133,9 @@ type Classified struct {
 	// delivered into, which the Recipe the format's module writer drafts reads
 	// off the inject pipe beside the parameters it carries.
 	Inputs []schemadraft.Input
+	// Recipe is the name of the Recipe drafted for a drafted resource, empty for
+	// every other node.
+	Recipe string
 	// Provides are what a drafted node's Recipe publishes, each attribute
 	// under its provides key: for a resource its id and name, and for a
 	// resource and a module alike each attribute another node references.
@@ -720,6 +723,7 @@ func (c *classifier) draft(grp *draftGroup) {
 		entity.SourceRef, entity.DecisionRef = n.ID, "decision:"+n.ID
 		cl := c.drafted(n)
 		cl.Name, cl.Decision, cl.Entity, cl.Inputs = drafted.Name, d, entity, drafted.Inputs
+		cl.Recipe = drafted.Recipe
 		if i == 0 {
 			cl.Drafts = drafted.Entities
 		}

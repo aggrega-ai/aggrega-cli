@@ -453,6 +453,13 @@ func (c *classifier) reference(n *Node, e Edge, ci string, direct bool, r reach,
 				return "the draft carries " + q(e.To) + " in no instance"
 			})
 		}
+		if r.pointer && env >= 0 {
+			c.notWired(n, ci, nil, read, func(q func(string) string) string {
+				return q(e.To) + " is a resource the draft leaves to the operator, which the Release holds a pointer " +
+					"to, and the Recipe of " + q(consumer.Name) + " takes the environment only through inject, so no " +
+					"Release key holds the pointer"
+			})
+		}
 		return cands
 	}
 	if len(r.instances) > 1 {
@@ -552,11 +559,10 @@ func (c *classifier) injectable(grp *draftGroup, mine []candidate, cand candidat
 			}
 		}
 		path = grp.props[i].path
-		if rule := c.f.Draft.Rules.NotInjected; rule != nil {
-			t := &schemadraft.Type{Name: grp.nodes[0].Type, APIVersion: grp.nodes[0].APIVersion}
-			if why := rule(t, &schemadraft.Property{Name: path[len(path)-1], Path: path, Written: true}); why != "" {
-				return nil, func(func(string) string) string { return why }
-			}
+		t := &schemadraft.Type{Name: grp.nodes[0].Type, APIVersion: grp.nodes[0].APIVersion}
+		prop := &schemadraft.Property{Name: path[len(path)-1], Path: path, Written: true}
+		if why := c.f.Draft.Rules.WhyNotInjected(t, prop); why != "" {
+			return nil, func(func(string) string) string { return why }
 		}
 	}
 	for _, other := range grp.nodes {
@@ -636,7 +642,7 @@ func (c *classifier) credential(n *Node, e Edge, ci string, direct bool) {
 	switch {
 	case read.Slot != "":
 		carried = fmt.Sprintf("the Release attaches %s on the slot %s of the instance %s, its origin left for the "+
-			"operator to name where the credential is kept", importer.Secret{Referenced: true}.Form(c.f.Target).Type,
+			"operator to name where the credential is kept", importer.Secret{Referenced: true}.Form(c.in.Target).Type,
 			read.Slot, consumer.Key)
 	case !direct:
 		carried = fmt.Sprintf("%s is written into the instance of %s, whose Recipe takes it in no slot: supply it "+

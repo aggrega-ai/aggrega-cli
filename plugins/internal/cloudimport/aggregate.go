@@ -45,10 +45,18 @@ import (
 // Recipes read it as the literal it is; deploy-time text is written as it is
 // for its own target, and for any other target is not written and warned
 // value-not-carried, as is a value a converter cannot convert. A value read
-// from a parameter, a reference or a credential is not written. Every text read
-// from the source is escaped through EscapeTemplateText, so it reads back as
-// written once the compiler evaluates the Aggregate as a template, and every
-// comment line is written through draftyaml.CommentLine.
+// from a parameter of the template is written as a reference to a parameter of
+// the Aggregate, declared under spec.parameters, as params.go describes; a
+// value read from a secure parameter, a reference, a credential or text that
+// names a secure parameter is not written, and is warned value-not-carried with
+// the key it would be written at, as is every object or list holding one. Every
+// text read from the source is escaped through EscapeTemplateText, so it reads
+// back as written once the compiler evaluates the Aggregate as a template, and
+// every comment line is written through draftyaml.CommentLine.
+//
+// An instance whose node carries a condition is written with active reading the
+// parameter the condition is, where it is one boolean parameter and no
+// connection of the Aggregate reaches the instance.
 //
 // A parameter is carried where a node the draft writes an instance for, or
 // folds into one, reads it at a path the draft carries: any property of a
@@ -58,13 +66,7 @@ import (
 // give one byte sequence.
 func Aggregate(in aggrega.ImportInput, f Format, g *Graph, classified []Classified) (aggrega.EmittedEntity,
 	[]aggrega.Diagnostic) {
-	w := &aggregateWriter{in: in, f: f, g: g}
-	for i := range classified {
-		if classified[i].Node != nil {
-			w.out = append(w.out, &classified[i])
-		}
-	}
-	w.cs = newClasses(g, w.out)
+	w := newAggregateWriter(in, f, g, classified, false)
 
 	format := in.Format
 	if format == "" {
@@ -80,31 +82,57 @@ func Aggregate(in aggrega.ImportInput, f Format, g *Graph, classified []Classifi
 	b.WriteString("  version: 0.1.0\n")
 	b.WriteString("  description: " + importer.DraftDescription(format) + "\n")
 	b.WriteString("spec:\n")
+	var components strings.Builder
 	written := false
 	for _, cl := range w.out {
 		if cl.Key == "" || !isInstance(cl) {
 			continue
 		}
 		if !written {
-			b.WriteString("  components:\n")
+			components.WriteString("  components:\n")
 			written = true
 		}
-		w.instance(&b, cl)
+		w.instance(&components, cl)
 	}
 	if !written {
-		b.WriteString("  components: {}\n")
+		components.WriteString("  components: {}\n")
 	}
+	b.WriteString(w.parametersBlock())
+	b.WriteString(components.String())
 	return aggrega.EmittedEntity{Kind: "Aggregate", Name: name, Mode: "draft", Body: b.String()}, w.diags
 }
 
-// aggregateWriter is one drafted Aggregate being written.
+// aggregateWriter writes the text of values: those of the drafted Aggregate's
+// instances, where a parameter is a reference to a parameter of the Aggregate,
+// and, with release set, those of the drafted Release's entries, which is no
+// template and holds each parameter's value itself.
 type aggregateWriter struct {
-	in    aggrega.ImportInput
-	f     Format
-	g     *Graph
-	out   []*Classified
-	cs    classLookup
-	diags []aggrega.Diagnostic
+	in      aggrega.ImportInput
+	f       Format
+	g       *Graph
+	out     []*Classified
+	cs      classLookup
+	diags   []aggrega.Diagnostic
+	release bool
+	// hoisted holds the Aggregate parameter key of each template parameter an
+	// instance reads; keys are the keys taken; pending the parameters the
+	// value being written reads, declared once it is written whole.
+	hoisted map[string]string
+	keys    map[string]bool
+	pending []string
+}
+
+// newAggregateWriter returns the writer of the instances of classified.
+func newAggregateWriter(in aggrega.ImportInput, f Format, g *Graph, classified []Classified,
+	release bool) *aggregateWriter {
+	w := &aggregateWriter{in: in, f: f, g: g, release: release, hoisted: map[string]string{}, keys: map[string]bool{}}
+	for i := range classified {
+		if classified[i].Node != nil {
+			w.out = append(w.out, &classified[i])
+		}
+	}
+	w.cs = newClasses(g, w.out)
+	return w
 }
 
 // opening writes the comments opening the Aggregate.
@@ -198,6 +226,9 @@ func (w *aggregateWriter) carriedValues(cl *Classified) []Value {
 			}
 		}
 	}
+	if cl.Key != "" && isInstance(cl) && w.conditionParam(cl) != nil {
+		out = append(out, n.Condition)
+	}
 	switch {
 	case cl.Class == ClassDrafted:
 		out = append(out, n.Name)
@@ -273,7 +304,11 @@ func (w *aggregateWriter) instance(b *strings.Builder, cl *Classified) {
 		typ = draftyaml.String("")
 	}
 	b.WriteString("      type: " + typ + "\n")
-	if values := w.values(cl); len(values) > 0 {
+	active, values := w.instanceParts(cl)
+	if active != "" {
+		b.WriteString("      active: " + active + "\n")
+	}
+	if len(values) > 0 {
 		b.WriteString("      values:\n")
 		writeTree(b, "        ", values)
 	}
@@ -309,22 +344,20 @@ func (w *aggregateWriter) values(cl *Classified) []*valueTree {
 		if !ok {
 			return
 		}
-		site := valueSite{node: n.ID, instance: cl.Key, from: from, key: key}
-		if text, ok := w.propText(p, conv, site); ok {
-			tree = plant(tree, key, text)
+		site := valueSite{node: n.ID, instance: cl.Key, from: from, dest: "values." + pathText(key)}
+		text, o := w.propText(p, conv)
+		if o.ok {
+			tree = plant(tree, key, w.commit(text))
+			return
 		}
+		w.pending = nil
+		w.notCarriedHere(site, o.why)
 	}
 	n := cl.Node
 	switch {
 	case cl.Class == ClassMapped && cl.Row != nil:
-		source := n
+		source := w.sourceOf(cl)
 		fold := instancesFold(cl.Row, n.Type)
-		if fold != nil {
-			source = nil
-			if parent := w.cs.byID[n.Parent]; parent != nil && parent.Class == ClassFolded {
-				source = parent.Node
-			}
-		}
 		for _, p := range cl.Row.Values {
 			put(source, p.From, []string{p.Key}, p.Conv)
 		}
@@ -347,6 +380,20 @@ func (w *aggregateWriter) values(cl *Classified) []*valueTree {
 		}
 	}
 	return tree
+}
+
+// sourceOf returns the node a mapped instance's row reads its properties off:
+// the node itself, or for an instance a fold of its row makes of a child, the
+// parent folded into it, nil where there is none.
+func (w *aggregateWriter) sourceOf(cl *Classified) *Node {
+	n := cl.Node
+	if instancesFold(cl.Row, n.Type) == nil {
+		return n
+	}
+	if parent := w.cs.byID[n.Parent]; parent != nil && parent.Class == ClassFolded {
+		return parent.Node
+	}
+	return nil
 }
 
 // valuesKey returns the key under values a fold writes at key, nil where key
@@ -434,84 +481,126 @@ func nodeProp(n *Node, path []string) (Prop, bool) {
 	return p, len(path) > 0
 }
 
-// valueSite is where a value written is read and written, for a warning.
+// valueSite is where a value written is read and written, for a warning: dest
+// names the key it is written at, such as values.version or infra.sku.
 type valueSite struct {
 	node, instance string
-	from, key      []string
+	from           []string
+	dest           string
 }
+
+// outcome is what became of writing one value: written, or not and why. A value
+// not written may be left for the Release's answers file (leave), and may also
+// warrant a warning of its own (warn); the Aggregate warns of every value it
+// does not write.
+type outcome struct {
+	ok          bool
+	why         string
+	leave, warn bool
+}
+
+// written is the outcome of a value written.
+func written() outcome { return outcome{ok: true} }
 
 // notCarriedHere warns that the value at site is not written, and why.
 func (w *aggregateWriter) notCarriedHere(site valueSite, why string) {
+	where := "in the Aggregate"
+	if w.release {
+		where = "in the Release"
+	}
 	w.diags = append(w.diags, Report(CodeValueNotCarried, fmt.Sprintf("%s writes %s, which the instance %s "+
-		"takes as values.%s, and %s, so it is not written: write the value in the Aggregate by hand", site.node,
-		pathText(site.from), site.instance, pathText(site.key), why)))
+		"takes as %s, and %s, so it is not written: write the value %s by hand", site.node, pathText(site.from),
+		site.instance, site.dest, why, where)))
 }
 
 // propText returns the YAML text the value p is written as, converted by conv,
-// and whether it is written.
-func (w *aggregateWriter) propText(p Prop, conv Conv, site valueSite) (string, bool) {
+// and what became of writing it. An object or a list is written whole or not at
+// all: one member not written is the whole's outcome.
+func (w *aggregateWriter) propText(p Prop, conv Conv) (string, outcome) {
 	switch {
 	case p.Value != nil:
-		return w.leafText(p.Value, conv, site)
+		return w.leafText(p.Value, conv)
 	case conv != "" && (len(p.Props) > 0 || len(p.Items) > 0):
-		w.notCarriedHere(site, "the converter "+string(conv)+" converts a scalar, not an object or a list")
-		return "", false
+		return "", outcome{why: "the converter " + string(conv) + " converts a scalar, not an object or a list"}
 	case len(p.Props) > 0:
 		parts := make([]string, 0, len(p.Props))
 		for _, m := range p.Props {
-			text, ok := w.propText(m, "", site)
-			if !ok {
-				return "", false
+			text, o := w.propText(m, "")
+			if !o.ok {
+				return "", o
 			}
 			parts = append(parts, w.stringText(m.Name)+": "+text)
 		}
-		return "{" + strings.Join(parts, ", ") + "}", true
+		return "{" + strings.Join(parts, ", ") + "}", written()
 	case len(p.Items) > 0:
 		parts := make([]string, 0, len(p.Items))
 		for _, item := range p.Items {
-			text, ok := w.propText(item, "", site)
-			if !ok {
-				return "", false
+			text, o := w.propText(item, "")
+			if !o.ok {
+				return "", o
 			}
 			parts = append(parts, text)
 		}
-		return "[" + strings.Join(parts, ", ") + "]", true
+		return "[" + strings.Join(parts, ", ") + "]", written()
 	}
-	return "", false
+	return "", outcome{why: "the source writes nothing there"}
 }
 
-// leafText returns the YAML text the value v is written as, converted by
-// conv, and whether it is written.
-func (w *aggregateWriter) leafText(v Value, conv Conv, site valueSite) (string, bool) {
+// leafText returns the YAML text the value v is written as, converted by conv,
+// and what became of writing it.
+func (w *aggregateWriter) leafText(v Value, conv Conv) (string, outcome) {
 	switch v := v.(type) {
 	case Literal:
 		if conv == "" {
 			text, ok := w.jsonText(v.JSON)
 			if !ok {
-				w.notCarriedHere(site, "it is not a value JSON writes")
+				return "", outcome{why: "it is not a value JSON writes"}
 			}
-			return text, ok
+			return text, written()
 		}
 		scalar, st := literalText(v.JSON)
 		if st != stateRead {
-			w.notCarriedHere(site, "the converter "+string(conv)+" converts a scalar, and it is none")
-			return "", false
+			return "", outcome{why: "the converter " + string(conv) + " converts a scalar, and it is none"}
 		}
-		return w.converted(scalar, conv, site)
+		return w.converted(scalar, conv)
 	case Opaque:
+		if secure := w.secureReads(v.Text); len(secure) > 0 {
+			return "", outcome{why: "it reads the secure parameter " + secure[0] + " inside text the source evaluates " +
+				"when it deploys, which the draft cannot tell holds a secret", leave: true, warn: true}
+		}
 		if v.Target != w.in.Target {
-			w.notCarriedHere(site, fmt.Sprintf("it is text the %s target evaluates when the source deploys, and "+
-				"the import drafts for %s", v.Target, targetName(w.in.Target)))
-			return "", false
+			return "", outcome{why: fmt.Sprintf("it is text the %s target evaluates when the source deploys, and "+
+				"the import drafts for %s", v.Target, targetName(w.in.Target)), leave: true}
 		}
 		if conv != "" && conv != "string" {
-			w.notCarriedHere(site, "the converter "+string(conv)+" cannot convert text evaluated when the source "+
-				"deploys")
-			return "", false
+			return "", outcome{why: "the converter " + string(conv) + " cannot convert text evaluated when the " +
+				"source deploys"}
 		}
-		return draftyaml.String(importer.EscapeTemplateText(v.Text)), true
+		return draftyaml.String(w.escape(v.Text)), written()
+	case Param:
+		return w.paramText(v, conv)
+	case Compose:
+		return w.composeText(v, conv)
+	case Ref:
+		if w.release {
+			return w.pointerText(v)
+		}
+		return "", outcome{why: "it reads an attribute of " + v.Node + ", which a connection delivers or the Release " +
+			"points at, and the Aggregate's values hold neither"}
+	case Credential:
+		return "", outcome{why: "it is a credential of " + v.Node + ", which the draft never carries"}
 	}
-	return "", false
+	return "", outcome{why: "it is no value the draft writes"}
+}
+
+// escape writes text read from the source for the document being written: for
+// the Aggregate, escaped so it reads back once evaluated as a template; for the
+// Release, which is no template, as it is.
+func (w *aggregateWriter) escape(text string) string {
+	if w.release {
+		return text
+	}
+	return importer.EscapeTemplateText(text)
 }
 
 // targetName names target in a warning.
@@ -522,33 +611,31 @@ func targetName(target string) string {
 	return "the " + target + " target"
 }
 
-// converted returns scalar converted by conv as YAML text, and whether it
-// converts.
-func (w *aggregateWriter) converted(scalar string, conv Conv, site valueSite) (string, bool) {
+// converted returns scalar converted by conv as YAML text, and what became of
+// converting it.
+func (w *aggregateWriter) converted(scalar string, conv Conv) (string, outcome) {
 	switch {
 	case conv == "string":
-		return w.stringText(scalar), true
+		return w.stringText(scalar), written()
 	case conv == "integer":
 		if i, err := strconv.ParseInt(strings.TrimSpace(scalar), 10, 64); err == nil {
-			return strconv.FormatInt(i, 10), true
+			return strconv.FormatInt(i, 10), written()
 		}
-		w.notCarriedHere(site, "the converter integer reads no integer in it")
-		return "", false
+		return "", outcome{why: "the converter integer reads no integer in it"}
 	case strings.HasPrefix(string(conv), "unit:"):
-		return w.stringText(scalar + strings.TrimPrefix(string(conv), "unit:")), true
+		return w.stringText(scalar + strings.TrimPrefix(string(conv), "unit:")), written()
 	}
-	w.notCarriedHere(site, "the row names the converter "+string(conv)+", which the core does not know")
-	return "", false
+	return "", outcome{why: "the row names the converter " + string(conv) + ", which the core does not know"}
 }
 
 // stringText writes s, a literal string of the source, as the double-quoted
 // scalar it is written as: through the format's Text where the import's target
-// is the format's own, then escaped so it reads back once evaluated.
+// is the format's own, then escaped as escape says.
 func (w *aggregateWriter) stringText(s string) string {
 	if w.f.Text != nil && w.in.Target == w.f.Target {
 		s = w.f.Text(s)
 	}
-	return draftyaml.String(importer.EscapeTemplateText(s))
+	return draftyaml.String(w.escape(s))
 }
 
 // jsonText writes the JSON raw as YAML flow text reading back as it: each
