@@ -232,6 +232,10 @@ type PluginContractClaim struct {
 	// It is the entity's own type rather than a neutral copy, because the claim
 	// carries it unchanged; the loader's caller maps it onto the wasm-side shape.
 	Detect *[]types.PluginDetectSignature
+
+	// DefaultTarget is the importer default target the entity records, or empty
+	// where it records none — in which case the load compares nothing about it.
+	DefaultTarget string
 }
 
 // ProviderContractClaim is the neutral, pluginpath-owned shape of an entity's

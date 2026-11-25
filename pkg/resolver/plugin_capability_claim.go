@@ -26,7 +26,8 @@ import (
 func PluginContractClaim(entity types.Plugin) *pluginpath.PluginContractClaim {
 	contract := entity.Spec.Provider.Contract
 	detect := importerDetectClaim(entity)
-	if len(entity.Spec.Exports) == 0 && contract.IsZero() && detect == nil {
+	defaultTarget := importerDefaultTargetClaim(entity)
+	if len(entity.Spec.Exports) == 0 && contract.IsZero() && detect == nil && defaultTarget == "" {
 		return nil
 	}
 	exports := make([]pluginpath.PluginExportClaim, 0, len(entity.Spec.Exports))
@@ -41,7 +42,18 @@ func PluginContractClaim(entity types.Plugin) *pluginpath.PluginContractClaim {
 		Exports:  exports,
 		Contract: pluginContractClaim(contract),
 		Detect:   detect,
+
+		DefaultTarget: defaultTarget,
 	}
+}
+
+// importerDefaultTargetClaim returns the default target an importer entity
+// records, or empty where it records none, in which case it makes no claim.
+func importerDefaultTargetClaim(entity types.Plugin) string {
+	if entity.Spec.Importer == nil {
+		return ""
+	}
+	return entity.Spec.Importer.DefaultTarget
 }
 
 // importerDetectClaim returns the recognition signatures an importer entity

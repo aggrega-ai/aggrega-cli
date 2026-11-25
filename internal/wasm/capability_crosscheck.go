@@ -30,6 +30,11 @@ type EntityContractClaim struct {
 	// them — in which case nothing about the signatures is compared; a non-nil
 	// list, even an empty one, is compared with describe() entry for entry.
 	Detect *[]DetectSignature
+
+	// DefaultTarget is the importer default target the entity records. Empty
+	// when the entity records none, in which case nothing about the target is
+	// compared; a non-empty record must equal what describe() reports.
+	DefaultTarget string
 }
 
 // EntityExportClaim is one export's authored capability: the export name the
@@ -112,7 +117,10 @@ func CrossCheckContract(entityIdentity string, claim EntityContractClaim, desc P
 			return err
 		}
 	}
-	return crossCheckDetect(entityIdentity, claim.Detect, desc.Importer)
+	if err := crossCheckDetect(entityIdentity, claim.Detect, desc.Importer); err != nil {
+		return err
+	}
+	return crossCheckDefaultTarget(entityIdentity, claim.DefaultTarget, desc.Importer)
 }
 
 // crossCheckDeclaredCapabilities verifies that every capability an entity's list
@@ -174,6 +182,25 @@ func crossCheckDetect(entityIdentity string, want *[]DetectSignature, got *Impor
 		if err := crossCheckDetectSignature(entityIdentity, i, recorded[i], reported[i]); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// crossCheckDefaultTarget compares the default target an entity records with the
+// one describe() reports, where the entity records one. The comparison is
+// one-sided like crossCheckDetect's: an absent record makes no claim.
+func crossCheckDefaultTarget(entityIdentity, want string, got *ImporterContract) error {
+	if want == "" {
+		return nil
+	}
+	var reported string
+	if got != nil {
+		reported = got.DefaultTarget
+	}
+	if want != reported {
+		return fmt.Errorf(
+			"entity %q records importer.defaultTarget %q but the plugin's describe() reports %q: %w",
+			entityIdentity, want, reported, ErrWasmContractMismatch())
 	}
 	return nil
 }

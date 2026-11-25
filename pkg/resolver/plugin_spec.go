@@ -132,6 +132,8 @@ func WasmContractClaim(claim *pluginpath.PluginContractClaim) *wasm.EntityContra
 		Exports:  exports,
 		Contract: wasmContract(claim.Contract),
 		Detect:   wasmDetect(claim.Detect),
+
+		DefaultTarget: claim.DefaultTarget,
 	}
 }
 

@@ -227,3 +227,45 @@ func TestUnderDeclaredNotices_ImporterDetect(t *testing.T) {
 		t.Fatalf("an entity recording the signatures drew notices: %q", notices)
 	}
 }
+
+// importerDescriptorTargeting is an importer's describe() report declaring
+// target as its default target, or none where target is empty.
+func importerDescriptorTargeting(target string) PluginDescriptor {
+	desc := importerDescriptor(nil)
+	if target != "" {
+		desc.Importer = &ImporterContract{DefaultTarget: target}
+	}
+	return desc
+}
+
+// TestImporterDefaultTargetMismatchRefused holds the load's comparison of the
+// default target an entity records with the importer's describe() report: a
+// differing record is refused as a contract mismatch naming importer.defaultTarget
+// and both values.
+func TestImporterDefaultTargetMismatchRefused(t *testing.T) {
+	t.Parallel()
+	err := CrossCheckContract("importer/import-arm:1.0.0", EntityContractClaim{DefaultTarget: "compose"},
+		importerDescriptorTargeting("arm"))
+	if !errors.Is(err, ErrWasmContractMismatch()) {
+		t.Fatalf("a differing default target must be refused as a contract mismatch; got %v", err)
+	}
+	for _, want := range []string{"importer.defaultTarget", `"compose"`, `"arm"`, "importer/import-arm:1.0.0"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not contain %s: %v", want, err)
+		}
+	}
+	if err := CrossCheckContract("importer/import-arm:1.0.0", EntityContractClaim{DefaultTarget: "arm"},
+		importerDescriptorTargeting("arm")); err != nil {
+		t.Errorf("an equal record was refused: %v", err)
+	}
+}
+
+// TestImporterDefaultTargetAbsentNotCompared holds an entity recording no
+// default target to making no claim against an importer that declares one.
+func TestImporterDefaultTargetAbsentNotCompared(t *testing.T) {
+	t.Parallel()
+	if err := CrossCheckContract("importer/import-arm:1.0.0", EntityContractClaim{Detect: &[]DetectSignature{}},
+		importerDescriptorTargeting("arm")); err != nil {
+		t.Fatalf("an entity recording no default target was refused: %v", err)
+	}
+}

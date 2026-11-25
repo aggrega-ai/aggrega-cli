@@ -125,6 +125,14 @@ func applyDescriptorContract(entity *types.Plugin, desc wasm.PluginDescriptor) {
 		}
 		entity.Spec.Importer.Detect = detect
 	}
+	// The default target is recorded the same way: only an importer carries the
+	// importer block, and a report declaring none writes no key.
+	if desc.Importer != nil && desc.Importer.DefaultTarget != "" && desc.PluginType == string(wasm.PluginTypeImporter) {
+		if entity.Spec.Importer == nil {
+			entity.Spec.Importer = &types.PluginImporter{}
+		}
+		entity.Spec.Importer.DefaultTarget = desc.Importer.DefaultTarget
+	}
 }
 
 // descriptorDetect maps the describe() recognition signatures onto the entity's
