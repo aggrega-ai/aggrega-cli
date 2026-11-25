@@ -33,9 +33,10 @@ import (
 //     warned value-not-carried where it is not;
 //   - the secrets are those secrets.go attaches, and a drafted instance's
 //     comment names each secret that stays a deploy-time parameter;
-//   - a mapped instance names its row's Recipe as its realization, and a
-//     drafted instance its drafted Recipe, where the import's target is the
-//     format's own;
+//   - a mapped instance names its row's Recipe as its realization on every
+//     target, which the host confirms against that target's Recipes; a drafted
+//     instance names its drafted Recipe, which exists on the format's own
+//     target alone, where the import's target is that one;
 //   - a module-form instance's comment names each parameter the node sets that
 //     its row does not translate.
 func Release(in aggrega.ImportInput, f Format, g *Graph, classified []Classified,
@@ -75,7 +76,6 @@ func Release(in aggrega.ImportInput, f Format, g *Graph, classified []Classified
 func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 	b := &entryBuilder{w: w, cl: cl, e: importer.ReleaseEntry{Key: cl.Key}}
 	n := cl.Node
-	ownTarget := w.in.Target != "" && w.in.Target == w.f.Target
 	switch {
 	case cl.Class == ClassMapped && cl.Row != nil:
 		source := w.sourceOf(cl)
@@ -96,9 +96,7 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 			}
 		}
 		b.e.Secrets = w.mappedSecrets(cl, source)
-		if ownTarget {
-			b.e.Realization = cl.Row.Recipe
-		}
+		b.e.Realization = cl.Row.Recipe
 		if isModule(n.Form) {
 			if names := untranslated(n, cl.Row); len(names) > 0 {
 				b.e.Comments = append(b.e.Comments, "Module parameters the source sets and the draft does not translate: "+
@@ -118,7 +116,7 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 			}
 		}
 		b.e.Comments = append(b.e.Comments, w.draftedSecrets(cl)...)
-		if ownTarget {
+		if w.ownTarget() {
 			b.e.Realization = cl.Recipe
 		}
 	}

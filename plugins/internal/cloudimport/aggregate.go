@@ -120,12 +120,17 @@ type aggregateWriter struct {
 	hoisted map[string]string
 	keys    map[string]bool
 	pending []string
+	// noted holds the secure parameters whose values were judged, and secure the
+	// patterns that find each secure parameter's name in text.
+	noted  map[string]bool
+	secure map[string]*regexp.Regexp
 }
 
 // newAggregateWriter returns the writer of the instances of classified.
 func newAggregateWriter(in aggrega.ImportInput, f Format, g *Graph, classified []Classified,
 	release bool) *aggregateWriter {
-	w := &aggregateWriter{in: in, f: f, g: g, release: release, hoisted: map[string]string{}, keys: map[string]bool{}}
+	w := &aggregateWriter{in: in, f: f, g: g, release: release, hoisted: map[string]string{}, keys: map[string]bool{},
+		noted: map[string]bool{}, secure: map[string]*regexp.Regexp{}}
 	for i := range classified {
 		if classified[i].Node != nil {
 			w.out = append(w.out, &classified[i])
@@ -632,7 +637,7 @@ func (w *aggregateWriter) converted(scalar string, conv Conv) (string, outcome) 
 // scalar it is written as: through the format's Text where the import's target
 // is the format's own, then escaped as escape says.
 func (w *aggregateWriter) stringText(s string) string {
-	if w.f.Text != nil && w.in.Target == w.f.Target {
+	if w.f.Text != nil && w.ownTarget() {
 		s = w.f.Text(s)
 	}
 	return draftyaml.String(w.escape(s))
@@ -680,4 +685,10 @@ func (w *aggregateWriter) jsonText(raw json.RawMessage) (string, bool) {
 		return w.stringText(s), true
 	}
 	return string(raw), true
+}
+
+// ownTarget reports whether the import names a target and it is the format's
+// own.
+func (w *aggregateWriter) ownTarget() bool {
+	return w.in.Target != "" && w.in.Target == w.f.Target
 }

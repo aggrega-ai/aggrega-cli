@@ -156,6 +156,13 @@ func TestReleaseEntryForAMappedInstance(t *testing.T) {
 	if !strings.Contains(manifest, "server: arm/postgres-flexible-server") {
 		t.Errorf("the Manifest does not map the server to its row's Recipe:\n%s", manifest)
 	}
+	// The row's Recipe name is the realization on every target; the host
+	// confirms it against that target's Recipes.
+	in.Target = "terraform"
+	_, _, _, manifest, _ = released(t, in, f, g)
+	if !strings.Contains(manifest, "server: terraform/postgres-flexible-server") {
+		t.Errorf("on terraform the Manifest does not map the server to its row's Recipe name:\n%s", manifest)
+	}
 	onlyCode(t, diags, CodeValueNotCarried, 0)
 }
 

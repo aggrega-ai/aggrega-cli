@@ -226,7 +226,11 @@ func (w *aggregateWriter) secureReads(text string) []string {
 		if !p.Secure || p.Name == "" {
 			continue
 		}
-		re := regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(p.Name) + `($|[^A-Za-z0-9_])`)
+		re := w.secure[p.Name]
+		if re == nil {
+			re = regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(p.Name) + `($|[^A-Za-z0-9_])`)
+			w.secure[p.Name] = re
+		}
 		if re.MatchString(text) {
 			out = append(out, p.Name)
 		}
@@ -311,7 +315,7 @@ func (w *aggregateWriter) parametersBlock() string {
 				"Aggregate parameter cannot hold, so it is not carried."))
 		}
 		if _, supplied := p.Supplied.(Literal); supplied && has {
-			b.WriteString(draftyaml.CommentLine("    ", "Its default is the value the parameters file supplies."))
+			b.WriteString(draftyaml.CommentLine("    ", "Its default is the value the parameters file supplies; a value that differs per environment belongs in the Release, which fulfils the parameter."))
 		}
 		b.WriteString("    " + key + ":\n")
 		b.WriteString("      type: " + aggType(p) + "\n")

@@ -86,6 +86,28 @@ func TestParameterFeedingValuesIsAnAggregateParameter(t *testing.T) {
 	onlyCode(t, diags, CodeValueNotCarried, 0)
 }
 
+// TestParameterSuppliedDefaultSaysWhereEnvironmentValuesBelong writes the
+// value a parameters file supplies as the Aggregate parameter's default, with
+// a comment saying that a value differing per environment belongs in the
+// Release.
+func TestParameterSuppliedDefaultSaysWhereEnvironmentValuesBelong(t *testing.T) {
+	in := edgeView()
+	in.Target = "arm"
+	s := pgServer()
+	s.Body = []Prop{leaf(Param{Name: "dbVersion"}, pathVersion...)}
+	g := &Graph{Nodes: []*Node{s}, Params: []Parameter{{Name: "dbVersion", Type: "string", Supplied: text("15")}}}
+	_, aggregate, _, _, _ := released(t, in, releaseFormat(), g)
+	want := `    # The template parameter dbVersion.
+    # Its default is the value the parameters file supplies; a value that differs per environment belongs in the Release, which fulfils the parameter.
+    db_version:
+      type: string
+      default: "15"
+`
+	if !strings.Contains(aggregate, want) {
+		t.Errorf("the Aggregate does not declare the parameter as\n%swant in\n%s", want, aggregate)
+	}
+}
+
 // TestParameterFeedingValuesWritesMembersAndWarnsOfWhatIsNot writes a
 // parameter read inside an object, and warns value-not-carried naming the
 // values key where a member cannot be written, where the value is a secure

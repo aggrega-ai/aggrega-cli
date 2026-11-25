@@ -61,7 +61,7 @@ func (w *aggregateWriter) pointerText(v Value) (string, outcome) {
 		}
 		named = append(named, w.resourceText(r.Node))
 	}
-	if w.f.Pointer != nil && w.in.Target == w.f.Target {
+	if w.f.Pointer != nil && w.ownTarget() {
 		if text, ok := w.f.Pointer(v); ok {
 			return draftyaml.String(text), written()
 		}

@@ -120,12 +120,14 @@ func TestSecretLiteralDefaultIsADecisionNamedInAWarning(t *testing.T) {
 func TestSecretNewGuidDefaultWarnsThatNoSecretIsGenerated(t *testing.T) {
 	in := edgeView()
 	in.Target = "arm"
-	g := &Graph{Nodes: []*Node{passwordServer("adminPassword")}, Params: []Parameter{
-		{Name: "adminPassword", Type: "string", Secure: true, Default: Opaque{Text: "[newGuid()]", Target: "arm"}}}}
-	_, _, release, _, diags := released(t, in, releaseFormat(), g)
-	warnsAbout(t, diags, CodeValueNotCarried, "adminPassword", "newGuid()", "generates no secret")
-	if !strings.Contains(instanceBlock(t, release, "server"), "type: core/referenced-secret") {
-		t.Errorf("the secret is not attached:\n%s", release)
+	for _, expr := range []string{"[newGuid()]", "[NEWGUID ()]"} {
+		g := &Graph{Nodes: []*Node{passwordServer("adminPassword")}, Params: []Parameter{
+			{Name: "adminPassword", Type: "string", Secure: true, Default: Opaque{Text: expr, Target: "arm"}}}}
+		_, _, release, _, diags := released(t, in, releaseFormat(), g)
+		warnsAbout(t, diags, CodeValueNotCarried, "adminPassword", "newGuid()", "generates no secret")
+		if !strings.Contains(instanceBlock(t, release, "server"), "type: core/referenced-secret") {
+			t.Errorf("%s: the secret is not attached:\n%s", expr, release)
+		}
 	}
 }
 
