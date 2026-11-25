@@ -1,0 +1,8 @@
+{
+  "resources": [
+    {"id": "queue", "type": "Toy.Messaging/queues", "name": "orders",
+     "properties": {"location": "westeurope"}},
+    {"id": "worker", "type": "Toy.Compute/workers", "name": "indexer", "dependsOn": ["queue"],
+     "properties": {"queueName": {"$ref": "queue", "attr": ["name"]}}}
+  ]
+}

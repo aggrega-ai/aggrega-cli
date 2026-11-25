@@ -1,0 +1,8 @@
+{
+  "resources": [
+    {"id": "search", "type": "Toy.Search/services", "name": "search-raw",
+     "properties": {"location": "westeurope"}},
+    {"id": "searchModule", "type": "Toy.Search/services", "module": {"path": "toy/search", "version": "1.2.0"},
+     "properties": {"name": "search-module"}}
+  ]
+}

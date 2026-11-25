@@ -6,6 +6,7 @@ package cloudimport
 import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // ParseFunc parses a source as the syntactic format named syntax into its
@@ -43,4 +44,25 @@ type Format struct {
 	// Wrap writes the Recipe sourcing whole a module no row maps; nil where
 	// the format's reader flattens such a module into its resources.
 	Wrap schemadraft.ModuleWriter
+	// Module locates the module a node of a module form calls, from the
+	// ModuleRef the reader gives the node: the source kind and the address
+	// the Recipe Wrap writes sources it from, and the parameters that Recipe
+	// binds itself. The version the Recipe sources is the one the ModuleRef
+	// states. A module it cannot locate takes an empty ModuleSource, and its
+	// draft halts. Nil where Wrap is nil; a format setting Wrap and no Module
+	// halts on a module no row maps.
+	Module func(ref ModuleRef) ModuleSource
+}
+
+// ModuleSource is where the Recipe drafted for a module no row maps sources
+// the module from, and what that Recipe binds itself, as a format's Module
+// gives it.
+type ModuleSource struct {
+	// Kind is the Recipe's source kind, and URL the module's address.
+	Kind, URL string
+	// Fixed are the parameters the Recipe binds itself, in order, which no
+	// Release sets: a parameter of one of these names the source sets is not
+	// carried, and is reported value-not-carried. Each Value is a single-line
+	// YAML scalar, written as it is.
+	Fixed []importer.Entry
 }

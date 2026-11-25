@@ -109,9 +109,7 @@ type Classified struct {
 	Name     string
 	Decision aggrega.ImportDecision
 	// Entity is the reference to the Component a mapped node references, or
-	// the Component drafted for a drafted node; empty for every other class,
-	// and for a drafted node of a module form, whose Recipe sources the module
-	// whole and is drafted with the format's module writer.
+	// the Component drafted for a drafted node; empty for every other class.
 	Entity aggrega.EmittedEntity
 	// Drafts are the Component and the Recipe drafted for a drafted node's
 	// Name, held by the first node by ID of those taking it and empty on the
@@ -127,13 +125,13 @@ type Classified struct {
 	// Comments are the comment lines written above the instance of a mapped or
 	// drafted node: each held-back resource it reads, named.
 	Comments []string
-	// Inputs are the inputs of a drafted node's Recipe, each with the pillar
-	// and the key it is read from: for a resource, those of the Recipe its
-	// Drafts hold; for a module, each parameter a neighbour's value is
-	// delivered into, which the Recipe the format's module writer drafts reads
-	// off the inject pipe beside the parameters it carries.
+	// Inputs are the inputs of the Recipe drafted for a drafted node, each with
+	// the pillar and the key it is read from: for a module, each parameter any
+	// node drafted with it sets, read from infra.overrides under its name or,
+	// where a neighbour's value is delivered into it, off the inject pipe, less
+	// each the Recipe binds itself.
 	Inputs []schemadraft.Input
-	// Recipe is the name of the Recipe drafted for a drafted resource, empty for
+	// Recipe is the name of the Recipe drafted for a drafted node, empty for
 	// every other node.
 	Recipe string
 	// Provides are what a drafted node's Recipe publishes, each attribute
@@ -183,15 +181,21 @@ type Classified struct {
 // the format's rules place as placement, identity and secret so, every
 // property a secure parameter or a credential feeds as a secret, each property
 // a neighbour's value is delivered into read off the inject pipe, and provides
-// its Provides. Each node is an instance of the Component with a decision of
-// its own, and its Inputs are those of the drafted Recipe. A node of a module
-// form is classed drafted and named, and nothing is drafted for it here: its
-// Recipe sources the module whole and is drafted with the format's module
-// writer. A node no row maps for which the format has no
-// writer — no Recipe writer for a resource, no module writer for a module —
-// halts source-refused, the format being misconfigured, and nothing is
-// classified. Where a draft halts, its nodes are classed drafted with nothing
-// drafted, and the halt is returned.
+// its Provides. The nodes of a module form of one Component name take one
+// Component and one Recipe sourcing the module whole, drafted once with
+// [schemadraft.DraftWrapped] and the format's Wrap: the module the first node
+// by ID calls, located by the format's Module at the version that node states,
+// each parameter any of them sets read from infra.overrides under its name,
+// matched regardless of case under the first node's spelling, or off the
+// inject pipe where a neighbour's value is delivered into it, and each output
+// another node reads provided. Each node is an instance of the Component with
+// a decision of its own, and its Inputs are those of the drafted Recipe. A
+// node no row maps for which the format has no writer — no Recipe writer for a
+// resource, no module writer or no Module for a module — halts source-refused,
+// the format being misconfigured, as do nodes of a module form and resources
+// whose drafts take one Component name, and nothing is classified. Where a
+// draft halts, its nodes are classed drafted with nothing drafted, and the
+// halt is returned.
 //
 // A child that is an instance of its own — mapped or drafted, not an instance
 // a fold of its parent's row makes — gains its parent in its DependsOn, so the
@@ -564,7 +568,8 @@ type draftGroup struct {
 // settleUnmatched holds back each node no Component maps whose draft's name
 // the catalog holds, and groups the others by name and form, each group to be
 // drafted once its instances are wired. It returns a halt where the format has
-// no writer for a node it would draft.
+// no writer for a node it would draft, or a module and a resource would draft
+// one Component name.
 func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 	var unwritable []string
 	for _, n := range c.nodes {
@@ -576,7 +581,7 @@ func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 		switch {
 		case holds:
 			c.heldBack(n, held)
-		case isModule(n.Form) && c.f.Wrap == nil, !isModule(n.Form) && c.f.Draft.Write == nil:
+		case isModule(n.Form) && (c.f.Wrap == nil || c.f.Module == nil), !isModule(n.Form) && c.f.Draft.Write == nil:
 			unwritable = append(unwritable, n.ID+" ("+n.Type+")")
 		default:
 			c.group(n, name)
@@ -585,9 +590,12 @@ func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 	if len(unwritable) > 0 {
 		d := Report(CodeSourceRefused, "the importer's format has no writer drafting "+andList(unwritable)+
 			", which no row maps: a format drafting a resource from its source needs a Recipe writer, and one "+
-			"keeping a module whole a module writer; the format is the importer's own, so report it to the "+
-			"importer's authors")
+			"keeping a module whole a module writer and a locator of the module; the format is the importer's "+
+			"own, so report it to the importer's authors")
 		return &d
+	}
+	if d := c.sharedNames(); d != nil {
+		return d
 	}
 	for _, grp := range c.groups {
 		if !grp.module {
@@ -611,15 +619,13 @@ func (c *classifier) group(n *Node, name string) {
 	c.out[n.ID].Name = name
 }
 
-// draftGroups drafts each group once its instances are wired: the Component
-// and the Recipe of a resource group, and for a module group, whose Recipe the
-// format's module writer drafts, the decision on each of its nodes.
+// draftGroups drafts the Component and the Recipe of each group once its
+// instances are wired: from the resources of a resource group, and for a
+// module group, sourcing its module whole.
 func (c *classifier) draftGroups() {
 	for _, grp := range c.groups {
 		if grp.module {
-			for _, n := range grp.nodes {
-				c.unwritten(n, grp.name)
-			}
+			c.draftModule(grp)
 			continue
 		}
 		c.draft(grp)
@@ -664,9 +670,8 @@ func (c *classifier) why(n *Node) string {
 		"catalog holds"
 }
 
-// unwritten classes n drafted under name with no draft written here: a node
-// of a module form, whose Recipe the format's module writer drafts, or one
-// whose draft halted.
+// unwritten classes n, whose draft halted, drafted under name with no draft
+// written.
 func (c *classifier) unwritten(n *Node, name string) {
 	d := c.own[n.ID].decision
 	d.SourceNode.ParamsSummary = summary(n)
@@ -675,11 +680,7 @@ func (c *classifier) unwritten(n *Node, name string) {
 		tier = d.Chosen.Tier
 	}
 	d.Chosen = &aggrega.DecisionChoice{Target: name, Mode: "draft", Tier: tier}
-	module := ""
-	if isModule(n.Form) {
-		module = "its Recipe sources the module whole, drafted with the format's module writer"
-	}
-	d.Rationale = joinNonEmpty("; ", "drafted: "+c.why(n), c.parentNote(n), module, c.says(n))
+	d.Rationale = joinNonEmpty("; ", "drafted: "+c.why(n), c.parentNote(n), c.says(n))
 	cl := c.drafted(n)
 	cl.Name, cl.Decision = name, d
 }
@@ -697,37 +698,11 @@ func (c *classifier) drafted(n *Node) *Classified {
 }
 
 // draft drafts the Component and the Recipe of grp once, for its nodes, the
-// nodes no Component maps that take its name, in ID order.
+// nodes of a resource form no Component maps that take its name, in ID order.
 func (c *classifier) draft(grp *draftGroup) {
-	nodes := grp.nodes
 	w, notes := c.written(grp)
 	drafted, diags := schemadraft.DraftResource(c.in, c.f.Draft, w)
-	c.diags = append(c.diags, diags...)
-	if halts(diags) || len(drafted.Entities) == 0 {
-		for _, n := range nodes {
-			c.unwritten(n, grp.name)
-		}
-		return
-	}
-	for i, n := range nodes {
-		d := drafted.Decision
-		d.SourceNode.ID, d.SourceNode.Type = n.ID, n.Type
-		d.Candidates = slices.Clone(d.Candidates)
-		if d.Chosen != nil {
-			chosen := *d.Chosen
-			d.Chosen = &chosen
-		}
-		d.Rationale = joinNonEmpty("; ", "drafted: "+c.why(n), c.parentNote(n), notes, c.says(n),
-			drafted.Decision.Rationale)
-		entity := drafted.Entities[0].Entity
-		entity.SourceRef, entity.DecisionRef = n.ID, "decision:"+n.ID
-		cl := c.drafted(n)
-		cl.Name, cl.Decision, cl.Entity, cl.Inputs = drafted.Name, d, entity, drafted.Inputs
-		cl.Recipe = drafted.Recipe
-		if i == 0 {
-			cl.Drafts = drafted.Entities
-		}
-	}
+	c.adopt(grp, drafted, diags, notes)
 }
 
 // writtenProp is one property the nodes of one draft write.

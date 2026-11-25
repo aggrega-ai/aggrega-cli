@@ -1,0 +1,8 @@
+{
+  "resources": [
+    {"id": "searchA", "type": "Toy.Search/services", "module": {"path": "toy/search", "version": "1.2.0"},
+     "properties": {"name": "search-a", "sku": "basic"}},
+    {"id": "searchB", "type": "Toy.Search/services", "module": {"path": "toy/search", "version": "1.3.0"},
+     "properties": {"name": "search-b", "SKU": "standard", "replicas": 3}}
+  ]
+}

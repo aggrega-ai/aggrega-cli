@@ -27,7 +27,15 @@
 //   - [Classify] gives each resource one class and one decision: folded into
 //     another resource's instance, substrate left to the operator, existing,
 //     mapped to a catalog Component through the format's [Table], drafted as
-//     a Component and a Recipe from the source, held back, or not carried.
+//     a Component and a Recipe from the source — for a module, a Recipe
+//     sourcing it whole — held back, or not carried.
+//   - [Aggregate] and [Release] write the drafted Aggregate and Release, with
+//     the Manifest naming each realization the Release names.
+//
+// [Import] runs the whole of it for one request and any [Format]: the
+// settings, the reader, the expansion, the classification and the drafts, the
+// Aggregate, the Release and the catalog entities, laid out as the importer
+// kit lays out every importer's drafts. Any halt drafts nothing.
 //
 // Every diagnostic the core and its formats raise is made by [Report], which
 // gives each code of the vocabulary its one severity.

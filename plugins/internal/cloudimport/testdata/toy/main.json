@@ -1,0 +1,19 @@
+{
+  "parameters": [
+    {"name": "region", "type": "string", "default": "westeurope"}
+  ],
+  "resources": [
+    {"id": "db", "type": "Toy.Data/servers", "name": "pg-main",
+     "properties": {"location": {"$param": "region"}, "version": "16"}},
+    {"id": "dbSetting", "type": "Toy.Data/servers/settings", "parent": "db", "name": "max-connections",
+     "properties": {"value": "200"}},
+    {"id": "net", "type": "Toy.Network/networks", "name": "net-core"},
+    {"id": "queue", "type": "Toy.Messaging/queues", "name": "orders",
+     "properties": {"location": "westeurope", "retentionDays": 7,
+                    "hostName": {"$ref": "db", "attr": ["host"]},
+                    "networkId": {"$ref": "net"}}}
+  ],
+  "outputs": [
+    {"name": "dbHost", "value": {"$ref": "db", "attr": ["host"]}}
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "resources": [
+    {"id": "queue", "type": "Toy.Messaging/queues", "name": "orders"},
+    {"id": "queue", "type": "Toy.Messaging/queues", "name": "orders-again"}
+  ]
+}
