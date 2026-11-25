@@ -1,6 +1,8 @@
 {
   "resources": [
-    {"id": "search", "type": "Toy.Search/services", "module": {"version": "1.2.0"},
-     "properties": {"name": "search-main"}}
+    {"id": "search", "type": "Toy.Search/services", "module": {"prefix": "toy.search", "version": "1.2.0"},
+     "properties": {"name": "search-main"}},
+    {"id": "worker", "type": "Toy.Compute/workers", "name": "indexer",
+     "properties": {"searchEndpoint": {"$ref": "search", "attr": ["endpoint"]}}}
   ]
 }

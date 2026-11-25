@@ -1,0 +1,6 @@
+{
+  "resources": [
+    {"id": "search", "type": "Toy.Search/services", "module": {"path": "toy/search"},
+     "properties": {"name": "search-main"}}
+  ]
+}

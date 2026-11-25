@@ -1,0 +1,9 @@
+{
+  "resources": [
+    {"id": "db", "type": "Toy.Data/servers", "name": "pg-main",
+     "properties": {"location": "westeurope", "version": "16"}},
+    {"id": "search", "type": "Toy.Search/services", "module": {"path": "toy/search", "version": "1.2.0"},
+     "properties": {"identity": {"ids": [{"$ref": "db", "attr": ["host"]}]},
+                    "hostName": {"$ref": "db", "attr": ["host"]}}}
+  ]
+}

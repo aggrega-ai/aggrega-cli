@@ -48,9 +48,10 @@ type Format struct {
 	// ModuleRef the reader gives the node: the source kind and the address
 	// the Recipe Wrap writes sources it from, and the parameters that Recipe
 	// binds itself. The version the Recipe sources is the one the ModuleRef
-	// states. A module it cannot locate takes an empty ModuleSource, and its
-	// draft halts. Nil where Wrap is nil; a format setting Wrap and no Module
-	// halts on a module no row maps.
+	// states. A module whose ModuleSource has no kind or no address is not
+	// located: its node is not carried, nothing is drafted for it, and a
+	// linked-source-not-read warning names it. Nil where Wrap is nil; a format
+	// setting Wrap and no Module halts on a module no row maps.
 	Module func(ref ModuleRef) ModuleSource
 }
 

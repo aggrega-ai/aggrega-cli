@@ -551,7 +551,11 @@ func (c *classifier) settleInjects(cands []candidate) {
 // into, or why it is not delivered there.
 func (c *classifier) injectable(grp *draftGroup, mine []candidate, cand candidate) ([]string, func(func(string) string) string) {
 	path := cand.path
-	if !grp.module {
+	if grp.module {
+		if why := wholeParameter(path); why != nil {
+			return nil, why
+		}
+	} else {
 		i := slices.IndexFunc(grp.props, func(p *writtenProp) bool { return samePath(p.path, cand.path) })
 		if i < 0 {
 			return nil, func(func(string) string) string {
@@ -586,6 +590,25 @@ func (c *classifier) injectable(grp *draftGroup, mine []candidate, cand candidat
 		}
 	}
 	return path, nil
+}
+
+// wholeParameter says why a neighbour's value read at path is not delivered
+// into a module's parameter, nil where it is: a module's parameter is set
+// whole, so a value is delivered into one only where the parameter is the
+// value, at a path of one segment that names it.
+func wholeParameter(path []string) func(func(string) string) string {
+	switch {
+	case len(path) == 0 || path[0] == "":
+		return func(func(string) string) string {
+			return "it is read at a member with no name, which sets no parameter of the module"
+		}
+	case len(path) > 1:
+		return func(q func(string) string) string {
+			return "the drafted Recipe sets the module's parameter " + q(path[0]) + " whole, from infra.overrides, " +
+				"and delivers no neighbour's value inside it"
+		}
+	}
+	return nil
 }
 
 // inject records the property at path as one a neighbour's value is delivered
@@ -647,6 +670,9 @@ func (c *classifier) credential(n *Node, e Edge, ci string, direct bool) {
 	case !direct:
 		carried = fmt.Sprintf("%s is written into the instance of %s, whose Recipe takes it in no slot: supply it "+
 			"where that instance is configured", n.ID, ci)
+	case consumer.Class == ClassDrafted && isModule(consumer.Node.Form) && len(e.Path) > 0:
+		carried = "the Recipe drafted for " + n.ID + " leaves out the module's parameter " + e.Path[0] + ", which " +
+			"a secret feeds, for the author to bind in that Recipe"
 	case consumer.Class == ClassDrafted:
 		carried = "the Recipe drafted for " + n.ID + " reads the property as a secret, never as a value the " +
 			"draft carries"
@@ -704,10 +730,16 @@ func (c *classifier) notWired(n *Node, ci string, pks []string, read reading, wh
 	c.note(n, Report(CodeReferenceNotWired, msg+"; write the value where the instance is configured"))
 }
 
-// heldComment names the held-back resource h above the instance ci.
+// heldComment names the held-back resource h above the instance ci, and why
+// it is held back: the catalog holds the Component its draft takes, or, where
+// the catalog does not, a resource of this import drafts that Component.
 func (c *classifier) heldComment(ci string, h *Classified) {
-	comment := "Not connected to " + draftyaml.Comment(h.Node.ID) + ", held back: the catalog holds the Component " +
-		draftyaml.Comment(h.Name) + " its draft takes."
+	why := "the catalog holds the Component " + draftyaml.Comment(h.Name) + " its draft takes."
+	if _, inCatalog := c.held(h.Name); !inCatalog {
+		why = "the Component " + draftyaml.Comment(h.Name) + " its draft takes is the one this import drafts from a " +
+			"resource."
+	}
+	comment := "Not connected to " + draftyaml.Comment(h.Node.ID) + ", held back: " + why
 	if cl := c.out[ci]; !slices.Contains(cl.Comments, comment) {
 		cl.Comments = append(cl.Comments, comment)
 	}

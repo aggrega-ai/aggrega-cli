@@ -28,7 +28,8 @@ import (
 // are the Aggregate, the Release and the Manifest as importer.Render lays them
 // out, followed by the drafted Components and Recipes as importer.CatalogFiles
 // lays them out under catalog/; under the render_mode setting llm, where each
-// writes the decisions alone as one document, that document is written once.
+// writes the decisions alone as one document, that document is written once,
+// and no other file is ever left out.
 //
 // Any halt, raised anywhere, drafts nothing: the output carries the
 // diagnostics alone. A format with no reader halts source-refused. Where the
@@ -87,8 +88,13 @@ func Import(in aggrega.ImportInput, f Format, parse ParseFunc) aggrega.ImportOut
 	}
 	out.Entities = append(out.Entities, documents...)
 	out.Files = importer.Render(in.Settings, documents, out.Decisions)
+	// Under the render_mode setting llm, Render and CatalogFiles each write the
+	// decisions document alone: the document Render writes for the decisions
+	// and no entity, written once. Any other file is kept, so two files of one
+	// path both reach the host.
+	decisionsAlone := importer.Render(in.Settings, nil, out.Decisions)
 	for _, file := range importer.CatalogFiles(in.Settings, drafts, out.Decisions) {
-		if !slices.ContainsFunc(out.Files, func(w aggrega.ScaffoldFile) bool { return w.Path == file.Path }) {
+		if !slices.Contains(decisionsAlone, file) {
 			out.Files = append(out.Files, file)
 		}
 	}

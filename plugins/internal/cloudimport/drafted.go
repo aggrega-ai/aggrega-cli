@@ -13,25 +13,123 @@ import (
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
 
+// groupModule adds n, a node of a module form no Component maps, to the group
+// of name where the format's Module locates its module, recording the source
+// it gives; where that source has no kind or no address, n is not carried.
+func (c *classifier) groupModule(n *Node, name string) {
+	ref := moduleRef(n)
+	located := c.f.Module(ref)
+	if located.Kind == "" || located.URL == "" {
+		c.unlocated(n, ref)
+		return
+	}
+	c.located[n.ID] = located
+	c.group(n, name)
+}
+
+// moduleRef is the module n calls, the empty one where its reader names none.
+func moduleRef(n *Node) ModuleRef {
+	if n.Module == nil {
+		return ModuleRef{}
+	}
+	return *n.Module
+}
+
+// unlocated classes n, a node of a module form calling ref, not carried: the
+// format locates no source for the module, so no Recipe sourcing it is
+// drafted, and a linked-source-not-read warning names n and the module.
+func (c *classifier) unlocated(n *Node, ref ModuleRef) {
+	module := moduleName(ref)
+	c.set(n, &Classified{Class: ClassNotCarried, Decision: decisionFor(n, joinNonEmpty("; ", "not carried: "+
+		c.why(n)+", and the importer's format locates no source for "+module+", so no Recipe sourcing it is "+
+		"drafted and nothing is drafted for it", c.parentNote(n), c.says(n)))})
+	c.note(n, Report(CodeLinkedSourceNotRead, fmt.Sprintf("%s (%s) calls %s, whose source the importer's format "+
+		"does not locate, and no Component maps it, so it is not carried and nothing is drafted for it: where it is "+
+		"wanted, map %s through the importer's mapping_overrides setting to a Component the catalog holds, or write "+
+		"its instance in the Aggregate", n.ID, n.Type, module, n.Type)))
+}
+
+// moduleName names the module ref calls, by its path, else by its prefix,
+// and the version it states.
+func moduleName(ref ModuleRef) string {
+	name := "a module of no stated path"
+	switch {
+	case ref.Path != "":
+		name = "the module " + ref.Path
+	case ref.Prefix != "":
+		name = "the module of the prefix " + ref.Prefix
+	}
+	if ref.Version == "" {
+		return name + " at no stated version"
+	}
+	return name + " at version " + ref.Version
+}
+
+// holdBackShared holds back the nodes of each module group whose Component
+// name a resource group of this import takes, and drafts nothing for that
+// module group: one Component takes one drafted Recipe, which cannot both
+// declare the resources and source a module whole.
+func (c *classifier) holdBackShared() {
+	var held []*draftGroup
+	for _, grp := range c.groups {
+		if !grp.module {
+			continue
+		}
+		i := slices.IndexFunc(c.groups, func(o *draftGroup) bool { return !o.module && o.name == grp.name })
+		if i < 0 {
+			continue
+		}
+		for _, n := range grp.nodes {
+			delete(c.groupOf, n.ID)
+			c.heldBeside(n, grp.name, c.groups[i].nodes)
+		}
+		held = append(held, grp)
+	}
+	c.groups = slices.DeleteFunc(c.groups, func(grp *draftGroup) bool { return slices.Contains(held, grp) })
+}
+
+// heldBeside holds back n, a node of a module form whose drafted Component
+// would take name, the Component this import drafts from resources: neither
+// drafted nor referenced, warned component-exists, its warning and its
+// decision's swap hint saying how the module is deployed by hand.
+func (c *classifier) heldBeside(n *Node, name string, resources []*Node) {
+	ids := make([]string, len(resources))
+	for i, r := range resources {
+		ids[i] = r.ID
+	}
+	url := c.located[n.ID].URL
+	why := fmt.Sprintf("the Component %s a draft of %s takes is the one this import drafts from %s, and one "+
+		"Component takes one drafted Recipe, which cannot both declare a resource and source the module %s whole, "+
+		"so the module is neither drafted nor referenced", name, n.Type, andList(ids), url)
+	remedy := "where the module is wanted, write in the Aggregate an instance of a Component of another name, with " +
+		"a Recipe implementing it that sources the module " + url
+	d := decisionFor(n, joinNonEmpty("; ", "held back: "+why, c.parentNote(n), c.says(n)))
+	d.SwapHint = remedy
+	c.set(n, &Classified{Class: ClassHeldBack, Name: name, Decision: d})
+	c.note(n, Report(CodeComponentExists, fmt.Sprintf("%s (%s) is held back: %s; %s", n.ID, n.Type, why, remedy)))
+}
+
 // draftModule drafts the Component and the Recipe of grp, the nodes of a
 // module form no Component maps that take its name, once: with the format's
 // module writer, a Recipe sourcing whole the module the first node by ID
-// calls, as the format's Module locates it, at the version that node states.
+// calls, from where the format's Module locates it, at the version that node
+// states. Each parameter a secret feeds is left out of the Recipe, and
+// value-not-carried warns of it on each node setting it.
 func (c *classifier) draftModule(grp *draftGroup) {
 	first := grp.nodes[0]
-	var ref ModuleRef
-	if first.Module != nil {
-		ref = *first.Module
-	}
-	located := c.f.Module(ref)
+	located := c.located[first.ID]
+	inputs, secrets := c.moduleParameters(grp)
 	m := schemadraft.WrappedModule{
 		Type:       &schemadraft.Type{Name: first.Type, Source: first.ID},
 		SourceKind: located.Kind,
 		URL:        located.URL,
-		Version:    ref.Version,
-		Inputs:     append(c.moduleParameters(grp), grp.injectInputs()...),
+		Version:    moduleRef(first).Version,
+		Inputs:     append(inputs, grp.injectInputs()...),
 		Fixed:      slices.Clone(located.Fixed),
 		Outputs:    slices.Clone(grp.provides),
+	}
+	for _, n := range grp.nodes {
+		c.leaveOutSecrets(n, grp.name, secrets)
 	}
 	drafted, diags := schemadraft.DraftWrapped(c.in, c.f.Draft, m, c.f.Wrap)
 	// A halt on a module no Recipe can source names no node: it points at the
@@ -41,7 +139,7 @@ func (c *classifier) draftModule(grp *draftGroup) {
 			diags[i].SourceRef = first.ID
 		}
 	}
-	c.adopt(grp, drafted, diags, modulesTogether(grp.nodes))
+	c.adopt(grp, drafted, diags, joinNonEmpty("; ", modulesTogether(grp.nodes), secretsText(secrets)))
 }
 
 // moduleParameters returns, for each parameter a node of grp sets, the input
@@ -49,13 +147,23 @@ func (c *classifier) draftModule(grp *draftGroup) {
 // parameter is read once, matched regardless of case under the spelling the
 // first node by ID writes it in, and typed from the value written; a parameter
 // a neighbour's value is delivered into whole is read off the inject pipe
-// instead, and a member with no name sets no parameter.
-func (c *classifier) moduleParameters(grp *draftGroup) []schemadraft.Input {
+// instead, and a member with no name sets no parameter. A parameter a secret
+// feeds on any node — a secure parameter, a credential, or a value the
+// format's secret rule names — is no input, the draft never carrying a
+// secret's value: it is returned beside the inputs, under that spelling.
+func (c *classifier) moduleParameters(grp *draftGroup) (inputs []schemadraft.Input, secrets []string) {
 	w := schemadraft.WrittenResource{Type: grp.nodes[0].Type}
 	var names []string
+	fed := map[string]bool{}
 	for _, n := range grp.nodes {
 		for _, p := range n.Body {
-			if p.Name == "" || slices.ContainsFunc(names, func(s string) bool { return strings.EqualFold(s, p.Name) }) {
+			if p.Name == "" {
+				continue
+			}
+			if c.secretFed(p) {
+				fed[foldedPath([]string{p.Name})] = true
+			}
+			if slices.ContainsFunc(names, func(s string) bool { return strings.EqualFold(s, p.Name) }) {
 				continue
 			}
 			names = append(names, p.Name)
@@ -66,8 +174,27 @@ func (c *classifier) moduleParameters(grp *draftGroup) []schemadraft.Input {
 				Value: c.parameterValue(p)})
 		}
 	}
-	_, inputs := schemadraft.FromWritten(w)
-	return inputs
+	typ, written := schemadraft.FromWritten(w)
+	secret := c.f.Draft.Rules.Secret
+	for _, in := range written {
+		if fed[foldedPath(in.Property.Path)] || secret != nil && secret(typ, in.Property) {
+			secrets = append(secrets, in.Property.Name)
+			continue
+		}
+		inputs = append(inputs, in)
+	}
+	return inputs, secrets
+}
+
+// secretFed reports whether a secret feeds the parameter p: a secure
+// parameter or a credential read anywhere in its value.
+func (c *classifier) secretFed(p Prop) bool {
+	for _, l := range leaves([]Prop{p}) {
+		if _, secret := c.typedValue(l.value); secret {
+			return true
+		}
+	}
+	return false
 }
 
 // parameterValue is the JSON the parameter p is typed from: its leaf's, as a
@@ -84,6 +211,32 @@ func (c *classifier) parameterValue(p Prop) json.RawMessage {
 		return json.RawMessage("[]")
 	}
 	return nil
+}
+
+// leaveOutSecrets warns value-not-carried of each parameter n sets that is one
+// of secrets, matched regardless of case: the Recipe drafted for component
+// does not read it, and the author binds it in that Recipe.
+func (c *classifier) leaveOutSecrets(n *Node, component string, secrets []string) {
+	var warned []string
+	for _, p := range n.Body {
+		named := func(s string) bool { return strings.EqualFold(s, p.Name) }
+		if p.Name == "" || slices.ContainsFunc(warned, named) || !slices.ContainsFunc(secrets, named) {
+			continue
+		}
+		warned = append(warned, p.Name)
+		c.note(n, Report(CodeValueNotCarried, fmt.Sprintf("%s sets the parameter %s of the module %s, which a secret "+
+			"feeds and the draft never carries, so the Recipe drafted for %s does not read it: bind %s in that "+
+			"Recipe, from where the secret is kept", n.ID, p.Name, c.located[n.ID].URL, component, p.Name)))
+	}
+}
+
+// secretsText says which parameters the Recipe drafted for a module leaves
+// out, a secret feeding each, empty where it leaves out none.
+func secretsText(secrets []string) string {
+	if len(secrets) == 0 {
+		return ""
+	}
+	return "the Recipe does not read " + andList(secrets) + ", which a secret feeds, for the author to bind in it"
 }
 
 // adopt records drafted, the Component and the Recipe drafted once for grp, on
@@ -128,75 +281,19 @@ func modulesTogether(nodes []*Node) string {
 		return ""
 	}
 	ids := make([]string, len(nodes))
-	first := moduleText(nodes[0].Module)
+	first := moduleName(moduleRef(nodes[0]))
 	var others []string
 	for i, n := range nodes {
 		ids[i] = n.ID
-		if called := moduleText(n.Module); i > 0 && called != first {
+		if called := moduleName(moduleRef(n)); i > 0 && called != first {
 			others = append(others, n.ID+" calls "+called)
 		}
 	}
 	text := fmt.Sprintf("the Component and its Recipe are drafted once for %s, the modules of %s, reading every "+
 		"parameter any of them sets, so each instance's Release entry sets its own", andList(ids), nodes[0].Type)
 	if len(others) > 0 {
-		text += fmt.Sprintf("; the Recipe sources the module %s calls, %s, where %s", nodes[0].ID, first,
+		text += fmt.Sprintf("; the Recipe sources what %s calls, %s, where %s", nodes[0].ID, first,
 			andList(others))
 	}
 	return text
-}
-
-// moduleText names the module ref calls and the version it states.
-func moduleText(ref *ModuleRef) string {
-	var path, version string
-	if ref != nil {
-		path, version = ref.Path, ref.Version
-	}
-	if path == "" {
-		path = "a module of no stated path"
-	}
-	if version == "" {
-		return path + " at no stated version"
-	}
-	return path + " at version " + version
-}
-
-// sharedNames halts source-refused where nodes of a module form and resources
-// no Component maps take one Component name: one Component cannot both source
-// a module whole and declare a resource, and the drafts of both would take one
-// path. A mapping_overrides entry mapping their types to a Component the
-// catalog holds makes each an instance of it.
-func (c *classifier) sharedNames() *aggrega.Diagnostic {
-	var clashes, types []string
-	for _, grp := range c.groups {
-		if !grp.module {
-			continue
-		}
-		i := slices.IndexFunc(c.groups, func(o *draftGroup) bool { return !o.module && o.name == grp.name })
-		if i < 0 {
-			continue
-		}
-		clashes = append(clashes, fmt.Sprintf("%s, calling a module, and %s, a resource, both draft the Component %s",
-			andList(typedIDs(grp.nodes)), andList(typedIDs(c.groups[i].nodes)), grp.name))
-		for _, n := range append(slices.Clone(grp.nodes), c.groups[i].nodes...) {
-			if !slices.Contains(types, n.Type) {
-				types = append(types, n.Type)
-			}
-		}
-	}
-	if len(clashes) == 0 {
-		return nil
-	}
-	d := Report(CodeSourceRefused, strings.Join(clashes, "; ")+", and one Component cannot both source a module "+
-		"whole and declare a resource: map "+andList(types)+" through the importer's mapping_overrides setting to "+
-		"a Component the catalog holds, so each is an instance of it")
-	return &d
-}
-
-// typedIDs names each of nodes by its ID and type.
-func typedIDs(nodes []*Node) []string {
-	out := make([]string, len(nodes))
-	for i, n := range nodes {
-		out[i] = n.ID + " (" + n.Type + ")"
-	}
-	return out
 }

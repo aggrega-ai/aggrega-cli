@@ -23,8 +23,10 @@ type Class int
 // The classes. A node takes the first of folded, substrate, existing, mapped
 // and drafted that applies to it, except that a node the source reads and does
 // not create is never folded; a fold or a type rule carrying none of it makes
-// it not carried, and a node whose drafted Component would take a name the
-// catalog holds already is held back.
+// it not carried, as the format locating no source makes a module; and a node
+// whose drafted Component would take a name the catalog holds already, or a
+// module whose drafted Component would take the name a resource of the import
+// drafts, is held back.
 const (
 	// ClassFolded is a child or extension resource a fold of another node's
 	// row writes into that node's instance, or a parent a fold writes into
@@ -45,12 +47,13 @@ const (
 	// Component and a Recipe drafted from the resource as the source writes it.
 	ClassDrafted
 	// ClassHeldBack is a resource whose drafted Component would take a name
-	// the catalog holds and this import did not draft: it is neither drafted
-	// nor referenced.
+	// the catalog holds and this import did not draft, or a module whose
+	// drafted Component would take the name a resource of this import drafts:
+	// it is neither drafted nor referenced.
 	ClassHeldBack
 	// ClassNotCarried is a resource no Recipe takes: a fold carrying none of
-	// it or taking one value only, or a type the format's type rules carry
-	// none of.
+	// it or taking one value only, a type the format's type rules carry none
+	// of, or a module no row maps whose source the format does not locate.
 	ClassNotCarried
 )
 
@@ -126,10 +129,11 @@ type Classified struct {
 	// drafted node: each held-back resource it reads, named.
 	Comments []string
 	// Inputs are the inputs of the Recipe drafted for a drafted node, each with
-	// the pillar and the key it is read from: for a module, each parameter any
-	// node drafted with it sets, read from infra.overrides under its name or,
-	// where a neighbour's value is delivered into it, off the inject pipe, less
-	// each the Recipe binds itself.
+	// the pillar and the key it is read from: for a resource, those of the
+	// Recipe its Drafts hold; for a module, each parameter any node drafted
+	// with it sets, read from infra.overrides under its name or, where a
+	// neighbour's value is delivered into it whole, off the inject pipe, less
+	// each the Recipe binds itself and each a secret feeds.
 	Inputs []schemadraft.Input
 	// Recipe is the name of the Recipe drafted for a drafted node, empty for
 	// every other node.
@@ -161,8 +165,8 @@ type Classified struct {
 //  4. mapped: the importer kit's Decide references a Component for it, through
 //     its row in the table or a mapping_overrides entry of its type;
 //  5. drafted: any other node, drafted from the resource as the source writes
-//     it; where the catalog holds the Component name its draft takes, it is
-//     held back instead.
+//     it, or for a module, as a Recipe sourcing it whole; where the catalog
+//     holds the Component name its draft takes, it is held back instead.
 //
 // Each mapped and drafted node is an instance of the drafted Aggregate, keyed
 // by [Keys] in the order Classify returns them, and the instances are wired as
@@ -187,15 +191,21 @@ type Classified struct {
 // by ID calls, located by the format's Module at the version that node states,
 // each parameter any of them sets read from infra.overrides under its name,
 // matched regardless of case under the first node's spelling, or off the
-// inject pipe where a neighbour's value is delivered into it, and each output
-// another node reads provided. Each node is an instance of the Component with
-// a decision of its own, and its Inputs are those of the drafted Recipe. A
-// node no row maps for which the format has no writer — no Recipe writer for a
-// resource, no module writer or no Module for a module — halts source-refused,
-// the format being misconfigured, as do nodes of a module form and resources
-// whose drafts take one Component name, and nothing is classified. Where a
-// draft halts, its nodes are classed drafted with nothing drafted, and the
-// halt is returned.
+// inject pipe where a neighbour's value is delivered into it whole, and each
+// output another node reads provided. A parameter a secret feeds — a secure
+// parameter, a credential, or a value the format's secret rule names — is no
+// input of that Recipe: value-not-carried warns of it on each node setting it,
+// naming the module, for the author to bind it in the Recipe. A module whose
+// source the format's Module does not locate is not carried, warned
+// linked-source-not-read; a module whose drafted Component would take the name
+// a resource of the import drafts is held back, warned component-exists, since
+// one Component takes one drafted Recipe. Each node is an instance of the
+// Component with a decision of its own, and its Inputs are those of the
+// drafted Recipe. A node no row maps for which the format has no writer — no
+// Recipe writer for a resource, no module writer or no Module for a module —
+// halts source-refused, the format being misconfigured, and nothing is
+// classified. Where a draft halts, its nodes are classed drafted with nothing
+// drafted, and the halt is returned.
 //
 // A child that is an instance of its own — mapped or drafted, not an instance
 // a fold of its parent's row makes — gains its parent in its DependsOn, so the
@@ -208,11 +218,14 @@ type Classified struct {
 //
 // Each decision's rationale opens with the class and names the rule that gave
 // it. Folded children are reported resource-folded; a not-carried resource
-// resource-not-carried; the substrate resources the source creates
-// substrate-left-to-operator, in one warning listing each; a held-back
-// resource component-exists, naming the Component and the mapping_overrides
-// entry that maps the type to it, built from the Component's labels in the
-// catalog view, so the import applying it references the Component; a node
+// resource-not-carried, but a module whose source the format does not locate
+// linked-source-not-read; the substrate resources the source creates
+// substrate-left-to-operator, in one warning listing each; a resource the
+// catalog holds back component-exists, naming the Component and the
+// mapping_overrides entry that maps the type to it, built from the Component's
+// labels in the catalog view, so the import applying it references the
+// Component; a module held back beside a resource component-exists, naming the
+// Component, the resources drafting it and the module's address; a node
 // whose row depends on a value set when the source deploys, and no
 // mapping_overrides entry maps, discriminator-unresolved. A type rule's Says
 // is added to the decision on each node of its type, whatever its class. The
@@ -284,6 +297,9 @@ type classifier struct {
 	// name and form, in the order first met, and groupOf each such node's.
 	groups  []*draftGroup
 	groupOf map[string]*draftGroup
+	// located holds the source the format's Module gives each node of a
+	// module form it locates, by the node's ID.
+	located map[string]ModuleSource
 	// cs reads the classes of the nodes as the wiring reaches them.
 	cs  classLookup
 	out map[string]*Classified
@@ -322,7 +338,7 @@ func newClassifier(in aggrega.ImportInput, f Format, g *Graph, rows []Row) *clas
 	c := &classifier{in: in, f: f, g: g, table: Table{Generated: rows}, nodes: byID(g), byID: map[string]*Node{},
 		kids: map[string][]*Node{}, own: map[string]assessment{}, instances: map[string]instanceOf{},
 		ones: map[string]*oneFold{}, pending: map[string]bool{}, groupOf: map[string]*draftGroup{},
-		out: map[string]*Classified{}, notes: map[string][]aggrega.Diagnostic{}}
+		located: map[string]ModuleSource{}, out: map[string]*Classified{}, notes: map[string][]aggrega.Diagnostic{}}
 	for _, n := range c.nodes {
 		if _, held := c.byID[n.ID]; !held {
 			c.byID[n.ID] = n
@@ -566,10 +582,11 @@ type draftGroup struct {
 }
 
 // settleUnmatched holds back each node no Component maps whose draft's name
-// the catalog holds, and groups the others by name and form, each group to be
-// drafted once its instances are wired. It returns a halt where the format has
-// no writer for a node it would draft, or a module and a resource would draft
-// one Component name.
+// the catalog holds, classes not carried each module whose source the format
+// does not locate, and groups the others by name and form, each group to be
+// drafted once its instances are wired; a module whose name a resource takes
+// is held back. It returns a halt where the format has no writer for a node it
+// would draft.
 func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 	var unwritable []string
 	for _, n := range c.nodes {
@@ -583,6 +600,8 @@ func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 			c.heldBack(n, held)
 		case isModule(n.Form) && (c.f.Wrap == nil || c.f.Module == nil), !isModule(n.Form) && c.f.Draft.Write == nil:
 			unwritable = append(unwritable, n.ID+" ("+n.Type+")")
+		case isModule(n.Form):
+			c.groupModule(n, name)
 		default:
 			c.group(n, name)
 		}
@@ -594,9 +613,7 @@ func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 			"own, so report it to the importer's authors")
 		return &d
 	}
-	if d := c.sharedNames(); d != nil {
-		return d
-	}
+	c.holdBackShared()
 	for _, grp := range c.groups {
 		if !grp.module {
 			grp.props = c.union(grp.nodes)

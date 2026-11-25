@@ -39,8 +39,9 @@ const toyModuleURL = "oci://registry.example/toy/search"
 // outputs, each resource with an id, a type, a name, a parent, the ids it
 // depends on, the module it calls and its properties. A property's value is a
 // literal, or an object naming a parameter ($param), an attribute of another
-// resource ($ref, with its path under attr) or text evaluated when the source
-// deploys ($text).
+// resource ($ref, with its path under attr), a credential read from another
+// resource ($credential, with the call reading it under what) or text
+// evaluated when the source deploys ($text).
 
 // toyFormat is the toy format: its table maps a server to the catalog's
 // PostgreSQL Component, folding each of its settings into its instance, and
@@ -151,6 +152,8 @@ func toyNode(raw json.RawMessage, source string) *Node {
 					n.Module.Path = toyString(m.Value)
 				case "version":
 					n.Module.Version = toyString(m.Value)
+				case "prefix":
+					n.Module.Prefix = toyString(m.Value)
 				}
 			}
 		case "properties":
@@ -212,15 +215,19 @@ func toyProp(name string, raw json.RawMessage) Prop {
 	return p
 }
 
-// toySpecial reads an object naming a parameter, an attribute or deploy-time
-// text, nil for any other object.
+// toySpecial reads an object naming a parameter, an attribute, a credential or
+// deploy-time text, nil for any other object.
 func toySpecial(entries []importer.ObjectEntry) Value {
 	var attr []string
+	var what string
 	for _, e := range entries {
-		if e.Key == "attr" {
+		switch e.Key {
+		case "attr":
 			for _, seg := range toyItems(e.Value) {
 				attr = append(attr, toyString(seg))
 			}
+		case "what":
+			what = toyString(e.Value)
 		}
 	}
 	for _, e := range entries {
@@ -229,6 +236,8 @@ func toySpecial(entries []importer.ObjectEntry) Value {
 			return Param{Name: toyString(e.Value)}
 		case "$ref":
 			return Ref{Node: toyString(e.Value), Attr: attr}
+		case "$credential":
+			return Credential{Node: toyString(e.Value), What: what}
 		case "$text":
 			return Opaque{Text: toyString(e.Value), Target: "toy"}
 		}
@@ -507,10 +516,6 @@ func TestImportHaltDraftsNothing(t *testing.T) {
 		{"two resources of one ID", func() aggrega.ImportInput {
 			return toyInput(t, "toy", "", []string{"duplicate.json"})
 		}, func() Format { return toyFormat(nil) }, string(CodeSourceRefused), []string{"queue", "rename"}},
-		{"a module the format does not locate", func() aggrega.ImportInput {
-			return toyInput(t, "toy", "", []string{"unlocated.json"})
-		}, func() Format { return toyFormat(nil) }, schemadraft.CodeResourceSchemaUnreadable,
-			[]string{"a Recipe sourcing it cannot be written"}},
 		{"a credential the setting cannot judge", func() aggrega.ImportInput {
 			return toyInput(t, "toy", `{"empty_credentials": "sometimes"}`, []string{"credential.json"})
 		}, func() Format { return toyFormat(nil) }, "unknown-empty-credentials", []string{"empty_credentials"}},
@@ -521,9 +526,6 @@ func TestImportHaltDraftsNothing(t *testing.T) {
 			for _, d := range out.Diagnostics {
 				if d.Severity == aggrega.SeverityHalt {
 					mentions(t, "the halt", d.Message, tc.mentions...)
-					if tc.code == schemadraft.CodeResourceSchemaUnreadable && d.SourceRef != "search" {
-						t.Errorf("the halt %+v does not point at the module search", d)
-					}
 				}
 			}
 		})
@@ -667,7 +669,7 @@ func TestImportNeverPanicsOnMalformedInput(t *testing.T) {
 			"c": {"$text": {}}, "d": {"$ref": "q", "attr": [1, null]}, "e": {}, "f": []}}],
 			"outputs": [{"value": {"$ref": "nowhere"}}, 7]}`, drafts: true},
 		tc{name: "a module of no shape", source: `{"resources": [{"id": "m", "type": "` + toySearch + `",
-			"module": "toy/search", "properties": "x"}]}`, want: schemadraft.CodeResourceSchemaUnreadable},
+			"module": "toy/search", "properties": "x"}]}`, want: string(CodeLinkedSourceNotRead)},
 		tc{name: "a module of nameless parameters", source: `{"resources": [{"id": "m", "type": "` + toySearch + `",
 			"module": {"path": "toy/search"}, "properties": [1, {"$ref": "m"}]}]}`, drafts: true},
 		tc{name: "a resource reading itself", source: `{"resources": [{"id": "db", "type": "` + toyServer + `",
@@ -677,7 +679,11 @@ func TestImportNeverPanicsOnMalformedInput(t *testing.T) {
 		tc{name: "no graph", read: graph(nil), want: "no-nodes"},
 		tc{name: "nil nodes", read: graph(&Graph{Nodes: []*Node{nil, nil}}), want: "no-nodes"},
 		tc{name: "a module calling no module", read: graph(&Graph{Nodes: []*Node{{ID: "m", Type: toySearch,
-			Form: FormAVM}}}), want: schemadraft.CodeResourceSchemaUnreadable},
+			Form: FormAVM}}}), want: string(CodeLinkedSourceNotRead)},
+		tc{name: "a module reading inside a parameter of no name", source: `{"resources": [
+			{"id": "db", "type": "` + toyServer + `", "properties": {"location": "westeurope"}},
+			{"id": "m", "type": "` + toySearch + `", "module": {"path": "toy/search"},
+			"properties": [{"$ref": "db", "attr": ["host"]}]}]}`, want: string(CodeReferenceNotWired)},
 		tc{name: "a node of no ID beside nil", read: graph(&Graph{Nodes: []*Node{nil, {Type: toyQueue,
 			Body: []Prop{{Name: "x", Items: []Prop{{}}}}}}}), drafts: true},
 		tc{name: "a member of no name", read: graph(&Graph{Nodes: []*Node{{ID: "q", Type: toyQueue,
@@ -699,6 +705,12 @@ func TestImportNeverPanicsOnMalformedInput(t *testing.T) {
 			out := Import(in, f, toyParse)
 			if halts(out.Diagnostics) && (out.Entities != nil || out.Decisions != nil || out.Files != nil) {
 				t.Errorf("the import halts and drafts %q", filePaths(out))
+			}
+			paths := filePaths(out)
+			for i, p := range paths {
+				if slices.Contains(paths[:i], p) {
+					t.Errorf("the import writes %s twice", p)
+				}
 			}
 			if c.drafts {
 				noHalt(t, out.Diagnostics)
