@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -69,18 +70,57 @@ func drift(committed, regenerated []byte) string {
 	return "the two differ"
 }
 
+// revisionLine matches the line a generated table names its revision on,
+// capturing the revision.
+var revisionLine = regexp.MustCompile(`(?m)^const TableRevision = "([^"]*)"$`)
+
+// tableDrift returns what is wrong with committed, the text of a generated
+// table of f, against rows and images regenerated from the checkout at hub: the
+// first line at which it differs from the regeneration rendered with the
+// revision committed itself names — so a row changed by hand, or a change to
+// what the table reads, is named, and the hub moving on is not — and that
+// revision where it is no commit the checkout holds. A checkout without its
+// history cannot say which commits it holds, so there the revision is held to
+// nothing.
+func tableDrift(t *testing.T, committed []byte, rows []cloudimport.Row, images []cloudimport.ImageRow, hub string,
+	f format) []string {
+	t.Helper()
+	m := revisionLine.FindSubmatch(committed)
+	if m == nil {
+		return []string{"the committed table names no TableRevision"}
+	}
+	revision := string(m[1])
+	var out []string
+	want, err := render(rows, images, revision, f)
+	if err != nil {
+		t.Fatalf("render the %s table: %v", f.capability, err)
+	}
+	if d := drift(committed, want); d != "" {
+		out = append(out, "its rows are not what the hub's "+f.capability+" Recipes generate ("+d+")")
+	}
+	if !shallow(t, hub) {
+		if err := exec.Command("git", "-C", hub, "cat-file", "-e", revision+"^{commit}").Run(); err != nil {
+			out = append(out, fmt.Sprintf("it names the revision %q, which the hub checkout holds no commit of",
+				revision))
+		}
+	}
+	return out
+}
+
 // TestTheArmTableIsWhatTheHubGenerates regenerates the arm importer's table
 // from the hub's arm Recipes and what they read, with the hand file as it is
-// committed, naming the last commit of the hub that changed what the table
-// reads, and requires the committed table to be exactly what the regeneration
-// writes, its revision included — so a Recipe
-// added, removed or changed, a Component's labels changed, or a library a
-// Recipe imports changed fails here until the table is regenerated with
-// `go generate ./plugins/internal/armimport`.
+// committed, renders it naming the revision the committed table names, and
+// requires the committed table to be exactly what that writes — so a Recipe
+// added, removed or changed in a way a row reads, a Component's labels changed,
+// or a library a Recipe imports changed fails here until the table is
+// regenerated with `go generate ./plugins/internal/armimport`, and the hub
+// committing anything a row does not read never does. The revision committed
+// must be a commit the hub checkout holds.
 //
-// 🔴 PLANTED DEFECT: edit one generated row of armimport/table_gen.go by hand
-// — the case below does so to a copy, renaming the first row's Component —
-// and the check names the line.
+// 🔴 PLANTED DEFECTS: edit one generated row of armimport/table_gen.go by hand,
+// or name a revision the hub holds no commit of — the cases below do each to a
+// copy — and the check names it; a copy naming an older commit that changed
+// what the table reads, its rows the same, passes.
 func TestTheArmTableIsWhatTheHubGenerates(t *testing.T) {
 	t.Parallel()
 	f := armFormatOrFail(t)
@@ -92,24 +132,13 @@ func TestTheArmTableIsWhatTheHubGenerates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate the arm image rows from %s: %v", hub(t), err)
 	}
-	revision := armimport.TableRevision
-	if !shallow(t, hub(t)) {
-		// A checkout without its history names no commit the table can be held to.
-		if revision, err = lastReadCommit(hub(t), f); err != nil {
-			t.Fatalf("read the revision of %s: %v", hub(t), err)
-		}
-	}
-	want, err := render(rows, images, revision, f)
-	if err != nil {
-		t.Fatalf("render the arm table: %v", err)
-	}
 	got, err := os.ReadFile(committedArmTable)
 	if err != nil {
 		t.Fatalf("read the committed arm table: %v", err)
 	}
-	if d := drift(got, want); d != "" {
-		t.Errorf("the committed arm table is not what the hub's arm Recipes generate (%s); regenerate it with "+
-			"`go generate ./plugins/internal/armimport` from the aggrega-cli module root", d)
+	for _, d := range tableDrift(t, got, rows, images, hub(t), f) {
+		t.Errorf("the committed arm table: %s; regenerate it with `go generate ./plugins/internal/armimport` from "+
+			"the aggrega-cli module root", d)
 	}
 
 	const field = "\t\tComponent: \""
@@ -118,8 +147,39 @@ func TestTheArmTableIsWhatTheHubGenerates(t *testing.T) {
 		t.Fatalf("the committed arm table holds no row naming a Component, so the planted edit would change nothing")
 	}
 	planted := slices.Concat(got[:at+len(field)], []byte("core/planted/needle-"), got[at+len(field):])
-	if d := drift(planted, want); !strings.Contains(d, "core/planted/needle-") {
-		t.Errorf("a generated row edited by hand passes the drift check: %q", d)
+	if found := tableDrift(t, planted, rows, images, hub(t), f); !slices.ContainsFunc(found, func(d string) bool {
+		return strings.Contains(d, "core/planted/needle-")
+	}) {
+		t.Errorf("a generated row edited by hand passes the drift check: %v", found)
+	}
+
+	if shallow(t, hub(t)) {
+		t.Logf("%s holds no history, so a revision is held to nothing and the revision cases plant nothing", hub(t))
+		return
+	}
+	madeUp := revisionLine.ReplaceAll(slices.Clone(got),
+		[]byte(`const TableRevision = "0123456789abcdef0123456789abcdef01234567"`))
+	if found := tableDrift(t, madeUp, rows, images, hub(t), f); !slices.ContainsFunc(found, func(d string) bool {
+		return strings.Contains(d, "0123456789abcdef0123456789abcdef01234567")
+	}) {
+		t.Errorf("a revision the hub holds no commit of passes the drift check: %v", found)
+	}
+	args := append([]string{"-C", hub(t), "log", "-2", "--format=%H", "--"}, readPaths(f)...)
+	out, err := exec.Command("git", args...).Output()
+	if err != nil {
+		t.Fatalf("read the commits of %s that changed what the arm table reads: %v", hub(t), err)
+	}
+	commits := strings.Fields(string(out))
+	if len(commits) < 2 {
+		t.Fatalf("%s holds one commit that changed what the arm table reads, so no older one can be named", hub(t))
+	}
+	older, err := render(rows, images, commits[1], f)
+	if err != nil {
+		t.Fatalf("render the arm table naming %s: %v", commits[1], err)
+	}
+	if found := tableDrift(t, older, rows, images, hub(t), f); len(found) > 0 {
+		t.Errorf("a table naming the older commit %s, its rows the same, fails the drift check: %v", commits[1],
+			found)
 	}
 }
 
