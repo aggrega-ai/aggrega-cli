@@ -318,6 +318,17 @@ func TestSelectFormat(t *testing.T) {
 	tfNoProviders := []byte(`{"format_version":"1.0"}`)
 	armTypes := []byte(`[{"$type":"StringType"},{"$type":"ObjectType","name":"Microsoft.Example/vaults"}]`)
 	armNoType := []byte(`[{"name":"Microsoft.Example/vaults"}]`)
+	// An Azure Resource Manager template, one written with comments, a parameters
+	// file, a JSON file naming the schema address of neither, and a template whose
+	// $schema is another address.
+	armTemplate := []byte(`{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",` +
+		`"contentVersion":"1.0.0.0","resources":[]}`)
+	armCommented := []byte("{\n  // a storage account\n  \"$schema\": \"https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#\",\n" +
+		"  \"resources\": [ /* none yet */ ],\n}\n")
+	armParameters := []byte(`{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",` +
+		`"contentVersion":"1.0.0.0","parameters":{"name":{"value":"x"}}}`)
+	armSchemaless := []byte(`{"contentVersion":"1.0.0.0","resources":[]}`)
+	armOtherSchema := []byte(`{"$schema":"https://example.test/schemas/deploymentTemplate.json#","resources":[]}`)
 
 	cases := []struct {
 		name     string
@@ -453,6 +464,16 @@ func TestSelectFormat(t *testing.T) {
 			wantErr: true},
 		{name: "a types.json whose first entry states no $type is refused", source: "types.json", content: armNoType,
 			wantErr: true},
+		{name: "an Azure Resource Manager template", source: "main.json", content: armTemplate, want: "arm"},
+		{name: "an Azure Resource Manager template written with comments", source: "main.json", content: armCommented,
+			want: "arm"},
+		{name: "an Azure Resource Manager parameters file", source: "main.parameters.json", content: armParameters,
+			want: "arm"},
+		{name: "a template naming no schema is refused", source: "main.json", content: armSchemaless, wantErr: true},
+		{name: "a template of another schema address is refused", source: "main.json", content: armOtherSchema,
+			wantErr: true},
+		{name: "an Azure Resource Manager template under another extension is refused", source: "main.txt",
+			content: armTemplate, wantErr: true},
 		{name: "explicit terraform-schema wins over a Compose file", explicit: "terraform-schema",
 			source: "compose.yaml", content: composeFile, want: "terraform-schema"},
 	}
@@ -472,7 +493,7 @@ func TestSelectFormat(t *testing.T) {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
 				}
 				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify", "crewai", "langgraph", "google-adk",
-					"agent-framework", "cloudformation-schema", "terraform-schema", "arm-schema"}; !slices.Equal(undetected.Formats(), want) {
+					"agent-framework", "cloudformation-schema", "terraform-schema", "arm-schema", "arm"}; !slices.Equal(undetected.Formats(), want) {
 					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
 						undetected.Formats(), want)
 				}
@@ -498,6 +519,7 @@ func TestSelectFormat(t *testing.T) {
 func TestSchemaImportersRecognisedAndNotCrossMatched(t *testing.T) {
 	seam := referenceDetectionSeam(t)
 	const schemas = "../../plugins/internal/schemadraft/"
+	const armTestdata = "../../plugins/internal/armimport/testdata/"
 	read := func(path string) []byte {
 		t.Helper()
 		body, err := os.ReadFile(path)
@@ -518,6 +540,10 @@ func TestSchemaImportersRecognisedAndNotCrossMatched(t *testing.T) {
 			"terraform-schema"},
 		{"a Bicep types.json", "types.json", schemas + "arm/testdata/vault.json", "arm-schema"},
 		{"a Bicep types.json of several scopes", "types.json", schemas + "arm/testdata/scopes.json", "arm-schema"},
+		{"an Azure Resource Manager template", "main.json", armTestdata + "avm/maps/account/0.2.2/main.json", "arm"},
+		{"an Azure Resource Manager template with comments", "main.json", armTestdata + "topology/one.json", "arm"},
+		{"an Azure Resource Manager template of language version 2.0", "main.json", armTestdata + "topology/two.json", "arm"},
+		{"an Azure Resource Manager parameters file", "main.parameters.json", armTestdata + "parameters/one.parameters.json", "arm"},
 		{"a Compose file", "compose.yaml", "testdata/compose/compose-for-agents/langgraph.compose.yaml", "compose"},
 		{"a Langflow export", "flow.json", "../compiler/importersocket/testdata/langflow-flow.json", "langflow"},
 		{"a Flowise export", "flow.json", "../compiler/importersocket/testdata/flowise-flow.json", "flowise"},

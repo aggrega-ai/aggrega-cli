@@ -429,6 +429,10 @@ func TestShapeDetectionReachesTheImportToolOverAListener(t *testing.T) {
 			readImportFixture(t, terraformFixture), "terraform-schema"},
 		{"a Bicep types file, told by its name and its first entry's type", "types.json",
 			readImportFixture(t, bicepTypesFixture), "arm-schema"},
+		{"an Azure Resource Manager template, told by its schema address and its resources", "main.json",
+			readImportFixture(t, armTemplateFixture), "arm"},
+		{"an Azure Resource Manager parameters file, told by its schema address and its parameters",
+			"main.parameters.json", readImportFixture(t, armParametersFixture), "arm"},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			f := newScopeGridFixture(t, false)

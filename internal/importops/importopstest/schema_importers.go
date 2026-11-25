@@ -20,21 +20,28 @@ import (
 var SchemaImporters = []string{"importer/cloudformation-schema", "importer/terraform-schema", "importer/arm-schema"}
 
 // CarrySchemaImporters makes the binary under test carry the resource-schema
-// importers: each one's Plugin entity as this build generated it, and the digest
-// of the module built here from the repository's sources, which is served from
-// the binary's embedded tier and is the module the import then accepts and runs. It fails the test where
-// the build carries no entity for one of them.
+// importers, as CarryImporters carries any.
+func CarrySchemaImporters(t *testing.T) {
+	t.Helper()
+	CarryImporters(t, SchemaImporters...)
+}
+
+// CarryImporters makes the binary under test carry the core importers named by
+// uris: each one's Plugin entity as this build generated it, and the digest of
+// the module built here from the repository's sources, which is served from the
+// binary's embedded tier and is the module the import then accepts and runs. It
+// fails the test where the build carries no entity for one of them.
 //
 // The carried set is process-wide, so a test calling this must not be parallel;
 // the set is restored when the test ends.
-func CarrySchemaImporters(t *testing.T) {
+func CarryImporters(t *testing.T, uris ...string) {
 	t.Helper()
 	entities := map[string][]byte{}
 	for _, p := range embedded.PublishedPlugins() {
 		entities[p.URI] = p.Entity
 	}
 	var carried []embedded.PublishedPlugin
-	for _, uri := range SchemaImporters {
+	for _, uri := range uris {
 		entity := entities[uri]
 		if len(entity) == 0 {
 			t.Fatalf("this binary carries no entity for %s: build the core plugins with the repository's build script", uri)

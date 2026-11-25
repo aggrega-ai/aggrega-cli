@@ -84,8 +84,9 @@ Decision points along the way.
 var migrateDeploymentPromptSpec = promptSpec{
 	name: migrateDeploymentPromptName,
 	description: "Calling sequence for bringing an existing deployment description into Aggrega — a chart, an " +
-		"infrastructure module, a container-compose file. States plainly which part no tool performs, and names the " +
-		"tools that check the result and render it for comparison against the original.",
+		"infrastructure module, a container-compose file. Names the import tool first, for the formats an importer " +
+		"covers, then the hand path for the rest, and the tools that check the result and render it for comparison " +
+		"against the original.",
 	render: func(_ map[string]string) (getPromptResult, *rpcError) {
 		return userPrompt(
 			"Calling sequence for bringing an existing deployment into Aggrega.",
@@ -96,9 +97,9 @@ var migrateDeploymentPromptSpec = promptSpec{
 
 const migrateDeploymentBody = `You are bringing an existing deployment description — a chart, an infrastructure module, a container-compose file — into Aggrega.
 
-Read this before you start: no tool on this surface translates one for you. The translation is yours to perform, by reading the source and authoring Aggrega entities from what you find. The tools below check your work at each point and show you what it renders to, which is what makes the translation verifiable rather than a guess.
+Start with the import tool when the source is in a format an importer covers — Azure Resource Manager templates and Compose applications among them. Call import with source set to the file or directory; it drafts the Aggregate, the Release and the catalog entities a unit no Component covers is drafted as, and what it returns is draft files to review and complete, which the sequence below then checks. Read cli://import for the formats it covers and what an importer needs attached.
 
-Aggrega does ship a separate import path, on the command line rather than among these tools. It drafts authoring files from a source description, for the source formats an importer plugin attached to the workspace covers, and what it produces is draft files to review and complete — not a mapping, and not a score you can rank alternatives by. Read cli://import for what it accepts and what it needs attached before assuming it covers your source. For everything it does not cover, the sequence below is the path that exists.
+For a source in a format no importer covers, the translation is yours to perform, by reading the source and authoring Aggrega entities from what you find. The same tools check your work at each point and show you what it renders to, which is what makes the translation verifiable rather than a guess. The sequence below is that hand path, and it is also how you complete what an import drafted.
 
 ` + fourDomainFraming + `
 

@@ -100,6 +100,7 @@ var referenceImporters = []referenceImporter{
 	{format: "cloudformation-schema", fixture: "cloudformation-schema-importer.wasm", name: "import-cloudformation-schema"},
 	{format: "terraform-schema", fixture: "terraform-schema-importer.wasm", name: "import-terraform-schema"},
 	{format: "arm-schema", fixture: "arm-schema-importer.wasm", name: "import-arm-schema"},
+	{format: "arm", fixture: "arm-importer.wasm", name: "import-arm"},
 }
 
 // referenceImporterFor returns the reference importer serving format, failing

@@ -39,7 +39,7 @@ var workflowPromptExpectations = []workflowPromptExpectation{
 	},
 	{
 		name:  migrateDeploymentPromptName,
-		tools: []string{"describe", "validate", "build", "explain-error"},
+		tools: []string{"import", "describe", "validate", "build", "explain-error"},
 		steps: 7,
 	},
 	{
@@ -393,6 +393,28 @@ func TestInstructionsPointAtTheWorkflowPromptSurface(t *testing.T) {
 	for i := range workflowPromptSpecs {
 		if !registered[workflowPromptSpecs[i].name] {
 			t.Errorf("workflow prompt %q is declared but absent from the advertised registry", workflowPromptSpecs[i].name)
+		}
+	}
+}
+
+// TestMigratePromptNamesTheImportToolBeforeTheHandPath holds the migration
+// prompt to the order it teaches in: the import tool first, for the formats an
+// importer covers, and the hand path after it, for the rest. It also holds the
+// prompt to saying the import tool is among the tools: no sentence tells a
+// client that none translates a source or that the import path lies elsewhere.
+func TestMigratePromptNamesTheImportToolBeforeTheHandPath(t *testing.T) {
+	body := wirePromptText(t, migrateDeploymentPromptName)
+	importAt := strings.Index(body, "Start with the import tool")
+	handAt := strings.Index(body, "no importer covers")
+	if importAt < 0 || handAt < 0 || importAt > handAt {
+		t.Fatalf("the body names the import tool at %d and the hand path at %d; want the import tool first", importAt, handAt)
+	}
+	if _, ok := lookupTool("import"); !ok {
+		t.Fatal("the prompt names the import tool, which no registry resolves")
+	}
+	for _, denied := range []string{"no tool on this surface", "rather than among these tools", "not a score", "no score"} {
+		if strings.Contains(body, denied) {
+			t.Errorf("the body still says %q", denied)
 		}
 	}
 }

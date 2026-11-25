@@ -15,9 +15,9 @@ import (
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
-// schemaPrefix opens the $schema of every Azure Resource Manager template and
+// SchemaPrefix opens the $schema of every Azure Resource Manager template and
 // parameters file.
-const schemaPrefix = "https://schema.management.azure.com/schemas/"
+const SchemaPrefix = "https://schema.management.azure.com/schemas/"
 
 // sourceKind is what a source the import is handed holds.
 type sourceKind int
@@ -51,7 +51,7 @@ func kindOf(tree json.RawMessage) (sourceKind, obj) {
 		return kindOther, nil
 	}
 	schema, ok := text(top.exact("$schema"))
-	if !ok || !strings.HasPrefix(schema, schemaPrefix) {
+	if !ok || !strings.HasPrefix(schema, SchemaPrefix) {
 		return kindOther, top
 	}
 	if top.exact("resources") != nil {
@@ -76,7 +76,7 @@ func (r *reader) sources() ([]*handed, []string) {
 		named := importer.Named(r.in, src)
 		tree, err := r.parse(syntax, src.Bytes)
 		if err != nil {
-			if len(all) == 1 || bytes.Contains(src.Bytes, []byte(schemaPrefix)) {
+			if len(all) == 1 || bytes.Contains(src.Bytes, []byte(SchemaPrefix)) {
 				r.halt(importer.ParseFailed(named, formatName, err))
 				continue
 			}
@@ -184,7 +184,7 @@ func (r *reader) selectSources(srcs []*handed, unreadable []string, s cloudimpor
 	}
 	if len(templates) == 0 {
 		r.halt(cloudimport.Report(cloudimport.CodeSourceRefused, "the import holds no Azure Resource Manager "+
-			"template: a template is a JSON file whose $schema begins "+schemaPrefix+" and which holds resources; "+
+			"template: a template is a JSON file whose $schema begins "+SchemaPrefix+" and which holds resources; "+
 			"import the template, or the directory holding it"))
 		return nil
 	}

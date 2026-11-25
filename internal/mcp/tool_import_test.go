@@ -69,6 +69,8 @@ const (
 	cloudFormationFixture = "../../plugins/internal/schemadraft/cloudformation/testdata/ledger.json"
 	terraformFixture      = "../../plugins/internal/schemadraft/terraform/testdata/ledger.json"
 	bicepTypesFixture     = "../../plugins/internal/schemadraft/arm/testdata/vault.json"
+	armTemplateFixture    = "../../plugins/internal/armimport/testdata/topology/one.json"
+	armParametersFixture  = "../../plugins/internal/armimport/testdata/parameters/one.parameters.json"
 )
 
 // importWorkspaceConfig is the configuration every fixture workspace here
