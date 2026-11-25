@@ -42,7 +42,7 @@ func TestParseJSONC_LeadingByteOrderMark(t *testing.T) {
 // TestParseJSONC_RefusalNamesLineAndColumn proves a JSON-with-comments source
 // refused at a character names the line and the column of that character, counted
 // from the first character after a byte-order mark and over the comments the
-// source holds, so a raw line break inside a string — a string written over two
+// source holds, in the source's own characters, so a raw line break inside a string — a string written over two
 // lines — is reported where the string breaks. A line ending in a carriage return
 // and a line feed counts as one line.
 func TestParseJSONC_RefusalNamesLineAndColumn(t *testing.T) {
@@ -55,6 +55,8 @@ func TestParseJSONC_RefusalNamesLineAndColumn(t *testing.T) {
 			"\xef\xbb\xbf// note\r\n{\r\n  \"é\": \"x\r\ny\"\r\n}",
 			`json parse: invalid character '\r' in string literal at line 3, column 10`},
 		{"a value missing", "{\n  \"a\": }", `json parse: invalid character '}' looking for beginning of value at line 2, column 8`},
+		{"after a block comment holding a character of two bytes", "/* é */ {\"a\": }",
+			`json parse: invalid character '}' looking for beginning of value at line 1, column 15`},
 		{"a source cut short", "{\"a\": [", "json parse: unexpected EOF"},
 	} {
 		out := parsercore.ParseJSONC([]byte(row.src))

@@ -49,7 +49,7 @@ func decodeJSON(src []byte) (any, error) {
 
 // position returns where in text the decoding error err was met, as " at line
 // L, column C" naming the character the decoder refused: lines counted by line
-// feeds, columns by characters, both from one. An error met at no character —
+// feeds, columns by the characters of text, both from one. An error met at no character —
 // a document cut short, content after the value — has no position, and is
 // empty.
 func position(text []byte, err error) string {
