@@ -71,7 +71,9 @@ type CredentialRead struct {
 // draws a connection delivering the producer's provides key for the attribute
 // it reads, where the consumer reads it as one whole value: into an entry of
 // a mapped instance's environment list on the env mechanism, under the
-// variable's name; into a property of a node drafted from the source on the
+// variable's name — the list read off an instance a fold of its row makes of
+// a child where the child writes one, and off the parent folded into it
+// otherwise; into a property of a node drafted from the source on the
 // property mechanism, under the snake_case of the property's path. Where the
 // value cannot be delivered so — composed with other text, read into a
 // property a mapped instance's Recipe reads no neighbour's value at, read of
@@ -435,7 +437,7 @@ func (c *classifier) reference(n *Node, e Edge, ci string, direct bool, r reach,
 	read := reading{consumer: n.ID, producer: e.To, attr: e.Attr, path: e.Path, composed: composed}
 	consumer := c.out[ci]
 	env, named := -1, false
-	if direct && consumer.Class == ClassMapped && consumer.Row != nil {
+	if (direct || c.envOfParent(consumer, n)) && consumer.Class == ClassMapped && consumer.Row != nil {
 		env = envItem(consumer.Row.Env, e.Path)
 		if env >= 0 {
 			read.variable, named = envName(n.Body, consumer.Row.Env, e.Path)
@@ -474,7 +476,7 @@ func (c *classifier) reference(n *Node, e Edge, ci string, direct bool, r reach,
 	unprovided := func(q func(string) string) string { return q(pk) + " publishes no provides key for it" }
 	var why func(q func(string) string) string
 	switch {
-	case !direct:
+	case !direct && env < 0:
 		why = func(q func(string) string) string {
 			return q(n.ID) + " is written into the instance of " + q(ci) + ", whose Recipe reads no neighbour's value there"
 		}
@@ -500,6 +502,19 @@ func (c *classifier) reference(n *Node, e Edge, ci string, direct bool, r reach,
 	}
 	c.notWired(n, ci, []string{pk}, read, why)
 	return cands
+}
+
+// envOfParent reports whether the instance consumer reads its environment
+// list off n: n is the parent folded into consumer, an instance a fold of its
+// row makes of a child, and the child writes no environment list, so the
+// row's list is read off the parent, as its placements are.
+func (c *classifier) envOfParent(consumer *Classified, n *Node) bool {
+	if consumer == nil || consumer.Class != ClassMapped || consumer.Row == nil || consumer.Row.Env == nil ||
+		instancesFold(consumer.Row, consumer.Node.Type) == nil || consumer.Node.Parent != n.ID {
+		return false
+	}
+	_, written := propAt(consumer.Node.Body, consumer.Row.Env.Path)
+	return !written
 }
 
 // quoted returns names each written through q.

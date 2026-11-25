@@ -5,6 +5,7 @@ package cloudimport
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
@@ -227,4 +228,108 @@ func TestFoldChildOfARepeatedParentIsDraftedOnItsOwn(t *testing.T) {
 		t.Fatalf("orphan is %s depending on %q, want drafted depending on nothing", o.Class, o.Node.DependsOn)
 	}
 	mentions(t, "orphan's rationale", o.Decision.Rationale, "spare deploys no instance")
+}
+
+// ordersDb is a database of the PostgreSQL server whose name the source
+// composes of the server's and its own, leaf its own part, nil where the
+// source composes them so it cannot be told apart.
+func ordersDb(leaf Value) *Node {
+	return &Node{ID: "ordersDb", Type: databaseType, Form: FormRaw, Parent: "server", Source: "main.json#/ordersDb",
+		Name: Compose{Parts: []Value{text("pg-main"), text("/orders")}}, Composed: true, Leaf: leaf}
+}
+
+// TestFoldReadsTheChildsOwnName writes, where a fold reads a child's name, the
+// child's own name within its parent: its Leaf where the source composes its
+// name of its parent's and its own, its name where it does not; and where the
+// source composes the two so the child's own part cannot be told apart, writes
+// nothing and warns value-not-carried, never writing the full name.
+func TestFoldReadsTheChildsOwnName(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		child *Node
+		want  string
+	}{
+		{"composed, with its own part", ordersDb(text("orders")), "        database: \"orders\"\n"},
+		{"its own name alone", &Node{ID: "ordersDb", Type: databaseType, Form: FormRaw, Parent: "server",
+			Name: text("orders")}, "        database: \"orders\"\n"},
+	} {
+		_, aggregate, diags := drafted(t, fixtureView(""), fixtureFormat(), &Graph{Nodes: []*Node{pgServer(), c.child}})
+		if !strings.Contains(instanceBlock(t, aggregate, "server"), c.want) {
+			t.Errorf("%s: the server is written\n%s\nwant it to hold %q", c.name, instanceBlock(t, aggregate, "server"),
+				c.want)
+		}
+		onlyCode(t, diags, CodeValueNotCarried, 0)
+	}
+
+	_, aggregate, diags := drafted(t, fixtureView(""), fixtureFormat(), &Graph{Nodes: []*Node{pgServer(), ordersDb(nil)}})
+	if block := instanceBlock(t, aggregate, "server"); strings.Contains(block, "database:") {
+		t.Errorf("the server is written with a database the source composes of two names:\n%s", block)
+	}
+	warnsAbout(t, onlyCode(t, diags, CodeValueNotCarried, 1), CodeValueNotCarried, "ordersDb", "values.database",
+		"its own name within its parent")
+}
+
+// The fixture of an instance a fold makes of a child: a SQL server whose row
+// makes each of its databases an instance of its own.
+const (
+	sqlServerType = "Microsoft.Sql/servers"
+	sqlDbType     = sqlServerType + "/databases"
+	sqlServer     = "core/datastore/sql-server"
+)
+
+// sqlFormat is the fixture's format whose SQL server row makes each database
+// an instance folding the server, its placements reading the edition, the
+// location, the login and the password.
+func sqlFormat() Format {
+	f := fixtureFormat()
+	f.Table.Generated = append(f.Table.Generated, Row{Key: sqlServerType, Component: sqlServer,
+		Category: "datastore", Recipe: "sql-server-azure-sql-database", Form: FormRaw,
+		Traits: map[string]string{"component.aggrega.ai/type": "stateful-server"},
+		Values: []Placement{{From: []string{"properties", "administratorLogin"}, Key: "user"},
+			{From: []string{"sku", "name"}, Key: "edition"}},
+		Overrides: []Placement{{From: []string{"sku", "name"}, Key: "sku_name"},
+			{From: []string{"location"}, Key: "location"}},
+		Secrets: []Placement{{From: []string{"properties", "administratorLoginPassword"}, Key: "admin_password"}},
+		Folds: []Fold{{Type: sqlDbType, Key: []string{"values", "database"}, From: []string{"name"},
+			Instances: true}}})
+	return f
+}
+
+// TestFoldInstanceReadsTheChildBeforeItsParent reads each placement of an
+// instance a fold makes of a child off the child where it writes the path,
+// and off the parent folded into it otherwise, in the Aggregate and in the
+// Release alike, the secret included, the child's name its own name within
+// its parent.
+func TestFoldInstanceReadsTheChildBeforeItsParent(t *testing.T) {
+	server := &Node{ID: "sql", Type: sqlServerType, Form: FormRaw, Name: text("sql-main"), Body: merged(
+		leaf(text("westeurope"), "location"), leaf(text("Server_Sku"), "sku", "name"),
+		leaf(text("sqladmin"), "properties", "administratorLogin"),
+		leaf(Param{Name: "sqlPassword"}, "properties", "administratorLoginPassword"))}
+	db := &Node{ID: "orders", Type: sqlDbType, Form: FormRaw, Parent: "sql",
+		Name: Compose{Parts: []Value{text("sql-main/orders")}}, Composed: true, Leaf: text("orders"),
+		Body: []Prop{leaf(text("S0"), "sku", "name")}}
+	g := &Graph{Nodes: []*Node{server, db}, Params: []Parameter{{Name: "sqlPassword", Type: "securestring",
+		Secure: true, StoreRef: "/subscriptions/s/resourceGroups/g/providers/Microsoft.KeyVault/vaults/v/secrets/p"}}}
+	in := fixtureView("", component(sqlServer, map[string]string{"component.aggrega.ai/category": "datastore",
+		"component.aggrega.ai/type": "stateful-server"}))
+	in.Target = "arm"
+	_, aggregate, release, _, diags := released(t, in, sqlFormat(), g)
+	wantBlock(t, aggregate, "orders", `    orders:
+      type: core/datastore/sql-server
+      values:
+        user: "sqladmin"
+        edition: "S0"
+        database: "orders"
+`)
+	block := instanceBlock(t, release, "orders")
+	for _, want := range []string{`location: "westeurope"`, `sku_name: "S0"`, "admin_password:",
+		"origin: \"/subscriptions/s/resourceGroups/g/providers/Microsoft.KeyVault/vaults/v/secrets/p\""} {
+		if !strings.Contains(block, want) {
+			t.Errorf("the Release entry of orders does not hold %s:\n%s", want, block)
+		}
+	}
+	if strings.Contains(release, "Server_Sku") || strings.Contains(aggregate, "Server_Sku") {
+		t.Errorf("the server's own edition is read where the database writes one:\n%s\n%s", aggregate, release)
+	}
+	onlyCode(t, diags, CodeValueNotCarried, 0)
 }

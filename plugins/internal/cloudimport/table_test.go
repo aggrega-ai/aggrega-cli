@@ -254,3 +254,48 @@ func TestHandRowsOfOneOriginDifferingOnlyInCaseAreDuplicates(t *testing.T) {
 		t.Fatalf("duplicate = %+v, want the second generated row, microsoft.web/sites", *d)
 	}
 }
+
+// TestMapConverterMalformedIsRefused refuses, where the rows are merged, a
+// placement whose map converter cannot be read — a pair with an empty side or
+// no equals sign, a <to> that is no plain scalar, a <from> written twice
+// regardless of case — naming the row, the placement and the converter; a
+// well-formed map is merged.
+func TestMapConverterMalformedIsRefused(t *testing.T) {
+	path := []string{"properties", "publicNetworkAccess"}
+	with := func(conv Conv) Row {
+		r := generatedSitesRow()
+		r.Overrides = []Placement{{From: path, Key: "public_network_access_enabled", Conv: conv}}
+		return r
+	}
+	for _, c := range []struct {
+		conv Conv
+		why  string
+	}{
+		{"map:Enabled=true,Disabled=", `"Disabled="`},
+		{"map:=true", `"=true"`},
+		{"map:Enabled", `"Enabled"`},
+		{"map:Enabled=a b", "no plain scalar"},
+		{"map:Enabled=true,ENABLED=false", `maps "ENABLED" twice`},
+	} {
+		for _, table := range []Table{{Generated: []Row{with(c.conv)}}, {Hand: []Row{with(c.conv)}}} {
+			_, err := table.Rows()
+			var m *MalformedConverter
+			if !errors.As(err, &m) {
+				t.Fatalf("Rows() with %q = %v, want a *MalformedConverter", c.conv, err)
+			}
+			if m.Key != sitesType || m.Field != "Overrides.public_network_access_enabled" || m.Conv != c.conv ||
+				!strings.Contains(m.Why, c.why) {
+				t.Errorf("the refusal of %q is %+v, want the row of %s, its placement and %q", c.conv, *m, sitesType,
+					c.why)
+			}
+			for _, part := range []string{sitesType, "Overrides.public_network_access_enabled", string(c.conv)} {
+				if !strings.Contains(err.Error(), part) {
+					t.Errorf("the refusal %q does not name %q", err.Error(), part)
+				}
+			}
+		}
+	}
+	if _, err := (Table{Hand: []Row{with("map:Enabled=true,Disabled=false")}}).Rows(); err != nil {
+		t.Errorf("a well-formed map is refused: %v", err)
+	}
+}

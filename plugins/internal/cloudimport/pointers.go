@@ -8,12 +8,18 @@ import (
 )
 
 // A value read from a substrate or existing resource is a pointer the Release
-// holds: where the import's target is the format's own, the text the format's
-// Pointer gives for the whole value, written as it is; on any other target, or
-// where the format has no pointer for the value, the key is left for the
-// answers file, its comment naming the resource and its type. Text the source
-// evaluates when it deploys is written the same way where its target is the
-// import's, and left otherwise.
+// holds. In the entry of a drafted instance, where the import's target is the
+// format's own, it is the text the format's Pointer gives for the whole value,
+// written as it is, which the drafted Recipe passes to the resource as the
+// source does. In the entry of a mapped instance it is left for the answers
+// file: a catalog Recipe takes the resource's literal identifier, which only
+// the operator knows when the draft is written, so the comment names the
+// resource, its type and the text the format's Pointer gives for it, from
+// which the operator writes the identifier. On any other target, or where the
+// format has no pointer for the value, the key is left for the answers file,
+// its comment naming the resource and its type. Text the source evaluates when
+// it deploys is written the same way where its target is the import's, and
+// left otherwise.
 
 // refsOf returns the references v reads, in order.
 func refsOf(v Value) []Ref {
@@ -61,10 +67,22 @@ func (w *aggregateWriter) pointerText(v Value) (string, outcome) {
 		}
 		named = append(named, w.resourceText(r.Node))
 	}
-	if w.f.Pointer != nil && w.ownTarget() {
+	expression := ""
+	if w.f.Pointer != nil {
 		if text, ok := w.f.Pointer(v); ok {
-			return draftyaml.String(text), written()
+			expression = text
 		}
+	}
+	if w.mappedEntry {
+		why := "the pointer to " + andList(named) + ", which the draft leaves to the operator"
+		if expression != "" {
+			why += " and the source names as " + draftyaml.Comment(expression)
+		}
+		return "", outcome{why: why + "; the catalog Recipe takes the resource's literal identifier: write it",
+			leave: true}
+	}
+	if expression != "" && w.ownTarget() {
+		return draftyaml.String(expression), written()
 	}
 	return "", outcome{why: "the pointer to " + andList(named) + ", which the draft leaves to the operator; write the " +
 		"target's pointer to it", leave: true}

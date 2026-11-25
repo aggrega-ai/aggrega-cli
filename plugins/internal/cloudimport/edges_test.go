@@ -571,3 +571,35 @@ func TestEdgeIntoAPropertyTheFormatCannotInjectIsNotWired(t *testing.T) {
 		}
 	}
 }
+
+// TestEdgeEnvListOfAnInstanceIsReadOffItsParent delivers a reference the
+// parent folded into an instance made of its child writes in the row's
+// environment list, where the child writes none, as it delivers one the
+// instance's own node writes: the environment list is read as the row's
+// placements are.
+func TestEdgeEnvListOfAnInstanceIsReadOffItsParent(t *testing.T) {
+	const hostType, revisionType = "Toy.Compute/hosts", "Toy.Compute/hosts/revisions"
+	f := edgeFormat(nil)
+	f.Table.Generated = append(f.Table.Generated, Row{Key: hostType, Component: computeServer, Category: "compute",
+		Recipe: "server-host", Form: FormRaw, Traits: map[string]string{"component.aggrega.ai/type": "server"},
+		Env:   &EnvList{Path: []string{"properties", "env"}, Name: "name", Value: "value"},
+		Folds: []Fold{{Type: revisionType, Key: []string{"values", "revision"}, From: []string{"name"}, Instances: true}}})
+	host := &Node{ID: "host", Type: hostType, Form: FormRaw, Name: text("h"), Body: []Prop{{Name: "properties",
+		Props: []Prop{{Name: "env", Items: []Prop{envEntry("DB_HOST", fqdn)}}}}}}
+	revision := &Node{ID: "blue", Type: revisionType, Form: FormRaw, Parent: "host", Name: text("blue")}
+	_, aggregate, diags := drafted(t, edgeView(), f, &Graph{Nodes: []*Node{pgServer(), host, revision}})
+	wantBlock(t, aggregate, "blue", `    blue:
+      type: core/compute/server
+      values:
+        revision: "blue"
+      uses:
+        server:
+          server:
+            target: server
+            inject:
+              env:
+                - in: "DB_HOST"
+                  from: host
+`)
+	onlyCode(t, diags, CodeReferenceNotWired, 0)
+}

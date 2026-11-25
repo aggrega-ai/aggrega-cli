@@ -4,6 +4,7 @@
 package cloudimport
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -144,7 +145,7 @@ func TestReleaseEntryForAMappedInstance(t *testing.T) {
         sku: "Standard_B1ms"
         overrides:
           storage_size_gb: 64
-          # Left for the Release, since the source cannot supply it: infra.overrides.delegated_subnet_id, the pointer to the resource subnet (Microsoft.Network/virtualNetworks/subnets), which the draft leaves to the operator; write the target's pointer to it
+          # Left for the Release, since the source cannot supply it: infra.overrides.delegated_subnet_id, the pointer to the resource subnet (Microsoft.Network/virtualNetworks/subnets), which the draft leaves to the operator; the catalog Recipe takes the resource's literal identifier: write it
           delegated_subnet_id: ""
       features:
         admin_password:
@@ -255,5 +256,46 @@ func TestReleaseNeverPanicsOnMalformedInput(t *testing.T) {
 			entity, _ := Aggregate(in, releaseFormat(), g, out)
 			Release(in, releaseFormat(), g, out, entity)
 		}()
+	}
+}
+
+// TestReleaseEntryMapsAVendorSpelling writes a value a map converter places as
+// the scalar its spelling maps to, regardless of case, and warns
+// value-not-carried, naming the key, the property and the converter, where the
+// map holds no spelling of the value.
+func TestReleaseEntryMapsAVendorSpelling(t *testing.T) {
+	const conv = "map:ZoneRedundant=true,Disabled=false"
+	mode := []string{"properties", "highAvailability", "mode"}
+	f := releaseFormat()
+	pg := f.Table.Generated[0]
+	pg.Overrides = append(slices.Clone(pg.Overrides), Placement{From: mode, Key: "high_availability_enabled", Conv: conv})
+	f.Table.Generated[0] = pg
+	in := edgeView()
+	in.Target = "arm"
+
+	_, _, release, _, diags := released(t, in, f, &Graph{Nodes: []*Node{mappedServer(leaf(text("zoneredundant"), mode...))}})
+	if !strings.Contains(release, "\n          high_availability_enabled: true\n") {
+		t.Errorf("the Release does not write the mapped scalar:\n%s", release)
+	}
+	onlyCode(t, diags, CodeValueNotCarried, 0)
+
+	_, _, release, _, diags = released(t, in, f, &Graph{Nodes: []*Node{mappedServer(leaf(text("SameZone"), mode...))}})
+	if strings.Contains(release, "high_availability_enabled") {
+		t.Errorf("the Release writes a value the map holds no spelling of:\n%s", release)
+	}
+	warnsAbout(t, onlyCode(t, diags, CodeValueNotCarried, 1), CodeValueNotCarried, "server",
+		"properties.highAvailability.mode", "infra.overrides.high_availability_enabled", conv)
+}
+
+// TestPointerOfADraftedInstanceIsWrittenWhole writes the format's pointer whole
+// in the entry of an instance drafted from the source, whose Recipe passes the
+// property to the resource as the source writes it.
+func TestPointerOfADraftedInstanceIsWrittenWhole(t *testing.T) {
+	in := edgeView()
+	in.Target = "arm"
+	site := staticSite(leaf(Ref{Node: "subnet"}, "properties", "subnetId"))
+	_, _, release, _, _ := released(t, in, releaseFormat(), &Graph{Nodes: []*Node{site, subnetNode()}})
+	if !strings.Contains(release, `: "`+subnetPointer+`"`) {
+		t.Errorf("the drafted instance's entry does not hold the pointer whole:\n%s", release)
 	}
 }

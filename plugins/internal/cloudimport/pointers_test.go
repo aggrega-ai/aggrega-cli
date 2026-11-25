@@ -8,17 +8,24 @@ import (
 	"testing"
 )
 
-// TestPointerOnItsOwnTarget writes the format's pointer whole where the value
-// reads a substrate resource and the import's target is the format's own; any
-// other target, or a value the format has no pointer for, leaves the key for the
-// answers file, its comment naming the resource and its type; deploy-time text
-// is written only where its target is the import's.
-func TestPointerOnItsOwnTarget(t *testing.T) {
+// TestPointerOfAMappedInstanceIsLeftForTheOperator leaves a mapped instance's
+// key reading a substrate or existing resource for the answers file, on its own
+// target and on any other alike: its catalog Recipe takes the resource's
+// literal identifier, so the comment names the resource, its type and the text
+// the format's pointer gives for it, which is never written as the value;
+// deploy-time text is written only where its target is the import's.
+func TestPointerOfAMappedInstanceIsLeftForTheOperator(t *testing.T) {
 	s := mappedServer(leaf(Ref{Node: "subnet"}, pathSubnetRef...),
 		leaf(Opaque{Text: "[resourceGroup().location]", Target: "arm"}, pathSkuName...),
 		leaf(Ref{Node: "vault", Attr: []string{"id"}}, pathStorage...))
 	vault := &Node{ID: "vault", Type: vaultType, Form: FormRaw, Existing: true, Name: text("kv-shared")}
 	g := func() *Graph { return &Graph{Nodes: []*Node{s, subnetNode(), vault}} }
+	subnet := `          # Left for the Release, since the source cannot supply it: infra.overrides.delegated_subnet_id, the pointer to the resource subnet (Microsoft.Network/virtualNetworks/subnets), which the draft leaves to the operator and the source names as "` + subnetPointer + `"; the catalog Recipe takes the resource's literal identifier: write it
+          delegated_subnet_id: ""
+`
+	storage := `          # Left for the Release, since the source cannot supply it: infra.overrides.storage_size_gb, the pointer to the resource vault (Microsoft.KeyVault/vaults), which the draft leaves to the operator; the catalog Recipe takes the resource's literal identifier: write it
+          storage_size_gb: ""
+`
 
 	in := edgeView()
 	in.Target = "arm"
@@ -28,10 +35,7 @@ func TestPointerOnItsOwnTarget(t *testing.T) {
         location: "westeurope"
         sku: "[resourceGroup().location]"
         overrides:
-          delegated_subnet_id: "`+subnetPointer+`"
-          # Left for the Release, since the source cannot supply it: infra.overrides.storage_size_gb, the pointer to the resource vault (Microsoft.KeyVault/vaults), which the draft leaves to the operator; write the target's pointer to it
-          storage_size_gb: ""
-`)
+`+storage+subnet)
 
 	in.Target = "terraform"
 	_, _, release, _, _ = released(t, in, releaseFormat(), g())
@@ -41,11 +45,7 @@ func TestPointerOnItsOwnTarget(t *testing.T) {
         # Left for the Release, since the source cannot supply it: infra.sku, it is text the arm target evaluates when the source deploys, and the import drafts for the terraform target
         sku: ""
         overrides:
-          # Left for the Release, since the source cannot supply it: infra.overrides.storage_size_gb, the pointer to the resource vault (Microsoft.KeyVault/vaults), which the draft leaves to the operator; write the target's pointer to it
-          storage_size_gb: ""
-          # Left for the Release, since the source cannot supply it: infra.overrides.delegated_subnet_id, the pointer to the resource subnet (Microsoft.Network/virtualNetworks/subnets), which the draft leaves to the operator; write the target's pointer to it
-          delegated_subnet_id: ""
-`)
+`+storage+subnet)
 }
 
 // TestPointerEnvEntryOfAMappedInstanceIsNamed warns reference-not-wired where an

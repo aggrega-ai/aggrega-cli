@@ -129,6 +129,9 @@ func (w *aggregateWriter) paramText(v Param, conv Conv) (string, outcome) {
 			" is a " + typ}
 	case strings.HasPrefix(string(conv), "unit:"):
 		return draftyaml.String(ref + strings.TrimPrefix(string(conv), "unit:")), written()
+	case strings.HasPrefix(string(conv), convMap):
+		return "", outcome{why: "the converter " + string(conv) + " maps a literal the source writes, and the " +
+			"template parameter " + p.Name + " is read when the Aggregate is built, where no map applies"}
 	}
 	return "", outcome{why: "the row names the converter " + string(conv) + ", which the core does not know"}
 }

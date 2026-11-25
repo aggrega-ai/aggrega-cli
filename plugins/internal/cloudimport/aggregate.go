@@ -33,14 +33,20 @@ import (
 // draftyaml.Inject.
 //
 // The values of a mapped instance are those its row's Values place, read off
-// its node, or, for an instance a fold of its row makes of a child, off the
-// parent folded into it, followed by the value of that child the fold writes
-// under values; then the value under values of each child folded into it. The
-// values of a drafted instance are those its Recipe reads from values, read
-// off its node. A placement's converter turns the value read into the one
-// written: string writes its text, integer an integer, unit:<suffix> its text
-// followed by the suffix. A literal is written as YAML reading back as the
-// literal, each string in it — an object's keys included — written through the
+// its node, or, for an instance a fold of its row makes of a child, off that
+// child where it writes the placement's path and off the parent folded into it
+// otherwise, followed by the value of that child the fold writes under values;
+// then the value under values of each child folded into it. A child's name,
+// where a fold or a row reads it off a mapped instance's own node or a child,
+// is its own name within its parent: its Leaf where the source composes its
+// Name of its parent's and its own, and not written, warned
+// value-not-carried, where the source composes them so its own part cannot be
+// told apart. The values of a drafted instance are those its Recipe reads from
+// values, read off its node. A placement's converter turns the value read into
+// the one written: string writes its text, integer an integer, unit:<suffix>
+// its text followed by the suffix, map:<from>=<to>,… the <to> of the <from> its
+// text is, regardless of case, or nothing where it is none of them. A literal
+// is written as YAML reading back as the literal, each string in it — an object's keys included — written through the
 // format's Text where the import's target is f.Target, so the format's own
 // Recipes read it as the literal it is; deploy-time text is written as it is
 // for its own target, and for any other target is not written and warned
@@ -124,6 +130,9 @@ type aggregateWriter struct {
 	// patterns that find each secure parameter's name in text.
 	noted  map[string]bool
 	secure map[string]*regexp.Regexp
+	// mappedEntry is set while the Release entry of a mapped instance is
+	// written, whose pointers are left for the answers file.
+	mappedEntry bool
 }
 
 // newAggregateWriter returns the writer of the instances of classified.
@@ -215,22 +224,25 @@ func (w *aggregateWriter) notCarried() []string {
 func (w *aggregateWriter) carriedValues(cl *Classified) []Value {
 	n := cl.Node
 	var out []Value
-	at := func(paths ...[]string) {
+	// at adds the values n writes at paths, each read as read reads it, where
+	// keep holds of the path.
+	at := func(read func(*Node, []string) read, keep func([]string) bool, paths ...[]string) {
 		for _, l := range leaves(n.Body) {
 			for _, path := range paths {
-				if overlaps(path, l.path) {
+				if keep(path) && overlaps(path, l.path) {
 					out = append(out, l.value)
 					break
 				}
 			}
 		}
 		for _, path := range paths {
-			if isName(path) && n.Name != nil {
-				out = append(out, n.Name)
+			if r := read(n, path); keep(path) && isName(path) && r.ok {
+				out = append(out, r.prop.Value)
 				break
 			}
 		}
 	}
+	every := func([]string) bool { return true }
 	if cl.Key != "" && isInstance(cl) && w.conditionParam(cl) != nil {
 		out = append(out, n.Condition)
 	}
@@ -241,19 +253,26 @@ func (w *aggregateWriter) carriedValues(cl *Classified) []Value {
 			out = append(out, l.value)
 		}
 	case cl.Class == ClassMapped && cl.Row != nil:
+		paths := rowPaths(cl.Row)
 		if fold := instancesFold(cl.Row, n.Type); fold != nil {
-			at(fold.From)
-		} else {
-			at(rowPaths(cl.Row)...)
+			paths = append(paths, fold.From)
 		}
+		at(childRead, every, paths...)
 	case cl.Class == ClassFolded && len(w.cs.folding[n.ID]) > 0:
-		inst := w.cs.byID[w.cs.folding[n.ID][0]]
-		if inst != nil {
-			at(rowPaths(inst.Row)...)
+		for _, id := range w.cs.folding[n.ID] {
+			inst := w.cs.byID[id]
+			if inst == nil {
+				continue
+			}
+			child := inst.Node
+			at(nodeRead, func(path []string) bool {
+				r := childRead(child, path)
+				return !r.ok && r.why == ""
+			}, rowPaths(inst.Row)...)
 		}
 	case cl.Class == ClassFolded:
 		if fold := childFold(cl.Row, n.Type); fold != nil {
-			at(fold.From)
+			at(childRead, every, fold.From)
 		}
 	}
 	return out
@@ -341,16 +360,18 @@ type valueTree struct {
 // values returns the values of cl's instance, as Aggregate states them.
 func (w *aggregateWriter) values(cl *Classified) []*valueTree {
 	var tree []*valueTree
-	put := func(n *Node, from, key []string, conv Conv) {
-		if n == nil || len(key) == 0 {
+	put := func(r read, key []string, conv Conv) {
+		if r.node == nil || len(key) == 0 {
 			return
 		}
-		p, ok := nodeProp(n, from)
-		if !ok {
+		site := valueSite{node: r.node.ID, instance: cl.Key, from: r.from, dest: "values." + pathText(key)}
+		if !r.ok {
+			if r.why != "" {
+				w.notCarriedHere(site, r.why)
+			}
 			return
 		}
-		site := valueSite{node: n.ID, instance: cl.Key, from: from, dest: "values." + pathText(key)}
-		text, o := w.propText(p, conv)
+		text, o := w.propText(r.prop, conv)
 		if o.ok {
 			tree = plant(tree, key, w.commit(text))
 			return
@@ -361,41 +382,92 @@ func (w *aggregateWriter) values(cl *Classified) []*valueTree {
 	n := cl.Node
 	switch {
 	case cl.Class == ClassMapped && cl.Row != nil:
-		source := w.sourceOf(cl)
-		fold := instancesFold(cl.Row, n.Type)
 		for _, p := range cl.Row.Values {
-			put(source, p.From, []string{p.Key}, p.Conv)
+			put(w.readOff(cl, p.From), []string{p.Key}, p.Conv)
 		}
-		if fold != nil {
-			put(n, fold.From, valuesKey(fold.Key), "")
+		if fold := instancesFold(cl.Row, n.Type); fold != nil {
+			put(childRead(n, fold.From), valuesKey(fold.Key), "")
 		}
 		for _, child := range w.out {
 			if child.Class != ClassFolded || child.Into != n.ID || len(w.cs.folding[child.Node.ID]) > 0 {
 				continue
 			}
 			if f := childFold(cl.Row, child.Node.Type); f != nil {
-				put(child.Node, f.From, valuesKey(f.Key), "")
+				put(childRead(child.Node, f.From), valuesKey(f.Key), "")
 			}
 		}
 	case cl.Class == ClassDrafted:
 		for _, in := range cl.Inputs {
 			if in.Source.Pillar == schemadraft.PillarValues && in.Property != nil {
-				put(n, in.Property.Path, []string{in.Source.Key}, "")
+				put(nodeRead(n, in.Property.Path), []string{in.Source.Key}, "")
 			}
 		}
 	}
 	return tree
 }
 
-// sourceOf returns the node a mapped instance's row reads its properties off:
-// the node itself, or for an instance a fold of its row makes of a child, the
-// parent folded into it, nil where there is none.
-func (w *aggregateWriter) sourceOf(cl *Classified) *Node {
-	n := cl.Node
-	if instancesFold(cl.Row, n.Type) == nil {
-		return n
+// read is what a node writes at a property path, as a placement reads it.
+type read struct {
+	// node is the node read and from the path read.
+	node *Node
+	from []string
+	// prop is what node writes at from, ok reporting that it writes something
+	// there; why says why nothing is read where node writes the path and the
+	// value cannot be told, empty where node writes nothing there.
+	prop Prop
+	ok   bool
+	why  string
+}
+
+// nodeRead reads what n writes at path, as nodeProp reads it.
+func nodeRead(n *Node, path []string) read {
+	if n == nil {
+		return read{from: path}
 	}
-	if parent := w.cs.byID[n.Parent]; parent != nil && parent.Class == ClassFolded {
+	p, ok := nodeProp(n, path)
+	return read{node: n, from: path, prop: p, ok: ok}
+}
+
+// childRead reads what n writes at path, as nodeProp reads it, but its name
+// as its own name within its parent: Leaf where Name is the full name the
+// source composes, and nothing, with why, where the source composes the two
+// so its own part cannot be told. A fold reads a child so, and so does an
+// instance of a row read off its own node or a child's.
+func childRead(n *Node, path []string) read {
+	if n != nil && n.Composed && isName(path) {
+		if _, written := propAt(n.Body, path); !written {
+			if n.Leaf == nil {
+				return read{node: n, from: path, why: "the source composes the name of " + n.ID + " of its " +
+					"parent's name and its own, so its own name within its parent cannot be told apart"}
+			}
+			return read{node: n, from: path, prop: Prop{Value: n.Leaf}, ok: true}
+		}
+	}
+	return nodeRead(n, path)
+}
+
+// readOff reads what the mapped instance cl's row reads at path: off the
+// instance's node, its name read as childRead reads it; for an instance a fold
+// of its row makes of a child, off the child where the child writes path, and
+// off the parent folded into it otherwise.
+func (w *aggregateWriter) readOff(cl *Classified, path []string) read {
+	r := childRead(cl.Node, path)
+	if r.ok || r.why != "" || instancesFold(cl.Row, cl.Node.Type) == nil {
+		return r
+	}
+	if parent := w.foldedParent(cl); parent != nil {
+		return nodeRead(parent, path)
+	}
+	return r
+}
+
+// foldedParent returns the parent folded into cl, an instance a fold of its
+// row makes of a child; nil where there is none.
+func (w *aggregateWriter) foldedParent(cl *Classified) *Node {
+	if instancesFold(cl.Row, cl.Node.Type) == nil {
+		return nil
+	}
+	if parent := w.cs.byID[cl.Node.Parent]; parent != nil && parent.Class == ClassFolded {
 		return parent.Node
 	}
 	return nil
@@ -629,6 +701,11 @@ func (w *aggregateWriter) converted(scalar string, conv Conv) (string, outcome) 
 		return "", outcome{why: "the converter integer reads no integer in it"}
 	case strings.HasPrefix(string(conv), "unit:"):
 		return w.stringText(scalar + strings.TrimPrefix(string(conv), "unit:")), written()
+	case strings.HasPrefix(string(conv), convMap):
+		if to, ok := conv.mapped(scalar); ok {
+			return to, written()
+		}
+		return "", outcome{why: "the converter " + string(conv) + " maps no value of the source's spelling there"}
 	}
 	return "", outcome{why: "the row names the converter " + string(conv) + ", which the core does not know"}
 }

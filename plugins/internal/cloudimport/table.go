@@ -6,6 +6,7 @@ package cloudimport
 import (
 	"fmt"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -41,9 +42,71 @@ type Pred struct {
 }
 
 // Conv is how a placed value is converted on its way to its key: empty for the
-// value as is, "string" for its text, "integer" for an integer, and
-// "unit:<suffix>" for a number written with that unit suffix.
+// value as is, "string" for its text, "integer" for an integer,
+// "unit:<suffix>" for a number written with that unit suffix, and
+// "map:<from>=<to>,<from>=<to>…" for a scalar the source spells in a
+// vocabulary of its own: the value whose text is a <from>, matched regardless
+// of case, is written as its <to>, a YAML scalar as it stands, so true reads
+// back as a boolean. A <from> holds neither a comma nor an equals sign; a <to>
+// holds letters, digits, '.', '_', '+' and '-' alone, so it reads back as the
+// scalar written. A value the map holds no <from> for is not written.
 type Conv string
+
+// convMap is the prefix of a map converter.
+const convMap = "map:"
+
+// mapTo is the scalar a map converter writes for the value whose text is
+// from, matched regardless of case.
+type mapTo struct {
+	from, to string
+}
+
+// plainScalar is the text of a <to> of a map converter.
+var plainScalar = regexp.MustCompile(`^[A-Za-z0-9_.+-]+$`)
+
+// mapping returns the pairs of the map converter c, in the order written, and
+// why c is malformed: a pair with an empty side or with no equals sign, a <to>
+// that is no plain scalar, or a <from> written twice regardless of case. It is
+// false where c is no map converter.
+func (c Conv) mapping() ([]mapTo, string, bool) {
+	text, ok := strings.CutPrefix(string(c), convMap)
+	if !ok {
+		return nil, "", false
+	}
+	var pairs []mapTo
+	for _, pair := range strings.Split(text, ",") {
+		from, to, found := strings.Cut(pair, "=")
+		switch {
+		case !found || from == "" || to == "":
+			return nil, fmt.Sprintf("the pair %q is not <from>=<to> with both sides written", pair), true
+		case !plainScalar.MatchString(to):
+			return nil, fmt.Sprintf("the pair %q maps to text that is no plain scalar of letters, digits, '.', "+
+				"'_', '+' and '-'", pair), true
+		}
+		for _, p := range pairs {
+			if strings.EqualFold(p.from, from) {
+				return nil, fmt.Sprintf("it maps %q twice", from), true
+			}
+		}
+		pairs = append(pairs, mapTo{from: from, to: to})
+	}
+	return pairs, "", true
+}
+
+// mapped returns the scalar the map converter c writes for the value whose
+// text is value, false where it holds no <from> for it.
+func (c Conv) mapped(value string) (string, bool) {
+	pairs, why, ok := c.mapping()
+	if !ok || why != "" {
+		return "", false
+	}
+	for _, p := range pairs {
+		if strings.EqualFold(p.from, value) {
+			return p.to, true
+		}
+	}
+	return "", false
+}
 
 // Placement places the value a node writes at a property path, or the
 // attribute a consumer reads, under a key of the instance.
@@ -209,6 +272,53 @@ func (d *DuplicateRow) Error() string {
 		WhenText(d.When))
 }
 
+// MalformedConverter is a placement of a row whose map converter cannot be
+// read, so no value placed through it could be written.
+type MalformedConverter struct {
+	// Key and When identify the row, and Origin says where it comes from.
+	Key    string
+	When   []Pred
+	Origin string
+	// Field names the placement as Row.Supersedes names it: Values.<key>,
+	// Infra.<key>, Overrides.<key>, Secrets.<slot> or Provides.<key>.
+	Field string
+	// Conv is the converter, and Why what is malformed in it.
+	Conv Conv
+	Why  string
+}
+
+// Error names the row, the placement, the converter and what to write.
+func (m *MalformedConverter) Error() string {
+	origin := m.Origin
+	if origin == "" {
+		origin = "the format's table"
+	}
+	return fmt.Sprintf("the row of %s%s (%s) converts %s with %q, and %s: write the converter as "+
+		"map:<from>=<to>,<from>=<to>, each <from> once and each <to> a plain scalar", m.Key, WhenText(m.When),
+		origin, m.Field, string(m.Conv), m.Why)
+}
+
+// malformed returns a *MalformedConverter for the first placement of rows
+// whose map converter is malformed, nil where none is.
+func malformed(rows []Row) error {
+	for _, r := range rows {
+		lists := []struct {
+			field string
+			ps    []Placement
+		}{{"Values", r.Values}, {"Infra", r.Infra}, {"Overrides", r.Overrides}, {"Secrets", r.Secrets},
+			{"Provides", r.Provides}}
+		for _, l := range lists {
+			for _, p := range l.ps {
+				if _, why, ok := p.Conv.mapping(); ok && why != "" {
+					return &MalformedConverter{Key: r.Key, When: r.When, Origin: r.Origin,
+						Field: l.field + "." + p.Key, Conv: p.Conv, Why: why}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // Rows returns the table's rows: each generated row in order, the hand row of
 // its key and When merged into it, then each hand row no generated row shares
 // a key and When with, in order. Two keys are one where they differ only in
@@ -226,7 +336,8 @@ func (d *DuplicateRow) Error() string {
 // generated one needs a written reason in the hand row's Supersedes: without
 // one, Rows returns a [*Contradiction] naming the key, the field and both
 // values. Two rows of one origin sharing a key and When return a
-// [*DuplicateRow]. A merged row shares the slices and maps of the fields it
+// [*DuplicateRow], and a placement whose map converter cannot be read a
+// [*MalformedConverter] naming its row. A merged row shares the slices and maps of the fields it
 // takes with the generated and the hand row, and a row left unmerged is the
 // table's own: none is to be changed.
 func (t Table) Rows() ([]Row, error) {
@@ -234,6 +345,12 @@ func (t Table) Rows() ([]Row, error) {
 		return nil, err
 	}
 	if err := duplicates(t.Hand, "hand"); err != nil {
+		return nil, err
+	}
+	if err := malformed(t.Generated); err != nil {
+		return nil, err
+	}
+	if err := malformed(t.Hand); err != nil {
 		return nil, err
 	}
 	handAt := make(map[string]int, len(t.Hand))

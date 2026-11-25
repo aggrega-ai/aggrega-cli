@@ -109,21 +109,21 @@ func (w *aggregateWriter) noteSecretValue(p *Parameter) {
 }
 
 // mappedSecrets returns the secrets the credential slots of the instance cl
-// take, off the properties of source the row's Secrets place there, each slot
-// once.
-func (w *aggregateWriter) mappedSecrets(cl *Classified, source *Node) []importer.Secret {
-	if cl.Row == nil || source == nil {
+// take, off the properties the row's Secrets place there, each read as the
+// row's placements are read, each slot once.
+func (w *aggregateWriter) mappedSecrets(cl *Classified) []importer.Secret {
+	if cl.Row == nil {
 		return nil
 	}
 	var out []importer.Secret
 	taken := map[string]bool{}
 	for _, pl := range cl.Row.Secrets {
-		p, ok := nodeProp(source, pl.From)
-		if !ok || taken[pl.Key] {
+		r := w.readOff(cl, pl.From)
+		if !r.ok || taken[pl.Key] {
 			continue
 		}
 		path := "features." + pl.Key
-		if s, ok := w.secretOf(path, source, pl, p); ok {
+		if s, ok := w.secretOf(path, r.node, pl, r.prop); ok {
 			taken[pl.Key] = true
 			out = append(out, s)
 		}

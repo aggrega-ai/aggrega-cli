@@ -22,13 +22,17 @@ import (
 // Aggregate's order:
 //
 //   - a mapped instance's infra and infra.overrides hold what its row places
-//     there, read off its node, a folded child's included where the row's fold
-//     writes under infra; a drafted instance's hold the values its Recipe reads
+//     there, read as the Aggregate reads its values — off its node, or for an
+//     instance a fold of its row makes of a child, off that child where it
+//     writes the path and off the folded parent otherwise — a folded child's
+//     included where the row's fold writes under infra; a drafted instance's hold the values its Recipe reads
 //     from infra and infra.overrides, read off its node, and the keys a
 //     property the node does not write leaves empty;
 //   - each value is written as the Release's text, a parameter as its value —
 //     the parameters file's, else the template's literal default — and a
-//     pointer or deploy-time text as pointers.go says; what cannot be written
+//     pointer or deploy-time text as pointers.go says: a drafted instance's
+//     pointer as the format's text for it, a mapped instance's left for the
+//     operator to write the literal identifier its catalog Recipe takes; what cannot be written
 //     is left for the answers file where the source's value is owed, and
 //     warned value-not-carried where it is not;
 //   - the secrets are those secrets.go attaches, and a drafted instance's
@@ -76,26 +80,25 @@ func Release(in aggrega.ImportInput, f Format, g *Graph, classified []Classified
 func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 	b := &entryBuilder{w: w, cl: cl, e: importer.ReleaseEntry{Key: cl.Key}}
 	n := cl.Node
+	w.mappedEntry = cl.Class == ClassMapped
+	defer func() { w.mappedEntry = false }()
 	switch {
 	case cl.Class == ClassMapped && cl.Row != nil:
-		source := w.sourceOf(cl)
-		if source != nil {
-			for _, p := range cl.Row.Infra {
-				b.put(source, p.From, []string{"infra", p.Key}, p.Conv, false)
-			}
-			for _, p := range cl.Row.Overrides {
-				b.put(source, p.From, []string{"infra", "overrides", p.Key}, p.Conv, false)
-			}
+		for _, p := range cl.Row.Infra {
+			b.place(w.readOff(cl, p.From), []string{"infra", p.Key}, p.Conv, false)
+		}
+		for _, p := range cl.Row.Overrides {
+			b.place(w.readOff(cl, p.From), []string{"infra", "overrides", p.Key}, p.Conv, false)
 		}
 		for _, child := range w.out {
 			if child.Class != ClassFolded || child.Into != n.ID || len(w.cs.folding[child.Node.ID]) > 0 {
 				continue
 			}
 			if fold := childFold(cl.Row, child.Node.Type); fold != nil && len(fold.Key) > 1 && fold.Key[0] == "infra" {
-				b.put(child.Node, fold.From, fold.Key, "", false)
+				b.place(childRead(child.Node, fold.From), fold.Key, "", false)
 			}
 		}
-		b.e.Secrets = w.mappedSecrets(cl, source)
+		b.e.Secrets = w.mappedSecrets(cl)
 		b.e.Realization = cl.Row.Recipe
 		if isModule(n.Form) {
 			if names := untranslated(n, cl.Row); len(names) > 0 {
@@ -110,9 +113,9 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 			}
 			switch in.Source.Pillar {
 			case schemadraft.PillarInfra:
-				b.put(n, in.Property.Path, []string{"infra", in.Source.Key}, "", in.Required)
+				b.place(nodeRead(n, in.Property.Path), []string{"infra", in.Source.Key}, "", in.Required)
 			case schemadraft.PillarOverrides:
-				b.put(n, in.Property.Path, []string{"infra", "overrides", in.Source.Key}, "", in.Required)
+				b.place(nodeRead(n, in.Property.Path), []string{"infra", "overrides", in.Source.Key}, "", in.Required)
 			}
 		}
 		b.e.Comments = append(b.e.Comments, w.draftedSecrets(cl)...)
@@ -150,22 +153,28 @@ type entryBuilder struct {
 	dotted []string
 }
 
-// put writes the value of source's property at from at dest, a key path of the
-// entry, converted by conv: its text, or the key left for the answers file, or
-// a warning where the value cannot be written. A key the source does not write
-// is left where owed is set.
-func (b *entryBuilder) put(source *Node, from, dest []string, conv Conv, owed bool) {
+// place writes the value r reads at dest, a key path of the entry, converted
+// by conv: its text, or the key left for the answers file, or a warning where
+// the value cannot be written. A key the node read does not write is left
+// where owed is set.
+func (b *entryBuilder) place(r read, dest []string, conv Conv, owed bool) {
 	w := b.w
+	if r.node == nil {
+		return
+	}
 	where := strings.Join(dest, ".")
-	p, ok := nodeProp(source, from)
-	if !ok {
-		if owed {
-			b.left(dest, "the property "+pathText(from)+", which another resource drafted with it writes and "+
-				source.ID+" does not")
+	site := valueSite{node: r.node.ID, instance: b.cl.Key, from: r.from, dest: where}
+	if !r.ok {
+		switch {
+		case r.why != "":
+			w.notCarriedHere(site, r.why)
+		case owed:
+			b.left(dest, "the property "+pathText(r.from)+", which another resource drafted with it writes and "+
+				r.node.ID+" does not")
 		}
 		return
 	}
-	site := valueSite{node: source.ID, instance: b.cl.Key, from: from, dest: where}
+	p := r.prop
 	text, o := w.propText(p, conv)
 	if o.ok {
 		b.value(dest, text, w.paramComment(p))

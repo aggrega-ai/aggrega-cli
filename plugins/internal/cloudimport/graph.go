@@ -73,6 +73,15 @@ type Node struct {
 	APIVersion string
 	// Name is the resource's name.
 	Name Value
+	// Composed reports that Name is the full name the source composes of the
+	// name of the node's parent and the node's own, as some sources name a
+	// child resource; where it is false, Name is the node's own name.
+	Composed bool
+	// Leaf is the node's own name within its parent where Composed is set,
+	// which a fold or an instance made of a child reads as the child's name;
+	// nil where the source composes the two names so the import cannot tell
+	// the node's own part, and then no fold writes the child's name.
+	Leaf Value
 	// Form is the form the node is written in.
 	Form Form
 	// Module is the module a FormAVM or FormModule node calls.
