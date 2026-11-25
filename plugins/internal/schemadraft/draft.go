@@ -76,6 +76,9 @@ func DraftResource(in aggrega.ImportInput, f Format, w WrittenResource) (Drafted
 	if halts := malformed(w); len(halts) > 0 {
 		return Drafted{}, halts
 	}
+	if halts := notInjectable(f.Rules, w); len(halts) > 0 {
+		return Drafted{}, halts
+	}
 	d := placeWritten(w, f.Rules)
 	name, category := componentName(importer.TargetNamespace(in.Settings), f, d.t)
 	format := in.Format
@@ -98,6 +101,33 @@ func DraftResource(in aggrega.ImportInput, f Format, w WrittenResource) (Drafted
 	referTo(drafts, id)
 	diags = append(diags, draftedFromSource(f, d, id, name, spec.name))
 	return Drafted{Name: name, Recipe: spec.name, Entities: drafts, Decision: decision, Inputs: spec.res.Inputs}, diags
+}
+
+// notInjectable halts on each property of w a neighbour supplies that rules
+// say cannot be injected, naming the property and the reason.
+func notInjectable(rules Rules, w WrittenResource) []aggrega.Diagnostic {
+	t := &Type{Name: w.Type, APIVersion: w.APIVersion}
+	resource := w.ID
+	if resource == "" {
+		resource = w.Type
+	}
+	var out []aggrega.Diagnostic
+	for _, wp := range w.Properties {
+		if wp.Inject == "" || len(wp.Path) == 0 {
+			continue
+		}
+		p := &Property{Name: wp.Path[len(wp.Path)-1], Path: slices.Clone(wp.Path), Written: true}
+		if why := rules.WhyNotInjected(t, p); why != "" {
+			out = append(out, aggrega.Diagnostic{
+				Severity: aggrega.SeverityHalt,
+				Code:     CodeResourceTypeRefused,
+				Message: fmt.Sprintf("the resource %q is read at %s from a value a neighbour supplies, which cannot be "+
+					"delivered there: %s; read the property from values or infra instead", resource, vendorPath(p), why),
+				SourceRef: w.ID,
+			})
+		}
+	}
+	return out
 }
 
 // malformed halts on each fault of w a draft cannot be named or placed with: no

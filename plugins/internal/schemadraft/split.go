@@ -88,10 +88,28 @@ type Rules struct {
 	LeftOut func(t *Type, p *Property) string
 	// NotInjected returns why the format's Recipe writer cannot write a value
 	// a neighbour delivers on the inject pipe at p, or "" where it can; a nil
-	// rule refuses none. Neither Split nor DraftResource reads it: an importer
-	// wiring a neighbour's reference into a property it drafts from a source
-	// reads it before marking the property injected.
+	// rule refuses none. Split does not read it: WhyNotInjected applies it with
+	// LeftOut, for an importer wiring a neighbour's reference into a property it
+	// drafts from a source and for DraftResource alike.
 	NotInjected func(t *Type, p *Property) string
+}
+
+// WhyNotInjected returns why a value a neighbour supplies cannot be delivered
+// at p, a property a draft from a source reads off the inject pipe, or "" where
+// it can: the reason LeftOut gives for leaving p out of the draft, else the
+// reason NotInjected gives for p's writer. It is the one test of whether a
+// property can be injected, which an importer applies before it marks a
+// property injected and DraftResource applies before it drafts one.
+func (r Rules) WhyNotInjected(t *Type, p *Property) string {
+	if r.LeftOut != nil {
+		if why := r.LeftOut(t, p); why != "" {
+			return why
+		}
+	}
+	if r.NotInjected != nil {
+		return r.NotInjected(t, p)
+	}
+	return ""
 }
 
 // overridesKey is the infra key holding every writable property no other rule

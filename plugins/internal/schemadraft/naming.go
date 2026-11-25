@@ -75,14 +75,9 @@ func newKeySpace(reserved ...string) *keySpace {
 
 // take returns the key vendor takes, and where it is not the vendor name's
 // SnakeKey, composed text naming both the vendor name and what holds that key.
-//
-// The kit's UniqueKey writes a key with hyphens. A SnakeKey is words of a-z and
-// 0-9 joined by underscores, so the kit's reading of it is the same words
-// joined by hyphens and writing its hyphens back as underscores gives the
-// snake_case key with the kit's suffix.
 func (s *keySpace) take(vendor string) (key, renamed string) {
 	base := SnakeKey(vendor)
-	key = strings.ReplaceAll(importer.UniqueKey(s.used, base), "-", "_")
+	key = UniqueSnakeKey(s.used, vendor)
 	if key != base && base != "" {
 		if by := s.takers[base]; by != "" {
 			renamed = fmt.Sprintf("%s is written %s, since %s takes %s", vendor, key, by, base)
@@ -208,4 +203,15 @@ func FirstParagraph(text string) string {
 		text = text[:i]
 	}
 	return strings.TrimSpace(text)
+}
+
+// UniqueSnakeKey returns the snake_case key vendor takes among the keys used
+// holds: the vendor name's SnakeKey, or that with the kit's numeric suffix where
+// a name taken earlier holds it, recorded in used so a later call sees it taken.
+// The kit's UniqueKey writes a key with hyphens, and a SnakeKey is words of a-z
+// and 0-9 joined by underscores, so the kit's reading of it is the same words
+// joined by hyphens: writing its hyphens back as underscores gives the snake_case
+// key with the kit's suffix.
+func UniqueSnakeKey(used map[string]bool, vendor string) string {
+	return strings.ReplaceAll(importer.UniqueKey(used, SnakeKey(vendor)), "-", "_")
 }

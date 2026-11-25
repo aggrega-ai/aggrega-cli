@@ -124,9 +124,10 @@ func notInjected(_ *schemadraft.Type, p *schemadraft.Property) string {
 }
 
 // atOrUnderProperties reports whether p is the resource's root properties or
-// lies under them.
+// lies under them, its name matched without regard to case as Azure Resource
+// Manager reads it.
 func atOrUnderProperties(p *schemadraft.Property) bool {
-	return len(p.Path) > 0 && p.Path[0] == keyProperties
+	return len(p.Path) > 0 && strings.EqualFold(p.Path[0], keyProperties)
 }
 
 // The scopes a Bicep type file states a type is writable at, by the bit of

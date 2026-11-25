@@ -347,3 +347,83 @@ func TestDraftResourceHaltsOnAMalformedResource(t *testing.T) {
 		})
 	}
 }
+
+// TestRulesWhyNotInjectedAppliesBothRules: a property the format leaves out of
+// a draft from a source, and one its writer cannot write a neighbour's value
+// at, each give a reason, the leaving out first; any other gives none, and a
+// format with neither rule refuses nothing.
+func TestRulesWhyNotInjectedAppliesBothRules(t *testing.T) {
+	const left, notInjected = "the sample service reports it", "the sample writer writes it nowhere"
+	rules := Rules{
+		LeftOut: func(_ *Type, p *Property) string {
+			if p.Name == "Status" {
+				return left
+			}
+			return ""
+		},
+		NotInjected: func(_ *Type, p *Property) string {
+			if p.Name == "Status" || p.Name == "Tags" {
+				return notInjected
+			}
+			return ""
+		},
+	}
+	typ := &Type{Name: fxQueue}
+	for _, c := range []struct{ name, want string }{
+		{"Status", left}, {"Tags", notInjected}, {"DelaySeconds", ""},
+	} {
+		p := &Property{Name: c.name, Path: []string{c.name}}
+		if got := rules.WhyNotInjected(typ, p); got != c.want {
+			t.Errorf("%s: reason %q, want %q", c.name, got, c.want)
+		}
+		if got := (Rules{}).WhyNotInjected(typ, p); got != "" {
+			t.Errorf("%s: a format with no rule refuses with %q", c.name, got)
+		}
+	}
+}
+
+// TestDraftResourceHaltsOnAnInjectedPropertyTheFormatCannotInject: a property
+// a neighbour supplies that the format leaves out of a draft, or whose writer
+// cannot write it, halts naming the property and the format's reason, and
+// drafts nothing, where it used to be dropped with a note or left to the
+// writer.
+func TestDraftResourceHaltsOnAnInjectedPropertyTheFormatCannotInject(t *testing.T) {
+	const left, notInjected = "the sample service reports it", "the sample writer writes it nowhere"
+	for _, c := range []struct {
+		path []string
+		why  string
+	}{
+		{[]string{"Status"}, left},
+		{[]string{"Tags", "owner"}, notInjected},
+	} {
+		w := queueWritten()
+		w.Properties = append(w.Properties, WrittenProperty{Path: c.path, Inject: InjectKey(c.path)})
+		f := writtenFormat(queueWritten())
+		f.Rules.LeftOut = func(_ *Type, p *Property) string {
+			if slices.Equal(p.Path, []string{"Status"}) {
+				return left
+			}
+			return ""
+		}
+		f.Rules.NotInjected = func(_ *Type, p *Property) string {
+			if len(p.Path) > 0 && p.Path[0] == "Tags" {
+				return notInjected
+			}
+			return ""
+		}
+		drafted, diags := DraftResource(writtenInput(""), f, w)
+		var halts []aggrega.Diagnostic
+		for _, d := range diags {
+			if d.Severity == aggrega.SeverityHalt {
+				halts = append(halts, d)
+			}
+		}
+		if len(halts) != 1 || halts[0].Code != CodeResourceTypeRefused ||
+			!strings.Contains(halts[0].Message, strings.Join(c.path, ".")) || !strings.Contains(halts[0].Message, c.why) {
+			t.Errorf("at %v diagnostics %+v, want one %s naming the path and %q", c.path, diags, CodeResourceTypeRefused, c.why)
+		}
+		if !reflect.DeepEqual(drafted, Drafted{}) {
+			t.Errorf("at %v a halt drafted %+v", c.path, drafted)
+		}
+	}
+}
