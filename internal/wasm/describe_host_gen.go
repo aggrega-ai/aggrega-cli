@@ -163,10 +163,12 @@ type AssemblyNameAnnotation struct {
 	RequireUnique bool `json:"require_unique,omitempty" yaml:"require_unique,omitempty" cbor:"require_unique,omitempty"`
 }
 
-// ImporterContract What an importer declares about its formats beyond advertising them: the signatures a source of those formats is recognised by. When an import names no format, the host reads the signatures recorded by every importer the import selects among — the importers in the workspace's catalog and the compiler's core importers, whose Plugin entities the binary carries — matches each against the source without knowing what any format is, and reads the source as the format of the one importer whose signature matches. A source no signature matches is refused asking for the format, and a source signatures of more than one format match is refused naming them. The Plugin entity records the same list, and the host refuses an importer whose describe() report differs from the record.
+// ImporterContract What an importer declares about its formats beyond advertising them: the signatures a source of those formats is recognised by, and the target its drafts default to. When an import names no format, the host reads the signatures recorded by every importer the import selects among — the importers in the workspace's catalog and the compiler's core importers, whose Plugin entities the binary carries — matches each against the source without knowing what any format is, and reads the source as the format of the one importer whose signature matches. A source no signature matches is refused asking for the format, and a source signatures of more than one format match is refused naming them. The Plugin entity records the same list, and the host refuses an importer whose describe() report differs from the record.
 type ImporterContract struct {
 	// Detect The signatures that recognise a source of this importer's formats, in declared order; a source is recognised when any one of them matches it. A source recognised by an importer is recognised as every format the importer advertises, so an importer advertising more than one format has every match refused as ambiguous, and an importer whose sources must be recognised advertises one format. Absent or empty declares no signature, and the importer's formats are reached only by naming them.
 	Detect []DetectSignature `json:"detect,omitempty" yaml:"detect,omitempty" cbor:"detect,omitempty"`
+	// DefaultTarget The target an import of this importer's formats drafts for when the import names none and no earlier import's record names one: the provider capability its drafted Manifest maps to, written as a Recipe's spec.capability is. The host applies it only where a Recipe of the import's catalog binds to it, and otherwise drafts no Manifest and says why; an import naming a target drafts for that one. Absent declares none.
+	DefaultTarget string `json:"default_target,omitempty" yaml:"default_target,omitempty" cbor:"default_target,omitempty"`
 }
 
 // DetectSignature One way a source is recognised: the syntax the source is read in, the file names the signature applies to, and the predicates the parsed tree must satisfy. It matches a file whose name matches one of its file patterns — or, where it declares none, a source that is one file, whatever it is called — whose bytes parse in its syntax, and whose parsed tree satisfies every one of its predicates. It matches a directory where it matches one of the directory's files its patterns select, so a signature declaring no pattern matches no directory.
@@ -1644,6 +1646,14 @@ func (t ImporterContract) MarshalJSON() ([]byte, error) {
 		}
 		buf.WriteByte(']')
 	}
+	if t.DefaultTarget != "" {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString("\"default_target\":")
+		writeJSONString(&buf, t.DefaultTarget)
+	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
 }
@@ -1681,6 +1691,12 @@ func (t *ImporterContract) UnmarshalJSON(data []byte) error {
 			if err := expectDelim(dec, ']'); err != nil {
 				return err
 			}
+		case "default_target":
+			if s, err := readString(dec); err != nil {
+				return err
+			} else {
+				t.DefaultTarget = s
+			}
 		default:
 			if _, err := readRaw(dec, data); err != nil {
 				return err
@@ -1700,7 +1716,7 @@ func (t *ImporterContract) UnmarshalJSON(data []byte) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the object's own keys and does not descend.
 func (t *ImporterContract) UnmarshalJSONStrict(data []byte) error {
-	if err := refuseUndeclaredJSONKeys(data, "detect"); err != nil {
+	if err := refuseUndeclaredJSONKeys(data, "detect", "default_target"); err != nil {
 		return err
 	}
 	return t.UnmarshalJSON(data)
@@ -3261,6 +3277,9 @@ func (t ImporterContract) appendCBOR(dst []byte) ([]byte, error) {
 	if len(t.Detect) != 0 {
 		n++
 	}
+	if t.DefaultTarget != "" {
+		n++
+	}
 	dst = appendCBORHead(dst, 5, uint64(n))
 	var err error
 	if len(t.Detect) != 0 {
@@ -3272,6 +3291,10 @@ func (t ImporterContract) appendCBOR(dst []byte) ([]byte, error) {
 				return nil, err
 			}
 		}
+	}
+	if t.DefaultTarget != "" {
+		dst = appendCBORTextString(dst, "default_target")
+		dst = appendCBORTextString(dst, t.DefaultTarget)
 	}
 	return dst, nil
 }
@@ -3310,6 +3333,12 @@ func (t *ImporterContract) decodeCBOR(dec *cborDec) error {
 				}
 				t.Detect = s
 			}
+		case "default_target":
+			if s, err := dec.readTextString(); err != nil {
+				return err
+			} else {
+				t.DefaultTarget = s
+			}
 		default:
 			if err := dec.skip(); err != nil {
 				return err
@@ -3326,7 +3355,7 @@ func (t *ImporterContract) decodeCBOR(dec *cborDec) error {
 // key would yield an empty value indistinguishable from a real one. The
 // check reads the map's own keys and does not descend.
 func (t *ImporterContract) DecodeCBORStrict(data []byte) error {
-	if err := refuseUndeclaredCBORKeys(data, "detect"); err != nil {
+	if err := refuseUndeclaredCBORKeys(data, "detect", "default_target"); err != nil {
 		return err
 	}
 	return t.DecodeCBOR(data)

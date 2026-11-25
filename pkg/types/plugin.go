@@ -164,6 +164,15 @@ type PluginImporter struct {
 	// and publication compare it with the self-report where it is present. A nil
 	// list records nothing and is compared with nothing.
 	Detect []PluginDetectSignature `json:"detect,omitempty" yaml:"detect,omitempty"`
+
+	// DefaultTarget is the machine-owned record of the target an import of this
+	// importer's formats drafts for when the import names none and no earlier
+	// import's record names one: a provider capability, written as a Recipe's
+	// spec.capability is. It is derived from the plugin's describe() self-report
+	// when the entity is generated from the plugin, and the load and publication
+	// compare it with the self-report where it is present. An empty value records
+	// nothing and is compared with nothing.
+	DefaultTarget string `json:"defaultTarget,omitempty" yaml:"defaultTarget,omitempty"`
 }
 
 // PluginDetectSignature is one way a source of an importer's formats is

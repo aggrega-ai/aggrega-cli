@@ -212,7 +212,8 @@ func maximalPlugin() types.Plugin {
 			PipelineStep: &types.PluginPipelineStep{Capabilities: []string{"helm"}},
 			Parser:       &types.PluginParser{Capabilities: []string{"parse:yaml"}},
 			Importer: &types.PluginImporter{
-				Capabilities: []string{"import:terraform"},
+				Capabilities:  []string{"import:terraform"},
+				DefaultTarget: "arm",
 				Detect: []types.PluginDetectSignature{{
 					Syntax: "json",
 					Files:  []string{"*.tf.json"},
