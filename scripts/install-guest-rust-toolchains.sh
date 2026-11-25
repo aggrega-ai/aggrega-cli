@@ -64,8 +64,8 @@ install_toolchains() {
   done <<< "$homes"
   cargo_bin="$CARGO_HOME/bin"
   # shellcheck source=lib/core-plugins.sh
-  . "$here/lib/core-plugins.sh"
-  dirs="$(core_plugin_rust_dirs)"
+  . "$here/lib/core-plugins.sh" || exit 1
+  dirs="$(core_plugin_rust_dirs)" || exit 1
   while IFS= read -r d; do
     [ -n "$d" ] || continue
     echo "rust: installing the toolchain aggrega-cli/$d/rust-toolchain.toml pins, with its targets" >&2
