@@ -2,7 +2,8 @@
 # aggrega-cli/scripts/install-guest-rust-toolchains.sh — install the Rust
 # toolchains the core guests pin, with a rustup of this script's own, into a
 # directory of the caller's. It is called by the release workflow's build job
-# and by a local check of the staging steps, so both install them the same way.
+# and by the heavy checks' workflows, and by a local check of the staging steps,
+# so all of them install the toolchains the same way.
 #
 #   <dir>
 #       Runs pinned-rustup.sh install <dir>, which installs rustup at one
@@ -24,8 +25,23 @@
 #       path. Everything else it reports, rustup's own output included, goes to
 #       standard error.
 #
+#   --github-env <dir>
+#       The same install into <dir>, for a GitHub Actions step. Instead of
+#       printing the two settings it appends them to the file GITHUB_ENV names,
+#       so every later step of the job runs rustup, cargo and rustc with them:
+#       cargo and rustc find their toolchains through RUSTUP_HOME, and the guest
+#       build remaps CARGO_HOME out of the guests' bytes. It also appends
+#       <dir>/cargo/bin to the file GITHUB_PATH names, so the cargo and rustc
+#       the later steps run are this rustup's. Standard output stays empty.
+#       When GITHUB_ENV or GITHUB_PATH is unset or empty it exits 2 before it
+#       installs anything. <dir> should lie under the runner's temporary
+#       directory, which the runner empties at the start and end of every job,
+#       so a run needs no Rust on the runner and installs none into a user's
+#       home.
+#
 # Usage:
 #   scripts/install-guest-rust-toolchains.sh <dir>
+#   scripts/install-guest-rust-toolchains.sh --github-env <dir>
 #   scripts/install-guest-rust-toolchains.sh --help
 #
 # Exits 0 when it did what it was asked, 1 when it could not, and 2 for an
@@ -61,9 +77,26 @@ install_toolchains() {
   printf '%s\n' "$homes"
 }
 
+github_env() {
+  local dir="$1" homes line
+  [ -n "${GITHUB_ENV:-}" ] || usage_error "--github-env needs GITHUB_ENV to name a file, and it is unset or empty"
+  [ -n "${GITHUB_PATH:-}" ] || usage_error "--github-env needs GITHUB_PATH to name a file, and it is unset or empty"
+  homes="$(install_toolchains "$dir")"
+  while IFS= read -r line; do
+    case "$line" in
+      RUSTUP_HOME=?*) printf '%s\n' "$line" >> "$GITHUB_ENV" ;;
+      CARGO_HOME=?*) printf '%s\n' "$line" >> "$GITHUB_ENV"; printf '%s\n' "${line#CARGO_HOME=}/bin" >> "$GITHUB_PATH" ;;
+    esac
+  done <<< "$homes"
+}
+
 case "${1:-}" in
   -h|--help) sed -n '2,/^# argument it cannot use\.$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   '') usage_error "name the directory to install rustup into (see --help)" ;;
+  --github-env)
+    [ "$#" = 2 ] || usage_error "--github-env takes one argument, the directory to install rustup into (see --help)"
+    github_env "$2"
+    ;;
   -*) usage_error "unknown option: $1 (see --help)" ;;
   *)
     [ "$#" = 1 ] || usage_error "takes one argument, the directory to install rustup into (see --help)"
