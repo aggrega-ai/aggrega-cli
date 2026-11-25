@@ -71,9 +71,37 @@ const (
 // warning; it never halts. The parameters the root template declares are the
 // graph's parameters, filled from the one parameters file the request
 // carries.
+//
+// A Microsoft.Resources/deployments resource holding its template inline, or
+// linking by a relative path a template the import holds, is read as the
+// resources that template deploys: they join the graph, each symbol behind the
+// symbol of the resource deploying them and a slash, reading the values that
+// resource gives the template's parameters — or, evaluated in the outer
+// scope, the holding template's parameters and variables — and a reference to
+// one of the template's outputs reads the value the output holds. A
+// template deployed into another resource group or subscription is read the
+// same way, with a deployment-scope-merged warning. One deploying an Azure
+// Verified Modules resource module — a template Bicep generated, holding the
+// resource by which the module sends its telemetry under a name opening
+// 46d3xbcp.res. — is one node of the module's resource type instead, in the
+// module form, its body the parameters given, where the module index lists
+// its telemetry prefix or a row of the table maps that type; it is reported
+// avm-module-recognised, and its lock, role assignments, diagnostic settings
+// and private endpoints are left out and reported resource-not-carried unless
+// the Recipe's override header lists them. Any other module — a pattern or a
+// utility module, or a resource module kept no one node — is read as its
+// resources. The resource by which a module sends its telemetry is never a
+// node, whatever template holds it, and enableTelemetry is never carried.
 func Read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.ParseFunc) (*cloudimport.Graph,
 	[]aggrega.Diagnostic) {
-	r := &reader{in: in, parse: parse}
+	return read(in, s, parse, Table())
+}
+
+// read reads as [Read] does, a module of no path the module index lists
+// staying one node where a row of table maps its resource type.
+func read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.ParseFunc, table cloudimport.Table) (
+	*cloudimport.Graph, []aggrega.Diagnostic) {
+	r := &reader{in: in, parse: parse, table: table, yields: map[string][]string{}}
 	srcs, unreadable := r.sources()
 	if r.halted {
 		return nil, r.diags
@@ -94,11 +122,18 @@ func Read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.Pars
 		return nil, r.diags
 	}
 
-	t := r.template(sel.root.name, "", sel.root.top)
-	g := &cloudimport.Graph{Format: formatName, Read: sel.read, NotRead: sel.notRead}
-	for _, res := range t.resources {
-		g.Nodes = append(g.Nodes, r.node(t, res))
+	t := r.template(sel.root.name, "", sel.root.top, nil)
+	r.root = t
+	r.recogniseRoot(t, sel.root.top)
+	r.defaults = r.quiet().parameters(t)
+	r.plan(t)
+	if r.halted {
+		return nil, r.diags
 	}
+	r.alias()
+	r.yield(t)
+	g := &cloudimport.Graph{Format: formatName, Read: sel.read, NotRead: sel.notRead}
+	g.Nodes = r.build(t)
 	sort.SliceStable(g.Nodes, func(i, j int) bool { return g.Nodes[i].ID < g.Nodes[j].ID })
 	g.Params = r.parameters(t)
 	if sel.params != nil {
@@ -116,9 +151,34 @@ type reader struct {
 	in    aggrega.ImportInput
 	parse cloudimport.ParseFunc
 	sel   *selection
-	diags []aggrega.Diagnostic
+	// table is the mapping table whose rows tell whether a module of no path
+	// the module index lists stays one node.
+	table cloudimport.Table
+	// root is the root template, and defaults its parameters as it declares
+	// them, read for the table's rows.
+	root     *template
+	defaults []cloudimport.Parameter
+	// families are the groups of templates deployed into one scope, in the
+	// order they are read.
+	families []*family
+	// yields holds, for each Microsoft.Resources/deployments resource whose
+	// template is flattened, the IDs of the nodes that template yields.
+	yields map[string][]string
+	// resolving names the resources whose template's outputs are being read,
+	// so an output reading itself ends.
+	resolving []string
+	// nestedRead counts the resources of the nested templates read.
+	nestedRead int
+	diags      []aggrega.Diagnostic
 	// halted reports a halting diagnostic among diags.
 	halted bool
+}
+
+// quiet returns a reader of the same request whose diagnostics are
+// discarded: what it reads is read again, and reported, by r.
+func (r *reader) quiet() *reader {
+	return &reader{in: r.in, parse: r.parse, sel: r.sel, table: r.table, root: r.root, defaults: r.defaults,
+		yields: r.yields}
 }
 
 // halt records a diagnostic that halts the import.
@@ -142,22 +202,10 @@ func (r *reader) note(d aggrega.Diagnostic) {
 // refusal says why the import does not read the template whose top-level
 // object is top, empty where it reads it.
 func refusal(top obj) string {
-	schema, _ := text(top.exact("$schema"))
-	if isTenantSchema(schema) {
-		return "its $schema is the tenant template schema, and the import drafts the resources a template " +
-			"deploys into a resource group, a subscription or a management group; import a template of one of " +
-			"those scopes"
+	if why := refusedVersion(top); why != "" {
+		return why
 	}
-	v2 := false
-	if raw := top.exact("languageVersion"); raw != nil && !isNull(raw) {
-		version, ok := text(raw)
-		if !ok || (version != "1.0" && version != "2.0") {
-			return "its languageVersion is neither 1.0 nor 2.0, the language versions the import reads; an " +
-				"experimental language version may change at any time, so build the template without the " +
-				"experimental features that set it"
-		}
-		v2 = version == "2.0"
-	}
+	v2 := isTwoZero(top)
 	resources := top.exact("resources")
 	switch {
 	case v2 && jsonKind(resources) != '{':
@@ -168,6 +216,34 @@ func refusal(top obj) string {
 			"keying its resources by symbolic name sets its languageVersion to 2.0"
 	}
 	return ""
+}
+
+// refusedVersion says why the import does not read the template whose
+// top-level object is top, by its schema and its language version alone;
+// empty where they are read.
+func refusedVersion(top obj) string {
+	schema, _ := text(top.exact("$schema"))
+	if isTenantSchema(schema) {
+		return "its $schema is the tenant template schema, and the import drafts the resources a template " +
+			"deploys into a resource group, a subscription or a management group; import a template of one of " +
+			"those scopes"
+	}
+	if raw := top.exact("languageVersion"); raw != nil && !isNull(raw) {
+		version, ok := text(raw)
+		if !ok || (version != "1.0" && version != "2.0") {
+			return "its languageVersion is neither 1.0 nor 2.0, the language versions the import reads; an " +
+				"experimental language version may change at any time, so build the template without the " +
+				"experimental features that set it"
+		}
+	}
+	return ""
+}
+
+// isTwoZero reports whether the template whose top-level object is top is of
+// language version 2.0.
+func isTwoZero(top obj) bool {
+	version, _ := text(top.exact("languageVersion"))
+	return version == "2.0"
 }
 
 // isTenantSchema reports whether schema is the template schema of the tenant
@@ -200,13 +276,37 @@ type template struct {
 	// settled, that several resources matched, their symbols in the order the
 	// template writes them.
 	ambiguous [][]string
+	// up is the template holding the Microsoft.Resources/deployments resource
+	// dep that deploys this one, both nil for the root; frames are the
+	// resources deploying it, outermost first, each with the template holding
+	// it.
+	up     *template
+	dep    *resource
+	frames []frame
+	// outer reports that the template's expressions read the parameters and
+	// variables of the template holding it, as a nested template evaluated in
+	// the outer scope does.
+	outer bool
+	// prefix opens the symbol of each of the template's resources: the symbol
+	// of dep and a slash, empty for the root.
+	prefix string
+	// family is the group of templates deployed into one scope the template
+	// belongs to, nil for a module's template read for its name alone.
+	family *family
+	// module is the Azure Verified Modules module the template is, nil where
+	// it is none.
+	module *recognised
 }
 
 // resource is one resource of a template, normalised.
 type resource struct {
-	// symbol is the resource's key in the graph: its symbolic name under 2.0,
-	// a symbol derived from its name under 1.0.
+	// symbol is the resource's key in the graph: its local symbol behind its
+	// template's prefix, or, for an existing resource another template of its
+	// scope declares, that resource's symbol.
 	symbol string
+	// local is the resource's symbol in its own template: its symbolic name
+	// under 2.0, a symbol derived from its name under 1.0.
+	local string
 	// typ is the resource's full type and apiVersion the API version it is
 	// written in.
 	typ, apiVersion string
@@ -228,11 +328,21 @@ type resource struct {
 	// existing reports that the template reads the resource and does not
 	// create it.
 	existing bool
-	// parent is the symbol of the resource the template nests it in, or names
-	// as its parent; empty where only its type and name can say.
+	// parent is the local symbol of the resource the template nests it in, or
+	// names as its parent; empty where only its type and name can say.
 	parent string
 	// id is the resource's identity, as a reference matches it.
 	id identity
+	// nested is the template a Microsoft.Resources/deployments resource
+	// deploys, read as resources of the graph; module the Azure Verified
+	// Modules module it deploys as one node. Each is nil where the resource
+	// is neither.
+	nested *template
+	module *avmModule
+	// telemetry reports the resource by which a module sends its telemetry,
+	// which is no node; aliased an existing resource read as the resource
+	// another template of its scope declares, which is no node of its own.
+	telemetry, aliased bool
 }
 
 // consumed are the members of a resource the reader reads into its node's
@@ -241,28 +351,17 @@ var consumed = []string{"type", "apiVersion", "name", "condition", "copy", "depe
 	"parent", "resources", "comments", "subscriptionId", "resourceGroup"}
 
 // template reads the template whose top-level object is top, held in file at
-// the JSON pointer at, normalising its resources.
-func (r *reader) template(file, at string, top obj) *template {
-	t := &template{file: file, at: at}
-	version, _ := text(top.exact("languageVersion"))
-	t.v2 = version == "2.0"
-	t.params, _ = objectOf(top.exact("parameters"))
-	t.defs, _ = objectOf(top.exact("definitions"))
-	t.outputs, _ = objectOf(top.exact("outputs"))
-	vars, _ := objectOf(top.exact("variables"))
-	for _, e := range vars {
-		if e.Key != "copy" {
-			t.vars = append(t.vars, e)
-			continue
-		}
-		loops, _ := arrayOf(e.Value)
-		for _, loop := range loops {
-			l, _ := objectOf(loop)
-			if name, ok := text(l.get("name")); ok {
-				t.loopVars = append(t.loopVars, name)
-			}
-		}
+// the JSON pointer at, normalising its resources. nest says how a nested
+// template is deployed, nil for the root.
+func (r *reader) template(file, at string, top obj, nest *nesting) *template {
+	t := header(file, at, top)
+	if nest != nil {
+		t.nestUnder(nest)
+	} else {
+		t.family = &family{}
+		r.families = append(r.families, t.family)
 	}
+	t.family.members = append(t.family.members, t)
 
 	resources := top.exact("resources")
 	used := map[string]bool{}
@@ -281,6 +380,31 @@ func (r *reader) template(file, at string, top obj) *template {
 		}
 	}
 	t.identify()
+	return t
+}
+
+// header returns the template whose top-level object is top, held in file at
+// the JSON pointer at, with its parameters, variables, type definitions and
+// outputs and none of its resources.
+func header(file, at string, top obj) *template {
+	t := &template{file: file, at: at, v2: isTwoZero(top)}
+	t.params, _ = objectOf(top.exact("parameters"))
+	t.defs, _ = objectOf(top.exact("definitions"))
+	t.outputs, _ = objectOf(top.exact("outputs"))
+	vars, _ := objectOf(top.exact("variables"))
+	for _, e := range vars {
+		if e.Key != "copy" {
+			t.vars = append(t.vars, e)
+			continue
+		}
+		loops, _ := arrayOf(e.Value)
+		for _, loop := range loops {
+			l, _ := objectOf(loop)
+			if name, ok := text(l.get("name")); ok {
+				t.loopVars = append(t.loopVars, name)
+			}
+		}
+	}
 	return t
 }
 
@@ -309,7 +433,7 @@ func (r *reader) resource(t *template, raw json.RawMessage, at, symbol string, p
 	if parent != nil {
 		res.names = append(append([]json.RawMessage(nil), parent.names...), o.get("name"))
 		res.nameAt = append(append([]string(nil), parent.nameAt...), at+importer.Pointer("name"))
-		res.parent = parent.symbol
+		res.parent = parent.local
 		if !strings.HasPrefix(strings.ToLower(typ), strings.ToLower(parent.typ)+"/") {
 			res.typ = parent.typ + "/" + typ
 		}
@@ -327,10 +451,11 @@ func (r *reader) resource(t *template, raw json.RawMessage, at, symbol string, p
 			res.body = append(res.body, e)
 		}
 	}
-	res.symbol = symbol
-	if res.symbol == "" {
-		res.symbol = importer.UniqueKey(used, t.derivedSymbol(res))
+	res.local = symbol
+	if res.local == "" {
+		res.local = importer.UniqueKey(used, t.derivedSymbol(res))
 	}
+	res.symbol = t.prefix + res.local
 	t.resources = append(t.resources, res)
 
 	nested := o.get("resources")
@@ -389,39 +514,72 @@ func (t *template) derivedSymbol(res *resource) string {
 	return res.typ[strings.LastIndex(res.typ, "/")+1:]
 }
 
-// node returns the graph node of res.
+// node returns the graph node of res in t.
 func (r *reader) node(t *template, res *resource) *cloudimport.Node {
-	l := r.lowerer(t, res)
-	n := l.build()
-	if res.copy != nil {
-		n.Repeat = r.repetition(t, res, l)
-	}
+	n := r.lowererAt(t, res, -1, 0).build()
+	n.Repeat = r.repetition(t, res)
 	r.linkedSource(t, res)
 	return n
 }
 
 // build returns the node of the lowerer's resource, lowered at the copy
-// index the lowerer holds.
+// indexes the lowerer and the lowerers it reads through hold. A node of a
+// flattened template takes, beside its own, the condition, the dependencies
+// and, where it states none of its own, the scope of each
+// Microsoft.Resources/deployments resource deploying that template; a
+// dependency on a resource whose template is flattened is a dependency on
+// each node that template yields.
 func (l *lowerer) build() *cloudimport.Node {
 	res := l.res
 	n := &cloudimport.Node{ID: res.symbol, Type: res.typ, APIVersion: res.apiVersion, Form: cloudimport.FormRaw,
 		Existing: res.existing, Source: l.t.file + "#" + res.at}
-	n.Name = l.name()
-	n.Body = l.body()
+	if res.module != nil {
+		l.moduleNode(n)
+	} else {
+		n.Name = l.name()
+		n.Body = l.body()
+	}
 	n.Parent = l.t.parentOf(res)
 	n.Scope = l.scopeText()
 	l.settle(res.at)
-	n.Condition = l.condition()
+	n.Condition = l.conditions()
 	n.DependsOn = l.dependencies()
+	for v := l.via; v != nil; v = v.via {
+		if n.Scope == "" {
+			n.Scope = v.scopeText()
+			v.settle(v.res.at)
+		}
+		n.DependsOn = append(n.DependsOn, v.dependencies()...)
+	}
+	n.DependsOn = l.r.flatDependencies(n.ID, n.DependsOn)
 	return n
 }
 
-// repetition returns how res repeats: one instance per index of a literal
-// count, the instance lowered with copyIndex() read as its index; a count the
-// template computes when it deploys holds no keys.
-func (r *reader) repetition(t *template, res *resource, base *lowerer) *cloudimport.Repetition {
-	loop, _ := objectOf(res.copy)
-	name, _ := text(loop.get("name"))
+// repetition returns how res in t repeats: through its own copy loop, or
+// through that of a Microsoft.Resources/deployments resource deploying t. One
+// loop of a literal count repeats it once per index, the instance lowered
+// with that loop's copyIndex() read as its index; a count the template
+// computes when it deploys, or loops at more than one level, hold no keys.
+func (r *reader) repetition(t *template, res *resource) *cloudimport.Repetition {
+	level, loops := -1, 0
+	for i, f := range t.frames {
+		if f.res.copy != nil {
+			level, loops = i, loops+1
+		}
+	}
+	loopRes := res
+	if res.copy != nil {
+		level, loops = len(t.frames), loops+1
+	} else if level >= 0 {
+		loopRes = t.frames[level].res
+	}
+	switch {
+	case loops == 0:
+		return nil
+	case loops > 1:
+		return &cloudimport.Repetition{}
+	}
+	loop, _ := objectOf(loopRes.copy)
 	count, ok := literalCount(loop.get("count"))
 	if !ok {
 		return &cloudimport.Repetition{}
@@ -435,8 +593,7 @@ func (r *reader) repetition(t *template, res *resource, base *lowerer) *cloudimp
 		if err != nil {
 			return nil
 		}
-		l := base.instance(name, index)
-		return l.build()
+		return r.lowererAt(t, res, level, index).build()
 	}}
 }
 

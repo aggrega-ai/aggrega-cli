@@ -20,7 +20,8 @@ func lowered(t *testing.T, variables, properties string) (*cloudimport.Node, []s
 	g, diags := readTemplate(oneZero(variables, `
 		{"type": "Microsoft.Storage/storageAccounts", "apiVersion": "2023-01-01", "name": "stcore"},
 		{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "inner",
-			"properties": {"mode": "Incremental", "template": {"resources": [], "outputs": {}}}},
+			"properties": {"mode": "Incremental", "template": {"resources": [], "outputs": {"endpoint": {
+				"type": "string", "value": "[reference('stcore').primaryEndpoints.web]"}}}}},
 		{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "web", "properties": {`+properties+`}}`))
 	if g == nil {
 		t.Fatalf("no graph: %+v", diags)
@@ -114,8 +115,9 @@ func TestLowerConcatAndFormatCompose(t *testing.T) {
 // TestLowerReferencesNameAResourceAndAnAttribute reads reference,
 // resourceInfo and resourceId as references: reference reads below the
 // resource's properties unless asked for the full resource, the outputs of a
-// Microsoft.Resources/deployments resource below its properties, and an id or
-// a resourceId is the resource's identifier.
+// Microsoft.Resources/deployments resource below its properties — the value
+// the output holds, where the template it deploys is read — and an id or a
+// resourceId is the resource's identifier.
 func TestLowerReferencesNameAResourceAndAnAttribute(t *testing.T) {
 	t.Parallel()
 	web, diags := lowered(t, "", `
@@ -141,8 +143,8 @@ func TestLowerReferencesNameAResourceAndAnAttribute(t *testing.T) {
 		{"full", ref("stcore", "identity", "principalId")},
 		{"id", ref("stcore")},
 		{"resourceId", ref("stcore")},
-		{"output", ref("inner", "outputs", "endpoint", "value")},
-		{"fullOutput", ref("inner", "outputs", "endpoint", "value")},
+		{"output", ref("stcore", "properties", "primaryEndpoints", "web")},
+		{"fullOutput", ref("stcore", "properties", "primaryEndpoints", "web")},
 		{"whole", cloudimport.Opaque{Text: "[reference('inner', '2022-09-01', 'Full')]", Target: "arm"}},
 		{"computed", cloudimport.Opaque{Text: "[reference(parameters('name')).primaryEndpoints.blob]", Target: "arm"}},
 	} {

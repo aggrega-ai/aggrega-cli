@@ -42,9 +42,10 @@ func (r *reader) parameters(t *template) []cloudimport.Parameter {
 	return out
 }
 
-// paramType returns the type of the template's parameter name, false where
-// the template declares none.
+// paramType returns the type of the parameter name the template's
+// expressions read, false where none is declared.
 func (t *template) paramType(name string) (string, bool) {
+	t = t.scope()
 	declared, ok := t.param(name)
 	if !ok {
 		return "", false

@@ -1,6 +1,7 @@
 # Test data for the ARM template reader
 
-Every template here is written for these tests; none is published by Microsoft.
+Every template here is written for these tests, except those under `avm/`, which Microsoft publishes (see
+[Azure Verified Modules](#azure-verified-modules)).
 
 | Path | What it holds |
 |---|---|
@@ -16,3 +17,47 @@ Every template here is written for these tests; none is published by Microsoft.
 | `refused/experimental.json` | A template of an experimental language version. |
 | `refused/keyed-resources.json` | A template of language version 1.0 whose resources are keyed by name, as only 2.0 keys them. |
 | `refused/multiline.json` | A template holding a raw line break inside a string, which JSON does not admit. |
+
+## Azure Verified Modules
+
+Each `avm/<module>/<version>/main.json` is the compiled template of an Azure Verified Modules module as the Microsoft
+Container Registry serves it: the `application/vnd.ms.bicep.module.layer.v1+json` layer of the image
+`mcr.microsoft.com/bicep/avm/res/<module>:<version>`, byte for byte. The modules are built from the
+[Azure/bicep-registry-modules](https://github.com/Azure/bicep-registry-modules) repository, under `avm/res/<module>`.
+
+| Path | Module, version | Layer digest |
+|---|---|---|
+| `avm/db-for-postgre-sql/flexible-server/0.9.1/main.json` | `avm/res/db-for-postgre-sql/flexible-server` 0.9.1: its telemetry named by the readable prefix `46d3xbcp.res.dbforpostgresql-flexibleserver`, written literally | `sha256:b6626d8b322ae6cc1c2bac4749a3224e91c4b59a69e1a4c42270873c90ec9174` |
+| `avm/db-for-postgre-sql/flexible-server/0.16.2/main.json` | `avm/res/db-for-postgre-sql/flexible-server` 0.16.2: its telemetry named through the variable `telemetryIdPrefix`, holding the hashed prefix `46d3xbcp.res.568937f`; its own child modules send telemetry too, stating no version | `sha256:1f67e24aa4c91515f37b4d7351c7d3602c72ec7e58acdc2fa66354f7d2d09e9b` |
+| `avm/kusto/cluster/0.11.1/main.json` | `avm/res/kusto/cluster` 0.11.1, an Azure Data Explorer cluster: a hashed prefix the module index lists, of a resource type no arm Recipe of the catalog realizes | `sha256:35808cafc1fd44138bd93d6decf37cbcf22132a2b5765aaa492a095355e297e8` |
+| `avm/maps/account/0.2.2/main.json` | `avm/res/maps/account` 0.2.2, an Azure Maps account: a readable prefix the module index does not list, of a resource type no arm Recipe of the catalog realizes | `sha256:4c19b24306a528cb252912d7d7a71b52ad30b47438ebc19d03200be48613e2cb` |
+
+`avm/db-for-postgre-sql/flexible-server/main/main.json` is not published: it is the 0.16.2 layer with one edit, the
+version its telemetry resource's name states, `replace('0.16.2', '.', '-')`, written as `replace('-..--..-', '.', '-')`,
+the placeholder a module built from its source states in place of a version.
+
+These files are licensed under the MIT License:
+
+```
+MIT License
+
+Copyright (c) Microsoft Corporation.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE
+```

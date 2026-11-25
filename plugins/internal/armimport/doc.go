@@ -15,7 +15,11 @@
 // list function reads, or text the template evaluates when it deploys, kept as
 // the expression it is. A reference is matched to the resource it names by
 // the canonical print of its type and name, so one written through resourceId,
-// a variable, concat or format names the resource alike.
+// a variable, concat or format names the resource alike. A template another
+// deploys, held inline or linked by a relative path, is read as the resources
+// it deploys, and an Azure Verified Modules resource module as one node of
+// the module form, recognised by the Bicep metadata of its template and the
+// telemetry it sends.
 //
 // The table is read from the hub's arm Recipes themselves — the resource or
 // Azure Verified Modules module each writes, the Component it implements with

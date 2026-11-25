@@ -5,6 +5,7 @@ package armimport
 
 import (
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -22,9 +23,12 @@ type identity struct {
 	sub, group string
 }
 
-// param returns the declared name of the template's parameter name, matched
-// as Azure Resource Manager matches it: exactly, else regardless of case.
+// param returns the declared name of the parameter name the template's
+// expressions read — its own, or for a template evaluated in the outer scope
+// the scope's — matched as Azure Resource Manager matches it: exactly, else
+// regardless of case.
 func (t *template) param(name string) (string, bool) {
+	t = t.scope()
 	if t.params.exact(name) != nil {
 		return name, true
 	}
@@ -36,10 +40,11 @@ func (t *template) param(name string) (string, bool) {
 	return "", false
 }
 
-// variable returns the declared name and the value of the template's
-// variable name, matched as a parameter is; false where the template declares
-// none, or a variable copy loop computes it.
+// variable returns the declared name and the value of the variable name the
+// template's expressions read, matched as a parameter is; false where the
+// template declares none, or a variable copy loop computes it.
 func (t *template) variable(name string) (string, json.RawMessage, bool) {
+	t = t.scope()
 	for _, loop := range t.loopVars {
 		if strings.EqualFold(loop, name) {
 			return "", nil, false
@@ -57,35 +62,77 @@ func (t *template) variable(name string) (string, json.RawMessage, bool) {
 }
 
 // canonical returns n with every variable it reads written in place where the
-// variable holds text or a scalar, so two expressions reading one value
-// through a variable and directly print alike.
+// variable holds text or a scalar, and every parameter of a nested template
+// the value it takes, so two expressions reading one value through a
+// variable, a parameter and directly print alike.
 func (t *template) canonical(n armexpr.Node) armexpr.Node {
 	return t.inline(n, nil)
 }
 
 // inline returns n with every variable it reads written in place where the
-// variable holds text or a scalar, and each copyIndex call whose index index
-// knows written as that index. A variable reading itself, through others or
-// directly, is left as the call reading it.
-func (t *template) inline(n armexpr.Node, index func(armexpr.Call) (int, bool)) armexpr.Node {
-	var inside []string
-	budget := maxInlined
+// variable holds text or a scalar; every parameter of a nested template
+// written as the text or scalar the resource deploying it gives it, else as
+// its default, read in the template that writes it; and, where l is the
+// lowerer of t, each copyIndex call whose index l knows written as that index.
+// A variable or a parameter reading itself, through others or directly, is
+// left as the call reading it, and so is a parameter of the root template.
+func (t *template) inline(n armexpr.Node, l *lowerer) armexpr.Node {
+	return t.inlineWith(n, l, &inlining{budget: maxInlined})
+}
+
+// inlining is the state of one expression being written with what it reads
+// in place: the variables and parameters it may still write, and those being
+// written.
+type inlining struct {
+	budget int
+	inside []inlined
+}
+
+// inlined is a variable, or a parameter, of a template being written in
+// place.
+type inlined struct {
+	t     *template
+	param bool
+	name  string
+}
+
+// enter records that k is being written in place, false where it is
+// already: it reads itself.
+func (st *inlining) enter(k inlined) bool {
+	if st.budget == 0 || slices.Contains(st.inside, k) {
+		return false
+	}
+	st.budget--
+	st.inside = append(st.inside, k)
+	return true
+}
+
+// leave records that the variable or parameter last entered is written.
+func (st *inlining) leave() {
+	st.inside = st.inside[:len(st.inside)-1]
+}
+
+// inlineWith returns n inlined as [template.inline] says, sharing st with the
+// expressions it writes in place.
+func (t *template) inlineWith(n armexpr.Node, l *lowerer, st *inlining) armexpr.Node {
 	var walk func(n armexpr.Node) armexpr.Node
 	walk = func(n armexpr.Node) armexpr.Node {
 		switch v := n.(type) {
 		case armexpr.Call:
 			if name, ok := oneTextArgument(v, "variables"); ok {
-				if budget == 0 {
-					return v
-				}
-				budget--
-				if replaced, ok := t.inlined(name, &inside, walk); ok {
+				if replaced, ok := t.inlined(name, st, walk); ok {
 					return replaced
 				}
 				return v
 			}
-			if v.Namespace == "" && strings.EqualFold(v.Name, "copyIndex") && index != nil {
-				if i, ok := index(v); ok {
+			if name, ok := oneTextArgument(v, "parameters"); ok {
+				if replaced, ok := t.bound(name, l, st); ok {
+					return replaced
+				}
+				return v
+			}
+			if v.Namespace == "" && strings.EqualFold(v.Name, "copyIndex") && l != nil {
+				if i, ok := l.copyIndex(v); ok {
 					return armexpr.Int{Text: strconv.Itoa(i), At: v.At}
 				}
 			}
@@ -107,25 +154,38 @@ func (t *template) inline(n armexpr.Node, index func(armexpr.Call) (int, bool)) 
 	return walk(n)
 }
 
-// maxInlined bounds the variables one expression has written in place, so
-// variables reading each other several times cannot grow it without bound;
-// past it a variable is left as the call reading it.
+// maxInlined bounds the variables and parameters one expression has written
+// in place, so ones reading each other several times cannot grow it without
+// bound; past it each is left as the call reading it.
 const maxInlined = 1000
 
 // inlined returns the expression the variable name holds, written in place of
 // the call reading it, false where it holds an object, an array or text that
 // does not parse, or is being written in place already.
-func (t *template) inlined(name string, inside *[]string, walk func(armexpr.Node) armexpr.Node) (armexpr.Node,
+func (t *template) inlined(name string, st *inlining, walk func(armexpr.Node) armexpr.Node) (armexpr.Node,
 	bool) {
 	key, raw, found := t.variable(name)
 	if !found {
 		return nil, false
 	}
-	for _, k := range *inside {
-		if k == key {
-			return nil, false
-		}
+	n, ok := expression(raw)
+	if !ok {
+		return nil, false
 	}
+	if s, isText := text(raw); !isText || !armexpr.IsExpression(s) {
+		return n, true
+	}
+	if !st.enter(inlined{t: t.scope(), name: key}) {
+		return nil, false
+	}
+	defer st.leave()
+	return walk(n), true
+}
+
+// expression returns the JSON scalar raw as an expression: text as the string
+// it is or the expression it holds, an integer, true, false or null; false
+// for an object, an array, a fraction, and text that does not parse.
+func expression(raw json.RawMessage) (armexpr.Node, bool) {
 	switch jsonKind(raw) {
 	case '"':
 		s, _ := text(raw)
@@ -133,12 +193,7 @@ func (t *template) inlined(name string, inside *[]string, walk func(armexpr.Node
 			return armexpr.String{Value: armexpr.LiteralText(s)}, true
 		}
 		n, err := armexpr.Parse(s)
-		if err != nil {
-			return nil, false
-		}
-		*inside = append(*inside, key)
-		defer func() { *inside = (*inside)[:len(*inside)-1] }()
-		return walk(n), true
+		return n, err == nil
 	case 't', 'f', 'n':
 		literal := strings.TrimSpace(string(raw))
 		return armexpr.Call{Name: literal}, literal == "true" || literal == "false" || literal == "null"
@@ -336,13 +391,19 @@ func (t *template) bySymbol(name string) *resource {
 	if !t.v2 {
 		return nil
 	}
+	return t.byLocal(name)
+}
+
+// byLocal returns the resource of the template whose local symbol is name,
+// exactly, else regardless of case; nil where there is none.
+func (t *template) byLocal(name string) *resource {
 	for _, res := range t.resources {
-		if res.symbol == name {
+		if res.local == name {
 			return res
 		}
 	}
 	for _, res := range t.resources {
-		if strings.EqualFold(res.symbol, name) {
+		if strings.EqualFold(res.local, name) {
 			return res
 		}
 	}
@@ -361,14 +422,15 @@ func (t *template) resourceOf(id string) *resource {
 }
 
 // match returns the symbol and type of the first resource, in the order the
-// template writes them, of type typ, the name segs and the scope sub and
-// group. Where none is, it returns the identifier of the resource the
-// template reads and does not declare: the resourceId call naming it, with
-// scope its subscription and resource group arguments, printed canonically.
+// template writes them, else in the order the other templates of its family
+// write them, of type typ, the name segs and the scope sub and group. Where
+// none is, it returns the identifier of the resource the template reads and
+// does not declare: the resourceId call naming it, with scope its
+// subscription and resource group arguments, printed canonically.
 func (t *template) match(typ string, segs [][]armexpr.Node, sub, group string, scope []armexpr.Node) (string,
 	string) {
 	want := printed(segs)
-	if res := t.first(func(res *resource) bool {
+	if res := t.firstAcross(func(res *resource) bool {
 		return strings.EqualFold(res.typ, typ) && sameText(res.id.segs, want) && strings.EqualFold(res.id.sub, sub) &&
 			strings.EqualFold(res.id.group, group)
 	}); res != nil {
@@ -493,7 +555,8 @@ func literalSegment(seg []armexpr.Node) (string, bool) {
 // byLiteral returns the symbol and type of the resource the literal text s
 // names: under 2.0 a symbolic name; where loops is set, the name of a
 // resource's copy loop; the full name of a resource of the template's own
-// scope; or a type and a name spelled together. Where it names none, the
+// scope, its own first and then its family's; or a type and a name spelled
+// together. Where it names none, the
 // identifier is s printed as a string literal, quoted, which no symbol of a
 // node takes, or the resourceId call a type and name spelled together name;
 // known reports that s names a resource of the template or spells a type and
@@ -513,7 +576,7 @@ func (t *template) byLiteral(s string, loops bool) (id, typ string, known bool) 
 	}
 	segs := segments([]armexpr.Node{armexpr.String{Value: s}})
 	want := printed(segs)
-	if res := t.first(func(res *resource) bool {
+	if res := t.firstAcross(func(res *resource) bool {
 		return res.id.sub == "" && res.id.group == "" && sameText(res.id.segs, want)
 	}); res != nil {
 		return res.symbol, res.typ, true
@@ -572,7 +635,10 @@ func (t *template) scopeTarget(res *resource) (string, bool) {
 // declare it. It is empty for a resource of none of these.
 func (t *template) parentOf(res *resource) string {
 	if res.parent != "" {
-		return res.parent
+		if p := t.byLocal(res.parent); p != nil {
+			return p.symbol
+		}
+		return t.prefix + res.parent
 	}
 	if res.scope != nil {
 		if id, ok := t.scopeTarget(res); ok {

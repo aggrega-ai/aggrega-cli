@@ -53,15 +53,24 @@ func (o obj) exact(key string) json.RawMessage {
 // matches a member's name: exactly, else regardless of case, the first in
 // key order; nil where o has none.
 func (o obj) get(key string) json.RawMessage {
-	if v := o.exact(key); v != nil {
-		return v
+	_, v := o.member(key)
+	return v
+}
+
+// member returns the key and the value of the member of o named key, matched
+// as get matches it; empty and nil where o has none.
+func (o obj) member(key string) (string, json.RawMessage) {
+	for _, e := range o {
+		if e.Key == key {
+			return e.Key, e.Value
+		}
 	}
 	for _, e := range o {
 		if strings.EqualFold(e.Key, key) {
-			return e.Value
+			return e.Key, e.Value
 		}
 	}
-	return nil
+	return "", nil
 }
 
 // jsonKind returns the first character of raw past any whitespace: '{', '[',
@@ -150,13 +159,17 @@ type lowerer struct {
 	// quiet discards what lowering reports: an instance of a repeated
 	// resource is lowered from what its resource reported once already.
 	quiet bool
-	// inside names the variables being lowered, so a variable reading itself
-	// through others is read as opaque rather than followed for ever.
+	// inside names the variables and parameters being lowered, so one reading
+	// itself through others is read as opaque rather than followed for ever.
 	inside []string
 	// spent counts the variables followed and the property copies written,
 	// shared by every lowerer of one value, so a template whose variables or
 	// loops multiply each other cannot grow the graph without bound.
 	spent *int
+	// via is the lowerer of the Microsoft.Resources/deployments resource
+	// deploying the lowerer's template, through which the template's
+	// parameters are read; nil for the root template.
+	via *lowerer
 }
 
 // maxExpansion bounds the variables one lowerer follows and the property
@@ -173,16 +186,10 @@ func (l *lowerer) spend(n int) bool {
 	return true
 }
 
-// lowerer returns the lowerer of res in t.
+// lowerer returns the lowerer of res in t; res is nil for t's parameters and
+// outputs.
 func (r *reader) lowerer(t *template, res *resource) *lowerer {
-	return &lowerer{r: r, t: t, res: res, spent: new(int)}
-}
-
-// instance returns the lowerer of the copy at index of the lowerer's
-// resource, repeated by the loop named name.
-func (l *lowerer) instance(name string, index int) *lowerer {
-	loops := append([]loopIndex{{name: name, index: index, resource: true}}, l.loops...)
-	return &lowerer{r: l.r, t: l.t, res: l.res, loops: loops, quiet: true, spent: new(int)}
+	return r.lowererAt(t, res, -1, 0)
 }
 
 // withLoop returns l with the index of the property loop named name known.
@@ -427,8 +434,10 @@ func (l *lowerer) propertyLoops(raw json.RawMessage, at string) []cloudimport.Pr
 // with a doubled bracket is the literal text without the first bracket, a
 // string Azure Resource Manager does not read as an expression is its
 // literal, and an expression is lowered; one reading a variable that holds an
-// object or an array is that object or array. An expression that does not
-// parse is not carried, with a value-not-carried warning.
+// object or an array is that object or array, and one reading a parameter of a
+// nested template is the value the parameter takes, as [lowerer.parameter]
+// reads it. An expression that does not parse is not carried, with a
+// value-not-carried warning.
 func (l *lowerer) text(s, at string) cloudimport.Prop {
 	if !armexpr.IsExpression(s) {
 		return cloudimport.Prop{Value: str(armexpr.LiteralText(s))}
@@ -442,7 +451,12 @@ func (l *lowerer) text(s, at string) cloudimport.Prop {
 		if key, raw, found := l.t.variable(name); found && (jsonKind(raw) == '{' || jsonKind(raw) == '[') &&
 			l.spend(1) && l.enter(key) {
 			defer l.leave()
-			return l.prop(raw, l.t.at+importer.Pointer("variables", key))
+			return l.prop(raw, l.t.scope().at+importer.Pointer("variables", key))
+		}
+	}
+	if name, ok := oneTextArgument(n, "parameters"); ok {
+		if p, _, handled := l.parameter(name, nil); handled {
+			return p
 		}
 	}
 	return cloudimport.Prop{Value: l.expr(n)}
@@ -504,8 +518,8 @@ func (l *lowerer) call(c armexpr.Call) cloudimport.Value {
 	switch strings.ToLower(c.Name) {
 	case "parameters":
 		if name, ok := oneTextArgument(c, "parameters"); ok {
-			if declared, ok := l.t.param(name); ok {
-				return cloudimport.Param{Name: declared}
+			if p, raw, handled := l.parameter(name, nil); handled {
+				return l.single(p, raw, c)
 			}
 		}
 		return l.opaque(c)
@@ -577,6 +591,12 @@ func (l *lowerer) access(n armexpr.Node) cloudimport.Value {
 		if name, ok := oneTextArgument(root, "variables"); ok {
 			return l.variable(name, path, n)
 		}
+	case "parameters":
+		if name, ok := oneTextArgument(root, "parameters"); ok {
+			if p, raw, handled := l.parameter(name, path); handled {
+				return l.single(p, raw, n)
+			}
+		}
 	}
 	if armexpr.IsListFunction(root.Name) {
 		return l.credential(root)
@@ -596,7 +616,7 @@ func (l *lowerer) variable(name string, path []string, whole armexpr.Node) cloud
 		return l.opaque(whole)
 	}
 	defer l.leave()
-	at := l.t.at + importer.Pointer("variables", key)
+	at := l.t.scope().at + importer.Pointer("variables", key)
 	for _, seg := range path {
 		raw = descend(raw, seg)
 		at += importer.Pointer(seg)
@@ -765,7 +785,7 @@ func (l *lowerer) textPart(v cloudimport.Value) (cloudimport.Value, bool) {
 		}
 		return str(strings.TrimSpace(string(v.JSON))), true
 	case cloudimport.Param:
-		typ, _ := l.t.paramType(v.Name)
+		typ, _ := l.r.root.paramType(v.Name)
 		return v, typ != "array" && typ != "object"
 	case cloudimport.Opaque:
 		n, err := armexpr.Parse(v.Text)
@@ -860,7 +880,8 @@ func (l *lowerer) copyIndex(c armexpr.Call) (int, bool) {
 // resourceId names the resource's identifier. A reference reads the attribute
 // at path — its properties where it reads the resource's properties, as
 // reference does unless asked for the full resource; the outputs of a
-// Microsoft.Resources/deployments resource are read below its properties —
+// Microsoft.Resources/deployments resource are read below its properties, and
+// those of one whose template is flattened are the value the output holds —
 // and its id names the identifier. A call naming no resource it can tell, a
 // whole resource object, or an output of a template the import does not read
 // is deploy-time text.
@@ -912,6 +933,9 @@ func (l *lowerer) refer(c armexpr.Call, whole armexpr.Node, path []string) cloud
 	if len(attr) == 0 {
 		return l.opaque(whole)
 	}
+	if res := l.t.resourceOf(id); res != nil && res.nested != nil {
+		return l.output(res, attr, whole)
+	}
 	return cloudimport.Ref{Node: id, Attr: attr}
 }
 
@@ -943,7 +967,7 @@ func (l *lowerer) credential(c armexpr.Call) cloudimport.Value {
 // variable holding an object or a list — is the credential that function
 // reads, so no credential is carried as text.
 func (l *lowerer) opaque(n armexpr.Node) cloudimport.Value {
-	inlined := l.t.inline(n, l.copyIndex)
+	inlined := l.t.inline(n, l)
 	if list, ok := l.t.listCallIn(inlined); ok {
 		return l.credential(list)
 	}
@@ -1045,10 +1069,10 @@ func andList(names []string) string {
 // resourceGroup, and a scope naming no resource of the template.
 func (l *lowerer) scopeText() string {
 	var parts []string
-	if l.res.subscription != nil {
+	if l.res.id.sub != "" {
 		parts = append(parts, "subscription "+l.t.valueText(l.res.subscription))
 	}
-	if l.res.group != nil {
+	if l.res.id.group != "" {
 		parts = append(parts, "resource group "+l.t.valueText(l.res.group))
 	}
 	if l.res.scope != nil {

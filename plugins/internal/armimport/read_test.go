@@ -353,7 +353,8 @@ func dump(g *cloudimport.Graph) string {
 // TestSourcesAreClassifiedRootedAndLinked imports a directory: the entry
 // template, the template it links by a relative path, a parameters file and a
 // JSON file of the directory that is no template. The entry template is the
-// root, the linked template and the parameters file are read with it, and the
+// root, the linked template and the parameters file are read with it — the
+// root's resources and the linked template's are the graph's nodes — and the
 // other file is named not read.
 func TestSourcesAreClassifiedRootedAndLinked(t *testing.T) {
 	t.Parallel()
@@ -371,13 +372,8 @@ func TestSourcesAreClassifiedRootedAndLinked(t *testing.T) {
 	if want := []string{"notes.json"}; !slices.Equal(g.NotRead, want) {
 		t.Errorf("not read %v, want %v", g.NotRead, want)
 	}
-	if node(t, g, "network").Type != deploymentsType {
-		t.Errorf("the root template's resources are not the graph's nodes")
-	}
-	rule := at(t, node(t, g, "vaults"), "properties", "networkAcls", "virtualNetworkRules", "0", "id")
-	if want := (cloudimport.Ref{Node: "network", Attr: []string{"outputs", "subnetId", "value"}}); !reflect.DeepEqual(rule, want) {
-		t.Errorf("the output the vault reads is %+v, want %+v", rule, want)
-	}
+	node(t, g, "vaults")
+	node(t, g, "network/vnet-core")
 	if len(g.Params) != 1 || !reflect.DeepEqual(g.Params[0].Supplied, lit(`"kv-core"`)) {
 		t.Errorf("the parameters are %+v, want vaultName supplied by the parameters file", g.Params)
 	}
