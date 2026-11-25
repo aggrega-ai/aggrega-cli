@@ -280,8 +280,8 @@ func TestArmImportGoldenWrappedModule(t *testing.T) {
 	}
 	holds(t, "the wrapped module's Recipe", recipe, "kind: bicep-module-oci",
 		"url: oci://mcr.microsoft.com/bicep/avm/res/kusto/cluster", "0.11.1", "enableTelemetry: false",
-		"outputs_uri_value: \"[reference('{{ .locals.symbol }}').outputs.uri.value]\"")
-	holds(t, "the Aggregate", fileText(t, out, "aggregate.yaml"), "- in: \"CLUSTER_URI\"")
+		"outputs_resource_id_value: \"[reference('{{ .locals.symbol }}').outputs.resourceId.value]\"")
+	holds(t, "the Aggregate", fileText(t, out, "aggregate.yaml"), "- in: \"CLUSTER_ID\"")
 }
 
 // containerAppModule is a template in the shape Bicep compiles an Azure

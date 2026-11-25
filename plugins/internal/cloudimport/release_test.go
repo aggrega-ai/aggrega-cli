@@ -4,11 +4,11 @@
 package cloudimport
 
 import (
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
 
@@ -427,7 +427,7 @@ func TestReleaseEntryNamesWhatATypeMappedByAnOverrideWrites(t *testing.T) {
 	if strings.Contains(manifest, "cache: arm/") {
 		t.Errorf("the Manifest names a realization the host maps:\n%s", manifest)
 	}
-	if _, again, _, _, _ := released(t, in, f, g); again == "" {
-		t.Error("the second run drafts no Aggregate")
+	if _, _, again, _, _ := released(t, in, f, g); again != release {
+		t.Errorf("a second run writes the Release\n%s\nthe first wrote\n%s", again, release)
 	}
 }

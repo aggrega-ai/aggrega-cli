@@ -130,13 +130,7 @@ func TestArmWrappedModuleBuildsFromALoopbackRegistry(t *testing.T) {
 
 	built := mustReadFile(t, filepath.Join(root, "dist/arm/arm-template.json"))
 	resources := armResources(t, built)
-	if got, want := slices.Sorted(func(yield func(string) bool) {
-		for k := range resources {
-			if !yield(k) {
-				return
-			}
-		}
-	}), []string{"Cluster", "SiteDocs"}; !slices.Equal(got, want) {
+	if got, want := sortedKeys(resources), []string{"Cluster", "SiteDocs"}; !slices.Equal(got, want) {
 		t.Fatalf("the template deploys %v, want %v", got, want)
 	}
 	wrapper := resources["Cluster"]

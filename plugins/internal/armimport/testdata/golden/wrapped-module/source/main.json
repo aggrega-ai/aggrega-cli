@@ -2,7 +2,7 @@
   // An Azure Data Explorer cluster deployed through the Azure Verified Modules
   // module, whose compiled template the test writes in place of the $avm
   // member: no row maps its resource type, so its Recipe sources the module
-  // whole, with its telemetry off, and provides the module's uri output a
+  // whole, with its telemetry off, and provides the module's resourceId output a
   // worker container app reads into its environment.
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
@@ -23,7 +23,7 @@
             {
               "name": "ingest",
               "image": "ghcr.io/example/ingest:3.1.0",
-              "env": [ { "name": "CLUSTER_URI", "value": "[reference('cluster').outputs.uri.value]" } ]
+              "env": [ { "name": "CLUSTER_ID", "value": "[reference('cluster').outputs.resourceId.value]" } ]
             }
           ]
         }
@@ -47,6 +47,6 @@
     }
   ],
   "outputs": {
-    "clusterUri": { "type": "string", "value": "[reference('cluster').outputs.uri.value]" }
+    "clusterId": { "type": "string", "value": "[reference('cluster').outputs.resourceId.value]" }
   }
 }

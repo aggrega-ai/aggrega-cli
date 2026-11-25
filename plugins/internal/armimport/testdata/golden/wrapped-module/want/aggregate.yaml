@@ -1,6 +1,6 @@
 # Sources read: main.json.
 # Outputs of the source:
-#   - clusterUri: carried by the instance cluster, provides key outputs_uri_value
+#   - clusterId: carried by the instance cluster, provides key outputs_resource_id_value
 apiVersion: aggrega.ai/v1beta1
 kind: Aggregate
 metadata:
@@ -19,5 +19,5 @@ spec:
             target: cluster
             inject:
               env:
-                - in: "CLUSTER_URI"
-                  from: outputs_uri_value
+                - in: "CLUSTER_ID"
+                  from: outputs_resource_id_value

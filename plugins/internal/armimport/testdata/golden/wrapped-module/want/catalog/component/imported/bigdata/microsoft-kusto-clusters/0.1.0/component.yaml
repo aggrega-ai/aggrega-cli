@@ -23,6 +23,6 @@ spec:
       type: object
       properties:
         # read back: published under provides
-        # The source writing the resource gives no description of outputs.uri.value.
-        outputs_uri_value: { type: string }
+        # The source writing the resource gives no description of outputs.resourceId.value.
+        outputs_resource_id_value: { type: string }
       additionalProperties: false

@@ -148,13 +148,7 @@ func TestArmImportBuildsBack(t *testing.T) {
 	first := armBuildBack(t, hub, armTemplateSource(t, source))
 	template := mustReadFile(t, filepath.Join(first, "dist/arm/arm-template.json"))
 	resources := armResources(t, template)
-	if got, want := slices.Sorted(func(yield func(string) bool) {
-		for k := range resources {
-			if !yield(k) {
-				return
-			}
-		}
-	}), []string{"EventsMain", "SiteDocs", "Stdocs"}; !slices.Equal(got, want) {
+	if got, want := sortedKeys(resources), []string{"EventsMain", "SiteDocs", "Stdocs"}; !slices.Equal(got, want) {
 		t.Fatalf("the template deploys %v, want %v", got, want)
 	}
 	for _, absent := range []string{"virtualNetworks", "vnet-core", "elemetry", "46d3xbcp"} {
