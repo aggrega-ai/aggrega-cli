@@ -1,0 +1,36 @@
+{
+  // The entry template: it deploys the network template beside it, linked by
+  // a relative path, and reads the subnet ID the network template outputs.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "vaultName": { "type": "string" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "network",
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": { "relativePath": "modules/network.json" }
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "[parameters('vaultName')]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [ "network" ],
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "sku": { "family": "A", "name": "standard" },
+        "networkAcls": {
+          "virtualNetworkRules": [
+            { "id": "[reference('network').outputs.subnetId.value]" }
+          ]
+        }
+      }
+    }
+  ]
+}

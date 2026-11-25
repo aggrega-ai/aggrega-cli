@@ -1,0 +1,106 @@
+{
+  // A PostgreSQL flexible server holding one database, a storage account
+  // deployed where deployStorage is true, and a container app reading the
+  // server's address and the storage account's key.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "serverName": {
+      "type": "string",
+      "defaultValue": "pg-main",
+      "minLength": 3,
+      "maxLength": 63,
+      "metadata": { "description": "The name of the PostgreSQL flexible server." }
+    },
+    "location": { "type": "string", "defaultValue": "[resourceGroup().location]" },
+    "administratorPassword": { "type": "securestring" },
+    "environmentId": { "type": "string" },
+    "deployStorage": { "type": "bool", "defaultValue": true },
+    "skuName": {
+      "type": "string",
+      "defaultValue": "Standard_B1ms",
+      "allowedValues": [ "Standard_B1ms", "Standard_D2s_v3" ]
+    }
+  },
+  "variables": {
+    "databaseName": "appdb",
+    "appName": "[concat(parameters('serverName'), '-web')]",
+    "storageName": "[concat('st', uniqueString(resourceGroup().id))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.DBforPostgreSQL/flexibleServers",
+      "apiVersion": "2022-12-01",
+      "name": "[parameters('serverName')]",
+      "location": "[parameters('location')]",
+      "sku": { "name": "[parameters('skuName')]", "tier": "Burstable" },
+      "properties": {
+        "administratorLogin": "pgadmin",
+        "administratorLoginPassword": "[parameters('administratorPassword')]",
+        "version": "16"
+      },
+      "resources": [
+        {
+          /* the database, nested in its server */
+          "type": "databases",
+          "apiVersion": "2022-12-01",
+          "name": "[variables('databaseName')]",
+          "dependsOn": [ "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('serverName'))]" ],
+          "properties": { "charset": "UTF8", "collation": "en_US.utf8" }
+        }
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-01-01",
+      "name": "[variables('storageName')]",
+      "condition": "[parameters('deployStorage')]",
+      "location": "[parameters('location')]",
+      "kind": "StorageV2",
+      "sku": { "name": "Standard_LRS" }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('appName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.DBforPostgreSQL/flexibleServers/databases', parameters('serverName'), variables('databaseName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]",
+      ],
+      "properties": {
+        "environmentId": "[parameters('environmentId')]",
+        "configuration": { "ingress": { "external": true, "targetPort": 8080 } },
+        "template": {
+          "containers": [
+            {
+              "name": "web",
+              "image": "ghcr.io/example/web:1.4.2",
+              "env": [
+                {
+                  "name": "DB_HOST",
+                  "value": "[reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('serverName'))).fullyQualifiedDomainName]"
+                },
+                {
+                  "name": "DB_URL",
+                  "value": "[concat('postgres://', reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('serverName'))).fullyQualifiedDomainName, ':5432/', variables('databaseName'))]"
+                },
+                {
+                  "name": "STORAGE_KEY",
+                  "value": "[listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), '2023-01-01').keys[0].value]"
+                },
+                { "name": "BANNER", "value": "[[written as text]" }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "serverAddress": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.DBforPostgreSQL/flexibleServers', parameters('serverName'))).fullyQualifiedDomainName]"
+    }
+  }
+}

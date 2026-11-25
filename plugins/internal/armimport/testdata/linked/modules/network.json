@@ -1,0 +1,22 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2023-09-01",
+      "name": "vnet-core",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "addressSpace": { "addressPrefixes": [ "10.0.0.0/16" ] },
+        "subnets": [ { "name": "snet-app", "properties": { "addressPrefix": "10.0.1.0/24" } } ]
+      }
+    }
+  ],
+  "outputs": {
+    "subnetId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', 'vnet-core', 'snet-app')]"
+    }
+  }
+}
