@@ -109,6 +109,12 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 		b.e.Realization = cl.Row.Recipe
 		b.e.Comments = append(b.e.Comments, w.unplacedComments(cl)...)
 		b.e.Comments = append(b.e.Comments, w.unwiredEnv(cl)...)
+	case cl.Class == ClassMapped:
+		// A type the mapping_overrides setting maps has no row: nothing is placed,
+		// every property the node writes is named for the author to place, and the
+		// host maps the realization.
+		b.e.Comments = append(b.e.Comments, w.unplacedComments(cl)...)
+		b.e.Comments = append(b.e.Comments, w.unwiredEnv(cl)...)
 	case cl.Class == ClassDrafted:
 		for _, in := range cl.Inputs {
 			if in.Property == nil {
@@ -179,9 +185,11 @@ func (w *aggregateWriter) unplacedComments(cl *Classified) []string {
 	var out []string
 	n := cl.Node
 	placed := rowPaths(cl.Row)
-	for _, p := range cl.Row.When {
-		if p.Op == OpEquals {
-			placed = append(placed, p.Path)
+	if cl.Row != nil {
+		for _, p := range cl.Row.When {
+			if p.Op == OpEquals {
+				placed = append(placed, p.Path)
+			}
 		}
 	}
 	if paths := unplaced(n.Body, placed); len(paths) > 0 {
@@ -224,6 +232,9 @@ func pathTexts(paths [][]string) []string {
 // — a secure parameter's, a credential's, or text naming a secure parameter —
 // is never written: its variable alone is named.
 func (w *aggregateWriter) unwiredEnv(cl *Classified) []string {
+	if cl.Row == nil {
+		return nil
+	}
 	env := cl.Row.Env
 	if env == nil {
 		return nil

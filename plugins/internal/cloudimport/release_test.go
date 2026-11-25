@@ -4,6 +4,7 @@
 package cloudimport
 
 import (
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
 	"slices"
 	"strings"
 	"testing"
@@ -398,5 +399,35 @@ func TestPointerReadsTheGraph(t *testing.T) {
 	_, _, release, _, _ := released(t, in, f, &Graph{Nodes: []*Node{site, subnetNode()}})
 	if !strings.Contains(release, `: "subnet:snet-db"`) {
 		t.Errorf("the pointer writer is not handed the graph:\n%s", release)
+	}
+}
+
+// TestReleaseEntryNamesWhatATypeMappedByAnOverrideWrites writes the Release of a
+// cache the mapping_overrides setting maps to a Component the catalog holds, with
+// no row: the instance's entry names every property the node writes in a
+// comment, places nothing and names no realization, which the host maps.
+func TestReleaseEntryNamesWhatATypeMappedByAnOverrideWrites(t *testing.T) {
+	f := fixtureFormat()
+	held := schemadraft.NameFor(fixtureView(""), f.Draft, cacheType)
+	settings := `{"mapping_overrides": {"arm": {"` + cacheType + `": {"component": "` + held + `",
+		"category": "datastore", "traits": {"component.aggrega.ai/type": "cache"}}}}}`
+	in := fixtureView(settings, component(held, cacheLabels))
+	in.Target = "arm"
+	cache := cacheGraph().Nodes[0]
+	cache.Body = merged(cache.Body...)
+	g := &Graph{Nodes: []*Node{cache}}
+	out, _, release, manifest, _ := released(t, in, f, g)
+	if cl := classOf(t, out, "cache"); cl.Class != ClassMapped || cl.Row != nil {
+		t.Fatalf("the cache is %s with row %v, want mapped with no row", cl.Class, cl.Row)
+	}
+	want := "    # Properties the source writes and the draft does not place: location, properties.\n    cache: {}\n"
+	if !strings.Contains(release, want) {
+		t.Errorf("the Release does not hold %q:\n%s", want, release)
+	}
+	if strings.Contains(manifest, "cache: arm/") {
+		t.Errorf("the Manifest names a realization the host maps:\n%s", manifest)
+	}
+	if _, again, _, _, _ := released(t, in, f, g); again == "" {
+		t.Error("the second run drafts no Aggregate")
 	}
 }

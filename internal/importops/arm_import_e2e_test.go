@@ -299,6 +299,11 @@ func TestArmTakenNameHeldBack(t *testing.T) {
 				"imported/compute/microsoft-web-staticsites: arm/microsoft-web-staticsites\n") {
 				t.Errorf("the Manifest does not map the Component to the Recipe the catalog holds:\n%s", got)
 			}
+			release := fileNamed(t, res, "release.yaml")
+			if !strings.Contains(release, "    # Properties the source writes and the draft does not place: "+
+				"location, properties, sku.\n    site-docs: {}\n") {
+				t.Errorf("the Release's entry for site-docs does not name the properties the source writes:\n%s", release)
+			}
 			decision := decisionNamed(t, res.Decisions, "site-docs")
 			for _, want := range []string{"mapping_overrides", "appLocation", "repositoryUrl", "repositoryToken"} {
 				if !strings.Contains(decision.Rationale, want) {
