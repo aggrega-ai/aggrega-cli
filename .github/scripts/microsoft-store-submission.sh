@@ -117,6 +117,10 @@
 # letters, digits, dots, - and _. A dry run reads the release, the installer's
 # address, the draft's status and packages, and prints the change; the only
 # request it sends that is not a read is the token's, and it changes nothing.
+# Where a real run would refuse — a version that is not MAJOR.MINOR.PATCH, a
+# release that does not exist, a submission in progress, a newer draft — the
+# dry run says so where it finds it and goes on, and its outcome line names
+# every such reason instead of the change.
 #
 # Programs: bash 4.3 or later, curl, jq, gh, sha256sum (or shasum), sort and the
 # shell's own utilities; the network on every run that passes the settings.
@@ -249,17 +253,6 @@ seconds() { printf '%s' "${POLL:-$1}"; }
 # uri <value> — <value> percent-encoded for one segment of a path.
 uri() { printf '%s' "$1" | jq -sRr @uri; }
 
-# curl_quote <value> — <value> as the inside of a quoted string in curl's
-# configuration, which reads \\, \", \n and \r back as the characters.
-curl_quote() {
-  local value="$1"
-  value="${value//\\/\\\\}"
-  value="${value//\"/\\\"}"
-  value="${value//$'\n'/\\n}"
-  value="${value//$'\r'/\\r}"
-  printf '%s' "$value"
-}
-
 # --- 1. Settings -------------------------------------------------------------
 
 SELLER="${MICROSOFT_STORE_SELLER_ID:-}"
@@ -281,10 +274,18 @@ fi
 
 # --- 2. Version --------------------------------------------------------------
 
+# The reasons a real run would refuse for, which a dry run reports and goes on
+# past; its outcome line names them all.
+WOULD_REFUSE=()
+
 RELEASE_FORM=false
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && RELEASE_FORM=true
-if [ "$DRY" = false ] && [ "$RELEASE_FORM" = false ]; then
-  refuse "'$VERSION' is not a version of the form MAJOR.MINOR.PATCH: a real run submits a final release only, never a pre-release or a build; nothing was sent"
+if [ "$RELEASE_FORM" = false ]; then
+  if [ "$DRY" = false ]; then
+    refuse "'$VERSION' is not a version of the form MAJOR.MINOR.PATCH: a real run submits a final release only, never a pre-release or a build; nothing was sent"
+  fi
+  say "dry run: '$VERSION' is not a version of the form MAJOR.MINOR.PATCH; a real run would refuse it"
+  WOULD_REFUSE+=("'$VERSION' is not a version of the form MAJOR.MINOR.PATCH")
 fi
 
 # --- 3. The installer's address ----------------------------------------------
@@ -325,7 +326,8 @@ if release_exists; then
   fi
   relay "$WORK/check.out" ""
 elif [ "$DRY" = true ]; then
-  say "dry run: the release $TAG does not exist yet, so the installer at $NEW_URL is not checked"
+  say "dry run: the release $TAG does not exist yet, so the installer at $NEW_URL is not checked; a real run would refuse"
+  WOULD_REFUSE+=("the release $TAG does not exist yet")
 else
   refuse "the release $TAG does not exist: a real run submits a released version's installer; nothing was sent to the Store"
 fi
@@ -333,10 +335,10 @@ fi
 # --- 4. The access token -----------------------------------------------------
 
 token_config() {
-  printf 'url = "%s"\n' "$(curl_quote "$LOGIN_BASE/$(uri "$store_tenant")/oauth2/v2.0/token")"
+  printf 'url = "%s"\n' "$(smoke_curl_config_quote "$LOGIN_BASE/$(uri "$store_tenant")/oauth2/v2.0/token")"
   printf 'data-urlencode = "%s"\n' "grant_type=client_credentials"
-  printf 'data-urlencode = "%s"\n' "$(curl_quote "client_id=$store_client_id")"
-  printf 'data-urlencode = "%s"\n' "$(curl_quote "client_secret=$store_client_secret")"
+  printf 'data-urlencode = "%s"\n' "$(smoke_curl_config_quote "client_id=$store_client_id")"
+  printf 'data-urlencode = "%s"\n' "$(smoke_curl_config_quote "client_secret=$store_client_secret")"
   printf 'data-urlencode = "%s"\n' "scope=$SCOPE"
 }
 # The answer stays in this shell's memory: it holds the token, so it is never
@@ -373,7 +375,7 @@ PRODUCT_PATH="$API_BASE/submission/v1/product/$(uri "$PRODUCT")"
 CORRELATION=""
 
 auth_config() {
-  printf 'header = "%s"\n' "$(curl_quote "Authorization: Bearer $store_token")"
+  printf 'header = "%s"\n' "$(smoke_curl_config_quote "Authorization: Bearer $store_token")"
 }
 
 # entries <label> — prints each entry of the answer's errors as one message,
@@ -475,6 +477,7 @@ if [ -n "$ongoing" ]; then
   state="$(jq -r '"publishingStatus \(.responseData.publishingStatus), hasFailed \(.responseData.hasFailed)"' "$WORK/answer")"
   if [ "$DRY" = true ]; then
     say "dry run: the listing has a submission in progress, $ongoing ($state); a real run would refuse, changing nothing"
+    WOULD_REFUSE+=("submission $ongoing is in progress")
   else
     refuse "the listing has a submission in progress, $ongoing ($state), so nothing was changed; run this again for $VERSION once that submission has ended"
   fi
@@ -519,6 +522,7 @@ elif [ -n "$draft_version" ]; then
     && [ "$(printf '%s\n%s\n' "$draft_core" "$want_core" | LC_ALL=C sort -V | tail -n 1)" = "$draft_core" ]; then
     if [ "$DRY" = true ]; then
       say "dry run: the draft's package is the installer of $draft_version, newer than $VERSION; a real run would refuse, changing nothing"
+      WOULD_REFUSE+=("the draft's package is the installer of $draft_version, newer than $VERSION")
     else
       refuse "the draft's package, $OLD_URL, is the installer of $draft_version, newer than $VERSION, so nothing was changed"
     fi
@@ -541,7 +545,13 @@ done < <(jq -r '.responseData.packages[0] | to_entries[] | select(.key != "packa
 # --- 8. A dry run stops here -------------------------------------------------
 
 if [ "$DRY" = true ]; then
-  if [ "$CURRENT" = true ]; then
+  if [ "${#WOULD_REFUSE[@]}" -gt 0 ]; then
+    reasons=""
+    for reason in "${WOULD_REFUSE[@]}"; do
+      reasons+="${reasons:+; }$reason"
+    done
+    outcome "dry run for $VERSION: a real run would refuse, changing nothing: $reasons. Nothing that changes the draft was sent."
+  elif [ "$CURRENT" = true ]; then
     outcome "dry run for $VERSION: the draft's package is already $NEW_URL; a real run commits and submits it. Nothing that changes the draft was sent."
   else
     outcome "dry run for $VERSION: a real run changes the draft's package from $OLD_URL to $NEW_URL and submits it. Nothing that changes the draft was sent."

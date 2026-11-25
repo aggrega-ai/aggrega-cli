@@ -36,7 +36,12 @@
 # and holds the address to smoke_check_download. The smoke
 # run's install step lays out a release the same way, with the same two
 # functions, so the install scripts are proven against the names and the list a
-# release carries.
+# release carries. The script that submits the installer to the Microsoft Store,
+# .github/scripts/microsoft-store-submission.sh, takes the installer's name, its
+# address, its digest and the address's check from smoke_release_asset_name,
+# smoke_download_url, smoke_listed_digest and smoke_check_download. That
+# script and the publishing job each hand curl a credential as a line of curl's
+# configuration on its standard input, written by smoke_curl_config_quote.
 #
 # Sourcing defines these functions and sets no variables:
 #
@@ -101,6 +106,15 @@
 #     (the status and the redirect's target; the Content-Length, or its absence,
 #     and the bytes received; the digest served and the digest expected),
 #     otherwise. It sets no variable and leaves no file.
+#
+#   smoke_curl_config_quote <value>
+#     Prints <value> as the inside of a double-quoted string in curl's
+#     configuration, which curl reads back as <value> itself: each \ written
+#     \\, each " written \", each newline \n and each carriage return \r,
+#     everything else unchanged, and no newline after it. Fed to curl --config -
+#     as a line such as user = "<printed>", it hands curl a credential on its
+#     standard input rather than its command line. It runs no program, so the
+#     value reaches no command line here either, and it sets no variable.
 #
 #   smoke_native_path <path>
 #     Prints <path> in the form a native program on this system reads: the Windows
@@ -487,6 +501,15 @@ smoke_check_download() (
   fi
   printf 'smoke: %s answers 200 itself, with Content-Length %s and SHA-256 %s\n' "$url" "$length" "$actual"
 )
+
+smoke_curl_config_quote() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  printf '%s' "$value"
+}
 
 smoke_native_path() {
   if command -v cygpath >/dev/null 2>&1; then

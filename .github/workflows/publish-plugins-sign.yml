@@ -4960,8 +4960,9 @@ jobs:
     # whose reader of SHA-256 lists gives its digest, as in the release step and
     # the package-channel render; it runs no action but checkout and no program but gh, curl and the
     # shell's own utilities. The key pair reaches curl on its standard input,
-    # as a line of curl's configuration, so it is never placed on a command
-    # line or written to disk.
+    # as a line of curl's configuration that the library's
+    # smoke_curl_config_quote writes, so it is never placed on a command line
+    # or written to disk.
     #
     # The bucket and the installer's media type are written once, in this job's
     # env; the object key and the public address are the smoke library's. The if: names both jobs it needs as
@@ -5095,10 +5096,8 @@ jobs:
           echo "publish-downloads: $installer from the release $TAG has SHA-256 $digest, as SHA256SUMS lists, and $size bytes"
 
           # The key pair as curl's user option, one configuration line read
-          # from standard input, quoted as curl's configuration quotes a value.
-          credentials="$DOWNLOADS_R2_ACCESS_KEY_ID:$DOWNLOADS_R2_SECRET_ACCESS_KEY"
-          credentials="${credentials//\\/\\\\}"
-          credentials="${credentials//\"/\\\"}"
+          # from standard input, quoted by smoke_curl_config_quote.
+          credentials="$(smoke_curl_config_quote "$DOWNLOADS_R2_ACCESS_KEY_ID:$DOWNLOADS_R2_SECRET_ACCESS_KEY")"
           status="$(printf 'user = "%s"\n' "$credentials" | curl --config - \
             --silent --show-error --proto '=https' --connect-timeout 30 --max-time 900 --retry 3 \
             --aws-sigv4 "aws:amz:auto:s3" \

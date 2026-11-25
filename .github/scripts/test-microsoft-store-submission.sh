@@ -199,6 +199,15 @@ DIGEST="${DIGEST%% *}"
 WRONG="$(printf 'other bytes\n' | sha256sum)"
 WRONG="${WRONG%% *}"
 
+# smoke_curl_config_quote: the " and \ are also proven end to end, through curl,
+# by the submission cases' token request; newline and carriage return here.
+quoted="$(smoke_curl_config_quote $'a\\b"c\nd\re~')"
+if [ "$quoted" = 'a\\b\"c\nd\re~' ]; then
+  pass curl_config_quote_escapes
+else
+  fail "curl_config_quote_escapes: printed [$quoted]"
+fi
+
 expect download_names_key 0 "$KEY" smoke_download_key 1.2.3
 expect download_names_url 0 "https://download.aggrega.ai/$KEY" smoke_download_url 1.2.3
 export DOWNLOADS_PUBLIC_BASE="https://example.test/base/"
@@ -250,7 +259,9 @@ SCRIPT="$HERE/microsoft-store-submission.sh"
 VERSION=0.10.3
 TENANT=stub-tenant-id
 CLIENT=stub-client-id
-SECRET=stub-secret-value
+# The secret holds a ", a \ and a ~, so the token request's form fields prove
+# the quoting of curl's configuration end to end.
+SECRET='stub-"secret\value~'
 TOKEN=stub-access-token
 SELLER=12345678
 PRODUCT=9NSTUBPRODUCT1
@@ -407,6 +418,10 @@ run_case() {
 requests() { jq -r '"\(.method) \(.path)"' "$STUB_LOG"; }
 want_exit() { [ "$RC" -eq "$1" ] || FAULTS+=("exit $RC, want $1"); }
 want_text() { [[ $OUT == *"$1"* ]] || FAULTS+=("the output lacks [$1]"); }
+want_no_text() { [[ $OUT != *"$1"* ]] || FAULTS+=("the output holds [$1]"); }
+# want_outcome <text> — the step summary, which receives the outcome line
+# alone, holds <text>.
+want_outcome() { grep -qF -- "$1" "$WORK/summary-$CASE.md" 2>/dev/null || FAULTS+=("the outcome line lacks [$1]"); }
 want_count() {
   local n
   n="$(requests | grep -Ec -- "$2")"
@@ -489,6 +504,7 @@ want_exit 0
 want_text "dry run"
 want_text "$OLD_URL"
 want_text "$NEW_URL"
+want_text "a real run changes the draft's package from $OLD_URL to $NEW_URL"
 want_count 0 "^PUT "
 want_count 0 "^POST /submission/"
 want_count 1 "^GET $P/packages\$"
@@ -498,9 +514,12 @@ begin_case
 : >"$GH_STUB/releases"
 serve_case
 BUILD_VERSION=0.10.4-3-gabc1234
-run_case -- --version "$BUILD_VERSION" --dry-run true
+CASE=dry_run_no_release
+run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$BUILD_VERSION" --dry-run true
 want_exit 0
 want_text "does not exist yet"
+want_outcome "a real run would refuse, changing nothing: '$BUILD_VERSION' is not a version of the form MAJOR.MINOR.PATCH; the release v$BUILD_VERSION does not exist yet."
+want_no_text "a real run changes the draft's package"
 want_text "$OLD_URL"
 want_text "$STUB_BASE/$(smoke_download_key "$BUILD_VERSION")"
 want_count 0 "^GET /aggrega-cli/"
@@ -595,10 +614,13 @@ end_case refuses_ongoing_submission
 begin_case
 R_STATUS="[$(answer "{\"isReady\": false, \"ongoingSubmissionId\": \"$ONGOING\"}")]"
 serve_case
-run_case -- --version "$VERSION" --dry-run true
+CASE=refuses_ongoing_submission_dry_run_reports
+run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$VERSION" --dry-run true
 want_exit 0
 want_text "$ONGOING"
 want_text "a real run would refuse"
+want_outcome "a real run would refuse, changing nothing: submission $ONGOING is in progress."
+want_no_text "a real run changes the draft's package"
 want_count 1 "^GET $P/status\$"
 want_count 0 "^PUT "
 want_count 0 "^POST /submission/"
@@ -629,10 +651,13 @@ end_case refuses_newer_draft
 begin_case
 DRAFT_VERSIONS=(0.10.5)
 serve_case
-run_case -- --version "$VERSION" --dry-run true
+CASE=refuses_newer_draft_dry_run_reports
+run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$VERSION" --dry-run true
 want_exit 0
 want_text "newer than $VERSION"
 want_text "a real run would refuse"
+want_outcome "a real run would refuse, changing nothing: the draft's package is the installer of 0.10.5, newer than $VERSION."
+want_no_text "a real run changes the draft's package"
 want_count 0 "^PUT "
 want_count 0 "^POST /submission/"
 end_case refuses_newer_draft_dry_run_reports
