@@ -1,0 +1,49 @@
+{
+  // A storage account and an Event Hubs namespace the catalog maps, a virtual
+  // network the operator owns, and a static web app no row maps whose
+  // properties carry a pointer and a string written with an escaped bracket.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "westeurope" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2023-09-01",
+      "name": "vnet-core",
+      "location": "[parameters('location')]",
+      "properties": {
+        "addressSpace": { "addressPrefixes": [ "10.0.0.0/16" ] }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "stdocs",
+      "location": "[parameters('location')]",
+      "kind": "StorageV2",
+      "sku": { "name": "Standard_LRS" }
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces",
+      "apiVersion": "2024-01-01",
+      "name": "events-main",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Standard", "tier": "Standard", "capacity": 1 },
+      "dependsOn": [ "[resourceId('Microsoft.Storage/storageAccounts', 'stdocs')]" ]
+    },
+    {
+      "type": "Microsoft.Web/staticSites",
+      "apiVersion": "2023-01-01",
+      "name": "site-docs",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Free", "tier": "Free" },
+      "properties": {
+        "buildProperties": { "appLocation": "/", "outputLocation": "dist" },
+        "repositoryUrl": "[[not-an-expression]",
+        "repositoryToken": "[resourceId('Microsoft.KeyVault/vaults/secrets', 'kv-shared', 'swa-token')]"
+      }
+    }
+  ]
+}

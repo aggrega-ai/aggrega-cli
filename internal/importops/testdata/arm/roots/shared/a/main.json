@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "net",
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": { "relativePath": "../shared/net.json" }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "stalpha",
+      "location": "westeurope",
+      "kind": "StorageV2",
+      "sku": { "name": "Standard_LRS" }
+    }
+  ]
+}

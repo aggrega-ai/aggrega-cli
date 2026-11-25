@@ -1,0 +1,41 @@
+{
+  // An Azure Data Explorer cluster deployed through the Azure Verified Modules
+  // module, whose compiled template the case writes in place of the member
+  // naming it: no row maps its resource type, so its Recipe sources the module
+  // whole. A static web app no row maps reads the cluster's identifier from the
+  // module's output.
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "westeurope" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "cluster",
+      "properties": {
+        "mode": "Incremental",
+        "expressionEvaluationOptions": { "scope": "inner" },
+        "parameters": {
+          "name": { "value": "adx-core" },
+          "location": { "value": "[parameters('location')]" },
+          "sku": { "value": "Standard_E2ads_v5" },
+          "enableTelemetry": { "value": true }
+        },
+        "template": { "$avm": "kusto/cluster/0.11.1" }
+      }
+    },
+    {
+      "type": "Microsoft.Web/staticSites",
+      "apiVersion": "2023-01-01",
+      "name": "site-docs",
+      "location": "[parameters('location')]",
+      "sku": { "name": "Free", "tier": "Free" },
+      "dependsOn": [ "[resourceId('Microsoft.Resources/deployments', 'cluster')]" ],
+      "properties": {
+        "repositoryToken": "[reference('cluster').outputs.resourceId.value]"
+      }
+    }
+  ]
+}
