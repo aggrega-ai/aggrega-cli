@@ -66,9 +66,10 @@ type importArgs struct {
 	// Target is the command line's --target: the provider capability the import
 	// drafts a Manifest for. It is a pointer for the reason Format is one — absent
 	// drafts for the importer's declared default, or none, or under Sync the one the
-	// record of the earlier import names, and a value sent empty is refused rather than read as absent. A value
-	// sent is handed to the layer as sent, so the Manifest is the one the command
-	// line and the editor's session draft for the same source.
+	// record of the earlier import names, and a value sent empty is refused rather
+	// than read as absent. A value sent is handed to the layer as sent, so the
+	// Manifest is the one the command line and the editor's session draft for the
+	// same source.
 	Target *string `json:"target"`
 
 	DryRun        bool   `json:"dry_run"`
@@ -365,9 +366,10 @@ var importToolSpec = toolSpec{
 		"offers it for that type and capability and dropped with a warning otherwise. The Manifest takes the drafted Release's name and version and the Release's " +
 		"spec.manifest is set to it, nothing else in the Release changing; a Release already naming a Manifest is left " +
 		"as it is. A `target` no Recipe in the catalog binds to is refused before the importer runs, naming it and the " +
-		"capabilities the catalog's Recipes bind to, and nothing is written. Without a `target`, the import drafts for the target the importer " +
-		"declares its drafts default to, where a Recipe in the catalog binds to it, and an information diagnostic says so; an importer " +
-		"declaring none, or one no Recipe binds to, drafts no Manifest. Send `dry_run` to be " +
+		"capabilities the catalog's Recipes bind to, and nothing is written. Without a `target`, the import drafts for the " +
+		"target the importer declares its drafts default to, where a Recipe in the catalog binds to it, and an " +
+		"information diagnostic says so; an importer declaring none, or one no Recipe binds to, drafts no Manifest. " +
+		"Send `dry_run` to be " +
 		"handed each drafted file's path and content instead, with nothing created: every other behaviour is " +
 		"the write's, the same importer over the same source reporting the same diagnostics, so a source the " +
 		"write would refuse is refused under it too. Every import that drafts anything also writes its entry " +
@@ -517,8 +519,9 @@ func importInvoke(s *server, ctx context.Context, args json.RawMessage) (*callTo
 	if a.Target != nil {
 		if target = *a.Target; target == "" {
 			return errorResult(importToolName + " was sent an empty 'target'. Name the provider capability to " +
-				"draft a Manifest for, such as compose or helm, or leave 'target' out altogether and the importer's declared " +
-				"default is used, if it has one a Recipe binds to — or, under 'sync', the target the earlier import was sent; an empty value is " +
+				"draft a Manifest for, such as compose or helm, or leave 'target' out altogether and the importer's " +
+				"declared default is used, if it has one a Recipe binds to — or, under 'sync', the target the " +
+				"earlier import was sent; an empty value is " +
 				"neither, so nothing was read and nothing was written.")
 		}
 	}

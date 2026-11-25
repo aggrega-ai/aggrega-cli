@@ -24,6 +24,10 @@
 // runtime binding, and the build that produces it watches every input it is built
 // from.
 //
+// Its wire codec is a deliberate near-copy of the draft-set importer's: a test
+// guest is a module of its own and cannot import another guest's code, and a
+// shared copy would couple two fixtures that must build independently.
+//
 // Build: GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -o default-target-importer.wasm ./
 package main
 

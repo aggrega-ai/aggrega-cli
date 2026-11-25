@@ -83,7 +83,7 @@ func hasInfo(res Result, parts ...string) bool {
 // TestDefaultTargetApplied imports with no target where the importer declares
 // compose and the catalog holds compose Recipes: the Manifest is composed, the
 // importer is handed compose, an information diagnostic says the drafts are for
-// compose, the importer's declared default, and that --target names another, and
+// compose, the importer's declared default, and that an import naming a target drafts for that one, and
 // the record names compose.
 func TestDefaultTargetApplied(t *testing.T) {
 	t.Parallel()
@@ -99,7 +99,7 @@ func TestDefaultTargetApplied(t *testing.T) {
 	if got := handedTarget(t, res); got != "target compose" {
 		t.Errorf("the importer reported %q; want it handed compose", got)
 	}
-	if !hasInfo(res, `"compose"`, "the importer's declared default", "--target names another") {
+	if !hasInfo(res, `"compose"`, "the importer's declared default", "an import naming a target drafts for that one") {
 		t.Errorf("no information diagnostic names compose as the importer's declared default among %+v",
 			res.Diagnostics)
 	}

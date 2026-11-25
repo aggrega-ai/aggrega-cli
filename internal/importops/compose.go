@@ -95,12 +95,12 @@ func defaultTarget(importer types.Plugin, recipes RecipeIndex) (string, *abi.Dia
 	target := importer.Spec.Importer.DefaultTarget
 	if checkTarget(target, false, recipes) != nil {
 		d := infoDiagnostic(fmt.Sprintf("the importer declares %s as its default target, but no Recipe of the "+
-			"catalog binds to it, so no Manifest is drafted; --target names another target",
+			"catalog binds to it, so no Manifest is drafted; an import naming a target drafts for that one",
 			strconv.Quote(target)))
 		return "", &d
 	}
 	d := infoDiagnostic(fmt.Sprintf("the drafts are for the target %s, the importer's declared default; "+
-		"--target names another", strconv.Quote(target)))
+		"an import naming a target drafts for that one", strconv.Quote(target)))
 	return target, &d
 }
 
