@@ -27,17 +27,17 @@
 #      whose address the release workflow never publishes;
 #   4. asks Microsoft Entra ID for an access token for the Store API;
 #   5. reads the draft's status. When a submission is in progress, it reads that
-#      submission's status and prints both; a real run then refuses, changing
-#      nothing, and a dry run says a real run would refuse and goes on. When the
-#      draft is not ready and no submission is in progress, it asks again every
+#      submission's status and prints both; a real run then changes
+#      nothing and exits 3, and a dry run says a real run would refuse and goes
+#      on. When the draft is not ready and no submission is in progress, it asks again every
 #      10 seconds, 60 tries in all. An entry of the status's errors whose code is
 #      warning is printed and never refuses, here and at step 9;
 #   6. reads the draft's packages, and refuses unless there is exactly one,
 #      naming each package's URL. When the package's URL ends in the object key
 #      smoke_download_key gives a version, that version is the draft's: one
-#      newer than <version>, by MAJOR.MINOR.PATCH in sort -V order, is refused
-#      on a real run and reported on a dry run. A package already at the
-#      installer's address is reported as already the draft's package, and the
+#      newer than <version>, by MAJOR.MINOR.PATCH in sort -V order, is left
+#      alone on a real run, which exits 3, and reported on a dry run. A package
+#      already at the installer's address is reported as already the draft's package, and the
 #      run goes on to the commit and the submit without updating it, so a run
 #      that stopped after its update is completed by running it again;
 #   7. prints the change: the package's URL before and after, and every other
@@ -131,12 +131,16 @@
 # shell's own utilities; the network on every run that passes the settings.
 #
 # Exits 0 when a dry run has printed the change, and when the submission is in
-# certification or published; 1, naming what it refused or what failed, when a setting is
-# missing or malformed, the version is not one a real run submits, the release
-# or the installer's address does not hold, a request fails, the Store refuses
-# an answer, a submission is in progress, the draft does not hold exactly one
-# package or holds a newer version, the draft does not become ready, or the
-# submission fails or stays unknown; 2 on a usage error.
+# certification or published; 1, naming what it refused or what failed, when a
+# setting is missing or malformed, the version is not one a real run submits,
+# the release or the installer's address does not hold, a request fails, the
+# Store refuses an answer, the draft does not hold exactly one package, the
+# draft does not become ready, or the submission fails or stays unknown; 2 on a
+# usage error; 3 when a real run changed nothing because a submission is in
+# progress or the draft's package is the installer of a newer version, its
+# outcome line naming that submission or version and saying to dispatch "Submit
+# to the Microsoft Store" with this version once the submission in progress
+# ends.
 set -euo pipefail
 # The credentials and the token must never reach the log, so tracing stays off
 # even when the caller turned it on.
@@ -156,7 +160,7 @@ PREFIX="microsoft-store-submission: "
 SCOPE="https://api.store.microsoft.com/.default"
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
-  sed -n '/^# microsoft-store-submission\.sh — /,/^# submission fails or stays unknown; 2 on a usage error\.$/p' \
+  sed -n '/^# microsoft-store-submission\.sh — /,/^# ends\.$/p' \
     "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 0
 fi
@@ -240,6 +244,9 @@ say() { clean "$*"; printf '%s%s\n' "$PREFIX" "$CLEAN"; }
 warn() { clean "$*"; printf '%s%s\n' "$PREFIX" "$CLEAN" >&2; }
 outcome() { clean "$*"; printf '%s%s\n' "$PREFIX" "$CLEAN"; summary "$PREFIX$CLEAN"; }
 refuse() { clean "$*"; printf '%s%s\n' "$PREFIX" "$CLEAN" >&2; summary "$PREFIX$CLEAN"; exit 1; }
+# defer <message> — a real run that changed nothing and leaves the submission
+# to a later run: the message, then exit status 3.
+defer() { clean "$*"; printf '%s%s\n' "$PREFIX" "$CLEAN" >&2; summary "$PREFIX$CLEAN"; exit 3; }
 
 # relay <file> <label> — prints each line of <file>, a program's own output, as
 # a message: "<label><line>", a library function's "smoke: " dropped.
@@ -503,7 +510,7 @@ if [ -n "$ongoing" ]; then
     say "dry run: the listing has a submission in progress, $ongoing ($state); a real run would refuse, changing nothing"
     WOULD_REFUSE+=("submission $ongoing is in progress")
   else
-    refuse "the listing has a submission in progress, $ongoing ($state), so nothing was changed; run this again for $VERSION once that submission has ended"
+    defer "the listing has a submission in progress, $ongoing ($state), so nothing was changed; dispatch \"Submit to the Microsoft Store\" with $VERSION once that submission has ended"
   fi
 else
   wait_ready 60 10 "before the change"
@@ -548,7 +555,7 @@ elif [ -n "$draft_version" ]; then
       say "dry run: the draft's package is the installer of $draft_version, newer than $VERSION; a real run would refuse, changing nothing"
       WOULD_REFUSE+=("the draft's package is the installer of $draft_version, newer than $VERSION")
     else
-      refuse "the draft's package, $OLD_URL, is the installer of $draft_version, newer than $VERSION, so nothing was changed"
+      defer "the draft's package, $OLD_URL, is the installer of $draft_version, newer than $VERSION, so nothing was changed; dispatch \"Submit to the Microsoft Store\" with $VERSION once the submission in progress ends"
     fi
   fi
 fi

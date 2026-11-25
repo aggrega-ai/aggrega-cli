@@ -14,7 +14,10 @@ name: Submit to the Microsoft Store
 # true, the default, it reads the release, the installer's address, the draft's
 # status and its packages, and prints the change it would make, sending no
 # request that writes anything. With dry_run false it replaces the draft's
-# package, commits the draft and submits it.
+# package, commits the draft and submits it. A submission in progress, or a
+# draft whose package is the installer of a newer version, refuses there: the
+# script changes nothing and exits 3, which fails the run, while the release
+# workflow's job only warns and passes.
 #
 # The job names the GitHub environment microsoft-store, which holds the Store
 # credentials: only its jobs read them. The environment's branch and tag rule

@@ -375,10 +375,13 @@ name: Publish and sign core plugins
 #                        the release's SHA256SUMS lists, commits the draft and
 #                        submits it for certification, then reads the
 #                        submission's status and passes while it is in
-#                        certification or published. It refuses, changing
-#                        nothing, a submission already in progress, a draft
-#                        that holds a newer version, and a draft that does not
-#                        hold exactly one package. On a dry run it reads the
+#                        certification or published. A submission already in
+#                        progress and a draft that holds a newer version leave
+#                        the listing unchanged and the job passing, with a
+#                        warning naming the Submit to the Microsoft Store
+#                        dispatch to run once the submission in progress ends;
+#                        a draft that does not hold exactly one package is
+#                        refused, changing nothing. On a dry run it reads the
 #                        release, the address, the draft's status and its
 #                        packages, and prints the change, writing nothing. It
 #                        runs on a GitHub-hosted runner, checks out this
@@ -5254,9 +5257,13 @@ jobs:
     # takes. On a dry run it reads the release, the installer's address, the
     # draft's status and its packages, and prints the change it would make,
     # sending no request that writes anything. On a real publish it refuses,
-    # naming what to fix, a submission already in progress, a draft that holds
-    # a newer version, and a draft that does not hold exactly one package,
-    # changing nothing.
+    # naming what to fix, a draft that does not hold exactly one package,
+    # changing nothing. A submission already in progress and a draft that holds
+    # a newer version also change nothing; the script exits 3 for them, and
+    # the job passes with a warning annotation and a line in the run's summary
+    # naming this version and the Submit to the Microsoft Store dispatch to
+    # run once the submission in progress ends. Every other non-zero status
+    # fails the job.
     #
     # It runs once publish-downloads has succeeded, for a final release tag
     # alone: a pre-release is skipped by its if:, which reads sign-and-publish's
@@ -5317,7 +5324,15 @@ jobs:
             echo "microsoft-store-submission: sign-and-publish handed on no version; nothing was submitted" >&2
             exit 1
           fi
-          bash .github/scripts/microsoft-store-submission.sh --version "$RELEASE_VERSION" --dry-run "$DRY"
+          status=0
+          bash .github/scripts/microsoft-store-submission.sh --version "$RELEASE_VERSION" --dry-run "$DRY" || status=$?
+          if [ "$status" -eq 3 ]; then
+            message="the Microsoft Store listing was not updated to $RELEASE_VERSION: a submission is in progress, or the draft holds a newer version; dispatch \"Submit to the Microsoft Store\" with $RELEASE_VERSION once the submission in progress ends"
+            echo "::warning title=Microsoft Store listing not updated::$message"
+            echo "$message" >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          exit "$status"
 
   smoke-binaries:
     # Fetches, on a dry run naming smoke_binaries_from, that release's Windows

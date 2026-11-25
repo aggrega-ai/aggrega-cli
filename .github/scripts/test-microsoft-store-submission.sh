@@ -23,7 +23,8 @@
 # setting missing; a pre-release version on a real run; a malformed version; a
 # seller ID that is not a number; a real run with no release; an installer
 # whose digest differs from the release's list; a submission already in
-# progress; a draft holding two packages or a newer version; a draft already
+# progress or a draft holding a newer version, each left alone with exit status
+# 3; a draft holding two packages; a draft already
 # holding the version; a package upload error and an error outside the
 # packages while the draft gets ready; a draft never ready, before the change
 # and after it; a refused update, submit and submission; a submission whose
@@ -589,7 +590,7 @@ FAULTS=()
 want_exit 0
 want_text "microsoft-store-submission.sh — "
 want_text "MICROSOFT_STORE_CLIENT_SECRET"
-want_text "2 on a usage error"
+want_text "usage error; 3 when a real run changed nothing"
 want_nothing_sent
 end_case help_prints_header
 
@@ -615,15 +616,18 @@ end_case refuses_installer_digest
 begin_case
 R_STATUS="[$(answer "{\"isReady\": false, \"ongoingSubmissionId\": \"$ONGOING\"}")]"
 serve_case
-run_case -- --version "$VERSION" --dry-run false
-want_exit 1
+CASE=defers_ongoing_submission
+run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$VERSION" --dry-run false
+want_exit 3
+want_outcome "submission in progress, $ONGOING (publishingStatus INPROGRESS, hasFailed false), so nothing was changed; dispatch \"Submit to the Microsoft Store\" with $VERSION"
 want_text "$ONGOING"
 want_text "in progress"
+want_text "dispatch \"Submit to the Microsoft Store\" with $VERSION once that submission has ended"
 want_text "publishingStatus INPROGRESS, hasFailed false"
 want_count 1 "^GET $P/submission/$ONGOING/status\$"
 want_count 0 "^PUT "
 want_count 0 "^POST /submission/"
-end_case refuses_ongoing_submission
+end_case defers_ongoing_submission
 
 begin_case
 R_STATUS="[$(answer "{\"isReady\": false, \"ongoingSubmissionId\": \"$ONGOING\"}")]"
@@ -654,13 +658,16 @@ end_case refuses_two_packages
 begin_case
 DRAFT_VERSIONS=(0.10.5)
 serve_case
-run_case -- --version "$VERSION" --dry-run false
-want_exit 1
+CASE=defers_newer_draft
+run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$VERSION" --dry-run false
+want_exit 3
+want_outcome "is the installer of 0.10.5, newer than $VERSION, so nothing was changed; dispatch \"Submit to the Microsoft Store\" with $VERSION"
 want_text "0.10.5"
 want_text "newer than $VERSION"
+want_text "dispatch \"Submit to the Microsoft Store\" with $VERSION once the submission in progress ends"
 want_count 0 "^PUT "
 want_count 0 "^POST /submission/"
-end_case refuses_newer_draft
+end_case defers_newer_draft
 
 begin_case
 DRAFT_VERSIONS=(0.10.5)
