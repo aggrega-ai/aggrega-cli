@@ -55,8 +55,9 @@ import (
 // capability, such as compose or helm, the import drafts a Manifest for beside
 // the importer's drafts and points the drafted Release at. It is handed to the
 // import as sent, so the Manifest is the one every surface drafts for the same
-// source; absent drafts none — or, under sync, drafts for the target the record
-// of the earlier import names — and a capability no Recipe in the workspace's
+// source; absent drafts for the importer's declared default where a Recipe binds
+// to it, or none — or, under sync, for the target the record of the earlier
+// import names — and a capability no Recipe in the workspace's
 // catalog binds to is refused before the importer runs, in the condition's own
 // words, which name no flag.
 //

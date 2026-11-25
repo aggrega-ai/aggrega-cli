@@ -676,6 +676,16 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 		}
 	}
 
+	// An import naming no target, with none in the record for a sync to reuse,
+	// takes the one the importer resolved declares as its default, where a Recipe
+	// of the catalog binds to it: the target is then composed for, handed to the
+	// importer and recorded as one named on the command line would be. A target
+	// named, or recorded, is never replaced.
+	var defaultNotice *abi.Diagnostic
+	if target == "" && resolveErr == nil {
+		target, defaultNotice = defaultTarget(importer, seam.Recipes)
+	}
+
 	// The drafts an earlier import of this format wrote are its own, not catalog
 	// facts: where they lie in a catalog folder the view reads — drafts an importer
 	// lays out under catalog/ beneath the workspace root — the importer would read its
@@ -715,6 +725,9 @@ func Import(ctx context.Context, rw *workspaceconfig.ResolvedWorkspace, opts Opt
 	}
 	composed = append(overlaid, composed...)
 	diagnostics := imported.Diagnostics
+	if defaultNotice != nil {
+		diagnostics = append([]abi.Diagnostic{*defaultNotice}, diagnostics...)
+	}
 	if snapshot.notice != "" {
 		diagnostics = append([]abi.Diagnostic{warnDiagnostic(snapshot.notice)}, diagnostics...)
 	}

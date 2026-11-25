@@ -806,6 +806,14 @@ func DraftComposerSource() string {
 // operation's tests, found by walking up to the module root.
 func LayDraftComposerCatalog(t *testing.T, workspaceRoot, dir string) LaidPlugin {
 	t.Helper()
+	copyDraftComposerCatalog(t, dir)
+	return layPlugin(t, workspaceRoot, dir, DraftSetModule(t), DraftSetImporterName, true)
+}
+
+// copyDraftComposerCatalog copies the committed draft-composition catalog's files
+// into dir.
+func copyDraftComposerCatalog(t *testing.T, dir string) {
+	t.Helper()
 	src := moduleRelative(t, draftComposerCatalog)
 	err := filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -828,7 +836,55 @@ func LayDraftComposerCatalog(t *testing.T, workspaceRoot, dir string) LaidPlugin
 	if err != nil {
 		t.Fatalf("copy the draft-composition catalog into %s: %v", dir, err)
 	}
-	return layPlugin(t, workspaceRoot, dir, DraftSetModule(t), DraftSetImporterName, true)
+}
+
+// DefaultTargetFormat is the format the default-target importer advertises.
+const DefaultTargetFormat = "default-target"
+
+// DefaultTargetImporterName is the metadata.name the default-target importer's
+// entity carries.
+const DefaultTargetImporterName = "import-default-target"
+
+// DefaultTargetDeclared is the target the default-target importer declares its
+// drafts default to.
+const DefaultTargetDeclared = "compose"
+
+// defaultTargetArtifact is the name the built default-target importer is
+// published under among the built fixtures. No other build layout owns it.
+const defaultTargetArtifact = "default-target-importer.wasm"
+
+// defaultTargetSource is where the default-target importer's source sits beneath
+// the module root.
+var defaultTargetSource = filepath.Join("internal", "importops", "testdata", "default-target-importer")
+
+// DefaultTargetModule builds the default-target importer and returns the built
+// module's path.
+//
+// The default-target importer is the draft-set importer ([DraftSetModule]) that
+// also declares DefaultTargetDeclared as the target its drafts default to and
+// reports the target it was handed in its first diagnostic: "target <name>", or
+// "no target" where the import handed none. It advertises DefaultTargetFormat.
+func DefaultTargetModule(t *testing.T) string {
+	t.Helper()
+	return localTestGuest(t, defaultTargetSource, defaultTargetArtifact)
+}
+
+// LayDefaultTargetImporter lays the default-target importer down at dir, inside
+// the workspace rooted at workspaceRoot, generated from its built module with the
+// module beside it, so its entity records the default target its describe()
+// declares.
+func LayDefaultTargetImporter(t *testing.T, workspaceRoot, dir string) LaidPlugin {
+	t.Helper()
+	return layPlugin(t, workspaceRoot, dir, DefaultTargetModule(t), DefaultTargetImporterName, true)
+}
+
+// LayDefaultTargetCatalog lays down at dir, inside the workspace rooted at
+// workspaceRoot, the draft-composition catalog (whose Recipes bind to compose and
+// helm) with the default-target importer beside it.
+func LayDefaultTargetCatalog(t *testing.T, workspaceRoot, dir string) LaidPlugin {
+	t.Helper()
+	copyDraftComposerCatalog(t, dir)
+	return LayDefaultTargetImporter(t, workspaceRoot, dir)
 }
 
 // DraftComposerCatalogDir is the committed draft-composition catalog's absolute

@@ -80,6 +80,30 @@ func checkTarget(target string, recorded bool, recipes RecipeIndex) error {
 		cerrors.ComposeMessage(errImportTargetUnbound, values, advice), nil)
 }
 
+// defaultTarget is the target an import naming none takes from the importer it
+// resolved: the importer's declared default where a Recipe of recipes binds to it;
+// "" and an information diagnostic naming the default where none does; "" and
+// nothing where the importer declares none.
+//
+// The binding is decided as [checkTarget] decides it, over the same capabilities,
+// so a default taken here is one a named target of the same word would be accepted
+// for.
+func defaultTarget(importer types.Plugin, recipes RecipeIndex) (string, *abi.Diagnostic) {
+	if importer.Spec.Importer == nil || importer.Spec.Importer.DefaultTarget == "" {
+		return "", nil
+	}
+	target := importer.Spec.Importer.DefaultTarget
+	if checkTarget(target, false, recipes) != nil {
+		d := infoDiagnostic(fmt.Sprintf("the importer declares %s as its default target, but no Recipe of the "+
+			"catalog binds to it, so no Manifest is drafted; --target names another target",
+			strconv.Quote(target)))
+		return "", &d
+	}
+	d := infoDiagnostic(fmt.Sprintf("the drafts are for the target %s, the importer's declared default; "+
+		"--target names another", strconv.Quote(target)))
+	return target, &d
+}
+
 // recipeCapabilities reads the capabilities the catalog's Recipes bind to, none
 // where the seam carries no Recipe view.
 func recipeCapabilities(recipes RecipeIndex) []string {
