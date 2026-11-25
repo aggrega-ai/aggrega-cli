@@ -33,7 +33,7 @@ name: Submit to the Microsoft Store
 #     MICROSOFT_STORE_CLIENT_ID      the application (client) ID of the Entra
 #                                    app registration that Partner Center lists
 #                                    with the Manager role (Partner Center,
-#                                    Account settings, Tenant administration,
+#                                    Account settings, User management,
 #                                    Microsoft Entra applications)
 #     MICROSOFT_STORE_CLIENT_SECRET  a client secret of that registration
 #                                    (Entra admin center, the registration's
@@ -65,8 +65,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: microsoft-store
     timeout-minutes: 50
+    # Two submissions never run at once, and the group is shared with the
+    # release workflow's job. GitHub cancels an older pending job when a newer
+    # one joins its group; queue: max lets up to 100 wait in turn instead, and
+    # cancel-in-progress: false never cancels one that is running.
     concurrency:
       group: microsoft-store-submission
+      queue: max
       cancel-in-progress: false
     permissions:
       contents: read

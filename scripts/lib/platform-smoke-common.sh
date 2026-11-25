@@ -39,7 +39,8 @@
 # release carries. The script that submits the installer to the Microsoft Store,
 # .github/scripts/microsoft-store-submission.sh, takes the installer's name, its
 # address, its digest and the address's check from smoke_release_asset_name,
-# smoke_download_url, smoke_listed_digest and smoke_check_download. That
+# smoke_download_url, smoke_listed_digest, smoke_check_download and
+# smoke_header_value. That
 # script and the publishing job each hand curl a credential as a line of curl's
 # configuration on its standard input, written by smoke_curl_config_quote.
 #
@@ -106,6 +107,14 @@
 #     (the status and the redirect's target; the Content-Length, or its absence,
 #     and the bytes received; the digest served and the digest expected),
 #     otherwise. It sets no variable and leaves no file.
+#
+#   smoke_header_value <headers file> <name>
+#     Prints the value of the response header <name>, matched without regard to
+#     case, from <headers file>, which curl --dump-header wrote: its last
+#     occurrence, with the carriage return and the whitespace after the colon
+#     dropped, and nothing when the file has none. It runs only tr and awk and
+#     sets no variable. smoke_check_download reads Content-Length with it, and
+#     microsoft-store-submission.sh reads X-Correlation-ID.
 #
 #   smoke_curl_config_quote <value>
 #     Prints <value> as the inside of a double-quoted string in curl's
@@ -480,7 +489,7 @@ smoke_check_download() (
       "$url" "$status" "${redirect:+, redirecting to $redirect}" >&2
     exit 1
   fi
-  length="$(tr -d '\r' <"$work/headers" | awk -F': *' 'tolower($1) == "content-length" { value = $2 } END { print value }')"
+  length="$(smoke_header_value "$work/headers" content-length)"
   size="$(wc -c <"$work/body")"
   size="${size//[[:space:]]/}"
   if [ -z "$length" ]; then
@@ -501,6 +510,10 @@ smoke_check_download() (
   fi
   printf 'smoke: %s answers 200 itself, with Content-Length %s and SHA-256 %s\n' "$url" "$length" "$actual"
 )
+
+smoke_header_value() {
+  tr -d '\r' <"$1" | awk -F': *' -v name="$2" 'tolower($1) == tolower(name) { value = $2 } END { print value }'
+}
 
 smoke_curl_config_quote() {
   local value="$1"

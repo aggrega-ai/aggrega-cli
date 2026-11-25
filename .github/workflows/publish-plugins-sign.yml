@@ -874,7 +874,7 @@ name: Publish and sign core plugins
 #                                        Entra app registration that Partner
 #                                        Center lists with the Manager role
 #                                        (secret; Partner Center, Account
-#                                        settings, Tenant administration,
+#                                        settings, User management,
 #                                        Microsoft Entra applications)
 #              MICROSOFT_STORE_CLIENT_SECRET
 #                                        a client secret of that registration
@@ -969,7 +969,9 @@ on:
 # organization's fork of microsoft/winget-pkgs and opens the pull request with
 # the personal access token it is given, and publish-downloads, which reads the
 # release with the run's own token and writes the download bucket with the R2
-# key pair it is given.
+# key pair it is given, and microsoft-store-submission, which writes the
+# Microsoft Store listing's draft with the Entra credentials it is given, never
+# this repository.
 # sources keeps contents:read too: it reads aggrega-hub with the run's own token.
 permissions:
   contents: read
@@ -4062,8 +4064,8 @@ jobs:
           # decides whether its tag is a pre-release. The step hands that on as
           # its prerelease output, true or false, written before a dry run stops
           # so a dry run writes it too; publish-skills, publish-package-channels,
-          # open-winget-pull-request and publish-downloads, which publish final
-          # releases alone, are
+          # open-winget-pull-request, publish-downloads and
+          # microsoft-store-submission, which take final releases alone, are
           # skipped by their if: when it is true, and the log says so here.
           RELEASE_KIND=()
           PRERELEASE=false
@@ -5271,7 +5273,9 @@ jobs:
     # token. The tenant ID, the client ID and the client secret reach curl on
     # its standard input and are never placed on a command line or written to
     # disk. Two submissions never run at once: the concurrency group is shared
-    # with the dispatch workflow, and a waiting one is never cancelled.
+    # with the dispatch workflow. GitHub cancels an older pending job when a
+    # newer one joins its group; queue: max lets up to 100 wait in turn
+    # instead, and cancel-in-progress: false never cancels one that is running.
     needs: [build, sign-and-publish, publish-downloads]
     if: ${{ !cancelled() && needs.publish-downloads.result == 'success' && needs.sign-and-publish.outputs.prerelease != 'true' }}
     runs-on: ubuntu-latest
@@ -5279,6 +5283,7 @@ jobs:
     timeout-minutes: 50
     concurrency:
       group: microsoft-store-submission
+      queue: max
       cancel-in-progress: false
     permissions:
       contents: read

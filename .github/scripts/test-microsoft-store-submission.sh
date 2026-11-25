@@ -13,7 +13,8 @@
 # The download cases cover smoke_download_key and smoke_download_url (the object
 # key, the address, the trailing slash of the base, an empty version) and
 # smoke_check_download (200 with the right bytes, a redirect, a digest that
-# differs, a response without Content-Length).
+# differs, a response without Content-Length), and smoke_header_value (a header's
+# value without regard to case, the last of two, none).
 #
 # The submission cases run the script with every wait set to 0 seconds and
 # cover: a real run end to end, each request's method, path, headers and body
@@ -26,7 +27,9 @@
 # holding the version; a package upload error and an error outside the
 # packages while the draft gets ready; a draft never ready, before the change
 # and after it; a refused update, submit and submission; a submission whose
-# status stays unknown; a refused token; a rate-limited read retried; the token
+# status stays unknown; a publishingStatus in any case; a warning among the
+# draft's status errors; a 403 with its likely cause; a dry run for a build's
+# version that has a release; the settings named in the outcome line; a refused token; a rate-limited read retried; the token
 # masked under GitHub Actions; and, over every run, that no credential and no
 # token reaches the output and every line names the script.
 #
@@ -207,6 +210,14 @@ if [ "$quoted" = 'a\\b\"c\nd\re~' ]; then
 else
   fail "curl_config_quote_escapes: printed [$quoted]"
 fi
+
+# smoke_header_value: a dump-header file as curl writes it, CRLF line ends.
+printf 'HTTP/2 200\r\nX-Correlation-ID: first\r\nx-correlation-id:   second-id\r\nContent-Length: 7\r\n\r\n' >"$WORK/dumped-headers"
+expect header_value_last_without_case 0 "second-id" smoke_header_value "$WORK/dumped-headers" X-CORRELATION-ID
+hv="$(smoke_header_value "$WORK/dumped-headers" content-length)"
+if [ "$hv" = 7 ]; then pass header_value_strips_cr; else fail "header_value_strips_cr: printed [$hv]"; fi
+hv="$(smoke_header_value "$WORK/dumped-headers" x-missing)"
+if [ -z "$hv" ]; then pass header_value_absent_prints_nothing; else fail "header_value_absent_prints_nothing: printed [$hv]"; fi
 
 expect download_names_key 0 "$KEY" smoke_download_key 1.2.3
 expect download_names_url 0 "https://download.aggrega.ai/$KEY" smoke_download_url 1.2.3
@@ -532,10 +543,13 @@ for setting in MICROSOFT_STORE_TENANT_ID MICROSOFT_STORE_CLIENT_ID MICROSOFT_STO
   MICROSOFT_STORE_SELLER_ID MICROSOFT_STORE_PRODUCT_ID; do
   begin_case
   serve_case
-  run_case -u "$setting" -- --version "$VERSION" --dry-run true
+  CASE="refuses_missing_settings_$setting"
+  run_case -u "$setting" GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$VERSION" --dry-run true
   want_exit 1
   want_text "$setting"
   want_text "is not set"
+  want_outcome "not set in the GitHub environment microsoft-store: "
+  want_outcome "$setting; every setting is needed on a dry run and a real run alike"
   want_nothing_sent
   end_case "refuses_missing_settings $setting"
 done
@@ -772,6 +786,67 @@ want_text "unauthorized_client"
 want_text "AADSTS700016: Application with identifier '***' was not found in the directory '***'."
 want_no_store_request
 end_case refuses_token_error
+
+begin_case
+# A dry run for a build's version that has a release: the release workflow
+# publishes the address for a final release alone, so the address is not asked.
+printf 'v%s\n' "$BUILD_VERSION" >"$GH_STUB/releases"
+serve_case
+CASE=dry_run_build_version_with_release
+run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$BUILD_VERSION" --dry-run true
+want_exit 0
+want_text "is not a final release's version, so the installer at $STUB_BASE/$(smoke_download_key "$BUILD_VERSION") is not checked"
+want_outcome "a real run would refuse, changing nothing: '$BUILD_VERSION' is not a version of the form MAJOR.MINOR.PATCH. Nothing"
+want_no_text "does not exist yet"
+want_count 0 "^GET /aggrega-cli/"
+want_count 0 "^PUT "
+want_count 0 "^POST /submission/"
+grep -q '^release download' "$GH_STUB/calls" && FAULTS+=("gh downloaded SHA256SUMS for a build's version")
+end_case dry_run_build_version_with_release
+
+begin_case
+R_STATUS="[$(answer '{"isReady": true, "ongoingSubmissionId": ""}' \
+  '[{"code": "warning", "target": "properties", "message": "stub: a property is advisory"}]'), $STATUS_BUSY, $STATUS_READY]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 0
+want_text "warning / properties / stub: a property is advisory"
+want_text "is in certification"
+want_count 1 "^PUT $P/packages\$"
+want_count 1 "^POST $P/submit\$"
+end_case status_warning_does_not_refuse
+
+begin_case
+R_SUBMISSION="[$(answer '{"publishingStatus": "InProgress", "hasFailed": false}')]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 0
+want_text "is in certification"
+want_count 1 "^GET $P/submission/$SUB/status\$"
+end_case submission_status_any_case
+
+begin_case
+R_STATUS="[$(refusal 403 corr-403-1 '[{"code": "forbidden", "target": "", "message": "stub: the caller has no access"}]')]"
+serve_case
+CASE=refuses_forbidden_names_cause
+run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$VERSION" --dry-run true
+want_exit 1
+want_text "HTTP 403"
+want_text "forbidden /  / stub: the caller has no access"
+want_text "corr-403-1"
+want_text "the Entra app registration lacks the Manager role in Partner Center, or the seller ID is not this account's"
+want_outcome "lacks the Manager role in Partner Center"
+want_count 0 "^PUT "
+end_case refuses_forbidden_names_cause
+
+begin_case
+R_STATUS="[$(refusal 500 corr-500-1 '[{"code": "internal", "target": "", "message": "stub: broke"}]')]"
+serve_case
+run_case -- --version "$VERSION" --dry-run true
+want_exit 1
+want_text "HTTP 500"
+want_no_text "Manager role"
+end_case refuses_server_error_names_no_cause
 
 begin_case
 R_PACKAGES="[$(refusal 429 corr-busy-1 '[{"code": "toomanyrequests", "target": "", "message": "stub: slow down"}]' \

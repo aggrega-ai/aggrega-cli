@@ -15,7 +15,7 @@
 #
 # A run, in order:
 #   1. refuses, naming each and where it lives, a setting below that is not
-#      set, and a seller ID that is not a number, before any request;
+#      set (its outcome line names them too), and a seller ID that is not a number, before any request;
 #   2. on a real run, refuses a version that is not MAJOR.MINOR.PATCH: a
 #      pre-release or a build is never submitted;
 #   3. reads the release v<version> with gh and holds the installer's address to
@@ -23,13 +23,15 @@
 #      one GET of it in full that answers 200 itself, not a redirect, with those
 #      bytes and a Content-Length equal to their number. A real run requires the
 #      release; a dry run for a version with no release says so and checks
-#      nothing;
+#      nothing, as does a dry run for a version that is not MAJOR.MINOR.PATCH,
+#      whose address the release workflow never publishes;
 #   4. asks Microsoft Entra ID for an access token for the Store API;
 #   5. reads the draft's status. When a submission is in progress, it reads that
 #      submission's status and prints both; a real run then refuses, changing
 #      nothing, and a dry run says a real run would refuse and goes on. When the
 #      draft is not ready and no submission is in progress, it asks again every
-#      10 seconds, 60 tries in all;
+#      10 seconds, 60 tries in all. An entry of the status's errors whose code is
+#      warning is printed and never refuses, here and at step 9;
 #   6. reads the draft's packages, and refuses unless there is exactly one,
 #      naming each package's URL. When the package's URL ends in the object key
 #      smoke_download_key gives a version, that version is the draft's: one
@@ -49,7 +51,8 @@
 #      packageuploaderror or whose target is anything but packages;
 #  10. submits the draft; the submission is the answer's submissionId, or its
 #      ongoingSubmissionId when it names none;
-#  11. reads the submission's status every 30 seconds, 20 tries in all.
+#  11. reads the submission's status every 30 seconds, 20 tries in all; the
+#      publishingStatus is read without regard to case.
 #      INPROGRESS: the submission is in certification, and the run passes. The
 #      submission API has no request that publishes a certified submission, and
 #      a submission reads INPROGRESS from certification until it is live; Partner
@@ -76,9 +79,11 @@
 # responseData}. An answer with an HTTP status outside 2xx, or with isSuccess
 # not true, is refused, naming each error's code, target and message, and the
 # answer's X-Correlation-ID header, the ID by which Microsoft's support finds a
-# request. The errors of a successful answer are its warnings, and are printed. A
-# read is retried by curl --retry 3, which waits as a rate-limited answer's
-# Retry-After header asks; a PUT or a POST is sent once, never retried.
+# request; on HTTP 401 or 403 it adds the likely cause, an Entra app without the
+# Manager role in Partner Center or a seller ID that is not the account's. The
+# errors of a successful answer are its warnings, and are printed. A read is
+# retried by curl --retry 3, which waits as a rate-limited answer's Retry-After
+# header asks; a PUT or a POST is sent once, never retried.
 #
 # Settings, all read from the environment. In the release workflow and the
 # dispatch workflow they come from this repository's GitHub environment
@@ -264,10 +269,12 @@ missing=()
 [ -n "$SELLER" ] || missing+=("variable MICROSOFT_STORE_SELLER_ID")
 [ -n "$PRODUCT" ] || missing+=("variable MICROSOFT_STORE_PRODUCT_ID")
 if [ "${#missing[@]}" -gt 0 ]; then
+  names=""
   for setting in "${missing[@]}"; do
     warn "the $setting of the GitHub environment microsoft-store is not set"
+    names+="${names:+, }$setting"
   done
-  refuse "nothing was sent: the ${#missing[@]} setting(s) above are needed on a dry run and a real run alike"
+  refuse "nothing was sent: not set in the GitHub environment microsoft-store: $names; every setting is needed on a dry run and a real run alike"
 fi
 [[ "$SELLER" =~ ^[0-9]+$ ]] \
   || refuse "the variable MICROSOFT_STORE_SELLER_ID is '$SELLER', not a seller ID: Partner Center gives it as a number, under Account settings, Legal info; nothing was sent"
@@ -307,7 +314,14 @@ release_exists() {
   refuse "gh could not read the release $TAG (exit $rc); nothing was sent to the Store"
 }
 
-if release_exists; then
+release_found=false
+release_exists && release_found=true
+if [ "$release_found" = true ] && [ "$RELEASE_FORM" = false ]; then
+  # Only a dry run gets here: a real run refused the version above. The release
+  # workflow publishes the installer's address for a final release alone, so
+  # the address of this version is not checked.
+  say "dry run: '$VERSION' is not a final release's version, so the installer at $NEW_URL is not checked: the release workflow publishes that address for a final release alone"
+elif [ "$release_found" = true ]; then
   rc=0
   gh release download "$TAG" --dir "$WORK/release" --pattern SHA256SUMS >/dev/null 2>"$WORK/gh.err" || rc=$?
   if [ "$rc" -ne 0 ]; then
@@ -389,6 +403,16 @@ entries() {
     | map(tostring | gsub("[\r\n]+"; " ")) | join(" / ")' "$WORK/answer")
 }
 
+# auth_hint <http status> — prints the likely cause of a 401 or a 403 from the
+# Store, and nothing for another status.
+auth_hint() {
+  case "$1" in
+    401 | 403)
+      printf '%s' "; likely cause: the Entra app registration lacks the Manager role in Partner Center, or the seller ID is not this account's"
+      ;;
+  esac
+}
+
 # refuse_answer <headline> — refuses with <headline>, then each error of the
 # answer and its X-Correlation-ID.
 refuse_answer() {
@@ -419,8 +443,7 @@ store() {
   CORRELATION=""
   code="$(auth_config | curl "${args[@]}" "$PRODUCT_PATH$path" 2>"$WORK/curl.err")" || rc=$?
   if [ -f "$WORK/headers" ]; then
-    CORRELATION="$(tr -d '\r' <"$WORK/headers" \
-      | awk -F': *' 'tolower($1) == "x-correlation-id" { value = $2 } END { print value }')"
+    CORRELATION="$(smoke_header_value "$WORK/headers" x-correlation-id)"
   fi
   if [ "$rc" -ne 0 ]; then
     relay "$WORK/curl.err" "" >&2
@@ -428,10 +451,10 @@ store() {
   fi
   if ! jq -e 'type == "object"' "$WORK/answer" >/dev/null 2>&1; then
     : >"$WORK/answer"
-    refuse_answer "the Store answered $what ($method $path) with HTTP $code and no JSON object"
+    refuse_answer "the Store answered $what ($method $path) with HTTP $code and no JSON object$(auth_hint "$code")"
   fi
   if [[ "$code" != 2?? ]] || ! jq -e '.isSuccess == true' "$WORK/answer" >/dev/null; then
-    refuse_answer "the Store refused $what ($method $path): HTTP $code, isSuccess $(jq -c '.isSuccess' "$WORK/answer")"
+    refuse_answer "the Store refused $what ($method $path): HTTP $code, isSuccess $(jq -c '.isSuccess' "$WORK/answer")$(auth_hint "$code")"
   fi
 }
 
@@ -439,10 +462,11 @@ store() {
 warnings() { entries "warning from the Store on $1"; }
 
 # draft_ready <when> — judges the draft's status in $WORK/answer: refuses on an
-# error whose code is packageuploaderror or whose target is not packages,
-# prints the other errors, and returns 0 when the draft is ready.
+# error whose code is packageuploaderror or whose target is not packages, an
+# entry whose code is warning excepted, prints the other entries, and returns 0
+# when the draft is ready.
 draft_ready() {
-  if jq -e '[(.errors // [])[] | objects | select(.target != "packages" or .code == "packageuploaderror")] | length > 0' \
+  if jq -e '[(.errors // [])[] | objects | select(.code != "warning" and (.target != "packages" or .code == "packageuploaderror"))] | length > 0' \
     "$WORK/answer" >/dev/null; then
     refuse_answer "the draft cannot become ready $1: the Store reports"
   fi
@@ -590,7 +614,7 @@ say "the Store created submission $SUBMISSION for $VERSION"
 tries=20
 for ((try = 1; try <= tries; try++)); do
   store GET "/submission/$(uri "$SUBMISSION")/status" "the read of submission $SUBMISSION's status"
-  status="$(jq -r '.responseData.publishingStatus // "UNKNOWN" | tostring' "$WORK/answer")"
+  status="$(jq -r '.responseData.publishingStatus // "UNKNOWN" | tostring | ascii_upcase' "$WORK/answer")"
   failed="$(jq -r '.responseData.hasFailed // false | tostring' "$WORK/answer")"
   if [ "$status" = FAILED ] || [ "$failed" = true ]; then
     refuse_answer "submission $SUBMISSION of $VERSION failed: publishingStatus $status, hasFailed $failed"
