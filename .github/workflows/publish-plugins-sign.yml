@@ -437,9 +437,12 @@ name: Publish and sign core plugins
 # For a tag carrying a pre-release suffix (v0.9.0-rc.1),
 # a dry run's included, each is skipped by its if:, which reads
 # sign-and-publish's prerelease output, and sign-and-publish's release step
-# names the first four in its log; so a pre-release run shows them skipped, not
-# failed. On a real publish each still refuses, in its own step, any other tag
-# that is not a release tag.
+# names them all in its log; so a pre-release run shows them skipped, not
+# failed. On a real publish the first four each still refuse, in their own
+# step, any other tag that is not a release tag; microsoft-store-submission
+# checks no tag, needs publish-downloads, which compares the tag with the
+# version, and its script refuses, on a real run, a version that is not
+# MAJOR.MINOR.PATCH.
 #
 # The sources, build, sign-windows, windows-installer, sign-windows-installer,
 # sign-and-publish, record-published and
@@ -605,7 +608,7 @@ name: Publish and sign core plugins
 # the organization's fork of microsoft/winget-pkgs, a new branch holding one
 # commit that adds the winget manifest's three files, from which it opens a pull
 # request on microsoft/winget-pkgs. A real publish of a pre-release makes
-# record-published's write alone: the four jobs after it are skipped.
+# record-published's write alone: the jobs after it are skipped.
 # Beside those, a real publish of a final release writes one object:
 # publish-downloads' copy of the Windows installer in the download bucket,
 # created under the release's version and never replaced; and
@@ -4069,7 +4072,7 @@ jobs:
           esac
           printf 'prerelease=%s\n' "$PRERELEASE" >> "$GITHUB_OUTPUT"
           if [ "$PRERELEASE" = "true" ]; then
-            echo "publish-plugins: '$TAG' carries a pre-release suffix, so publish-skills, publish-package-channels, open-winget-pull-request and publish-downloads are skipped on this run: aggrega-skills, the Homebrew tap and the Scoop bucket, winget and the Microsoft Store download take final releases alone"
+            echo "publish-plugins: '$TAG' carries a pre-release suffix, so publish-skills, publish-package-channels, open-winget-pull-request, publish-downloads and microsoft-store-submission are skipped on this run: aggrega-skills, the Homebrew tap and the Scoop bucket, winget, the Microsoft Store download and the Microsoft Store submission take final releases alone"
           fi
 
           if [ "$DRY" = "true" ]; then
