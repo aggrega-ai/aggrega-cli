@@ -1,0 +1,201 @@
+name: Checks
+
+# The checks every push to main or to a release branch, and every pull request
+# into main, runs on GitHub-hosted runners. A newer push to the same branch or
+# pull request cancels the run it supersedes.
+#
+# Nothing here builds the WebAssembly guests the binary embeds: a test binary
+# that links internal/wasm/embedded stops at start-up when the guests are not
+# built, so the packages whose tests link it run in full-checks.yml, after the
+# guests are built. The jobs run side by side, each from an empty module and
+# build cache:
+#
+#   build    go build of every package, and of every package as the light
+#            binary builds it (-tags light), whose files the default build
+#            never compiles.
+#   vet      gofmt; go vet of every package, and under the integration tag,
+#            whose test files no untagged build sees.
+#   test     go test of every package whose test binary does not link
+#            internal/wasm/embedded, the set derived at run time from
+#            `go list -test`, split in two halves (every other package of the
+#            sorted set) that run side by side. A test that reads a repository
+#            checked out beside this one skips here, naming it; full-checks.yml
+#            checks those repositories out.
+#   scripts  the repository's read-only checks: the version recipe has one home
+#            (scripts/check-version-single-source.sh), the third-party
+#            attribution is current (scripts/check-third-party-licenses.sh), no
+#            job of the release workflow that can reach a credential runs
+#            third-party code (scripts/check-release-job-isolation.sh, which
+#            also reads the aggrega-hub script that workflow runs, so aggrega-hub
+#            is checked out beside this repository), and the committed skills
+#            repository is what the skills generate.
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build every package, and as the light binary
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      GOWORK: 'off'
+    steps:
+      - name: Check out the CLI
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Build every package
+        run: go build ./...
+
+      - name: Build every package as the light binary builds it
+        run: go build -tags light ./...
+
+  vet:
+    name: Vet every package and check the formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      GOWORK: 'off'
+    steps:
+      - name: Check out the CLI
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Refuse a file gofmt would change
+        run: |
+          set -euo pipefail
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::not formatted with gofmt (run gofmt -w on each):"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet every package
+        run: go vet ./...
+
+      - name: Vet the integration-tagged tests
+        run: go vet -tags integration ./...
+
+  test:
+    name: Test the packages that do not link the embedded guests (half ${{ matrix.half }} of 2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        half: [1, 2]
+    env:
+      GOWORK: 'off'
+    steps:
+      - name: Check out the CLI
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Select this half of the packages whose test binary does not link the embedded guests
+        env:
+          HALF: ${{ matrix.half }}
+        run: |
+          set -euo pipefail
+          embedded="$(go list ./internal/wasm/embedded)"
+          go list -test -f '{{.ImportPath}} {{join .Deps " "}}' ./... \
+            | awk -v e="$embedded" '$1 ~ /\.test$/ { for (i = 2; i <= NF; i++) if ($i == e) { sub(/\.test$/, "", $1); print $1; break } }' \
+            | LC_ALL=C sort -u > "$RUNNER_TEMP/needs-guests"
+          go list ./... | LC_ALL=C sort -u > "$RUNNER_TEMP/all"
+          LC_ALL=C comm -23 "$RUNNER_TEMP/all" "$RUNNER_TEMP/needs-guests" > "$RUNNER_TEMP/without-guests"
+          awk -v half="$HALF" '(NR - 1) % 2 == half - 1' "$RUNNER_TEMP/without-guests" > "$RUNNER_TEMP/packages"
+          echo "testing $(wc -l < "$RUNNER_TEMP/packages") of the $(wc -l < "$RUNNER_TEMP/without-guests") packages that do not link the embedded guests (half $HALF of 2); the $(wc -l < "$RUNNER_TEMP/needs-guests") that do run in full-checks.yml"
+
+      - name: Test them
+        run: |
+          set -euo pipefail
+          mapfile -t packages < "$RUNNER_TEMP/packages"
+          go test -count=1 -timeout 15m "${packages[@]}"
+
+  scripts:
+    name: Check the version recipe, the attribution, the release jobs and the skills repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      GOWORK: 'off'
+    steps:
+      - name: Check out the CLI
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          path: aggrega-cli
+          persist-credentials: false
+
+      - name: Check out aggrega-hub beside it
+        # The release workflow runs a script of aggrega-hub; the release-job
+        # check reads it there. aggrega-hub is public, so the run's own token
+        # reads it.
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: aggrega-ai/aggrega-hub
+          ref: main
+          path: aggrega-hub
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: aggrega-cli/go.mod
+          cache: false
+
+      - name: Check that the version recipe has one home
+        run: aggrega-cli/scripts/check-version-single-source.sh
+
+      - name: Check that the third-party attribution is current
+        run: aggrega-cli/scripts/check-third-party-licenses.sh
+
+      - name: Check that no release job that can reach a credential runs third-party code
+        run: aggrega-cli/scripts/check-release-job-isolation.sh
+
+      - name: Check that the committed skills repository is what the skills generate
+        working-directory: aggrega-cli
+        run: |
+          set -euo pipefail
+          generated="$(mktemp -d "$RUNNER_TEMP/skills-repository.XXXXXX")"
+          go run ./internal/skills/genrepository -out "$generated"
+          if ! diff -r internal/skills/repository "$generated"; then
+            echo "::error::internal/skills/repository is not what the skills built into the binary generate (the differences are above); run go generate ./internal/skills and commit the result"
+            exit 1
+          fi
