@@ -24,8 +24,9 @@ name: Checks
 #   scripts  the repository's read-only checks: the version recipe has one home
 #            (scripts/check-version-single-source.sh), the third-party
 #            attribution is current (scripts/check-third-party-licenses.sh), no
-#            job of the release workflow that can reach a credential runs
-#            third-party code (scripts/check-release-job-isolation.sh, which
+#            job of the release workflow or of the Store dispatch workflow
+#            that can reach a credential runs third-party code
+#            (scripts/check-release-job-isolation.sh, run once for each, which
 #            also reads the aggrega-hub script that workflow runs, so aggrega-hub
 #            is checked out beside this repository), and the committed skills
 #            repository is what the skills generate.
@@ -192,8 +193,10 @@ jobs:
       - name: Check that the third-party attribution is current
         run: aggrega-cli/scripts/check-third-party-licenses.sh
 
-      - name: Check that no release job that can reach a credential runs third-party code
-        run: aggrega-cli/scripts/check-release-job-isolation.sh
+      - name: Check that no job of the release workflow or the Store dispatch workflow that can reach a credential runs third-party code
+        run: |
+          aggrega-cli/scripts/check-release-job-isolation.sh
+          aggrega-cli/scripts/check-release-job-isolation.sh aggrega-cli/.github/workflows/microsoft-store-submission.yml
 
       - name: Check that the committed skills repository is what the skills generate
         working-directory: aggrega-cli
