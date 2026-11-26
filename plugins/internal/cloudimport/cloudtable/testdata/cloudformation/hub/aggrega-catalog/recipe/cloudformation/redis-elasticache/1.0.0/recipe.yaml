@@ -1,0 +1,57 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: redis-elasticache
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/datastore/redis:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  # This Recipe reads from infra.overrides:
+  #   CacheNodeType             - string (Properties.CacheNodeType; default "cache.t3.small")
+  #   CacheParameterGroupFamily - string (the parameter group's CacheParameterGroupFamily)
+  provides:
+    host: "!GetAtt {{ .locals.logical_id }}.PrimaryEndPoint.Address"
+
+  assertions:
+    credentials: >-
+      {{- $f := default dict .features -}}
+      {{- if hasKey $f "password" -}}
+      {{- $p := $f.password -}}
+      {{- if ne (toString (optional $p "type" "")) "core/random-password" -}}
+      {{- fail "the password slot takes core/random-password alone" -}}
+      {{- end -}}
+      {{- end -}}
+
+  artifacts:
+    template.yaml: |
+      {{- $pw := optional (default dict .features) "password" dict }}
+      {{- $pwp := optional $pw "provides" dict }}
+      {{- $params := optional .values "maxmemory_policy" "" }}
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::ElastiCache::ReplicationGroup
+          Properties:
+            Engine: redis
+            CacheNodeType: "{{ optional .infra.overrides "CacheNodeType" "cache.t3.small" }}"
+            Port: {{ .infra.port }}
+            NumCacheClusters: 1
+            {{- if hasKey (default dict .features) "password" }}
+            AuthToken:
+              Fn::Sub:
+                - "{{ "{{" }}resolve:secretsmanager:${Secret}:SecretString:{{ $pwp.key }}{{ "}}" }}"
+                - Secret: {{ $pwp.name }}
+            {{- end }}
+            {{- if $params }}
+            CacheParameterGroupName: !Ref {{ .locals.logical_id }}ParameterGroup
+            {{- end }}
+        {{- if $params }}
+        {{ .locals.logical_id }}ParameterGroup:
+          Type: AWS::ElastiCache::ParameterGroup
+          Properties:
+            CacheParameterGroupFamily: "{{ .infra.overrides.CacheParameterGroupFamily }}"
+            Description: "parameters for {{ .context.instance_id }}"
+        {{- end }}

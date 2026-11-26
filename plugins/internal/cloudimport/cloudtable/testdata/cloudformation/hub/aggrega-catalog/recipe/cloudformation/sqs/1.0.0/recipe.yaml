@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: sqs
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/messaging/sqs:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  provides:
+    arn: "!GetAtt {{ .locals.logical_id }}.Arn"
+
+  artifacts:
+    template.yaml: |
+      {{- $l := .locals.logical_id }}
+      Resources:
+        {{ $l }}:
+          Type: AWS::SQS::Queue
+          Properties:
+            QueueName: "{{ .values.queue_name }}"

@@ -190,7 +190,7 @@ func unindexedModules(t *testing.T, h *hubCatalog, index func(string) (armimport
 // reads the miniature hub, whose modules are the index's none — is named.
 func TestEveryArmRecipeModuleIsInTheAVMIndex(t *testing.T) {
 	t.Parallel()
-	for _, line := range unindexedModules(t, loadHubOrFail(t), armimport.AVMModuleByPath) {
+	for _, line := range unindexedModules(t, loadHubOrFail(t, armFormatOrFail(t)), armimport.AVMModuleByPath) {
 		t.Errorf("%s, which the index holds no row of: regenerate the index from a newer module index file with "+
 			"`go run ./plugins/internal/cloudimport/cloudtable -avm-index FILE -avm-commit COMMIT -out "+
 			"plugins/internal/armimport/avmindex_gen.go`", line)

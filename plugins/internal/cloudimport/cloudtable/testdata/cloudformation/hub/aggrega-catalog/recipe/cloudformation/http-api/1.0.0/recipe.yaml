@@ -1,0 +1,39 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: http-api
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/gateway/acme-api:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+    operator_host: '{{ optional (optional .infra "overrides" dict) "host" "" }}'
+
+  # This Recipe reads from infra.overrides:
+  #   host - string (published as provides.endpoint; renders nothing)
+  provides:
+    endpoint: "{{ if .locals.operator_host }}https://{{ .locals.operator_host }}{{ else }}!GetAtt {{ .locals.logical_id }}Api.ApiEndpoint{{ end }}"
+    host: "!Select [2, !Split [\"/\", !GetAtt {{ .locals.logical_id }}Api.ApiEndpoint]]"
+
+  artifacts:
+    template.yaml: |
+      {{- $l := .locals.logical_id }}
+      Resources:
+        {{ $l }}Api:
+          Type: AWS::ApiGatewayV2::Api
+          Properties:
+            Name: "{{ .context.instance_id }}"
+            ProtocolType: HTTP
+        {{ $l }}Stage:
+          Type: AWS::ApiGatewayV2::Stage
+          Properties:
+            ApiId: !Ref {{ $l }}Api
+            StageName: "$default"
+        {{- if .locals.operator_host }}
+        {{ $l }}DomainName:
+          Type: AWS::ApiGatewayV2::DomainName
+          Properties:
+            DomainName: "{{ .locals.operator_host }}"
+        {{- end }}

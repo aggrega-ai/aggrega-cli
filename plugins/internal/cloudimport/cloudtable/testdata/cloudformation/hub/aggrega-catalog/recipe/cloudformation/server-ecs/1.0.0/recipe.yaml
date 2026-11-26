@@ -1,0 +1,24 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: server-ecs
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/compute/server:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  # This Recipe reads from infra.overrides:
+  #   Cluster - string (the service's Cluster), required
+  provides: {}
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::ECS::Service
+          Properties:
+            Cluster: "{{ .infra.overrides.Cluster }}"
+            LaunchType: EC2

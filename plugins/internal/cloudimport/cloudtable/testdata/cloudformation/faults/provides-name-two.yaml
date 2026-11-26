@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: provides-name-two
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/gateway/acme-api:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  provides:
+    user_pool_id: "!GetAtt {{ .locals.logical_id }}UserPool.UserPoolId"
+    client_id: "!GetAtt {{ .locals.logical_id }}Client.ClientId"
+
+  artifacts:
+    template.yaml: |
+      {{- $l := .locals.logical_id }}
+      Resources:
+        {{ $l }}UserPool:
+          Type: AWS::Cognito::UserPool
+        {{ $l }}Client:
+          Type: AWS::Cognito::UserPoolClient
+          Properties:
+            UserPoolId: !Ref {{ $l }}UserPool

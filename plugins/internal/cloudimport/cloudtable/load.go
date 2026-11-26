@@ -152,6 +152,11 @@ func (h *hubCatalog) read(r types.Recipe) (recipeSource, error) {
 		v, _ := provides.Get(k)
 		out.provides = append(out.provides, entry{key: k, value: v})
 	}
+	assertions := r.Spec.Assertions
+	for _, k := range assertions.Keys() {
+		v, _ := assertions.Get(k)
+		out.assertions = append(out.assertions, v)
+	}
 	refuse := func(ref string, err error) (recipeSource, error) {
 		return recipeSource{}, &importError{identity: identity, path: path, ref: ref, err: err}
 	}

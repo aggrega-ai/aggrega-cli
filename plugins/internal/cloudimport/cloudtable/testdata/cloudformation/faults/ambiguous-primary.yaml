@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: ambiguous-primary
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/messaging/sqs:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  provides:
+    region: "!Ref AWS::Region"
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}Queue:
+          Type: AWS::SQS::Queue
+        {{ .locals.logical_id }}DeadLetters:
+          Type: AWS::SQS::Queue

@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: unresolvable-import
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/compute/server:1.0.0
+
+  provides: {}
+
+  artifacts:
+    service:
+      $import: MissingFragment#/artifacts/Service

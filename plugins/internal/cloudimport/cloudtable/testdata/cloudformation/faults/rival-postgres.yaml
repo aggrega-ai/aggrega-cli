@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: rival-postgres
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/datastore/acme-sql:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  provides: {}
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::RDS::DBInstance
+          Properties:
+            Engine: postgres

@@ -1,0 +1,33 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: s3-object-store-amazon-s3
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/storage/s3-object-store:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  # This Recipe reads from infra.overrides:
+  #   policy - object (the BucketPolicy's Properties.PolicyDocument), the bucket policy document
+  provides:
+    bucket: "!Ref {{ .locals.logical_id }}"
+    region: "!Ref AWS::Region"
+
+  artifacts:
+    template.yaml: |
+      {{- $policy := optional (optional .infra "overrides" dict) "policy" dict }}
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::S3::Bucket
+          Properties:
+            BucketName: "{{ .values.bucket }}"
+        {{- if $policy }}
+        {{ .locals.logical_id }}Policy:
+          Type: AWS::S3::BucketPolicy
+          Properties:
+            Bucket: !Ref {{ .locals.logical_id }}
+            PolicyDocument: {{ toJson $policy }}
+        {{- end }}

@@ -83,6 +83,7 @@ func render(rows []cloudimport.Row, images []cloudimport.ImageRow, revision stri
 			{"Provides", r.Provides}} {
 			writePlacements(&b, l.field, l.ps)
 		}
+		writeFolds(&b, r.Folds)
 		writeText(&b, "Origin", r.Origin)
 		b.WriteString("},\n")
 	}
@@ -132,6 +133,62 @@ func writePlacements(b *bytes.Buffer, field string, ps []cloudimport.Placement) 
 		b.WriteString("},\n")
 	}
 	b.WriteString("},\n")
+}
+
+// writeFolds writes a row's folds, nothing where it has none; a fold's empty
+// key, path and reason and its unset switches are left out.
+func writeFolds(b *bytes.Buffer, folds []cloudimport.Fold) {
+	if len(folds) == 0 {
+		return
+	}
+	b.WriteString("Folds: []cloudimport.Fold{\n")
+	for _, f := range folds {
+		fmt.Fprintf(b, "{Type: %q", f.Type)
+		if len(f.Key) > 0 {
+			fmt.Fprintf(b, ", Key: %s", stringsLiteral(f.Key))
+		}
+		if len(f.From) > 0 {
+			fmt.Fprintf(b, ", From: %s", stringsLiteral(f.From))
+		}
+		if f.One {
+			b.WriteString(", One: true")
+		}
+		if f.Instances {
+			b.WriteString(", Instances: true")
+		}
+		if f.NotCarried != "" {
+			fmt.Fprintf(b, ", NotCarried: %q", f.NotCarried)
+		}
+		b.WriteString("},\n")
+	}
+	b.WriteString("},\n")
+}
+
+// renderTable writes f's table: the rows and the image rows as render writes
+// them and, for a format whose table lists them, the feature types the
+// Recipes admit at a credential slot after them, ordered by Recipe and slot,
+// formatted as gofmt formats it.
+func renderTable(rows []cloudimport.Row, images []cloudimport.ImageRow, slots []slotFeature, revision string,
+	f format) ([]byte, error) {
+	content, err := render(rows, images, revision, f)
+	if err != nil || !f.slots {
+		return content, err
+	}
+	b := bytes.NewBuffer(content)
+	fmt.Fprintf(b, "\n// generatedSlotFeatures are the feature types the hub's %s Recipes admit at a\n",
+		f.capability)
+	b.WriteString("// credential slot, one per Recipe and slot whose assertions admit one alone,\n")
+	b.WriteString("// ordered by Recipe and slot.\n")
+	b.WriteString("var generatedSlotFeatures = []SlotFeature{\n")
+	for _, s := range slots {
+		fmt.Fprintf(b, "{Recipe: %q, Slot: %q, Feature: %q},\n", s.recipe, s.slot, s.feature)
+	}
+	b.WriteString("}\n")
+	formatted, err := gofmt.Source(b.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("format the generated table: %w", err)
+	}
+	return formatted, nil
 }
 
 // stringsLiteral writes path as a Go slice literal.

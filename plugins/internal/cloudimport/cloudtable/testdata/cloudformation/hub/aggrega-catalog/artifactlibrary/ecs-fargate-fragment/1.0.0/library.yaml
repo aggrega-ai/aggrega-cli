@@ -1,0 +1,115 @@
+apiVersion: aggrega.ai/v1beta1
+kind: ArtifactLibrary
+metadata:
+  name: EcsFargateFragment
+  version: 1.0.0
+spec:
+  artifacts:
+    Service:
+      template.yaml: |
+        {{- $instances := true }}
+        {{- $scheduled := false }}
+        {{- $id := .context.instance_id }}
+        {{- $logicalId := capitalizedWords $id }}
+        {{- $o := optional .infra "overrides" dict }}
+        {{- $image := toString (optional .infra "image" "") }}
+        {{- if not $image }}{{ $image = toString (optional .locals "default_image" "") }}{{ end }}
+        {{- $expression := "" }}
+        {{- if $scheduled }}
+        {{- with trim (toString (optional .values "schedule" "")) }}
+        {{- $expression = printf "cron(%s)" . }}
+        {{- end }}
+        {{- end }}
+        Resources:
+          {{- if $instances }}
+          {{ $logicalId }}:
+            Type: AWS::ECS::Service
+            Properties:
+              Cluster: {{ toJson $o.Cluster }}
+              LaunchType: FARGATE
+              DesiredCount: {{ optional .infra "replicas" 1 }}
+              TaskDefinition: !Ref {{ $logicalId }}TaskDefinition
+              NetworkConfiguration:
+                AwsvpcConfiguration:
+                  Subnets: {{ toJson $o.Subnets }}
+                  AssignPublicIp: {{ optional $o "AssignPublicIp" "DISABLED" }}
+              {{- with optional $o "TargetGroupArn" "" }}
+              LoadBalancers:
+                - TargetGroupArn: {{ toJson . }}
+                  ContainerName: main
+              {{- end }}
+          {{- end }}
+          {{- with $expression }}
+          {{ $logicalId }}Schedule:
+            Type: AWS::Scheduler::Schedule
+            Properties:
+              ScheduleExpression: {{ toJson . }}
+              Target:
+                Arn: {{ toJson $o.Cluster }}
+                EcsParameters:
+                  TaskDefinitionArn: !Ref {{ $logicalId }}TaskDefinition
+          {{- end }}
+          {{ $logicalId }}TaskDefinition:
+            Type: AWS::ECS::TaskDefinition
+            Properties:
+              Family: "{{ $id }}"
+              NetworkMode: awsvpc
+              ExecutionRoleArn: {{ toJson $o.ExecutionRoleArn }}
+              ContainerDefinitions:
+                - Name: main
+                  Image: {{ toJson $image }}
+                  Essential: true
+    Task:
+      template.yaml: |
+        {{- $instances := false }}
+        {{- $scheduled := true }}
+        {{- $id := .context.instance_id }}
+        {{- $logicalId := capitalizedWords $id }}
+        {{- $o := optional .infra "overrides" dict }}
+        {{- $image := toString (optional .infra "image" "") }}
+        {{- if not $image }}{{ $image = toString (optional .locals "default_image" "") }}{{ end }}
+        {{- $expression := "" }}
+        {{- if $scheduled }}
+        {{- with trim (toString (optional .values "schedule" "")) }}
+        {{- $expression = printf "cron(%s)" . }}
+        {{- end }}
+        {{- end }}
+        Resources:
+          {{- if $instances }}
+          {{ $logicalId }}:
+            Type: AWS::ECS::Service
+            Properties:
+              Cluster: {{ toJson $o.Cluster }}
+              LaunchType: FARGATE
+              DesiredCount: {{ optional .infra "replicas" 1 }}
+              TaskDefinition: !Ref {{ $logicalId }}TaskDefinition
+              NetworkConfiguration:
+                AwsvpcConfiguration:
+                  Subnets: {{ toJson $o.Subnets }}
+                  AssignPublicIp: {{ optional $o "AssignPublicIp" "DISABLED" }}
+              {{- with optional $o "TargetGroupArn" "" }}
+              LoadBalancers:
+                - TargetGroupArn: {{ toJson . }}
+                  ContainerName: main
+              {{- end }}
+          {{- end }}
+          {{- with $expression }}
+          {{ $logicalId }}Schedule:
+            Type: AWS::Scheduler::Schedule
+            Properties:
+              ScheduleExpression: {{ toJson . }}
+              Target:
+                Arn: {{ toJson $o.Cluster }}
+                EcsParameters:
+                  TaskDefinitionArn: !Ref {{ $logicalId }}TaskDefinition
+          {{- end }}
+          {{ $logicalId }}TaskDefinition:
+            Type: AWS::ECS::TaskDefinition
+            Properties:
+              Family: "{{ $id }}"
+              NetworkMode: awsvpc
+              ExecutionRoleArn: {{ toJson $o.ExecutionRoleArn }}
+              ContainerDefinitions:
+                - Name: main
+                  Image: {{ toJson $image }}
+                  Essential: true

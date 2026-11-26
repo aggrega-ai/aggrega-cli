@@ -1,0 +1,62 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: postgres-rds
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/datastore/postgres:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+    operator_host: '{{ optional (optional .infra "overrides" dict) "host" "" }}'
+
+  # This Recipe reads from infra.overrides:
+  #   DeletionPolicy       - string (the resource's DeletionPolicy; default "Snapshot")
+  #   DBInstanceClass      - string (Properties.DBInstanceClass; default "db.t3.small")
+  #   MultiAZ              - bool (Properties.MultiAZ; defaults to infra.ha.enabled)
+  #   DBSubnetGroupName    - string (Properties.DBSubnetGroupName)
+  #   VPCSecurityGroups    - []string (Properties.VPCSecurityGroups)
+  #   host                 - string (published as provides.host; renders nothing)
+  provides:
+    host: "{{ if .locals.operator_host }}{{ .locals.operator_host }}{{ else }}!GetAtt {{ .locals.logical_id }}.Endpoint.Address{{ end }}"
+    port: "{{ .infra.port }}"
+    user: "{{ .values.user }}"
+
+  assertions:
+    credentials: >-
+      {{- $f := default dict .features -}}
+      {{- if hasKey $f "password" -}}
+      {{- $ty := toString (optional $f.password "type" "") -}}
+      {{- if ne (first (splitList ":" $ty)) "core/generated-secret" -}}
+      {{- fail "the password slot takes core/generated-secret alone" -}}
+      {{- end -}}
+      {{- end -}}
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::RDS::DBInstance
+          DeletionPolicy: {{ if .infra.overrides }}{{ .infra.overrides.DeletionPolicy | default "Snapshot" }}{{ else }}Snapshot{{ end }}
+          Properties:
+            Engine: postgres
+            EngineVersion: "{{ .infra.engine_version }}"
+            Port: {{ .infra.port }}
+            DBName: "{{ .values.database }}"
+            MasterUsername: "{{ .values.user }}"
+            ManageMasterUserPassword: true
+            DBInstanceClass: {{ if .infra.overrides }}{{ .infra.overrides.DBInstanceClass | default "db.t3.small" }}{{ else }}db.t3.small{{ end }}
+            AllocatedStorage: {{ trimSuffix "Gi" .infra.storage.size }}
+            MultiAZ: {{ if .infra.overrides }}{{ optional .infra.overrides "MultiAZ" .infra.ha.enabled }}{{ else }}{{ .infra.ha.enabled }}{{ end }}
+            {{- if .infra.overrides }}
+            {{- if .infra.overrides.DBSubnetGroupName }}
+            DBSubnetGroupName: "{{ .infra.overrides.DBSubnetGroupName }}"
+            {{- end }}
+            {{- if .infra.overrides.VPCSecurityGroups }}
+            VPCSecurityGroups: {{ toJson .infra.overrides.VPCSecurityGroups }}
+            {{- end }}
+            {{- end }}
+
+      provides:
+        host: {{ if .locals.operator_host }}"{{ .locals.operator_host }}"{{ else }}!GetAtt {{ .locals.logical_id }}.Endpoint.Address{{ end }}

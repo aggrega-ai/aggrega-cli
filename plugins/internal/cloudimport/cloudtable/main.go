@@ -13,9 +13,12 @@
 // — and reads, of each Recipe at the version a reference naming it without one
 // resolves to, its text literally, every library import resolved as a build
 // resolves it; it renders nothing and evaluates no template. Each format reads
-// its Recipes by rules of its own (arm.go for arm). A row carries its
-// Component's category label as its category, and every other label of the
-// Component, as an import is handed them, as its traits.
+// its Recipes by rules of its own (arm.go for arm, cloudformation.go for
+// cloudformation), and a format's reader may refuse a Recipe whose text it
+// cannot read a row from, naming the Recipe and what to fix; no table is then
+// written. A row carries its Component's category label as its category, and
+// every other label of the Component, as an import is handed them, as its
+// traits.
 //
 // The generator reads the format's hand-written table, in the importer's
 // package, for what it accounts for: a Recipe its notImported lists generates
@@ -26,10 +29,14 @@
 // no table is written, since a table naming one of them would decide which
 // Component a resource of that kind is — unless the hand table writes the
 // rows of all of them but one itself, each Recipe it names then generating no
-// row. A Recipe whose import the checkout does not resolve is refused too,
-// naming it and the reference, and so is a Recipe implementing a Component the
-// checkout holds no version of. The rows are ordered by key, When and Recipe,
-// so one checkout always writes the same bytes.
+// row. A format's hand table may also write the Whens of the Recipes whose
+// text gives no When telling their resources apart: each Recipe it names gives
+// one row for each When written, its text's When followed by that one, and a
+// When written for a Recipe that gives no row is refused. A Recipe whose
+// import the checkout does not resolve is refused too, naming it and the
+// reference, and so is a Recipe implementing a Component the checkout holds no
+// version of. The rows are ordered by key, When and Recipe, so one checkout
+// always writes the same bytes.
 //
 // A Recipe sourcing a module of the Azure Verified Modules programme gives a
 // row keyed by the type of the resource the module deploys, which the format's
@@ -39,7 +46,9 @@
 // Beside the rows it writes the image rows of the container products: each
 // Recipe whose locals name a literal image default maps the image's
 // repository, as the Compose image table reads one, to the Recipe and its
-// Component, with the infra key the Recipe reads the image's tag from.
+// Component, with the infra key the Recipe reads the image's tag from. For a
+// format that asks for them it writes, too, the one feature type each Recipe's
+// assertions admit at a credential slot, where they admit one.
 //
 // The table names the aggrega-hub commit it was generated from: the last
 // commit that changed a path the generator reads, so a commit to anything else
@@ -55,6 +64,7 @@
 // Usage:
 //
 //	go run ./plugins/internal/cloudimport/cloudtable -format arm -hub ../aggrega-hub -out plugins/internal/armimport/table_gen.go
+//	go run ./plugins/internal/cloudimport/cloudtable -format cloudformation -hub ../aggrega-hub -out plugins/internal/cfnimport/table_gen.go
 //	go run ./plugins/internal/cloudimport/cloudtable -format arm -hub DIR -revision NAME -report
 //	go run ./plugins/internal/cloudimport/cloudtable -avm-index BicepResourceModules.csv -avm-commit COMMIT -out plugins/internal/armimport/avmindex_gen.go
 package main
@@ -73,6 +83,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armimport"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cfnimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
 )
@@ -87,12 +98,24 @@ type format struct {
 	extract               func(recipeSource) (cloudimport.Row, string)
 	moduleType            func(module string) (string, bool)
 	table                 func() cloudimport.Table
+	// read, where set, reads one Recipe's row in extract's place: the row,
+	// with notes on what it leaves out; no row, with why; or an error saying
+	// why the Recipe is refused and what to fix, which writes no table.
+	read func(recipeSource) (cloudimport.Row, string, error)
+	// whens, where set, returns the Whens the importer's table writes by hand
+	// for the generated rows of the Recipes it names.
+	whens func() map[string][][]cloudimport.Pred
+	// slots makes the table list, beside the rows, the one feature type each
+	// Recipe's assertions admit at a credential slot.
+	slots bool
 }
 
 // formats are the formats the generator writes a table for.
 var formats = []format{
 	{name: "arm", capability: "arm", pkg: "armimport", extract: extractARM, moduleType: avmResourceType,
 		table: armimport.Table},
+	{name: "cloudformation", capability: "cloudformation", pkg: "cfnimport", read: extractCloudFormation,
+		table: cfnimport.Table, whens: cfnimport.RecipeWhens, slots: true},
 }
 
 // avmResourceType returns the type of the resource the Azure Verified Modules
@@ -113,7 +136,8 @@ func formatNamed(name string) (format, bool) {
 }
 
 func main() {
-	name := flag.String("format", "", "the format whose table is generated: arm (required, unless -avm-index is given)")
+	name := flag.String("format", "", "the format whose table is generated: arm or cloudformation (required, unless "+
+		"-avm-index is given)")
 	hub := flag.String("hub", "", "the aggrega-hub checkout whose Recipes the table is generated from (required)")
 	out := flag.String("out", "", "the file the table is written to; standard output where empty")
 	revision := flag.String("revision", "", "what the table names as the revision it was read from; the checkout's HEAD where empty")
@@ -135,8 +159,8 @@ func main() {
 	}
 	f, ok := formatNamed(*name)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "cloudtable: -format names %q, which is no format a table is generated for; name arm\n",
-			*name)
+		fmt.Fprintf(os.Stderr, "cloudtable: -format names %q, which is no format a table is generated for; name arm "+
+			"or cloudformation\n", *name)
 		os.Exit(2)
 	}
 	if *hub == "" {
@@ -169,12 +193,18 @@ func run(f format, hub, out, revision string, report bool) error {
 	if err != nil {
 		return err
 	}
+	var slots []slotFeature
+	if f.slots {
+		if slots, err = generateSlotFeaturesFromHub(hub, f, f.table()); err != nil {
+			return err
+		}
+	}
 	if revision == "" {
 		if revision, err = hubRevision(hub, f); err != nil {
 			return err
 		}
 	}
-	content, err := render(rows, images, revision, f)
+	content, err := renderTable(rows, images, slots, revision, f)
 	if err != nil {
 		return err
 	}
@@ -258,6 +288,17 @@ func (u *unindexedModule) Error() string {
 		"index file, or source a module the index holds"
 }
 
+// refusedRecipes is each Recipe a format's reader refuses, with why and what
+// to fix, and each Recipe a When is written by hand for that gives no row.
+type refusedRecipes struct {
+	lines []string
+}
+
+// Error names each Recipe and what to fix.
+func (r *refusedRecipes) Error() string {
+	return strings.Join(r.lines, "; ") + "; no table is written"
+}
+
 // generate reads each Recipe of h's capability, by name, at the version a
 // reference naming it without one resolves to, and returns f's rows and one
 // note per Recipe.
@@ -266,11 +307,17 @@ func generate(h *hubCatalog, f format, hand cloudimport.Table) ([]cloudimport.Ro
 	for _, n := range hand.NotImported {
 		notImported[n.Recipe] = true
 	}
+	var whens map[string][][]cloudimport.Pred
+	if f.whens != nil {
+		whens = f.whens()
+	}
+	applied := map[string]bool{}
 	var (
 		claims  []claim
 		notes   []string
 		missing missingComponent
 		lacking unindexedModule
+		refused refusedRecipes
 	)
 	for _, name := range h.recipeNames() {
 		r, ok := h.recipe(name)
@@ -286,7 +333,18 @@ func generate(h *hubCatalog, f format, hand cloudimport.Table) ([]cloudimport.Ro
 			notes = append(notes, identity+": no row, since the hand table lists it in notImported")
 			continue
 		}
-		row, why := f.extract(src)
+		var (
+			row cloudimport.Row
+			why string
+		)
+		if f.read != nil {
+			if row, why, err = f.read(src); err != nil {
+				refused.lines = append(refused.lines, "the Recipe "+identity+" ("+src.path+") "+err.Error())
+				continue
+			}
+		} else {
+			row, why = f.extract(src)
+		}
 		if row.Key == "" {
 			notes = append(notes, identity+": no row, since "+why)
 			continue
@@ -308,14 +366,40 @@ func generate(h *hubCatalog, f format, hand cloudimport.Table) ([]cloudimport.Ro
 		}
 		row.Component, row.Recipe, row.Origin = src.component, name, "generated "+src.path
 		row.Category, row.Traits = labelsOf(labels)
-		claims = append(claims, claim{row: row, identity: identity})
-		notes = append(notes, identity+": "+row.Key+cloudimport.WhenText(row.When)+" -> "+row.Component)
+		if why != "" {
+			why = "; " + why
+		}
+		hands, ok := whens[name]
+		if !ok {
+			hands = [][]cloudimport.Pred{nil}
+		}
+		applied[name] = ok
+		for _, w := range hands {
+			told := row
+			if len(w) > 0 {
+				told.When = slices.Concat(row.When, w)
+			}
+			claims = append(claims, claim{row: told, identity: identity})
+			notes = append(notes, identity+": "+told.Key+cloudimport.WhenText(told.When)+" -> "+told.Component+why)
+		}
+	}
+	if len(refused.lines) > 0 {
+		return nil, notes, &refused
 	}
 	if len(missing.recipes) > 0 {
 		return nil, notes, &missing
 	}
 	if len(lacking.recipes) > 0 {
 		return nil, notes, &lacking
+	}
+	for _, name := range slices.Sorted(maps.Keys(whens)) {
+		if !applied[name] {
+			refused.lines = append(refused.lines, "the importer's table.go writes Whens for the Recipe "+
+				f.capability+"/"+name+", which gives no row: remove them, or let the Recipe give a row")
+		}
+	}
+	if len(refused.lines) > 0 {
+		return nil, notes, &refused
 	}
 	rows, conflict := settle(claims, hand.Hand)
 	if conflict != nil {

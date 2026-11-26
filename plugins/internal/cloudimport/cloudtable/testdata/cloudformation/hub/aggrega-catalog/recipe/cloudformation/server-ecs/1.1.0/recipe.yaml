@@ -1,0 +1,21 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: server-ecs
+  version: 1.1.0
+spec:
+  capability: cloudformation
+  implements: core/compute/server:1.0.0
+
+  # This Recipe reads from infra.overrides:
+  #   Cluster          - string (the service's Cluster), required
+  #   Subnets          - []string (the service's AwsvpcConfiguration.Subnets), required
+  #   ExecutionRoleArn - string (the task definition's ExecutionRoleArn), required
+  #   AssignPublicIp   - string (AwsvpcConfiguration.AssignPublicIp; default DISABLED)
+  #   TargetGroupArn   - string (the service's LoadBalancers[].TargetGroupArn)
+  provides:
+    name: "!GetAtt {{ capitalizedWords .context.instance_id }}.Name"
+
+  artifacts:
+    service:
+      $import: EcsFargateFragment#/artifacts/Service

@@ -21,8 +21,9 @@ type entry struct{ key, value string }
 // import already resolved: its name, its path beneath the hub's root, the
 // Component it implements less its version, its source, its locals, its
 // provides in the order written, its valuesMapping text, the text of each of
-// its artifacts' files in the order written, and its document as written,
-// comments included.
+// its artifacts' files in the order written, its document as written,
+// comments included, and the text of each of its assertions in the order
+// written.
 type recipeSource struct {
 	name, path, component string
 	source                map[string]any
@@ -31,6 +32,7 @@ type recipeSource struct {
 	valuesMapping         string
 	fragments             []string
 	document              string
+	assertions            []string
 }
 
 // avmResource is the prefix of the path of an Azure Verified Modules resource
@@ -431,7 +433,9 @@ const overridesHeader = "This Recipe reads from infra.overrides:"
 
 // headerEntry matches one key of the overrides header and the description
 // after its dash, which a key too long for its column writes on the next line.
-var headerEntry = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)(?:\s+-\s+(.*))?$`)
+// A key may hold a hyphen after its first character, as a log driver option's
+// name does.
+var headerEntry = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_-]*)(?:\s+-\s+(.*))?$`)
 
 // headerPath matches the path a description's parenthesis opens with: a
 // member name, then any run of a list index in brackets or a dot and a member
@@ -443,15 +447,21 @@ var (
 )
 
 // headerOverrides returns each key the document's overrides header names a
-// path for, placed from that path, in the order listed. The block is the
-// comment lines after its opening line, each key at one indentation, a key
-// beneath a parent whose description ends in a colon two deeper, and every
-// deeper line continuing the key before it; a comment line indented less, an
-// empty one or a line of the document ends it. A key's path is what its
-// description's first parenthesis opens with where a path ends it, or a
+// path for, placed from that path, in the order listed. A key's path is what
+// its description's first parenthesis opens with where a path ends it, or a
 // semicolon or a colon follows it; a path a comma or words follow is a value
 // translated, and gives nothing.
 func headerOverrides(document string) []cloudimport.Placement {
+	return placementsOf(headerItems(document))
+}
+
+// headerItems returns each key of the document's overrides header with the
+// lines of its description, in the order listed. The block is the comment
+// lines after its opening line, each key at one indentation, a key beneath a
+// parent whose description ends in a colon two deeper, and every deeper line
+// continuing the key before it; a comment line indented less, an empty one or
+// a line of the document ends it.
+func headerItems(document string) []*headerItem {
 	lines := strings.Split(document, "\n")
 	start := slices.IndexFunc(lines, func(l string) bool {
 		body, ok := strings.CutPrefix(strings.TrimSpace(l), "#")
@@ -476,7 +486,7 @@ func headerOverrides(document string) []cloudimport.Placement {
 			return nil
 		case indent < 0 || at == indent:
 			if m == nil {
-				return placementsOf(keys)
+				return keys
 			}
 			indent = at
 			k := &headerItem{key: m[1]}
@@ -485,7 +495,7 @@ func headerOverrides(document string) []cloudimport.Placement {
 			}
 			keys, parent = append(keys, k), k
 		case at < indent:
-			return placementsOf(keys)
+			return keys
 		case at == indent+2 && m != nil && parent != nil &&
 			strings.HasSuffix(strings.Join(parent.desc, " "), ":"):
 			k := &headerItem{key: parent.key + "." + m[1]}
@@ -504,7 +514,7 @@ func headerOverrides(document string) []cloudimport.Placement {
 			last.desc = append(last.desc, text)
 		}
 	}
-	return placementsOf(keys)
+	return keys
 }
 
 // headerItem is one key of the overrides header with the lines of its

@@ -1,0 +1,39 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: function-lambda
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/compute/function:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  # This Recipe reads from infra.overrides:
+  #   Role    - string (the function's Role), required
+  #   Timeout - integer (the function's Timeout; seconds)
+  provides: {}
+
+  artifacts:
+    template.yaml: |
+      {{- $o := optional .infra "overrides" dict }}
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::Lambda::Function
+          Properties:
+            PackageType: Image
+            Code:
+              ImageUri: {{ toJson .infra.image }}
+            Role: {{ toJson $o.Role }}
+            {{- with optional $o "Timeout" "" }}
+            Timeout: {{ . }}
+            {{- end }}
+        {{- if gt (int .infra.min_replicas) 0 }}
+        {{ .locals.logical_id }}Version:
+          Type: AWS::Lambda::Version
+          Properties:
+            FunctionName: !Ref {{ .locals.logical_id }}
+            ProvisionedConcurrencyConfig:
+              ProvisionedConcurrentExecutions: {{ .infra.min_replicas }}
+        {{- end }}

@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: unplaced-resource
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/messaging/sqs:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+
+  provides: {}
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::SQS::Queue
+        {{ .locals.logical_id }}Alarm:
+          Type: AWS::CloudWatch::Alarm
+          Properties:
+            Namespace: AWS/SQS
