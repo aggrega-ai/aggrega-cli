@@ -545,6 +545,9 @@ func dnsRecords() []cloudimport.Row {
 // notImported are the hub's arm Recipes and FeatureRecipes no row reaches,
 // each with the reason. A Recipe listed here generates no row.
 var notImported = []cloudimport.NotImported{
+	{Recipe: "audit-logging-azure-api-management", Reason: "a FeatureRecipe, binding core/audit-logging on the " +
+		"azure-api-management Recipe's API to a halt: it emits nothing, so no resource of a template is an " +
+		"instance of it"},
 	{Recipe: "azure-managed", Reason: "a reference realization: it writes no resource and publishes the endpoint " +
 		"infra.endpoint names, so no resource of a template is an instance of it"},
 	{Recipe: "azure-openai", Reason: "the model each deployment of an Azure OpenAI account serves chooses " +
@@ -560,6 +563,18 @@ var notImported = []cloudimport.NotImported{
 	{Recipe: "manual-trigger", Reason: "a FeatureRecipe, realizing core/manual-trigger: it emits nothing, and the " +
 		"Recipe realizing the task deploys a Container Apps job with a manual trigger, so no resource of a " +
 		"template is an instance of it"},
+	{Recipe: "period-budget-azure-api-management", Reason: "a FeatureRecipe, realizing core/period-budget as an " +
+		"element of the API Management API policy the azure-api-management Recipe writes: no deployed " +
+		"resource is its own, so no resource of a template is an instance of it"},
+	{Recipe: "prompt-injection-shield-azure-api-management", Reason: "a FeatureRecipe, realizing " +
+		"core/prompt-injection-shield as an element of the API Management API policy the azure-api-management " +
+		"Recipe writes: no deployed resource is its own, so no resource of a template is an instance of it"},
+	{Recipe: "retry-policy-azure-api-management", Reason: "a FeatureRecipe, realizing core/retry-policy as an " +
+		"element of the API Management API policy the azure-api-management Recipe writes: no deployed " +
+		"resource is its own, so no resource of a template is an instance of it"},
+	{Recipe: "semantic-caching-azure-api-management", Reason: "a FeatureRecipe, realizing core/semantic-caching " +
+		"as an element of the API Management API policy the azure-api-management Recipe writes: no deployed " +
+		"resource is its own, so no resource of a template is an instance of it"},
 }
 
 // Table returns the arm format's mapping table: the rows generated from the
