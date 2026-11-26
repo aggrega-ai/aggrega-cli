@@ -26,8 +26,9 @@
 #      <identifier> version <version>" when winget-pkgs holds no version of the
 #      package yet, else "Update: <identifier> to <version>".
 # The token in WINGET_PULL_REQUEST_TOKEN does all of it: a personal access token
-# (classic) with the public_repo scope, of an account that may push to the fork.
-# It reaches gh through gh's own GH_TOKEN, and git as an Authorization header
+# (classic) with the public_repo and workflow scopes, of an account that may push
+# to the fork; workflow is needed because the fork's sync with an upstream whose
+# commits change workflow files is refused without it. It reaches gh through gh's own GH_TOKEN, and git as an Authorization header
 # through git's environment configuration (GIT_CONFIG_COUNT), so it is never
 # placed on a command line or written to disk. The pull request is opened
 # through GitHub's REST API (gh api), because gh pr create does not take an
@@ -40,8 +41,8 @@
 # variable would do on a real publish. It then checks the token, whatever the
 # variable is, with one read-only request to GitHub's API (so a dry run with a
 # token set reaches the network): GitHub must accept the token, and it must be
-# a personal access token (classic) carrying the public_repo scope, which GitHub
-# reports in the X-OAuth-Scopes header of its answer; a fine-grained or App
+# a personal access token (classic) carrying the public_repo and workflow scopes,
+# which GitHub reports in the X-OAuth-Scopes header of its answer; a fine-grained or App
 # token carries no such header and is refused. The dry run names the account and
 # the scopes the token carries. With no token set, a dry run refuses when the
 # variable is true, since a real publish would have none to push with, and
@@ -78,7 +79,7 @@
 # what failed, when the manifest is not three files carrying one identifier and
 # the given version, the tag is not v<version>, no token is set where one is
 # needed, GitHub does not accept the token or the token is not a personal access
-# token (classic) with the public_repo scope, the fork already has the branch, or
+# token (classic) with the public_repo and workflow scopes, the fork already has the branch, or
 # a step against GitHub fails; 2 on a usage error.
 set -euo pipefail
 # The manifest's files are listed in one order on every machine.
@@ -209,11 +210,12 @@ fi
 
 # check_token — asks GitHub, with one request, whose token WINGET_PULL_REQUEST_TOKEN
 # is and which scopes it carries, and refuses unless GitHub accepts it and it is
-# a personal access token (classic) with the public_repo scope. It sets
-# ACCOUNT_ID, LOGIN and SCOPES. gh reads the token from GH_TOKEN; nothing else
+# a personal access token (classic) with the public_repo and workflow scopes
+# (workflow lets the fork's sync pass when upstream's new commits change workflow
+# files). It sets ACCOUNT_ID, LOGIN and SCOPES. gh reads the token from GH_TOKEN; nothing else
 # here holds one, and only the scope names and the login are ever printed.
 check_token() {
-  local response headers scope found=false
+  local response headers scope has_repo=false has_workflow=false
   export GH_TOKEN="$TOKEN"
   if ! response="$(gh api --include user --jq '"\(.id) \(.login)"')"; then
     refuse "GitHub did not accept the token in WINGET_PULL_REQUEST_TOKEN; nothing was opened"
@@ -225,7 +227,7 @@ check_token() {
   ACCOUNT_ID="${account%% *}" LOGIN="${account#* }"
   [ -n "$ACCOUNT_ID" ] && [ -n "$LOGIN" ] && [ "$ACCOUNT_ID" != "$account" ] || refuse "GitHub named no account for the token; nothing was opened"
   if ! printf '%s\n' "$headers" | awk -F: 'tolower($1) == "x-oauth-scopes" { found = 1 } END { exit !found }'; then
-    refuse "the token in WINGET_PULL_REQUEST_TOKEN carries no X-OAuth-Scopes header, so it is not a personal access token (classic); the winget pull request needs a personal access token (classic) with the public_repo scope, of an account that may push to $FORK; nothing was opened"
+    refuse "the token in WINGET_PULL_REQUEST_TOKEN carries no X-OAuth-Scopes header, so it is not a personal access token (classic); the winget pull request needs a personal access token (classic) with the public_repo and workflow scopes, of an account that may push to $FORK; nothing was opened"
   fi
   SCOPES="$(awk -F: 'tolower($1) == "x-oauth-scopes" { sub(/^[^:]*:[ \t]*/, ""); print; exit }' <<<"$headers")"
   local -a listed
@@ -233,9 +235,12 @@ check_token() {
   for scope in "${listed[@]}"; do
     scope="${scope#"${scope%%[![:space:]]*}"}"
     scope="${scope%"${scope##*[![:space:]]}"}"
-    [ "$scope" = "public_repo" ] && found=true
+    [ "$scope" = "public_repo" ] && has_repo=true
+    [ "$scope" = "workflow" ] && has_workflow=true
   done
-  [ "$found" = "true" ] || refuse "the token in WINGET_PULL_REQUEST_TOKEN lacks the public_repo scope: it carries the scopes: ${SCOPES:-none}; the winget pull request needs a personal access token (classic) with the public_repo scope; nothing was opened"
+  if [ "$has_repo" != "true" ] || [ "$has_workflow" != "true" ]; then
+    refuse "the token in WINGET_PULL_REQUEST_TOKEN lacks the public_repo scope, the workflow scope or both: it carries the scopes: ${SCOPES:-none}; the winget pull request needs a personal access token (classic) with both, public_repo to push the branch and open the pull request, and workflow because the fork's sync with $UPSTREAM is refused whenever the upstream commits it brings change workflow files; nothing was opened"
+  fi
 }
 
 if [ "$DRY" = "true" ]; then

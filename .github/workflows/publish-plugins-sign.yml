@@ -320,7 +320,8 @@ name: Publish and sign core plugins
 #                        branch, the files' paths and the title of the pull
 #                        request it would open, and opens nothing, whatever the
 #                        variable is, and checks the token: GitHub must accept
-#                        it, and it must carry the public_repo scope. It runs on
+#                        it, and it must carry the public_repo and workflow
+#                        scopes. It runs on
 #                        a GitHub-hosted runner, checks
 #                        out this repository at the commit the build job built
 #                        for that script and needs nothing from the hand-over
@@ -646,7 +647,8 @@ name: Publish and sign core plugins
 # the manifest it would commit, pushing nothing, and open-winget-pull-request
 # prints the pull request it would open on microsoft/winget-pkgs and what
 # AGGREGA_WINGET_PULL_REQUEST would make of it, opening nothing, and checks its
-# token: GitHub must accept it, and it must carry the public_repo scope; with
+# token: GitHub must accept it, and it must carry the public_repo and workflow
+# scopes; with
 # no token set, it refuses when that variable is true and otherwise says so
 # and passes — save for a tag carrying a pre-release suffix, for which
 # publish-skills, publish-package-channels, open-winget-pull-request,
@@ -848,10 +850,12 @@ name: Publish and sign core plugins
 #                                        refuses, naming it, any it reads that
 #                                        is not set)
 #              WINGET_PULL_REQUEST_TOKEN a personal access token (classic)
-#                                        with the public_repo scope alone, of
-#                                        an account that may push to the
+#                                        with the public_repo and workflow
+#                                        scopes, of an account that may push to the
 #                                        organization's fork of
-#                                        microsoft/winget-pkgs: it pushes the
+#                                        microsoft/winget-pkgs (workflow lets
+#                                        the fork's sync pass when upstream's
+#                                        new commits change workflow files): it pushes the
 #                                        branch to the fork and opens the pull
 #                                        request on microsoft/winget-pkgs, which
 #                                        neither a fine-grained token nor an App
@@ -909,7 +913,9 @@ name: Publish and sign core plugins
 #   1. fork microsoft/winget-pkgs into this organization, keeping the name
 #      winget-pkgs, the name open-winget-pull-request's env: gives the fork;
 #   2. as a member of this organization who may push to that fork, create a
-#      personal access token (classic) with the public_repo scope and no other,
+#      personal access token (classic) with the public_repo and workflow scopes
+#      (workflow lets the fork's sync with microsoft/winget-pkgs pass when
+#      upstream's new commits change workflow files),
 #      in GitHub's Settings, Developer settings, Personal access tokens, Tokens
 #      (classic), with an expiry, renewing it before it expires; the
 #      organization's policy must not restrict personal access tokens (classic);
@@ -4925,7 +4931,7 @@ jobs:
     # it would open and opens nothing, whatever the variable is, and checks the
     # token with one read-only request to GitHub's API: GitHub must accept it,
     # and it must be a personal access token (classic) carrying the public_repo
-    # scope. With no token set, a dry run refuses when the variable is true and
+    # and workflow scopes. With no token set, a dry run refuses when the variable is true and
     # otherwise says so and passes. The first path runs the same check before
     # it syncs anything; the second reads no token and reaches no network.
     # When the tag carries a pre-release suffix, a dry run's included, it is
