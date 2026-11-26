@@ -19,7 +19,7 @@ spec:
   # The source writing the resource gives no description of Properties.DeliveryOptions.
   # infra.overrides.DeletionPolicy: string; override: writable, set under infra.overrides in the vendor's spelling
   # The source writing the resource gives no description of DeletionPolicy.
-  # context.inject.property.delivery_options_sending_pool_name: string, required; inject: a value a neighbour publishes, delivered by the Aggregate's uses edge on the property mechanism and written at Properties.DeliveryOptions.SendingPoolName
+  # context.inject.property.properties_delivery_options_sending_pool_name: string, required; inject: a value a neighbour publishes, delivered by the Aggregate's uses edge on the property mechanism and written at Properties.DeliveryOptions.SendingPoolName
   # The source writing the resource gives no description of Properties.DeliveryOptions.SendingPoolName.
   # template.yaml declares the resource under the logical id in locals, and the cloudformation provider projects its provides block into the stack's Outputs.
   capability: cloudformation
@@ -54,7 +54,7 @@ spec:
       {{ $_ := set $properties "SmtpPassword" (printf "!Ref %s%s" .locals.logical_id "SmtpPassword") -}}
       {{ if (hasKey (optional .infra "overrides" dict) "DeliveryOptions") }}{{ $_ := set $properties "DeliveryOptions" (index .infra "overrides" "DeliveryOptions") }}{{ end -}}
       {{ if (hasKey (optional .infra "overrides" dict) "SendingEnabled") }}{{ $set4 := (index .infra "overrides" "SendingEnabled") }}{{ if hasKey $properties "SendingOptions" }}{{ $_ := set $properties "SendingOptions" (deepCopy (index $properties "SendingOptions")) }}{{ else }}{{ $_ := set $properties "SendingOptions" dict }}{{ end }}{{ $at4_1 := index $properties "SendingOptions" }}{{ if not (kindIs "map" $at4_1) }}{{ fail "Properties.SendingOptions is not an object, and this Recipe writes Properties.SendingOptions.SendingEnabled inside it" }}{{ end }}{{ $_ := set $at4_1 "SendingEnabled" $set4 }}{{ end -}}
-      {{ $set5 := (index (default dict .context.inject) "property" "delivery_options_sending_pool_name") }}{{ if hasKey $properties "DeliveryOptions" }}{{ $_ := set $properties "DeliveryOptions" (deepCopy (index $properties "DeliveryOptions")) }}{{ else }}{{ $_ := set $properties "DeliveryOptions" dict }}{{ end }}{{ $at5_1 := index $properties "DeliveryOptions" }}{{ if not (kindIs "map" $at5_1) }}{{ fail "Properties.DeliveryOptions is not an object, and this Recipe writes Properties.DeliveryOptions.SendingPoolName inside it" }}{{ end }}{{ $_ := set $at5_1 "SendingPoolName" $set5 -}}
+      {{ $set5 := (index (default dict .context.inject) "property" "properties_delivery_options_sending_pool_name") }}{{ if hasKey $properties "DeliveryOptions" }}{{ $_ := set $properties "DeliveryOptions" (deepCopy (index $properties "DeliveryOptions")) }}{{ else }}{{ $_ := set $properties "DeliveryOptions" dict }}{{ end }}{{ $at5_1 := index $properties "DeliveryOptions" }}{{ if not (kindIs "map" $at5_1) }}{{ fail "Properties.DeliveryOptions is not an object, and this Recipe writes Properties.DeliveryOptions.SendingPoolName inside it" }}{{ end }}{{ $_ := set $at5_1 "SendingPoolName" $set5 -}}
       Parameters:
         {{ .locals.logical_id }}SmtpPassword:
           Type: String

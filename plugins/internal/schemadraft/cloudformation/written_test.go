@@ -17,10 +17,13 @@ import (
 
 const (
 	configSet    = "AWS::SES::ConfigurationSet"
-	poolInject   = "delivery_options_sending_pool_name"
 	poolValue    = "!GetAtt Pool.Name"
 	templateName = "main.yaml"
 )
+
+// poolInject is the key the importer's core hands the writer for the pool: the
+// inject key of the property's full path from the resource's body root.
+var poolInject = schemadraft.InjectKey([]string{"Properties", "DeliveryOptions", "SendingPoolName"})
 
 // configWritten is an AWS::SES::ConfigurationSet as a template writes it: the
 // name, two settings, a password fed by a NoEcho parameter, a neighbour's pool
@@ -255,7 +258,7 @@ func TestCloudFormationLeavesOutWhatSitsBesideProperties(t *testing.T) {
 		t.Errorf("the policies beside Properties: %s", canon(t, at(doc, "Resources", "OrdersConfig")))
 	}
 
-	w.Properties = append(w.Properties, schemadraft.WrittenProperty{Path: []string{"DeletionPolicy"}, Inject: "deletion_policy"})
+	w.Properties = append(w.Properties, schemadraft.WrittenProperty{Path: []string{"DeletionPolicy"}, Inject: schemadraft.InjectKey([]string{"DeletionPolicy"})})
 	_, ds := schemadraft.DraftResource(templateInput(), Format, w)
 	if h := onlyHalt(t, ds, codeRefused); !strings.Contains(h.Message, "DeletionPolicy") {
 		t.Errorf("halt %q does not name DeletionPolicy", h.Message)
