@@ -121,23 +121,33 @@ func valueText(g *cloudimport.Graph, v cloudimport.Value) (string, bool) {
 	return "", false
 }
 
-// paramText returns the text a parameter of g named name is given: by the
-// parameters file, else by a literal default; false where it is given none,
-// or is secure.
+// paramText returns the text a parameter of g named name is given, as
+// paramLiteral reads it; false where that is no text.
 func paramText(g *cloudimport.Graph, name string) (string, bool) {
 	if g == nil {
 		return "", false
 	}
-	for _, p := range g.Params {
+	raw, ok := paramLiteral(g.Params, name)
+	if !ok {
+		return "", false
+	}
+	return text(raw)
+}
+
+// paramLiteral returns the literal a parameter of params named name is given:
+// the value the parameters file supplies, else a literal default; false where
+// it is given none, or is secure.
+func paramLiteral(params []cloudimport.Parameter, name string) (json.RawMessage, bool) {
+	for _, p := range params {
 		if !strings.EqualFold(p.Name, name) || p.Secure {
 			continue
 		}
 		for _, v := range []cloudimport.Value{p.Supplied, p.Default} {
 			if lit, ok := v.(cloudimport.Literal); ok {
-				return text(json.RawMessage(lit.JSON))
+				return json.RawMessage(lit.JSON), true
 			}
 		}
-		return "", false
+		return nil, false
 	}
-	return "", false
+	return nil, false
 }

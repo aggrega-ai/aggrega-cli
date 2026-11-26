@@ -431,3 +431,44 @@ func TestReleaseEntryNamesWhatATypeMappedByAnOverrideWrites(t *testing.T) {
 		t.Errorf("a second run writes the Release\n%s\nthe first wrote\n%s", again, release)
 	}
 }
+
+// TestDeployTimeTextNamesWhatIsWrittenInPlaceAndLeavesWhatItOwes writes
+// deploy-time text holding a parameter's value written in place beneath a
+// comment naming the parameter, in the Aggregate and in the Release, the
+// parameter carried; and leaves text owing what it reads for the Release's
+// answers file, warning value-not-carried with why.
+func TestDeployTimeTextNamesWhatIsWrittenInPlaceAndLeavesWhatItOwes(t *testing.T) {
+	in := edgeView()
+	in.Target = "arm"
+	owed := "it reads the variable settings, which the draft cannot write in place"
+	inPlace := func(text string) Opaque { return Opaque{Text: text, Target: "arm", Params: []string{"tier"}} }
+	s := pgServer()
+	s.Body = merged(
+		leaf(text("westeurope"), pathLocation...),
+		leaf(inPlace("[string(16)]"), pathVersion...),
+		leaf(inPlace("[toUpper('b1')]"), pathSkuName...),
+		leaf(Opaque{Text: "[mul(variables('settings').size, 2)]", Target: "arm", Owed: owed}, pathStorage...),
+	)
+	g := &Graph{Nodes: []*Node{s}, Params: []Parameter{{Name: "tier", Type: "string", Default: text("b1")}}}
+	_, aggregate, release, _, diags := released(t, in, releaseFormat(), g)
+	if want := "      values:\n        # From the template parameter tier, its literal default.\n" +
+		"        version: \"[string(16)]\"\n"; !strings.Contains(aggregate, want) {
+		t.Errorf("the Aggregate does not hold\n%s\n%s", want, aggregate)
+	}
+	if strings.Contains(aggregate, "carries nowhere") {
+		t.Errorf("the Aggregate names the parameter carried nowhere:\n%s", aggregate)
+	}
+	wantBlock(t, release, "server", `    server:
+      infra:
+        location: "westeurope"
+        # From the template parameter tier, its literal default.
+        sku: "[toUpper('b1')]"
+        overrides:
+          # Left for the Release, since the source cannot supply it: infra.overrides.storage_size_gb, the source's value, which the draft does not write
+          storage_size_gb: ""
+`)
+	got := onlyCode(t, diags, CodeValueNotCarried, 1)
+	if !strings.Contains(got[0].Message, "infra.overrides.storage_size_gb, and "+owed+", so it is not written") {
+		t.Errorf("value-not-carried does not say why the storage size is not written: %s", got[0].Message)
+	}
+}

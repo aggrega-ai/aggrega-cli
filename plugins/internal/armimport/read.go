@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -134,6 +135,10 @@ func read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.Pars
 	r.root = t
 	r.recogniseRoot(t, sel.root.top)
 	r.defaults = r.quiet().parameters(t)
+	r.given = slices.Clone(r.defaults)
+	if sel.params != nil {
+		r.quiet().fill(r.given, sel.params)
+	}
 	r.plan(t)
 	if r.halted {
 		return nil, r.diags
@@ -163,9 +168,10 @@ type reader struct {
 	// the module index lists stays one node.
 	table cloudimport.Table
 	// root is the root template, and defaults its parameters as it declares
-	// them, read for the table's rows.
-	root     *template
-	defaults []cloudimport.Parameter
+	// them, read for the table's rows; given holds them with the values the
+	// parameters file supplies, which deploy-time text is written with.
+	root            *template
+	defaults, given []cloudimport.Parameter
 	// families are the groups of templates deployed into one scope, in the
 	// order they are read.
 	families []*family
@@ -189,7 +195,7 @@ type reader struct {
 // discarded: what it reads is read again, and reported, by r.
 func (r *reader) quiet() *reader {
 	return &reader{in: r.in, parse: r.parse, sel: r.sel, table: r.table, root: r.root, defaults: r.defaults,
-		families: r.families, yields: r.yields, known: map[string]cloudimport.Value{}}
+		given: r.given, families: r.families, yields: r.yields, known: map[string]cloudimport.Value{}}
 }
 
 // halt records a diagnostic that halts the import.

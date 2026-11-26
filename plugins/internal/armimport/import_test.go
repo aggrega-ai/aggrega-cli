@@ -481,3 +481,127 @@ func TestArmModuleIsSourcedFromTheRegistry(t *testing.T) {
 		t.Errorf("a module of no path is located at %+v", got)
 	}
 }
+
+// staticSite is a 1.0 template declaring the parameters given, as JSON object
+// members, and one static web app, a type no row maps, whose name and whose
+// build's app location are the deploy-time text given.
+func staticSite(params, name, appLocation string) string {
+	return `{` + schema + `, "contentVersion": "1.0.0.0", "parameters": {` + params + `},
+		"resources": [{"type": "Microsoft.Web/staticSites", "apiVersion": "2023-01-01", "name": "` + name + `",
+			"location": "westeurope", "properties": {"buildProperties": {"appLocation": "` + appLocation + `"}}}]}`
+}
+
+// importOf imports sources for the arm target against goldenView.
+func importOf(t *testing.T, sources ...aggrega.ImportSource) aggrega.ImportOutput {
+	t.Helper()
+	return Import(aggrega.ImportInput{Format: formatName, Target: target, Catalog: goldenView(t), Sources: sources},
+		parse)
+}
+
+// TestArmDeployTimeTextWritesTheTemplateParametersInPlace imports deploy-time
+// text reading a parameter of the template, which no drafted template
+// declares: the text is written with the parameter's literal value in its
+// place — the parameters file's where it supplies one, else the template's
+// default — beneath a comment naming the parameter, in the Aggregate and in
+// the Release alike, and the parameter is carried.
+func TestArmDeployTimeTextWritesTheTemplateParametersInPlace(t *testing.T) {
+	t.Parallel()
+	template := staticSite(`"appName": {"type": "string", "defaultValue": "Docs"}`,
+		"[toLower(parameters('appName'))]", "[toUpper(parameters('appName'))]")
+	file := `{"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+		"contentVersion": "1.0.0.0", "parameters": {"appName": {"value": "Site"}}}`
+	for _, row := range []struct {
+		scenario      string
+		sources       []aggrega.ImportSource
+		value, source string
+	}{
+		{"the default", []aggrega.ImportSource{src("main.json", []byte(template))}, "Docs", "its literal default"},
+		{"the parameters file", []aggrega.ImportSource{src("main.json", []byte(template)),
+			src("main.parameters.json", []byte(file))}, "Site", "the value the parameters file supplies"},
+	} {
+		out := importOf(t, row.sources...)
+		comment := "# From the template parameter appName, " + row.source + ".\n"
+		aggregate := fileText(t, out, "aggregate.yaml")
+		if want := "      values:\n        " + comment + "        name: \"[toLower('" + row.value + "')]\"\n"; !strings.Contains(aggregate, want) {
+			t.Errorf("%s: the Aggregate does not hold\n%s\n%s", row.scenario, want, aggregate)
+		}
+		if strings.Contains(aggregate, "carries nowhere") {
+			t.Errorf("%s: the Aggregate names the parameter carried nowhere:\n%s", row.scenario, aggregate)
+		}
+		release := fileText(t, out, "release.yaml")
+		if want := "          " + comment + "          appLocation: \"[toUpper('" + row.value + "')]\"\n"; !strings.Contains(release, want) {
+			t.Errorf("%s: the Release does not hold\n%s\n%s", row.scenario, want, release)
+		}
+		if got := coded(out, cloudimport.CodeValueNotCarried); len(got) != 0 {
+			t.Errorf("%s: the import warns %+v", row.scenario, got)
+		}
+	}
+}
+
+// TestArmDeployTimeTextReadingAParameterWithNoLiteralIsLeftForTheAnswers
+// imports deploy-time text reading a parameter of the template given no value
+// by a parameters file and no default: the text is not written, the Release's
+// key is left for its answers file, and value-not-carried warns of the key in
+// the Aggregate and in the Release, naming the parameter.
+func TestArmDeployTimeTextReadingAParameterWithNoLiteralIsLeftForTheAnswers(t *testing.T) {
+	t.Parallel()
+	out := importOf(t, src("main.json", []byte(staticSite(`"appName": {"type": "string"}`,
+		"[toLower(parameters('appName'))]", "[toUpper(parameters('appName'))]"))))
+	for _, f := range out.Files {
+		if strings.Contains(f.Content, "parameters('appName')") {
+			t.Errorf("%s writes the text reading the parameter:\n%s", f.Path, f.Content)
+		}
+	}
+	holds(t, "the Release", fileText(t, out, "release.yaml"), "# Left for the Release, since the source cannot "+
+		"supply it: infra.overrides.appLocation, the source's value, which the draft does not write\n"+
+		"          appLocation: \"\"\n")
+	warned := map[string]bool{}
+	for _, d := range coded(out, cloudimport.CodeValueNotCarried) {
+		if strings.Contains(d.Message, "it reads the template parameter appName, which neither the parameters "+
+			"file nor a literal default gives a value") {
+			warned[strings.Fields(d.Message[strings.Index(d.Message, "takes as ")+len("takes as "):])[0]] = true
+		}
+	}
+	if !warned["values.name,"] || !warned["infra.overrides.appLocation,"] {
+		t.Errorf("value-not-carried does not name the parameter at values.name and infra.overrides.appLocation: %+v",
+			out.Diagnostics)
+	}
+}
+
+// TestArmDeployTimeTextReadingAVariableHoldingAnObjectIsNotWritten imports
+// deploy-time text reading a variable that holds an object, which no drafted
+// template declares: the text is not written, and value-not-carried names the
+// variable.
+func TestArmDeployTimeTextReadingAVariableHoldingAnObjectIsNotWritten(t *testing.T) {
+	t.Parallel()
+	template := strings.Replace(staticSite("", "site", "[string(variables('build'))]"), `"resources"`,
+		`"variables": {"build": {"root": "app"}}, "resources"`, 1)
+	out := importOf(t, src("main.json", []byte(template)))
+	if release := fileText(t, out, "release.yaml"); strings.Contains(release, "variables('build')") {
+		t.Errorf("the Release writes the text reading the variable:\n%s", release)
+	}
+	got := coded(out, cloudimport.CodeValueNotCarried)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "infra.overrides.appLocation") ||
+		!strings.Contains(got[0].Message, "it reads the variable build,") {
+		t.Errorf("value-not-carried does not name the variable once: %+v", out.Diagnostics)
+	}
+}
+
+// TestArmDeployTimeTextReadingASecureParameterIsNeverWrittenInPlace imports
+// deploy-time text reading a secure parameter with a default: the default is
+// never written, and the text is not written, as text naming a secure
+// parameter never is.
+func TestArmDeployTimeTextReadingASecureParameterIsNeverWrittenInPlace(t *testing.T) {
+	t.Parallel()
+	out := importOf(t, src("main.json", []byte(staticSite(`"token": {"type": "securestring", "defaultValue": "s3cret"}`,
+		"site", "[toUpper(parameters('token'))]"))))
+	for _, f := range out.Files {
+		if strings.Contains(f.Content, "s3cret") || strings.Contains(f.Content, "S3CRET") {
+			t.Errorf("%s writes the secure parameter's default:\n%s", f.Path, f.Content)
+		}
+	}
+	got := coded(out, cloudimport.CodeValueNotCarried)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "it reads the secure parameter token inside text") {
+		t.Errorf("value-not-carried does not name the secure parameter once: %+v", out.Diagnostics)
+	}
+}

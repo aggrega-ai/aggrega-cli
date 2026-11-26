@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore/armexpr"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 )
 
 // identity is a resource's type, name and scope, as a reference matches them.
@@ -81,11 +82,97 @@ func (t *template) inline(n armexpr.Node, l *lowerer) armexpr.Node {
 }
 
 // inlining is the state of one expression being written with what it reads
-// in place: the variables and parameters it may still write, and those being
-// written.
+// in place: the variables and parameters it may still write, those being
+// written, and, for deploy-time text, the root template's parameters written
+// as their literal values.
 type inlining struct {
 	budget int
 	inside []inlined
+	// place, set for deploy-time text, writes each parameter of the root
+	// template in place as the literal value it is given, and records what the
+	// text is left reading.
+	place *placing
+}
+
+// placing is what one deploy-time text has written in place of the root
+// template's parameters, and what it is left reading that no template of the
+// draft declares.
+type placing struct {
+	// root is the root template, and given its parameters, each holding the
+	// value the parameters file supplies.
+	root  *template
+	given []cloudimport.Parameter
+	// params are the parameters of the root template written as their literal
+	// values, and unread names each parameter and variable left read, in the
+	// order the text reads them.
+	params, unread []string
+}
+
+// read records what a text is left reading, once.
+func (p *placing) read(what string) {
+	if p != nil && !slices.Contains(p.unread, what) {
+		p.unread = append(p.unread, what)
+	}
+}
+
+// literal returns the parameter name of t, where st writes deploy-time text,
+// written as the literal value it is given: a parameter of the root template
+// given a literal scalar — by the parameters file, else by its default — as
+// paramLiteral reads it. Any other parameter is left read and recorded so,
+// but for a secure one: text reading a secure parameter is never written, and
+// its parameter's value never is.
+func (st *inlining) literal(t *template, name string) (armexpr.Node, bool) {
+	p := st.place
+	if p == nil {
+		return nil, false
+	}
+	s := t.scope()
+	declared, ok := s.param(name)
+	switch {
+	case !ok:
+		p.read("the parameter " + name + ", which the template does not declare")
+		return nil, false
+	case s != p.root:
+		what := "the parameter " + declared
+		if s.dep != nil {
+			what += " of the template " + s.dep.symbol + " deploys"
+		}
+		p.read(what)
+		return nil, false
+	}
+	i := slices.IndexFunc(p.given, func(g cloudimport.Parameter) bool { return g.Name == declared })
+	if i >= 0 && p.given[i].Secure {
+		return nil, false
+	}
+	raw, given := paramLiteral(p.given, declared)
+	if !given {
+		p.read("the template parameter " + declared + ", which neither the parameters file nor a literal " +
+			"default gives a value")
+		return nil, false
+	}
+	n, ok := literalNode(raw)
+	if !ok {
+		p.read("the template parameter " + declared + ", whose value is an object, a list or a fraction")
+		return nil, false
+	}
+	if !slices.Contains(p.params, declared) {
+		p.params = append(p.params, declared)
+	}
+	return n, true
+}
+
+// literalNode returns the expression writing raw, a literal JSON scalar a
+// parameters file or a default gives: text as the string it is, never read as
+// an expression, and any other scalar as expression reads it; false for an
+// object, an array and a fraction.
+func literalNode(raw json.RawMessage) (armexpr.Node, bool) {
+	if s, ok := text(raw); ok {
+		return armexpr.String{Value: s}, true
+	}
+	if jsonKind(raw) == '"' {
+		return nil, false
+	}
+	return expression(raw)
 }
 
 // inlined is a variable, or a parameter, of a template being written in
@@ -123,10 +210,14 @@ func (t *template) inlineWith(n armexpr.Node, l *lowerer, st *inlining) armexpr.
 				if replaced, ok := t.inlined(name, st, walk); ok {
 					return replaced
 				}
+				st.place.read("the variable " + name)
 				return v
 			}
 			if name, ok := oneTextArgument(v, "parameters"); ok {
 				if replaced, ok := t.bound(name, l, st); ok {
+					return replaced
+				}
+				if replaced, ok := st.literal(t, name); ok {
 					return replaced
 				}
 				return v

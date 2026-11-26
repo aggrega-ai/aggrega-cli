@@ -1048,16 +1048,27 @@ func (l *lowerer) credential(c armexpr.Call) cloudimport.Value {
 
 // opaque returns the expression n as deploy-time text for the arm target,
 // printed canonically with every variable it reads written in place where it
-// can be, and every copy index the lowerer knows. An expression reaching a
-// list function — itself, through a variable written in place, or through a
-// variable holding an object or a list — is the credential that function
-// reads, so no credential is carried as text.
+// can be, every copy index the lowerer knows, and every parameter of the root
+// template written as the literal value it is given, which the text names
+// among its Params. A drafted template declares no parameter or variable of
+// the source, so text left reading one — a parameter given no literal value,
+// a variable holding an object or a list — owes it, and is not written; a
+// secure parameter is left read, and the text reading it is never written.
+// An expression reaching a list function — itself, through a variable
+// written in place, or through a variable holding an object or a list — is
+// the credential that function reads, so no credential is carried as text.
 func (l *lowerer) opaque(n armexpr.Node) cloudimport.Value {
-	inlined := l.t.inline(n, l)
+	place := &placing{root: l.r.root, given: l.r.given}
+	inlined := l.t.inlineWith(n, l, &inlining{budget: maxInlined, place: place})
 	if list, ok := l.t.listCallIn(inlined); ok {
 		return l.credential(list)
 	}
-	return cloudimport.Opaque{Text: armexpr.Expression(inlined), Target: target}
+	out := cloudimport.Opaque{Text: armexpr.Expression(inlined), Target: target, Params: place.params}
+	if len(place.unread) > 0 {
+		out.Owed = "it is text the template evaluates when it deploys, and it reads " + andList(place.unread) +
+			", which the draft cannot write in place and no template of the draft declares"
+	}
+	return out
 }
 
 // listCallIn returns the first call of the list family n reaches: in n, or in

@@ -35,7 +35,19 @@ type Credential struct{ Node, What string }
 // Opaque is text evaluated when the source deploys, written in the source's
 // own language: a draft for Target can carry it as written, and a draft for any
 // other target cannot.
-type Opaque struct{ Text, Target string }
+type Opaque struct {
+	Text, Target string
+	// Params are the source's parameters the format wrote in Text as the
+	// literal value each is given, in the order Text reads them, each named in
+	// a comment above the value written.
+	Params []string
+	// Owed says why Text cannot be written as it is, naming what it reads that
+	// the format could not write in its place and no template of the draft
+	// declares; empty where it can be. Text owing something is not written:
+	// its key is left for the Release's answers file, and value-not-carried
+	// warns of it.
+	Owed string
+}
 
 func (Literal) value()    {}
 func (Param) value()      {}

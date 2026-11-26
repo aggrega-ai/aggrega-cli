@@ -31,12 +31,15 @@ import (
 //     from infra and infra.overrides, read off its node, and the keys a
 //     property the node does not write leaves empty;
 //   - each value is written as the Release's text, a parameter as its value —
-//     the parameters file's, else the template's literal default — and a
-//     pointer or deploy-time text as pointers.go says: a drafted instance's
+//     the parameters file's, else the template's literal default — beneath a
+//     comment naming it, and deploy-time text beneath one naming each
+//     parameter whose value it holds written in place; a pointer or
+//     deploy-time text as pointers.go says: a drafted instance's
 //     pointer as the format's text for it, a mapped instance's left for the
 //     operator to write the literal identifier its catalog Recipe takes; what cannot be written
 //     is left for the answers file where the source's value is owed, and
-//     warned value-not-carried where it is not;
+//     warned value-not-carried where it is not, and deploy-time text owing
+//     what it reads is both;
 //   - the secrets are those secrets.go attaches, and a drafted instance's
 //     comment names each secret that stays a deploy-time parameter;
 //   - a mapped instance names its row's Recipe as its realization on every
@@ -432,12 +435,18 @@ func (b *entryBuilder) done() importer.ReleaseEntry {
 	return b.e
 }
 
-// paramComment names each parameter p reads and where its value comes from.
+// paramComment names each parameter whose value the text of p holds and where
+// that value comes from: in the Release each parameter p reads; in the
+// Aggregate, which reads its own parameters, each written in place in
+// deploy-time text.
 func (w *aggregateWriter) paramComment(p Prop) string {
 	var parts []string
 	seen := map[string]bool{}
 	for _, l := range leaves([]Prop{p}) {
-		collectParams(l.value, func(name string) {
+		collectParams(l.value, func(name string, inPlace bool) {
+			if !w.release && !inPlace {
+				return
+			}
 			if declared := w.param(name); declared != nil && !seen[name] {
 				seen[name] = true
 				parts = append(parts, fmt.Sprintf("the template parameter %s, %s", draftyaml.Comment(name),
@@ -451,11 +460,16 @@ func (w *aggregateWriter) paramComment(p Prop) string {
 	return "From " + strings.Join(parts, "; ") + "."
 }
 
-// collectParams calls found with the name of each parameter v reads, in order.
-func collectParams(v Value, found func(string)) {
+// collectParams calls found with the name of each parameter v reads, in order,
+// and whether deploy-time text holds its value written in place.
+func collectParams(v Value, found func(name string, inPlace bool)) {
 	switch v := v.(type) {
 	case Param:
-		found(v.Name)
+		found(v.Name, false)
+	case Opaque:
+		for _, name := range v.Params {
+			found(name, true)
+		}
 	case Compose:
 		for _, part := range v.Parts {
 			collectParams(part, found)

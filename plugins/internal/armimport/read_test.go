@@ -121,6 +121,19 @@ func lit(text string) cloudimport.Literal {
 	return cloudimport.Literal{JSON: json.RawMessage(text)}
 }
 
+// owing is deploy-time text that reads what reads names, which the draft
+// cannot write in place.
+func owing(text, reads string) cloudimport.Opaque {
+	return cloudimport.Opaque{Text: text, Target: "arm", Owed: "it is text the template evaluates when it deploys, " +
+		"and it reads " + reads + ", which the draft cannot write in place and no template of the draft declares"}
+}
+
+// unsetParameter names the parameter of the root template name, given no
+// value, as deploy-time text owing it names it.
+func unsetParameter(name string) string {
+	return "the template parameter " + name + ", which neither the parameters file nor a literal default gives a value"
+}
+
 // template is a 1.0 template holding the resources and variables given, as
 // JSON text.
 func oneZero(variables, resources string) string {
@@ -176,8 +189,8 @@ func TestReadKeysTwoZeroResourcesBySymbolicName(t *testing.T) {
 		!reflect.DeepEqual(at(t, k, "properties", "kty"), str("RSA")) {
 		t.Errorf("vault::key reads parent %q, name %+v", k.Parent, k.Name)
 	}
-	if s := node(t, g, "store"); !reflect.DeepEqual(s.Condition, cloudimport.Opaque{
-		Text: "[equals(parameters('name'), 'on')]", Target: "arm"}) {
+	if s := node(t, g, "store"); !reflect.DeepEqual(s.Condition, owing("[equals(parameters('name'), 'on')]",
+		unsetParameter("name"))) {
 		t.Errorf("store's condition reads %+v", s.Condition)
 	}
 	if l := node(t, g, "lock"); l.Parent != "store" || l.Scope != "" {

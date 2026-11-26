@@ -49,8 +49,10 @@ import (
 // is written as YAML reading back as the literal, each string in it — an object's keys included — written through the
 // format's Text where the import's target is f.Target, so the format's own
 // Recipes read it as the literal it is; deploy-time text is written as it is
-// for its own target, and for any other target is not written and warned
-// value-not-carried, as is a value a converter cannot convert. A value read
+// for its own target, beneath a comment naming each parameter whose value the
+// format wrote in it, and for any other target is not written and warned
+// value-not-carried, as is text owing what it reads and a value a converter
+// cannot convert. A value read
 // from a parameter of the template is written as a reference to a parameter of
 // the Aggregate, declared under spec.parameters, as params.go describes; a
 // value read from a secure parameter, a reference, a credential or text that
@@ -208,7 +210,7 @@ func (w *aggregateWriter) notCarried() []string {
 	carried := map[string]bool{}
 	for _, cl := range w.out {
 		for _, v := range w.carriedValues(cl) {
-			paramsOf(v, carried)
+			collectParams(v, func(name string, _ bool) { carried[name] = true })
 		}
 	}
 	var out []string
@@ -303,18 +305,6 @@ func placedPaths(r *Row) [][]string {
 	return out
 }
 
-// paramsOf records in names each parameter v reads.
-func paramsOf(v Value, names map[string]bool) {
-	switch v := v.(type) {
-	case Param:
-		names[v.Name] = true
-	case Compose:
-		for _, part := range v.Parts {
-			paramsOf(part, names)
-		}
-	}
-}
-
 // isName reports whether path names a node's name, which a reader keeps
 // beside its body.
 func isName(path []string) bool {
@@ -357,11 +347,11 @@ func (w *aggregateWriter) instance(b *strings.Builder, cl *Classified) {
 	}
 }
 
-// valueTree is a values key holding either text or members.
+// valueTree is a values key holding either text or members, and the comment
+// written above it.
 type valueTree struct {
-	key     string
-	text    string
-	members []*valueTree
+	key, text, comment string
+	members            []*valueTree
 }
 
 // values returns the values of cl's instance, as Aggregate states them.
@@ -380,7 +370,7 @@ func (w *aggregateWriter) values(cl *Classified) []*valueTree {
 		}
 		text, o := w.propText(r.prop, conv)
 		if o.ok {
-			tree = plant(tree, key, w.commit(text))
+			tree = plant(tree, key, w.commit(text), w.paramComment(r.prop))
 			return
 		}
 		w.pending = nil
@@ -496,9 +486,9 @@ func valuesKey(key []string) []string {
 	return key[1:]
 }
 
-// plant adds text under key to tree, unless key, or a key it lies in or
-// holds, is set already.
-func plant(tree []*valueTree, key []string, text string) []*valueTree {
+// plant adds text under key to tree, comment above it, unless key, or a key it
+// lies in or holds, is set already.
+func plant(tree []*valueTree, key []string, text, comment string) []*valueTree {
 	for _, t := range tree {
 		if t.key != key[0] {
 			continue
@@ -506,14 +496,14 @@ func plant(tree []*valueTree, key []string, text string) []*valueTree {
 		if len(key) == 1 || t.members == nil {
 			return tree
 		}
-		t.members = plant(t.members, key[1:], text)
+		t.members = plant(t.members, key[1:], text, comment)
 		return tree
 	}
 	t := &valueTree{key: key[0]}
 	if len(key) == 1 {
-		t.text = text
+		t.text, t.comment = text, comment
 	} else {
-		t.members = plant(nil, key[1:], text)
+		t.members = plant(nil, key[1:], text, comment)
 	}
 	return append(tree, t)
 }
@@ -521,6 +511,9 @@ func plant(tree []*valueTree, key []string, text string) []*valueTree {
 // writeTree writes tree at indent.
 func writeTree(b *strings.Builder, indent string, tree []*valueTree) {
 	for _, t := range tree {
+		if t.comment != "" {
+			b.WriteString(draftyaml.CommentLine(indent, t.comment))
+		}
 		if t.members == nil {
 			b.WriteString(indent + keyText(t.key) + ": " + t.text + "\n")
 			continue
@@ -662,6 +655,9 @@ func (w *aggregateWriter) leafText(v Value, conv Conv) (string, outcome) {
 		if v.Target != w.in.Target {
 			return "", outcome{why: fmt.Sprintf("it is text the %s target evaluates when the source deploys, and "+
 				"the import drafts for %s", v.Target, targetName(w.in.Target)), leave: true}
+		}
+		if v.Owed != "" {
+			return "", outcome{why: v.Owed, leave: true, warn: true}
 		}
 		if conv != "" && conv != "string" {
 			return "", outcome{why: "the converter " + string(conv) + " cannot convert text evaluated when the " +

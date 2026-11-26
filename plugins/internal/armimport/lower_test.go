@@ -49,7 +49,7 @@ func TestEscapedBracketIsALiteral(t *testing.T) {
 // TestLowerLiteralsParametersAndVariables reads literals as they are, a
 // parameter by its declared name whatever case reads it, and a variable as
 // what it holds, followed through other variables; a variable reading itself
-// is deploy-time text.
+// is deploy-time text owing that variable.
 func TestLowerLiteralsParametersAndVariables(t *testing.T) {
 	t.Parallel()
 	web, diags := lowered(t, `{"prefix": "app", "full": "[concat(variables('prefix'), '-', parameters('Name'))]",
@@ -73,7 +73,7 @@ func TestLowerLiteralsParametersAndVariables(t *testing.T) {
 		{[]string{"param"}, cloudimport.Param{Name: "name"}},
 		{[]string{"full"}, cloudimport.Compose{Parts: []cloudimport.Value{str("app-"), cloudimport.Param{Name: "name"}}}},
 		{[]string{"tags", "team"}, str("core")},
-		{[]string{"cycle"}, cloudimport.Opaque{Text: "[variables('loopA')]", Target: "arm"}},
+		{[]string{"cycle"}, owing("[variables('loopA')]", "the variable loopA")},
 		{[]string{"computed", "owner"}, cloudimport.Param{Name: "name"}},
 		{[]string{"member"}, cloudimport.Param{Name: "name"}},
 	} {
@@ -85,7 +85,7 @@ func TestLowerLiteralsParametersAndVariables(t *testing.T) {
 
 // TestLowerConcatAndFormatCompose reads concat and format of text into
 // composed text, the literal text joined, and either joining arrays, or format
-// with a specifier, as deploy-time text.
+// with a specifier, as deploy-time text, owing a parameter given no value.
 func TestLowerConcatAndFormatCompose(t *testing.T) {
 	t.Parallel()
 	web, diags := lowered(t, "", `"concat": "[concat('https://', parameters('name'), '.example.com')]",
@@ -104,7 +104,7 @@ func TestLowerConcatAndFormatCompose(t *testing.T) {
 		{"concat", cloudimport.Compose{Parts: []cloudimport.Value{str("https://"), name, str(".example.com")}}},
 		{"format", cloudimport.Compose{Parts: []cloudimport.Value{str("https://"), name, str(".example.com:443/{x}")}}},
 		{"arrays", cloudimport.Opaque{Text: "[concat(createArray('a'), createArray('b'))]", Target: "arm"}},
-		{"specifier", cloudimport.Opaque{Text: "[format('{0:N2}', parameters('count'))]", Target: "arm"}},
+		{"specifier", owing("[format('{0:N2}', parameters('count'))]", unsetParameter("count"))},
 		{"literal", str("ab")},
 	} {
 		if got := at(t, web, "properties", row.path); !reflect.DeepEqual(got, row.want) {
@@ -147,7 +147,7 @@ func TestLowerReferencesNameAResourceAndAnAttribute(t *testing.T) {
 		{"output", ref("stcore", "properties", "primaryEndpoints", "web")},
 		{"fullOutput", ref("stcore", "properties", "primaryEndpoints", "web")},
 		{"whole", cloudimport.Opaque{Text: "[reference('inner', '2022-09-01', 'Full')]", Target: "arm"}},
-		{"computed", cloudimport.Opaque{Text: "[reference(parameters('name')).primaryEndpoints.blob]", Target: "arm"}},
+		{"computed", owing("[reference(parameters('name')).primaryEndpoints.blob]", unsetParameter("name"))},
 	} {
 		if got := at(t, web, "properties", row.path); !reflect.DeepEqual(got, row.want) {
 			t.Errorf("%s reads %+v, want %+v", row.path, got, row.want)
@@ -306,5 +306,48 @@ func TestLowerAListCallBehindAVariableIsACredential(t *testing.T) {
 		if got := at(t, web, "properties", path); !reflect.DeepEqual(got, keys) {
 			t.Errorf("%s reads %+v, want %+v", path, got, keys)
 		}
+	}
+}
+
+// TestLowerDeployTimeTextWritesRootParametersInPlace reads deploy-time text
+// reading parameters of the root template: each given a literal scalar — by
+// the parameters file, else by its default — is written in place as that
+// scalar and named among the text's Params; one given an object owes it, and
+// so does a parameter of a nested template its deploying resource gives an
+// object.
+func TestLowerDeployTimeTextWritesRootParametersInPlace(t *testing.T) {
+	t.Parallel()
+	template := `{` + schema + `, "contentVersion": "1.0.0.0",
+		"parameters": {"label": {"type": "string", "defaultValue": "it's"}, "size": {"type": "int", "defaultValue": 3},
+			"on": {"type": "bool", "defaultValue": true}, "tags": {"type": "object", "defaultValue": {"a": "b"}},
+			"zone": {"type": "string", "defaultValue": "x"}},
+		"resources": [
+			{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "web", "properties": {
+				"scalars": "[format('{0:N2}{1}{2}{3}', parameters('size'), toUpper(parameters('label')), parameters('on'), parameters('zone'))]",
+				"object": "[string(parameters('tags'))]"}},
+			{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "inner",
+				"properties": {"mode": "Incremental", "expressionEvaluationOptions": {"scope": "inner"},
+					"parameters": {"cfg": {"value": {"k": "v"}}},
+					"template": {"parameters": {"cfg": {"type": "object"}}, "resources": [
+						{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01", "name": "api", "properties": {
+							"nested": "[string(parameters('cfg'))]"}}]}}}]}`
+	file := `{"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+		"contentVersion": "1.0.0.0", "parameters": {"zone": {"value": "eu"}}}`
+	g, diags := readAll("", src("main.json", []byte(template)), src("main.parameters.json", []byte(file)))
+	if g == nil {
+		t.Fatalf("no graph: %+v", diags)
+	}
+	web := node(t, g, "web")
+	if got, want := at(t, web, "properties", "scalars"), (cloudimport.Opaque{Target: "arm",
+		Text: "[format('{0:N2}{1}{2}{3}', 3, toUpper('it''s'), true(), 'eu')]", Params: []string{"size", "label", "on", "zone"}}); !reflect.DeepEqual(got, want) {
+		t.Errorf("scalars reads %+v, want %+v", got, want)
+	}
+	if got, want := at(t, web, "properties", "object"), owing("[string(parameters('tags'))]",
+		"the template parameter tags, whose value is an object, a list or a fraction"); !reflect.DeepEqual(got, want) {
+		t.Errorf("object reads %+v, want %+v", got, want)
+	}
+	if got, want := at(t, node(t, g, "inner/api"), "properties", "nested"), owing("[string(parameters('cfg'))]",
+		"the parameter cfg of the template inner deploys"); !reflect.DeepEqual(got, want) {
+		t.Errorf("nested reads %+v, want %+v", got, want)
 	}
 }
