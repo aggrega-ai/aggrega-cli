@@ -409,7 +409,7 @@ WHATS_NEW_WANT="Added
 
 Fixed
 - The installer names the file it cannot write."
-MORE_LINE="More changes in this version: https://aggrega.ai/docs/changelog/"
+MORE_LINE="More changes in this version: https://github.com/aggrega-ai/aggrega-cli/releases/tag/v$VERSION"
 
 # begin_case — resets the answers to those of a real run end to end, the
 # release v$VERSION to existing with SHA256SUMS listing the stub installer, the
@@ -1041,7 +1041,7 @@ end_case whats_new_refuses_html_comment
 # Plane, two UTF-16 code units, and is as long as makes the text through f1 with
 # the closing lines 1,500 characters but 1,501 code units: the text keeps the
 # whole lines through the 13th entry, drops the heading "Fixed" left with no
-# entry, and ends with a blank line and the line naming the Changelog page.
+# entry, and ends with a blank line and the line naming the release's page.
 xs() { local s=""; while [ "${#s}" -lt "$1" ]; do s+=x; done; printf '%s' "$s"; }
 long_section="### Added"$'\n\n'
 long_want="Added"

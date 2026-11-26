@@ -30,7 +30,9 @@
 #      in UTF-16 code units, never fewer than the characters: a longer text
 #      keeps the whole lines that fit, drops a heading left with no entry, and
 #      ends with a blank line and the line "More changes in this version:
-#      https://aggrega.ai/docs/changelog/", the documentation's Changelog page.
+#      https://github.com/aggrega-ai/aggrega-cli/releases/tag/v<version>", the
+#      release's page, whose Changes part is the same section and which a real
+#      run has required at step 4.
 #      A real run refuses a version whose section is absent or empty, naming
 #      the version and the file, before any request; a dry run says a real run
 #      would refuse and goes on. A section holding an HTML comment is refused
@@ -350,7 +352,7 @@ TAG="v$VERSION"
 
 CHANGELOG="$(cd "$HERE/../.." && pwd)/CHANGELOG.md"
 WHATS_NEW_LIMIT=1500
-MORE_CHANGES="More changes in this version: https://aggrega.ai/docs/changelog/"
+MORE_CHANGES="More changes in this version: https://github.com/aggrega-ai/aggrega-cli/releases/tag/$TAG"
 
 # whats_new_text — prints the What's new text of the CHANGELOG.md section on
 # standard input, as step 3 of the header gives it.
