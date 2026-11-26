@@ -301,11 +301,55 @@ var intrinsicsMu sync.Mutex
 func normalizeTemplateBytes(content []byte) ([]byte, error) {
 	intrinsicsMu.Lock()
 	defer intrinsicsMu.Unlock()
-	out, err := intrinsics.ProcessYAML(content, &intrinsics.ProcessorOptions{NoProcess: true})
+	out, err := intrinsics.ProcessYAML(retagTimestampScalars(content), &intrinsics.ProcessorOptions{NoProcess: true})
 	if err != nil {
 		return nil, err
 	}
 	return append(out, '\n'), nil
+}
+
+// retagTimestampScalars returns content with every plain, untagged scalar that YAML
+// resolves as a timestamp rewritten as a double-quoted string, so the reader that
+// follows keeps the text the template wrote (`AWSTemplateFormatVersion: 2010-09-09`,
+// a policy's `Version: 2012-10-17`) instead of re-emitting it as a different
+// timestamp spelling. A quoted scalar and one with an explicit tag are left as they
+// are. It walks the parsed node tree through Content only, never an alias, so an
+// anchor that contains its own alias cannot loop. When the bytes do not parse, or no
+// scalar changed, content comes back unchanged, so a template without such a scalar
+// reads exactly the bytes it was given and a parse failure surfaces from the reader.
+func retagTimestampScalars(content []byte) []byte {
+	var root yaml.Node
+	if err := yaml.Unmarshal(content, &root); err != nil {
+		return content
+	}
+	if !retagTimestampNode(&root) {
+		return content
+	}
+	out, err := yaml.Marshal(&root)
+	if err != nil {
+		return content
+	}
+	return out
+}
+
+// retagTimestampNode retags the timestamp scalars under n and reports whether it
+// changed any. Alias nodes are not followed.
+func retagTimestampNode(n *yaml.Node) bool {
+	changed := false
+	if n.Kind == yaml.ScalarNode {
+		if n.Style == 0 && n.ShortTag() == "!!timestamp" {
+			n.Tag = "!!str"
+			n.Style = yaml.DoubleQuotedStyle
+			changed = true
+		}
+		return changed
+	}
+	for _, c := range n.Content {
+		if retagTimestampNode(c) {
+			changed = true
+		}
+	}
+	return changed
 }
 
 // isTemplateFile reports whether a packed file's path names a CloudFormation template
