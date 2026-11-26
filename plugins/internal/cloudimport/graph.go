@@ -121,6 +121,10 @@ type Parameter struct {
 	MinLength, MaxLength *int
 	// Default is the parameter's default, nil where it has none.
 	Default Value
+	// Generated names, as a warning names it, the call by which the format
+	// reads the source generating the default afresh each time it deploys;
+	// empty where the format reads the default as no such call.
+	Generated string
 	// Secure reports that the source declares the parameter's value secret.
 	Secure bool
 	// Supplied is the value a parameters file supplies, nil where none does.

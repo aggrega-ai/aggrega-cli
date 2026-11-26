@@ -30,9 +30,6 @@ import (
 // credentialWhere completes the report of a credential the setting judges.
 const credentialWhere = "in the draft, which attaches the secret by reference and writes no value"
 
-// newGuidCall finds a call of newGuid in deploy-time text.
-var newGuidCall = regexp.MustCompile(`(?i)newguid\s*\(`)
-
 // variableOf returns the variable name a secret read from the template
 // parameter name is written with: the name itself where it is one, else the
 // kit's variable name for it.
@@ -89,7 +86,8 @@ func (w *aggregateWriter) paramSecret(path string, p *Parameter) importer.Secret
 }
 
 // noteSecretValue judges the literals the secure parameter p holds, the
-// parameters file's first, and warns of a default the template generates.
+// parameters file's first, and warns of a default the format marks generated
+// each time the template deploys.
 func (w *aggregateWriter) noteSecretValue(p *Parameter) {
 	if w.noted[p.Name] {
 		return
@@ -101,10 +99,11 @@ func (w *aggregateWriter) noteSecretValue(p *Parameter) {
 	case literalHeld(p.Default):
 		w.judge(p.Name, "defaultValue")
 	}
-	if o, ok := p.Default.(Opaque); ok && newGuidCall.MatchString(o.Text) {
+	if p.Generated != "" {
 		w.diags = append(w.diags, Report(CodeValueNotCarried, fmt.Sprintf("the default of the template parameter %s "+
-			"is newGuid(), which the template evaluates when it deploys: the template generates no secret store entry, "+
-			"so the secret is attached by its form and its value is kept where the attachment's origin names", p.Name)))
+			"is %s, which the template evaluates when it deploys: the template generates no secret store entry, "+
+			"so the secret is attached by its form and its value is kept where the attachment's origin names", p.Name,
+			p.Generated)))
 	}
 }
 

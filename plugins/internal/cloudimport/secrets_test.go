@@ -115,18 +115,37 @@ func TestSecretLiteralDefaultIsADecisionNamedInAWarning(t *testing.T) {
 }
 
 // TestSecretNewGuidDefaultWarnsThatNoSecretIsGenerated attaches the secret by
-// its form and warns that the template generates no secret where the default
-// is newGuid().
+// its form and warns that the template generates no secret where the format
+// marks the default generated afresh each time the template deploys, naming
+// the call; a default the format does not mark is never read for one, its text
+// the format's own.
 func TestSecretNewGuidDefaultWarnsThatNoSecretIsGenerated(t *testing.T) {
 	in := edgeView()
 	in.Target = "arm"
-	for _, expr := range []string{"[newGuid()]", "[NEWGUID ()]"} {
+	for _, row := range []struct {
+		scenario, generated string
+	}{
+		{"marked", "newGuid()"},
+		{"not marked", ""},
+	} {
 		g := &Graph{Nodes: []*Node{passwordServer("adminPassword")}, Params: []Parameter{
-			{Name: "adminPassword", Type: "string", Secure: true, Default: Opaque{Text: expr, Target: "arm"}}}}
+			{Name: "adminPassword", Type: "string", Secure: true, Default: Opaque{Text: "[newGuid()]", Target: "arm"},
+				Generated: row.generated}}}
 		_, _, release, _, diags := released(t, in, releaseFormat(), g)
-		warnsAbout(t, diags, CodeValueNotCarried, "adminPassword", "newGuid()", "generates no secret")
+		warned := 0
+		for _, d := range withCode(diags, CodeValueNotCarried) {
+			if strings.Contains(d.Message, "generates no secret") {
+				warned++
+				if !strings.Contains(d.Message, "adminPassword is newGuid(), ") {
+					t.Errorf("%s: the warning does not name the parameter and the call: %s", row.scenario, d.Message)
+				}
+			}
+		}
+		if want := map[bool]int{true: 1, false: 0}[row.generated != ""]; warned != want {
+			t.Errorf("%s: %d warnings that no secret is generated, want %d: %+v", row.scenario, warned, want, diags)
+		}
 		if !strings.Contains(instanceBlock(t, release, "server"), "type: core/referenced-secret") {
-			t.Errorf("%s: the secret is not attached:\n%s", expr, release)
+			t.Errorf("%s: the secret is not attached:\n%s", row.scenario, release)
 		}
 	}
 }
