@@ -649,7 +649,7 @@ func TestArmWrapReadsAnOutputsValueAndNothingElse(t *testing.T) {
 		{"provisioningState", "provisioning_state"}} {
 		if d := diags[i]; d.Code != string(cloudimport.CodeReferenceNotWired) || d.Severity != aggrega.SeverityWarn ||
 			!strings.Contains(d.Message, "reads "+named[0]+" of the module") ||
-			!strings.Contains(d.Message, "the provides key "+named[1]+":") {
+			!strings.Contains(d.Message, "the provides key "+named[1]+", ") {
 			t.Errorf("wrap reports %+v, want reference-not-wired naming %s and %s", d, named[0], named[1])
 		}
 	}
@@ -731,4 +731,37 @@ func TestTheArmValuesHaveOneHome(t *testing.T) {
 			t.Errorf("%s is written in %v, want in %s alone", h.literal, got, h.home)
 		}
 	}
+}
+
+// TestArmReadingNoOutputsValueOfAWrappedModuleSaysWhatToRemove imports a site
+// reading a wrapped module's output whole, which is no output's value: the
+// warning says to remove the site's inject entry and the drafted Component's
+// provides key, and the site's connection carries a comment saying so.
+func TestArmReadingNoOutputsValueOfAWrappedModuleSaysWhatToRemove(t *testing.T) {
+	t.Parallel()
+	template := `{` + schema + `, "contentVersion": "1.0.0.0",
+		"parameters": {"location": {"type": "string", "defaultValue": "westeurope"}},
+		"resources": [
+			{"type": "Microsoft.Web/staticSites", "apiVersion": "2023-01-01", "name": "site", "location": "westeurope",
+				"dependsOn": ["[resourceId('Microsoft.Resources/deployments', 'cluster')]"],
+				"properties": {"buildProperties": {"appLocation": "[reference('cluster').outputs.resourceId]"}}},
+			{"type": "Microsoft.Resources/deployments", "apiVersion": "2022-09-01", "name": "cluster",
+				"properties": {"mode": "Incremental", "expressionEvaluationOptions": {"scope": "inner"},
+					"parameters": {"name": {"value": "adx-core"}, "location": {"value": "[parameters('location')]"},
+						"sku": {"value": "Standard_E2ads_v5"}},
+					"template": {"$avm": "kusto/cluster/0.11.1"}}}]}`
+	raw := avmLayer.ReplaceAllFunc([]byte(template), func(m []byte) []byte {
+		return fixture(t, "avm/"+string(avmLayer.FindSubmatch(m)[1])+"/main.json")
+	})
+	out := importOf(t, src("main.json", raw))
+	warned := coded(out, cloudimport.CodeReferenceNotWired)
+	if len(warned) != 1 || !strings.Contains(warned[0].Message, "remove the inject entry reading "+
+		"outputs_resource_id from the connection delivering it and the provides key outputs_resource_id from the "+
+		"drafted Component") {
+		t.Errorf("reference-not-wired does not say once what to remove: %+v", out.Diagnostics)
+	}
+	holds(t, "the Aggregate", fileText(t, out, "aggregate.yaml"), "        # Not wired: the value this connection "+
+		"delivers from outputs_resource_id is cluster's outputs.resourceId, which the Recipe drafted for cluster "+
+		"publishes under no provides key; remove the inject entry reading outputs_resource_id from this connection "+
+		"and the provides key outputs_resource_id from the Component ")
 }

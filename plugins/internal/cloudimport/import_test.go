@@ -725,3 +725,31 @@ func TestImportNeverPanicsOnMalformedInput(t *testing.T) {
 		})
 	}
 }
+
+// TestImportCommentsAConnectionDeliveringAKeyTheModuleWriterDoesNotPublish
+// imports a module whose output a neighbour reads, with a module writer that
+// publishes nothing under that output's provides key: the neighbour's
+// connection keeps its entry, and a comment above it names the key and the
+// attribute and says to remove the entry and the Component's provides key.
+func TestImportCommentsAConnectionDeliveringAKeyTheModuleWriterDoesNotPublish(t *testing.T) {
+	f := toyFormat(nil)
+	wrap := f.Wrap
+	f.Wrap = func(m schemadraft.WrappedModule) (importer.RecipeDraft, []aggrega.Diagnostic) {
+		d, diags := wrap(m)
+		d.Provides = slices.DeleteFunc(d.Provides, func(e importer.Entry) bool { return e.Key == "endpoint" })
+		return d, diags
+	}
+	out := Import(toyInput(t, "toy", "", []string{"module.json"}), f, toyParse)
+	noHalt(t, out.Diagnostics)
+	block := instanceBlock(t, fileOf(t, out, "aggregate.yaml"), "worker")
+	want := "        # Not wired: the value this connection delivers from endpoint is search's endpoint, which the " +
+		"Recipe drafted for search publishes under no provides key; remove the inject entry reading endpoint from " +
+		"this connection and the provides key endpoint from the Component "
+	if !strings.Contains(block, want) || !strings.Contains(block, "from: endpoint") {
+		t.Errorf("the worker's connection to search is not commented\n%s\nin\n%s", want, block)
+	}
+	if strings.Count(block, "# Not wired:") != 1 {
+		t.Errorf("the worker's connections carry %d not-wired comments, want one:\n%s", strings.Count(block,
+			"# Not wired:"), block)
+	}
+}

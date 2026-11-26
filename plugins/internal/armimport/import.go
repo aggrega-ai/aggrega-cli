@@ -54,7 +54,9 @@ func Import(in aggrega.ImportInput, parse cloudimport.ParseFunc) aggrega.ImportO
 // below that: outputs.o.value is published as the output o, which the module
 // writer reads at outputs.o.value itself, and outputs.o.value.<member…> at
 // that path. An attribute reading no output's value is not published, and a
-// reference-not-wired warning names it and its provides key.
+// reference-not-wired warning names it and its provides key and says to remove
+// the neighbour's inject entry and the drafted Component's provides key, as a
+// comment above the neighbour's connection says too.
 func wrap(m schemadraft.WrappedModule) (importer.RecipeDraft, []aggrega.Diagnostic) {
 	var (
 		outputs []schemadraft.Provide
@@ -65,9 +67,11 @@ func wrap(m schemadraft.WrappedModule) (importer.RecipeDraft, []aggrega.Diagnost
 		if len(a) < 3 || !strings.EqualFold(a[0], "outputs") || !strings.EqualFold(a[2], "value") {
 			diags = append(diags, cloudimport.Report(cloudimport.CodeReferenceNotWired, fmt.Sprintf("a neighbour "+
 				"reads %s of the module %s, which is no output's value, read at outputs.<output>.value, nor a member "+
-				"inside one, so the Recipe drafted for the module publishes nothing under the provides key %s: "+
-				"read an output's value, or write the value where the instance reading it is configured",
-				strings.Join(a, "."), m.URL, p.Key)))
+				"inside one, so the Recipe drafted for the module publishes nothing under the provides key %s, and "+
+				"the build halts until it is unwired: remove the inject entry reading %s from the connection "+
+				"delivering it and the provides key %s from the drafted Component, a comment above that connection "+
+				"naming both, then read an output's value or write the value where the instance reading it is "+
+				"configured", strings.Join(a, "."), m.URL, p.Key, p.Key, p.Key)))
 			continue
 		}
 		if len(a) == 3 {

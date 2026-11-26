@@ -9,8 +9,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // groupModule adds n, a node of a module form no Component maps, to the group
@@ -131,7 +133,15 @@ func (c *classifier) draftModule(grp *draftGroup) {
 	for _, n := range grp.nodes {
 		c.leaveOutSecrets(n, grp.name, secrets)
 	}
-	drafted, diags := schemadraft.DraftWrapped(c.in, c.f.Draft, m, c.f.Wrap)
+	var published []string
+	write := func(m schemadraft.WrappedModule) (importer.RecipeDraft, []aggrega.Diagnostic) {
+		d, diags := c.f.Wrap(m)
+		for _, e := range d.Provides {
+			published = append(published, e.Key)
+		}
+		return d, diags
+	}
+	drafted, diags := schemadraft.DraftWrapped(c.in, c.f.Draft, m, write)
 	// A halt on a module no Recipe can source names no node: it points at the
 	// node whose module the Recipe would source.
 	for i := range diags {
@@ -139,7 +149,45 @@ func (c *classifier) draftModule(grp *draftGroup) {
 			diags[i].SourceRef = first.ID
 		}
 	}
+	if !halts(diags) {
+		c.unpublished(grp, published)
+	}
 	c.adopt(grp, drafted, diags, joinNonEmpty("; ", modulesTogether(grp.nodes), secretsText(secrets)))
+}
+
+// unpublished comments each connection delivering a provides key of grp that
+// the format's module writer, publishing the keys published, does not
+// publish: the connection keeps its entry, which no value fills, so the
+// comment above it says to remove the entry and the drafted Component's key,
+// the writer's own warning saying why it publishes none.
+func (c *classifier) unpublished(grp *draftGroup, published []string) {
+	for _, p := range grp.provides {
+		if slices.Contains(published, p.Key) {
+			continue
+		}
+		for _, n := range grp.nodes {
+			target := c.out[n.ID].Key
+			comment := "Not wired: the value this connection delivers from " + draftyaml.Comment(p.Key) + " is " +
+				draftyaml.Comment(n.ID) + "'s " + draftyaml.Comment(pathText(p.Attribute)) + ", which the Recipe " +
+				"drafted for " + draftyaml.Comment(n.ID) + " publishes under no provides key; remove the inject " +
+				"entry reading " + draftyaml.Comment(p.Key) + " from this connection and the provides key " +
+				draftyaml.Comment(p.Key) + " from the Component " + draftyaml.Comment(grp.name) + "."
+			for _, consumer := range c.nodes {
+				cl := c.out[consumer.ID]
+				if cl == nil {
+					continue
+				}
+				for i := range cl.Uses {
+					u := &cl.Uses[i]
+					if u.Target == target && slices.ContainsFunc(u.Entries, func(e draftyaml.Injected) bool {
+						return e.From == p.Key
+					}) && !slices.Contains(u.Comments, comment) {
+						u.Comments = append(u.Comments, comment)
+					}
+				}
+			}
+		}
+	}
 }
 
 // moduleParameters returns, for each parameter a node of grp sets, the input
