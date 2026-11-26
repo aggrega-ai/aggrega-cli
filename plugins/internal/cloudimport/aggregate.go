@@ -23,14 +23,20 @@ import (
 // one instance for each mapped or drafted node, under its Key, of the
 // Component it is named for, with its values and the connections it draws.
 //
-// Comments open it: the sources read and those not read, each output of the
+// Comments open it: the sources read and those not read, the notes the format
+// adds to the graph, each line of one a comment line, each output of the
 // source with the instance and the provides key carrying it where one does,
 // the parameters the draft carries nowhere, and the substrate the source
 // creates, which the draft leaves to the operator. Above an instance whose key
 // is not its node's ID a comment names that ID, then its Comments. Each
 // connection is written under a socket and an alias both named for its
 // target's key, its comments above it and its entries delivered through
-// draftyaml.Inject.
+// draftyaml.Inject. Each attachment an attached node is written as on an
+// instance, other than a referenced secret the Release attaches, is written
+// under that instance's features at its slot: its Feature as the type, and its
+// values read off the attached node through the rule's placements, as a mapped
+// instance's values are, the name it pins in place of what they place under
+// name.
 //
 // The values of a mapped instance are those its row's Values place, read off
 // its node, or, for an instance a fold of its row makes of a child, off that
@@ -55,9 +61,12 @@ import (
 // cannot convert. A value read
 // from a parameter of the template is written as a reference to a parameter of
 // the Aggregate, declared under spec.parameters, as params.go describes; a
-// value read from a secure parameter, a reference, a credential or text that
-// names a secure parameter is not written, and is warned value-not-carried with
-// the key it would be written at, as is every object or list holding one. Every
+// value read from a secure parameter, a parameter naming an existing resource,
+// a reference, a credential or text that names a secure parameter is not
+// written, and is warned value-not-carried with the key it would be written
+// at, as is every object or list holding one. A secret a store holds is
+// written as the source's text for it where the import's target is f.Target,
+// and is not written otherwise. Every
 // text read from the source is escaped through EscapeTemplateText, so it reads
 // back as written once the compiler evaluates the Aggregate as a template, and
 // every comment line is written through draftyaml.CommentLine.
@@ -67,11 +76,13 @@ import (
 // connection of the Aggregate reaches the instance.
 //
 // A parameter is carried where a node the draft writes an instance for, or
-// folds into one, reads it at a path the draft carries: any property of a
-// drafted node, its name included; a property a mapped instance's row places;
-// the path a fold writes of a folded child. An entry of a mapped instance's
-// environment list carries no parameter: the draft delivers the environment
-// from connections, and names each entry it does not deliver in the Release. The
+// folds or attaches into one, reads it at a path the draft carries: any
+// property of a drafted node, its name included; a property a mapped
+// instance's row places; the path a fold writes of a folded child; the path an
+// attachment the Aggregate declares places in its values. An entry of a mapped
+// instance's environment list carries no parameter: the draft delivers the
+// environment from connections, and names each entry it does not deliver in
+// the Release. The
 // Aggregate is named as importer.DraftName names it. Two runs over one input
 // give one byte sequence.
 func Aggregate(in aggrega.ImportInput, f Format, g *Graph, classified []Classified) (aggrega.EmittedEntity,
@@ -161,6 +172,11 @@ func (w *aggregateWriter) opening(b *strings.Builder) {
 		}
 		if len(w.g.NotRead) > 0 {
 			b.WriteString(draftyaml.CommentLine("", "Not read: "+draftyaml.CommentList(w.g.NotRead)+"."))
+		}
+		for _, note := range w.g.Notes {
+			for _, line := range lineBreak.Split(note, -1) {
+				b.WriteString(draftyaml.CommentLine("", line))
+			}
 		}
 		if len(w.g.Outputs) > 0 {
 			b.WriteString(draftyaml.CommentLine("", "Outputs of the source:"))
@@ -275,6 +291,17 @@ func (w *aggregateWriter) carriedValues(cl *Classified) []Value {
 		if fold := childFold(cl.Row, n.Type); fold != nil {
 			at(childRead, every, fold.From)
 		}
+	case cl.Class == ClassAttached:
+		var paths [][]string
+		for _, a := range cl.Attach {
+			if a.Secret != nil {
+				continue
+			}
+			for _, p := range a.Values {
+				paths = append(paths, p.From)
+			}
+		}
+		at(nodeRead, every, paths...)
 	}
 	return out
 }
@@ -326,12 +353,24 @@ func (w *aggregateWriter) instance(b *strings.Builder, cl *Classified) {
 	}
 	b.WriteString("      type: " + typ + "\n")
 	active, values := w.instanceParts(cl)
+	features := w.features(cl)
 	if active != "" {
 		b.WriteString("      active: " + active + "\n")
 	}
 	if len(values) > 0 {
 		b.WriteString("      values:\n")
 		writeTree(b, "        ", values)
+	}
+	if len(features) > 0 {
+		b.WriteString("      features:\n")
+		for _, f := range features {
+			b.WriteString("        " + keyText(f.slot) + ":\n")
+			b.WriteString("          type: " + f.feature + "\n")
+			if len(f.values) > 0 {
+				b.WriteString("          values:\n")
+				writeTree(b, "            ", f.values)
+			}
+		}
 	}
 	if len(cl.Uses) > 0 {
 		b.WriteString("      uses:\n")
@@ -357,50 +396,135 @@ type valueTree struct {
 // values returns the values of cl's instance, as Aggregate states them.
 func (w *aggregateWriter) values(cl *Classified) []*valueTree {
 	var tree []*valueTree
-	put := func(r read, key []string, conv Conv) {
-		if r.node == nil || len(key) == 0 {
-			return
-		}
-		site := valueSite{node: r.node.ID, instance: cl.Key, from: r.from, dest: "values." + pathText(key)}
-		if !r.ok {
-			if r.why != "" {
-				w.notCarriedHere(site, r.why)
-			}
-			return
-		}
-		text, o := w.propText(r.prop, conv)
-		if o.ok {
-			tree = plant(tree, key, w.commit(text), w.paramComment(r.prop))
-			return
-		}
-		w.pending = nil
-		w.notCarriedHere(site, o.why)
+	for _, v := range w.valueReads(cl) {
+		tree = w.put(tree, cl, v.r, v.key, "values."+pathText(v.key), v.conv)
 	}
+	return tree
+}
+
+// put plants in tree, under key, the value r reads, converted by conv, as cl's
+// instance writes it at dest, a comment above it naming each parameter it
+// reads; a value that cannot be written is warned value-not-carried, and one r
+// does not read is passed over.
+func (w *aggregateWriter) put(tree []*valueTree, cl *Classified, r read, key []string, dest string,
+	conv Conv) []*valueTree {
+	if r.node == nil || len(key) == 0 {
+		return tree
+	}
+	site := valueSite{node: r.node.ID, instance: cl.Key, from: r.from, dest: dest}
+	if !r.ok {
+		if r.why != "" {
+			w.notCarriedHere(site, r.why)
+		}
+		return tree
+	}
+	text, o := w.propText(r.prop, conv)
+	if o.ok {
+		return plant(tree, key, w.commit(text), w.paramComment(r.prop))
+	}
+	w.pending = nil
+	w.notCarriedHere(site, o.why)
+	return tree
+}
+
+// valueRead is one value an instance's values read: what is read, the key
+// under values it is written at, and its converter.
+type valueRead struct {
+	r    read
+	key  []string
+	conv Conv
+}
+
+// valueReads returns the values cl's instance reads, in the order Aggregate
+// writes them: a mapped instance's row's Values, the value of the child an
+// instance a fold of its row makes is, and the value of each child folded into
+// it its fold writes under values; a drafted instance's inputs read from
+// values.
+func (w *aggregateWriter) valueReads(cl *Classified) []valueRead {
+	var out []valueRead
 	n := cl.Node
 	switch {
 	case cl.Class == ClassMapped && cl.Row != nil:
 		for _, p := range cl.Row.Values {
-			put(w.readOff(cl, p.From), []string{p.Key}, p.Conv)
+			out = append(out, valueRead{r: w.readOff(cl, p.From), key: []string{p.Key}, conv: p.Conv})
 		}
 		if fold := instancesFold(cl.Row, n.Type); fold != nil {
-			put(childRead(n, fold.From), valuesKey(fold.Key), "")
+			out = append(out, valueRead{r: childRead(n, fold.From), key: valuesKey(fold.Key)})
 		}
 		for _, child := range w.out {
 			if child.Class != ClassFolded || child.Into != n.ID || len(w.cs.folding[child.Node.ID]) > 0 {
 				continue
 			}
 			if f := childFold(cl.Row, child.Node.Type); f != nil {
-				put(childRead(child.Node, f.From), valuesKey(f.Key), "")
+				out = append(out, valueRead{r: childRead(child.Node, f.From), key: valuesKey(f.Key)})
 			}
 		}
 	case cl.Class == ClassDrafted:
 		for _, in := range cl.Inputs {
 			if in.Source.Pillar == schemadraft.PillarValues && in.Property != nil {
-				put(nodeRead(n, in.Property.Path), []string{in.Source.Key}, "")
+				out = append(out, valueRead{r: nodeRead(n, in.Property.Path), key: []string{in.Source.Key}})
 			}
 		}
 	}
-	return tree
+	return out
+}
+
+// feature is one attachment the Aggregate declares under an instance's
+// features: its slot, its feature type and its values.
+type feature struct {
+	slot, feature string
+	values        []*valueTree
+}
+
+// features returns the attachments the Aggregate declares on cl's instance,
+// as Aggregate states them, in the order the attached nodes are written, each
+// node's in its order.
+func (w *aggregateWriter) features(cl *Classified) []feature {
+	var out []feature
+	for _, at := range w.attachedOn(cl.Node.ID) {
+		if at.a.Secret != nil {
+			continue
+		}
+		var tree []*valueTree
+		named := false
+		for _, p := range at.a.Values {
+			if p.Key == attachName && at.a.Name != "" {
+				tree, named = plant(tree, []string{p.Key}, w.stringText(at.a.Name), ""), true
+				continue
+			}
+			tree = w.put(tree, cl, nodeRead(at.node, p.From), []string{p.Key},
+				"features."+at.a.Slot+".values."+p.Key, p.Conv)
+		}
+		if at.a.Name != "" && !named {
+			tree = plant(tree, []string{attachName}, w.stringText(at.a.Name), "")
+		}
+		out = append(out, feature{slot: at.a.Slot, feature: at.a.Feature, values: tree})
+	}
+	return out
+}
+
+// attachmentOn is an attachment written on an instance, with the node it
+// attaches.
+type attachmentOn struct {
+	node *Node
+	a    Attachment
+}
+
+// attachedOn returns the attachments written on the instance of the node id,
+// in the order the attached nodes are classified, each node's in its order.
+func (w *aggregateWriter) attachedOn(id string) []attachmentOn {
+	var out []attachmentOn
+	for _, cl := range w.out {
+		if cl.Class != ClassAttached {
+			continue
+		}
+		for _, a := range cl.Attach {
+			if a.Into == id {
+				out = append(out, attachmentOn{node: cl.Node, a: a})
+			}
+		}
+	}
+	return out
 }
 
 // read is what a node writes at a property path, as a placement reads it.
@@ -526,6 +650,10 @@ func writeTree(b *strings.Builder, indent string, tree []*valueTree) {
 // plainKey is a key written as it is.
 var plainKey = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
+// lineBreak is a line break YAML reads as one: a note is written one comment
+// line per line it holds.
+var lineBreak = regexp.MustCompile(`\r\n|\r|\n`)
+
 // keyText writes a key of the values, quoted where it is not plain.
 func keyText(key string) string {
 	if plainKey.MatchString(key) {
@@ -576,10 +704,12 @@ type valueSite struct {
 // outcome is what became of writing one value: written, or not and why. A value
 // not written may be left for the Release's answers file (leave), and may also
 // warrant a warning of its own (warn); the Aggregate warns of every value it
-// does not write.
+// does not write. left, where set, is what the comment above a key left for
+// the answers file says in place of why: a locator the source states, which a
+// comment names and a warning, quoting no value of the source, does not.
 type outcome struct {
 	ok          bool
-	why         string
+	why, left   string
 	leave, warn bool
 }
 
@@ -658,6 +788,21 @@ func (w *aggregateWriter) leafText(v Value, conv Conv) (string, outcome) {
 		}
 		if v.Owed != "" {
 			return "", outcome{why: v.Owed, leave: true, warn: true}
+		}
+		if conv != "" && conv != "string" {
+			return "", outcome{why: "the converter " + string(conv) + " cannot convert text evaluated when the " +
+				"source deploys"}
+		}
+		return draftyaml.String(w.escape(v.Text)), written()
+	case Stored:
+		if !w.ownTarget() {
+			resolves := ", which " + targetName(w.f.Target) + " resolves when the source deploys"
+			return "", outcome{why: "it is a secret the " + v.Store + " store holds" + resolves + ", and the import " +
+				"drafts for " + targetName(w.in.Target),
+				left: "the secret the " + draftyaml.Comment(v.Store) + " store holds at " + draftyaml.Comment(v.Locator) +
+					resolves + "; the import drafts for " + targetName(w.in.Target) + ", so supply the secret as that " +
+					"target reads one",
+				leave: true}
 		}
 		if conv != "" && conv != "string" {
 			return "", outcome{why: "the converter " + string(conv) + " cannot convert text evaluated when the " +

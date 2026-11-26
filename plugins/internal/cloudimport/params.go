@@ -25,7 +25,9 @@ import (
 // Aggregate: each Release entry writes its value — the parameters file's, else
 // the template's literal default — or leaves the key for the answers file, a
 // comment naming the parameter. A secure parameter is never written as a value
-// in either place, and nor is text that names one.
+// in either place, and nor is text that names one. A parameter naming an
+// existing resource is no parameter of the Aggregate whatever key reads it: a
+// values key reading it is not written, and the Release entry names it.
 
 // paramRef is the text standing for an Aggregate parameter in a value being
 // written, resolved to its key once the value is written whole.
@@ -103,6 +105,8 @@ func (w *aggregateWriter) paramText(v Param, conv Conv) (string, outcome) {
 	case p.Secure:
 		return "", outcome{why: "the template parameter " + p.Name + " is secure, and a secure value is never written " +
 			"as a value", warn: true}
+	case p.Pointer && !w.release:
+		return "", outcome{why: "it reads " + pointerWhy(p)}
 	}
 	if w.release {
 		lit, o := w.paramLiteral(p)
@@ -163,6 +167,8 @@ func (w *aggregateWriter) composeText(v Compose, conv Conv) (string, outcome) {
 			case p.Secure:
 				return "", outcome{why: "it is composed with the secure template parameter " + p.Name + ", which is " +
 					"never written as a value", warn: true}
+			case p.Pointer && !w.release:
+				return "", outcome{why: "it is composed with " + pointerWhy(p)}
 			case w.release:
 				lit, o := w.paramLiteral(p)
 				if !o.ok {
@@ -184,6 +190,13 @@ func (w *aggregateWriter) composeText(v Compose, conv Conv) (string, outcome) {
 		}
 	}
 	return draftyaml.String(b.String()), written()
+}
+
+// pointerWhy names p, a parameter naming an existing resource, saying why a
+// value of the Aggregate reading it is not written.
+func pointerWhy(p *Parameter) string {
+	return "the template parameter " + p.Name + ", which names an existing resource, whose value the Release " +
+		"supplies and no parameter of the Aggregate holds, as the instance's Release entry says"
 }
 
 // paramLiteral returns the literal the Release writes for the parameter p: the
@@ -243,14 +256,15 @@ func (w *aggregateWriter) secureReads(text string) []string {
 
 // conditionParam returns the parameter the Aggregate's active reads for the
 // instance cl: the one boolean parameter its node's condition is, where no
-// connection of the Aggregate reaches the instance; nil otherwise.
+// connection of the Aggregate reaches the instance and it names no existing
+// resource; nil otherwise.
 func (w *aggregateWriter) conditionParam(cl *Classified) *Parameter {
 	pr, ok := cl.Node.Condition.(Param)
 	if !ok || w.targeted(cl) {
 		return nil
 	}
 	p := w.param(pr.Name)
-	if p == nil || p.Secure || aggType(*p) != "boolean" {
+	if p == nil || p.Secure || p.Pointer || aggType(*p) != "boolean" {
 		return nil
 	}
 	return p

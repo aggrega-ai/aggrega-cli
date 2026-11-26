@@ -41,7 +41,15 @@ import (
 //     warned value-not-carried where it is not, and deploy-time text owing
 //     what it reads is both;
 //   - the secrets are those secrets.go attaches, and a drafted instance's
-//     comment names each secret that stays a deploy-time parameter;
+//     comment names each secret that stays a deploy-time parameter; a slot an
+//     attached node's attachment fills attaches nothing else, and an
+//     attachment that is the kit's referenced secret is attached in the entry
+//     of the instance taking it;
+//   - a value of the instance's values reading a parameter that names an
+//     existing resource, which the Aggregate does not write, is named in the
+//     entry's comment with the value the parameters file supplies, else the
+//     template's literal default, and left for the operator where neither is,
+//     since a Release sets no values;
 //   - a mapped instance names its row's Recipe as its realization on every
 //     target, which the host confirms against that target's Recipes; a drafted
 //     instance names its drafted Recipe, which exists on the format's own
@@ -51,8 +59,9 @@ import (
 //     translate — each property the parent folded into an instance a fold
 //     makes of a child writes that the row does not place, and each property
 //     a child folded into it writes that its fold does not; then each entry
-//     of its environment list the draft does not deliver from a connection,
-//     the variable and its value as the source writes it, or the variable
+//     of its environment list the draft does not deliver from a connection —
+//     an item of the list, or a member of an environment listed as an object
+//     — the variable and its value as the source writes it, or the variable
 //     alone where the value is secret — or the list whole, where the source
 //     writes it as one value — each also warned value-not-carried.
 func Release(in aggrega.ImportInput, f Format, g *Graph, classified []Classified,
@@ -61,6 +70,7 @@ func Release(in aggrega.ImportInput, f Format, g *Graph, classified []Classified
 	for _, cl := range analysis.out {
 		if cl.Key != "" && isInstance(cl) {
 			analysis.instanceParts(cl)
+			analysis.features(cl)
 		}
 	}
 	w := newAggregateWriter(in, f, g, classified, true)
@@ -110,10 +120,11 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 				b.place(childRead(child.Node, fold.From), fold.Key, "", false)
 			}
 		}
-		b.e.Secrets = w.mappedSecrets(cl)
+		b.e.Secrets = append(w.mappedSecrets(cl), w.attachedSecrets(cl)...)
 		b.e.Realization = cl.Row.Recipe
 		b.e.Comments = append(b.e.Comments, w.unplacedComments(cl)...)
 		b.e.Comments = append(b.e.Comments, w.unwiredEnv(cl)...)
+		b.pointerValues()
 	case cl.Class == ClassMapped:
 		// A type the mapping_overrides setting maps has no row: nothing is placed,
 		// every property the node writes is named for the author to place, and the
@@ -133,11 +144,51 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 			}
 		}
 		b.e.Comments = append(b.e.Comments, w.draftedSecrets(cl)...)
+		b.pointerValues()
 		if w.ownTarget() {
 			b.e.Realization = cl.Recipe
 		}
 	}
 	return b.done()
+}
+
+// pointerValues names in the entry each value of the instance's values that
+// reads a parameter naming an existing resource, which the Aggregate does not
+// write and a Release sets no value of: in a comment, with the value the
+// parameters file supplies, else the template's literal default, or as left
+// for the operator where neither is.
+func (b *entryBuilder) pointerValues() {
+	w := b.w
+	for _, v := range w.valueReads(b.cl) {
+		if v.r.node == nil || len(v.key) == 0 || !v.r.ok {
+			continue
+		}
+		var names, sources []string
+		seen := map[string]bool{}
+		for _, l := range leaves([]Prop{v.r.prop}) {
+			collectParams(l.value, func(name string, inPlace bool) {
+				if p := w.param(name); p != nil && p.Pointer && !inPlace && !seen[name] {
+					seen[name] = true
+					names = append(names, "the template parameter "+name)
+					sources = append(sources, "the template parameter "+name+", "+paramSource(p))
+				}
+			})
+		}
+		if len(names) == 0 {
+			continue
+		}
+		dest := "values." + pathText(v.key)
+		const why = "which names an existing resource, so it is never a parameter of the Aggregate"
+		const where = "a Release sets no values, so write it under values where the instance is configured"
+		text, o := w.propText(v.r.prop, v.conv)
+		if o.ok {
+			b.e.Comments = append(b.e.Comments, fmt.Sprintf("%s takes %s, from %s, %s: %s.", dest, text,
+				strings.Join(sources, "; "), why, where))
+			continue
+		}
+		b.e.Left = append(b.e.Left, importer.LeftItem{Text: fmt.Sprintf("%s, from %s, %s, and %s: %s", dest,
+			andList(names), why, o.why, where)})
+	}
 }
 
 // unplaced returns the paths body writes that no path of paths places, in the
@@ -258,19 +309,17 @@ func (w *aggregateWriter) unwiredEnv(cl *Classified) []string {
 	if !r.ok {
 		return nil
 	}
-	if len(r.prop.Items) == 0 {
+	entries, whole := envEntries(*env, r.prop)
+	if whole {
 		return w.wholeEnv(cl, r)
 	}
 	var named []string
-	for i, item := range r.prop.Items {
+	for i, e := range entries {
 		variable := "the entry " + strconv.Itoa(i)
-		if p, ok := child(item.Props, nil, env.Name); ok {
-			if text, st := literalText(literalJSON(p.Value)); st == stateRead && text != "" {
-				variable = text
-			}
+		if e.name != "" {
+			variable = e.name
 		}
-		value, _ := child(item.Props, nil, env.Value)
-		v := value.Value
+		v := e.value
 		if len(refsOf(v)) > 0 || holdsCredential(v) {
 			continue
 		}
@@ -295,6 +344,47 @@ func (w *aggregateWriter) unwiredEnv(cl *Classified) []string {
 	}
 	return []string{"Environment variables the source sets and no connection delivers: " +
 		strings.Join(named, "; ") + "."}
+}
+
+// envVar is one entry of an environment list: the variable's name, empty
+// where the source writes none as text, and its value, nil where it writes no
+// value read as one.
+type envVar struct {
+	name  string
+	value Value
+}
+
+// envEntries returns the entries of the environment list p, as env lists
+// them, and whether the source writes the list as one value rather than as
+// entries: for a list of items, each item, named by its member Name and set by
+// its member Value; for an environment listed as an object, each member, named
+// by its key.
+func envEntries(env EnvList, p Prop) ([]envVar, bool) {
+	var out []envVar
+	if env.listsObject() {
+		if len(p.Props) == 0 {
+			return nil, true
+		}
+		for _, m := range p.Props {
+			out = append(out, envVar{name: m.Name, value: m.Value})
+		}
+		return out, false
+	}
+	if len(p.Items) == 0 {
+		return nil, true
+	}
+	for _, item := range p.Items {
+		e := envVar{}
+		if name, ok := child(item.Props, nil, env.Name); ok {
+			if text, st := literalText(literalJSON(name.Value)); st == stateRead {
+				e.name = text
+			}
+		}
+		value, _ := child(item.Props, nil, env.Value)
+		e.value = value.Value
+		out = append(out, e)
+	}
+	return out, false
 }
 
 // wholeEnv returns the comment line naming the environment list r reads off
@@ -369,6 +459,8 @@ func (w *aggregateWriter) sourceText(v Value) (text string, secret bool) {
 		return "{the template parameter " + v.Name + "}", p != nil && p.Secure
 	case Opaque:
 		return v.Text, len(w.secureReads(v.Text)) > 0
+	case Stored:
+		return v.Text, false
 	case Compose:
 		var b strings.Builder
 		for _, part := range v.Parts {
@@ -431,6 +523,9 @@ func (b *entryBuilder) place(r read, dest []string, conv Conv, owed bool) {
 	}
 	if o.leave {
 		why := o.why
+		if o.left != "" {
+			why = o.left
+		}
 		if o.warn {
 			why = "the source's value, which the draft does not write"
 		}

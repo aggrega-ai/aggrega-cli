@@ -132,6 +132,14 @@ type Parameter struct {
 	// StoreRef is a secret-store locator a parameters file names instead of a
 	// value.
 	StoreRef string
+	// Pointer reports that the parameter names an existing resource of the
+	// target's cloud, whose value the Release supplies: it is never a parameter
+	// of the Aggregate, whatever it feeds. A value of the Aggregate reading it is
+	// not written, and the instance's Release entry names it — with the value
+	// the parameters file supplies, else the template's literal default, or
+	// left for the operator where neither is — since a Release sets no values;
+	// an infra or infra.overrides key reading it is written as any parameter's.
+	Pointer bool
 }
 
 // Output is one output the source declares.
@@ -153,6 +161,13 @@ type Graph struct {
 	// Read and NotRead are the names of the sources the import read and of
 	// those it was handed and did not read.
 	Read, NotRead []string
+	// Notes are the lines the format adds to the comment opening the drafted
+	// Aggregate, after the sources read and not read, in order: what it read of
+	// the source that no resource carries, such as a section it names and does
+	// not read. Each line of a note is one comment line, written as it is, so a
+	// format writes each text it reads from the source in a note through
+	// draftyaml.Comment.
+	Notes []string
 	// Expanded holds, for each repeated node [Expand] replaced by its
 	// instances or removed, the IDs of the nodes it deploys, in key order:
 	// none for a node that deploys no instance. A Ref, Credential, dependency
@@ -199,14 +214,27 @@ func Edges(g *Graph) []Edge {
 
 // Keys returns the instance key of each of nodes, aligned with them: the key
 // every importer gives a source item, [importer.UniqueKey] of the node's ID,
-// so no two nodes share a key and none is empty.
+// so no two nodes share a key and none is empty. It is the keys of a format
+// with no Key ([Format.Keys]).
 func Keys(nodes []*Node) []string {
+	return Format{}.Keys(nodes)
+}
+
+// Keys returns the instance key of each of nodes, aligned with them: the key
+// f.Key gives the node's ID, or the ID itself where f has no Key, written as
+// [importer.UniqueKey] writes a key, so no two nodes share a key and none is
+// empty. Two nodes whose IDs f.Key gives one key take it and it numbered, in
+// the order of nodes: db, then db-2.
+func (f Format) Keys(nodes []*Node) []string {
 	used := map[string]bool{}
 	keys := make([]string, len(nodes))
 	for i, n := range nodes {
 		id := ""
 		if n != nil {
 			id = n.ID
+			if f.Key != nil {
+				id = f.Key(id)
+			}
 		}
 		keys[i] = importer.UniqueKey(used, id)
 	}

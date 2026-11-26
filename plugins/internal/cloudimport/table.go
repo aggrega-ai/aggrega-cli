@@ -154,10 +154,18 @@ type Equivalence struct {
 
 // EnvList is where a compute resource lists its environment: the array at
 // Path, each of whose items names a variable under the member Name and holds
-// its value under the member Value.
+// its value under the member Value; or, where Name and Value are both empty,
+// the object at Path, each of whose members is a variable named by its key and
+// holding its value.
 type EnvList struct {
 	Path        []string
 	Name, Value string
+}
+
+// listsObject reports whether e lists its environment as an object of
+// variable names to values.
+func (e EnvList) listsObject() bool {
+	return e.Name == "" && e.Value == ""
 }
 
 // Row maps the nodes of one type, where its When holds, to a catalog
@@ -641,6 +649,9 @@ func samePath(a, b []string) bool {
 }
 
 func envText(e EnvList) string {
+	if e.listsObject() {
+		return pathText(e.Path) + " (an object of names to values)"
+	}
 	return pathText(e.Path) + " (name " + e.Name + ", value " + e.Value + ")"
 }
 

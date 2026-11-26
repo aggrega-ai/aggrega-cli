@@ -9,9 +9,10 @@
 // Each format's reader lifts its source into one model: a [Graph] of resource
 // [Node]s whose properties are ordered trees of [Value]s, where a value is a
 // literal, a parameter, a reference to another resource's attribute, a
-// credential read from a resource, a concatenation of these, or deploy-time
-// text in the source's own language. The drafts are written from that model
-// alone, so the formats share one reading of what a source declares:
+// credential read from a resource, a secret a store holds, a concatenation of
+// these, or deploy-time text in the source's own language. The drafts are
+// written from that model alone, so the formats share one reading of what a
+// source declares:
 //
 //   - [Edges] lists what each resource consumes from another: every reference
 //     and credential in its properties, with the property path it sits at, and
@@ -20,15 +21,17 @@
 //     identifier, so one source drafts one byte sequence whatever order it
 //     writes its resources in; a cycle is broken at its smallest identifier.
 //   - [Keys] gives each resource the instance key every importer gives a
-//     source item.
+//     source item, and [Format.Keys] the key a format gives it, made unique
+//     the same way.
 //   - [SelectRoot] chooses the source an import starts from among several the
 //     import is handed, and [Expand] writes a repeated resource as one node per
 //     copy where the source states the copies literally.
 //   - [Classify] gives each resource one class and one decision: folded into
-//     another resource's instance, substrate left to the operator, existing,
-//     mapped to a catalog Component through the format's [Table], drafted as
-//     a Component and a Recipe from the source — for a module, a Recipe
-//     sourcing it whole — held back, or not carried.
+//     another resource's instance, attached as a Feature on another
+//     resource's instance by the format's [AttachRule], substrate left to the
+//     operator, existing, mapped to a catalog Component through the format's
+//     [Table], drafted as a Component and a Recipe from the source — for a
+//     module, a Recipe sourcing it whole — held back, or not carried.
 //   - [Aggregate] and [Release] write the drafted Aggregate and Release, with
 //     the Manifest naming each realization the Release names.
 //

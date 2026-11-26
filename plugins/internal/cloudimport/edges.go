@@ -71,9 +71,10 @@ type CredentialRead struct {
 // draws a connection delivering the producer's provides key for the attribute
 // it reads, where the consumer reads it as one whole value: into an entry of
 // a mapped instance's environment list on the env mechanism, under the
-// variable's name — the list read off an instance a fold of its row makes of
-// a child where the child writes one, and off the parent folded into it
-// otherwise; into a property of a node drafted from the source on the
+// variable's name — an item of the list, or a member of an environment listed
+// as an object, named by its key, the list read off an instance a fold of its
+// row makes of a child where the child writes one, and off the parent folded
+// into it otherwise; into a property of a node drafted from the source on the
 // property mechanism, under the snake_case of the property's path. Where the
 // value cannot be delivered so — composed with other text, read into a
 // property a mapped instance's Recipe reads no neighbour's value at, read of
@@ -82,7 +83,8 @@ type CredentialRead struct {
 // dependency alone, a comment above it says why, and reference-not-wired warns
 // on the consumer. A credential draws no connection: credential-flow warns,
 // and the consumer's slot is left for a core/referenced-secret the Release
-// attaches.
+// attaches. A reference or a credential reading an attached node at the slot
+// its attachment fills draws nothing: the attachment carries it.
 
 // wire decides the instance keys, what each drafted node publishes, and the
 // connections, deliveries and credential reads of every instance.
@@ -93,10 +95,11 @@ func (c *classifier) wire(ordered []*Classified) {
 			instances = append(instances, cl.Node)
 		}
 	}
-	for i, key := range Keys(instances) {
+	for i, key := range c.f.Keys(instances) {
 		c.out[instances[i].ID].Key = key
 	}
 	c.cs = newClasses(c.g, ordered)
+	c.attach(ordered)
 
 	all := edges(c.nodes)
 	c.provide(all)
@@ -300,18 +303,16 @@ func providedKey(provides []schemadraft.Provide, attr []string) (string, bool) {
 }
 
 // provide gives each group of drafted nodes what its Recipe publishes: for a
-// resource drafted from the source its identifier as id and its name as name,
-// then each attribute another node references of any node of the group, under
-// the snake_case of the attribute's path, numbered where another attribute
-// takes that key; for a module, each output another node references. Each node
-// of a group publishes the group's keys.
+// resource drafted from the source what the format's DraftProvides lists —
+// where the format gives no list, its identifier as id and its name as name — then
+// each attribute another node references of any node of the group, under the
+// snake_case of the attribute's path, numbered where another attribute takes
+// that key; for a module, each output another node references. Each node of a
+// group publishes the group's keys.
 func (c *classifier) provide(all []Edge) {
 	for _, grp := range c.groups {
 		if !grp.module {
-			grp.provides = []schemadraft.Provide{
-				{Key: "id", Attribute: []string{"id"}, Identifier: true},
-				{Key: "name", Attribute: []string{"name"}},
-			}
+			grp.provides = c.draftProvides()
 		}
 	}
 	for _, e := range all {
@@ -333,6 +334,25 @@ func (c *classifier) provide(all []Edge) {
 			c.out[n.ID].Provides = grp.provides
 		}
 	}
+}
+
+// draftProvides returns, in a list of its own, what a Recipe drafted for a
+// resource from the source publishes before the attributes its neighbours
+// read: the format's DraftProvides, else the identifier as id and the
+// attribute name as name.
+func (c *classifier) draftProvides() []schemadraft.Provide {
+	if c.f.DraftProvides == nil {
+		return []schemadraft.Provide{
+			{Key: "id", Attribute: []string{"id"}, Identifier: true},
+			{Key: "name", Attribute: []string{"name"}},
+		}
+	}
+	out := make([]schemadraft.Provide, len(c.f.DraftProvides))
+	for i, p := range c.f.DraftProvides {
+		p.Attribute = slices.Clone(p.Attribute)
+		out[i] = p
+	}
+	return out
 }
 
 // provide publishes attr of the group's resource where it publishes it under
@@ -392,11 +412,12 @@ func (r reading) text(q func(string) string) string {
 func asIs(s string) string { return s }
 
 // wireEdge wires e into each instance consuming it, and returns cands with
-// each reference a drafted node may read on the property mechanism added.
+// each reference a drafted node may read on the property mechanism added. A
+// read of an attached node at the slot its attachment fills draws nothing.
 func (c *classifier) wireEdge(e Edge, cands []candidate) []candidate {
 	n := c.byID[e.From]
 	cl := c.out[e.From]
-	if n == nil || cl == nil {
+	if n == nil || cl == nil || e.Kind != EdgeDepends && c.readings[readingKey(e.From, e.Path, e.To)] {
 		return cands
 	}
 	consumers, direct := []string{e.From}, true
@@ -787,8 +808,15 @@ func (c *classifier) deliver(ci, pk, mechanism string, entry draftyaml.Injected)
 }
 
 // envItem returns the index of the item of env whose value sits at path, -1
-// where path is no item's value.
+// where path is no item's value; for an environment listed as an object, 0
+// where path is a member's value.
 func envItem(env *EnvList, path []string) int {
+	if env != nil && env.listsObject() {
+		if len(path) != len(env.Path)+1 || !samePath(env.Path, path[:len(env.Path)]) {
+			return -1
+		}
+		return 0
+	}
 	if env == nil || len(path) != len(env.Path)+2 || !samePath(env.Path, path[:len(env.Path)]) ||
 		!strings.EqualFold(path[len(path)-1], env.Value) {
 		return -1
@@ -801,8 +829,13 @@ func envItem(env *EnvList, path []string) int {
 }
 
 // envName returns the name of the variable whose value sits at path in body's
-// environment list env, and whether it is written as text.
+// environment list env, and whether it is written as text: for an
+// environment listed as an object, the member's key.
 func envName(body []Prop, env *EnvList, path []string) (string, bool) {
+	if env.listsObject() {
+		name := path[len(path)-1]
+		return name, name != ""
+	}
 	item, ok := propAt(body, path[:len(path)-1])
 	if !ok {
 		return "", false

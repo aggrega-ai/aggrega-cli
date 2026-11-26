@@ -31,6 +31,14 @@ type Format struct {
 	// as substrate, the types no Recipe carries, and what the decision on a
 	// resource of a type says beside its class.
 	Types []TypeRule
+	// Attach are the format's attach rules: the types whose nodes it writes as
+	// a Feature attachment on another node's instance rather than as an
+	// instance of their own, as [AttachRule] says.
+	Attach []AttachRule
+	// Key gives the instance key of a node from its ID, which [Format.Keys]
+	// then makes unique as every importer's keys are; nil keys a node by its
+	// ID alone.
+	Key func(id string) string
 	// Pointer returns the target's deterministic pointer text for a value
 	// referencing a substrate or existing resource, read in g, the graph the
 	// value is read from, its repetitions expanded; false where the target has
@@ -42,6 +50,13 @@ type Format struct {
 	// no row maps: its naming, its categories, the provider its Recipes
 	// target, its placement rules and its Recipe writer.
 	Draft schemadraft.Format
+	// DraftProvides is what the Recipe drafted for a resource from the source
+	// publishes before each attribute another node reads of it: nil publishes
+	// the resource's identifier under id and its attribute name under name,
+	// and a list given, empty included, publishes that list in its place. A
+	// format sets it where the attribute name is not one its target reads back
+	// of every resource, such as id alone.
+	DraftProvides []schemadraft.Provide
 	// Wrap writes the Recipe sourcing whole a module no row maps; nil where
 	// the format's reader flattens such a module into its resources.
 	Wrap schemadraft.ModuleWriter

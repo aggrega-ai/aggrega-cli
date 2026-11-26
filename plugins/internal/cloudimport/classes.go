@@ -20,13 +20,13 @@ import (
 // writes for it.
 type Class int
 
-// The classes. A node takes the first of folded, substrate, existing, mapped
-// and drafted that applies to it, except that a node the source reads and does
-// not create is never folded; a fold or a type rule carrying none of it makes
-// it not carried, as the format locating no source makes a module; and a node
-// whose drafted Component would take a name the catalog holds already, or a
-// module whose drafted Component would take the name a resource of the import
-// drafts, is held back.
+// The classes. A node takes the first of folded, attached, substrate,
+// existing, mapped and drafted that applies to it, except that a node the
+// source reads and does not create is never folded nor attached; a fold or a
+// type rule carrying none of it makes it not carried, as the format locating
+// no source makes a module; and a node whose drafted Component would take a
+// name the catalog holds already, or a module whose drafted Component would
+// take the name a resource of the import drafts, is held back.
 const (
 	// ClassFolded is a child or extension resource a fold of another node's
 	// row writes into that node's instance, or a parent a fold writes into
@@ -55,6 +55,10 @@ const (
 	// it or taking one value only, a type the format's type rules carry none
 	// of, or a module no row maps whose source the format does not locate.
 	ClassNotCarried
+	// ClassAttached is a resource the format's attach rule writes as a Feature
+	// attachment on another resource's instance, as [AttachRule] says: nothing
+	// is drafted for it. It comes after folded in the order a node is classed.
+	ClassAttached
 )
 
 // String names the class as a decision's rationale opens with it.
@@ -74,6 +78,8 @@ func (c Class) String() string {
 		return "held back"
 	case ClassNotCarried:
 		return "not carried"
+	case ClassAttached:
+		return "attached"
 	}
 	return "class " + strconv.Itoa(int(c))
 }
@@ -145,6 +151,10 @@ type Classified struct {
 	// Credentials are the credentials the instance of a mapped or drafted
 	// node reads from other resources, in the order the source writes them.
 	Credentials []CredentialRead
+	// Attach are the attachments an attached node is written as, on the
+	// instances taking it, in the order the Aggregate writes those instances;
+	// empty for every other class.
+	Attach []Attachment
 }
 
 // Classify gives each node of g one class and one decision, and each resource
@@ -159,21 +169,30 @@ type Classified struct {
 //     such instance, and each such child is mapped as an instance of that row.
 //     A node the source reads and does not create is never folded: it is
 //     substrate where a type rule says so, and existing otherwise.
-//  2. substrate, or not carried: a type the format's type rules leave to the
+//  2. attached: a node the format's attach rule of its type takes and an
+//     instance takes, as [AttachRule] says, written as a Feature attachment on
+//     that instance. Such a node is classed once every other node is, but those
+//     whose ancestor it is, so a reader's class is known; its descendants are
+//     classed after it, so a fold reads its class.
+//  3. substrate, or not carried: a type the format's type rules leave to the
 //     operator or carry none of;
-//  3. existing: a node the source reads and does not create;
-//  4. mapped: the importer kit's Decide references a Component for it, through
+//  4. existing: a node the source reads and does not create;
+//  5. mapped: the importer kit's Decide references a Component for it, through
 //     its row in the table or a mapping_overrides entry of its type;
-//  5. drafted: any other node, drafted from the resource as the source writes
+//  6. drafted: any other node, drafted from the resource as the source writes
 //     it, or for a module, as a Recipe sourcing it whole; where the catalog
 //     holds the Component name its draft takes, it is held back instead.
 //
 // Each mapped and drafted node is an instance of the drafted Aggregate, keyed
-// by [Keys] in the order Classify returns them, and the instances are wired as
-// the wiring rule states before any Component is drafted: each instance's
-// Uses, Comments and Credentials record what it draws, a reference not wired
-// is reported reference-not-wired and a credential read credential-flow, on
-// the node reading it.
+// by the format's [Format.Keys] in the order Classify returns them, and the
+// instances are wired as the wiring rule states before any Component is
+// drafted: each instance's Uses, Comments and Credentials record what it
+// draws, a reference not wired is reported reference-not-wired and a
+// credential read credential-flow, on the node reading it. A read of an
+// attached node at the credential slot its attachment fills draws nothing: the
+// attachment carries it. Each attached node's Attach records what it is
+// written as, once the instances are keyed, and its attachments are reported
+// resource-folded, naming the Feature of each.
 //
 // The nodes of one Component name — two resources of one type no row maps —
 // take one Component and one Recipe, drafted once with
@@ -234,8 +253,9 @@ type Classified struct {
 // it at; no message quotes a value the source writes.
 //
 // The table's rows are merged once: a table [Table.Rows] refuses halts
-// source-refused, as do two nodes of g sharing one ID, and nothing is
-// classified. The classified nodes are returned in [Order] of g, followed by
+// source-refused, as do an attach rule the core cannot apply and two nodes of
+// g sharing one ID, and nothing is classified. The classified nodes are
+// returned in [Order] of g, followed by
 // the resources referenced and not declared, in ID order; every list is built
 // in an order of IDs, so two runs over one graph give one result.
 func Classify(in aggrega.ImportInput, f Format, g *Graph) ([]Classified, []aggrega.Diagnostic) {
@@ -245,6 +265,9 @@ func Classify(in aggrega.ImportInput, f Format, g *Graph) ([]Classified, []aggre
 	rows, err := f.Table.Rows()
 	if err != nil {
 		return nil, append([]aggrega.Diagnostic(nil), tableRefused(err))
+	}
+	if refused := attachRefused(f.Attach); refused != nil {
+		return nil, append([]aggrega.Diagnostic(nil), *refused)
 	}
 	c := newClassifier(in, f, g, rows)
 	if halts := c.sharedIDs(); len(halts) > 0 {
@@ -256,6 +279,7 @@ func Classify(in aggrega.ImportInput, f Format, g *Graph) ([]Classified, []aggre
 	for _, n := range c.byDepth() {
 		c.classify(n)
 	}
+	c.settleAttachments()
 	c.settleOneValueFolds()
 	if refused := c.settleUnmatched(); refused != nil {
 		return nil, append([]aggrega.Diagnostic(nil), *refused)
@@ -303,6 +327,22 @@ type classifier struct {
 	// cs reads the classes of the nodes as the wiring reaches them.
 	cs  classLookup
 	out map[string]*Classified
+	// incoming are the edges to each node, by its ID, in the order [Edges]
+	// lists them.
+	incoming map[string][]Edge
+	// deferred holds the attach rule of each node it may attach, classed once
+	// every node but those awaiting it is; waiting holds the nodes awaiting an
+	// ancestor so deferred, and queued lists them in the order they are
+	// classed.
+	deferred map[string]*AttachRule
+	waiting  map[string]bool
+	queued   []*Node
+	// attaching holds where each attached node is attached, by its ID; slots
+	// the slots of each instance an attachment fills, by slotKey; readings the
+	// reads of an attached node at a slot its attachment fills, by readingKey.
+	attaching map[string]attachedTo
+	slots     map[string]bool
+	readings  map[string]bool
 	// notes are the diagnostics naming one node, by its ID; diags those of a
 	// draft.
 	notes map[string][]aggrega.Diagnostic
@@ -338,11 +378,16 @@ func newClassifier(in aggrega.ImportInput, f Format, g *Graph, rows []Row) *clas
 	c := &classifier{in: in, f: f, g: g, table: Table{Generated: rows}, nodes: byID(g), byID: map[string]*Node{},
 		kids: map[string][]*Node{}, own: map[string]assessment{}, instances: map[string]instanceOf{},
 		ones: map[string]*oneFold{}, pending: map[string]bool{}, groupOf: map[string]*draftGroup{},
-		located: map[string]ModuleSource{}, out: map[string]*Classified{}, notes: map[string][]aggrega.Diagnostic{}}
+		located: map[string]ModuleSource{}, out: map[string]*Classified{}, notes: map[string][]aggrega.Diagnostic{},
+		incoming: map[string][]Edge{}, deferred: map[string]*AttachRule{}, waiting: map[string]bool{},
+		attaching: map[string]attachedTo{}, slots: map[string]bool{}, readings: map[string]bool{}}
 	for _, n := range c.nodes {
 		if _, held := c.byID[n.ID]; !held {
 			c.byID[n.ID] = n
 		}
+	}
+	for _, e := range edges(c.nodes) {
+		c.incoming[e.To] = append(c.incoming[e.To], e)
 	}
 	for _, n := range c.nodes {
 		if p := c.parent(n); p != nil {
@@ -453,8 +498,14 @@ func (c *classifier) assess(n *Node) {
 	c.own[n.ID] = a
 }
 
-// classify classes n, its ancestors classed already.
+// classify classes n, its ancestors classed already; it defers n where an
+// attach rule may attach it, and where an ancestor of n is deferred.
 func (c *classifier) classify(n *Node) {
+	if c.waits(n) {
+		c.waiting[n.ID] = true
+		c.queued = append(c.queued, n)
+		return
+	}
 	if inst, ok := c.instances[n.ID]; ok {
 		c.instance(n, inst)
 		return
@@ -462,6 +513,16 @@ func (c *classifier) classify(n *Node) {
 	if !n.Existing && c.fold(n) {
 		return
 	}
+	if r := c.attachRule(n); r != nil && c.mayAttach(n, r) {
+		c.deferred[n.ID] = r
+		return
+	}
+	c.classifyOwn(n)
+}
+
+// classifyOwn classes n as what it is of itself, no fold and no attach rule
+// taking it.
+func (c *classifier) classifyOwn(n *Node) {
 	a := c.own[n.ID]
 	switch {
 	case a.classing():
@@ -816,8 +877,9 @@ func together(nodes []*Node) string {
 // typedValue returns the JSON a drafted property is typed from for v, and
 // whether v is a secret: a secure parameter's value, a credential, or a
 // composition holding either. A parameter is typed by its declared type, a
-// composition is text, a reference is typed as text, and deploy-time text and
-// a property with no value are of any kind.
+// composition is text, a reference is typed as text, a secret a store holds
+// is the text referring to it, and deploy-time text and a property with no
+// value are of any kind.
 func (c *classifier) typedValue(v Value) (json.RawMessage, bool) {
 	switch v := v.(type) {
 	case Literal:
@@ -830,6 +892,8 @@ func (c *classifier) typedValue(v Value) (json.RawMessage, bool) {
 		return zeroOf(*p), p.Secure
 	case Credential:
 		return nil, true
+	case Stored:
+		return json.RawMessage(`""`), false
 	case Compose:
 		secret := false
 		for _, part := range v.Parts {

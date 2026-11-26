@@ -49,9 +49,23 @@ type Opaque struct {
 	Owed string
 }
 
+// Stored is a secret a secret store holds, which the source reads by its
+// locator and the format's own target resolves when the source deploys: Store
+// names the store, as the source's language names it, Locator is where the
+// store keeps the secret, and Text is the source's whole reference to it. The
+// draft never carries the secret's value. Placed in a credential slot of a
+// mapped instance's row, it is the kit's referenced secret whose origin is the
+// locator; anywhere else, Text is written as it is where the import drafts for
+// the format's own target, and the key is left, its comment naming the store
+// and the locator, on any other.
+type Stored struct {
+	Store, Locator, Text string
+}
+
 func (Literal) value()    {}
 func (Param) value()      {}
 func (Compose) value()    {}
 func (Ref) value()        {}
 func (Credential) value() {}
 func (Opaque) value()     {}
+func (Stored) value()     {}

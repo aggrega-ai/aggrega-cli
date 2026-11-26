@@ -20,8 +20,11 @@ import (
 // the form the kit gives the target: a secure parameter the parameters file
 // gives as a reference to a secret store is a core/referenced-secret whose
 // origin is that secret's locator, one it gives none for takes the form
-// Secret.Form gives the import's target, and a credential read from another
-// resource is a core/referenced-secret whose origin is left for the Release. A
+// Secret.Form gives the import's target, a secret a store holds is a
+// core/referenced-secret whose origin is the store's locator, and a
+// credential read from another resource is a core/referenced-secret whose
+// origin is left for the Release. A slot an attached node's attachment fills
+// takes that attachment alone. A
 // literal the source writes there, as a parameter's default or the file's value,
 // is a credential the empty_credentials setting judges, named in a warning
 // that never shows it. A secret of a resource drafted from the source stays the
@@ -109,13 +112,17 @@ func (w *aggregateWriter) noteSecretValue(p *Parameter) {
 
 // mappedSecrets returns the secrets the credential slots of the instance cl
 // take, off the properties the row's Secrets place there, each read as the
-// row's placements are read, each slot once.
+// row's placements are read, each slot once; a slot an attachment fills takes
+// none of them.
 func (w *aggregateWriter) mappedSecrets(cl *Classified) []importer.Secret {
 	if cl.Row == nil {
 		return nil
 	}
 	var out []importer.Secret
 	taken := map[string]bool{}
+	for _, at := range w.attachedOn(cl.Node.ID) {
+		taken[at.a.Slot] = true
+	}
 	for _, pl := range cl.Row.Secrets {
 		r := w.readOff(cl, pl.From)
 		if !r.ok || taken[pl.Key] {
@@ -145,6 +152,9 @@ func (w *aggregateWriter) secretOf(path string, source *Node, pl Placement, p Pr
 	case Credential:
 		return importer.Secret{Path: path, Referenced: true,
 			Text: "the credential of " + draftyaml.Comment(v.Node) + " the source reads"}, true
+	case Stored:
+		return importer.Secret{Path: path, Variable: variableOf(pl.Key), Referenced: true, Origin: v.Locator,
+			Text: "the secret the " + draftyaml.Comment(v.Store) + " store holds"}, true
 	case Literal:
 		if !literalHeld(v) {
 			return importer.Secret{}, false
@@ -158,6 +168,19 @@ func (w *aggregateWriter) secretOf(path string, source *Node, pl Placement, p Pr
 		"%s by its form", source.ID, pathText(pl.From), pl.Key)))
 	return importer.Secret{Path: path, Variable: variableOf(pl.Key),
 		Text: "the " + draftyaml.Comment(pl.Key) + " of " + draftyaml.Comment(source.ID)}, true
+}
+
+// attachedSecrets returns the secrets the attachments on the instance cl
+// attach in its Release entry: each that is the kit's referenced secret, in
+// the order the attached nodes are classified.
+func (w *aggregateWriter) attachedSecrets(cl *Classified) []importer.Secret {
+	var out []importer.Secret
+	for _, at := range w.attachedOn(cl.Node.ID) {
+		if at.a.Secret != nil {
+			out = append(out, *at.a.Secret)
+		}
+	}
+	return out
 }
 
 // firstSecretPart returns the first credential, else the first parameter, c
