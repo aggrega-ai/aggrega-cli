@@ -120,3 +120,26 @@ func TestWriteWrappedTelemetryIsNotAnOverride(t *testing.T) {
 		t.Errorf("the mapping does not bind enableTelemetry once, to false:\n%s", mapping)
 	}
 }
+
+// TestWriteWrappedReadsInsideAnOutputsValueAsWritten publishes an output named
+// by one segment as its value, and an attribute of several segments, which
+// reads inside an output's value, below the outputs as written.
+func TestWriteWrappedReadsInsideAnOutputsValueAsWritten(t *testing.T) {
+	m := wrappedApp(moduleVersion)
+	m.Outputs = append(m.Outputs, schemadraft.Provide{Key: "member",
+		Attribute: []string{"resourceId", "value", "member"}})
+	d, diags := WriteWrapped(m)
+	noHalt(t, diags)
+	want := []importer.Entry{
+		{Key: "fqdn", Value: "[reference('{{ .locals.symbol }}').outputs.fqdn.value]"},
+		{Key: "member", Value: "[reference('{{ .locals.symbol }}').outputs.resourceId.value.member]"},
+	}
+	if len(d.Provides) != len(want) {
+		t.Fatalf("WriteWrapped publishes %+v, want %+v", d.Provides, want)
+	}
+	for i, p := range d.Provides {
+		if p.Key != want[i].Key || p.Value != want[i].Value {
+			t.Errorf("WriteWrapped publishes %s as %q, want %s as %q", p.Key, p.Value, want[i].Key, want[i].Value)
+		}
+	}
+}

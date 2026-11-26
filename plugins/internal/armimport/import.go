@@ -4,6 +4,8 @@
 package armimport
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore"
@@ -46,21 +48,38 @@ func Import(in aggrega.ImportInput, parse cloudimport.ParseFunc) aggrega.ImportO
 }
 
 // wrap drafts the Recipe sourcing a module no row maps as arm.WriteWrapped
-// drafts it, each output a neighbour reads named by the output's own name: the
-// reader reads a module's output o at the attribute outputs.o.value, as Azure
-// Resource Manager's reference function returns it, and the module writer
-// reads it from outputs.o.value itself.
+// drafts it, publishing each output a neighbour reads. The reader reads a
+// module's output o at the attribute outputs.o.value, as Azure Resource
+// Manager's reference function returns it, and a member inside its value
+// below that: outputs.o.value is published as the output o, which the module
+// writer reads at outputs.o.value itself, and outputs.o.value.<member…> at
+// that path. An attribute reading no output's value is not published, and a
+// reference-not-wired warning names it and its provides key.
 func wrap(m schemadraft.WrappedModule) (importer.RecipeDraft, []aggrega.Diagnostic) {
-	outputs := make([]schemadraft.Provide, len(m.Outputs))
-	for i, p := range m.Outputs {
-		if len(p.Attribute) == 3 && strings.EqualFold(p.Attribute[0], "outputs") &&
-			strings.EqualFold(p.Attribute[2], "value") {
-			p.Attribute = []string{p.Attribute[1]}
+	var (
+		outputs []schemadraft.Provide
+		diags   []aggrega.Diagnostic
+	)
+	for _, p := range m.Outputs {
+		a := p.Attribute
+		if len(a) < 3 || !strings.EqualFold(a[0], "outputs") || !strings.EqualFold(a[2], "value") {
+			diags = append(diags, cloudimport.Report(cloudimport.CodeReferenceNotWired, fmt.Sprintf("a neighbour "+
+				"reads %s of the module %s, which is no output's value, read at outputs.<output>.value, nor a member "+
+				"inside one, so the Recipe drafted for the module publishes nothing under the provides key %s: "+
+				"read an output's value, or write the value where the instance reading it is configured",
+				strings.Join(a, "."), m.URL, p.Key)))
+			continue
 		}
-		outputs[i] = p
+		if len(a) == 3 {
+			p.Attribute = []string{a[1]}
+		} else {
+			p.Attribute = slices.Clone(a[1:])
+		}
+		outputs = append(outputs, p)
 	}
 	m.Outputs = outputs
-	return arm.WriteWrapped(m)
+	d, more := arm.WriteWrapped(m)
+	return d, append(diags, more...)
 }
 
 // moduleRegistry is the address under which the Microsoft Container Registry

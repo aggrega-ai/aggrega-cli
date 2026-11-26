@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
 
@@ -603,5 +604,49 @@ func TestArmDeployTimeTextReadingASecureParameterIsNeverWrittenInPlace(t *testin
 	got := coded(out, cloudimport.CodeValueNotCarried)
 	if len(got) != 1 || !strings.Contains(got[0].Message, "it reads the secure parameter token inside text") {
 		t.Errorf("value-not-carried does not name the secure parameter once: %+v", out.Diagnostics)
+	}
+}
+
+// TestArmWrapReadsAnOutputsValueAndNothingElse drafts the Recipe sourcing a
+// module whose outputs neighbours read: an output's value is published as the
+// output, a member inside it below the output's value, and an attribute naming
+// no output's value is not published, reference-not-wired naming it and its
+// provides key.
+func TestArmWrapReadsAnOutputsValueAndNothingElse(t *testing.T) {
+	t.Parallel()
+	m := schemadraft.WrappedModule{
+		Type: &schemadraft.Type{Name: "Microsoft.Kusto/clusters"}, SourceKind: "bicep-module-oci",
+		URL: "oci://mcr.microsoft.com/bicep/avm/res/kusto/cluster", Version: "0.11.1",
+		Outputs: []schemadraft.Provide{
+			{Key: "outputs_resource_id_value", Attribute: []string{"outputs", "resourceId", "value"}},
+			{Key: "outputs_resource_id_value_member", Attribute: []string{"outputs", "resourceId", "value", "member"}},
+			{Key: "outputs_resource_id", Attribute: []string{"outputs", "resourceId"}},
+			{Key: "provisioning_state", Attribute: []string{"provisioningState"}},
+		},
+	}
+	d, diags := wrap(m)
+	want := map[string]string{
+		"outputs_resource_id_value":        "[reference('{{ .locals.symbol }}').outputs.resourceId.value]",
+		"outputs_resource_id_value_member": "[reference('{{ .locals.symbol }}').outputs.resourceId.value.member]",
+	}
+	if len(d.Provides) != len(want) {
+		t.Errorf("wrap publishes %+v, want %v", d.Provides, want)
+	}
+	for _, p := range d.Provides {
+		if want[p.Key] != p.Value {
+			t.Errorf("wrap publishes %s as %q, want %q", p.Key, p.Value, want[p.Key])
+		}
+	}
+	if len(diags) != 2 {
+		t.Fatalf("wrap reports %+v, want a reference-not-wired warning on each attribute naming no output's value",
+			diags)
+	}
+	for i, named := range [][2]string{{"outputs.resourceId", "outputs_resource_id"},
+		{"provisioningState", "provisioning_state"}} {
+		if d := diags[i]; d.Code != string(cloudimport.CodeReferenceNotWired) || d.Severity != aggrega.SeverityWarn ||
+			!strings.Contains(d.Message, "reads "+named[0]+" of the module") ||
+			!strings.Contains(d.Message, "the provides key "+named[1]+":") {
+			t.Errorf("wrap reports %+v, want reference-not-wired naming %s and %s", d, named[0], named[1])
+		}
 	}
 }
