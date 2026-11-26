@@ -54,7 +54,7 @@ func SetAt(target string, prefix, below []string, value string, n int) string {
 		" dict }}{{ end }}{{ " + held(1) + " := index " + target + " " + first + " }}")
 	last := len(below) - 1
 	for i := 1; i < last; i++ {
-		if item, ok := itemIndex(below[i]); ok {
+		if item, ok := ItemIndex(below[i]); ok {
 			b.WriteString(isList(i, item) + "{{ " + held(i+1) + " := index " + held(i) + " " + strconv.Itoa(item) + " }}")
 			continue
 		}
@@ -68,7 +68,7 @@ func SetAt(target string, prefix, below []string, value string, n int) string {
 	// set where the list was read.
 	replacing := set
 	for i := last; ; i-- {
-		item, ok := itemIndex(below[i])
+		item, ok := ItemIndex(below[i])
 		if !ok || i == 0 {
 			if i > 0 {
 				b.WriteString(isMap(i))
@@ -87,8 +87,10 @@ func SetAt(target string, prefix, below []string, value string, n int) string {
 	}
 }
 
-// itemIndex reads segment as the index of an array item, written in decimal.
-func itemIndex(segment string) (int, bool) {
+// ItemIndex reads segment, one segment of a property path, as the index of an
+// array item, written in decimal, as a path names an item; false where it is a
+// member's name.
+func ItemIndex(segment string) (int, bool) {
 	if segment == "" || strings.Trim(segment, "0123456789") != "" {
 		return 0, false
 	}

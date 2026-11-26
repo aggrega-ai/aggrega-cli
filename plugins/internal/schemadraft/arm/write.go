@@ -298,14 +298,19 @@ func readBack(r schemadraft.Resource, p schemadraft.Provide, scope armcore.Scope
 // plainSegment matches a path segment ARM reads after a dot.
 var plainSegment = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-// access is the accessors reading the path below a value: .<segment> where the
-// segment is plain, ['<segment>'] otherwise, any template text in it escaped.
+// access is the accessors reading the path below a value: [<index>] where the
+// segment names an array item, as schemadraft.ItemIndex reads it,
+// .<segment> where it is plain, ['<segment>'] otherwise, any template text in
+// it escaped.
 func access(path []string) string {
 	var b strings.Builder
 	for _, segment := range path {
-		if plainSegment.MatchString(segment) {
+		switch item, isItem := schemadraft.ItemIndex(segment); {
+		case isItem:
+			b.WriteString("[" + strconv.Itoa(item) + "]")
+		case plainSegment.MatchString(segment):
 			b.WriteString("." + segment)
-		} else {
+		default:
 			b.WriteString("[" + armcore.StringLiteral(segment) + "]")
 		}
 	}

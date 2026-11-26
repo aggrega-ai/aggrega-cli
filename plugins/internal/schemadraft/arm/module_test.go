@@ -123,16 +123,22 @@ func TestWriteWrappedTelemetryIsNotAnOverride(t *testing.T) {
 
 // TestWriteWrappedReadsInsideAnOutputsValueAsWritten publishes an output named
 // by one segment as its value, and an attribute of several segments, which
-// reads inside an output's value, below the outputs as written.
+// reads inside an output's value, below the outputs as ARM reads it: a plain
+// member after a dot, an item's index in decimal in brackets, and any other
+// member as a quoted name in brackets.
 func TestWriteWrappedReadsInsideAnOutputsValueAsWritten(t *testing.T) {
 	m := wrappedApp(moduleVersion)
-	m.Outputs = append(m.Outputs, schemadraft.Provide{Key: "member",
-		Attribute: []string{"resourceId", "value", "member"}})
+	m.Outputs = append(m.Outputs,
+		schemadraft.Provide{Key: "member", Attribute: []string{"resourceId", "value", "member"}},
+		schemadraft.Provide{Key: "first", Attribute: []string{"resourceId", "value", "0"}},
+		schemadraft.Provide{Key: "dashed", Attribute: []string{"resourceId", "value", "my-member"}})
 	d, diags := WriteWrapped(m)
 	noHalt(t, diags)
 	want := []importer.Entry{
 		{Key: "fqdn", Value: "[reference('{{ .locals.symbol }}').outputs.fqdn.value]"},
 		{Key: "member", Value: "[reference('{{ .locals.symbol }}').outputs.resourceId.value.member]"},
+		{Key: "first", Value: "[reference('{{ .locals.symbol }}').outputs.resourceId.value[0]]"},
+		{Key: "dashed", Value: "[reference('{{ .locals.symbol }}').outputs.resourceId.value['my-member']]"},
 	}
 	if len(d.Provides) != len(want) {
 		t.Fatalf("WriteWrapped publishes %+v, want %+v", d.Provides, want)

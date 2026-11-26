@@ -609,9 +609,9 @@ func TestArmDeployTimeTextReadingASecureParameterIsNeverWrittenInPlace(t *testin
 
 // TestArmWrapReadsAnOutputsValueAndNothingElse drafts the Recipe sourcing a
 // module whose outputs neighbours read: an output's value is published as the
-// output, a member inside it below the output's value, and an attribute naming
-// no output's value is not published, reference-not-wired naming it and its
-// provides key.
+// output, a member or an item inside it below the output's value, as ARM reads
+// it, and an attribute naming no output's value is not published,
+// reference-not-wired naming it and its provides key.
 func TestArmWrapReadsAnOutputsValueAndNothingElse(t *testing.T) {
 	t.Parallel()
 	m := schemadraft.WrappedModule{
@@ -620,14 +620,18 @@ func TestArmWrapReadsAnOutputsValueAndNothingElse(t *testing.T) {
 		Outputs: []schemadraft.Provide{
 			{Key: "outputs_resource_id_value", Attribute: []string{"outputs", "resourceId", "value"}},
 			{Key: "outputs_resource_id_value_member", Attribute: []string{"outputs", "resourceId", "value", "member"}},
+			{Key: "outputs_resource_id_value_0", Attribute: []string{"outputs", "resourceId", "value", "0"}},
+			{Key: "outputs_resource_id_value_my_member", Attribute: []string{"outputs", "resourceId", "value", "my-member"}},
 			{Key: "outputs_resource_id", Attribute: []string{"outputs", "resourceId"}},
 			{Key: "provisioning_state", Attribute: []string{"provisioningState"}},
 		},
 	}
 	d, diags := wrap(m)
 	want := map[string]string{
-		"outputs_resource_id_value":        "[reference('{{ .locals.symbol }}').outputs.resourceId.value]",
-		"outputs_resource_id_value_member": "[reference('{{ .locals.symbol }}').outputs.resourceId.value.member]",
+		"outputs_resource_id_value":           "[reference('{{ .locals.symbol }}').outputs.resourceId.value]",
+		"outputs_resource_id_value_member":    "[reference('{{ .locals.symbol }}').outputs.resourceId.value.member]",
+		"outputs_resource_id_value_0":         "[reference('{{ .locals.symbol }}').outputs.resourceId.value[0]]",
+		"outputs_resource_id_value_my_member": "[reference('{{ .locals.symbol }}').outputs.resourceId.value['my-member']]",
 	}
 	if len(d.Provides) != len(want) {
 		t.Errorf("wrap publishes %+v, want %v", d.Provides, want)

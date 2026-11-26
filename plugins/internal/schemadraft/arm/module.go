@@ -21,10 +21,11 @@ import (
 // output published as the expression
 // [reference('<symbol>').outputs.<output>.value] where its attribute is one
 // segment naming the output, or none, the output then named by its key, and as
-// [reference('<symbol>').outputs.<path>] where its attribute is a path of
-// several segments reading inside an output, written as it is; the symbol is
-// the instance's name in capitalized words, as the arm provider names the
-// nested template it makes of the module. DraftWrapped completes it.
+// [reference('<symbol>').outputs<path>] where its attribute is a path of
+// several segments reading inside an output, each segment written as access
+// writes it; the symbol is the instance's name in capitalized words, as the arm
+// provider names the nested template it makes of the module. DraftWrapped
+// completes it.
 func WriteWrapped(m schemadraft.WrappedModule) (importer.RecipeDraft, []aggrega.Diagnostic) {
 	d := importer.RecipeDraft{
 		Header: []string{"The arm provider fetches the published module, nests its template as one nested template named " +
@@ -39,15 +40,15 @@ func WriteWrapped(m schemadraft.WrappedModule) (importer.RecipeDraft, []aggrega.
 		}},
 	}
 	for _, p := range m.Outputs {
-		read := p.Key + ".value"
-		switch {
-		case len(p.Attribute) == 1:
-			read = p.Attribute[0] + ".value"
-		case len(p.Attribute) > 1:
-			read = strings.Join(p.Attribute, ".")
+		path := p.Attribute
+		switch len(path) {
+		case 0:
+			path = []string{p.Key, "value"}
+		case 1:
+			path = []string{path[0], "value"}
 		}
 		d.Provides = append(d.Provides, importer.Entry{Key: p.Key,
-			Value: "[reference('" + symbol + "').outputs." + read + "]"})
+			Value: "[reference('" + symbol + "').outputs" + access(path) + "]"})
 	}
 	if len(d.Provides) > 0 {
 		d.Provides[0].Comment = []string{"The String Pipe: each value is one whole ARM expression reading an output " +
