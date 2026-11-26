@@ -557,6 +557,9 @@ var notImported = []cloudimport.NotImported{
 		"agent the endpoint infra.endpoint names serves, so no resource of a template is an instance of it"},
 	{Recipe: "key-vault-secret", Reason: "a FeatureRecipe, realizing core/referenced-secret on a Key Vault " +
 		"secret: the importer attaches a Feature for a secret a template reads, and maps no resource to it"},
+	{Recipe: "manual-trigger", Reason: "a FeatureRecipe, realizing core/manual-trigger: it emits nothing, and the " +
+		"Recipe realizing the task deploys a Container Apps job with a manual trigger, so no resource of a " +
+		"template is an instance of it"},
 }
 
 // Table returns the arm format's mapping table: the rows generated from the
