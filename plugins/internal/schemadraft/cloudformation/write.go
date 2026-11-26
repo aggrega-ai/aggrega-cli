@@ -5,6 +5,8 @@ package cloudformation
 
 import (
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
@@ -44,23 +46,29 @@ const (
 // attribute is written as the fail Unmapped.Value gives, in both places. No
 // other resource is written.
 //
-// Each input is a member of Properties under its name, so an input at a path of
-// more than one segment halts with schemadraft.NestedInputRefused, drafting
-// nothing, rather than be set at the top of Properties.
+// An input at a path beginning Properties is a member of the resource's
+// Properties, or sits inside one at the rest of its path: an object member by
+// its key and a list item by its index, set into a copy of the value the Release
+// writes, so a neighbour's reference lands inside an object the Release sets and
+// the Release's value stays as it is. An input of one segment is a member of
+// Properties under its name, as a schema import writes it. A source's
+// DeletionPolicy and UpdateReplacePolicy are set beside Properties, a type
+// under AWS::Serverless:: declares the Transform AWS::Serverless-2016-10-31,
+// and an input at any other path halts with schemadraft.NestedInputRefused,
+// drafting nothing.
 func Write(r schemadraft.Resource) (importer.RecipeDraft, []aggrega.Diagnostic) {
 	var halts []aggrega.Diagnostic
 	for _, in := range r.Inputs {
-		if len(in.Property.Path) > 1 {
-			halts = append(halts, schemadraft.NestedInputRefused(r.Type, in, "the writer sets each input as a "+
-				"member of the resource's Properties under its name, and sets none inside one"))
+		if len(in.Property.Path) > 1 && !underProperties(in.Property) {
+			halts = append(halts, schemadraft.NestedInputRefused(r.Type, in, "the writer sets an input as a member "+
+				"of the resource's Properties or inside one, and sets none inside another key of the resource"))
 		}
 	}
 	if len(halts) > 0 {
 		return importer.RecipeDraft{}, halts
 	}
 	d := importer.RecipeDraft{
-		Header: []string{"template.yaml declares the resource under the logical id in locals, and the " +
-			"cloudformation provider projects its provides block into the stack's Outputs."},
+		Header: header(r),
 		Locals: []importer.Entry{{
 			Key:   logicalIDLocal,
 			Value: "{{ capitalizedWords .context.instance_id }}",
@@ -86,15 +94,36 @@ func Write(r schemadraft.Resource) (importer.RecipeDraft, []aggrega.Diagnostic) 
 	return d, nil
 }
 
+// header is the writer's own header lines for a Recipe declaring r.
+func header(r schemadraft.Resource) []string {
+	lines := []string{"template.yaml declares the resource under the logical id in locals, and the " +
+		"cloudformation provider projects its provides block into the stack's Outputs."}
+	if serverless(r.Type) {
+		lines = append(lines, "The type is a serverless resource, so template.yaml declares the Transform "+
+			serverlessTransform+" that expands it.")
+	}
+	return lines
+}
+
 // fragment is the text of template.yaml for r, its provides block holding the
-// lines given.
+// lines given. Where an input sits inside a member of Properties, the members
+// are built in a dict that Properties then holds, each line building one ending
+// by trimming the line break after it so the fragment opens with its first
+// section; otherwise each is a line under Properties.
 func fragment(r schemadraft.Resource, provides []string) string {
 	var b strings.Builder
+	nested := slices.ContainsFunc(r.Inputs, func(in schemadraft.Input) bool { return nestedPath(in.Property) })
+	if nested {
+		b.WriteString(buildProperties(r.Inputs))
+	}
 	var secrets []schemadraft.Input
 	for _, in := range r.Inputs {
 		if in.Secret {
 			secrets = append(secrets, in)
 		}
+	}
+	if serverless(r.Type) {
+		b.WriteString("Transform: " + serverlessTransform + "\n")
 	}
 	if len(secrets) > 0 {
 		b.WriteString("Parameters:\n")
@@ -103,14 +132,22 @@ func fragment(r schemadraft.Resource, provides []string) string {
 		}
 	}
 	b.WriteString("Resources:\n  " + logicalID + ":\n    Type: " + yamlName(r.Type.Name) + "\n")
-	b.WriteString(propertiesLine(r.Inputs))
+	var members []schemadraft.Input
 	for _, in := range r.Inputs {
-		line := "      " + yamlName(in.Property.Name) + ": " + inputValue(in) + "\n"
-		if in.Required || in.Secret {
-			b.WriteString(line)
+		if besideProperties(in.Property) {
+			b.WriteString(optional(in, "    "+in.Property.Name+": "+inputValue(in)+"\n", "    "))
 			continue
 		}
-		b.WriteString("      {{- if " + in.Source.Present() + " }}\n" + line + "      {{- end }}\n")
+		members = append(members, in)
+	}
+	switch {
+	case nested:
+		b.WriteString("    Properties: {{ toJson " + propertiesVar + " }}\n")
+	default:
+		b.WriteString(propertiesLine(members))
+		for _, in := range members {
+			b.WriteString(optional(in, "      "+yamlName(in.Property.Name)+": "+inputValue(in)+"\n", "      "))
+		}
 	}
 	if len(provides) > 0 {
 		b.WriteString("provides:\n")
@@ -119,6 +156,96 @@ func fragment(r schemadraft.Resource, provides []string) string {
 		}
 	}
 	return b.String()
+}
+
+// optional is line, written where in is present when in is not required.
+func optional(in schemadraft.Input, line, indent string) string {
+	if in.Required || in.Secret {
+		return line
+	}
+	return indent + "{{- if " + in.Source.Present() + " }}\n" + line + indent + "{{- end }}\n"
+}
+
+// buildProperties is the template text building the dict the Properties of a
+// resource whose inputs reach inside a member are written from: each member by
+// name, then each input at a deeper path, shallower first, set into it.
+func buildProperties(inputs []schemadraft.Input) string {
+	var b strings.Builder
+	b.WriteString("{{- " + propertiesVar + " := dict -}}\n")
+	var respeller schemadraft.Respeller
+	var members, deeper []schemadraft.Input
+	for _, in := range inputs {
+		switch {
+		case besideProperties(in.Property):
+		case nestedPath(in.Property):
+			deeper = append(deeper, in)
+		default:
+			members = append(members, in)
+		}
+	}
+	slices.SortStableFunc(deeper, func(a, b schemadraft.Input) int {
+		return len(a.Property.Path) - len(b.Property.Path)
+	})
+	for n, in := range append(members, deeper...) {
+		statements, value := dictValue(&respeller, in)
+		set := "{{ $_ := set " + propertiesVar + " " + strconv.Quote(in.Property.Name) + " " + value + " }}"
+		if nestedPath(in.Property) {
+			set = schemadraft.SetAt(propertiesVar, []string{resourceProperties}, in.Property.Path[1:], value, n)
+		}
+		if in.Required || in.Secret {
+			b.WriteString(statements + strings.TrimSuffix(set, " }}") + " -}}\n")
+			continue
+		}
+		b.WriteString("{{ if " + in.Source.Present() + " }}" + statements + set + "{{ end -}}\n")
+	}
+	return b.String()
+}
+
+// dictValue returns the statements building in's value and the expression
+// holding it, for a value set into a dict.
+func dictValue(respeller *schemadraft.Respeller, in schemadraft.Input) (statements, value string) {
+	switch {
+	case in.Secret:
+		return "", "(printf \"!Ref %s%s\" .locals." + logicalIDLocal + " " + strconv.Quote(schemadraft.SecretParameter(in.Property)) + ")"
+	case in.Source.Pillar == schemadraft.PillarValues || in.Source.Pillar == schemadraft.PillarInfra:
+		return respeller.Value(in.Property, in.Source.Template())
+	}
+	return "", in.Source.Template()
+}
+
+const (
+	// resourceProperties is the key of a resource's members, and propertiesVar
+	// the variable the fragment builds them in.
+	resourceProperties = "Properties"
+	propertiesVar      = "$properties"
+	// serverlessPrefix opens the name of each type the Serverless transform
+	// expands, and serverlessTransform is that transform's name.
+	serverlessPrefix    = "AWS::Serverless::"
+	serverlessTransform = "AWS::Serverless-2016-10-31"
+)
+
+// serverless reports whether t is a type the Serverless transform expands.
+func serverless(t *schemadraft.Type) bool { return strings.HasPrefix(t.Name, serverlessPrefix) }
+
+// policies are the attributes of a resource a source writes beside Properties
+// that the Recipe sets there.
+var policies = []string{"DeletionPolicy", "UpdateReplacePolicy"}
+
+// besideProperties reports whether p is one of the policies a source writes at
+// the resource's root, set beside Properties.
+func besideProperties(p *schemadraft.Property) bool {
+	return p.Written && len(p.Path) == 1 && slices.Contains(policies, p.Path[0])
+}
+
+// underProperties reports whether p is at a path beginning Properties and
+// naming a member of it or a value inside one.
+func underProperties(p *schemadraft.Property) bool {
+	return len(p.Path) > 1 && p.Path[0] == resourceProperties
+}
+
+// nestedPath reports whether p is inside a member of Properties.
+func nestedPath(p *schemadraft.Property) bool {
+	return len(p.Path) > 2 && p.Path[0] == resourceProperties
 }
 
 // propertiesLine opens the resource's Properties: an empty object where there is

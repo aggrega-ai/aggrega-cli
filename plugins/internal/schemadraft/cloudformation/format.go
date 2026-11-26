@@ -34,9 +34,35 @@ var Format = schemadraft.Format{
 		Identity:       identity,
 		Secret:         secret,
 		NestedProvides: true,
+		LeftOut:        leftOut,
+		NotInjected:    notInjected,
 	},
 	Category: category,
 	Write:    Write,
+	// SchemaFile is the describe-type output a schema import reads, and
+	// SchemaCommand the command writing it.
+	SchemaFile:    "describe-type output",
+	SchemaCommand: "aws cloudformation describe-type --type RESOURCE --type-name %s",
+}
+
+// leftOut reports why a draft from a template leaves out the written property p:
+// a resource attribute the Recipe does not write. The members of Properties, and
+// the two policies beside it, are carried.
+func leftOut(_ *schemadraft.Type, p *schemadraft.Property) string {
+	if !p.Written || underProperties(p) || besideProperties(p) {
+		return ""
+	}
+	return "a CloudFormation resource attribute written beside Properties other than DeletionPolicy and " +
+		"UpdateReplacePolicy, which the Recipe does not write"
+}
+
+// notInjected reports why a neighbour's value cannot be delivered at p: a policy
+// beside Properties is written as the template states it, never as a reference.
+func notInjected(_ *schemadraft.Type, p *schemadraft.Property) string {
+	if besideProperties(p) {
+		return "CloudFormation reads a resource's " + p.Path[0] + " as written and takes no reference there"
+	}
+	return ""
 }
 
 // nameSuffix closes the name of a property naming its resource: <Leaf>Name, the

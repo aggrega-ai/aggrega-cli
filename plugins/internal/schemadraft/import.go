@@ -50,6 +50,10 @@ type Format struct {
 	// message offering that import writes it in angle brackets for the author
 	// to replace; empty writes schema file.
 	SchemaFile string
+	// SchemaCommand is the command writing that file for one type, with %s
+	// where the type's name goes; a hint offering the schema import names it
+	// beside the file. Empty names none.
+	SchemaCommand string
 }
 
 // fallbackCategory is the segment a drafted Component is named under where the

@@ -235,9 +235,13 @@ func schemaImportHint(f Format, t *Type) string {
 	if file == "" {
 		file = "schema file"
 	}
-	return fmt.Sprintf("to draft %s from the vendor's schema, with the descriptions, constraints and required "+
+	hint := fmt.Sprintf("to draft %s from the vendor's schema, with the descriptions, constraints and required "+
 		"properties a source does not state, run `aggrega import --format %s <%s>` with %s in the importer's "+
 		"resource_types setting", t.Name, f.Name, file, typeName(t))
+	if f.SchemaCommand != "" {
+		hint += fmt.Sprintf("; <%s> is the output of `%s`", file, fmt.Sprintf(f.SchemaCommand, t.Name))
+	}
+	return hint
 }
 
 // draftedFromSource records the resource id drafted from its source as the

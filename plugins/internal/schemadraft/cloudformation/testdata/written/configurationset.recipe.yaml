@@ -1,0 +1,71 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: aws-ses-configurationset
+  version: 0.1.0
+  description: "Draft Recipe realizing imported/component/aws-ses-configurationset on cloudformation with one resource of the type AWS::SES::ConfigurationSet, imported from a source in the cloudformation format."
+spec:
+  # This Recipe realizes imported/component/aws-ses-configurationset with one resource of the type AWS::SES::ConfigurationSet, drafted from the resource as a source writes it. It reads the keys below, each with its type and its rule, and none with a vendor's description, which a source does not state; any other key under infra.overrides halts the build naming it.
+  # A secret is a deploy-time parameter whose name is the instance's name in capitalized words, written <instance> below, followed by the name the line gives.
+  # values.name: string, required; identity: the resource's own name or identifier
+  # The source writing the resource gives no description of Properties.Name.
+  # infra.overrides.ReputationOptions: object; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of Properties.ReputationOptions.
+  # infra.overrides.SendingEnabled: boolean; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of Properties.SendingOptions.SendingEnabled.
+  # parameter <instance>SmtpPassword: string, required; secret: declared by the Recipe as a deploy-time parameter
+  # The source writing the resource gives no description of Properties.SmtpPassword.
+  # infra.overrides.DeliveryOptions: object; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of Properties.DeliveryOptions.
+  # infra.overrides.DeletionPolicy: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of DeletionPolicy.
+  # context.inject.property.delivery_options_sending_pool_name: string, required; inject: a value a neighbour publishes, delivered by the Aggregate's uses edge on the property mechanism and written at Properties.DeliveryOptions.SendingPoolName
+  # The source writing the resource gives no description of Properties.DeliveryOptions.SendingPoolName.
+  # template.yaml declares the resource under the logical id in locals, and the cloudformation provider projects its provides block into the stack's Outputs.
+  capability: cloudformation
+  implements: imported/component/aws-ses-configurationset:0.1.0
+  locals:
+    # The resource's logical id: the instance's name in capitalized words, letters and digits alone, so two instances in one stack declare two resources.
+    logical_id: "{{ capitalizedWords .context.instance_id }}"
+  provides:
+    # The String Pipe: each value is piped as written into a consumer's context; the provides block of template.yaml carries the same values into the stack's Outputs.
+    id: "!Ref {{ .locals.logical_id }}"
+    arn: "!GetAtt {{ .locals.logical_id }}.Arn"
+  assertions:
+    # Halts naming any key under infra.overrides this Recipe does not read.
+    overrides_this_recipe_reads: |
+      {{- $o := optional .infra "overrides" dict -}}
+      {{- range $k, $v := $o -}}
+      {{- if not (has $k (list "ReputationOptions" "SendingEnabled" "DeliveryOptions" "DeletionPolicy")) -}}
+      {{- fail (printf "infra.overrides.%s is not a setting this Recipe reads: it reads %s from infra.overrides; remove infra.overrides.%s from the Release" $k "ReputationOptions, SendingEnabled, DeliveryOptions and DeletionPolicy" $k) -}}
+      {{- end -}}
+      {{- end -}}
+    # Halts on an attachment under smtp_password: this Recipe declares each secret as a deploy-time parameter instead.
+    secrets_are_parameters: |
+      {{- $f := default dict .features -}}
+      {{- if hasKey $f "smtp_password" -}}
+      {{- fail (printf "a secret is attached under %s, and this Recipe declares the secret %s of %s as the deploy-time parameter %s%s, supplied when the template is deployed: remove the attachment and supply the value to that parameter when deploying" "smtp_password" "SmtpPassword" "AWS::SES::ConfigurationSet" (capitalizedWords .metadata.instance_id) "SmtpPassword") -}}
+      {{- end -}}
+  artifacts:
+    template.yaml: |
+      {{- $properties := dict -}}
+      {{ $_ := set $properties "Name" (index .values "name") -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "ReputationOptions") }}{{ $_ := set $properties "ReputationOptions" (index .infra "overrides" "ReputationOptions") }}{{ end -}}
+      {{ $_ := set $properties "SmtpPassword" (printf "!Ref %s%s" .locals.logical_id "SmtpPassword") -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "DeliveryOptions") }}{{ $_ := set $properties "DeliveryOptions" (index .infra "overrides" "DeliveryOptions") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "SendingEnabled") }}{{ $set4 := (index .infra "overrides" "SendingEnabled") }}{{ if hasKey $properties "SendingOptions" }}{{ $_ := set $properties "SendingOptions" (deepCopy (index $properties "SendingOptions")) }}{{ else }}{{ $_ := set $properties "SendingOptions" dict }}{{ end }}{{ $at4_1 := index $properties "SendingOptions" }}{{ if not (kindIs "map" $at4_1) }}{{ fail "Properties.SendingOptions is not an object, and this Recipe writes Properties.SendingOptions.SendingEnabled inside it" }}{{ end }}{{ $_ := set $at4_1 "SendingEnabled" $set4 }}{{ end -}}
+      {{ $set5 := (index (default dict .context.inject) "property" "delivery_options_sending_pool_name") }}{{ if hasKey $properties "DeliveryOptions" }}{{ $_ := set $properties "DeliveryOptions" (deepCopy (index $properties "DeliveryOptions")) }}{{ else }}{{ $_ := set $properties "DeliveryOptions" dict }}{{ end }}{{ $at5_1 := index $properties "DeliveryOptions" }}{{ if not (kindIs "map" $at5_1) }}{{ fail "Properties.DeliveryOptions is not an object, and this Recipe writes Properties.DeliveryOptions.SendingPoolName inside it" }}{{ end }}{{ $_ := set $at5_1 "SendingPoolName" $set5 -}}
+      Parameters:
+        {{ .locals.logical_id }}SmtpPassword:
+          Type: String
+          NoEcho: true
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::SES::ConfigurationSet
+          {{- if (hasKey (optional .infra "overrides" dict) "DeletionPolicy") }}
+          DeletionPolicy: {{ toJson (index .infra "overrides" "DeletionPolicy") }}
+          {{- end }}
+          Properties: {{ toJson $properties }}
+      provides:
+        id: !Ref {{ .locals.logical_id }}
+        arn: !GetAtt {{ .locals.logical_id }}.Arn
