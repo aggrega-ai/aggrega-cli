@@ -3,18 +3,20 @@ name: Submit to the Microsoft Store
 # Submits one released version's Windows installer to Aggrega's Microsoft Store
 # listing, by hand: points the listing's one package at the installer's public
 # address, https://download.aggrega.ai/aggrega-cli/v<version>/aggrega-<version>-windows-amd64-setup.exe,
-# and submits the listing for certification, as the release workflow does for
-# each final release. It is the way to submit a version whose release run
+# sets the English listing's "What's new in this version" to the version's
+# section of CHANGELOG.md at the dispatching ref, and submits the listing for
+# certification, as the release workflow does for each final release. It is the way to submit a version whose release run
 # stopped before the submission, or to run the submission again, and the way to
 # see what a submission would change before one is made.
 #
 # The one job runs .github/scripts/microsoft-store-submission.sh, the script
 # the release workflow's microsoft-store-submission job runs, with the version
 # and the dry_run input; the script's --help gives its contract. With dry_run
-# true, the default, it reads the release, the installer's address, the draft's
-# status and its packages, and prints the change it would make, sending no
-# request that writes anything. With dry_run false it replaces the draft's
-# package, commits the draft and submits it. A submission in progress, or a
+# true, the default, it reads CHANGELOG.md, the release, the installer's
+# address, the draft's status, its packages and its listings, and prints the
+# change it would make, sending no request that writes anything. With dry_run
+# false it sets the listing's What's new text, replaces the draft's package,
+# commits the draft and submits it. A submission in progress, or a
 # draft whose package is the installer of a newer version, refuses there: the
 # script changes nothing and exits 3, which fails the run, while the release
 # workflow's job only warns and passes.

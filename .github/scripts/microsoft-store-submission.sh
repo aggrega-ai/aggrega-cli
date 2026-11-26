@@ -10,8 +10,10 @@
 # installer of the release <version>, at the address the release workflow
 # publishes it to, smoke_download_url's in scripts/lib/platform-smoke-common.sh:
 # https://download.aggrega.ai/aggrega-cli/v<version>/aggrega-<version>-windows-amd64-setup.exe.
-# Then it submits the listing for certification. The listing's text, images and
-# markets stay as Partner Center holds them; no request here touches them.
+# It sets the English listing's "What's new in this version", the listing's
+# whatsNew, to the version's section of CHANGELOG.md. Then it submits the
+# listing for certification. Every other field of the listing, its images and
+# its markets stay as Partner Center holds them.
 #
 # A run, in order:
 #   1. refuses, naming each and where it lives, a setting below that is not
@@ -19,21 +21,35 @@
 #      a product ID that is not a GUID, before any request;
 #   2. on a real run, refuses a version that is not MAJOR.MINOR.PATCH: a
 #      pre-release or a build is never submitted;
-#   3. reads the release v<version> with gh and holds the installer's address to
+#   3. takes the What's new text from CHANGELOG.md at the root of the checkout
+#      this script is in: the section of v<version>, as release-changes.sh
+#      prints it for the release page, written as plain lines. A heading
+#      "### Fixed" becomes the line "Fixed", after a blank line unless it comes
+#      first; each "- " entry stays a line, its inline-code backticks dropped;
+#      blank lines go. The listing takes at most 1,500 characters, counted here
+#      in UTF-16 code units, never fewer than the characters: a longer text
+#      keeps the whole lines that fit, drops a heading left with no entry, and
+#      ends with a blank line and the line "More changes in this version:
+#      https://aggrega.ai/docs/changelog/", the documentation's Changelog page.
+#      A real run refuses a version whose section is absent or empty, naming
+#      the version and the file, before any request; a dry run says a real run
+#      would refuse and goes on. A section holding an HTML comment is refused
+#      on every run, as release-changes.sh refuses it;
+#   4. reads the release v<version> with gh and holds the installer's address to
 #      the SHA-256 the release's SHA256SUMS lists, through smoke_check_download:
 #      one GET of it in full that answers 200 itself, not a redirect, with those
 #      bytes and a Content-Length equal to their number. A real run requires the
 #      release; a dry run for a version with no release says so and checks
 #      nothing, as does a dry run for a version that is not MAJOR.MINOR.PATCH,
 #      whose address the release workflow never publishes;
-#   4. asks Microsoft Entra ID for an access token for the Store API;
-#   5. reads the draft's status. When a submission is in progress, it reads that
+#   5. asks Microsoft Entra ID for an access token for the Store API;
+#   6. reads the draft's status. When a submission is in progress, it reads that
 #      submission's status and prints both; a real run then changes
 #      nothing and exits 3, and a dry run says a real run would refuse and goes
 #      on. When the draft is not ready and no submission is in progress, it asks again every
 #      10 seconds, 60 tries in all. An entry of the status's errors whose code is
-#      warning is printed and never refuses, here and at step 9;
-#   6. reads the draft's packages, and refuses unless there is exactly one,
+#      warning is printed and never refuses, here and at steps 11 and 12;
+#   7. reads the draft's packages, and refuses unless there is exactly one,
 #      naming each package's URL. When the package's URL ends in the object key
 #      smoke_download_key gives a version, that version is the draft's: one
 #      newer than <version>, by MAJOR.MINOR.PATCH in sort -V order, is left
@@ -41,18 +57,28 @@
 #      already at the installer's address is reported as already the draft's package, and the
 #      run goes on to the commit and the submit without updating it, so a run
 #      that stopped after its update is completed by running it again;
-#   7. prints the change: the package's URL before and after, and every other
-#      field of the package, unchanged;
-#   8. stops here on a dry run;
-#   9. replaces the draft's packages with that one package, its URL changed and
+#   8. reads the draft's listings, one per language, and refuses unless exactly
+#      one is English, its language en or en-<region> in any case, naming each
+#      listing's language; a listing in another language is named and left as
+#      it is. An English listing whose whatsNew already equals the text is
+#      reported, and its whatsNew is not sent again;
+#   9. prints the change: the English listing's whatsNew before and after, the
+#      package's URL before and after, and every other field of the package,
+#      unchanged;
+#  10. stops here on a dry run;
+#  11. unless it already holds the text, sends the English listing with its
+#      whatsNew replaced and every other field as the draft holds it, then
+#      reads the draft's status every 10 seconds, 60 tries in all, until it is
+#      ready, refusing an error entry as step 12 does;
+#  12. replaces the draft's packages with that one package, its URL changed and
 #      every other field sent as the draft holds it, since the update replaces
 #      the whole package set and resets a field it is not sent; commits the
 #      draft's packages; and reads the draft's status every 10 seconds, 90 tries
 #      in all, until it is ready, refusing on an error whose code is
 #      packageuploaderror or whose target is anything but packages;
-#  10. submits the draft; the submission is the answer's submissionId, or its
+#  13. submits the draft; the submission is the answer's submissionId, or its
 #      ongoingSubmissionId when it names none;
-#  11. reads the submission's status every 30 seconds, 20 tries in all; the
+#  14. reads the submission's status every 30 seconds, 20 tries in all; the
 #      publishingStatus is read without regard to case.
 #      INPROGRESS: the submission is in certification, and the run passes. The
 #      submission API has no request that publishes a certified submission, and
@@ -69,13 +95,20 @@
 # scope=https://api.store.microsoft.com/.default. The Store's, each under
 # <api>/submission/v1/product/<product ID>, with the headers Authorization:
 # Bearer <token> and X-Seller-Account-Id: <seller ID>, and Content-Type:
-# application/json on the one that carries a body:
-#   GET  /status                           the draft's isReady and ongoingSubmissionId
-#   GET  /submission/<id>/status           a submission's publishingStatus and hasFailed
-#   GET  /packages                         the draft's packages
-#   PUT  /packages                         {"packages": [<the package>]}
-#   POST /packages/commit                  no body
-#   POST /submit                           no body
+# application/json on the two that carry a body:
+#   GET   /status                          the draft's isReady and ongoingSubmissionId
+#   GET   /submission/<id>/status          a submission's publishingStatus and hasFailed
+#   GET   /packages                        the draft's packages
+#   GET   /metadata/listings               the draft's listings, {"listings": [...]}
+#   PATCH /metadata                        {"listings": <the English listing>}
+#   PUT   /packages                        {"packages": [<the package>]}
+#   POST  /packages/commit                 no body
+#   POST  /submit                          no body
+# The PATCH sends the listing whole, as the draft holds it with whatsNew alone
+# replaced, the form in which Microsoft's own samples send a listing back; a
+# PATCH keeps a field it is not sent, where a PUT of the metadata resets it.
+# The Store refuses a metadata update while a submission is in progress, which
+# step 6 has already ruled out on a real run.
 # Every Store answer is {isSuccess, errors: [{code, target, message}],
 # responseData}. An answer with an HTTP status outside 2xx, or with isSuccess
 # not true, is refused, naming each error's code, target and message, and the
@@ -84,7 +117,7 @@
 # Manager role in Partner Center or a seller ID that is not the account's. The
 # errors of a successful answer are its warnings, and are printed. A read is
 # retried by curl --retry 3, which waits as a rate-limited answer's Retry-After
-# header asks; a PUT or a POST is sent once, never retried.
+# header asks; a PUT, a PATCH or a POST is sent once, never retried.
 #
 # Settings, all read from the environment. In the release workflow and the
 # dispatch workflow they come from this repository's GitHub environment
@@ -124,10 +157,11 @@
 #
 # <version> is the release's version, without the tag's v. On a dry run it may
 # also be a build's version, such as 1.2.3-4-gabc1234: a digit first, then
-# letters, digits, dots, - and _. A dry run reads the release, the installer's
-# address, the draft's status and packages, and prints the change; the only
-# request it sends that is not a read is the token's, and it changes nothing.
-# Where a real run would refuse — a version that is not MAJOR.MINOR.PATCH, a
+# letters, digits, dots, - and _. A dry run reads CHANGELOG.md, the release,
+# the installer's address, the draft's status, packages and listings, and
+# prints the change; the only request it sends that is not a read is the
+# token's, and it changes nothing. Where a real run would refuse — a version
+# that is not MAJOR.MINOR.PATCH, a version with no section in CHANGELOG.md, a
 # release that does not exist, a submission in progress, a newer draft — the
 # dry run says so where it finds it and goes on, and its outcome line names
 # every such reason instead of the change.
@@ -138,9 +172,11 @@
 # Exits 0 when a dry run has printed the change, and when the submission is in
 # certification or published; 1, naming what it refused or what failed, when a
 # setting is missing or malformed, the version is not one a real run submits,
-# the release or the installer's address does not hold, a request fails, the
-# Store refuses an answer, the draft does not hold exactly one package, the
-# draft does not become ready, or the submission fails or stays unknown; 2 on a
+# CHANGELOG.md gives a real run no text for the version or its section holds
+# an HTML comment, the release or the installer's address does not hold, a
+# request fails, the Store refuses an answer, the draft does not hold exactly
+# one package or exactly one English listing, the draft does not become
+# ready, or the submission fails or stays unknown; 2 on a
 # usage error; 3 when a real run changed nothing because a submission is in
 # progress, its outcome line naming that submission and saying to dispatch
 # "Submit to the Microsoft Store" with this version once it ends, or because the
@@ -308,10 +344,60 @@ if [ "$RELEASE_FORM" = false ]; then
   say "dry run: '$VERSION' is not a version of the form MAJOR.MINOR.PATCH; a real run would refuse it"
   WOULD_REFUSE+=("'$VERSION' is not a version of the form MAJOR.MINOR.PATCH")
 fi
-
-# --- 3. The installer's address ----------------------------------------------
-
 TAG="v$VERSION"
+
+# --- 3. The What's new text --------------------------------------------------
+
+CHANGELOG="$(cd "$HERE/../.." && pwd)/CHANGELOG.md"
+WHATS_NEW_LIMIT=1500
+MORE_CHANGES="More changes in this version: https://aggrega.ai/docs/changelog/"
+
+# whats_new_text — prints the What's new text of the CHANGELOG.md section on
+# standard input, as step 3 of the header gives it.
+whats_new_text() {
+  jq -Rrs --arg more "$MORE_CHANGES" --argjson limit "$WHATS_NEW_LIMIT" '
+    def units: [explode[] | if . > 65535 then 2 else 1 end] | add // 0;
+    def text: map(.line) | join("\n");
+    [split("\n")[] | select(test("\\S"))] as $raw
+    | [range(0; $raw | length) as $i | $raw[$i]
+        | if startswith("### ") then
+            (if $i > 0 then {line: "", kind: "blank"} else empty end), {line: .[4:], kind: "heading"}
+          else {line: gsub("`"; ""), kind: "entry"} end] as $lines
+    | if ($lines | text | units) <= $limit then $lines | text
+      else
+        [{line: "", kind: "blank"}, {line: $more, kind: "more"}] as $tail
+        | ([range(0; ($lines | length) + 1) | select(($lines[0:.] + $tail | text | units) <= $limit)] | max) as $fit
+        | $lines[0:$fit]
+        | until(length == 0 or (.[-1].kind == "entry"); .[0:-1])
+        | if length == 0 then [$tail[1]] else . + $tail end
+        | text
+      end'
+}
+
+WHATS_NEW=""
+rc=0
+section="$(bash "$HERE/release-changes.sh" "$TAG" "$CHANGELOG" 2>"$WORK/changes.err")" || rc=$?
+if [ "$rc" -ne 0 ]; then
+  relay "$WORK/changes.err" "" >&2
+  refuse "the section of $VERSION in $CHANGELOG cannot be the listing's What's new text: release-changes.sh exited $rc; nothing was sent"
+fi
+if [ -n "$section" ]; then
+  WHATS_NEW="$(printf '%s\n' "$section" | whats_new_text)"
+else
+  if [ -f "$CHANGELOG" ]; then
+    absent="$CHANGELOG has no section for $VERSION, or an empty one"
+  else
+    absent="$CHANGELOG does not exist, so it has no section for $VERSION"
+  fi
+  if [ "$DRY" = false ]; then
+    refuse "$absent: the listing's What's new text is that section; nothing was sent"
+  fi
+  say "dry run: $absent; a real run would refuse"
+  WOULD_REFUSE+=("$absent")
+fi
+
+# --- 4. The installer's address ----------------------------------------------
+
 INSTALLER="$(smoke_release_asset_name windows/amd64 "$VERSION" "$(smoke_target_installer windows/amd64)")"
 NEW_URL="$(smoke_download_url "$VERSION")"
 
@@ -360,7 +446,7 @@ else
   refuse "the release $TAG does not exist: a real run submits a released version's installer; nothing was sent to the Store"
 fi
 
-# --- 4. The access token -----------------------------------------------------
+# --- 5. The access token -----------------------------------------------------
 
 token_config() {
   printf 'url = "%s"\n' "$(smoke_curl_config_quote "$LOGIN_BASE/$(uri "$store_tenant")/oauth2/v2.0/token")"
@@ -442,7 +528,7 @@ refuse_answer() {
 # under the product's path and leaves the answer in $WORK/answer, refusing,
 # with <what> named, when it cannot be sent, the answer is not JSON, its HTTP
 # status is outside 2xx, or its isSuccess is not true. A GET is retried by
-# curl; a PUT carries <body file> as JSON; a POST carries no body.
+# curl; a PUT or a PATCH carries <body file> as JSON; a POST carries no body.
 store() {
   local method="$1" path="$2" what="$3" body="${4:-}" code rc=0
   local -a args=(--config - --silent --show-error --proto '=https' --connect-timeout 30 --max-time 120
@@ -450,7 +536,7 @@ store() {
     --dump-header "$WORK/headers" --output "$WORK/answer" --write-out '%{http_code}')
   case "$method" in
     GET) args+=(--retry 3) ;;
-    PUT) args+=(--request PUT --header "Content-Type: application/json" --data-binary "@$body") ;;
+    PUT | PATCH) args+=(--request "$method" --header "Content-Type: application/json" --data-binary "@$body") ;;
     POST) args+=(--data-binary "" --header "Content-Type:") ;;
   esac
   rm -f -- "$WORK/headers" "$WORK/answer"
@@ -504,7 +590,7 @@ wait_ready() {
   done
 }
 
-# --- 5. The draft's status ---------------------------------------------------
+# --- 6. The draft's status ---------------------------------------------------
 
 store GET /status "the read of the draft's status"
 ongoing="$(jq -r '.responseData.ongoingSubmissionId // "" | tostring' "$WORK/answer")"
@@ -523,7 +609,7 @@ else
   wait_ready 60 10 "before the change"
 fi
 
-# --- 6. The draft's package --------------------------------------------------
+# --- 7. The draft's package --------------------------------------------------
 
 store GET /packages "the read of the draft's packages"
 warnings "the draft's packages"
@@ -567,8 +653,60 @@ elif [ -n "$draft_version" ]; then
   fi
 fi
 
-# --- 7. The change -----------------------------------------------------------
+# --- 8. The draft's English listing ------------------------------------------
 
+store GET /metadata/listings "the read of the draft's listings"
+warnings "the draft's listings"
+cp -- "$WORK/answer" "$WORK/listings.json"
+ENGLISH='[(.responseData.listings // [])[] | objects
+  | select(.language // "" | tostring | ascii_downcase | test("^en(-|$)"))]'
+count="$(jq "$ENGLISH | length" "$WORK/listings.json")"
+if [ "$count" -ne 1 ]; then
+  languages="$(jq -r '[(.responseData.listings // [])[] | objects | .language // "(no language)" | tostring] | join(", ")' \
+    "$WORK/listings.json")"
+  refuse "the draft holds $count English listings (its listings' languages: ${languages:-none}); this sets the What's new text of a draft that holds exactly one, so nothing was changed"
+fi
+jq "$ENGLISH | .[0]" "$WORK/listings.json" >"$WORK/listing.json"
+LANGUAGE="$(jq -r '.language | tostring' "$WORK/listing.json")"
+while IFS= read -r other; do
+  say "the draft's $other listing is left as it is"
+done < <(jq -r --arg lang "$LANGUAGE" '(.responseData.listings // [])[] | objects
+  | .language // "(no language)" | tostring | select(. != $lang)' "$WORK/listings.json")
+OLD_WHATS_NEW="$(jq -r '.whatsNew // "" | tostring' "$WORK/listing.json")"
+LISTING_CURRENT=false
+if [ -n "$WHATS_NEW" ] && [ "$OLD_WHATS_NEW" = "$WHATS_NEW" ]; then
+  LISTING_CURRENT=true
+  say "the $LANGUAGE listing's whatsNew already holds the section of $VERSION in CHANGELOG.md"
+fi
+
+# --- 9. The change -----------------------------------------------------------
+
+# text_lines <text> — prints each line of <text> as a message, "  | <line>"
+# ("  |" for a blank line), or "  (empty)" for an empty text.
+text_lines() {
+  local line
+  if [ -z "$1" ]; then
+    say "  (empty)"
+    return
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    say "  |${line:+ $line}"
+  done <<<"$1"
+}
+
+if [ "$LISTING_CURRENT" = true ]; then
+  say "the $LANGUAGE listing's whatsNew (unchanged):"
+  text_lines "$OLD_WHATS_NEW"
+else
+  say "the $LANGUAGE listing's whatsNew now:"
+  text_lines "$OLD_WHATS_NEW"
+  if [ -n "$WHATS_NEW" ]; then
+    say "the $LANGUAGE listing's whatsNew after, from the section of $VERSION in CHANGELOG.md:"
+    text_lines "$WHATS_NEW"
+  else
+    say "the $LANGUAGE listing's whatsNew after: none, since CHANGELOG.md gives no text for $VERSION"
+  fi
+fi
 say "the draft's package $(jq -r '.responseData.packages[0].packageId // "(no packageId)" | tostring' "$WORK/packages.json"):"
 if [ "$CURRENT" = true ]; then
   say "  packageUrl: $OLD_URL (unchanged)"
@@ -580,9 +718,14 @@ while IFS= read -r field; do
 done < <(jq -r '.responseData.packages[0] | to_entries[] | select(.key != "packageUrl") | "\(.key): \(.value | tojson)"' \
   "$WORK/packages.json")
 
-# --- 8. A dry run stops here -------------------------------------------------
+# --- 10. A dry run stops here ------------------------------------------------
 
 if [ "$DRY" = true ]; then
+  if [ "$LISTING_CURRENT" = true ]; then
+    listing_change="leaves the $LANGUAGE listing's whatsNew, already the section of $VERSION in CHANGELOG.md, as it is"
+  else
+    listing_change="sets the $LANGUAGE listing's whatsNew to the section of $VERSION in CHANGELOG.md"
+  fi
   if [ "${#WOULD_REFUSE[@]}" -gt 0 ]; then
     reasons=""
     for reason in "${WOULD_REFUSE[@]}"; do
@@ -590,14 +733,27 @@ if [ "$DRY" = true ]; then
     done
     outcome "dry run for $VERSION: a real run would refuse, changing nothing: $reasons. Nothing that changes the draft was sent."
   elif [ "$CURRENT" = true ]; then
-    outcome "dry run for $VERSION: the draft's package is already $NEW_URL; a real run commits and submits it. Nothing that changes the draft was sent."
+    outcome "dry run for $VERSION: the draft's package is already $NEW_URL; a real run $listing_change, then commits and submits the draft. Nothing that changes the draft was sent."
   else
-    outcome "dry run for $VERSION: a real run changes the draft's package from $OLD_URL to $NEW_URL and submits it. Nothing that changes the draft was sent."
+    outcome "dry run for $VERSION: a real run $listing_change, changes the draft's package from $OLD_URL to $NEW_URL and submits it. Nothing that changes the draft was sent."
   fi
   exit 0
 fi
 
-# --- 9. Update, commit, wait until ready ---------------------------------------
+# --- 11. The listing's What's new --------------------------------------------
+
+if [ "$LISTING_CURRENT" = true ]; then
+  say "the $LANGUAGE listing's whatsNew is not sent again"
+else
+  jq --arg text "$WHATS_NEW" '{listings: (.whatsNew = $text)}' "$WORK/listing.json" >"$WORK/patch.json"
+  store PATCH /metadata "the update of the $LANGUAGE listing's whatsNew" "$WORK/patch.json"
+  warnings "the update of the $LANGUAGE listing's whatsNew"
+  say "the $LANGUAGE listing's whatsNew now holds the section of $VERSION in CHANGELOG.md"
+  store GET /status "the read of the draft's status"
+  wait_ready 60 10 "after the listing's update"
+fi
+
+# --- 12. Update, commit, wait until ready ------------------------------------
 
 if [ "$CURRENT" = true ]; then
   say "the draft's package is not updated; the draft is committed and submitted as it stands"
@@ -614,7 +770,7 @@ store GET /status "the read of the draft's status"
 wait_ready 90 10 "after the commit"
 say "the draft is ready"
 
-# --- 10. Submit --------------------------------------------------------------
+# --- 13. Submit --------------------------------------------------------------
 
 store POST /submit "the submit"
 warnings "the submit"
@@ -623,7 +779,7 @@ SUBMISSION="$(jq -r '(.responseData.submissionId // "" | tostring) as $id
 [ -n "$SUBMISSION" ] || refuse_answer "the Store's answer to the submit names no submission"
 say "the Store created submission $SUBMISSION for $VERSION"
 
-# --- 11. The submission's status ---------------------------------------------
+# --- 14. The submission's status ---------------------------------------------
 
 tries=20
 for ((try = 1; try <= tries; try++)); do

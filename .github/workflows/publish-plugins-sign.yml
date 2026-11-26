@@ -372,8 +372,10 @@ name: Publish and sign core plugins
 #                        .github/scripts/microsoft-store-submission.sh: it
 #                        points the listing's one package at the installer's
 #                        public address, which it first holds to the SHA-256
-#                        the release's SHA256SUMS lists, commits the draft and
-#                        submits it for certification, then reads the
+#                        the release's SHA256SUMS lists, sets the English
+#                        listing's What's new in this version to the
+#                        release's section of CHANGELOG.md, commits the draft
+#                        and submits it for certification, then reads the
 #                        submission's status and passes while it is in
 #                        certification or published. A submission already in
 #                        progress and a draft that holds a newer version leave
@@ -382,12 +384,15 @@ name: Publish and sign core plugins
 #                        submission in progress, names the Submit to the
 #                        Microsoft Store dispatch to run once it ends;
 #                        a draft that does not hold exactly one package is
-#                        refused, changing nothing. On a dry run it reads the
-#                        release, the address, the draft's status and its
-#                        packages, and prints the change, writing nothing. It
+#                        refused, changing nothing, as is a release whose
+#                        CHANGELOG.md has no section for it. On a dry run it
+#                        reads CHANGELOG.md, the release, the address, the
+#                        draft's status, its packages and its listings, and
+#                        prints the change, writing nothing. It
 #                        runs on a GitHub-hosted runner, checks out this
 #                        repository at the commit the build job built for the
-#                        script and needs nothing from the hand-over folder. It
+#                        script and CHANGELOG.md and needs nothing from the
+#                        hand-over folder. It
 #                        names the environment microsoft-store, not release, so
 #                        its credentials are the Store's alone: the three
 #                        secrets MICROSOFT_STORE_TENANT_ID,
@@ -617,7 +622,8 @@ name: Publish and sign core plugins
 # publish-downloads' copy of the Windows installer in the download bucket,
 # created under the release's version and never replaced; and
 # microsoft-store-submission's update of the Microsoft Store listing's package
-# to that installer's address, which it submits for certification.
+# to that installer's address and of its English What's new text, which it
+# submits for certification.
 #
 # A manual dispatch, from a release/* branch or a v* tag (the refs the release
 # environment admits), defaults to a dry run; the dry run before a release tag
@@ -5248,8 +5254,10 @@ jobs:
     # Submits the Windows installer of the release to Aggrega's Microsoft Store
     # listing, through the Store's submission API for MSI/EXE apps: the
     # listing's one package is pointed at the installer's public address, the
-    # one publish-downloads has just checked, and the listing is submitted for
-    # certification. The listing's text, images and markets stay as Partner
+    # one publish-downloads has just checked, the English listing's What's new
+    # in this version is set to the release's section of CHANGELOG.md in the
+    # checkout below, and the listing is submitted for certification. Every
+    # other field of the listing, its images and its markets stay as Partner
     # Center holds them. Whether a certified submission goes live by itself or
     # waits for Partner Center's Publish button is the listing's setting, not
     # this job's.
@@ -5257,11 +5265,12 @@ jobs:
     # It runs .github/scripts/microsoft-store-submission.sh, whose --help gives
     # the whole contract, with the release's version, as sign-and-publish
     # hands it on, and this run's dry-run decision, the one publish-downloads
-    # takes. On a dry run it reads the release, the installer's address, the
-    # draft's status and its packages, and prints the change it would make,
-    # sending no request that writes anything. On a real publish it refuses,
-    # naming what to fix, a draft that does not hold exactly one package,
-    # changing nothing. A submission already in progress and a draft that holds
+    # takes. On a dry run it reads CHANGELOG.md, the release, the installer's
+    # address, the draft's status, its packages and its listings, and prints
+    # the change it would make, sending no request that writes anything. On a
+    # real publish it refuses, naming what to fix, a release with no section in
+    # CHANGELOG.md, and a draft that does not hold exactly one package or
+    # exactly one English listing, changing nothing. A submission already in progress and a draft that holds
     # a newer version also change nothing; the script exits 3 for them, and
     # the job passes with a warning annotation naming this version and a line
     # in the run's summary saying why, and, for a submission in progress, the
@@ -5277,8 +5286,8 @@ jobs:
     # microsoft-store rather than release, so the Store credentials share a job
     # with no other credential but the run's own token, which here reads this
     # repository and its release and nothing more. It checks out this
-    # repository at the commit the build job built, for the script and the
-    # smoke library it reads; it runs no action but checkout and no program but
+    # repository at the commit the build job built, for the script, the smoke
+    # library and CHANGELOG.md it reads; it runs no action but checkout and no program but
     # curl, jq, gh and the shell's own utilities, and may not mint an OIDC
     # token. The tenant ID, the client ID and the client secret reach curl on
     # its standard input and are never placed on a command line or written to

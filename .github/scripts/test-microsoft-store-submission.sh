@@ -31,8 +31,15 @@
 # status stays unknown; a publishingStatus in any case; a warning among the
 # draft's status errors; a 403 with its likely cause; a dry run for a build's
 # version that has a release; the settings named in the outcome line; a refused token; a rate-limited read retried; the token
-# masked under GitHub Actions; and, over every run, that no credential and no
-# token reaches the output and every line names the script.
+# masked under GitHub Actions; the listing's What's new text: the PATCH body
+# held exactly, the text printed before and after on a dry run, a section
+# absent, empty or in no file (a real run refuses before any request, a dry run
+# reports), a section holding an HTML comment, a section over the limit cut at
+# whole lines in UTF-16 code units, a text already equal and not sent again, the
+# English listing among others and its language read from the draft, no English
+# listing, a refused PATCH sent once, and a draft not ready after the update;
+# and, over every run, that no credential and no token reaches the output and
+# every line names the script.
 #
 # Exit: 0 when every case passes; 1 with the failing cases named.
 
@@ -267,7 +274,15 @@ stub_stop
 # ---------------------------------------------------------------------------
 # microsoft-store-submission.sh
 
-SCRIPT="$HERE/microsoft-store-submission.sh"
+# The script reads CHANGELOG.md at the root of the checkout it is in, so it runs
+# from a tree of its own: links to it, to release-changes.sh and to the smoke
+# library, beside a CHANGELOG.md each case writes.
+TREE="$WORK/tree"
+mkdir -p "$TREE/.github/scripts" "$TREE/scripts/lib"
+ln -s "$HERE/microsoft-store-submission.sh" "$HERE/release-changes.sh" "$TREE/.github/scripts/"
+ln -s "$HERE/../../scripts/lib/platform-smoke-common.sh" "$TREE/scripts/lib/"
+SCRIPT="$TREE/.github/scripts/microsoft-store-submission.sh"
+CHANGELOG="$TREE/CHANGELOG.md"
 VERSION=0.10.3
 TENANT=stub-tenant-id
 CLIENT=stub-client-id
@@ -353,13 +368,61 @@ PACKAGES_DRAFT="$(jq -cn --arg file "$WORK/packages.json" \
   '{status: 200, headers: {"Content-Type": "application/json"}, body_file: $file}')"
 WARNING='[{"code": "warning", "target": "packages", "message": "stub: the package keeps its languages"}]'
 
+# The draft's English listing, every field the API documents for a listing and
+# one more, and the listings answer holding it alone.
+LISTING_EN='{"language": "en-us", "description": "Stub description.", "whatsNew": "Stub text of 0.10.2.",
+  "productFeatures": ["Stub feature"], "shortDescription": "Stub short description.", "searchTerms": ["compiler"],
+  "additionalLicenseTerms": "Stub licence terms.", "copyright": "Stub copyright", "developedBy": "Stub developer",
+  "sortTitle": null, "requirements": [{"minimumHardware": "Stub minimum", "recommendedHardware": ""}],
+  "contactInfo": "", "extraField": "kept"}'
+# listings <listing>... — the answer to GET /metadata/listings holding each listing.
+listings() { answer "$(jq -cn '{listings: $ARGS.positional}' --jsonargs "$@")"; }
+
+# The default CHANGELOG.md: the section of $VERSION between a later and an
+# earlier one, and the What's new text it gives.
+CHANGELOG_DEFAULT="# Changelog
+
+## [0.10.4] - 2026-11-28
+
+### Fixed
+
+- A later version's entry.
+
+## [$VERSION] - 2026-11-25
+
+### Added
+
+- \`aggrega import\` reads an Azure Resource Manager template.
+
+### Fixed
+
+- The installer names the file it cannot write.
+
+## [0.10.2] - 2026-11-20
+
+### Fixed
+
+- An earlier version's entry.
+"
+WHATS_NEW_WANT="Added
+- aggrega import reads an Azure Resource Manager template.
+
+Fixed
+- The installer names the file it cannot write."
+MORE_LINE="More changes in this version: https://aggrega.ai/docs/changelog/"
+
 # begin_case — resets the answers to those of a real run end to end, the
-# release v$VERSION to existing with SHA256SUMS listing the stub installer, and
-# the draft to 0.10.2's installer. A case then changes the one thing it is about.
+# release v$VERSION to existing with SHA256SUMS listing the stub installer, the
+# draft to 0.10.2's installer and English listing, and CHANGELOG.md to the
+# default. A case then changes the one thing it is about. The draft is ready
+# before the change and after the listing's update, and on the second read
+# after the commit.
 begin_case() {
   R_TOKEN="[$(jq -cn --arg token "$TOKEN" '{status: 200, json: {token_type: "Bearer", expires_in: 3599, access_token: $token}}')]"
-  R_STATUS="[$STATUS_READY, $STATUS_BUSY, $STATUS_READY]"
+  R_STATUS="[$STATUS_READY, $STATUS_READY, $STATUS_BUSY, $STATUS_READY]"
   R_PACKAGES="[$PACKAGES_DRAFT]"
+  R_LISTINGS="[$(listings "$LISTING_EN")]"
+  R_PATCH="[$(answer "{\"pollingUrl\": \"$P/status\", \"ongoingSubmissionId\": \"\"}")]"
   R_PUT="[$(answer "{\"pollingUrl\": \"$P/status\", \"ongoingSubmissionId\": \"\"}" "$WARNING")]"
   R_COMMIT="[$(answer "{\"pollingUrl\": \"$P/status\", \"ongoingSubmissionId\": \"\"}")]"
   R_SUBMIT="[$(answer "{\"submissionId\": \"$SUB\", \"pollingUrl\": \"$P/submission/$SUB/status\", \"ongoingSubmissionId\": \"\"}")]"
@@ -369,6 +432,7 @@ begin_case() {
   printf 'v%s\n' "$VERSION" >"$GH_STUB/releases"
   printf '%s  %s\n%s  %s\n' "$DIGEST" "$INSTALLER_NAME" "$WRONG" "aggrega-$VERSION-linux-amd64" >"$GH_STUB/SHA256SUMS"
   : >"$GH_STUB/calls"
+  printf '%s' "$CHANGELOG_DEFAULT" >"$CHANGELOG"
 }
 
 # serve_case — starts the stub on the R_* answers and writes the draft, one
@@ -380,11 +444,14 @@ serve_case() {
     --arg sub "$SUB" --arg ongoing "$ONGOING" --argjson rtoken "$R_TOKEN" --argjson rstatus "$R_STATUS" \
     --argjson rpackages "$R_PACKAGES" --argjson rput "$R_PUT" --argjson rcommit "$R_COMMIT" \
     --argjson rsubmit "$R_SUBMIT" --argjson rsubmission "$R_SUBMISSION" --argjson rongoing "$R_ONGOING" \
+    --argjson rlistings "$R_LISTINGS" --argjson rpatch "$R_PATCH" \
     '{routes: [
       {method: "GET", path: $dl, responses: [{status: 200, body_file: $installer}]},
       {method: "POST", path: $token, responses: $rtoken},
       {method: "GET", path: ($p + "/status"), responses: $rstatus},
       {method: "GET", path: ($p + "/packages"), responses: $rpackages},
+      {method: "GET", path: ($p + "/metadata/listings"), responses: $rlistings},
+      {method: "PATCH", path: ($p + "/metadata"), responses: $rpatch},
       {method: "PUT", path: ($p + "/packages"), responses: $rput},
       {method: "POST", path: ($p + "/packages/commit"), responses: $rcommit},
       {method: "POST", path: ($p + "/submit"), responses: $rsubmit},
@@ -465,8 +532,9 @@ want_exit 0
 want_text "is in certification"
 want_text "no request that publishes"
 want_text "warning / packages / stub: the package keeps its languages"
+want_text "the en-us listing's whatsNew now holds the section of $VERSION in CHANGELOG.md"
 got="$(requests | paste -sd'|' -)"
-want="GET /$NEW_KEY|POST $TOKEN_PATH|GET $P/status|GET $P/packages|PUT $P/packages|POST $P/packages/commit|GET $P/status|GET $P/status|POST $P/submit|GET $P/submission/$SUB/status"
+want="GET /$NEW_KEY|POST $TOKEN_PATH|GET $P/status|GET $P/packages|GET $P/metadata/listings|PATCH $P/metadata|GET $P/status|PUT $P/packages|POST $P/packages/commit|GET $P/status|GET $P/status|POST $P/submit|GET $P/submission/$SUB/status"
 [ "$got" = "$want" ] || FAULTS+=("requests [$got], want [$want]")
 want_true "the token request is not a form" \
   "map(select(.path == \"$TOKEN_PATH\")) | length == 1 and all(.headers[\"content-type\"] | startswith(\"application/x-www-form-urlencoded\")) and all(.headers.authorization == null)"
@@ -476,11 +544,14 @@ want_form="$(jq -cn --arg c "$CLIENT" --arg s "$SECRET" \
   '[["client_id", $c], ["client_secret", $s], ["grant_type", "client_credentials"], ["scope", "https://api.store.microsoft.com/.default"]]')"
 [ "$form" = "$want_form" ] || FAULTS+=("the token request's form fields differ from the four documented ones")
 want_true "a Store request lacks the bearer token or the seller header" \
-  "map(select(.path | startswith(\"/submission/\"))) | length == 8 and all(.headers.authorization == \"Bearer $TOKEN\" and .headers[\"x-seller-account-id\"] == \"$SELLER\")"
-want_true "the PUT is not application/json" \
-  "map(select(.method == \"PUT\")) | length == 1 and all(.headers[\"content-type\"] == \"application/json\")"
+  "map(select(.path | startswith(\"/submission/\"))) | length == 11 and all(.headers.authorization == \"Bearer $TOKEN\" and .headers[\"x-seller-account-id\"] == \"$SELLER\")"
+want_true "the PUT or the PATCH is not application/json" \
+  "map(select(.method == \"PUT\" or .method == \"PATCH\")) | length == 2 and all(.headers[\"content-type\"] == \"application/json\")"
 want_true "a Store request without a body carries a body or a Content-Type" \
-  "map(select((.path | startswith(\"/submission/\")) and .method != \"PUT\")) | all(.body == \"\" and .headers[\"content-type\"] == null)"
+  "map(select((.path | startswith(\"/submission/\")) and .method != \"PUT\" and .method != \"PATCH\")) | all(.body == \"\" and .headers[\"content-type\"] == null)"
+patch_body="$(jq -r 'select(.method == "PATCH") | .body' "$STUB_LOG" | jq -S . 2>/dev/null)"
+want_patch="$(jq -Sn --argjson listing "$LISTING_EN" --arg text "$WHATS_NEW_WANT" '{listings: ($listing | .whatsNew = $text)}')"
+[ "$patch_body" = "$want_patch" ] || FAULTS+=("the PATCH body [$patch_body] is not the English listing with whatsNew [$WHATS_NEW_WANT]")
 put_body="$(jq -r 'select(.method == "PUT") | .body' "$STUB_LOG" | jq -S . 2>/dev/null)"
 want_body="$(jq -Sn --arg url "$NEW_URL" '{packages: [{
     packageId: "pkg-1", packageUrl: $url, languages: ["en-us"], architectures: ["X64"],
@@ -511,15 +582,27 @@ end_case masks_token_under_actions
 
 begin_case
 serve_case
-run_case -- --version "$VERSION" --dry-run true
+CASE=dry_run_reads_only
+run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$VERSION" --dry-run true
 want_exit 0
 want_text "dry run"
 want_text "$OLD_URL"
 want_text "$NEW_URL"
-want_text "a real run changes the draft's package from $OLD_URL to $NEW_URL"
+want_text "${PREFIX}the en-us listing's whatsNew now:
+${PREFIX}  | Stub text of 0.10.2.
+${PREFIX}the en-us listing's whatsNew after, from the section of $VERSION in CHANGELOG.md:
+${PREFIX}  | Added
+${PREFIX}  | - aggrega import reads an Azure Resource Manager template.
+${PREFIX}  |
+${PREFIX}  | Fixed
+${PREFIX}  | - The installer names the file it cannot write.
+"
+want_outcome "a real run sets the en-us listing's whatsNew to the section of $VERSION in CHANGELOG.md, changes the draft's package from $OLD_URL to $NEW_URL and submits it."
 want_count 0 "^PUT "
+want_count 0 "^PATCH "
 want_count 0 "^POST /submission/"
 want_count 1 "^GET $P/packages\$"
+want_count 1 "^GET $P/metadata/listings\$"
 end_case dry_run_reads_only
 
 begin_case
@@ -530,8 +613,8 @@ CASE=dry_run_no_release
 run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$BUILD_VERSION" --dry-run true
 want_exit 0
 want_text "does not exist yet"
-want_outcome "a real run would refuse, changing nothing: '$BUILD_VERSION' is not a version of the form MAJOR.MINOR.PATCH; the release v$BUILD_VERSION does not exist yet."
-want_no_text "a real run changes the draft's package"
+want_outcome "a real run would refuse, changing nothing: '$BUILD_VERSION' is not a version of the form MAJOR.MINOR.PATCH; $CHANGELOG has no section for $BUILD_VERSION, or an empty one; the release v$BUILD_VERSION does not exist yet."
+want_no_text "changes the draft's package from"
 want_text "$OLD_URL"
 want_text "$STUB_BASE/$(smoke_download_key "$BUILD_VERSION")"
 want_count 0 "^GET /aggrega-cli/"
@@ -635,6 +718,7 @@ want_text "in progress"
 want_text "dispatch \"Submit to the Microsoft Store\" with $VERSION once that submission has ended"
 want_text "publishingStatus INPROGRESS, hasFailed false"
 want_count 1 "^GET $P/submission/$ONGOING/status\$"
+want_count 0 "^PATCH "
 want_count 0 "^PUT "
 want_count 0 "^POST /submission/"
 end_case defers_ongoing_submission
@@ -648,7 +732,7 @@ want_exit 0
 want_text "$ONGOING"
 want_text "a real run would refuse"
 want_outcome "a real run would refuse, changing nothing: submission $ONGOING is in progress."
-want_no_text "a real run changes the draft's package"
+want_no_text "changes the draft's package from"
 want_count 1 "^GET $P/status\$"
 want_count 0 "^PUT "
 want_count 0 "^POST /submission/"
@@ -661,6 +745,7 @@ run_case -- --version "$VERSION" --dry-run false
 want_exit 1
 want_text "$OLD_URL"
 want_text "$STUB_BASE/$(smoke_download_key 0.10.1)"
+want_count 0 "^PATCH "
 want_count 0 "^PUT "
 want_count 0 "^POST /submission/"
 end_case refuses_two_packages
@@ -675,6 +760,8 @@ want_outcome "is the installer of 0.10.5, newer than $VERSION, so the draft alre
 want_text "0.10.5"
 want_text "newer than $VERSION"
 want_no_text "dispatch"
+want_count 0 "^GET $P/metadata/listings\$"
+want_count 0 "^PATCH "
 want_count 0 "^PUT "
 want_count 0 "^POST /submission/"
 end_case defers_newer_draft
@@ -688,7 +775,7 @@ want_exit 0
 want_text "newer than $VERSION"
 want_text "a real run would refuse"
 want_outcome "a real run would refuse, changing nothing: the draft's package is the installer of 0.10.5, newer than $VERSION."
-want_no_text "a real run changes the draft's package"
+want_no_text "changes the draft's package from"
 want_count 0 "^PUT "
 want_count 0 "^POST /submission/"
 end_case refuses_newer_draft_dry_run_reports
@@ -700,30 +787,33 @@ run_case -- --version "$VERSION" --dry-run false
 want_exit 0
 want_text "already the draft's package"
 want_text "is in certification"
+want_count 1 "^PATCH $P/metadata\$"
 want_count 0 "^PUT "
 want_count 1 "^POST $P/packages/commit\$"
 want_count 1 "^POST $P/submit\$"
 end_case draft_already_current
 
 begin_case
-R_STATUS="[$STATUS_READY, $(answer '{"isReady": false, "ongoingSubmissionId": ""}' \
+R_STATUS="[$STATUS_READY, $STATUS_READY, $(answer '{"isReady": false, "ongoingSubmissionId": ""}' \
   '[{"code": "packageuploaderror", "target": "packages", "message": "stub: the package could not be downloaded"}]')]"
 serve_case
 run_case -- --version "$VERSION" --dry-run false
 want_exit 1
 want_text "packageuploaderror / packages / stub: the package could not be downloaded"
-want_count 2 "^GET $P/status\$"
+want_count 3 "^GET $P/status\$"
+want_count 1 "^POST $P/packages/commit\$"
 want_count 0 "^POST $P/submit\$"
 end_case refuses_upload_error
 
 begin_case
-R_STATUS="[$STATUS_READY, $(answer '{"isReady": false, "ongoingSubmissionId": ""}' \
+R_STATUS="[$STATUS_READY, $STATUS_READY, $(answer '{"isReady": false, "ongoingSubmissionId": ""}' \
   '[{"code": "invalidinput", "target": "listings", "message": "stub: a listing field is missing"}]')]"
 serve_case
 run_case -- --version "$VERSION" --dry-run false
 want_exit 1
 want_text "invalidinput / listings / stub: a listing field is missing"
-want_count 2 "^GET $P/status\$"
+want_count 3 "^GET $P/status\$"
+want_count 1 "^POST $P/packages/commit\$"
 want_count 0 "^POST $P/submit\$"
 end_case refuses_status_error_outside_packages
 
@@ -738,12 +828,12 @@ want_count 0 "^GET $P/packages\$"
 end_case refuses_not_ready_before_change
 
 begin_case
-R_STATUS="[$STATUS_READY, $STATUS_BUSY]"
+R_STATUS="[$STATUS_READY, $STATUS_READY, $STATUS_BUSY]"
 serve_case
 run_case -- --version "$VERSION" --dry-run false
 want_exit 1
-want_text "not ready"
-want_count 91 "^GET $P/status\$"
+want_text "not ready after the commit"
+want_count 92 "^GET $P/status\$"
 want_count 0 "^POST $P/submit\$"
 end_case refuses_not_ready_after_commit
 
@@ -813,7 +903,7 @@ CASE=dry_run_build_version_with_release
 run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$BUILD_VERSION" --dry-run true
 want_exit 0
 want_text "is not a final release's version, so the installer at $STUB_BASE/$(smoke_download_key "$BUILD_VERSION") is not checked"
-want_outcome "a real run would refuse, changing nothing: '$BUILD_VERSION' is not a version of the form MAJOR.MINOR.PATCH. Nothing"
+want_outcome "a real run would refuse, changing nothing: '$BUILD_VERSION' is not a version of the form MAJOR.MINOR.PATCH; $CHANGELOG has no section for $BUILD_VERSION, or an empty one. Nothing"
 want_no_text "does not exist yet"
 want_count 0 "^GET /aggrega-cli/"
 want_count 0 "^PUT "
@@ -874,6 +964,175 @@ want_exit 0
 want_text "$NEW_URL"
 want_count 2 "^GET $P/packages\$"
 end_case retries_rate_limited_read
+
+# The What's new text. CHANGELOG_WITHOUT holds the sections around $VERSION's
+# and not that one.
+CHANGELOG_WITHOUT="# Changelog
+
+## [0.10.4] - 2026-11-28
+
+### Fixed
+
+- A later version's entry.
+
+## [0.10.2] - 2026-11-20
+
+### Fixed
+
+- An earlier version's entry.
+"
+
+begin_case
+printf '%s' "$CHANGELOG_WITHOUT" >"$CHANGELOG"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "$CHANGELOG has no section for $VERSION, or an empty one: the listing's What's new text is that section; nothing was sent"
+want_nothing_sent
+end_case whats_new_refuses_absent_section
+
+begin_case
+printf '# Changelog\n\n## [%s] - 2026-11-25\n\n\n## [0.10.2] - 2026-11-20\n\n### Fixed\n\n- An earlier version'"'"'s entry.\n' \
+  "$VERSION" >"$CHANGELOG"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "$CHANGELOG has no section for $VERSION, or an empty one: the listing's What's new text is that section; nothing was sent"
+want_nothing_sent
+end_case whats_new_refuses_empty_section
+
+begin_case
+rm -f -- "$CHANGELOG"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "$CHANGELOG does not exist, so it has no section for $VERSION: the listing's What's new text is that section; nothing was sent"
+want_nothing_sent
+end_case whats_new_refuses_absent_file
+
+begin_case
+printf '%s' "$CHANGELOG_WITHOUT" >"$CHANGELOG"
+serve_case
+CASE=whats_new_absent_dry_run_reports
+run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$VERSION" --dry-run true
+want_exit 0
+want_text "dry run: $CHANGELOG has no section for $VERSION, or an empty one; a real run would refuse"
+want_outcome "a real run would refuse, changing nothing: $CHANGELOG has no section for $VERSION, or an empty one."
+want_text "${PREFIX}the en-us listing's whatsNew now:
+${PREFIX}  | Stub text of 0.10.2.
+${PREFIX}the en-us listing's whatsNew after: none, since CHANGELOG.md gives no text for $VERSION"
+want_count 1 "^GET $P/metadata/listings\$"
+want_count 0 "^PATCH "
+want_count 0 "^PUT "
+end_case whats_new_absent_dry_run_reports
+
+begin_case
+printf '# Changelog\n\n## [%s] - 2026-11-25\n\n### Fixed\n\n- Leaked <!-- aggrega-cli abc1234 --> marker.\n' "$VERSION" >"$CHANGELOG"
+serve_case
+run_case -- --version "$VERSION" --dry-run true
+want_exit 1
+want_text "${PREFIX}release-changes: the CHANGELOG.md section of v$VERSION holds an HTML comment"
+want_text "release-changes.sh exited 1; nothing was sent"
+want_nothing_sent
+end_case whats_new_refuses_html_comment
+
+# Over the limit: "Added" and 13 entries of 99 characters, then "Fixed", an
+# entry f1, and one more. f1 holds one character outside the Basic Multilingual
+# Plane, two UTF-16 code units, and is as long as makes the text through f1 with
+# the closing lines 1,500 characters but 1,501 code units: the text keeps the
+# whole lines through the 13th entry, drops the heading "Fixed" left with no
+# entry, and ends with a blank line and the line naming the Changelog page.
+xs() { local s=""; while [ "${#s}" -lt "$1" ]; do s+=x; done; printf '%s' "$s"; }
+long_section="### Added"$'\n\n'
+long_want="Added"
+for i in $(seq 1 13); do
+  entry="- Entry $(printf '%02d' "$i") $(xs 88)"
+  long_section+="$entry"$'\n'
+  long_want+=$'\n'"$entry"
+done
+long_section+=$'\n'"### Fixed"$'\n\n'"- "$'\xf0\x9d\x91\xa5'"$(xs $((182 - ${#MORE_LINE})))"$'\n'"- $(xs 97)"$'\n'
+long_want+=$'\n\n'"$MORE_LINE"
+begin_case
+printf '# Changelog\n\n## [%s] - 2026-11-25\n\n%s' "$VERSION" "$long_section" >"$CHANGELOG"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 0
+got_text="$(jq -r 'select(.method == "PATCH") | .body' "$STUB_LOG" | jq -r '.listings.whatsNew')"
+[ "$got_text" = "$long_want" ] || FAULTS+=("the PATCH's whatsNew [$got_text], want [$long_want]")
+end_case whats_new_over_limit_keeps_whole_lines
+
+begin_case
+R_LISTINGS="[$(listings "$(jq -c --arg text "$WHATS_NEW_WANT" '.whatsNew = $text' <<<"$LISTING_EN")")]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 0
+want_text "the en-us listing's whatsNew already holds the section of $VERSION in CHANGELOG.md"
+want_text "the en-us listing's whatsNew is not sent again"
+want_text "is in certification"
+want_count 0 "^PATCH "
+want_count 1 "^PUT $P/packages\$"
+want_count 1 "^POST $P/submit\$"
+end_case whats_new_already_equal_not_sent
+
+begin_case
+R_LISTINGS="[$(listings "$(jq -c --arg text "$WHATS_NEW_WANT" '.whatsNew = $text' <<<"$LISTING_EN")")]"
+serve_case
+CASE=whats_new_already_equal_dry_run
+run_case GITHUB_STEP_SUMMARY="$WORK/summary-$CASE.md" -- --version "$VERSION" --dry-run true
+want_exit 0
+want_text "${PREFIX}the en-us listing's whatsNew (unchanged):
+${PREFIX}  | Added"
+want_outcome "a real run leaves the en-us listing's whatsNew, already the section of $VERSION in CHANGELOG.md, as it is, changes the draft's package from $OLD_URL to $NEW_URL and submits it."
+want_count 0 "^PATCH "
+end_case whats_new_already_equal_dry_run
+
+# The English listing's language is the draft's own, here en, beside a listing
+# in Italian that is left as it is.
+LISTING_IT='{"language": "it-it", "description": "Descrizione.", "whatsNew": "Novità."}'
+begin_case
+R_LISTINGS="[$(listings "$LISTING_IT" "$(jq -c '.language = "en"' <<<"$LISTING_EN")")]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 0
+want_text "the draft's it-it listing is left as it is"
+want_text "the en listing's whatsNew now holds the section of $VERSION in CHANGELOG.md"
+patch_body="$(jq -r 'select(.method == "PATCH") | .body' "$STUB_LOG" | jq -S . 2>/dev/null)"
+want_patch="$(jq -Sn --argjson listing "$LISTING_EN" --arg text "$WHATS_NEW_WANT" '{listings: ($listing | .language = "en" | .whatsNew = $text)}')"
+[ "$patch_body" = "$want_patch" ] || FAULTS+=("the PATCH body [$patch_body] is not the en listing with the new whatsNew")
+end_case whats_new_english_listing_among_others
+
+begin_case
+R_LISTINGS="[$(listings "$LISTING_IT")]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "the draft holds 0 English listings (its listings' languages: it-it); this sets the What's new text of a draft that holds exactly one, so nothing was changed"
+want_count 0 "^PATCH "
+want_count 0 "^PUT "
+end_case whats_new_refuses_no_english_listing
+
+begin_case
+# A write is sent once: the 503's second answer, a success, is never served.
+R_PATCH="[$(refusal 503 corr-patch-1 '[{"code": "serviceunavailable", "target": "listings", "message": "stub: the update is not available"}]'), ${R_PATCH#[}"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "the Store refused the update of the en-us listing's whatsNew (PATCH /metadata): HTTP 503"
+want_text "serviceunavailable / listings / stub: the update is not available"
+want_text "corr-patch-1"
+want_count 1 "^PATCH $P/metadata\$"
+want_count 0 "^PUT "
+end_case whats_new_refuses_failed_patch
+
+begin_case
+R_STATUS="[$STATUS_READY, $STATUS_BUSY]"
+serve_case
+run_case -- --version "$VERSION" --dry-run false
+want_exit 1
+want_text "not ready after the listing's update"
+want_count 61 "^GET $P/status\$"
+want_count 0 "^PUT "
+end_case whats_new_refuses_not_ready_after_update
 
 FAULTS=()
 OUT="$(cat "$WORK/script-output")"
