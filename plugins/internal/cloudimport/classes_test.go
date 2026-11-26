@@ -509,10 +509,10 @@ func TestClassifyHaltsOnATableThatContradictsItself(t *testing.T) {
 	mentions(t, "the halt", diags[0].Message, serverType, "Component", "Supersedes")
 }
 
+// TestClassifyHaltsOnTwoNodesOfOneID halts source-refused on a graph a
+// reader writes with two nodes of one ID, naming the ID.
 func TestClassifyHaltsOnTwoNodesOfOneID(t *testing.T) {
-	db := repeated([]string{"0"})
-	g := &Graph{Nodes: []*Node{db, {ID: "db-0", Type: namespaceType}}}
-	Expand(g)
+	g := &Graph{Nodes: []*Node{{ID: "db-0", Type: serverType}, {ID: "db-0", Type: namespaceType}}}
 	out, diags := Classify(fixtureView(""), fixtureFormat(), g)
 	if out != nil || len(diags) != 1 || diags[0].Code != string(CodeSourceRefused) {
 		t.Fatalf("Classify = %v, %+v; want one source-refused halt", classes(out), diags)

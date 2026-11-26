@@ -6,6 +6,7 @@ package cloudimport
 import (
 	"maps"
 	"sort"
+	"strconv"
 
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
@@ -13,7 +14,10 @@ import (
 // Expand writes each repeated node of g as the nodes it deploys. Where the
 // source states the instances literally, the node is replaced by one node per
 // key: the node Repetition.Instance returns for the key, its ID "<id>-<key>",
-// taking the repeated node's Source where it names none; and a dependency of
+// or where a node of g or an instance expanded before it takes that ID,
+// "<id>-<key>-<n>", the least n from 2 none takes, the instances expanded in
+// the order of g.Nodes, so the IDs are the same on every run; the node takes
+// the repeated node's Source where it names none; and a dependency of
 // any node on the repeated node becomes a dependency on each of its instances.
 // Where the literal keys are none, the source deploys no instance: the node is
 // removed, nothing is drafted for it, and a resource-not-carried warning names
@@ -31,6 +35,12 @@ func Expand(g *Graph) []aggrega.Diagnostic {
 	var diags []aggrega.Diagnostic
 	var nodes []*Node
 	instances := map[string][]string{}
+	taken := map[string]bool{}
+	for _, n := range g.Nodes {
+		if n != nil {
+			taken[n.ID] = true
+		}
+	}
 	for _, n := range g.Nodes {
 		switch {
 		case n == nil || n.Repeat == nil:
@@ -45,7 +55,7 @@ func Expand(g *Graph) []aggrega.Diagnostic {
 		default:
 			ids := make([]string, 0, len(n.Repeat.Keys))
 			for _, key := range n.Repeat.Keys {
-				inst := instance(n, key)
+				inst := instance(n, key, taken)
 				ids = append(ids, inst.ID)
 				nodes = append(nodes, inst)
 			}
@@ -70,15 +80,21 @@ func Expand(g *Graph) []aggrega.Diagnostic {
 }
 
 // instance returns the node n deploys for key: a node of its own, so no two
-// instances share one, with no repetition left.
-func instance(n *Node, key string) *Node {
+// instances share one, with no repetition left, its ID one taken does not
+// hold, which it records there.
+func instance(n *Node, key string, taken map[string]bool) *Node {
 	var inst Node
 	if made := callInstance(n.Repeat, key); made != nil {
 		inst = *made
 	} else {
 		inst = *n
 	}
-	inst.ID = n.ID + "-" + key
+	id := n.ID + "-" + key
+	inst.ID = id
+	for i := 2; taken[inst.ID]; i++ {
+		inst.ID = id + "-" + strconv.Itoa(i)
+	}
+	taken[inst.ID] = true
 	inst.Repeat = nil
 	if inst.Source == "" {
 		inst.Source = n.Source

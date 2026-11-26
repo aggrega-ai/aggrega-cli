@@ -98,3 +98,32 @@ func TestExpandRecordsWhatEachRepeatedNodeDeploys(t *testing.T) {
 		t.Fatalf("gone is recorded as %q, %v; want recorded as deploying no instance", ids, ok)
 	}
 }
+
+// TestExpandGivesEachInstanceAnIDNoOtherNodeTakes expands repeated nodes
+// whose "<id>-<key>" another node of the graph, or an instance expanded
+// before, takes already: the instance takes "<id>-<key>-<n>", the least n
+// from 2 no node takes, and the IDs are the same on every run.
+func TestExpandGivesEachInstanceAnIDNoOtherNodeTakes(t *testing.T) {
+	graph := func() *Graph {
+		a, a1 := repeated([]string{"1-2"}), repeated([]string{"2", "3"})
+		a.ID, a1.ID = "a", "a-1"
+		return &Graph{Nodes: []*Node{a, a1, repeated([]string{"0", "1", "2"}), {ID: "db-2"}, {ID: "db-2-2"}}}
+	}
+	g := graph()
+	if diags := Expand(g); len(diags) != 0 {
+		t.Fatalf("diagnostics = %+v", diags)
+	}
+	want := []string{"a-1-2", "a-1-2-2", "a-1-3", "db-0", "db-1", "db-2", "db-2-2", "db-2-3"}
+	if got := ids(g.Nodes); !reflect.DeepEqual(got, want) {
+		t.Fatalf("nodes = %q, want %q", got, want)
+	}
+	expanded := map[string][]string{"a": {"a-1-2"}, "a-1": {"a-1-2-2", "a-1-3"}, "db": {"db-0", "db-1", "db-2-3"}}
+	if !reflect.DeepEqual(g.Expanded, expanded) {
+		t.Fatalf("expanded = %q, want %q", g.Expanded, expanded)
+	}
+	again := graph()
+	Expand(again)
+	if !reflect.DeepEqual(ids(again.Nodes), want) {
+		t.Fatalf("a second run gives %q, want %q", ids(again.Nodes), want)
+	}
+}

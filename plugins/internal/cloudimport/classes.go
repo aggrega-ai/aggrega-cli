@@ -358,8 +358,7 @@ func (c *classifier) sharedIDs() []aggrega.Diagnostic {
 	for i := 1; i < len(c.nodes); i++ {
 		if c.nodes[i].ID == c.nodes[i-1].ID && (i == 1 || c.nodes[i-2].ID != c.nodes[i].ID) {
 			out = append(out, Report(CodeSourceRefused, fmt.Sprintf("two resources of the source take the ID %s, "+
-				"as a copy of a repeated resource takes the ID of the resource it repeats followed by its key: "+
-				"rename one of them in the source", c.nodes[i].ID)))
+				"and the draft keys each resource by its ID: rename one of them in the source", c.nodes[i].ID)))
 		}
 	}
 	return out

@@ -650,3 +650,23 @@ func TestArmWrapReadsAnOutputsValueAndNothingElse(t *testing.T) {
 		}
 	}
 }
+
+// TestArmCopyOfAResourceTakesAnIDNoOtherResourceTakes imports a resource
+// copied three times beside another resource of the same type, whose ID is the
+// one the third copy would take: the import drafts all four, the copy taking
+// an ID of its own.
+func TestArmCopyOfAResourceTakesAnIDNoOtherResourceTakes(t *testing.T) {
+	t.Parallel()
+	out := importOf(t, src("main.json", []byte(`{`+schema+`, "contentVersion": "1.0.0.0",
+		"parameters": {"a": {"type": "string", "defaultValue": "x"}, "b": {"type": "string", "defaultValue": "y"}},
+		"resources": [
+			{"type": "Microsoft.Web/staticSites", "apiVersion": "2023-01-01",
+				"name": "[concat(parameters('a'), copyIndex())]", "location": "westeurope", "copy": {"name": "loop", "count": 3}},
+			{"type": "Microsoft.Web/staticSites", "apiVersion": "2023-01-01", "name": "[parameters('b')]",
+				"location": "westeurope"}]}`)))
+	if halts := coded(out, cloudimport.CodeSourceRefused); len(halts) != 0 {
+		t.Fatalf("the import halts %+v", halts)
+	}
+	holds(t, "the Aggregate", fileText(t, out, "aggregate.yaml"), "    staticsites-0:\n", "    staticsites-1:\n",
+		"    staticsites-2:\n", "    staticsites-2-2:\n")
+}
