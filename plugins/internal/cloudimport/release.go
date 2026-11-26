@@ -48,11 +48,13 @@ import (
 //     target alone, where the import's target is that one;
 //   - a mapped instance's comment names each property its node writes that its
 //     row does not place — a module-form node's parameters its row does not
-//     translate — and each property a child folded into it writes that its
-//     fold does not; then each entry of its environment list the draft does
-//     not deliver from a connection, the variable and its value as the source
-//     writes it, or the variable alone where the value is secret, each also
-//     warned value-not-carried.
+//     translate — each property the parent folded into an instance a fold
+//     makes of a child writes that the row does not place, and each property
+//     a child folded into it writes that its fold does not; then each entry
+//     of its environment list the draft does not deliver from a connection,
+//     the variable and its value as the source writes it, or the variable
+//     alone where the value is secret — or the list whole, where the source
+//     writes it as one value — each also warned value-not-carried.
 func Release(in aggrega.ImportInput, f Format, g *Graph, classified []Classified,
 	aggregate aggrega.EmittedEntity) ([]aggrega.EmittedEntity, []aggrega.Diagnostic) {
 	analysis := newAggregateWriter(in, f, g, classified, false)
@@ -182,8 +184,10 @@ func unplacedIn(out [][]string, p Prop, at []string, paths [][]string) [][]strin
 // the draft does not place: the properties its node writes that its row
 // neither places nor fixes by a predicate of its When testing it equals a
 // value, which the row's Recipe writes, or for a node of a module form the
-// parameters its row does not translate; and for each child folded into it,
-// the properties the child writes that its fold does not.
+// parameters its row does not translate; for an instance a fold of its row
+// makes of a child, the properties the parent folded into it writes that the
+// row does not place either; and for each child folded into it, the
+// properties the child writes that its fold does not.
 func (w *aggregateWriter) unplacedComments(cl *Classified) []string {
 	var out []string
 	n := cl.Node
@@ -201,6 +205,12 @@ func (w *aggregateWriter) unplacedComments(cl *Classified) []string {
 			lead = "Module parameters the source sets and the draft does not translate: "
 		}
 		out = append(out, lead+draftyaml.CommentList(pathTexts(paths))+".")
+	}
+	if parent := w.foldedParent(cl); parent != nil {
+		if paths := unplaced(parent.Body, placed); len(paths) > 0 {
+			out = append(out, "Properties "+draftyaml.Comment(parent.ID)+", folded into this instance, writes and "+
+				"the draft does not place: "+draftyaml.CommentList(pathTexts(paths))+".")
+		}
 	}
 	for _, child := range w.out {
 		if child.Class != ClassFolded || child.Into != n.ID || len(w.cs.folding[child.Node.ID]) > 0 {

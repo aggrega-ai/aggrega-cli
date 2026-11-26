@@ -333,3 +333,25 @@ func TestFoldInstanceReadsTheChildBeforeItsParent(t *testing.T) {
 	}
 	onlyCode(t, diags, CodeValueNotCarried, 0)
 }
+
+// TestFoldInstanceNamesWhatItsFoldedParentWritesUnplaced names, in the
+// Release entry of an instance a fold makes of a child, each property the
+// parent folded into it writes that its row does not place, as it names a
+// folded child's.
+func TestFoldInstanceNamesWhatItsFoldedParentWritesUnplaced(t *testing.T) {
+	server := &Node{ID: "sql", Type: sqlServerType, Form: FormRaw, Name: text("sql-main"), Body: merged(
+		leaf(text("westeurope"), "location"), leaf(text("sqladmin"), "properties", "administratorLogin"),
+		leaf(text("1.2"), "properties", "minimalTlsVersion"))}
+	db := &Node{ID: "orders", Type: sqlDbType, Form: FormRaw, Parent: "sql",
+		Name: Compose{Parts: []Value{text("sql-main/orders")}}, Composed: true, Leaf: text("orders"),
+		Body: []Prop{leaf(text("S0"), "sku", "name")}}
+	in := fixtureView("", component(sqlServer, map[string]string{"component.aggrega.ai/category": "datastore",
+		"component.aggrega.ai/type": "stateful-server"}))
+	in.Target = "arm"
+	_, _, release, _, _ := released(t, in, sqlFormat(), &Graph{Nodes: []*Node{server, db}})
+	want := "    # Properties sql, folded into this instance, writes and the draft does not place: " +
+		"properties.minimalTlsVersion.\n    orders:\n"
+	if !strings.Contains(release, want) {
+		t.Errorf("the Release does not hold\n%s\n%s", want, release)
+	}
+}
