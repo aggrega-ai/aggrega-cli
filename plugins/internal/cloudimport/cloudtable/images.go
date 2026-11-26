@@ -5,32 +5,30 @@ package main
 
 import (
 	"cmp"
-	"regexp"
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/composeimport"
 )
 
-// imageLocal is the locals entry a container product's Recipe holds its image
-// default in, and imageTagKey the infra key such a Recipe reads the image's
-// tag from where it reads one.
+// imageLocal is the locals entry a container product's Recipe holds its
+// default image in, and imageKey the infra key under which a Release writes the
+// whole image the Recipe runs instead, as the published container libraries
+// name them.
 const (
-	imageLocal  = "image"
-	imageTagKey = "image_tag"
+	imageLocal = "default_image"
+	imageKey   = "image"
 )
 
-// imageTagRead matches an action reading the infra key the image's tag is
-// written under.
-var imageTagRead = regexp.MustCompile(`\{\{[^}]*\.infra\.` + imageTagKey + `\b`)
-
 // imageRowOf returns the image row of the Recipe r, a container product's: its
-// locals name a literal image default, whose repository, read as the Compose
-// image table reads it, is the row's. The tag key is the infra key the
-// Recipe's valuesMapping or fragments read the image's tag from, empty where
-// they read none. It reports false for a Recipe whose locals name no image, or
-// one that is no image reference, holding a template action.
+// locals name a literal default image, whose repository, read as the Compose
+// image table reads it, is the row's. The image key is imageKey where the
+// Recipe's valuesMapping or fragments, every library they import resolved,
+// read that infra key, and empty where they read none. It reports false for a
+// Recipe whose locals name no default image, or one that is no image
+// reference, holding a template action.
 func imageRowOf(r recipeSource) (cloudimport.ImageRow, bool) {
 	image, ok := r.locals[imageLocal]
 	if !ok {
@@ -42,12 +40,39 @@ func imageRowOf(r recipeSource) (cloudimport.ImageRow, bool) {
 	}
 	row := cloudimport.ImageRow{Repository: repository, Component: r.component, Recipe: r.name}
 	for _, text := range append([]string{r.valuesMapping}, r.fragments...) {
-		if imageTagRead.MatchString(text) {
-			row.TagKey = imageTagKey
+		if readsInfraKey(text, imageKey) {
+			row.ImageKey = imageKey
 			break
 		}
 	}
 	return row, true
+}
+
+// readsInfraKey reports whether text reads the infra key key: as a field,
+// .infra.<key> or a path below it, or through optional, index or hasKey
+// handed .infra and the key as a string literal. Text that does not parse
+// reads nothing.
+func readsInfraKey(text, key string) bool {
+	if text == "" {
+		return false
+	}
+	root, err := gotmpl.ParseTree(text, "{{", "}}")
+	if err != nil {
+		return false
+	}
+	field := ".infra." + key
+	for _, path := range gotmpl.TreeFieldAccesses(root) {
+		if path == field || strings.HasPrefix(path, field+".") {
+			return true
+		}
+	}
+	found := false
+	eachCommand(root, func(args []argument) {
+		found = found || len(args) >= 3 && args[0].kind == argIdentifier &&
+			slices.Contains([]string{"optional", "index", "hasKey"}, args[0].text) &&
+			args[1].kind == argField && args[1].text == ".infra" && args[2].kind == argString && args[2].text == key
+	})
+	return found
 }
 
 // imageConflict is two or more Recipes naming one image repository.
@@ -69,7 +94,7 @@ func (c *imageConflict) Error() string {
 
 // generateImages generates the image rows of h's capability: one for each
 // Recipe, read at the version a reference naming it without one resolves to,
-// whose locals name a literal image default, ordered by repository. A Recipe
+// whose locals name a literal default image, ordered by repository. A Recipe
 // implementing a Component the hub holds no version of is refused, and so are
 // two Recipes naming one repository.
 func generateImages(h *hubCatalog) ([]cloudimport.ImageRow, error) {

@@ -191,7 +191,7 @@ func TestTheRenderedTableIsGoOfTheFormatsPackage(t *testing.T) {
 			Value: "Premium"}}, Form: cloudimport.FormRaw, Provides: []cloudimport.Placement{{Key: "id"}},
 		Traits: map[string]string{"b": "2", "a": "1"}, Origin: "generated x"}},
 		[]cloudimport.ImageRow{{Repository: "ghcr.io/acme/product", Component: "core/compute/acme-app",
-			Recipe: "acme-product", TagKey: "image_tag"}}, "abc123", f)
+			Recipe: "acme-product", ImageKey: "image"}}, "abc123", f)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestTheRenderedTableIsGoOfTheFormatsPackage(t *testing.T) {
 	}
 	for _, want := range []string{`const TableRevision = "abc123"`, "DO NOT EDIT",
 		`"a": "1",` + "\n\t\t\t\"b\": \"2\",", "var generatedImages = []cloudimport.ImageRow{",
-		`{Repository: "ghcr.io/acme/product", Component: "core/compute/acme-app", Recipe: "acme-product", TagKey: "image_tag"},`} {
+		`{Repository: "ghcr.io/acme/product", Component: "core/compute/acme-app", Recipe: "acme-product", ImageKey: "image"},`} {
 		if !bytes.Contains(content, []byte(want)) {
 			t.Errorf("the rendered table does not hold %q:\n%s", want, content)
 		}

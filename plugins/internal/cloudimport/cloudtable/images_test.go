@@ -24,10 +24,10 @@ func productRecipe(name, locals string) string {
 }
 
 // TestImageRowsOfTheMiniatureHub generates the image rows of the miniature
-// hub, two of whose Recipes name a literal image default in their locals, one
-// reading the image's tag from an infra key and one not, and requires a row
-// for each, ordered by repository, with the repository as the Compose image
-// table reads it.
+// hub, two of whose Recipes name a literal default image in their locals, one
+// reading the Release's whole image from infra.image and one not, and requires
+// a row for each, ordered by repository, with the repository as the Compose
+// image table reads it.
 func TestImageRowsOfTheMiniatureHub(t *testing.T) {
 	t.Parallel()
 	images, err := generateImagesFromHub(miniatureHub, armFormatOrFail(t))
@@ -36,7 +36,7 @@ func TestImageRowsOfTheMiniatureHub(t *testing.T) {
 	}
 	want := []cloudimport.ImageRow{
 		{Repository: "ghcr.io/acme/product", Component: "core/compute/acme-app", Recipe: "acme-product",
-			TagKey: "image_tag"},
+			ImageKey: "image"},
 		{Repository: "ghcr.io/acme/tagless", Component: "core/compute/acme-app", Recipe: "acme-product-tagless"},
 	}
 	if !reflect.DeepEqual(images, want) {
@@ -44,16 +44,58 @@ func TestImageRowsOfTheMiniatureHub(t *testing.T) {
 	}
 }
 
-// TestAnImageThatIsNotLiteralGivesNoImageRow requires a locals image holding a
-// template action, one that is no image reference, and an entry that is not
-// named image to give no row.
+// TestAnImageRowRecordsTheKeyTheRecipeReadsTheWholeImageFrom generates the
+// image row of a Recipe whose locals hold default_image, reading the
+// Release's whole image from infra.image — in its own text, as a field or
+// through optional, or through the mapping library it imports — or reading
+// none, and requires a row recording the key image where it reads it and no
+// key where it does not.
+func TestAnImageRowRecordsTheKeyTheRecipeReadsTheWholeImageFrom(t *testing.T) {
+	t.Parallel()
+	locals := "    default_image: ghcr.io/acme/extra:1.0.0\n"
+	output := func(value string) string {
+		return strings.Replace(productRecipe("extra", locals), "      resources: {}\n",
+			"      resources: {}\n      outputs: {image: {type: string, value: '"+value+"'}}\n", 1)
+	}
+	for _, row := range []struct {
+		scenario, recipe, want string
+	}{
+		{"a field", output("{{ .infra.image }}"), "image"},
+		{"optional", output(`{{ toString (optional .infra "image" .locals.default_image) }}`), "image"},
+		{"an imported library", "apiVersion: aggrega.ai/v1beta1\nkind: Recipe\nmetadata:\n  name: extra\n" +
+			"  version: 1.0.0\nspec:\n  capability: arm\n  implements: core/compute/acme-app:1.0.0\n  locals:\n" +
+			locals + "  source:\n    kind: bicep-module-oci\n    url: oci://mcr.microsoft.com/bicep/avm/res/acme/extra\n" +
+			"    version: 0.1.0\n  valuesMapping:\n    $import: AcmeAppParameters#/mappings/App\n", "image"},
+		{"no read", output("{{ .locals.default_image }}"), ""},
+		{"another key", output("{{ .infra.image_tag }}"), ""},
+	} {
+		root := hubWith(t, map[string]string{"aggrega-catalog/recipe/arm/extra/1.0.0/recipe.yaml": row.recipe})
+		images, err := generateImagesFromHub(root, armFormatOrFail(t))
+		if err != nil {
+			t.Fatalf("%s: generate the image rows: %v", row.scenario, err)
+		}
+		i := slices.IndexFunc(images, func(r cloudimport.ImageRow) bool { return r.Recipe == "extra" })
+		if i < 0 {
+			t.Errorf("%s: no row is generated for the Recipe", row.scenario)
+			continue
+		}
+		if images[i].Repository != "ghcr.io/acme/extra" || images[i].ImageKey != row.want {
+			t.Errorf("%s: the row is %#v, want the repository ghcr.io/acme/extra and the key %q", row.scenario,
+				images[i], row.want)
+		}
+	}
+}
+
+// TestAnImageThatIsNotLiteralGivesNoImageRow requires a default_image holding
+// a template action, one that is no image reference, and an image named in an
+// entry other than default_image — image among them — to give no row.
 func TestAnImageThatIsNotLiteralGivesNoImageRow(t *testing.T) {
 	t.Parallel()
 	for name, locals := range map[string]string{
-		"templated":       "    image: '{{ .infra.registry }}/acme/templated:1'\n",
+		"templated":       "    default_image: '{{ .infra.registry }}/acme/templated:1'\n",
 		"no image":        "    port: \"8080\"\n",
-		"not named image": "    default_image: ghcr.io/acme/other:1\n",
-		"not a reference": "    image: two words\n",
+		"named image":     "    image: ghcr.io/acme/other:1\n",
+		"not a reference": "    default_image: two words\n",
 	} {
 		root := hubWith(t, map[string]string{"aggrega-catalog/recipe/arm/extra/1.0.0/recipe.yaml": productRecipe("extra", locals)})
 		images, err := generateImagesFromHub(root, armFormatOrFail(t))
@@ -74,7 +116,7 @@ func TestAnImageThatIsNotLiteralGivesNoImageRow(t *testing.T) {
 func TestTwoProductsClaimingOneRepositoryAreRefused(t *testing.T) {
 	t.Parallel()
 	root := hubWith(t, map[string]string{"aggrega-catalog/recipe/arm/rival/1.0.0/recipe.yaml": productRecipe("rival",
-		"    image: ghcr.io/acme/product:2.0.0\n")})
+		"    default_image: ghcr.io/acme/product:2.0.0\n")})
 	images, err := generateImagesFromHub(root, armFormatOrFail(t))
 	if repo, ok := composeimport.Repository("ghcr.io/acme/product:2.0.0"); !ok || repo != "ghcr.io/acme/product" {
 		t.Fatalf("the fixture's repository reads as %q, %v", repo, ok)
@@ -94,7 +136,7 @@ func TestTwoProductsClaimingOneRepositoryAreRefused(t *testing.T) {
 // Recipe to implement a Component the hub holds.
 func TestAProductImplementingAnAbsentComponentIsRefused(t *testing.T) {
 	t.Parallel()
-	body := strings.Replace(productRecipe("ghost", "    image: ghcr.io/acme/ghost\n"), "core/compute/acme-app",
+	body := strings.Replace(productRecipe("ghost", "    default_image: ghcr.io/acme/ghost\n"), "core/compute/acme-app",
 		"core/compute/acme-absent", 1)
 	root := hubWith(t, map[string]string{"aggrega-catalog/recipe/arm/ghost/1.0.0/recipe.yaml": body})
 	_, err := generateImagesFromHub(root, armFormatOrFail(t))

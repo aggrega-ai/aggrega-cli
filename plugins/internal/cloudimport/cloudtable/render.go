@@ -92,8 +92,8 @@ func render(rows []cloudimport.Row, images []cloudimport.ImageRow, revision stri
 	b.WriteString("var generatedImages = []cloudimport.ImageRow{\n")
 	for _, r := range images {
 		fmt.Fprintf(&b, "{Repository: %q, Component: %q, Recipe: %q", r.Repository, r.Component, r.Recipe)
-		if r.TagKey != "" {
-			fmt.Fprintf(&b, ", TagKey: %q", r.TagKey)
+		if r.ImageKey != "" {
+			fmt.Fprintf(&b, ", ImageKey: %q", r.ImageKey)
 		}
 		b.WriteString("},\n")
 	}

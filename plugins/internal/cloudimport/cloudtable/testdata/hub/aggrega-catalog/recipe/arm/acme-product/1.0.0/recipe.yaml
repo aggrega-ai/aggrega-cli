@@ -8,7 +8,7 @@ spec:
   implements: core/compute/acme-app:1.0.0
 
   locals:
-    image: ghcr.io/acme/product:1.4.2
+    default_image: ghcr.io/acme/product:1.4.2
     port: "8080"
 
   provides:
@@ -20,7 +20,4 @@ spec:
       outputs:
         image:
           type: string
-          value: {{ toJson .locals.image }}
-        tag:
-          type: string
-          value: {{ toJson .infra.image_tag }}
+          value: {{ toJson (toString (optional .infra "image" .locals.default_image)) }}

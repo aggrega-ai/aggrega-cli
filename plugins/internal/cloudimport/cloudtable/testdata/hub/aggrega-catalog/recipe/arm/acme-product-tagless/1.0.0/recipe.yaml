@@ -8,7 +8,7 @@ spec:
   implements: core/compute/acme-app:1.0.0
 
   locals:
-    image: ghcr.io/acme/tagless
+    default_image: ghcr.io/acme/tagless
 
   provides:
     endpoint: "{{ .infra.endpoint }}"

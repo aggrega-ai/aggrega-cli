@@ -223,10 +223,14 @@ type NotImported struct {
 }
 
 // ImageRow maps a compute node whose main container runs an image of
-// Repository to the container product Component and Recipe whose literal image
-// default names that repository; the image's tag is written under TagKey.
+// Repository to the container product Component and Recipe whose literal
+// default image names that repository.
 type ImageRow struct {
-	Repository, Component, Recipe, TagKey string
+	Repository, Component, Recipe string
+	// ImageKey is the infra key under which a Release writes the whole image
+	// the Recipe runs, its repository and its tag together, in place of the
+	// default; empty where the Recipe reads no such key.
+	ImageKey string
 }
 
 // Table is a format's mapping table.

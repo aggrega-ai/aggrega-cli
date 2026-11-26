@@ -389,10 +389,11 @@ const (
 	argIdentifier
 	argString
 	argTrue
+	argField
 )
 
 // argument is one argument of a command: a function's name, a string literal's
-// text, true, or anything else.
+// text, true, a field read off the dot, such as .infra, or anything else.
 type argument struct {
 	text string
 	kind argKind
@@ -413,6 +414,8 @@ func eachCommand(root parse.Node, visit func([]argument)) {
 					args[i] = argument{text: a.Ident, kind: argIdentifier}
 				case *parse.StringNode:
 					args[i] = argument{text: a.Text, kind: argString}
+				case *parse.FieldNode:
+					args[i] = argument{text: "." + strings.Join(a.Ident, "."), kind: argField}
 				case *parse.BoolNode:
 					if a.True {
 						args[i] = argument{text: "true", kind: argTrue}
