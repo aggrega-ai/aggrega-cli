@@ -94,7 +94,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/alphanumeric"
@@ -104,7 +103,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/namesegment"
-	"github.com/awslabs/goformation/v7/intrinsics"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cfncore/cfntemplate"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -223,7 +222,7 @@ type SourcedFile struct {
 // through untouched and nothing depends on runtime state. A template that does not
 // parse is a loud error naming the parse failure.
 func NormalizeSourcedTemplate(content []byte) ([]byte, error) {
-	out, err := normalizeTemplateBytes(content)
+	out, err := cfntemplate.Normalize(content)
 	if err != nil {
 		return nil, fmt.Errorf("cloudformation-provider: parse sourced template: %w", err)
 	}
@@ -245,7 +244,7 @@ func NormalizeSourced(files []SourcedFile, rootIsDir bool) ([]SourcedFile, error
 			out = append(out, f)
 			continue
 		}
-		normalized, err := normalizeTemplateBytes(f.Content)
+		normalized, err := cfntemplate.Normalize(f.Content)
 		if err != nil {
 			return nil, fmt.Errorf("cloudformation-provider: normalize sourced template %q: %w", f.Path, err)
 		}
@@ -273,7 +272,7 @@ func ValidateSourced(files []SourcedFile, rootIsDir bool) []renderctx.Diagnostic
 		if rootIsDir && !isTemplateFile(f.Path) {
 			continue
 		}
-		if _, err := normalizeTemplateBytes(f.Content); err != nil {
+		if _, err := cfntemplate.Normalize(f.Content); err != nil {
 			diags = append(diags, renderctx.Diagnostic{
 				Severity: abi.SeverityHalt,
 				Code:     templateParseCode,
@@ -283,73 +282,6 @@ func ValidateSourced(files []SourcedFile, rootIsDir bool) []renderctx.Diagnostic
 		}
 	}
 	return diags
-}
-
-// intrinsicsMu serializes every call into the intrinsics package. Its YAML
-// processing registers its tag handlers into a package-level map on every call and
-// reads that map while decoding, so two concurrent calls race on it and the runtime
-// aborts the process. This is the package's only call into it, so holding the lock
-// here makes every caller safe, whatever goroutine it runs on.
-var intrinsicsMu sync.Mutex
-
-// normalizeTemplateBytes converts one CloudFormation template's YAML or JSON bytes to
-// pure-JSON long-form intrinsics without evaluating any intrinsic: short-form tags
-// expand to their long-form object spellings and the document re-emits as sorted-key
-// JSON with a trailing newline. Ref, GetAtt, and every other intrinsic pass through as
-// their long-form pointer objects, never resolved, so the conversion is
-// ahead-of-time-pure and deterministic across runs.
-func normalizeTemplateBytes(content []byte) ([]byte, error) {
-	intrinsicsMu.Lock()
-	defer intrinsicsMu.Unlock()
-	out, err := intrinsics.ProcessYAML(retagTimestampScalars(content), &intrinsics.ProcessorOptions{NoProcess: true})
-	if err != nil {
-		return nil, err
-	}
-	return append(out, '\n'), nil
-}
-
-// retagTimestampScalars returns content with every plain, untagged scalar that YAML
-// resolves as a timestamp rewritten as a double-quoted string, so the reader that
-// follows keeps the text the template wrote (`AWSTemplateFormatVersion: 2010-09-09`,
-// a policy's `Version: 2012-10-17`) instead of re-emitting it as a different
-// timestamp spelling. A quoted scalar and one with an explicit tag are left as they
-// are. It walks the parsed node tree through Content only, never an alias, so an
-// anchor that contains its own alias cannot loop. When the bytes do not parse, or no
-// scalar changed, content comes back unchanged, so a template without such a scalar
-// reads exactly the bytes it was given and a parse failure surfaces from the reader.
-func retagTimestampScalars(content []byte) []byte {
-	var root yaml.Node
-	if err := yaml.Unmarshal(content, &root); err != nil {
-		return content
-	}
-	if !retagTimestampNode(&root) {
-		return content
-	}
-	out, err := yaml.Marshal(&root)
-	if err != nil {
-		return content
-	}
-	return out
-}
-
-// retagTimestampNode retags the timestamp scalars under n and reports whether it
-// changed any. Alias nodes are not followed.
-func retagTimestampNode(n *yaml.Node) bool {
-	changed := false
-	if n.Kind == yaml.ScalarNode {
-		if n.Style == 0 && n.ShortTag() == "!!timestamp" {
-			n.Tag = "!!str"
-			n.Style = yaml.DoubleQuotedStyle
-			changed = true
-		}
-		return changed
-	}
-	for _, c := range n.Content {
-		if retagTimestampNode(c) {
-			changed = true
-		}
-	}
-	return changed
 }
 
 // isTemplateFile reports whether a packed file's path names a CloudFormation template
@@ -1048,7 +980,7 @@ func intrinsicFromNode(n *yaml.Node) (any, error) {
 	case "Condition":
 		return map[string]any{"Condition": inner}, nil
 	case "GetAtt":
-		return map[string]any{"Fn::GetAtt": getAttValue(inner)}, nil
+		return map[string]any{"Fn::GetAtt": cfntemplate.GetAttLongForm(inner)}, nil
 	default:
 		return map[string]any{"Fn::" + name: inner}, nil
 	}
@@ -1068,22 +1000,6 @@ func innerValue(n *yaml.Node) (any, error) {
 		return mappingToValue(n)
 	default:
 		return nil, fmt.Errorf("cloudformation-provider: unsupported intrinsic node kind %d", n.Kind)
-	}
-}
-
-// getAttValue shapes the argument of a !GetAtt intrinsic into the long-form
-// [logicalId, attribute] pair. A string is split on its first dot; a value with
-// no dot yields a single-element slice; an already-sequence argument passes
-// through unchanged.
-func getAttValue(inner any) any {
-	switch v := inner.(type) {
-	case string:
-		if idx := strings.Index(v, "."); idx >= 0 {
-			return []any{v[:idx], v[idx+1:]}
-		}
-		return []any{v}
-	default:
-		return inner
 	}
 }
 

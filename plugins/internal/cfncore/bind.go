@@ -18,6 +18,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cfncore/cfntemplate"
 )
 
 // The attributes of a CloudFormation parameter declaration this core reads, each
@@ -56,24 +57,6 @@ const (
 	resourceProperty  = "Properties"
 	ruleFunctionValue = "Fn::ValueOf"
 )
-
-// dynamicReference matches a value that is wholly one CloudFormation dynamic
-// reference — {{resolve:ssm:…}}, {{resolve:ssm-secure:…}} or
-// {{resolve:secretsmanager:…}} — the form CloudFormation resolves when the stack is
-// created or updated, so the value it names is never written into the template.
-var dynamicReference = regexp.MustCompile(`^\{\{resolve:(ssm|ssm-secure|secretsmanager):[^{}]+\}\}$`)
-
-// shortFormIntrinsicTags are the YAML short forms CloudFormation defines for its
-// intrinsic functions, each written as the tag an author types. A bound value that
-// is wholly one of them is read as that intrinsic; a value opening with any other
-// "!" stays text, so a value that merely starts with an exclamation mark keeps its
-// meaning.
-var shortFormIntrinsicTags = map[string]bool{
-	"Ref": true, "Condition": true, "GetAtt": true, "Base64": true, "Cidr": true,
-	"FindInMap": true, "GetAZs": true, "ImportValue": true, "Join": true, "Select": true,
-	"Split": true, "Sub": true, "Transform": true, "And": true, "Equals": true,
-	"If": true, "Not": true, "Or": true,
-}
 
 // BindInput is what a sourced render hands the binding: the node's values, whether
 // a values mapping produced them, and whether that mapping's output depends on a
@@ -569,9 +552,9 @@ func referencesParameter(v any, name string) bool {
 			found = true
 		}
 		if arg, ok := node[intrinsicSub]; ok {
-			text, mapped := subParts(arg)
+			text, mapped := cfntemplate.SubParts(arg)
 			if _, isMapped := mapped[name]; !isMapped {
-				for _, variable := range subVariables(text) {
+				for _, variable := range cfntemplate.SubVariables(text) {
 					if variable == name {
 						found = true
 					}
@@ -656,9 +639,9 @@ func bindSub(arg any, values map[string]any, path, nodeID string) (any, error) {
 		return replaceParameterReferences(arg, values, path, nodeID)
 	}
 
-	text, mapped := subParts(arg)
+	text, mapped := cfntemplate.SubParts(arg)
 	var added []string
-	for _, variable := range subVariables(text) {
+	for _, variable := range cfntemplate.SubVariables(text) {
 		if _, isBound := values[variable]; !isBound {
 			continue
 		}
@@ -690,54 +673,6 @@ func bindSub(arg any, values map[string]any, path, nodeID string) (any, error) {
 	return []any{text, vars}, nil
 }
 
-// subParts splits an Fn::Sub argument into its string and its variable map, which
-// is empty for the string form.
-func subParts(arg any) (string, map[string]any) {
-	switch a := arg.(type) {
-	case string:
-		return a, map[string]any{}
-	case []any:
-		if len(a) == 0 {
-			return "", map[string]any{}
-		}
-		text, _ := a[0].(string)
-		if len(a) > 1 {
-			if vars, ok := a[1].(map[string]any); ok {
-				return text, vars
-			}
-		}
-		return text, map[string]any{}
-	default:
-		return "", map[string]any{}
-	}
-}
-
-// subVariables returns the variables one Fn::Sub string names, each once, in the
-// order they first appear, as written between ${ and }. A variable written ${!…} is
-// literal text and is not returned.
-func subVariables(text string) []string {
-	var vars []string
-	seen := map[string]bool{}
-	for rest := text; ; {
-		open := strings.Index(rest, "${")
-		if open < 0 {
-			return vars
-		}
-		rest = rest[open+2:]
-		end := strings.IndexByte(rest, '}')
-		if end < 0 {
-			return vars
-		}
-		variable := rest[:end]
-		rest = rest[end+1:]
-		if strings.HasPrefix(variable, "!") || variable == "" || seen[variable] {
-			continue
-		}
-		seen[variable] = true
-		vars = append(vars, variable)
-	}
-}
-
 // classifyBound reads what one bound value is to CloudFormation.
 func classifyBound(v any) boundValue {
 	switch value := v.(type) {
@@ -747,7 +682,7 @@ func classifyBound(v any) boundValue {
 		}
 	case string:
 		switch {
-		case dynamicReference.MatchString(value):
+		case cfntemplate.IsDynamicReference(value):
 			return boundValue{kind: boundDynamicReference, value: value}
 		case strings.HasPrefix(value, rendercore.CrossBoundaryLinkSentinelPrefix):
 			return boundValue{kind: boundLink, value: value}
@@ -764,11 +699,7 @@ func classifyBound(v any) boundValue {
 // intrinsic the template's normalization would read it as, through the same YAML
 // reading a fragment's short forms take.
 func shortFormIntrinsic(s string) (map[string]any, bool) {
-	if !strings.HasPrefix(s, "!") || strings.HasPrefix(s, "!!") || strings.ContainsAny(s, "\r\n") {
-		return nil, false
-	}
-	tag, _, _ := strings.Cut(s[1:], " ")
-	if !shortFormIntrinsicTags[tag] {
+	if !cfntemplate.LooksLikeShortForm(s) {
 		return nil, false
 	}
 	v, err := decodeToValue([]byte("value: " + s))

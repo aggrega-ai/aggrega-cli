@@ -13,6 +13,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/plugincondition"
 	cerrors "github.com/aggrega-ai/aggrega-cli/pkg/errors"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cfncore/cfntemplate"
 )
 
 // omitTarget is what an omit entry names in a CloudFormation template, stated once
@@ -235,7 +236,7 @@ func decodeNormalizedTemplate(content []byte) (map[string]any, error) {
 }
 
 // encodeNormalizedTemplate writes a template's value tree in the form
-// [normalizeTemplateBytes] writes it: two-space indented JSON with sorted keys and a
+// [cfntemplate.Normalize] writes it: two-space indented JSON with sorted keys and a
 // trailing newline. It is the same form on purpose — a template a resource was
 // removed from must read exactly as normalization writes the template authored
 // without it, and a test holds the two to each other.
@@ -408,12 +409,8 @@ func walkReferences(v any, at []string, emit func(resourceReference)) {
 // of its list form, or the text before the first dot of its string form, read
 // through the same split a short-form GetAtt is expanded with.
 func getAttLogicalID(arg any) (string, bool) {
-	parts, ok := getAttValue(arg).([]any)
-	if !ok || len(parts) == 0 {
-		return "", false
-	}
-	id, ok := parts[0].(string)
-	return id, ok && id != ""
+	id, _, ok := cfntemplate.GetAttParts(arg)
+	return id, ok
 }
 
 // subLogicalIDs returns the logical IDs a Fn::Sub argument's variables name, each
@@ -424,10 +421,10 @@ func subLogicalIDs(arg any) []string {
 	// The string and the variable map are read by the one reading the parameter
 	// binding uses, so a variable the binding writes into the map and a variable
 	// this check reads out of it are the same variable.
-	text, mapped := subParts(arg)
+	text, mapped := cfntemplate.SubParts(arg)
 	var ids []string
 	seen := map[string]bool{}
-	for _, variable := range subVariables(text) {
+	for _, variable := range cfntemplate.SubVariables(text) {
 		if _, named := mapped[variable]; named {
 			continue
 		}
