@@ -35,6 +35,13 @@ const manifestKindToken = "manifest"
 // replaces with the key, or drops once the key above which it stands is written.
 const manifestCommentPrefix = "# manifest:"
 
+// targetBound reports whether target is one of the capabilities the catalog's
+// Recipes bind to. It is the one test of a target's binding: [checkTarget]
+// refuses a named target by it and [defaultTarget] accepts a declared default by it.
+func targetBound(target string, capabilities []string) bool {
+	return slices.Contains(capabilities, target)
+}
+
 // checkTarget refuses a target that no Recipe in the import's catalog binds to,
 // as the occurrence of [ErrImportTargetUnbound] naming the target exactly as
 // given and the capabilities the catalog's Recipes do bind to. An empty target
@@ -54,7 +61,7 @@ func checkTarget(target string, recorded bool, recipes RecipeIndex) error {
 		return nil
 	}
 	capabilities := recipeCapabilities(recipes)
-	if slices.Contains(capabilities, target) {
+	if targetBound(target, capabilities) {
 		return nil
 	}
 	values := []string{"target " + strconv.Quote(target)}
@@ -85,7 +92,7 @@ func checkTarget(target string, recorded bool, recipes RecipeIndex) error {
 // "" and an information diagnostic naming the default where none does; "" and
 // nothing where the importer declares none.
 //
-// The binding is decided as [checkTarget] decides it, over the same capabilities,
+// The binding is decided as [checkTarget] decides it, by [targetBound] over the same capabilities,
 // so a default taken here is one a named target of the same word would be accepted
 // for.
 func defaultTarget(importer types.Plugin, recipes RecipeIndex) (string, *abi.Diagnostic) {
@@ -93,7 +100,7 @@ func defaultTarget(importer types.Plugin, recipes RecipeIndex) (string, *abi.Dia
 		return "", nil
 	}
 	target := importer.Spec.Importer.DefaultTarget
-	if checkTarget(target, false, recipes) != nil {
+	if !targetBound(target, recipeCapabilities(recipes)) {
 		d := infoDiagnostic(fmt.Sprintf("the importer declares %s as its default target, but no Recipe of the "+
 			"catalog binds to it, so no Manifest is drafted; an import naming a target drafts for that one",
 			strconv.Quote(target)))
