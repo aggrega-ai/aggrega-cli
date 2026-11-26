@@ -218,7 +218,8 @@ func (w *aggregateWriter) publishedBy(v Value) string {
 }
 
 // notCarried returns the names of the parameters the draft carries nowhere, in
-// the order the source declares them.
+// the order the source declares them. A parameter whose value deploy-time text
+// holds written in place is carried only where that text is written.
 func (w *aggregateWriter) notCarried() []string {
 	if w.g == nil {
 		return nil
@@ -226,7 +227,11 @@ func (w *aggregateWriter) notCarried() []string {
 	carried := map[string]bool{}
 	for _, cl := range w.out {
 		for _, v := range w.carriedValues(cl) {
-			collectParams(v, func(name string, _ bool) { carried[name] = true })
+			collectParams(v, func(name string, inPlace bool) {
+				if !inPlace || w.textWritten(v) {
+					carried[name] = true
+				}
+			})
 		}
 	}
 	var out []string
@@ -238,6 +243,18 @@ func (w *aggregateWriter) notCarried() []string {
 		}
 	}
 	return out
+}
+
+// textWritten reports whether v is deploy-time text the draft writes as it is,
+// as leafText decides it: neither for another target, nor owing what it reads,
+// nor naming a secure parameter.
+func (w *aggregateWriter) textWritten(v Value) bool {
+	o, ok := v.(Opaque)
+	if !ok {
+		return false
+	}
+	_, out := w.leafText(o, "")
+	return out.ok
 }
 
 // carriedValues returns the values of cl's node the draft carries.

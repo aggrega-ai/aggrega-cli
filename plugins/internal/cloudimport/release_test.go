@@ -517,3 +517,30 @@ func TestReleaseNamesAnEnvironmentListWrittenAsOneValue(t *testing.T) {
 		}
 	}
 }
+
+// TestAParameterInTextNotWrittenIsCarriedNowhere counts a parameter whose
+// value deploy-time text holds written in place as carried only where the text
+// is written: for another target, and where the text owes what it reads, the
+// Aggregate names it among the parameters the draft carries nowhere.
+func TestAParameterInTextNotWrittenIsCarriedNowhere(t *testing.T) {
+	for _, row := range []struct {
+		scenario, target, owed string
+		nowhere                bool
+	}{
+		{"written", "arm", "", false},
+		{"another target", "kubernetes", "", true},
+		{"owing", "arm", "it reads the variable settings, which the draft cannot write in place", true},
+	} {
+		in := edgeView()
+		in.Target = row.target
+		s := pgServer()
+		s.Body = merged(leaf(text("westeurope"), pathLocation...), leaf(Opaque{Text: "[toUpper('b1')]",
+			Target: "arm", Params: []string{"tier"}, Owed: row.owed}, pathSkuName...))
+		g := &Graph{Nodes: []*Node{s}, Params: []Parameter{{Name: "tier", Type: "string", Default: text("b1")}}}
+		_, aggregate, _, _, _ := released(t, in, releaseFormat(), g)
+		if got := strings.Contains(aggregate, "# Parameters the draft carries nowhere: tier.\n"); got != row.nowhere {
+			t.Errorf("%s: the Aggregate names tier carried nowhere: %v, want %v\n%s", row.scenario, got, row.nowhere,
+				aggregate)
+		}
+	}
+}
