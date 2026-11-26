@@ -472,3 +472,48 @@ func TestDeployTimeTextNamesWhatIsWrittenInPlaceAndLeavesWhatItOwes(t *testing.T
 		t.Errorf("value-not-carried does not say why the storage size is not written: %s", got[0].Message)
 	}
 }
+
+// TestReleaseNamesAnEnvironmentListWrittenAsOneValue names in a mapped
+// instance's Release entry the environment list its source writes as one
+// value, at its path, with that value as the source writes it, or as a secret
+// value alone, and warns value-not-carried of it once; a list written empty
+// sets nothing and is neither named nor warned of.
+func TestReleaseNamesAnEnvironmentListWrittenAsOneValue(t *testing.T) {
+	in := edgeView()
+	in.Target = "arm"
+	at := "properties.template.containers.0.env"
+	for _, row := range []struct {
+		scenario string
+		value    Value
+		named    string
+	}{
+		{"a parameter", Param{Name: "envVars"}, "{the template parameter envVars}"},
+		{"a secure parameter", Param{Name: "secretEnv"}, "a secret value the draft never writes"},
+		{"deploy-time text", Opaque{Text: "[variables('env')]", Target: "arm"}, `"[variables('env')]"`},
+		{"an empty list", literal("[]"), ""},
+	} {
+		env := envOf()
+		env.Props[0].Props[0].Items[0].Props[0] = Prop{Name: "env", Value: row.value}
+		g := &Graph{Nodes: []*Node{app(env)}, Params: []Parameter{
+			{Name: "envVars", Type: "array"},
+			{Name: "secretEnv", Type: "array", Secure: true},
+		}}
+		_, _, release, _, diags := released(t, in, edgeFormat(nil), g)
+		comment := "    # Environment list the source writes as one value at " + at + ", which no connection " +
+			"delivers: " + row.named + ".\n    app:"
+		notCarried := withCode(diags, CodeValueNotCarried)
+		if row.named == "" {
+			if strings.Contains(release, "Environment list") || len(notCarried) != 0 {
+				t.Errorf("%s: the list is named or warned of: %+v\n%s", row.scenario, notCarried, release)
+			}
+			continue
+		}
+		if !strings.Contains(release, comment) {
+			t.Errorf("%s: the Release does not hold\n%s\n%s", row.scenario, comment, release)
+		}
+		if len(notCarried) != 1 || !strings.Contains(notCarried[0].Message, "the environment list of the instance "+
+			"app at "+at+" as one value") {
+			t.Errorf("%s: value-not-carried does not warn of the list once: %+v", row.scenario, notCarried)
+		}
+	}
+}

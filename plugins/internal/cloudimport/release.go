@@ -233,7 +233,9 @@ func pathTexts(paths [][]string) []string {
 // resource, which no connection delivers. An entry reading another resource is
 // a connection's, reported where it is wired or why it is not. A secret value
 // — a secure parameter's, a credential's, or text naming a secure parameter —
-// is never written: its variable alone is named.
+// is never written: its variable alone is named. A list the source writes as
+// one value rather than as entries is named whole, at its path, as wholeEnv
+// says.
 func (w *aggregateWriter) unwiredEnv(cl *Classified) []string {
 	if cl.Row == nil {
 		return nil
@@ -245,6 +247,9 @@ func (w *aggregateWriter) unwiredEnv(cl *Classified) []string {
 	r := w.readOff(cl, env.Path)
 	if !r.ok {
 		return nil
+	}
+	if len(r.prop.Items) == 0 {
+		return w.wholeEnv(cl, r)
 	}
 	var named []string
 	for i, item := range r.prop.Items {
@@ -280,6 +285,36 @@ func (w *aggregateWriter) unwiredEnv(cl *Classified) []string {
 	}
 	return []string{"Environment variables the source sets and no connection delivers: " +
 		strings.Join(named, "; ") + "."}
+}
+
+// wholeEnv returns the comment line naming the environment list r reads off
+// the mapped instance cl where the source writes it as one value — a
+// parameter, deploy-time text, an object — with that value as the source
+// writes it, or as a secret value alone, and warns value-not-carried of it: no
+// connection delivers it, and the draft writes no list whole. A list reading
+// another resource is a connection's, reported where it is wired or why it is
+// not, and a list written empty sets nothing.
+func (w *aggregateWriter) wholeEnv(cl *Classified, r read) []string {
+	v := r.prop.Value
+	if l, ok := v.(Literal); ok && strings.TrimSpace(string(l.JSON)) == "[]" ||
+		v == nil && len(r.prop.Props) == 0 || len(refsOf(v)) > 0 || holdsCredential(v) {
+		return nil
+	}
+	text, secret := w.sourceText(v)
+	what := draftyaml.Comment(text)
+	switch {
+	case secret:
+		what = "a secret value the draft never writes"
+	case text == "":
+		what = "a value the draft does not read"
+	}
+	at := pathText(r.from)
+	w.diags = append(w.diags, Report(CodeValueNotCarried, fmt.Sprintf("%s sets the environment list of the "+
+		"instance %s at %s as one value, and the draft delivers an instance's environment from its connections "+
+		"alone, so the list is not carried: the instance's Release entry names it, for the author to set where "+
+		"the instance is configured", r.node.ID, cl.Key, at)))
+	return []string{"Environment list the source writes as one value at " + draftyaml.Comment(at) +
+		", which no connection delivers: " + what + "."}
 }
 
 // literalJSON is the JSON of a literal v, nil for any other value.
