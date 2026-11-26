@@ -10,8 +10,8 @@
 // Component its type matches, connected as the template's references and
 // dependencies say, a Release beside it carrying what the template states for
 // its operation and the parameters file supplies, and the catalog entities a
-// resource no Component covers is drafted as. Its Manifest binds the arm
-// target, which is the target an import names none for.
+// resource no Component covers is drafted as. An import naming no target
+// drafts its Manifest for the arm target, where a catalog Recipe binds to it.
 //
 // The guest holds what the host reads off it: this descriptor, the signatures a
 // template and a parameters file are recognised by, and the export wiring. What
@@ -58,9 +58,10 @@ func descriptor() aggrega.PluginDescriptor {
 			"without) and their parameters files into a draft Aggregate holding one instance per resource, of the " +
 			"catalog Component its type matches, connected as its references and dependencies say, a draft Release " +
 			"carrying what the template states for its operation, and the catalog entities a resource no Component " +
-			"covers is drafted as. An import that names no target drafts for arm. Resource types are matched through " +
+			"covers is drafted as. An import that names no target drafts for arm, where a catalog Recipe binds to it. " +
+			"Resource types are matched through " +
 			"a table generated from the arm Recipes of aggrega-hub at " + armimport.TableRevision +
-			"; Azure Verified Modules modules are recognised through the module index of commit " +
+			"; the modules of the Azure Verified Modules programme are recognised through its module index at commit " +
 			armimport.AVMIndexCommit + ".",
 		Capabilities: []string{"import:" + armimport.Format.Name},
 		Exports: []aggrega.PluginExport{{
