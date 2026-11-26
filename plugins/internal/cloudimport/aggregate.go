@@ -61,10 +61,10 @@ import (
 // cannot convert. A value read
 // from a parameter of the template is written as a reference to a parameter of
 // the Aggregate, declared under spec.parameters, as params.go describes; a
-// value read from a secure parameter, a parameter naming an existing resource,
-// a reference, a credential or text that names a secure parameter is not
-// written, and is warned value-not-carried with the key it would be written
-// at, as is every object or list holding one. A secret a store holds is
+// value read from a secure parameter, a reference, a credential or text that
+// names a secure parameter is not written, and is warned value-not-carried
+// with the key it would be written at, as is every object or list holding
+// one. A secret a store holds is
 // written as the source's text for it where the import's target is f.Target,
 // and is not written otherwise. Every
 // text read from the source is escaped through EscapeTemplateText, so it reads
@@ -315,7 +315,9 @@ func (w *aggregateWriter) carriedValues(cl *Classified) []Value {
 				continue
 			}
 			for _, p := range a.Values {
-				paths = append(paths, p.From)
+				if p.Key != attachName || a.Name == "" {
+					paths = append(paths, p.From)
+				}
 			}
 		}
 		at(nodeRead, every, paths...)

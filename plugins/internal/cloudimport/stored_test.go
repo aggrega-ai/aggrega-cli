@@ -28,7 +28,8 @@ func storedSecret() Stored {
 // in a credential slot, as the kit's referenced secret whose origin is the
 // store's locator: on cloudformation a core/referenced-secret, which the
 // drafted Manifest maps to the realization the kit's form names, and to none
-// where the form names none. Its text is written nowhere.
+// where the form names none. Its text is written nowhere. On a target whose
+// form reads no locator, the comment above the secret still names it.
 func TestStoredAtASlotIsAReferencedSecret(t *testing.T) {
 	in := edgeView()
 	in.Target = "cloudformation"
@@ -41,7 +42,7 @@ func TestStoredAtASlotIsAReferencedSecret(t *testing.T) {
         admin_password:
           type: core/referenced-secret
           infra:
-            # Attached by reference, never as a value: the secret the secretsmanager store holds, at the locator the source states.
+            # Attached by reference, never as a value: the secret `+storedLocator+` the secretsmanager store holds, at the locator the source states.
             origin: "`+storedLocator+`"
 `)
 	form := importer.Secret{Referenced: true, Origin: storedLocator}.Form("cloudformation")
@@ -59,6 +60,13 @@ func TestStoredAtASlotIsAReferencedSecret(t *testing.T) {
 	}
 	onlyCode(t, diags, CodeValueNotCarried, 0)
 	onlyCode(t, diags, CodeCredentialFlow, 0)
+
+	in.Target = "compose"
+	_, _, release, _, _ = released(t, in, releaseFormat(), g)
+	if want := "# Attached by reference, never as a value: the secret " + storedLocator + " the secretsmanager store " +
+		"holds, read from the variable admin_password"; !strings.Contains(instanceBlock(t, release, "server"), want) {
+		t.Errorf("on a target reading no locator the entry does not name it, want %q in\n%s", want, release)
+	}
 }
 
 // TestStoredElsewhereIsDeployTimeText writes a secret a store holds, read

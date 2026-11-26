@@ -20,8 +20,10 @@ import (
 // DraftRelease, and the Manifest the kit drafts where a realization is named.
 //
 // Its spec.parameters leaves each parameter of the Aggregate that has no
-// default for the answers file. It has one entry for each instance, in the
-// Aggregate's order:
+// default for the answers file: for a parameter naming an existing resource,
+// which declares no default, the comment above it names the value the
+// parameters file supplies, where it supplies one. It has one entry for each
+// instance, in the Aggregate's order:
 //
 //   - a mapped instance's infra and infra.overrides hold what its row places
 //     there, read as the Aggregate reads its values — off its node, or for an
@@ -45,11 +47,6 @@ import (
 //     attached node's attachment fills attaches nothing else, and an
 //     attachment that is the kit's referenced secret is attached in the entry
 //     of the instance taking it;
-//   - a value of the instance's values reading a parameter that names an
-//     existing resource, which the Aggregate does not write, is named in the
-//     entry's comment with the value the parameters file supplies, else the
-//     template's literal default, and left for the operator where neither is,
-//     since a Release sets no values;
 //   - a mapped instance names its row's Recipe as its realization on every
 //     target, which the host confirms against that target's Recipes; a drafted
 //     instance names its drafted Recipe, which exists on the format's own
@@ -58,7 +55,9 @@ import (
 //     row does not place — a module-form node's parameters its row does not
 //     translate — each property the parent folded into an instance a fold
 //     makes of a child writes that the row does not place, and each property
-//     a child folded into it writes that its fold does not; then each entry
+//     a child folded into it writes that its fold does not, and each property
+//     a node attached to it by its first attachment writes that the node's
+//     attach rule places nowhere; then each entry
 //     of its environment list the draft does not deliver from a connection —
 //     an item of the list, or a member of an environment listed as an object
 //     — the variable and its value as the source writes it, or the variable
@@ -84,9 +83,7 @@ func Release(in aggrega.ImportInput, f Format, g *Graph, classified []Classified
 			}
 			done[p.Name] = true
 			if _, has := analysis.defaultOf(p); !has {
-				draft.Parameters = append(draft.Parameters, importer.LeftItem{Path: key, Text: "the value of the " +
-					"template parameter " + draftyaml.Comment(p.Name) + ", which the parameters file does not supply and " +
-					"the template gives no literal default"})
+				draft.Parameters = append(draft.Parameters, importer.LeftItem{Path: key, Text: w.leftParameter(p)})
 			}
 		}
 	}
@@ -96,6 +93,25 @@ func Release(in aggrega.ImportInput, f Format, g *Graph, classified []Classified
 		}
 	}
 	return importer.DraftRelease(in, aggregate, draft), w.diags
+}
+
+// leftParameter says what the parameter of the Aggregate standing for p is,
+// which the Release fulfils and no source supplies a default for: for a
+// parameter naming an existing resource, which declares no default, the value
+// the parameters file supplies where it supplies one.
+func (w *aggregateWriter) leftParameter(p Parameter) string {
+	if !p.Pointer {
+		return "the value of the template parameter " + draftyaml.Comment(p.Name) + ", which the parameters file " +
+			"does not supply and the template gives no literal default"
+	}
+	text := "the value of the template parameter " + draftyaml.Comment(p.Name) + ", which names an existing " +
+		"resource, so the Aggregate declares no default for it"
+	if l, ok := p.Supplied.(Literal); ok {
+		if supplied, _ := w.sourceText(l); supplied != "" {
+			text += "; the parameters file supplies " + draftyaml.Comment(supplied) + ": write that value here"
+		}
+	}
+	return text
 }
 
 // entry returns the Release entry of the instance cl.
@@ -124,7 +140,6 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 		b.e.Realization = cl.Row.Recipe
 		b.e.Comments = append(b.e.Comments, w.unplacedComments(cl)...)
 		b.e.Comments = append(b.e.Comments, w.unwiredEnv(cl)...)
-		b.pointerValues()
 	case cl.Class == ClassMapped:
 		// A type the mapping_overrides setting maps has no row: nothing is placed,
 		// every property the node writes is named for the author to place, and the
@@ -144,51 +159,11 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 			}
 		}
 		b.e.Comments = append(b.e.Comments, w.draftedSecrets(cl)...)
-		b.pointerValues()
 		if w.ownTarget() {
 			b.e.Realization = cl.Recipe
 		}
 	}
 	return b.done()
-}
-
-// pointerValues names in the entry each value of the instance's values that
-// reads a parameter naming an existing resource, which the Aggregate does not
-// write and a Release sets no value of: in a comment, with the value the
-// parameters file supplies, else the template's literal default, or as left
-// for the operator where neither is.
-func (b *entryBuilder) pointerValues() {
-	w := b.w
-	for _, v := range w.valueReads(b.cl) {
-		if v.r.node == nil || len(v.key) == 0 || !v.r.ok {
-			continue
-		}
-		var names, sources []string
-		seen := map[string]bool{}
-		for _, l := range leaves([]Prop{v.r.prop}) {
-			collectParams(l.value, func(name string, inPlace bool) {
-				if p := w.param(name); p != nil && p.Pointer && !inPlace && !seen[name] {
-					seen[name] = true
-					names = append(names, "the template parameter "+name)
-					sources = append(sources, "the template parameter "+name+", "+paramSource(p))
-				}
-			})
-		}
-		if len(names) == 0 {
-			continue
-		}
-		dest := "values." + pathText(v.key)
-		const why = "which names an existing resource, so it is never a parameter of the Aggregate"
-		const where = "a Release sets no values, so write it under values where the instance is configured"
-		text, o := w.propText(v.r.prop, v.conv)
-		if o.ok {
-			b.e.Comments = append(b.e.Comments, fmt.Sprintf("%s takes %s, from %s, %s: %s.", dest, text,
-				strings.Join(sources, "; "), why, where))
-			continue
-		}
-		b.e.Left = append(b.e.Left, importer.LeftItem{Text: fmt.Sprintf("%s, from %s, %s, and %s: %s", dest,
-			andList(names), why, o.why, where)})
-	}
 }
 
 // unplaced returns the paths body writes that no path of paths places, in the
@@ -237,8 +212,10 @@ func unplacedIn(out [][]string, p Prop, at []string, paths [][]string) [][]strin
 // value, which the row's Recipe writes, or for a node of a module form the
 // parameters its row does not translate; for an instance a fold of its row
 // makes of a child, the properties the parent folded into it writes that the
-// row does not place either; and for each child folded into it, the
-// properties the child writes that its fold does not.
+// row does not place either; for each child folded into it, the properties
+// the child writes that its fold does not; and for each node whose first
+// attachment it takes, the properties the node writes that its attach rule
+// places nowhere.
 func (w *aggregateWriter) unplacedComments(cl *Classified) []string {
 	var out []string
 	n := cl.Node
@@ -274,6 +251,13 @@ func (w *aggregateWriter) unplacedComments(cl *Classified) []string {
 		if paths := unplaced(child.Node.Body, [][]string{fold.From}); len(paths) > 0 {
 			out = append(out, "Properties "+draftyaml.Comment(child.Node.ID)+", folded into this instance, writes "+
 				"and the draft does not place: "+draftyaml.CommentList(pathTexts(paths))+".")
+		}
+	}
+	for _, at := range w.attachedOn(n.ID) {
+		if len(at.a.Unplaced) > 0 {
+			out = append(out, "Properties "+draftyaml.Comment(at.node.ID)+", attached to this instance as "+
+				at.a.Feature+" at the slot "+at.a.Slot+", writes and the draft does not place: "+
+				draftyaml.CommentList(at.a.Unplaced)+".")
 		}
 	}
 	return out

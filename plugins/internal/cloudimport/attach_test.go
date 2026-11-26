@@ -80,10 +80,20 @@ func readsSecret(id string) Credential { return Credential{Node: id, What: "Secr
 func attached(t *testing.T, target string, rules []AttachRule, nodes func() []*Node) ([]Classified,
 	aggrega.ImportOutput) {
 	t.Helper()
+	return attachedGraph(t, target, rules, func() *Graph { return &Graph{Nodes: nodes()} })
+}
+
+// attachedGraph is attached over the graph graph returns, called once for the
+// classification and once for the import.
+func attachedGraph(t *testing.T, target string, rules []AttachRule, graph func() *Graph) ([]Classified,
+	aggrega.ImportOutput) {
+	t.Helper()
 	f := toyFormat(nil)
 	f.Attach = rules
 	f.Read = func(aggrega.ImportInput, Settings, ParseFunc) (*Graph, []aggrega.Diagnostic) {
-		return &Graph{Format: "toy", Nodes: nodes(), Read: []string{"main.json"}}, nil
+		g := graph()
+		g.Format, g.Read = "toy", []string{"main.json"}
+		return g, nil
 	}
 	in := toyInput(t, target, "", []string{"main.json"})
 	g, _ := f.Read(in, Settings{}, toyParse)
@@ -291,6 +301,75 @@ func TestAttachReaderAsReferencedSecret(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("unnamed on cloudformation", func(t *testing.T) {
+		_, out := attached(t, "cloudformation", []AttachRule{keptSecret()}, nodes(""))
+		wantBlock(t, fileOf(t, out, "release.yaml"), "db", `    db:
+      infra:
+        location: "westeurope"
+      features:
+        admin_password:
+          type: core/referenced-secret
+          infra:
+            # Attached by reference, never as a value: the secret dbSecret the source declares, read from the variable dbSecret, which a target substituting variable references, as Docker Compose does when the stack starts, reads from the environment, so no file carries the value.
+            origin: "${dbSecret}"
+`)
+	})
+}
+
+// TestAttachedResourceNamesWhatItLeavesOut names each property an attached
+// node writes that its rule places nowhere — not by its values' placements,
+// nor by a predicate of its When testing it equals a value — in the node's
+// decision and in a comment above the Release entry of the instance taking
+// its first attachment, as a folded child's are named; a predicate testing
+// that a property is present places nothing inside it.
+func TestAttachedResourceNamesWhatItLeavesOut(t *testing.T) {
+	rule := generatedSecret()
+	rule.When = append(rule.When, Pred{Path: []string{"generate", "kind"}, Op: OpEquals, Value: "random"})
+	cls, out := attached(t, "toy", []AttachRule{rule}, func() []*Node {
+		s := toySecret("dbSecret", "orders-db", true)
+		s.Body[1].Props = append(s.Body[1].Props, Prop{Name: "kind", Value: text("random")},
+			Prop{Name: "template", Value: text(`{"username":"admin"}`)}, Prop{Name: "excludeCharacters", Value: text("/@")})
+		s.Body = append(s.Body, Prop{Name: "kmsKeyId", Value: text("alias/orders")})
+		return []*Node{toyReader("dbA", readsSecret("dbSecret"), "dbB"), toyReader("dbB", readsSecret("dbSecret")), s}
+	})
+	decision := classOf(t, cls, "dbSecret").Decision.Rationale
+	if !strings.Contains(decision, "the attachment does not carry what it writes at generate.template, "+
+		"generate.excludeCharacters and kmsKeyId") || strings.Contains(decision, "username") {
+		t.Errorf("the decision does not name what the rule leaves out, or quotes a value: %s", decision)
+	}
+	release := fileOf(t, out, "release.yaml")
+	want := "    # Properties dbSecret, attached to this instance as core/random-password at the slot " +
+		"admin_password, writes and the draft does not place: generate.template, generate.excludeCharacters, " +
+		"kmsKeyId.\n    dbb:\n"
+	if !strings.Contains(release, want) {
+		t.Errorf("the first reader's entry does not name what the rule leaves out, want\n%s\nin\n%s", want, release)
+	}
+	if block := instanceBlock(t, release, "dba"); strings.Contains(block, "attached to this instance") {
+		t.Errorf("a later reader's entry names what the rule leaves out:\n%s", block)
+	}
+}
+
+// TestAttachPinnedNameCarriesNoParameter pins the name of a secret several
+// servers read to the key the format gives it where the secret's name is a
+// parameter: the parameter is read nowhere else, so the draft carries it
+// nowhere and declares no parameter for it.
+func TestAttachPinnedNameCarriesNoParameter(t *testing.T) {
+	_, out := attachedGraph(t, "toy", []AttachRule{generatedSecret()}, func() *Graph {
+		s := toySecret("dbSecret", "", true)
+		s.Body = append([]Prop{{Name: "name", Value: Param{Name: "secretName"}}}, s.Body...)
+		return &Graph{Nodes: []*Node{toyReader("dbA", readsSecret("dbSecret"), "dbB"),
+			toyReader("dbB", readsSecret("dbSecret")), s},
+			Params: []Parameter{{Name: "secretName", Type: "string", Default: text("orders-db")}}}
+	})
+	aggregate := fileOf(t, out, "aggregate.yaml")
+	if !strings.Contains(aggregate, "# Parameters the draft carries nowhere: secretName.\n") ||
+		strings.Contains(aggregate, "  parameters:\n") {
+		t.Errorf("the Aggregate does not name the parameter as carried nowhere, or declares it:\n%s", aggregate)
+	}
+	if block := instanceBlock(t, aggregate, "dbb"); !strings.Contains(block, `            name: "dbsecret"`+"\n") {
+		t.Errorf("the first reader's attachment does not pin the format's key:\n%s", block)
+	}
 }
 
 // TestAttachRuleWhenNotHolding classes a node of a rule's type whose When does

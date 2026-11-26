@@ -92,6 +92,12 @@ type Attachment struct {
 	// attached in the Release entry of Into's instance; the Aggregate declares
 	// nothing of it, and Values and Name are not read.
 	Secret *importer.Secret
+	// Unplaced are the paths, dotted, of the properties the attached node
+	// writes that its rule places nowhere — not by its values' placements, nor
+	// by a predicate of its When testing the property equals a value — named
+	// in a comment above the Release entry of Into's instance; set on a node's
+	// first attachment alone.
+	Unplaced []string
 }
 
 // The values keys an attach rule's placements give a meaning of their own.
@@ -337,10 +343,14 @@ func (c *classifier) attach(ordered []*Classified) {
 			}
 		}
 		first := c.out[targets[0].into].Key
+		left := pathTexts(unplaced(n.Body, attachPlaced(r)))
 		cl := c.out[n.ID]
 		var phrases []string
 		for i, t := range targets {
 			a := Attachment{Into: t.into, Slot: t.slot, Feature: r.Feature}
+			if i == 0 {
+				a.Unplaced = left
+			}
 			where := " on the instance " + c.out[t.into].Key + " at the slot " + t.slot
 			switch {
 			case r.Secret:
@@ -359,11 +369,33 @@ func (c *classifier) attach(ordered []*Classified) {
 			cl.Attach = append(cl.Attach, a)
 			phrases = append(phrases, a.Feature+where)
 		}
+		carries := ""
+		if len(left) > 0 {
+			carries = "the attachment does not carry what it writes at " + andList(left) + ", which the Release entry " +
+				"of the instance " + first + " names"
+		}
 		cl.Decision = decisionFor(n, joinNonEmpty("; ", "attached: the format's attach rule of "+r.Type+
-			WhenText(r.When)+" writes it as "+andList(phrases)+", and nothing is drafted for it", c.says(n)))
+			WhenText(r.When)+" writes it as "+andList(phrases)+", and nothing is drafted for it", carries, c.says(n)))
 		c.note(n, Report(CodeResourceFolded, fmt.Sprintf("%s (%s) is attached as %s; nothing is drafted for it", n.ID,
 			n.Type, andList(phrases))))
 	}
+}
+
+// attachPlaced returns the paths of a node r places: each of its values'
+// placements reads, and each a predicate of its When tests equals a value, as
+// a row's When fixes a property its Recipe writes. A predicate testing that a
+// property is present, or anything else of it, places nothing inside it.
+func attachPlaced(r *AttachRule) [][]string {
+	var out [][]string
+	for _, p := range r.Values {
+		out = append(out, p.From)
+	}
+	for _, p := range r.When {
+		if p.Op == OpEquals {
+			out = append(out, p.Path)
+		}
+	}
+	return out
 }
 
 // literalPlaced returns the text n writes as a literal scalar where the

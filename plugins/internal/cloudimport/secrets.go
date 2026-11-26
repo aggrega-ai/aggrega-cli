@@ -153,8 +153,9 @@ func (w *aggregateWriter) secretOf(path string, source *Node, pl Placement, p Pr
 		return importer.Secret{Path: path, Referenced: true,
 			Text: "the credential of " + draftyaml.Comment(v.Node) + " the source reads"}, true
 	case Stored:
+		text := "the secret " + draftyaml.Comment(v.Locator) + " the " + draftyaml.Comment(v.Store) + " store holds"
 		return importer.Secret{Path: path, Variable: variableOf(pl.Key), Referenced: true, Origin: v.Locator,
-			Text: "the secret the " + draftyaml.Comment(v.Store) + " store holds"}, true
+			Text: text}, true
 	case Literal:
 		if !literalHeld(v) {
 			return importer.Secret{}, false

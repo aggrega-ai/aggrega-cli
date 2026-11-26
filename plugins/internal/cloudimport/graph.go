@@ -133,12 +133,12 @@ type Parameter struct {
 	// value.
 	StoreRef string
 	// Pointer reports that the parameter names an existing resource of the
-	// target's cloud, whose value the Release supplies: it is never a parameter
-	// of the Aggregate, whatever it feeds. A value of the Aggregate reading it is
-	// not written, and the instance's Release entry names it — with the value
-	// the parameters file supplies, else the template's literal default, or
-	// left for the operator where neither is — since a Release sets no values;
-	// an infra or infra.overrides key reading it is written as any parameter's.
+	// target's cloud, whose value differs by environment: a values key reading
+	// it reads a parameter of the Aggregate that declares no default, which the
+	// Release fulfils under its spec.parameters, left for the answers file, the
+	// comment above it naming the value the parameters file supplies; an infra
+	// or infra.overrides key reading it is written in the Release entry as any
+	// parameter's value is.
 	Pointer bool
 }
 

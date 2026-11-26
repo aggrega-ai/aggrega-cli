@@ -11,57 +11,101 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
 )
 
-// TestPointerParameterIsNeverAnAggregateParameter writes nothing in the
-// Aggregate for a parameter naming an existing resource, read into a values
-// key, and declares it under no spec.parameters: the instance's Release entry
-// names the value, with the value the parameters file supplies, and leaves it
-// where the file supplies none. The same parameter not marked a pointer is a
-// parameter of the Aggregate.
-func TestPointerParameterIsNeverAnAggregateParameter(t *testing.T) {
+// pointerGraph is a server whose property path reads the template parameter
+// SubnetId, declared as p, a parameter naming an existing subnet.
+func pointerGraph(p Parameter, path []string) *Graph {
+	s := pgServer()
+	s.Body = merged(leaf(text("westeurope"), pathLocation...), leaf(Param{Name: "SubnetId"}, path...))
+	p.Name, p.Type = "SubnetId", "AWS::EC2::Subnet::Id"
+	return &Graph{Nodes: []*Node{s}, Params: []Parameter{p}}
+}
+
+// TestPointerParameterFeedingAValueIsHoisted declares a parameter naming an
+// existing resource, read into a values key, as a parameter of the Aggregate
+// with no default, whatever default the template gives it, the instance's
+// value reading it: the Release fulfils it under its spec.parameters, left for
+// the answers file, the comment above it naming the value the parameters file
+// supplies. The same parameter not marked a pointer takes that value as its
+// default.
+func TestPointerParameterFeedingAValueIsHoisted(t *testing.T) {
 	in := edgeView()
 	in.Target = "arm"
-	graph := func(p Parameter) *Graph {
-		s := pgServer()
-		s.Body = merged(leaf(text("westeurope"), pathLocation...), leaf(Param{Name: "SubnetId"}, pathVersion...))
-		p.Name, p.Type = "SubnetId", "AWS::EC2::Subnet::Id"
-		return &Graph{Nodes: []*Node{s}, Params: []Parameter{p}}
-	}
+	const declared = `  parameters:
+    # The template parameter SubnetId.
+    # It names an existing resource, so it declares no default: the Release fulfils it.
+    subnet_id:
+      type: string
+`
+	const server = `    server:
+      type: core/datastore/postgres
+      values:
+        version: "{{ .parameters.subnet_id }}"
+`
+	const left = "    # Left for the Release, since the source cannot supply it: subnet_id, the value of the template " +
+		"parameter SubnetId, which names an existing resource, so the Aggregate declares no default for it"
 
 	t.Run("supplied", func(t *testing.T) {
-		_, aggregate, release, _, diags := released(t, in, releaseFormat(),
-			graph(Parameter{Pointer: true, Supplied: text("subnet-0abc")}))
-		if strings.Contains(aggregate, "parameters:") || strings.Contains(release, "parameters:") {
-			t.Errorf("a draft declares the pointer under spec.parameters:\n%s\n%s", aggregate, release)
+		_, aggregate, release, _, diags := released(t, in, releaseFormat(), pointerGraph(Parameter{Pointer: true,
+			Supplied: text("subnet-0abc"), Default: text("subnet-default")}, pathVersion))
+		if !strings.Contains(aggregate, declared) {
+			t.Errorf("the Aggregate does not declare\n%s\nin\n%s", declared, aggregate)
 		}
-		wantBlock(t, aggregate, "server", "    server:\n      type: core/datastore/postgres\n")
-		warnsAbout(t, diags, CodeValueNotCarried, "server", "values.version", "SubnetId")
-		block := instanceBlock(t, release, "server")
-		for _, want := range []string{`values.version takes "subnet-0abc", from the template parameter SubnetId, ` +
-			"the value the parameters file supplies", "never a parameter of the Aggregate"} {
-			if !strings.Contains(block, want) {
-				t.Errorf("the entry lacks %q:\n%s", want, block)
-			}
+		wantBlock(t, aggregate, "server", server)
+		want := left + "; the parameters file supplies subnet-0abc: write that value here\n    subnet_id: \"\"\n"
+		if !strings.Contains(release, want) {
+			t.Errorf("the Release does not fulfil the parameter as\n%s\nin\n%s", want, release)
 		}
+		onlyCode(t, diags, CodeValueNotCarried, 0)
 	})
 
 	t.Run("not supplied", func(t *testing.T) {
-		_, aggregate, release, _, _ := released(t, in, releaseFormat(), graph(Parameter{Pointer: true}))
-		if strings.Contains(aggregate, "parameters:") || strings.Contains(release, "parameters:") {
-			t.Errorf("a draft declares the pointer under spec.parameters:\n%s\n%s", aggregate, release)
+		_, aggregate, release, _, _ := released(t, in, releaseFormat(), pointerGraph(Parameter{Pointer: true},
+			pathVersion))
+		if !strings.Contains(aggregate, declared) {
+			t.Errorf("the Aggregate does not declare\n%s\nin\n%s", declared, aggregate)
 		}
-		block := instanceBlock(t, release, "server")
-		for _, want := range []string{"# Left for the Release, since the source cannot supply it:",
-			"#   - values.version, from the template parameter SubnetId, which names an existing resource"} {
-			if !strings.Contains(block, want) {
-				t.Errorf("the entry lacks %q:\n%s", want, block)
-			}
+		if want := left + "\n    subnet_id: \"\"\n"; !strings.Contains(release, want) {
+			t.Errorf("the Release does not leave the parameter as\n%s\nin\n%s", want, release)
 		}
 	})
 
 	t.Run("not a pointer", func(t *testing.T) {
-		_, aggregate, _, _, _ := released(t, in, releaseFormat(), graph(Parameter{Supplied: text("subnet-0abc")}))
-		if !strings.Contains(aggregate, "  parameters:\n") || !strings.Contains(aggregate, "{{ .parameters.subnet_id }}") {
-			t.Errorf("the Aggregate does not declare the parameter that names no existing resource:\n%s", aggregate)
+		_, aggregate, _, _, _ := released(t, in, releaseFormat(), pointerGraph(Parameter{Supplied: text("subnet-0abc")},
+			pathVersion))
+		if !strings.Contains(aggregate, "    subnet_id:\n      type: string\n      default: \"subnet-0abc\"\n") {
+			t.Errorf("the parameter naming no existing resource does not take the supplied default:\n%s", aggregate)
+		}
+	})
+}
+
+// TestPointerParameterFeedingAnOverrideStaysInTheRelease writes a parameter
+// naming an existing resource, read into an infra.overrides key, in the
+// instance's Release entry as any parameter is — the value the parameters file
+// supplies, else left for the answers file — and declares it a parameter of
+// neither the Aggregate nor the Release.
+func TestPointerParameterFeedingAnOverrideStaysInTheRelease(t *testing.T) {
+	in := edgeView()
+	in.Target = "arm"
+
+	t.Run("supplied", func(t *testing.T) {
+		_, aggregate, release, _, _ := released(t, in, releaseFormat(), pointerGraph(Parameter{Pointer: true,
+			Supplied: text("subnet-0abc")}, pathSubnetRef))
+		if strings.Contains(aggregate, "parameters:") || strings.Contains(release, "  parameters:") {
+			t.Errorf("a draft declares the pointer as a parameter:\n%s\n%s", aggregate, release)
+		}
+		wantBlock(t, release, "server", `    server:
+      infra:
+        location: "westeurope"
+        overrides:
+          # From the template parameter SubnetId, the value the parameters file supplies.
+          delegated_subnet_id: "subnet-0abc"
+`)
+	})
+
+	t.Run("not supplied", func(t *testing.T) {
+		_, _, release, _, _ := released(t, in, releaseFormat(), pointerGraph(Parameter{Pointer: true}, pathSubnetRef))
+		if block := instanceBlock(t, release, "server"); !strings.Contains(block, "          delegated_subnet_id: \"\"\n") {
+			t.Errorf("the entry does not leave the override:\n%s", block)
 		}
 	})
 }
