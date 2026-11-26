@@ -29,11 +29,17 @@ func IsShortFormTag(tag string) bool {
 // the string. A "!!" tag, an unknown tag, text that merely contains a short form
 // and a string with a carriage return or a line feed are not.
 func LooksLikeShortForm(s string) bool {
-	if !strings.HasPrefix(s, "!") || strings.HasPrefix(s, "!!") || strings.ContainsAny(s, "\r\n") {
+	if !isBangTag(s) || strings.ContainsAny(s, "\r\n") {
 		return false
 	}
 	tag, _, _ := strings.Cut(s[1:], " ")
 	return IsShortFormTag(tag)
+}
+
+// isBangTag reports whether s opens with a single "!", the way a custom tag does, as
+// opposed to a "!!" standard tag.
+func isBangTag(s string) bool {
+	return strings.HasPrefix(s, "!") && !strings.HasPrefix(s, "!!")
 }
 
 // dynamicReference matches a value that is wholly one CloudFormation dynamic

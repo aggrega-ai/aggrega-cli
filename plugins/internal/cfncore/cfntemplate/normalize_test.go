@@ -6,6 +6,7 @@ package cfntemplate
 import (
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -131,15 +132,18 @@ func TestNormalizeReadsJSONAndPassesItThrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), `"Ref": "Foo"`) && !strings.Contains(string(out), `"Ref":"Foo"`) {
-		t.Errorf("output lost the Ref: %s", out)
+	want := "{\n  \"Resources\": {\n    \"X\": {\n      \"Properties\": {\n        \"P\": {\n          \"Ref\": \"Foo\"\n        }\n      },\n      \"Type\": \"AWS::S3::Bucket\"\n    }\n  }\n}\n"
+	if string(out) != want {
+		t.Errorf("output = %q, want %q", out, want)
 	}
 }
 
 func TestNormalizeOfUnparseableBytesReturnsTheReadersError(t *testing.T) {
 	t.Parallel()
-	if _, err := Normalize([]byte("a: [unclosed\n")); err == nil {
-		t.Error("Normalize accepted bytes that are not YAML")
+	_, err := Normalize([]byte("a: [unclosed\n"))
+	want := "invalid YAML template: yaml: line 1: did not find expected ',' or ']'"
+	if err == nil || err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
 	}
 }
 
@@ -151,6 +155,8 @@ func TestAliasToAShortFormReadsAsTheIntrinsic(t *testing.T) {
 	}
 }
 
+// A container holding a !Condition is expanded where it is anchored, so an alias to
+// it reads the same; the old reader read the Condition as the bare name there.
 func TestAliasToAContainerHoldingAShortFormReadsAsTheIntrinsic(t *testing.T) {
 	t.Parallel()
 	props := property(t, "      A: &x\n        Name: !Sub '${Foo}-n'\n        Cond: !Condition C\n      B: *x\n      C: [*x, 1]\n")
@@ -162,6 +168,41 @@ func TestAliasToAContainerHoldingAShortFormReadsAsTheIntrinsic(t *testing.T) {
 	}
 	if got := props["C"].([]any)[0]; !reflect.DeepEqual(got, want) {
 		t.Errorf("C[0] = %#v, want %#v", got, want)
+	}
+}
+
+// An anchor written twice is read at each alias as the definition before it, also
+// inside a short form that is copied out in full.
+func TestRedefinedAnchorReadsAsTheDefinitionBeforeEachAlias(t *testing.T) {
+	t.Parallel()
+	props := property(t, `      a: &a plain
+      b: &s !Join [",", [*a, x]]
+      a2: &a other
+      c: *s
+      d: [*a, *s]
+`)
+	joinPlain := map[string]any{"Fn::Join": []any{",", []any{"plain", "x"}}}
+	if !reflect.DeepEqual(props["b"], joinPlain) || !reflect.DeepEqual(props["c"], joinPlain) {
+		t.Errorf("b = %#v, c = %#v, want both %#v", props["b"], props["c"], joinPlain)
+	}
+	if want := []any{"other", joinPlain}; !reflect.DeepEqual(props["d"], want) {
+		t.Errorf("d = %#v, want %#v", props["d"], want)
+	}
+}
+
+// An aliased short form that expands past the copy bound is refused, naming the
+// anchor, rather than read without its tag.
+func TestNormalizeRefusesAnAliasedShortFormTooLargeToCopy(t *testing.T) {
+	t.Parallel()
+	var b strings.Builder
+	b.WriteString("Resources:\n  X:\n    Type: AWS::S3::Bucket\n    Properties:\n      s: &s !Join [\",\", [a, b]]\n")
+	for i := range maxCopiedNodes/3 + 1 {
+		b.WriteString("      k" + strconv.Itoa(i) + ": *s\n")
+	}
+	_, err := Normalize([]byte(b.String()))
+	want := "invalid YAML template: the short form anchored as &s, aliased by *s, expands to more than 100000 nodes; write the repeated content out in full or alias a smaller one"
+	if err == nil || err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
 	}
 }
 

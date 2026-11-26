@@ -5,7 +5,6 @@ package cfntemplate
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/aggrega-ai/aggrega-cli/pkg/anchorcycle"
@@ -20,10 +19,9 @@ import (
 // the lock there makes every caller safe, whatever goroutine it runs on.
 var intrinsicsMu sync.Mutex
 
-// maxCopiedNodes bounds the nodes the reader copies when it writes an alias out in
-// full. An alias chain can name content exponentially larger than the text; past
-// the bound the remaining aliases stay as written and the YAML reader's own
-// refusal of excessive aliasing speaks.
+// maxCopiedNodes bounds the nodes the reader copies when it writes an aliased short
+// form out in full. Past it the template is refused, so a short form is never left
+// to be read without its tag.
 const maxCopiedNodes = 100000
 
 // Normalize reads one template, YAML with short forms or JSON, as CloudFormation
@@ -65,8 +63,11 @@ func prepare(content []byte) ([]byte, error) {
 	if anchor, found := anchorcycle.Find(&root); found {
 		return nil, fmt.Errorf("invalid YAML template: %s", anchorcycle.Explain(anchor))
 	}
-	p := &pass{tagged: map[*yaml.Node]bool{}}
+	p := &pass{}
 	p.rewrite(&root)
+	if p.err != nil {
+		return nil, p.err
+	}
 	if !p.changed {
 		return content, nil
 	}
@@ -78,27 +79,26 @@ func prepare(content []byte) ([]byte, error) {
 }
 
 // pass is one walk over a parsed template that rewrites what the intrinsics reader
-// reads differently from CloudFormation. It follows alias links only to learn
-// whether an alias target carries a short form, never to walk it, and the caller
-// has established that no anchor is aliased inside its own content.
+// reads differently from CloudFormation. The caller has established that no anchor
+// is aliased inside its own content.
 type pass struct {
 	changed bool
 	copied  int
-	// tagged memoizes whether a node's content holds a short form.
-	tagged map[*yaml.Node]bool
+	// err is the refusal of an alias that expands past [maxCopiedNodes].
+	err error
 }
 
 // rewrite applies the rewrites to the subtree under n: an unquoted timestamp
-// becomes a quoted string, an alias whose target holds a short form is replaced by
-// a copy of the target, and a !Condition, !Transform or !GetStackOutput node
+// becomes a quoted string, an alias whose target carries a short-form tag is
+// replaced by a copy of the target, and a !Condition, !Transform or !GetStackOutput node
 // becomes the long-form mapping.
 func (p *pass) rewrite(n *yaml.Node) {
-	if n.Kind == yaml.AliasNode {
+	if n.Kind == yaml.AliasNode || p.err != nil {
 		return
 	}
 	for i, c := range n.Content {
-		if c.Kind == yaml.AliasNode && c.Alias != nil && p.holdsShortForm(c.Alias) && p.copied < maxCopiedNodes {
-			n.Content[i] = p.copyOf(c.Alias)
+		if c.Kind == yaml.AliasNode && c.Alias != nil && p.carriesShortForm(c.Alias) {
+			n.Content[i] = p.copyOf(c.Alias, c.Value)
 		}
 	}
 	if n.Kind == yaml.ScalarNode && n.Style == 0 && n.ShortTag() == "!!timestamp" {
@@ -145,44 +145,37 @@ func (p *pass) expandLongFormTag(n *yaml.Node) {
 	p.changed = true
 }
 
-// holdsShortForm reports whether n or anything it contains, through aliases, is
-// tagged with a short form: one the intrinsics reader reads by tag, or one of
-// [longFormTags].
-func (p *pass) holdsShortForm(n *yaml.Node) bool {
-	if v, done := p.tagged[n]; done {
-		return v
+// carriesShortForm reports whether n itself is tagged with a short form: one the
+// intrinsics reader reads by tag, or one of [longFormTags].
+func (p *pass) carriesShortForm(n *yaml.Node) bool {
+	if !isBangTag(n.Tag) {
+		return false
 	}
-	held := false
-	if strings.HasPrefix(n.Tag, "!") && !strings.HasPrefix(n.Tag, "!!") {
-		_, long := longFormTags[n.Tag]
-		held = long || IsShortFormTag(n.Tag[1:])
-	}
-	if !held && n.Alias != nil {
-		held = p.holdsShortForm(n.Alias)
-	}
-	for _, c := range n.Content {
-		if !held {
-			held = p.holdsShortForm(c)
-		}
-	}
-	p.tagged[n] = held
-	return held
+	_, long := longFormTags[n.Tag]
+	return long || IsShortFormTag(n.Tag[1:])
 }
 
-// copyOf returns a copy of n and of everything it contains, without anchors, and
-// counts the nodes it copies.
-func (p *pass) copyOf(n *yaml.Node) *yaml.Node {
-	p.copied++
+// copyOf returns a copy of the target of the alias named anchor, with every alias
+// inside it written out in full too, and without anchors. Past [maxCopiedNodes]
+// it records the refusal and stops copying.
+func (p *pass) copyOf(n *yaml.Node, anchor string) *yaml.Node {
 	p.changed = true
+	p.copied++
+	if p.copied > maxCopiedNodes {
+		if p.err == nil {
+			p.err = fmt.Errorf("invalid YAML template: the short form anchored as &%s, aliased by *%s, expands to more than %d nodes; write the repeated content out in full or alias a smaller one", anchor, anchor, maxCopiedNodes)
+		}
+		return n
+	}
 	out := *n
 	out.Anchor = ""
 	out.Content = make([]*yaml.Node, len(n.Content))
 	for i, c := range n.Content {
-		if p.copied >= maxCopiedNodes {
-			out.Content[i] = c
+		if c.Kind == yaml.AliasNode && c.Alias != nil {
+			out.Content[i] = p.copyOf(c.Alias, c.Value)
 			continue
 		}
-		out.Content[i] = p.copyOf(c)
+		out.Content[i] = p.copyOf(c, anchor)
 	}
 	return &out
 }
