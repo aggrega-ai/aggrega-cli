@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore/armexpr"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
@@ -20,6 +21,10 @@ const (
 	// telemetryPrefix opens the name of the Microsoft.Resources/deployments
 	// resource by which an Azure Verified Modules module sends its telemetry.
 	telemetryPrefix = "46d3xbcp."
+	// AVMResourcePrefix opens the telemetry prefix of an Azure Verified
+	// Modules resource module, as the module index lists it and as the name of
+	// the resource by which the module sends its telemetry opens.
+	AVMResourcePrefix = telemetryPrefix + "res."
 	// telemetryParameter is the parameter by which a module's user turns the
 	// module's telemetry on and off.
 	telemetryParameter = "enableTelemetry"
@@ -56,7 +61,7 @@ type recognised struct {
 // kind returns the kind of the module, as its prefix names it.
 func (rec recognised) kind() moduleKind {
 	switch {
-	case strings.HasPrefix(rec.prefix, telemetryPrefix+"res."):
+	case strings.HasPrefix(rec.prefix, AVMResourcePrefix):
 		return resourceModule
 	case strings.HasPrefix(rec.prefix, telemetryPrefix+"ptn."):
 		return patternModule
@@ -113,7 +118,7 @@ func recognise(top obj) *recognised {
 	t := header("", "", top)
 	for _, raw := range resourceValues(top.exact("resources")) {
 		o, _ := objectOf(raw)
-		if typ, _ := text(o.get("type")); !strings.EqualFold(typ, deploymentsType) {
+		if typ, _ := text(o.get("type")); !strings.EqualFold(typ, armcore.DeploymentsType) {
 			continue
 		}
 		if prefix, version, ok := t.telemetryName(o.get("name")); ok {
@@ -160,7 +165,7 @@ func (t *template) telemetryName(raw json.RawMessage) (prefix, version string, o
 // isTelemetry reports whether res of t is the resource by which a module
 // sends its telemetry.
 func (t *template) isTelemetry(res *resource) bool {
-	if !strings.EqualFold(res.typ, deploymentsType) || len(res.names) == 0 {
+	if !strings.EqualFold(res.typ, armcore.DeploymentsType) || len(res.names) == 0 {
 		return false
 	}
 	_, _, ok := t.telemetryName(res.names[len(res.names)-1])
@@ -189,7 +194,7 @@ type avmModule struct {
 // accessoryTypes are the types of the resources a resource module deploys
 // beside the resource it is for.
 var accessoryTypes = []string{"Microsoft.Authorization/locks", "Microsoft.Authorization/roleAssignments",
-	"Microsoft.Insights/diagnosticSettings", deploymentsType}
+	"Microsoft.Insights/diagnosticSettings", armcore.DeploymentsType}
 
 // ownResource is one resource a module's template creates of its own.
 type ownResource struct {
@@ -264,7 +269,7 @@ func (r *reader) oneNode(t *template, res *resource, file, at string, top obj, r
 		if len(own) != 1 {
 			return false, fmt.Sprintf("the module index lists no module of its telemetry prefix, and the "+
 				"module creates %s beside locks, role assignments, diagnostic settings and %s resources, so no "+
-				"one resource type is its own", ownCount(len(own)), deploymentsType)
+				"one resource type is its own", ownCount(len(own)), armcore.DeploymentsType)
 		}
 		m.typ = own[0].typ
 	}

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore/armexpr"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
@@ -102,7 +103,7 @@ func links(top obj) []string {
 		}
 		for _, raw := range resourceValues(resources) {
 			res, _ := objectOf(raw)
-			if typ, _ := text(res.get("type")); !strings.EqualFold(typ, deploymentsType) {
+			if typ, _ := text(res.get("type")); !strings.EqualFold(typ, armcore.DeploymentsType) {
 				walk(res.get("resources"), depth+1)
 				continue
 			}

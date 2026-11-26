@@ -250,7 +250,7 @@ func nestedDeploymentBody(name string, template, parameters map[string]any) map[
 		properties["parameters"] = parameters
 	}
 	return map[string]any{
-		"type":       deploymentsResourceType,
+		"type":       DeploymentsType,
 		"apiVersion": DeploymentsAPIVersion,
 		"name":       name,
 		"properties": properties,

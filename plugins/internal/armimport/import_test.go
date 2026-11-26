@@ -670,3 +670,61 @@ func TestArmCopyOfAResourceTakesAnIDNoOtherResourceTakes(t *testing.T) {
 	holds(t, "the Aggregate", fileText(t, out, "aggregate.yaml"), "    staticsites-0:\n", "    staticsites-1:\n",
 		"    staticsites-2:\n", "    staticsites-2-2:\n")
 }
+
+// TestTheArmValuesHaveOneHome reads every Go source of the plugins, generated
+// and test files aside, for the literal each value below is written as, and
+// requires it in its home alone: the registry serving the Azure Verified
+// Modules, the type of a nested deployment, and the telemetry prefix opening a
+// resource module's. The scan is first run over a planted source holding all
+// three, so a scan that reads nothing fails.
+func TestTheArmValuesHaveOneHome(t *testing.T) {
+	t.Parallel()
+	homes := []struct{ literal, home string }{
+		{`"oci://mcr.microsoft.com/bicep/`, "internal/armimport/import.go"},
+		{`"Microsoft.Resources/deployments"`, "internal/armcore/references.go"},
+		{`"46d3xbcp.`, "internal/armimport/avm.go"},
+	}
+	scan := func(root string) map[string][]string {
+		found := map[string][]string{}
+		err := filepath.WalkDir(root, func(file string, e fs.DirEntry, err error) error {
+			if err != nil || e.IsDir() || !strings.HasSuffix(file, ".go") || strings.HasSuffix(file, "_test.go") ||
+				strings.HasSuffix(file, "_gen.go") {
+				return err
+			}
+			raw, err := os.ReadFile(file)
+			if err != nil {
+				return err
+			}
+			rel, _ := filepath.Rel(root, file)
+			for _, h := range homes {
+				if strings.Contains(string(raw), h.literal) {
+					found[h.literal] = append(found[h.literal], filepath.ToSlash(rel))
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return found
+	}
+	planted := t.TempDir()
+	var body strings.Builder
+	body.WriteString("package p\n\nconst (\n")
+	for i, h := range homes {
+		fmt.Fprintf(&body, "\tc%d = %s\"\n", i, strings.TrimSuffix(h.literal, `"`))
+	}
+	body.WriteString(")\n")
+	if err := os.WriteFile(filepath.Join(planted, "p.go"), []byte(body.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := scan(planted); len(got) != len(homes) {
+		t.Fatalf("the scan finds %v in the planted source, want each value", got)
+	}
+	found := scan(filepath.Join("..", ".."))
+	for _, h := range homes {
+		if got := found[h.literal]; !slices.Equal(got, []string{h.home}) {
+			t.Errorf("%s is written in %v, want in %s alone", h.literal, got, h.home)
+		}
+	}
+}

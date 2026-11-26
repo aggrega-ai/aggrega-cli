@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore/armexpr"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
@@ -311,7 +312,7 @@ func (l *lowerer) body() []cloudimport.Prop {
 	for _, e := range l.res.body {
 		at := l.res.at + importer.Pointer(e.Key)
 		var p cloudimport.Prop
-		if strings.EqualFold(l.res.typ, deploymentsType) && strings.EqualFold(e.Key, "properties") {
+		if strings.EqualFold(l.res.typ, armcore.DeploymentsType) && strings.EqualFold(e.Key, "properties") {
 			p = l.deploymentProperties(e.Value, at)
 		} else {
 			p = l.prop(e.Value, at)
@@ -1003,9 +1004,9 @@ func (l *lowerer) refer(c armexpr.Call, whole armexpr.Node, path []string) cloud
 	}
 	var attr []string
 	switch {
-	case strings.EqualFold(typ, deploymentsType) && full && len(path) > 0 && strings.EqualFold(path[0], "properties"):
+	case strings.EqualFold(typ, armcore.DeploymentsType) && full && len(path) > 0 && strings.EqualFold(path[0], "properties"):
 		attr = append(attr, path[1:]...)
-	case strings.EqualFold(typ, deploymentsType), full:
+	case strings.EqualFold(typ, armcore.DeploymentsType), full:
 		attr = append(attr, path...)
 	default:
 		attr = append([]string{"properties"}, path...)
@@ -1040,7 +1041,7 @@ func (l *lowerer) credential(c armexpr.Call) cloudimport.Value {
 		l.warn(l.site(), fmt.Sprintf("the template %s reads at %s a credential of %s with %s, a %s resource the "+
 			"draft writes no resource for, as it is read as the resources it deploys, or sends a module's "+
 			"telemetry, so the credential is not carried: read the output holding it", l.t.file, l.site(), id,
-			c.Name, deploymentsType))
+			c.Name, armcore.DeploymentsType))
 		return nil
 	}
 	return cloudimport.Credential{Node: id, What: c.Name}

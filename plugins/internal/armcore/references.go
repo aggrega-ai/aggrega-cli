@@ -13,9 +13,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore/armexpr"
 )
 
-// deploymentsResourceType is the resource type of a nested deployment, matched
-// without regard to case.
-const deploymentsResourceType = "Microsoft.Resources/deployments"
+// DeploymentsType is the resource type of a nested deployment, a resource
+// deploying another template, written inline or linked; matched without regard
+// to case.
+const DeploymentsType = "Microsoft.Resources/deployments"
 
 // level is one template level under assembly: the merged entries of each carried
 // section, keyed by section name and then by the name the entry is written under
@@ -223,7 +224,7 @@ func walkStrings(v any, s site, visit visitFunc) (any, bool, error) {
 func isDeployment(body any) bool {
 	m, _ := body.(map[string]any)
 	typ, _ := m["type"].(string)
-	return strings.EqualFold(typ, deploymentsResourceType)
+	return strings.EqualFold(typ, DeploymentsType)
 }
 
 // declarations is what one level declares for its expressions to name: resource

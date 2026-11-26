@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 )
@@ -148,7 +149,7 @@ func TestAVMChildModulesStayInsideTheModule(t *testing.T) {
 		t.Fatalf("the module read as the root: diagnostics %+v", diags)
 	}
 	for _, n := range g.Nodes {
-		if n.Type == deploymentsType || strings.HasSuffix(n.ID, "avmTelemetry") {
+		if n.Type == armcore.DeploymentsType || strings.HasSuffix(n.ID, "avmTelemetry") {
 			t.Errorf("%s is a %s node", n.ID, n.Type)
 		}
 	}
@@ -248,7 +249,7 @@ func TestLegacyModuleNoRowMapsIsFlattened(t *testing.T) {
 		t.Errorf("the account reads form %s, type %s, name %+v", account.Form, account.Type, account.Name)
 	}
 	for _, n := range g.Nodes {
-		if !strings.HasPrefix(n.ID, "maps/") || n.Type == deploymentsType {
+		if !strings.HasPrefix(n.ID, "maps/") || n.Type == armcore.DeploymentsType {
 			t.Errorf("%s, of type %s, is a node", n.ID, n.Type)
 		}
 	}

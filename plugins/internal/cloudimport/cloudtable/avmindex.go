@@ -19,12 +19,11 @@ import (
 )
 
 // Where the Azure Verified Modules programme publishes its index of Bicep
-// resource modules, the file the index is read from, and the telemetry prefix
-// that marks a resource module.
+// resource modules, and the file the index is read from; a resource module's
+// row is marked by its telemetry prefix, armimport.AVMResourcePrefix.
 const (
 	avmIndexRepository = "https://github.com/Azure/Azure-Verified-Modules"
 	avmIndexFile       = "docs/static/module-indexes/BicepResourceModules.csv"
-	avmResourcePrefix  = "46d3xbcp.res."
 )
 
 // avmColumns are the columns of the module index file the generator reads.
@@ -120,7 +119,7 @@ func readAVMIndex(r io.Reader) ([]armimport.AVMModule, error) {
 		}
 		field := func(name string) string { return strings.TrimSpace(rec[at[name]]) }
 		prefix := field("TelemetryIdPrefix")
-		if !strings.HasPrefix(prefix, avmResourcePrefix) {
+		if !strings.HasPrefix(prefix, armimport.AVMResourcePrefix) {
 			continue
 		}
 		m := armimport.AVMModule{Prefix: prefix, Module: field("ModuleName"), Namespace: field("ProviderNamespace"),

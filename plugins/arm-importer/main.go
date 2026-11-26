@@ -67,7 +67,7 @@ func descriptor() aggrega.PluginDescriptor {
 			Name:          "import",
 			HostFunctions: []string{"aggrega_parse_source"},
 		}},
-		Importer: &aggrega.ImporterContract{Detect: detect, DefaultTarget: "arm"},
+		Importer: &aggrega.ImporterContract{Detect: detect, DefaultTarget: armimport.Format.Target},
 		Metadata: &aggrega.PluginDescriptorMeta{Author: "aggrega", License: "Apache-2.0"},
 	}
 }

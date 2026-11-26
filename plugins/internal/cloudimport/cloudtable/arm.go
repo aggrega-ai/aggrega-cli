@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 )
 
@@ -31,16 +33,10 @@ type recipeSource struct {
 	document              string
 }
 
-// avmRegistry is where the Azure Verified Modules programme publishes its
-// Bicep modules, and avmResource the prefix of a resource module's path.
-const (
-	avmRegistry = "oci://mcr.microsoft.com/bicep/"
-	avmResource = "avm/res/"
-)
-
-// nestedDeployment is the type of the resource that wraps a template inside
-// another, and which the importer flattens into the resources it holds.
-const nestedDeployment = "Microsoft.Resources/deployments"
+// avmResource is the prefix of the path of an Azure Verified Modules resource
+// module, in the registry the programme publishes its Bicep modules to,
+// armimport.ModuleRegistry, and in its repository.
+const avmResource = "avm/res/"
 
 // foldedName is the action writing the instance's symbol: its name folded into
 // words, as the provider names the resource it wraps a sourced module in.
@@ -133,7 +129,7 @@ func avmModule(source map[string]any) (string, string) {
 			"resource module", sub)
 	case "bicep-module-oci":
 		url, _ := source["url"].(string)
-		if rest, ok := strings.CutPrefix(url, avmRegistry); ok && strings.HasPrefix(rest, avmResource) &&
+		if rest, ok := strings.CutPrefix(url, armimport.ModuleRegistry); ok && strings.HasPrefix(rest, avmResource) &&
 			len(rest) > len(avmResource) {
 			return strings.TrimSuffix(rest, "/"), ""
 		}
@@ -273,7 +269,7 @@ func dictResource(doc templateDoc) resource {
 	var types []string
 	for _, c := range calls {
 		t := c["type"]
-		if !resourceType.MatchString(t) || strings.EqualFold(t, nestedDeployment) || c["existing"] == "true" ||
+		if !resourceType.MatchString(t) || strings.EqualFold(t, armcore.DeploymentsType) || c["existing"] == "true" ||
 			slices.ContainsFunc(types, func(s string) bool { return strings.EqualFold(s, t) }) {
 			continue
 		}

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armcore/armexpr"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
@@ -28,9 +29,6 @@ const (
 	// target is the target the format's own Recipes deploy on, the target an
 	// expression of a template is carried for as written.
 	target = "arm"
-	// deploymentsType is the type of a resource that deploys another template,
-	// written inline or linked; matched regardless of case.
-	deploymentsType = "Microsoft.Resources/deployments"
 	// maxNesting bounds how deep the reader follows child resources and the
 	// templates resources hold, so a hostile source cannot exhaust the stack.
 	maxNesting = 64
@@ -632,7 +630,7 @@ func literalCount(raw json.RawMessage) (int, bool) {
 // the imported directory or naming no file the import was handed.
 func (r *reader) linkedSource(t *template, res *resource) {
 	if why := r.unreadLink(t, res); why != "" {
-		d := cloudimport.Report(cloudimport.CodeLinkedSourceNotRead, res.symbol+" is a "+deploymentsType+
+		d := cloudimport.Report(cloudimport.CodeLinkedSourceNotRead, res.symbol+" is a "+armcore.DeploymentsType+
 			" resource of "+t.file+" whose template is linked by "+why+", which the import does not read: no "+
 			"resource of that template is drafted, and each of its outputs the template reads is carried as text "+
 			"evaluated when the template deploys; to draft its resources, place the linked template inside the "+
@@ -645,7 +643,7 @@ func (r *reader) linkedSource(t *template, res *resource) {
 // unreadLink says how res links a template the import does not read, empty
 // where res links none or the import reads the one it links.
 func (r *reader) unreadLink(t *template, res *resource) string {
-	if !strings.EqualFold(res.typ, deploymentsType) {
+	if !strings.EqualFold(res.typ, armcore.DeploymentsType) {
 		return ""
 	}
 	props, _ := objectOf(res.body.get("properties"))

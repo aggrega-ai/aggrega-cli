@@ -82,10 +82,10 @@ func wrap(m schemadraft.WrappedModule) (importer.RecipeDraft, []aggrega.Diagnost
 	return d, append(diags, more...)
 }
 
-// moduleRegistry is the address under which the Microsoft Container Registry
+// ModuleRegistry is the address under which the Microsoft Container Registry
 // serves the Azure Verified Modules Bicep modules, as Bicep's br/public alias
-// names it.
-const moduleRegistry = "oci://mcr.microsoft.com/bicep/"
+// names it: a module's address is this followed by its path.
+const ModuleRegistry = "oci://mcr.microsoft.com/bicep/"
 
 // module locates an Azure Verified Modules module no row maps: the Bicep
 // module the Microsoft Container Registry serves under its path, its
@@ -96,6 +96,6 @@ func module(ref cloudimport.ModuleRef) cloudimport.ModuleSource {
 	if ref.Path == "" {
 		return cloudimport.ModuleSource{}
 	}
-	return cloudimport.ModuleSource{Kind: "bicep-module-oci", URL: moduleRegistry + ref.Path,
+	return cloudimport.ModuleSource{Kind: "bicep-module-oci", URL: ModuleRegistry + ref.Path,
 		Fixed: []importer.Entry{{Key: telemetryParameter, Value: "false"}}}
 }

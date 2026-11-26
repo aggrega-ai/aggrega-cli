@@ -282,7 +282,7 @@ func (sl *lowerer) parameterValue(declared string, path []string) (cloudimport.P
 	}
 	sl.warn(declAt, fmt.Sprintf("the template %s declares at %s the parameter %s with no default, and %s, the %s "+
 		"resource deploying that template, gives it no value, so what reads it is not carried: give it a value "+
-		"under that resource's properties.parameters", s.file, declAt, declared, s.dep.symbol, deploymentsType))
+		"under that resource's properties.parameters", s.file, declAt, declared, s.dep.symbol, armcore.DeploymentsType))
 	return cloudimport.Prop{}, nil, true
 }
 
@@ -530,7 +530,7 @@ func (l *lowerer) reference(id string, attr []string, whole armexpr.Node) cloudi
 		"resource for, as it is read as the resources it deploys, or sends a module's telemetry; the expression "+
 		"%s is kept as text evaluated when the template deploys, naming a resource the draft does not hold: "+
 		"read an output of its template, or the resources it deploys", l.t.file, l.site(), readText(attr), id,
-		deploymentsType, armexpr.Expression(whole)))
+		armcore.DeploymentsType, armexpr.Expression(whole)))
 	return l.opaque(whole)
 }
 
@@ -597,7 +597,7 @@ func (r *reader) plan(t *template) {
 			if t.module == nil {
 				r.telemetryNotCarried(t, res)
 			}
-		case strings.EqualFold(res.typ, deploymentsType):
+		case strings.EqualFold(res.typ, armcore.DeploymentsType):
 			r.planNested(t, res)
 		}
 	}
@@ -614,7 +614,7 @@ func (r *reader) planNested(t *template, res *resource) {
 		r.notFlattened(t, res, fmt.Sprintf("it is nested deeper than the %d levels the import follows", maxNesting))
 		return
 	case !inline && deploysItself(t, file):
-		d := cloudimport.Report(cloudimport.CodeLinkedSourceNotRead, res.symbol+" is a "+deploymentsType+
+		d := cloudimport.Report(cloudimport.CodeLinkedSourceNotRead, res.symbol+" is a "+armcore.DeploymentsType+
 			" resource of "+t.file+" linking the template "+file+", which deploys the template linking it, "+
 			"directly or through others, so it is not read again: no resource of it is drafted a second time, and "+
 			res.symbol+" is drafted as written; link each template once")
@@ -661,7 +661,7 @@ func (r *reader) planNested(t *template, res *resource) {
 	}
 	r.scopeMerged(t, res, scope)
 	if props.get("parametersLink") != nil {
-		d := cloudimport.Report(cloudimport.CodeValueNotCarried, res.symbol+" is a "+deploymentsType+
+		d := cloudimport.Report(cloudimport.CodeValueNotCarried, res.symbol+" is a "+armcore.DeploymentsType+
 			" resource of "+t.file+" reading the values of its template's parameters from the parameters file "+
 			"it links, which the import does not read: each parameter takes its default, and what reads one "+
 			"declaring none is not carried; write their values under properties.parameters")
@@ -681,7 +681,7 @@ func (r *reader) scopeMerged(t *template, res *resource, scope string) {
 	d := cloudimport.Report(cloudimport.CodeDeploymentScopeMerged, fmt.Sprintf("%s is a %s resource of %s "+
 		"deploying into %s, another scope than the template's own; what it deploys is drafted into the one "+
 		"boundary the import writes, whose template deploys into one scope: to deploy it into %s, move the "+
-		"Components drafted from it into a boundary of their own annotated %s", res.symbol, deploymentsType, t.file,
+		"Components drafted from it into a boundary of their own annotated %s", res.symbol, armcore.DeploymentsType, t.file,
 		scope, scope, armcore.AnnotationResourceGroup))
 	d.SourceRef = t.file + "#" + res.at
 	r.note(d)
@@ -782,7 +782,7 @@ func (t *template) otherScope(res *resource) string {
 // notFlattened warns that the template res deploys is not read, and why: res
 // is a node as written.
 func (r *reader) notFlattened(t *template, res *resource, why string) {
-	d := cloudimport.Report(cloudimport.CodeResourceNotCarried, res.symbol+" is a "+deploymentsType+" resource of "+
+	d := cloudimport.Report(cloudimport.CodeResourceNotCarried, res.symbol+" is a "+armcore.DeploymentsType+" resource of "+
 		t.file+" whose template is not read, as "+why+": no resource of that template is drafted on its own, and "+
 		res.symbol+" is drafted as written")
 	d.SourceRef = t.file + "#" + res.at
@@ -937,7 +937,7 @@ func (l *lowerer) conditionExpression() armexpr.Node {
 func (r *reader) telemetryNotCarried(t *template, res *resource) {
 	d := cloudimport.Report(cloudimport.CodeResourceNotCarried, fmt.Sprintf("the template %s writes %s, a %s "+
 		"resource by which an Azure Verified Modules module sends its telemetry, its name opening %s; it is not "+
-		"drafted, as whether a Recipe sends telemetry is the Recipe's to set", t.file, res.symbol, deploymentsType,
+		"drafted, as whether a Recipe sends telemetry is the Recipe's to set", t.file, res.symbol, armcore.DeploymentsType,
 		telemetryPrefix))
 	d.SourceRef = t.file + "#" + res.at
 	r.note(d)
