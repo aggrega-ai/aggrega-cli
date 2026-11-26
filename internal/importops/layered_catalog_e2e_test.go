@@ -1107,7 +1107,7 @@ func TestLayeredCatalogFolderParserServesBeforePublished(t *testing.T) {
 		t.Errorf("the folder's parser %s was not read from beside its entity; the import resolved %+v",
 			folder.Parser.Reference, calls)
 	}
-	if slices.ContainsFunc(calls, func(c cascadeResolution) bool { return strings.HasPrefix(c.uri, "parser/json") }) {
+	if slices.ContainsFunc(calls, func(c cascadeResolution) bool { return c.uri == "parser/json" }) {
 		t.Errorf("the import resolved the published parser/json: %+v", calls)
 	}
 	if got := recordIn(t, res).CatalogSnapshot; got != f.digest {

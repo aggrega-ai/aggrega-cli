@@ -74,6 +74,12 @@ func parserLoads(cascade *recordingCascade) []string {
 	return out
 }
 
+// binaryJSONCParser is the load of the binary's own JSONC parser, from the
+// binary's own tier. A recognition of a lone .json file reads it in JSONC for the
+// signatures the reference Azure Resource Manager importer declares over *.json,
+// so the file is parsed through it wherever the workspace serves no JSONC parser.
+var binaryJSONCParser = fmt.Sprintf("parser/jsonc from %s", pluginpath.TierEmbed)
+
 // binaryYAMLParser is the load of the binary's own YAML parser, from the binary's
 // own tier. A recognition of a lone file reads it in YAML for the signature the
 // reference Dify importer declares, which names no file and reads YAML, so the
@@ -134,13 +140,14 @@ func TestAWorkspaceHoldingNoParserImportsThroughTheBinarysParser(t *testing.T) {
 				}
 				want := []string{fmt.Sprintf("parser/json from %s", pluginpath.TierEmbed)}
 				if !named {
-					want = append(want, binaryYAMLParser)
+					want = append(want, binaryJSONCParser, binaryYAMLParser)
 					slices.Sort(want)
 				}
 				if got := parserLoads(cascade); !slices.Equal(got, want) {
 					t.Errorf("the import loaded the parsers %v; want exactly %v — the binary's parser/json from the "+
-						"binary's own tier, and, with the format recognised, its parser/yaml from that tier for the one "+
-						"signature naming no file and reading YAML", got, want)
+						"binary's own tier, and, with the format recognised, its parser/jsonc and parser/yaml from "+
+						"that tier for the signatures reading JSONC over *.json and the one naming no file and reading YAML",
+						got, want)
 				}
 			})
 		}
@@ -285,13 +292,14 @@ func TestAWorkspacesOwnParserIsTheOneAnImportReadsThrough(t *testing.T) {
 
 			want := []string{fmt.Sprintf("%s from %s", planted.Reference, pluginpath.TierColocated)}
 			if row.format == "" {
-				want = append(want, binaryYAMLParser)
+				want = append(want, binaryJSONCParser, binaryYAMLParser)
 				slices.Sort(want)
 			}
 			if got := parserLoads(cascade); !slices.Equal(got, want) {
 				t.Errorf("the import loaded the parsers %v; want exactly %v — the workspace's %s from beside its "+
-					"entity, never the binary's parser/json, and, with the format recognised, the binary's parser/yaml "+
-					"for the one signature naming no file and reading YAML, a syntax the workspace serves no parser for",
+					"entity, never the binary's parser/json, and, with the format recognised, the binary's parser/jsonc "+
+					"for the signatures reading JSONC over *.json and its parser/yaml for the one naming no file and "+
+					"reading YAML, syntaxes the workspace serves no parser for",
 					got, want, planted.Reference)
 			}
 		})
