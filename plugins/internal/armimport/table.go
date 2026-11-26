@@ -569,6 +569,8 @@ var notImported = []cloudimport.NotImported{
 	{Recipe: "prompt-injection-shield-azure-api-management", Reason: "a FeatureRecipe, realizing " +
 		"core/prompt-injection-shield as an element of the API Management API policy the azure-api-management " +
 		"Recipe writes: no deployed resource is its own, so no resource of a template is an instance of it"},
+	{Recipe: "public-ingress-native", Reason: "a FeatureRecipe, realizing core/public-ingress: it emits nothing, " +
+		"and the Recipe realizing the server publishes it, so no resource of a template is an instance of it"},
 	{Recipe: "retry-policy-azure-api-management", Reason: "a FeatureRecipe, realizing core/retry-policy as an " +
 		"element of the API Management API policy the azure-api-management Recipe writes: no deployed " +
 		"resource is its own, so no resource of a template is an instance of it"},
