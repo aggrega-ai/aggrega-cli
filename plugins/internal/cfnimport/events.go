@@ -99,10 +99,7 @@ func eventKindOf(typ string) eventKind {
 //     machine on that resource, and one routing through an API of the
 //     template is a dependency of that API on it; each event is left out of
 //     its body and reported resource-not-carried, naming what SAM writes for
-//     it, an Api or HttpApi event naming no API saying SAM creates one;
-//   - a property of a serverless function from which SAM writes what no
-//     Recipe deploying a function takes is left out of its body and reported
-//     value-not-carried ([reader.notTakenProperties]).
+//     it, an Api or HttpApi event naming no API saying SAM creates one.
 //
 // The resource an event reads, or the API it routes through, is the node its
 // value references, lowered as [reader.lower] lowers a value and reporting
@@ -124,9 +121,6 @@ func (r *reader) serverless(g *cloudimport.Graph) {
 		r.embeddedConnectors(h, byID)
 		if n.Type == functionType || n.Type == stateMachineType {
 			r.events(h, byID)
-		}
-		if n.Type == functionType {
-			r.notTakenProperties(h)
 		}
 	}
 	if len(dropped) == 0 {

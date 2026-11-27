@@ -37,9 +37,8 @@
 // whose messages or records invoke it, of the API an event routes through on
 // the function, of a connector's source on its destinations — and are not
 // carried, as no instance of the draft deploys what the transform writes for
-// them. A function's properties from which the transform writes what no
-// Recipe deploying a function takes, such as its policies and its packaged
-// code, are reported and left out.
+// them. Every other property a serverless resource writes, or takes from the
+// Globals, is kept.
 //
 // [Read] then lowers each intrinsic function, dynamic reference and condition
 // the template writes into the core's values: a parameter, a reference to a

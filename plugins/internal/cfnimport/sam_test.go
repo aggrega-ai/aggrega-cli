@@ -190,56 +190,92 @@ Resources:
 	}
 }
 
-// samProperty is the value-not-carried warning naming the property of the
-// function fn of testdata/sam/properties/template.yaml written at the JSON
-// pointer at, global where the function takes it from the Globals.
-func samProperty(fn, property, at string, global bool, does string) aggrega.Diagnostic {
-	where := "the template template.yaml writes " + property + " on the function " + fn + " at " + at
-	if global {
-		where = "the template template.yaml writes " + property + " under Globals for Function at " + at +
-			", which the function " + fn + " takes"
-	}
-	return aggrega.Diagnostic{Severity: aggrega.SeverityWarn, Code: "value-not-carried", Message: where + ", " + does,
-		SourceRef: "template.yaml#" + at}
-}
-
-// TestServerlessFunctionPropertiesTheRecipeNeverTakesAreNamed reads two SAM
-// functions writing, or taking from the Globals, the properties from which
-// SAM writes what no Recipe deploying a function takes — AutoPublishAlias,
-// DeploymentPreference, Policies, CodeUri and InlineCode —: each is reported
-// value-not-carried on each function, where the template writes it, saying
-// what to do instead, and left out of the function's body.
-func TestServerlessFunctionPropertiesTheRecipeNeverTakesAreNamed(t *testing.T) {
+// TestServerlessFunctionKeepsItsOwnProperties reads two SAM functions
+// writing, or taking from the Globals, the properties from which SAM writes
+// what no Recipe deploying a function takes — AutoPublishAlias,
+// DeploymentPreference, Policies, CodeUri and InlineCode —: each is kept in
+// the function's body as written, and nothing is reported, as what the
+// draft does with them depends on whether a row maps the function.
+func TestServerlessFunctionKeepsItsOwnProperties(t *testing.T) {
 	t.Parallel()
 	g, diags := readSam(t, "properties")
-	alias := "from which SAM publishes a version of the function and an alias naming it whenever the function " +
-		"changes, so it is not carried: the Recipe deploying a function publishes no alias, so call the function " +
-		"itself, or write the alias by hand"
-	code := "so it is not carried: the Recipe deploying a function runs a container image, infra.image, which is " +
-		"left for the operator, so build the code into an image in Amazon ECR"
-	want := []aggrega.Diagnostic{
-		samProperty("Api", "AutoPublishAlias", "/Globals/Function/AutoPublishAlias", true, alias),
-		samProperty("Api", "CodeUri", "/Resources/Api/Properties/CodeUri", false, "the function's code as a .zip "+
-			"package, "+code),
-		samProperty("Api", "DeploymentPreference", "/Resources/Api/Properties/DeploymentPreference", false, "from "+
-			"which SAM writes an AWS CodeDeploy application and DeploymentGroup shifting the alias to each new "+
-			"version, so it is not carried: the Recipe deploying a function shifts no traffic, so each change is "+
-			"deployed at once; shift traffic with AWS CodeDeploy by hand"),
-		samProperty("Api", "Policies", "/Resources/Api/Properties/Policies", false, "from which SAM writes an "+
-			"execution role for the function, so it is not carried: the Recipe takes an existing role: "+
-			"infra.overrides.Role, so grant what the policies allow in the role the operator supplies there"),
-		samProperty("Hook", "AutoPublishAlias", "/Globals/Function/AutoPublishAlias", true, alias),
-		samProperty("Hook", "InlineCode", "/Resources/Hook/Properties/InlineCode", false, "the function's code "+
-			"written in the template, "+code),
-	}
-	if !reflect.DeepEqual(diags, want) {
-		t.Fatalf("the read reports\n%+v\nwant\n%+v", diags, want)
+	noDiagnostics(t, diags)
+	want := map[string][]cloudimport.Prop{
+		"Api": {
+			leafProp("AutoPublishAlias", `"live"`),
+			leafProp("CodeUri", `"src/"`),
+			objectProp("DeploymentPreference", leafProp("Type", `"Canary10Percent5Minutes"`)),
+			leafProp("Handler", `"app.handler"`),
+			listProp("Policies", `"AWSLambdaBasicExecutionRole"`),
+			leafProp("Runtime", `"python3.12"`),
+		},
+		"Hook": {
+			leafProp("AutoPublishAlias", `"live"`),
+			leafProp("Handler", `"index.handler"`),
+			leafProp("InlineCode", `"def handler(event, context): return event"`),
+			leafProp("Runtime", `"python3.12"`),
+		},
 	}
 	for _, id := range []string{"Api", "Hook"} {
-		want := []cloudimport.Prop{leafProp("Handler", map[string]string{"Api": `"app.handler"`,
-			"Hook": `"index.handler"`}[id]), leafProp("Runtime", `"python3.12"`)}
-		if got := propsOf(t, node(t, g, id)); !reflect.DeepEqual(got, want) {
-			t.Errorf("%s's properties read\n%#v\nwant\n%#v", id, got, want)
+		if got := propsOf(t, node(t, g, id)); !reflect.DeepEqual(got, want[id]) {
+			t.Errorf("%s's properties read\n%#v\nwant\n%#v", id, got, want[id])
+		}
+	}
+}
+
+// TestGlobalsLeaveNullPropertiesAsTheyAre reads a SAM function writing its
+// Properties as null beside Globals for functions: the transform reads null
+// as written, so the function takes none of the Globals, and nothing is
+// reported.
+func TestGlobalsLeaveNullPropertiesAsTheyAre(t *testing.T) {
+	t.Parallel()
+	g, diags := readText(`AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Globals:
+  Function:
+    Timeout: 5
+Resources:
+  Fn:
+    Type: AWS::Serverless::Function
+    Properties: null
+`)
+	noDiagnostics(t, diags)
+	want := []cloudimport.Prop{{Name: "Properties", Value: lit("null")}}
+	if got := node(t, g, "Fn").Body; !reflect.DeepEqual(got, want) {
+		t.Errorf("Fn's body reads\n%#v\nwant\n%#v", got, want)
+	}
+}
+
+// TestGlobalsCapacityProviderRules merges the Globals of CapacityProvider by
+// the transform's own rules there: the architectures nested in
+// InstanceRequirements are the resource's list, replacing the global one,
+// while a list beside them is the global items followed by the resource's;
+// ManagedResourceTags keeps only the members the resource writes, where it
+// writes any, each merged — so a member only the Globals write is dropped
+// while the Tags map is merged, a global tag the resource does not write
+// kept — and is taken whole from the Globals by a resource writing it empty
+// or not at all.
+func TestGlobalsCapacityProviderRules(t *testing.T) {
+	t.Parallel()
+	g, diags := readSam(t, "capacity")
+	noDiagnostics(t, diags)
+	globalTags := objectProp("ManagedResourceTags", objectProp("Labels", leafProp("Fleet", `"shared"`)),
+		objectProp("Tags", leafProp("CostCenter", `"cc-0001"`), leafProp("Team", `"platform"`)))
+	globalRequirements := objectProp("InstanceRequirements", listProp("Architectures", `"x86_64"`),
+		listProp("ExcludedTypes", `"t2.micro"`))
+	want := map[string][]cloudimport.Prop{
+		"Tagged": {
+			objectProp("InstanceRequirements", listProp("Architectures", `"arm64"`),
+				listProp("ExcludedTypes", `"t2.micro"`, `"t3.nano"`)),
+			objectProp("ManagedResourceTags", objectProp("Tags", leafProp("CostCenter", `"cc-1234"`),
+				leafProp("Environment", `"production"`), leafProp("Team", `"platform"`))),
+		},
+		"EmptyTags": {globalRequirements, globalTags},
+		"Untagged":  {globalRequirements, globalTags},
+	}
+	for _, id := range []string{"EmptyTags", "Tagged", "Untagged"} {
+		if got := propsOf(t, node(t, g, id)); !reflect.DeepEqual(got, want[id]) {
+			t.Errorf("%s's properties read\n%#v\nwant\n%#v", id, got, want[id])
 		}
 	}
 }

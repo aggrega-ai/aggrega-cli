@@ -27,6 +27,9 @@ Every file here is synthetic, written for the reader's tests; none is copied fro
 - `sam/globals/template.yaml` — SAM Globals for functions and simple tables (a primitive, a map of variables, a list of
   layers, the architectures, and a network setting reading a parameter) beside two functions, one overriding each,
   a simple table writing no properties, and a queue no Globals name.
+- `sam/capacity/template.yaml` — SAM Globals for capacity providers (instance requirements, and managed-resource tags
+  holding a member besides `Tags` so that the members a resource does not write are seen dropped) beside a capacity
+  provider overriding both, one writing its managed-resource tags empty, and one writing no properties.
 - `sam/events-edges/template.yaml` — a SAM function writing an event of each type SAM reads, beside the queue, stream,
   table, bucket, topic, APIs, event bus, log group and user pool its events name.
 - `sam/connectors/template.yaml` — a SAM connector resource with a list of destinations and a function depending on it,

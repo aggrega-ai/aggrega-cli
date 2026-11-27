@@ -187,15 +187,19 @@ Resources:
 }
 
 // drafted is a SAM function and a SAM state machine no row maps, each
-// writing an event.
+// writing an event, the function also its packaged code, an alias and its
+// policies.
 const drafted = `AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Resources:
   Worker:
     Type: AWS::Serverless::Function
     Properties:
-      PackageType: Image
-      ImageUri: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/worker:1.0
+      CodeUri: src/
+      Handler: app.handler
+      Runtime: python3.12
+      AutoPublishAlias: live
+      Policies: AWSLambdaBasicExecutionRole
       Events:
         FromQueue:
           Type: SQS
@@ -216,9 +220,10 @@ Resources:
 
 // TestDraftedServerlessResourceEventsAreNotCarried imports a SAM function
 // and a SAM state machine no row maps through the core: each is drafted from
-// the source with no Events in its drafted Recipe or its Release entry, each
-// event is reported resource-not-carried, and the function's instance uses
-// the queue its event reads.
+// the source keeping every property it writes but its Events — the function
+// its code, alias and policies — with no Events in its drafted Recipe or its
+// Release entry, each event is reported resource-not-carried, and the
+// function's instance uses the queue its event reads.
 func TestDraftedServerlessResourceEventsAreNotCarried(t *testing.T) {
 	t.Parallel()
 	f := cloudimport.Format{Name: formatName, Target: target, Syntax: "yaml", Read: Read, Key: Key,
@@ -256,5 +261,12 @@ func TestDraftedServerlessResourceEventsAreNotCarried(t *testing.T) {
 		"          queue:\n            target: queue\n"
 	if !strings.Contains(files["aggregate.yaml"], worker) {
 		t.Errorf("the Aggregate holds no\n%s\nin\n%s", worker, files["aggregate.yaml"])
+	}
+	entries := "  components:\n    flow:\n      infra:\n        overrides:\n          DefinitionUri: \"flow.asl.json\"\n" +
+		"    queue: {}\n    worker:\n      infra:\n        overrides:\n          AutoPublishAlias: \"live\"\n" +
+		"          CodeUri: \"src/\"\n          Handler: \"app.handler\"\n" +
+		"          Policies: \"AWSLambdaBasicExecutionRole\"\n          Runtime: \"python3.12\"\n"
+	if !strings.HasSuffix(files["release.yaml"], entries) {
+		t.Errorf("the Release does not end with\n%s\nin\n%s", entries, files["release.yaml"])
 	}
 }

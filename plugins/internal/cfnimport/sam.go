@@ -117,33 +117,6 @@ func mergeOpAt(path []string) mergeOp {
 	return mergeDeep
 }
 
-// notTakenProperty is a property of a serverless function from which SAM
-// writes what no Recipe deploying a function takes: its name, what SAM
-// writes from it and what to do instead.
-type notTakenProperty struct {
-	name, does, fix string
-}
-
-// notTaken are the properties of a serverless function from which SAM writes
-// what no Recipe deploying a function takes, in name order.
-var notTaken = []notTakenProperty{
-	{"AutoPublishAlias", "from which SAM publishes a version of the function and an alias naming it whenever the " +
-		"function changes", "the Recipe deploying a function publishes no alias, so call the function itself, or " +
-		"write the alias by hand"},
-	{"CodeUri", "the function's code as a .zip package", codeFix},
-	{"DeploymentPreference", "from which SAM writes an AWS CodeDeploy application and DeploymentGroup shifting the " +
-		"alias to each new version", "the Recipe deploying a function shifts no traffic, so each change is deployed " +
-		"at once; shift traffic with AWS CodeDeploy by hand"},
-	{"InlineCode", "the function's code written in the template", codeFix},
-	{"Policies", "from which SAM writes an execution role for the function", "the Recipe takes an existing role: " +
-		"infra.overrides.Role, so grant what the policies allow in the role the operator supplies there"},
-}
-
-// codeFix is what to do instead of the code a serverless function is
-// written with.
-const codeFix = "the Recipe deploying a function runs a container image, infra.image, which is left for the " +
-	"operator, so build the code into an image in Amazon ECR"
-
 // serverless reports whether t declares the serverless transform.
 func (t *template) serverless() bool {
 	return slices.ContainsFunc(declaredTransforms(t.top.get("Transform")), func(tr transform) bool {
@@ -181,9 +154,8 @@ type typeGlobals struct {
 // with the global member of its name; a list is the global items followed by
 // the resource's; values of differing kinds take the resource's; and at the
 // paths of mergeOps the transform's own rule holds instead. A resource
-// writing no Properties takes the global ones. The properties each resource
-// takes from the Globals and does not write itself are recorded in
-// t.fromGlobals.
+// writing no Properties takes the global ones; one writing Properties as null
+// takes none, as the transform reads it.
 func (r *reader) serverlessResources(t *template) {
 	if t.serverlessRead {
 		return
@@ -209,24 +181,11 @@ func (r *reader) serverlessResources(t *template) {
 			continue
 		}
 		own := res.get("Properties")
-		if own == nil || isNull(own) {
+		if own == nil {
 			own = json.RawMessage("{}")
 		}
 		props := merged(global.encoded(), own, []string{strings.TrimPrefix(typ, serverlessPrefix)})
 		t.resources[i].Value = res.with("Properties", props).encoded()
-		written, _ := objectOf(own)
-		taken, _ := objectOf(props)
-		if isIntrinsic(taken) {
-			continue
-		}
-		for _, g := range global {
-			if written.get(g.Key) == nil && taken.get(g.Key) != nil {
-				if t.fromGlobals == nil {
-					t.fromGlobals = map[string][]string{}
-				}
-				t.fromGlobals[e.Key] = append(t.fromGlobals[e.Key], g.Key)
-			}
-		}
 	}
 }
 
@@ -286,37 +245,6 @@ func (r *reader) globals(t *template) []typeGlobals {
 		out = append(out, g)
 	}
 	return out
-}
-
-// notTakenProperties leaves out of the body of h, a serverless function, each
-// property of notTaken it holds, each reported value-not-carried where the
-// template writes it: on the resource, or in the Globals of Function the
-// resource takes it from.
-func (r *reader) notTakenProperties(h home) {
-	t := h.s.t
-	for _, p := range h.n.Body {
-		if p.Name != "Properties" {
-			continue
-		}
-		for _, m := range p.Props {
-			i := slices.IndexFunc(notTaken, func(q notTakenProperty) bool { return q.name == m.Name })
-			if i < 0 {
-				continue
-			}
-			at := importer.Pointer("Resources", h.id, "Properties", m.Name)
-			where := "the template " + t.file + " writes " + m.Name + " on the function " + h.id + " at " + at
-			if slices.Contains(t.fromGlobals[h.id], m.Name) {
-				at = importer.Pointer(globalsSection, "Function", m.Name)
-				where = "the template " + t.file + " writes " + m.Name + " under Globals for Function at " + at +
-					", which the function " + h.id + " takes"
-			}
-			r.warnAt(cloudimport.CodeValueNotCarried, t.file, at, where+", "+notTaken[i].does+", so it is not "+
-				"carried: "+notTaken[i].fix)
-		}
-	}
-	for _, p := range notTaken {
-		h.n.Body = withoutProperty(h.n.Body, p.name)
-	}
 }
 
 // isIntrinsic reports whether o, the members of an object, is an intrinsic

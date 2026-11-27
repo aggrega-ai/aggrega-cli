@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Globals:
+  CapacityProvider:
+    InstanceRequirements:
+      Architectures: [x86_64]
+      ExcludedTypes: [t2.micro]
+    ManagedResourceTags:
+      Labels:
+        Fleet: shared
+      Tags:
+        CostCenter: cc-0001
+        Team: platform
+Resources:
+  Tagged:
+    Type: AWS::Serverless::CapacityProvider
+    Properties:
+      InstanceRequirements:
+        Architectures: [arm64]
+        ExcludedTypes: [t3.nano]
+      ManagedResourceTags:
+        Tags:
+          CostCenter: cc-1234
+          Environment: production
+  EmptyTags:
+    Type: AWS::Serverless::CapacityProvider
+    Properties:
+      ManagedResourceTags: {}
+  Untagged:
+    Type: AWS::Serverless::CapacityProvider
