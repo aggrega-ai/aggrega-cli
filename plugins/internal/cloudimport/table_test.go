@@ -324,3 +324,34 @@ func TestMapConverterMalformedIsRefused(t *testing.T) {
 		t.Errorf("a well-formed map is refused: %v", err)
 	}
 }
+
+// TestHandRequirementsMergeBesideTheGeneratedOnes merges a hand row's
+// requirement of a key the generated row does not require after the generated
+// ones, and refuses a hand requirement of a key the generated row requires
+// otherwise, naming both, where no reason is written.
+func TestHandRequirementsMergeBesideTheGeneratedOnes(t *testing.T) {
+	runtime := Requirement{Key: "values.runtime", Type: "string"}
+	image := Requirement{Key: "infra.image", Why: "the image the function runs"}
+	rows := func(gen, hand Row) ([]Row, error) {
+		gen.Key, gen.Component, gen.Recipe, gen.Origin = serverType, postgres, "postgres-flexible-server", "generated"
+		hand.Key, hand.Origin = serverType, "hand"
+		return Table{Generated: []Row{gen}, Hand: []Row{hand}}.Rows()
+	}
+	got, err := rows(Row{Requires: []Requirement{runtime}}, Row{Requires: []Requirement{image}})
+	if err != nil {
+		t.Fatalf("Rows() error = %v", err)
+	}
+	if want := []Requirement{runtime, image}; len(got) != 1 || !reflect.DeepEqual(got[0].Requires, want) {
+		t.Fatalf("rows = %+v, want one row requiring %+v", got, want)
+	}
+	_, err = rows(Row{Requires: []Requirement{runtime}}, Row{Requires: []Requirement{{Key: "values.runtime",
+		Type: "integer"}}})
+	var c *Contradiction
+	if !errors.As(err, &c) {
+		t.Fatalf("Rows() error = %v, want a *Contradiction", err)
+	}
+	if want := (Contradiction{Key: serverType, Field: "Requires.values.runtime", Generated: "string",
+		Hand: "integer"}); !reflect.DeepEqual(*c, want) {
+		t.Fatalf("contradiction = %+v, want %+v", *c, want)
+	}
+}

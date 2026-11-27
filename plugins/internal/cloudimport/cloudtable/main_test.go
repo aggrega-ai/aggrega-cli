@@ -536,3 +536,46 @@ func TestAHandRowWrittenWholeStandsInForItsRecipesClaim(t *testing.T) {
 		t.Errorf("a hand row of the claim's own key and When drops the generated row it merges into: %v", rows)
 	}
 }
+
+// TestARowRequiresTheValuesItsComponentRequires generates the row of a
+// Recipe whose Component requires three values keys, one with a default, and
+// requires the two without one, in the order the schema lists them, each with
+// its type; the rendered table writes them.
+func TestARowRequiresTheValuesItsComponentRequires(t *testing.T) {
+	t.Parallel()
+	root := hubWith(t, map[string]string{
+		"aggrega-catalog/component/core/compute/acme-fn/1.0.0/component.yaml": "apiVersion: aggrega.ai/v1beta1\n" +
+			"kind: Component\nmetadata:\n  name: core/compute/acme-fn\n  version: 1.0.0\n  labels:\n" +
+			"    component.aggrega.ai/category: compute\n    component.aggrega.ai/type: function\nspec:\n" +
+			"  schema:\n    values:\n      properties:\n        runtime: { type: string }\n" +
+			"        memory_mb: { type: integer, default: 128 }\n        handlers: { type: array }\n" +
+			"        label: { type: string }\n      required: [runtime, memory_mb, handlers]\n",
+		"aggrega-catalog/recipe/arm/fn-module/1.0.0/recipe.yaml": moduleRecipe("fn-module", "core/compute/acme-fn",
+			"acme/fn", "Function"),
+	})
+	rows, notes, err := generateFromHub(root, armFormatOrFail(t), cloudimport.Table{})
+	if err != nil {
+		t.Fatalf("generate the table: %v (%v)", err, notes)
+	}
+	i := slices.IndexFunc(rows, func(r cloudimport.Row) bool { return r.Recipe == "fn-module" })
+	if i < 0 {
+		t.Fatalf("no row of fn-module among %+v", rows)
+	}
+	want := []cloudimport.Requirement{{Key: "values.runtime", Type: "string"}, {Key: "values.handlers", Type: "array"}}
+	if !reflect.DeepEqual(rows[i].Requires, want) {
+		t.Errorf("the row requires %+v, want %+v", rows[i].Requires, want)
+	}
+	for _, r := range rows {
+		if r.Recipe != "fn-module" && len(r.Requires) > 0 {
+			t.Errorf("the row of %s, whose Component requires nothing, requires %+v", r.Recipe, r.Requires)
+		}
+	}
+	text, err := render(rows, nil, "r", armFormatOrFail(t))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if line := "\t\tRequires: []cloudimport.Requirement{\n\t\t\t{Key: \"values.runtime\", Type: \"string\"},\n" +
+		"\t\t\t{Key: \"values.handlers\", Type: \"array\"},\n\t\t},\n"; !strings.Contains(string(text), line) {
+		t.Errorf("the rendered table does not write\n%s\nin\n%s", line, text)
+	}
+}

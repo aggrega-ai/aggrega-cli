@@ -128,6 +128,9 @@ var generatedRows = []cloudimport.Row{
 		Provides: []cloudimport.Placement{
 			{Key: "arn"},
 		},
+		Requires: []cloudimport.Requirement{
+			{Key: "values.domain_name", Type: "string"},
+		},
 		Origin: "generated aggrega-catalog/recipe/cloudformation/aws-certificate-manager/1.0.0/recipe.yaml",
 	},
 	{
@@ -461,6 +464,9 @@ var generatedRows = []cloudimport.Row{
 		Provides: []cloudimport.Placement{
 			{Key: "database"},
 		},
+		Requires: []cloudimport.Requirement{
+			{Key: "values.database", Type: "string"},
+		},
 		Origin: "generated aggrega-catalog/recipe/cloudformation/glue/1.0.0/recipe.yaml",
 	},
 	{
@@ -557,6 +563,9 @@ var generatedRows = []cloudimport.Row{
 		Folds: []cloudimport.Fold{
 			{Type: "AWS::Lambda::Version", Key: []string{"infra", "min_replicas"}, From: []string{"Properties", "ProvisionedConcurrencyConfig", "ProvisionedConcurrentExecutions"}},
 		},
+		Requires: []cloudimport.Requirement{
+			{Key: "values.runtime", Type: "string"},
+		},
 		Origin: "generated aggrega-catalog/recipe/cloudformation/function-lambda/1.0.0/recipe.yaml",
 	},
 	{
@@ -616,6 +625,9 @@ var generatedRows = []cloudimport.Row{
 		},
 		Folds: []cloudimport.Fold{
 			{Type: "AWS::RDS::DBInstance", From: []string{"Properties", "DBClusterIdentifier"}},
+		},
+		Requires: []cloudimport.Requirement{
+			{Key: "values.database", Type: "string"},
 		},
 		Origin: "generated aggrega-catalog/recipe/cloudformation/mysql-aurora/1.0.0/recipe.yaml",
 	},
@@ -689,6 +701,9 @@ var generatedRows = []cloudimport.Row{
 		Provides: []cloudimport.Placement{
 			{From: []string{"Endpoint", "Address"}, Key: "host"},
 		},
+		Requires: []cloudimport.Requirement{
+			{Key: "values.database", Type: "string"},
+		},
 		Origin: "generated aggrega-catalog/recipe/cloudformation/mariadb-rds/1.0.0/recipe.yaml",
 	},
 	{
@@ -724,6 +739,9 @@ var generatedRows = []cloudimport.Row{
 		},
 		Provides: []cloudimport.Placement{
 			{From: []string{"Endpoint", "Address"}, Key: "host"},
+		},
+		Requires: []cloudimport.Requirement{
+			{Key: "values.database", Type: "string"},
 		},
 		Origin: "generated aggrega-catalog/recipe/cloudformation/mysql-rds/1.0.0/recipe.yaml",
 	},
@@ -844,6 +862,11 @@ var generatedRows = []cloudimport.Row{
 		Provides: []cloudimport.Placement{
 			{Key: "host"},
 		},
+		Requires: []cloudimport.Requirement{
+			{Key: "values.name", Type: "string"},
+			{Key: "values.type", Type: "string"},
+			{Key: "values.records", Type: "array"},
+		},
 		Origin: "generated aggrega-catalog/recipe/cloudformation/dns-record-route-53/1.0.0/recipe.yaml",
 	},
 	{
@@ -865,6 +888,9 @@ var generatedRows = []cloudimport.Row{
 		},
 		Folds: []cloudimport.Fold{
 			{Type: "AWS::S3::BucketPolicy", Key: []string{"infra", "overrides", "policy"}, From: []string{"Properties", "PolicyDocument"}},
+		},
+		Requires: []cloudimport.Requirement{
+			{Key: "values.bucket", Type: "string"},
 		},
 		Origin: "generated aggrega-catalog/recipe/cloudformation/s3-object-store-amazon-s3/1.0.0/recipe.yaml",
 	},
@@ -935,6 +961,9 @@ var generatedRows = []cloudimport.Row{
 		},
 		Provides: []cloudimport.Placement{
 			{Key: "arn"},
+		},
+		Requires: []cloudimport.Requirement{
+			{Key: "values.definition", Type: "object"},
 		},
 		Origin: "generated aggrega-catalog/recipe/cloudformation/step-functions/1.0.0/recipe.yaml",
 	},

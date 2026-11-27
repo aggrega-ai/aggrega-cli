@@ -11,9 +11,14 @@ spec:
   # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
   manifest: ""
   components:
-    archive: {}
+    archive:
+      infra:
+        # Left for the Release, since the source cannot supply it: infra.region, the AWS Region the stack is deployed to, which the Recipe holds the stack to and a template never states
+        region: ""
     # Properties UploadsPolicy, folded into this instance, writes and the draft does not place: Properties.Bucket.
     uploads:
       infra:
         overrides:
           policy: {"Statement": [{"Action": "s3:*", "Condition": {"Bool": {"aws:SecureTransport": "false"}}, "Effect": "Deny", "Principal": "*", "Resource": "!Sub 'arn:${AWS::Partition}:s3:::${Uploads}/*'"}]}
+        # Left for the Release, since the source cannot supply it: infra.region, the AWS Region the stack is deployed to, which the Recipe holds the stack to and a template never states
+        region: ""

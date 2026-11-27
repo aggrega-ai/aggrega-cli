@@ -336,3 +336,17 @@ func TestEveryStringFormatHasAPlaceholderItsCheckAccepts(t *testing.T) {
 		}
 	}
 }
+
+// mapAt walks a nested string-keyed map along keys and returns the map at the
+// final key, reporting whether every step resolved to a map.
+func mapAt(m map[string]any, keys ...string) (map[string]any, bool) {
+	cur := m
+	for _, k := range keys {
+		next, ok := cur[k].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur = next
+	}
+	return cur, true
+}

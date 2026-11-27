@@ -100,6 +100,19 @@ func overrides(key string) []string {
 	return propPath("infra", "overrides", key)
 }
 
+// functionImage and bucketRegion say what the infra keys the Recipes of a
+// function and of a bucket require are, where a template gives none: a
+// function's container image, which a template running the function from a
+// .zip package or from code written in it names none of, and a bucket's AWS
+// Region, which a template never states, a stack creating its resources in
+// the Region it is deployed to.
+const (
+	functionImage = "the container image in Amazon ECR the function runs, which the Recipe requires and the " +
+		"source names none of"
+	bucketRegion = "the AWS Region the stack is deployed to, which the Recipe holds the stack to and a template " +
+		"never states"
+)
+
 // handRows are the mapping table's rows written by hand, each keyed like a
 // generated row: a row of a generated row's key and When merges into it, and
 // any other stands beside the generated rows. A fold writing a child's
@@ -136,15 +149,20 @@ var handRows = []cloudimport.Row{
 		propPath("Properties", "ConnectionId")),
 	oneChild("AWS::Bedrock::KnowledgeBase", nil, "AWS::Bedrock::DataSource", overrides("BucketARN"),
 		propPath("Properties", "DataSourceConfiguration", "S3Configuration", "BucketArn")),
-	oneChild("AWS::S3::Bucket", nil, "AWS::S3::BucketPolicy", overrides("policy"),
-		propPath("Properties", "PolicyDocument")),
+	func() cloudimport.Row {
+		r := oneChild("AWS::S3::Bucket", nil, "AWS::S3::BucketPolicy", overrides("policy"),
+			propPath("Properties", "PolicyDocument"))
+		r.Requires = []cloudimport.Requirement{{Key: "infra.region", Why: bucketRegion}}
+		return r
+	}(),
 	rdsInstance(engine(cloudimport.OpEquals, "postgres")),
 	rdsInstance(engine(cloudimport.OpEquals, "mysql")),
 	rdsInstance(engine(cloudimport.OpEquals, "mariadb")),
 	rdsInstance(sqlServer),
 	{
-		Key: "AWS::Lambda::Function",
-		Env: &cloudimport.EnvList{Path: propPath("Properties", "Environment", "Variables")},
+		Key:    "AWS::Lambda::Function",
+		Values: []cloudimport.Placement{{From: propPath("Properties", "Runtime"), Key: "runtime"}},
+		Env:    &cloudimport.EnvList{Path: propPath("Properties", "Environment", "Variables")},
 		Folds: []cloudimport.Fold{
 			{Type: "AWS::Lambda::Version", Key: propPath("infra", "min_replicas"),
 				From: propPath("Properties", "ProvisionedConcurrencyConfig", "ProvisionedConcurrentExecutions"),
@@ -153,6 +171,7 @@ var handRows = []cloudimport.Row{
 				"the function's connection to the resource whose records invoke it, so map that resource's " +
 				"records to the function outside the draft"},
 		},
+		Requires:   []cloudimport.Requirement{{Key: "infra.image", Why: functionImage}},
 		Supersedes: map[string]string{"Folds.AWS::Lambda::Version at infra.min_replicas": takeOne},
 	},
 	{

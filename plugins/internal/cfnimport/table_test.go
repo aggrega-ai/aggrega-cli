@@ -310,8 +310,9 @@ Resources:
 
 // TestZipPackagedSamFunctionLeavesTheImageToTheOperator maps a SAM function
 // whose code is a .zip package to the function, its decision saying the
-// Recipe runs a container image built from its CodeUri, infra.image left for
-// the operator, and the CodeUri reported not carried.
+// Recipe runs a container image built from its CodeUri, infra.image left in
+// its Release entry for the answers file, and the CodeUri reported not
+// carried.
 func TestZipPackagedSamFunctionLeavesTheImageToTheOperator(t *testing.T) {
 	t.Parallel()
 	out := importText(t, `AWSTemplateFormatVersion: "2010-09-09"
@@ -329,7 +330,89 @@ Resources:
 		!strings.Contains(notCarried[0].Message, "the function's code as a .zip package, so it is not carried") {
 		t.Errorf("the CodeUri is reported %+v", notCarried)
 	}
-	lacks(t, "the Release", fileText(t, out, "release.yaml"), "image:")
+	holds(t, "the Release", fileText(t, out, "release.yaml"), "    orders:\n      infra:\n        # Left for the "+
+		"Release, since the source cannot supply it: infra.image, "+functionImage+"\n        image: \"\"\n")
+}
+
+// TestFunctionRuntimeIsTheFunctionsRuntimeValue places the runtime a Lambda
+// function or a SAM function writes as the function's runtime value, which
+// the Component requires; a function whose source writes none, run from an
+// image, reads it from an Aggregate parameter of its own declaring no default,
+// which the Release leaves for the answers file.
+func TestFunctionRuntimeIsTheFunctionsRuntimeValue(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"AWS::Lambda::Function", "AWS::Serverless::Function"} {
+		r := rowOf(t, key, "function-lambda")
+		if i := slices.IndexFunc(r.Values, func(p cloudimport.Placement) bool { return p.Key == "runtime" }); i < 0 ||
+			!slices.Equal(r.Values[i].From, []string{"Properties", "Runtime"}) {
+			t.Errorf("the row of %s places its values %+v, want runtime from Properties.Runtime", key, r.Values)
+		}
+		want := []cloudimport.Requirement{{Key: "values.runtime", Type: "string"},
+			{Key: "infra.image", Why: functionImage}}
+		if !slices.Equal(r.Requires, want) {
+			t.Errorf("the row of %s requires %+v, want %+v", key, r.Requires, want)
+		}
+	}
+	zip := importText(t, `AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Globals:
+  Function: {Runtime: python3.12}
+Resources:
+  Orders:
+    Type: AWS::Serverless::Function
+    Properties: {CodeUri: ./src, Handler: app.handler}
+`)
+	holds(t, "the Aggregate of a SAM function", fileText(t, zip, "aggregate.yaml"), `      type: core/compute/function
+      values:
+        runtime: "python3.12"
+`)
+	lacks(t, "the Aggregate of a SAM function", fileText(t, zip, "aggregate.yaml"), "parameters:")
+	image := importText(t, `AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Orders:
+    Type: AWS::Lambda::Function
+    Properties:
+      PackageType: Image
+      Code: {ImageUri: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/orders:1.0.0}
+      Role: arn:aws:iam::123456789012:role/orders
+`)
+	holds(t, "the Aggregate of an image function", fileText(t, image, "aggregate.yaml"), `  parameters:
+    orders_runtime:
+      type: string
+      description: "values.runtime of the instance orders, which its Component core/compute/function requires and the source does not give."
+  components:
+    # The resource Orders.
+    orders:
+      type: core/compute/function
+      values:
+        runtime: "{{ .parameters.orders_runtime }}"
+`)
+	release := fileText(t, image, "release.yaml")
+	holds(t, "the Release of an image function", release, `  parameters:
+    # Left for the Release, since the source cannot supply it: orders_runtime, values.runtime of the instance orders, which its Component core/compute/function requires and the source does not give
+    orders_runtime: ""
+`, `        image: "123456789012.dkr.ecr.eu-west-1.amazonaws.com/orders:1.0.0"
+`)
+	lacks(t, "the Release of an image function", release, `image: ""`)
+}
+
+// TestBucketRegionIsLeftForTheAnswersFile leaves the Region a bucket's Recipe
+// holds its stack to in the bucket's Release entry for the answers file, as no
+// template states the Region its stack deploys to.
+func TestBucketRegionIsLeftForTheAnswersFile(t *testing.T) {
+	t.Parallel()
+	out := importText(t, `AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  OrderArchive:
+    Type: AWS::S3::Bucket
+    Properties: {BucketName: orders-archive-example}
+`)
+	holds(t, "the Release", fileText(t, out, "release.yaml"), `    order-archive:
+      infra:
+        # Left for the Release, since the source cannot supply it: infra.region, `+bucketRegion+`
+        region: ""
+`)
+	lacks(t, "the Aggregate", fileText(t, out, "aggregate.yaml"), "parameters:")
 }
 
 // TestSamFunctionMapsThroughTheDerivedRow derives the row of a SAM function

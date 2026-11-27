@@ -84,6 +84,7 @@ func render(rows []cloudimport.Row, images []cloudimport.ImageRow, revision stri
 			writePlacements(&b, l.field, l.ps)
 		}
 		writeFolds(&b, r.Folds)
+		writeRequires(&b, r.Requires)
 		writeText(&b, "Origin", r.Origin)
 		b.WriteString("},\n")
 	}
@@ -158,6 +159,26 @@ func writeFolds(b *bytes.Buffer, folds []cloudimport.Fold) {
 		}
 		if f.NotCarried != "" {
 			fmt.Fprintf(b, ", NotCarried: %q", f.NotCarried)
+		}
+		b.WriteString("},\n")
+	}
+	b.WriteString("},\n")
+}
+
+// writeRequires writes a row's requirements, nothing where it has none; a
+// requirement's empty type and reason are left out.
+func writeRequires(b *bytes.Buffer, reqs []cloudimport.Requirement) {
+	if len(reqs) == 0 {
+		return
+	}
+	b.WriteString("Requires: []cloudimport.Requirement{\n")
+	for _, r := range reqs {
+		fmt.Fprintf(b, "{Key: %q", r.Key)
+		if r.Type != "" {
+			fmt.Fprintf(b, ", Type: %q", r.Type)
+		}
+		if r.Why != "" {
+			fmt.Fprintf(b, ", Why: %q", r.Why)
 		}
 		b.WriteString("},\n")
 	}

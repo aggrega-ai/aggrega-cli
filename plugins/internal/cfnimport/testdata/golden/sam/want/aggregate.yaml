@@ -7,6 +7,10 @@ metadata:
   version: 0.1.0
   description: Draft Aggregate imported from a source in the cloudformation format.
 spec:
+  parameters:
+    image_function_runtime:
+      type: string
+      description: "values.runtime of the instance image-function, which its Component core/compute/function requires and the source does not give."
   components:
     # The resource AdminApi.
     admin-api:
@@ -14,12 +18,16 @@ spec:
     # The resource ImageFunction.
     image-function:
       type: core/compute/function
+      values:
+        runtime: "{{ .parameters.image_function_runtime }}"
     # The resource OrdersTable.
     orders-table:
       type: core/datastore/dynamodb
     # The resource OrdersFunction.
     orders-function:
       type: core/compute/function
+      values:
+        runtime: "python3.12"
       uses:
         orders-table:
           orders-table:

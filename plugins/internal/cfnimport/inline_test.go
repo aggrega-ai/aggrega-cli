@@ -392,6 +392,7 @@ Resources:
 	holds(t, "the decision on OrdersMapping", decisionOn(t, out, "OrdersMapping").Rationale,
 		"not carried: the fold of AWS::Lambda::EventSourceMapping in the row of AWS::Lambda::Function")
 	holds(t, "the Aggregate", fileText(t, out, "aggregate.yaml"), "    handler:\n      type: core/compute/function\n"+
+		"      values:\n        runtime: \"{{ .parameters.handler_runtime }}\"\n"+
 		"      uses:\n        orders:\n          orders:\n            target: orders\n")
 }
 

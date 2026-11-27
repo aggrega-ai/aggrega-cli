@@ -6,6 +6,10 @@ metadata:
   version: 0.1.0
   description: Draft Aggregate imported from a source in the cloudformation format.
 spec:
+  parameters:
+    consumer_runtime:
+      type: string
+      description: "values.runtime of the instance consumer, which its Component core/compute/function requires and the source does not give."
   components:
     # The resource Events.
     events:
@@ -15,6 +19,8 @@ spec:
     # The resource Consumer.
     consumer:
       type: core/compute/function
+      values:
+        runtime: "{{ .parameters.consumer_runtime }}"
       uses:
         events:
           events:

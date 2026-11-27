@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -42,12 +43,14 @@ import (
 // its node, or, for an instance a fold of its row makes of a child, off that
 // child where it writes the placement's path and off the parent folded into it
 // otherwise, followed by the value of that child the fold writes under values;
-// then the value under values of each child folded into it. A child's name,
-// where a fold or a row reads it off a mapped instance's own node or a child,
-// is its own name within its parent: its Leaf where the source composes its
-// Name of its parent's and its own, and not written, warned
-// value-not-carried, where the source composes them so its own part cannot be
-// told apart. The values of a drafted instance are those its Recipe reads from
+// then the value under values of each child folded into it; then each string
+// values key its row requires that none of these writes, reading an Aggregate
+// parameter declared for it with no default, which the Release supplies. A
+// child's name, where a fold or a row reads it off a mapped instance's own
+// node or a child, is its own name within its parent: its Leaf where the
+// source composes its Name of its parent's and its own, and not written,
+// warned value-not-carried, where the source composes them so its own part
+// cannot be told apart. The values of a drafted instance are those its Recipe reads from
 // values, read off its node. A placement's converter turns the value read into
 // the one written: string writes its text, integer an integer, unit:<suffix>
 // its text followed by the suffix, map:<from>=<to>,… the <to> of the <from> its
@@ -141,6 +144,10 @@ type aggregateWriter struct {
 	hoisted map[string]string
 	keys    map[string]bool
 	pending []string
+	// required holds the Aggregate parameters standing for the values the
+	// instances' Components require and their sources do not give, in the order
+	// declared.
+	required []requiredParam
 	// noted holds the secure parameters whose values were judged, and secure the
 	// patterns that find each secure parameter's name in text.
 	noted  map[string]bool
@@ -419,11 +426,24 @@ type valueTree struct {
 	members            []*valueTree
 }
 
-// values returns the values of cl's instance, as Aggregate states them.
+// values returns the values of cl's instance, as Aggregate states them, and
+// for a mapped instance each string values key its row requires that they do
+// not hold, reading the Aggregate parameter declared for it (requiredValue).
 func (w *aggregateWriter) values(cl *Classified) []*valueTree {
 	var tree []*valueTree
 	for _, v := range w.valueReads(cl) {
 		tree = w.put(tree, cl, v.r, v.key, "values."+pathText(v.key), v.conv)
+	}
+	if cl.Class != ClassMapped || cl.Row == nil {
+		return tree
+	}
+	for _, req := range cl.Row.Requires {
+		key, ok := strings.CutPrefix(req.Key, "values.")
+		if !ok || key == "" || strings.Contains(key, ".") || req.Type != "string" ||
+			slices.ContainsFunc(tree, func(v *valueTree) bool { return v.key == key }) {
+			continue
+		}
+		tree = plant(tree, []string{key}, w.requiredValue(cl, key), "")
 	}
 	return tree
 }

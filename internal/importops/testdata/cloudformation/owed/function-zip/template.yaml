@@ -1,0 +1,11 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: A function packaged as a .zip, whose runtime the template states.
+Resources:
+  ResizeImage:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      Handler: app.handler
+      CodeUri: src/
+      Role: arn:aws:iam::123456789012:role/resize-image

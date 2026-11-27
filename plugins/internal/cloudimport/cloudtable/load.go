@@ -14,7 +14,10 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/libraryimport"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
+	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 )
 
 // Where a hub checkout keeps, beneath its root, the Components, the schema
@@ -54,6 +57,9 @@ type hubCatalog struct {
 	// labels holds each Component's labels by name, at the version a reference
 	// naming it without one resolves to, its extends chain resolved.
 	labels map[string]map[string]string
+	// requires holds, by the same name and version, the values keys each
+	// Component requires and declares no default for, with their types.
+	requires map[string][]cloudimport.Requirement
 }
 
 // loadHub loads the catalog of the hub checkout at root for capability.
@@ -72,13 +78,48 @@ func loadHub(root, capability string) (*hubCatalog, error) {
 		return nil, fmt.Errorf("load the %s Recipes of %s and what they read: %w", capability, root, err)
 	}
 	h := &hubCatalog{root: root, capability: capability, cat: cat, libs: cat.DefaultLibraries(),
-		labels: map[string]map[string]string{}}
+		labels: map[string]map[string]string{}, requires: map[string][]cloudimport.Requirement{}}
 	if view := importersocket.ProjectCatalog(cat); view != nil {
 		for _, c := range view.Components {
 			h.labels[c.Name] = c.Labels
+			reqs, err := h.requiredValues(c.Name)
+			if err != nil {
+				return nil, err
+			}
+			h.requires[c.Name] = reqs
 		}
 	}
 	return h, nil
+}
+
+// requiredValues returns the values keys the Component named name requires and
+// declares no default for, at the version a reference naming it without one
+// resolves to and its extends chain resolved, as a build reads its schema:
+// each a requirement of the key under values, with the type its schema
+// declares, in the order its schema lists them. A schema the compiler cannot
+// compile is refused, naming the Component.
+func (h *hubCatalog) requiredValues(name string) ([]cloudimport.Requirement, error) {
+	lookup := h.cat.CatalogLookup()
+	comp, ok := lookup.Component(name)
+	if !ok || comp.Spec.Schema.Kind == 0 {
+		return nil, nil
+	}
+	if comp.Spec.Extends != "" {
+		if resolved, errs := validator.ResolveComponentExtends(comp, lookup.Component); len(errs) == 0 {
+			comp = resolved
+		}
+	}
+	compiled, err := compactform.Compile(&comp.Spec.Schema, compactform.WithSchemaLibraries(h.libs.Schemas))
+	if err != nil {
+		return nil, fmt.Errorf("compile the schema of the Component %s:%s: %w", comp.Metadata.Name,
+			comp.Metadata.Version, err)
+	}
+	var out []cloudimport.Requirement
+	for _, f := range compactform.PillarRequired(compiled, "values") {
+		typ, _ := f.Schema["type"].(string)
+		out = append(out, cloudimport.Requirement{Key: "values." + f.Name, Type: typ})
+	}
+	return out, nil
 }
 
 // recipeNames returns the name of every Recipe of the capability the hub

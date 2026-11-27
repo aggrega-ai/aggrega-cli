@@ -221,23 +221,6 @@ spec:
 	}
 }
 
-// requiredNames reads a compiled required list in either of the two shapes the
-// compiler writes it in.
-func requiredNames(raw any) []string {
-	var out []string
-	switch list := raw.(type) {
-	case []string:
-		out = append(out, list...)
-	case []any:
-		for _, item := range list {
-			if s, ok := item.(string); ok {
-				out = append(out, s)
-			}
-		}
-	}
-	return out
-}
-
 // TestInDocumentReference_SiblingsAreCompactForm asserts the keys beside an
 // in-document `$ref:` are read as compact form: `required: true` marks the node
 // required in its parent, `properties:` declares properties, `when:` gates the

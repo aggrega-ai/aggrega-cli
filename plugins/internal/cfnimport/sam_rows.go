@@ -19,12 +19,12 @@ type alias struct {
 
 // derivation is a row derived for the type Key, whose resource deploys as the
 // resource of the row keyed From and of the When FromWhen: that row's
-// Component, Recipe and labels, its When where Key's resources hold it, and
-// each of its placements, environment list and provides translated through
-// Aliases, the first alias of the longest path each begins with; a
-// placement whose path no alias covers is left out. Promoted are the folds of
-// that row whose child the type writes as a property of its own, each read as
-// an infra placement at the alias's Derived path. Why says why Key's
+// Component, Recipe, labels and requirements, its When where Key's resources
+// hold it, and each of its placements, environment list and provides
+// translated through Aliases, the first alias of the longest path each begins
+// with; a placement whose path no alias covers is left out. Promoted are the
+// folds of that row whose child the type writes as a property of its own, each
+// read as an infra placement at the alias's Derived path. Why says why Key's
 // resources deploy as From's, in the derived row's origin.
 type derivation struct {
 	Key, From string
@@ -58,6 +58,7 @@ var derivations = []derivation{
 			same("Properties", "MemorySize"),
 			same("Properties", "ReservedConcurrentExecutions"),
 			same("Properties", "Role"),
+			same("Properties", "Runtime"),
 			same("Properties", "Timeout"),
 			same("Properties", "VpcConfig"),
 		},
@@ -126,7 +127,7 @@ func derivedRows(rows []cloudimport.Row) []cloudimport.Row {
 // derive returns the row d derives from r.
 func (d derivation) derive(r cloudimport.Row) cloudimport.Row {
 	out := cloudimport.Row{Key: d.Key, Component: r.Component, Category: r.Category, Recipe: r.Recipe,
-		When: d.When, Traits: r.Traits, Form: r.Form,
+		When: d.When, Traits: r.Traits, Form: r.Form, Requires: r.Requires,
 		Origin: "derived for " + d.Key + " from the row of " + d.From + cloudimport.WhenText(d.FromWhen) + ", " +
 			d.Why + "; that row " + r.Origin}
 	out.Values = d.placements(r.Values)

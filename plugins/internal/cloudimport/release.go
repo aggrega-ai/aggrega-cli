@@ -6,6 +6,7 @@ package cloudimport
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -22,14 +23,18 @@ import (
 // Its spec.parameters leaves each parameter of the Aggregate that has no
 // default for the answers file: for a parameter naming an existing resource,
 // which declares no default, the comment above it names the value the
-// parameters file supplies, where it supplies one. It has one entry for each
-// instance, in the Aggregate's order:
+// parameters file supplies, where it supplies one; and for a parameter
+// standing for a value an instance's Component requires and its source does
+// not give, the comment names the instance, the values key and the Component.
+// It has one entry for each instance, in the Aggregate's order:
 //
 //   - a mapped instance's infra and infra.overrides hold what its row places
 //     there, read as the Aggregate reads its values — off its node, or for an
 //     instance a fold of its row makes of a child, off that child where it
 //     writes the path and off the folded parent otherwise — a folded child's
-//     included where the row's fold writes under infra; a drafted instance's hold the values its Recipe reads
+//     included where the row's fold writes under infra, and then, left for
+//     the answers file, each infra key its row requires that none of these
+//     writes or leaves; a drafted instance's hold the values its Recipe reads
 //     from infra and infra.overrides, read off its node, and the keys a
 //     property the node does not write leaves empty;
 //   - each value is written as the Release's text, a parameter as its value —
@@ -87,6 +92,9 @@ func Release(in aggrega.ImportInput, f Format, g *Graph, classified []Classified
 			}
 		}
 	}
+	for _, p := range analysis.required {
+		draft.Parameters = append(draft.Parameters, importer.LeftItem{Path: p.param, Text: p.what()})
+	}
 	for _, cl := range w.out {
 		if cl.Key != "" && isInstance(cl) {
 			draft.Entries = append(draft.Entries, w.entry(cl))
@@ -138,6 +146,7 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 				}
 			}
 		}
+		b.required(cl.Row.Requires)
 		b.e.Secrets = append(w.mappedSecrets(cl), w.attachedSecrets(cl)...)
 		b.e.Realization = cl.Row.Recipe
 		b.e.Comments = append(b.e.Comments, w.unplacedComments(cl)...)
@@ -521,6 +530,43 @@ func (b *entryBuilder) place(r read, dest []string, conv Conv, owed bool) {
 		}
 		b.left(dest, why)
 	}
+}
+
+// required leaves for the answers file each infra key of reqs the entry writes
+// no value at and leaves nothing at, nor at a key above or below it, the
+// requirement's Why saying what the value is; the image is left as every
+// importer leaves one.
+func (b *entryBuilder) required(reqs []Requirement) {
+	for _, req := range reqs {
+		dest := strings.Split(req.Key, ".")
+		if len(dest) < 2 || dest[0] != "infra" || slices.Contains(dest, "") || b.writes(req.Key) {
+			continue
+		}
+		if req.Key == "infra.image" {
+			b.e.Left = append(b.e.Left, importer.LeftImage(req.Why))
+			continue
+		}
+		b.left(dest, req.Why)
+	}
+}
+
+// writes reports whether the entry writes a value at the key path key, or
+// leaves one there, or at a key above or below it.
+func (b *entryBuilder) writes(key string) bool {
+	touches := func(path string) bool {
+		return path == key || strings.HasPrefix(path, key+".") || strings.HasPrefix(key, path+".")
+	}
+	for _, v := range b.e.Values {
+		if touches(v.Path) {
+			return true
+		}
+	}
+	for _, l := range b.e.Left {
+		if l.Path != "" && touches(l.Path) {
+			return true
+		}
+	}
+	return false
 }
 
 // left leaves the key at dest for the answers file, why saying what is owed.

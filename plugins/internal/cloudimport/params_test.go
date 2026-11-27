@@ -296,3 +296,76 @@ func TestConditionOnATargetOfAnEdgeIsNotCarried(t *testing.T) {
 			"another instance's edge points at it", "switched-off target halts the build")
 	}
 }
+
+// requiringFormat is the Release fixtures' format whose server row requires
+// the values keys version, database, replicas and tags, of the types string,
+// string, integer and object, and the infra keys location, zone and image.
+func requiringFormat() Format {
+	f := releaseFormat()
+	pg := f.Table.Generated[0]
+	pg.Requires = []Requirement{
+		{Key: "values.version", Type: "string"},
+		{Key: "values.database", Type: "string"},
+		{Key: "values.replicas", Type: "integer"},
+		{Key: "values.tags", Type: "object"},
+		{Key: "infra.location", Why: "the region the server runs in"},
+		{Key: "infra.zone", Why: "the zone the server runs in, which the Recipe requires and no template states"},
+		{Key: "infra.image", Why: "the image the server runs, which the Recipe requires and the source does not name"},
+	}
+	f.Table.Generated[0] = pg
+	return f
+}
+
+// TestARequiredStringValueTheSourceDoesNotGiveIsAParameterTheReleaseSupplies
+// declares, for a string values key the row's Component requires and the
+// instance's values do not hold, an Aggregate parameter of no default written
+// as the value, and leaves it under the Release's spec.parameters for the
+// answers file. A required key the node writes stays as written, and a
+// required key that is no string is not declared.
+func TestARequiredStringValueTheSourceDoesNotGiveIsAParameterTheReleaseSupplies(t *testing.T) {
+	in := edgeView()
+	in.Target = "arm"
+	_, aggregate, release, _, diags := released(t, in, requiringFormat(), &Graph{Nodes: []*Node{mappedServer()}})
+	wantParams := `  parameters:
+    server_database:
+      type: string
+      description: "values.database of the instance server, which its Component core/datastore/postgres requires and the source does not give."
+  components:
+`
+	if !strings.Contains(aggregate, wantParams) {
+		t.Errorf("the Aggregate does not declare the parameter as\n%swant in\n%s", wantParams, aggregate)
+	}
+	wantBlock(t, aggregate, "server", `    server:
+      type: core/datastore/postgres
+      values:
+        version: "16"
+        database: "{{ .parameters.server_database }}"
+`)
+	wantLeft := `  parameters:
+    # Left for the Release, since the source cannot supply it: server_database, values.database of the instance server, which its Component core/datastore/postgres requires and the source does not give
+    server_database: ""
+`
+	if !strings.Contains(release, wantLeft) {
+		t.Errorf("the Release does not leave the parameter as\n%swant in\n%s", wantLeft, release)
+	}
+	onlyCode(t, diags, CodeValueNotCarried, 0)
+}
+
+// TestARequiredInfraKeyTheEntryDoesNotWriteIsLeftForTheAnswersFile leaves, in
+// a mapped instance's Release entry, each infra key its row requires that the
+// entry writes no value for, its comment saying what the value is, the image
+// as every importer leaves an image; a required key the row places from the
+// node is written as placed.
+func TestARequiredInfraKeyTheEntryDoesNotWriteIsLeftForTheAnswersFile(t *testing.T) {
+	in := edgeView()
+	in.Target = "arm"
+	_, _, release, _, _ := released(t, in, requiringFormat(), &Graph{Nodes: []*Node{mappedServer()}})
+	wantBlock(t, release, "server", `    server:
+      infra:
+        location: "westeurope"
+        # Left for the Release, since the source cannot supply it: infra.zone, the zone the server runs in, which the Recipe requires and no template states
+        zone: ""
+        # Left for the Release, since the source cannot supply it: infra.image, the image the server runs, which the Recipe requires and the source does not name
+        image: ""
+`)
+}

@@ -9,7 +9,7 @@ import "github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 
 // TableRevision is the last aggrega-hub commit that changed the arm Recipes, or the
 // Components and libraries they read, the generated rows were read from.
-const TableRevision = "d4135ac28b7135f32550c03acb3b1b205e97aaf2"
+const TableRevision = "d667110a7006c7e93d2746776cdc911c470f8e83"
 
 // generatedRows are the mapping table's rows read from the hub's arm Recipes,
 // one per Recipe whose text names its resource, ordered by key, When and
@@ -137,6 +137,9 @@ var generatedRows = []cloudimport.Row{
 			{From: []string{"location"}, Key: "location"},
 			{From: []string{"configurations"}, Key: "server_configuration"},
 			{From: []string{"tags"}, Key: "tags"},
+		},
+		Requires: []cloudimport.Requirement{
+			{Key: "values.database", Type: "string"},
 		},
 		Origin: "generated aggrega-catalog/recipe/arm/mysql-flexible-server/1.0.0/recipe.yaml",
 	},

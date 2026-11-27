@@ -10,6 +10,9 @@ spec:
   aggregate: imported/flow
   # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
   manifest: ""
+  parameters:
+    # Left for the Release, since the source cannot supply it: image_function_runtime, values.runtime of the instance image-function, which its Component core/compute/function requires and the source does not give
+    image_function_runtime: ""
   components:
     admin-api:
       infra:
@@ -28,11 +31,13 @@ spec:
         overrides:
           ReadCapacityUnits: 5
           WriteCapacityUnits: 5
-    # Properties the source writes and the draft does not place: Properties.AutoPublishAlias, Properties.CodeUri, Properties.Handler, Properties.Runtime.
+    # Properties the source writes and the draft does not place: Properties.AutoPublishAlias, Properties.CodeUri, Properties.Handler.
     # Environment variables the source sets and no connection delivers: STAGE = prod.
     orders-function:
       infra:
         overrides:
           Role: "arn:aws:iam::123456789012:role/orders-function"
           Timeout: 20
+        # Left for the Release, since the source cannot supply it: infra.image, the container image in Amazon ECR the function runs, which the Recipe requires and the source names none of
+        image: ""
     orders-http-api: {}

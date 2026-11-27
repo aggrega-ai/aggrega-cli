@@ -218,13 +218,21 @@ type Row struct {
 	// Env is where a compute resource lists its environment, nil for a
 	// resource that lists none.
 	Env *EnvList
+	// Requires are the keys an instance of the row is given whatever its node
+	// writes, in order: a string values key its values hold none of is
+	// written reading an Aggregate parameter of its own, which declares no
+	// default and which the Release leaves for the answers file; an infra key
+	// its Release entry writes no value for is left there for the answers
+	// file.
+	Requires []Requirement
 	// Supersedes gives, for a field a hand row sets over a value the generated
 	// row of its key and When sets otherwise, why the hand value supersedes the
 	// generated one. A field is named as Rows names it in a [Contradiction]:
 	// Component, Category, Recipe, Form or Env; Traits.<label>; Values.<key>,
 	// Infra.<key>, Overrides.<key>, Secrets.<slot> or Provides.<key>;
 	// Folds.<type> at <key>, the fold's Key joined by dots, or Folds.<type> for
-	// a fold of no Key; Equivalences.<raw path>, its segments joined by dots.
+	// a fold of no Key; Equivalences.<raw path>, its segments joined by dots;
+	// Requires.<key>.
 	// The type of a fold's name and the path of Equivalences.<raw path> are
 	// matched regardless of case, and a fold's key exactly, as the merge
 	// matches the entries they name.
@@ -233,6 +241,23 @@ type Row struct {
 	// or a generated row's origin followed by "and hand" where Rows merged a
 	// hand row into it.
 	Origin string
+}
+
+// Requirement is a key an instance of a row is given whatever its node
+// writes: a values key its Component requires and declares no default for, or
+// an infra key its Recipe requires.
+type Requirement struct {
+	// Key is the key's path within the instance, its segments joined by dots:
+	// values.<key> or infra.<key>.
+	Key string
+	// Type is the type the Component's schema declares for a values key —
+	// string, integer, number, boolean, object or array — and empty where it
+	// declares none.
+	Type string
+	// Why says, of an infra key, what the value is and why the source does
+	// not give it: the text completing "<key>, " in the comment above the key
+	// the Release entry leaves for the answers file.
+	Why string
 }
 
 // NotImported is a Recipe of the format's target that no row reaches, with
@@ -497,6 +522,10 @@ func merge(g, h Row) (Row, error) {
 		equivalencesSame, equivalenceText); err != nil {
 		return Row{}, err
 	}
+	if out.Requires, err = mergeEntries(m, "Requires", g.Requires, h.Requires, requirementKey, exactly,
+		requirementsSame, requirementText); err != nil {
+		return Row{}, err
+	}
 	switch {
 	case h.Env == nil:
 		out.Env = g.Env
@@ -669,6 +698,17 @@ func equivalencesSame(a, b Equivalence) bool {
 }
 
 func equivalenceText(e Equivalence) string { return pathText(e.Module) }
+
+func requirementKey(r Requirement) string { return r.Key }
+
+func requirementsSame(a, b Requirement) bool { return a == b }
+
+func requirementText(r Requirement) string {
+	if r.Why == "" {
+		return r.Type
+	}
+	return r.Type + ": " + r.Why
+}
 
 func envSame(a, b EnvList) bool {
 	return samePath(a.Path, b.Path) && strings.EqualFold(a.Name, b.Name) && strings.EqualFold(a.Value, b.Value)

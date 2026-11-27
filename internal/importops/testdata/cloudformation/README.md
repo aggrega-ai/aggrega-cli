@@ -9,3 +9,6 @@ Every template here is written for these tests.
 | `roots/shared/` | Two templates, `a/main.yaml` and `b/main.yaml`, each linking `shared/net.yaml` by the relative path `../shared/net.yaml`. |
 | `remote/` | A template linking a second by an `https` address, and a queue. |
 | `forms/` | One template written three ways, in `short/` with the short intrinsic forms, in `long/` with the long forms, and in `json/` as JSON. |
+| `owed/function-zip/` | A SAM function packaged as a `.zip`, stating its runtime and its role, whose container image the import leaves for the answers file. |
+| `owed/function-image/` | A Lambda function run from a container image, stating its role and no runtime, whose runtime the import leaves for the answers file. |
+| `owed/bucket/` | An S3 bucket, whose Region the import leaves for the answers file. |

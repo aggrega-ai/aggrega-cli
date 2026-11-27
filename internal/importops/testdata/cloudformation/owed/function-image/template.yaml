@@ -1,0 +1,10 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: A function run from a container image, which states no runtime.
+Resources:
+  ResizeImage:
+    Type: AWS::Lambda::Function
+    Properties:
+      PackageType: Image
+      Code:
+        ImageUri: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/resize-image:1.0.0
+      Role: arn:aws:iam::123456789012:role/resize-image

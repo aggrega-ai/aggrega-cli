@@ -16,9 +16,10 @@
 // its Recipes by rules of its own (arm.go for arm, cloudformation.go for
 // cloudformation), and a format's reader may refuse a Recipe whose text it
 // cannot read a row from, naming the Recipe and what to fix; no table is then
-// written. A row carries its Component's category label as its category, and
+// written. A row carries its Component's category label as its category,
 // every other label of the Component, as an import is handed them, as its
-// traits.
+// traits, and each values key the Component's schema requires and declares no
+// default for, with its type, as a requirement.
 //
 // The generator reads the format's hand-written table, in the importer's
 // package, for what it accounts for: a Recipe its notImported lists generates
@@ -365,6 +366,7 @@ func generate(h *hubCatalog, f format, hand cloudimport.Table) ([]cloudimport.Ro
 		}
 		row.Component, row.Recipe, row.Origin = src.component, name, "generated "+src.path
 		row.Category, row.Traits = labelsOf(labels)
+		row.Requires = h.requires[src.component]
 		if why != "" {
 			why = "; " + why
 		}

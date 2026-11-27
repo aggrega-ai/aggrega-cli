@@ -1437,29 +1437,17 @@ func requiredPlaceholders(comp *types.Component, libraries map[string]types.Sche
 // materializes the default; each placeholder is a value of the field's declared
 // type that its own declared constraints accept, as placeholderForField states.
 func requiredFieldPlaceholders(compiled map[string]any, pillar string) map[string]any {
-	pillarNode, ok := mapAt(compiled, "properties", pillar)
-	if !ok {
-		return nil
-	}
-	required := toStringSlice(pillarNode["required"])
-	props, _ := pillarNode["properties"].(map[string]any)
-	if len(required) == 0 || props == nil {
+	fields := compactform.PillarRequired(compiled, pillar)
+	if len(fields) == 0 {
 		return nil
 	}
 	out := map[string]any{}
-	for _, name := range required {
-		if name == "" {
+	for _, f := range fields {
+		if f.Schema == nil {
+			out[f.Name] = placeholderString
 			continue
 		}
-		field, _ := props[name].(map[string]any)
-		if field == nil {
-			out[name] = placeholderString
-			continue
-		}
-		if _, hasDefault := field["default"]; hasDefault {
-			continue
-		}
-		out[name] = placeholderForField(field)
+		out[f.Name] = placeholderForField(f.Schema)
 	}
 	return out
 }
@@ -1482,20 +1470,6 @@ func toStringSlice(v any) []string {
 	default:
 		return nil
 	}
-}
-
-// mapAt walks a nested string-keyed map along keys and returns the map at the
-// final key, reporting whether every step resolved to a map.
-func mapAt(m map[string]any, keys ...string) (map[string]any, bool) {
-	cur := m
-	for _, k := range keys {
-		next, ok := cur[k].(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		cur = next
-	}
-	return cur, true
 }
 
 // artifactKeysSorted returns the artifact paths in lexical order for a
