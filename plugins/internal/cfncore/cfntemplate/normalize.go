@@ -120,10 +120,27 @@ var longFormTags = map[string]string{
 	"!GetStackOutput": "Fn::GetStackOutput",
 }
 
-// expandLongFormTag turns n, when it carries one of [longFormTags], into a mapping
-// holding the long-form key and n's content, in place.
+// longFormKey returns the long-form key CloudFormation reads n's short-form tag
+// as, and whether n is one the pass rewrites: a tag of [longFormTags] on any node,
+// or any other short form written over a mapping, which the intrinsics reader
+// would read as a flat list of the mapping's keys and values.
+func longFormKey(n *yaml.Node) (string, bool) {
+	if key, ok := longFormTags[n.Tag]; ok {
+		return key, true
+	}
+	if n.Kind != yaml.MappingNode || !isBangTag(n.Tag) || !IsShortFormTag(n.Tag[1:]) {
+		return "", false
+	}
+	if name := n.Tag[1:]; name == "Ref" || name == "Condition" {
+		return name, true
+	}
+	return "Fn::" + n.Tag[1:], true
+}
+
+// expandLongFormTag turns n, when [longFormKey] names a key for it, into a mapping
+// holding that key and n's content, in place.
 func (p *pass) expandLongFormTag(n *yaml.Node) {
-	key, ok := longFormTags[n.Tag]
+	key, ok := longFormKey(n)
 	if !ok {
 		return
 	}

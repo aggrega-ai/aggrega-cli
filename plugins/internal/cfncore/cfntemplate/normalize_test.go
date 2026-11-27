@@ -282,3 +282,26 @@ func TestNormalizeIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeReadsAShortFormOverAMapping(t *testing.T) {
+	t.Parallel()
+	sub := map[string]any{"Fn::Sub": "echo ${AWS::Region}"}
+	azs := map[string]any{"Fn::GetAZs": ref("AWS::Region")}
+	cases := []struct {
+		name string
+		body string
+		want any
+	}{
+		{"flow Base64", "      P: !Base64 {'Fn::Sub': 'echo ${AWS::Region}'}\n", map[string]any{"Fn::Base64": sub}},
+		{"block Base64", "      P: !Base64\n        Fn::Sub: 'echo ${AWS::Region}'\n", map[string]any{"Fn::Base64": sub}},
+		{"GetAZs", "      P: !GetAZs {Ref: AWS::Region}\n", azs},
+		{"Select", "      P: !Select [0, !GetAZs {Ref: AWS::Region}]\n", map[string]any{"Fn::Select": []any{float64(0), azs}}},
+		{"Join", "      P: !Join ['', [!Base64 {'Fn::Sub': x}]]\n", map[string]any{"Fn::Join": []any{"", []any{map[string]any{"Fn::Base64": map[string]any{"Fn::Sub": "x"}}}}}},
+		{"Ref over a mapping", "      P: !Ref {K: v}\n", map[string]any{"Ref": map[string]any{"K": "v"}}},
+	}
+	for _, c := range cases {
+		if got := property(t, c.body)["P"]; !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: P = %#v, want %#v", c.name, got, c.want)
+		}
+	}
+}

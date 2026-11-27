@@ -44,3 +44,21 @@ Resources:
 		t.Errorf("Properties = %#v, want %#v", props, want)
 	}
 }
+
+// TestSourcedTemplateUserDataBase64OverSubMappingReachesTheStack holds a short-form
+// function written over a block mapping to the function over that mapping.
+func TestSourcedTemplateUserDataBase64OverSubMappingReachesTheStack(t *testing.T) {
+	t.Parallel()
+	doc := sourcedJSON(t, `Resources:
+  X:
+    Type: AWS::EC2::Instance
+    Properties:
+      UserData: !Base64
+        Fn::Sub: 'echo ${AWS::Region}'
+`)
+	props := doc["Resources"].(map[string]any)["X"].(map[string]any)["Properties"].(map[string]any)
+	want := map[string]any{"Fn::Base64": map[string]any{"Fn::Sub": "echo ${AWS::Region}"}}
+	if got := props["UserData"]; !reflect.DeepEqual(got, any(want)) {
+		t.Errorf("UserData = %#v, want %#v", got, want)
+	}
+}
