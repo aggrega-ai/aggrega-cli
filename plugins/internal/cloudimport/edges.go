@@ -438,7 +438,8 @@ func asIs(s string) string { return s }
 func (c *classifier) wireEdge(e Edge, cands []candidate) []candidate {
 	n := c.byID[e.From]
 	cl := c.out[e.From]
-	if n == nil || cl == nil || e.Kind != EdgeDepends && c.readings[readingKey(e.From, e.Path, e.To)] {
+	if n == nil || cl == nil || c.inlined[e.From] ||
+		e.Kind != EdgeDepends && c.readings[readingKey(e.From, e.Path, e.To)] {
 		return cands
 	}
 	consumers, direct := []string{e.From}, true

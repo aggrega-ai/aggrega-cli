@@ -134,13 +134,14 @@ func TestInfraKeyWrittenWithDotsIsAPath(t *testing.T) {
 }
 
 // TestImageRowMapsAComputeNodeToItsProduct resolves a node whose image, the
-// value its row places under infra.image, names the repository of an image
-// row as that row's container product: its Component and Recipe, the image
-// placed under the image row's key, or nowhere where it names none; any
-// other image keeps the row.
+// value its row, of a server or a worker, places under infra.image, names the
+// repository of an image row as that row's container product: its Component
+// and Recipe, the image placed under the image row's key, or nowhere where it
+// names none; any other image keeps the row, and so does a row of a task.
 func TestImageRowMapsAComputeNodeToItsProduct(t *testing.T) {
 	row := *postgresRow()
 	row.Key = toyServer
+	row.Traits = map[string]string{"component.aggrega.ai/type": "server"}
 	row.Infra = []Placement{{From: []string{"location"}, Key: "location"}, {From: []string{"image"}, Key: "image"}}
 	node := func(image string) *Node {
 		n := toyServerNode("app")
@@ -166,6 +167,12 @@ func TestImageRowMapsAComputeNodeToItsProduct(t *testing.T) {
 				t.Fatalf("the node resolves to %s by %s (%v), want %s by %s", got.Component, got.Recipe, ok,
 					c.component, c.recipe)
 			}
+			task := row
+			task.Traits = map[string]string{"component.aggrega.ai/type": "task"}
+			table.Generated = []Row{task}
+			if got, _, _ := table.Resolve(node(c.image), nil); got.Recipe != row.Recipe {
+				t.Errorf("a task's row resolves to %s by %s, want its own Recipe", got.Component, got.Recipe)
+			}
 			var keys []string
 			for _, p := range got.Infra {
 				keys = append(keys, p.Key)
@@ -174,5 +181,67 @@ func TestImageRowMapsAComputeNodeToItsProduct(t *testing.T) {
 				t.Errorf("the row places infra %q, want %q", keys, c.infra)
 			}
 		})
+	}
+}
+
+// readInGraph is a server whose body holds the properties of the toy thing
+// part in place of its reference to it, the thing reading the server's
+// network, and the node of type typ standing for the server where it is not
+// one the toy row maps.
+func readInGraph(typ string) *Graph {
+	written := []Prop{{Name: "location", Value: text("westeurope")}, {Name: "part", Value: Ref{Node: "part"}}}
+	app := &Node{ID: "app", Type: typ, Form: FormRaw, Source: "main.json#/app", AsWritten: written,
+		Body: []Prop{{Name: "location", Value: text("westeurope")}, {Name: "version", Value: text("16")},
+			{Name: "part", Props: []Prop{{Name: "size", Value: literal("3")}, {Name: "net", Value: Ref{Node: "net"}}}}}}
+	part := &Node{ID: "part", Type: "Toy.Parts/parts", Form: FormRaw, Source: "main.json#/part", ReadIn: []string{"app"},
+		Body: []Prop{{Name: "size", Value: literal("3")}, {Name: "net", Value: Ref{Node: "net"}}}}
+	net := &Node{ID: "net", Type: toyNetwork, Form: FormRaw, Source: "main.json#/net"}
+	return &Graph{Format: "toy", Nodes: []*Node{app, net, part}}
+}
+
+// TestNodeReadInAMappedNodeIsFoldedAndDrawsNoEdge folds a node whose
+// properties the body of a node a row maps holds in place of a reference to
+// it into that node, reported resource-folded, drafting nothing and drawing
+// no edge of its own; the mapped node keeps the body its row reads.
+func TestNodeReadInAMappedNodeIsFoldedAndDrawsNoEdge(t *testing.T) {
+	g := readInGraph(toyServer)
+	cls, diags := Classify(toyInput(t, "toy", "", nil), toyFormat(nil), g)
+	noHalt(t, diags)
+	part := classOf(t, cls, "part")
+	if part.Class != ClassFolded || part.Into != "app" || !strings.HasPrefix(part.Decision.Rationale,
+		"folded: read in place of the reference to it in the body of app") {
+		t.Fatalf("the part is classed %s into %q, deciding %q", part.Class, part.Into, part.Decision.Rationale)
+	}
+	if n := len(onlyCode(t, diags, CodeResourceFolded, 1)); n != 1 {
+		t.Errorf("the part is reported resource-folded %d times", n)
+	}
+	if app := classOf(t, cls, "app"); app.Class != ClassMapped || len(app.Node.Body) != 3 {
+		t.Errorf("the server is classed %s with the body %+v, want mapped, keeping the body its row reads",
+			app.Class, app.Node.Body)
+	}
+	for _, d := range diags {
+		if strings.Contains(d.Message, "part reads") {
+			t.Errorf("the folded part draws an edge: %s", d.Message)
+		}
+	}
+}
+
+// TestNodeReadInADraftedNodeIsANodeOfItsOwn keeps a node whose properties the
+// body of a node no row maps holds in place of a reference to it a node of its
+// own, drafted from the source, and drafts the node reading it from its body
+// as written, reading the node by reference.
+func TestNodeReadInADraftedNodeIsANodeOfItsOwn(t *testing.T) {
+	g := readInGraph("Toy.Apps/apps")
+	cls, aggregate, _, _, _ := released(t, toyInput(t, "toy", "", nil), toyFormat(nil), g)
+	if part := classOf(t, cls, "part"); part.Class != ClassDrafted {
+		t.Errorf("the part is classed %s, want drafted, a node of its own", part.Class)
+	}
+	app := classOf(t, cls, "app")
+	if app.Class != ClassDrafted || len(app.Node.Body) != 2 || app.Node.Body[1].Props != nil {
+		t.Errorf("the app is classed %s with the body %+v, want drafted from its body as written", app.Class,
+			app.Node.Body)
+	}
+	if block := instanceBlock(t, aggregate, "app"); !strings.Contains(block, "target: part") {
+		t.Errorf("the app does not read the part by reference:\n%s", block)
 	}
 }

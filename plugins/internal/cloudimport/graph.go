@@ -120,6 +120,17 @@ type Node struct {
 	// otherwise.
 	SaysIfMapped    []string
 	ReportsIfMapped []aggrega.Diagnostic
+	// AsWritten, where set, is the node's body as the source writes it, where
+	// Body holds, for a row to map the node, another node's properties read in
+	// place of a reference to it: a node a row does not map takes AsWritten as
+	// its Body once it is classed, and is wired and drafted from it.
+	AsWritten []Prop
+	// ReadIn are the IDs of the nodes whose Body holds this node's properties
+	// in place of a reference to it: the node is folded into the first of
+	// them a row maps, its properties written through that node's row, and
+	// draws no edge of its own; where a row maps none of them, it is classed as
+	// any other node is, each of them reading it by reference.
+	ReadIn []string
 }
 
 // Parameter is one parameter the source declares.

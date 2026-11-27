@@ -29,10 +29,11 @@ import (
 // no row, and the rows n could take in the order tried, for the caller to
 // report the discriminator unresolved. A type no row keys, or whose every
 // row's When fails, returns no row and no candidate. A compute node whose
-// image an image row of t names is mapped by the row that holds as the
-// container product's ([Table.product]). A table whose rows Rows refuses
-// resolves no node. The rows are returned as the table holds them,
-// sharing its slices and maps; [Row.For] reads one in n's form.
+// image an image row of t names, and which the row that holds maps to a
+// server or a worker, is mapped by that row as the container product's
+// ([Table.product]). A table whose rows Rows refuses resolves no node. The
+// rows are returned as the table holds them, sharing its slices and maps;
+// [Row.For] reads one in n's form.
 //
 // Types, property names and the values a predicate tests are matched
 // regardless of case, as Azure Resource Manager compares them: a template may
@@ -75,6 +76,14 @@ func (t Table) Resolve(n *Node, g *Graph) (Row, []Row, bool) {
 // under.
 const imagePlaced = "image"
 
+// typeLabel is the label naming a Component's type, and productTypes the
+// types of the rows a container product's row replaces: a long-running
+// container, a server or a worker, which is what a container product's
+// Recipe deploys; a task or a function running an image is no product.
+const typeLabel = "component.aggrega.ai/type"
+
+var productTypes = []string{"server", "worker"}
+
 // product returns r, the row mapping n, as the row of the container product
 // whose image row of t names the repository of the image n runs — the value r
 // places under infra.image, read as literal text, a parameter through its
@@ -82,9 +91,10 @@ const imagePlaced = "image"
 // that row's Component and Recipe, the image placed under the image row's
 // ImageKey, or placed nowhere where it names none, each other field r's own.
 // It returns r as it is where t holds no image row naming that repository, r
-// places no image, or n's image cannot be read so.
+// maps no server or worker (productTypes), r places no image, or n's image
+// cannot be read so.
 func (t Table) product(r Row, n *Node, read reader) Row {
-	if len(t.Images) == 0 {
+	if len(t.Images) == 0 || !slices.Contains(productTypes, r.Traits[typeLabel]) {
 		return r
 	}
 	at := slices.IndexFunc(r.Infra, func(p Placement) bool { return p.Key == imagePlaced })

@@ -164,8 +164,11 @@ type Classified struct {
 // g references and does not declare the class existing. A node is classed by
 // the first of these that takes it:
 //
-//  1. folded: a node a fold of the row of its nearest ancestor that is mapped
-//     and folds its type writes into that ancestor's instance; the fold of a
+//  1. folded: a node whose properties the body of a node a row maps holds in
+//     place of a reference to it (Node.ReadIn), written through that node's
+//     row and drawing no edge of its own; a node a fold of the row of its
+//     nearest ancestor that is mapped and folds its type writes into that
+//     ancestor's instance; the fold of a
 //     row taking one value writes the first such node by ID, and a fold that
 //     carries none of its type leaves each not carried. A parent whose row
 //     makes each child of a type an instance of its own is written into each
@@ -185,6 +188,10 @@ type Classified struct {
 //  6. drafted: any other node, drafted from the resource as the source writes
 //     it, or for a module, as a Recipe sourcing it whole; where the catalog
 //     holds the Component name its draft takes, it is held back instead.
+//
+// A node a row does not map, and whose reader kept its body as written
+// (Node.AsWritten), takes that body once it is classed, and is wired and
+// drafted from it.
 //
 // Each mapped and drafted node is an instance of the drafted Aggregate, keyed
 // by the format's [Format.Keys] in the order Classify returns them, and the
@@ -305,6 +312,9 @@ type classifier struct {
 	// table holds the merged rows as its generated rows, and the format's
 	// image rows, so a node is resolved without merging them again.
 	table Table
+	// inlined holds the nodes folded into a node whose body holds their
+	// properties in place of a reference to them ([classifier.readIn]).
+	inlined map[string]bool
 	// nodes are g's nodes in ID order, and byID each by its ID.
 	nodes []*Node
 	byID  map[string]*Node
@@ -384,7 +394,7 @@ func newClassifier(in aggrega.ImportInput, f Format, g *Graph, rows []Row) *clas
 	c := &classifier{in: in, f: f, g: g, table: Table{Generated: rows, Images: f.Table.Images}, nodes: byID(g),
 		byID: map[string]*Node{}, kids: map[string][]*Node{}, own: map[string]assessment{},
 		instances: map[string]instanceOf{}, ones: map[string]*oneFold{}, pending: map[string]bool{},
-		groupOf: map[string]*draftGroup{},
+		groupOf: map[string]*draftGroup{}, inlined: map[string]bool{},
 		located: map[string]ModuleSource{}, out: map[string]*Classified{}, notes: map[string][]aggrega.Diagnostic{},
 		incoming: map[string][]Edge{}, deferred: map[string]*AttachRule{}, waiting: map[string]bool{},
 		attaching: map[string]attachedTo{}, slots: map[string]bool{}, readings: map[string]bool{}}
@@ -527,7 +537,7 @@ func (c *classifier) classify(n *Node) {
 		c.instance(n, inst)
 		return
 	}
-	if !n.Existing && c.fold(n) {
+	if !n.Existing && (c.readIn(n) || c.fold(n)) {
 		return
 	}
 	if r := c.attachRule(n); r != nil && c.mayAttach(n, r) {
@@ -541,6 +551,9 @@ func (c *classifier) classify(n *Node) {
 // taking it.
 func (c *classifier) classifyOwn(n *Node) {
 	a := c.own[n.ID]
+	if n.AsWritten != nil && (a.classing() || !a.byRow()) {
+		n.Body = n.AsWritten
+	}
 	switch {
 	case a.classing():
 		c.typed(n, a.rule)
@@ -557,6 +570,40 @@ func (c *classifier) classifyOwn(n *Node) {
 		c.pending[n.ID] = true
 		c.set(n, &Classified{Class: ClassDrafted})
 	}
+}
+
+// readIn folds n into the first node of its ReadIn a row maps, whose body
+// holds n's properties in place of a reference to it, and reports whether one
+// does: n drafts nothing, and its decision and a resource-folded record name
+// each such node.
+func (c *classifier) readIn(n *Node) bool {
+	var by []string
+	var into string
+	var row *Row
+	for _, id := range n.ReadIn {
+		p, a := c.byID[id], c.own[id]
+		if p == nil || p.Existing || a.classing() || !a.byRow() {
+			continue
+		}
+		by = append(by, id)
+		if into == "" {
+			into, row = id, a.row
+		}
+	}
+	if into == "" {
+		return false
+	}
+	c.inlined[n.ID] = true
+	mapped := "an instance a row maps"
+	if len(by) > 1 {
+		mapped = "each an instance a row maps"
+	}
+	c.set(n, &Classified{Class: ClassFolded, Row: row, Into: into, Decision: decisionFor(n, joinNonEmpty("; ",
+		"folded: read in place of the reference to it in the body of "+andList(by)+", "+mapped+", so its "+
+			"properties are written through that row and nothing is drafted for it", c.says(n)))})
+	c.note(n, Report(CodeResourceFolded, fmt.Sprintf("%s (%s) is read in place of the reference to it by %s, so "+
+		"nothing is drafted for it", n.ID, n.Type, andList(by))))
+	return true
 }
 
 // set records n's class.
