@@ -184,11 +184,23 @@ func isPseudo(name string) bool {
 
 // given returns the text of the literal value the parameter p is given — the
 // value the parameters file supplies, else its default; a number or a boolean
-// as written — false where it is given none.
+// as written, and a list parameter's members joined by commas, the text
+// CloudFormation reads them from — false where it is given none.
 func given(p *cloudimport.Parameter) (string, bool) {
 	lit, ok := p.Given()
 	if !ok {
 		return "", false
+	}
+	if items, isList := itemsOf(lit.JSON); isList {
+		members := make([]string, len(items))
+		for i, item := range items {
+			text, isText := schemadraft.JSONText(item)
+			if !isText {
+				return "", false
+			}
+			members[i] = text
+		}
+		return strings.Join(members, ","), true
 	}
 	return draftyaml.ScalarText(lit.JSON)
 }

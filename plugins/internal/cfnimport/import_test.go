@@ -733,3 +733,35 @@ Resources:
 			"its key, where the template names it DBStream, so updating a stack the template deployed replaces the "+
 			"resource.\n    db-stream:\n", "    # The resource Ledger.\n    ledger:\n")
 }
+
+// TestListParameterIsReadAsAList reads a list parameter's default, and the
+// value the parameters file supplies it, as the list of its comma-separated
+// members, as CloudFormation reads it, so the Release writes a list where a
+// Recipe places a list.
+func TestListParameterIsReadAsAList(t *testing.T) {
+	t.Parallel()
+	const template = `AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Groups:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+    Default: sg-1, sg-2
+  Zones:
+    Type: CommaDelimitedList
+    Default: eu-south-1a,eu-south-1b
+Resources:
+  Db:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: postgres
+      VPCSecurityGroups: !Ref Groups
+      DBSubnetGroupName: !Select [0, !Ref Zones]
+`
+	out := importText(t, template)
+	holds(t, "the Release", fileText(t, out, "release.yaml"), `VPCSecurityGroups: ["sg-1", "sg-2"]`,
+		`DBSubnetGroupName: "!Select [0, [eu-south-1a, eu-south-1b]]"`)
+
+	out = importOf(t, nil, src("template.yaml", []byte(template)), src("params.json",
+		[]byte(`[{"ParameterKey": "Groups", "ParameterValue": "sg-3,sg-4"}]`)))
+	holds(t, "the Release read with the parameters file", fileText(t, out, "release.yaml"),
+		`VPCSecurityGroups: ["sg-3", "sg-4"]`)
+}

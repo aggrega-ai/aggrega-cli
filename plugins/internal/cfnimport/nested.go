@@ -707,10 +707,10 @@ func (r *reader) ssmValue(s *stack, a *argument, v cloudimport.Value) cloudimpor
 	return nil
 }
 
-// listed returns v, the value a Ref to the nested template's parameter decl
-// reads, as the property it is: the list of the comma-separated members of
-// the literal text of a list parameter, each with the space around it
-// trimmed, as CloudFormation reads a list parameter; v itself otherwise.
+// listed returns v, the value a Ref to the parameter decl reads, as the
+// property it is: the list of the comma-separated members of the literal text
+// of a list parameter, each with the space around it trimmed, as
+// CloudFormation reads a list parameter; v itself otherwise.
 func listed(decl *cloudimport.Parameter, v cloudimport.Value) cloudimport.Value {
 	lit, ok := v.(cloudimport.Literal)
 	text, isText := schemadraft.JSONText(lit.JSON)
@@ -726,6 +726,14 @@ func listed(decl *cloudimport.Parameter, v cloudimport.Value) cloudimport.Value 
 		return v
 	}
 	return literal(raw)
+}
+
+// listedLiteral returns raw, a default or a supplied value of the parameter
+// p, as the leaf the graph holds: a list parameter's the list of its members,
+// as [listed] reads it, and any other's as written.
+func listedLiteral(p *cloudimport.Parameter, raw json.RawMessage) cloudimport.Literal {
+	lit, _ := listed(p, literal(raw)).(cloudimport.Literal)
+	return lit
 }
 
 // reference returns what the template of the lowerer reads, at the JSON

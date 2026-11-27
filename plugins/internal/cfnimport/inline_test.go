@@ -57,19 +57,24 @@ Resources:
 
 // TestInlinedChildIsReadInPlaceInEachParent reads the task definition two
 // services reference in place of each reference, each service holding a copy
-// of its own and taking its dependencies: the task definition is no node, a
+// of its own and taking its dependencies, and keeping its body as written:
+// the task definition is folded into the first service, drafting nothing, a
 // resource-folded record names both services, and the decision on each lists
 // it.
 func TestInlinedChildIsReadInPlaceInEachParent(t *testing.T) {
 	t.Parallel()
-	g, diags := readOK(t, sharedTask)
-	if holdsNode(g, "Shared") {
-		t.Errorf("the inlined task definition stays a node: %v", nodeIDs(g))
+	g, _ := readOK(t, sharedTask)
+	if got := node(t, g, "Shared").ReadIn; !slices.Equal(got, []string{"Admin", "Api"}) {
+		t.Errorf("the task definition is read in %q, want Admin and Api", got)
 	}
 	for _, id := range []string{"Admin", "Api"} {
 		n := node(t, g, id)
 		if got := valueAt(t, n.Body, "Properties", "TaskDefinition", "Family"); !reflect.DeepEqual(got, lit(`"shared"`)) {
 			t.Errorf("%s reads Family %#v, want the task definition's", id, got)
+		}
+		if got := valueAt(t, n.AsWritten, "Properties", "TaskDefinition"); !reflect.DeepEqual(got,
+			cloudimport.Ref{Node: "Shared"}) {
+			t.Errorf("%s keeps %#v as written, want its reference to Shared", id, got)
 		}
 		if !slices.Equal(n.DependsOn, []string{"Logs"}) {
 			t.Errorf("%s depends on %q, want the task definition's dependency Logs", id, n.DependsOn)
@@ -82,12 +87,6 @@ func TestInlinedChildIsReadInPlaceInEachParent(t *testing.T) {
 		"0"}).Props, "Name"); name != "app" {
 		t.Errorf("the services share one copy of the task definition: Admin's container is named %q", name)
 	}
-	folded := onlyCodeOf(t, diags, cloudimport.CodeResourceFolded)
-	if len(folded) != 1 || folded[0].Message != "Shared (AWS::ECS::TaskDefinition) is read in place of the "+
-		"reference to it of Admin at Properties.TaskDefinition and Api at Properties.TaskDefinition, written with "+
-		"each, so nothing is drafted for it" || folded[0].SourceRef != "template.yaml#/Resources/Shared" {
-		t.Errorf("the task definition is reported %+v", folded)
-	}
 
 	out := importText(t, sharedTask)
 	for _, id := range []string{"Admin", "Api"} {
@@ -95,9 +94,53 @@ func TestInlinedChildIsReadInPlaceInEachParent(t *testing.T) {
 			"(AWS::ECS::TaskDefinition) at Properties.TaskDefinition, whose properties are read there in place of "+
 			"the reference")
 	}
-	if slices.ContainsFunc(out.Decisions, func(d aggrega.ImportDecision) bool { return d.SourceNode.ID == "Shared" }) {
-		t.Errorf("the import decides on the inlined task definition")
+	holds(t, "the decision on Shared", decisionOn(t, out, "Shared").Rationale, "folded: read in place of the "+
+		"reference to it in the body of Admin and Api")
+	folded := coded(out, cloudimport.CodeResourceFolded)
+	if len(folded) != 1 || folded[0].Message != "Shared (AWS::ECS::TaskDefinition) is read in place of the "+
+		"reference to it by Admin and Api, so nothing is drafted for it" {
+		t.Errorf("the task definition is reported %+v", folded)
 	}
+	if strings.Contains(fileText(t, out, "aggregate.yaml"), "shared:") {
+		t.Errorf("the task definition is an instance of its own")
+	}
+}
+
+// TestDraftedParentKeepsItsBodyAsWritten drafts a cache cluster whose engine a
+// parameter with no default gives from its body as written, its parameter
+// group read by reference, and drafts the parameter group, a node of its own.
+func TestDraftedParentKeepsItsBodyAsWritten(t *testing.T) {
+	t.Parallel()
+	out := importText(t, `AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Engine:
+    Type: String
+Resources:
+  CacheParams:
+    Type: AWS::ElastiCache::ParameterGroup
+    Properties:
+      CacheParameterGroupFamily: redis7
+      Description: cache parameters
+  Cache:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      Engine: !Ref Engine
+      CacheNodeType: cache.t3.micro
+      NumCacheNodes: 1
+      CacheParameterGroupName: !Ref CacheParams
+`)
+	for _, id := range []string{"Cache", "CacheParams"} {
+		if d := decisionOn(t, out, id); d.Chosen == nil || d.Chosen.Mode != "draft" {
+			t.Errorf("%s is decided %+v, want drafted from the source", id, d.Chosen)
+		}
+	}
+	lacks(t, "the decision on Cache", decisionOn(t, out, "Cache").Rationale, "in place of the reference")
+	holds(t, "the Aggregate", fileText(t, out, "aggregate.yaml"), "    cache:\n      type: "+
+		"imported/datastore/aws-elasticache-cachecluster\n", "target: cache-params")
+	holds(t, "the Release", fileText(t, out, "release.yaml"), "    cache-params:\n      infra:\n"+
+		"        overrides:\n          CacheParameterGroupFamily: \"redis7\"\n")
+	lacks(t, "the drafted cache cluster's Recipe", fileText(t, out,
+		"catalog/recipe/cloudformation/aws-elasticache-cachecluster/0.1.0/recipe.yaml"), "CacheParameterGroupFamily")
 }
 
 // TestInlinedChildAnotherResourceReadsStaysANode reads a task definition a
@@ -129,16 +172,14 @@ Resources:
         EcsParameters:
           TaskDefinitionArn: !Ref Report
 `
-	g, diags := readOK(t, text)
-	if !holdsNode(g, "Report") || node(t, g, "Nightly").Parent != "Report" {
-		t.Fatalf("the task definition is no node, or the schedule's parent is %q", node(t, g, "Nightly").Parent)
-	}
-	folded := onlyCodeOf(t, diags, cloudimport.CodeResourceFolded)
-	if len(folded) != 1 || !strings.HasSuffix(folded[0].Message, "and stays a resource of its own, as another "+
-		"resource reads it too") {
-		t.Errorf("the task definition is reported %+v", folded)
+	g, _ := readOK(t, text)
+	if report := node(t, g, "Report"); report.ReadIn != nil || node(t, g, "Nightly").Parent != "Report" {
+		t.Fatalf("the task definition is read in %q, or the schedule's parent is %q", report.ReadIn,
+			node(t, g, "Nightly").Parent)
 	}
 	out := importText(t, text)
+	holds(t, "the decision on Api", decisionOn(t, out, "Api").Rationale, "Report staying a resource of its own, "+
+		"as another resource reads it too")
 	if d := decisionOn(t, out, "Report"); d.Chosen == nil || d.Chosen.Target != "core/compute/task" {
 		t.Errorf("the task definition is decided %+v, want the task Component", d)
 	}
@@ -196,18 +237,19 @@ Resources:
 		"not carried: the fold of AWS::SQS::QueuePolicy in the row of AWS::SQS::Queue")
 }
 
-// TestMainContainerIsFirst keeps first, among the containers of a task
-// definition, the one a service's load balancer names, else the first
-// essential one, else the first, and reports each other not carried.
+// TestMainContainerIsFirst reads, of the containers of a task definition, the
+// one a service's load balancer names, else the first essential one, else the
+// first, alone, and reports each other not carried at its index in the
+// template; the task definition keeps its containers as written.
 func TestMainContainerIsFirst(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
 		case_, balancer, essential, main string
-		others                           []string
+		others, at                       []string
 	}{
-		{"named by the load balancer", "api", "true", "api", []string{"sidecar", "agent"}},
-		{"the first essential", "", "true", "api", []string{"sidecar", "agent"}},
-		{"the first", "", "false", "sidecar", []string{"api", "agent"}},
+		{"named by the load balancer", "api", "true", "api", []string{"sidecar", "agent"}, []string{"0", "2"}},
+		{"the first essential", "", "true", "api", []string{"sidecar", "agent"}, []string{"0", "2"}},
+		{"the first", "", "false", "sidecar", []string{"api", "agent"}, []string{"1", "2"}},
 	} {
 		t.Run(c.case_, func(t *testing.T) {
 			lb := ""
@@ -238,26 +280,36 @@ Resources:
 					"          Essential: false\n", "        - Name: sidecar\n          Image: registry.example/sidecar:1\n"+
 					"          Essential: true\n", 1)
 			}
-			g, diags := readOK(t, text)
-			defs := propAt(node(t, g, "Api").Body, []string{"Properties", "TaskDefinition", "ContainerDefinitions"})
-			var names []string
-			for _, d := range defs.Items {
-				name, _ := textAt(d.Props, "Name")
-				names = append(names, name)
+			g, _ := readOK(t, text)
+			names := func(body []cloudimport.Prop, path ...string) []string {
+				var out []string
+				for _, d := range propAt(body, path).Items {
+					name, _ := textAt(d.Props, "Name")
+					out = append(out, name)
+				}
+				return out
 			}
-			if want := append([]string{c.main}, c.others...); !slices.Equal(names, want) {
-				t.Errorf("the containers read %q, want %q", names, want)
+			got := names(node(t, g, "Api").Body, "Properties", "TaskDefinition", "ContainerDefinitions")
+			if !slices.Equal(got, []string{c.main}) {
+				t.Errorf("the service reads the containers %q, want %s alone", got, c.main)
 			}
+			got = names(node(t, g, "Task").AsWritten, "Properties", "ContainerDefinitions")
+			if !slices.Equal(got, []string{"sidecar", "api", "agent"}) {
+				t.Errorf("the task definition keeps the containers %q as written", got)
+			}
+			out := importText(t, text)
 			var notCarried []string
-			for _, d := range onlyCodeOf(t, diags, cloudimport.CodeResourceNotCarried) {
+			for _, d := range coded(out, cloudimport.CodeResourceNotCarried) {
 				notCarried = append(notCarried, d.SourceRef)
 			}
-			if len(notCarried) != 2 {
-				t.Errorf("the containers not carried are reported at %q, want two", notCarried)
+			const at = "template.yaml#/Resources/Task/Properties/ContainerDefinitions/"
+			if want := []string{at + c.at[0], at + c.at[1]}; !slices.Equal(notCarried, want) {
+				t.Errorf("the containers not carried are reported at %q, want %q", notCarried, want)
 			}
-			holds(t, "the decision on Api", decisionOn(t, importText(t, text), "Api").Rationale,
+			holds(t, "the decision on Api", decisionOn(t, out, "Api").Rationale,
 				"its main container is "+c.main+", which the instance runs, and "+c.others[0]+" and "+c.others[1]+
 					" are not carried")
+			lacks(t, "the Release", fileText(t, out, "release.yaml"), "ContainerDefinitions.1")
 		})
 	}
 }

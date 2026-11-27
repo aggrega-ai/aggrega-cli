@@ -1,1 +1,1 @@
-info resource-folded: WorkerTask (AWS::ECS::TaskDefinition) is read in place of the reference to it of Worker at Properties.TaskDefinition, written with it, so nothing is drafted for it
+info resource-folded: WorkerTask (AWS::ECS::TaskDefinition) is read in place of the reference to it by Worker, so nothing is drafted for it

@@ -191,7 +191,7 @@ func (t *template) parameters() ([]cloudimport.Parameter, []string) {
 			notes = append(notes, "The template parameter "+draftyaml.Comment(e.Key)+" is NoEcho, so the draft "+
 				"never writes its default.")
 		default:
-			p.Default = literal(raw)
+			p.Default = listedLiteral(&p, raw)
 		}
 		out = append(out, p)
 	}

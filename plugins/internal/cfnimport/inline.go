@@ -26,11 +26,12 @@ const (
 // says of resources that are part of another, and the edges a resource
 // relating two others draws between them:
 //
-//   - each task definition with several containers keeps its main container
-//     first, as [reader.mainContainer] chooses it, and names each other
-//     container not carried;
+//   - each task definition with several containers is read with its main
+//     container alone, as [reader.mainContainer] chooses it, each other
+//     container named not carried where a Recipe runs it;
 //   - each child an inline rule names is read in place of the reference each
-//     parent referencing it writes at the rule's path ([reader.inline]);
+//     parent referencing it writes at the rule's path, where a row maps the
+//     parent ([reader.inline]);
 //   - each child a parent link names is read as part of the one resource its
 //     link names ([reader.link]);
 //   - an event source mapping draws a dependency of its function on the
@@ -87,12 +88,14 @@ func depend(n *cloudimport.Node, ids []string) {
 	}
 }
 
-// mainContainer keeps the main container of the task definition n first
-// among the containers it defines, where it defines several: the one the
-// load balancer of a service running n names, the first such service by ID,
-// else the first essential one, else the first. Each other container is
-// reported not carried, as the Amazon ECS Recipes run one container, and the
-// decision on n names the main one.
+// mainContainer reads, of the containers the task definition n defines,
+// where it defines several, the main one alone, which the Amazon ECS Recipes
+// run: the one the load balancer of a service running n names, the first such
+// service by ID, else the first essential one, else the first. n keeps its
+// body as written, which it is drafted from where no row maps it; where a row
+// maps it, or the service reading it in place of its reference, the decision
+// names the main container, and each other is reported not carried, by its
+// index in the template.
 func (r *reader) mainContainer(g *cloudimport.Graph, n *cloudimport.Node) {
 	defs := propAt(n.Body, []string{"Properties", "ContainerDefinitions"})
 	if defs == nil || len(defs.Items) < 2 {
@@ -126,12 +129,15 @@ func (r *reader) mainContainer(g *cloudimport.Graph, n *cloudimport.Node) {
 			"run one container, the main one — the one a service's load balancer names, else the first essential "+
 			"one, else the first — so "+name+" is not carried: run it as a component of its own")
 		d.SourceRef = n.Source + "/Properties/ContainerDefinitions/" + strconv.Itoa(i)
-		r.note(d)
+		n.ReportsIfMapped = append(n.ReportsIfMapped, d)
 	}
-	items := append([]cloudimport.Prop{defs.Items[main]}, slices.Delete(slices.Clone(defs.Items), main, main+1)...)
-	defs.Items = items
-	n.Says = append(n.Says, "its main container is "+mainName+", which the instance runs, and "+andList(others)+
-		" are not carried")
+	if n.AsWritten == nil {
+		n.AsWritten = cloneProps(n.Body)
+	}
+	defs = propAt(n.Body, []string{"Properties", "ContainerDefinitions"})
+	defs.Items = []cloudimport.Prop{defs.Items[main]}
+	n.SaysIfMapped = append(n.SaysIfMapped, "its main container is "+mainName+", which the instance runs, and "+
+		andList(others)+" are not carried")
 }
 
 // balancedContainer returns the container name the load balancer of the first
@@ -172,68 +178,71 @@ func containerName(c cloudimport.Prop, i int) string {
 // place of the reference to it: where a parent of the rule's type references a
 // node of the child's type, by its identifier alone, at the rule's path, the
 // child's properties are written there in its place, each parent taking a
-// copy of its own, and the parent takes the child's dependencies as its own.
-// A child no other node references is then no node of its own: nothing is
-// drafted for it, a resource-folded record names the parents it is written
-// with, and the decision on each says what it read in place of the reference.
-// A child another node references too stays a node, read in place in each
-// parent all the same.
+// copy of its own and the child's dependencies, and keeping its body as
+// written, which it is drafted from where no row maps it. A child no other
+// node references is read in each such parent (Node.ReadIn): folded into the
+// first a row maps, drafting nothing, and a node of its own where a row maps
+// none of them. A child another node references too stays a node of its own,
+// read in place in each parent all the same. The decision on a parent a row
+// maps says what it read in place of the reference.
 func (r *reader) inline(g *cloudimport.Graph) {
 	byID := map[string]*cloudimport.Node{}
 	for _, n := range g.Nodes {
 		byID[n.ID] = n
 	}
-	parents := map[string][]string{}
-	var children []string
+	type reading struct {
+		parent, child *cloudimport.Node
+		rule          cfnrules.Inline
+		path          []string
+	}
+	var reads []reading
 	for _, rule := range cfnrules.Inlines() {
 		path := strings.Split(rule.Path, ".")
 		for _, n := range g.Nodes {
 			if !strings.EqualFold(n.Type, rule.Parent) {
 				continue
 			}
-			at := propAt(n.Body, path)
-			ref, ok := at.valueOf().(cloudimport.Ref)
+			ref, ok := propAt(n.Body, path).valueOf().(cloudimport.Ref)
 			child := byID[ref.Node]
 			if !ok || len(ref.Attr) > 0 || child == nil || child == n || !strings.EqualFold(child.Type, rule.Child) {
 				continue
 			}
-			var props []cloudimport.Prop
-			if p := propAt(child.Body, []string{"Properties"}); p != nil {
-				props = cloneProps(p.Props)
-			}
-			at.Value, at.Props, at.Items = nil, props, nil
-			depend(n, child.DependsOn)
-			n.Says = append(n.Says, "it references "+child.ID+" ("+child.Type+") at "+rule.Path+", whose "+
-				"properties are read there in place of the reference")
-			n.Says = append(n.Says, child.Says...)
-			if _, met := parents[child.ID]; !met {
-				children = append(children, child.ID)
-			}
-			parents[child.ID] = append(parents[child.ID], n.ID+" at "+rule.Path)
+			reads = append(reads, reading{parent: n, child: child, rule: rule, path: path})
 		}
-	}
-	if len(children) == 0 {
-		return
 	}
 	referenced := map[string]bool{}
 	for _, e := range cloudimport.Edges(g) {
-		referenced[e.To] = true
+		inlined := slices.ContainsFunc(reads, func(rd reading) bool {
+			return rd.parent.ID == e.From && rd.child.ID == e.To && slices.Equal(rd.path, e.Path)
+		})
+		if !inlined {
+			referenced[e.To] = true
+		}
 	}
-	for _, id := range children {
-		child := byID[id]
-		stays := ", written with it, so nothing is drafted for it"
-		if len(parents[id]) > 1 {
-			stays = ", written with each, so nothing is drafted for it"
+	for _, rd := range reads {
+		n, child := rd.parent, rd.child
+		if n.AsWritten == nil {
+			n.AsWritten = cloneProps(n.Body)
 		}
-		if referenced[id] {
-			stays = ", and stays a resource of its own, as another resource reads it too"
-		} else {
-			g.Nodes = slices.DeleteFunc(g.Nodes, func(n *cloudimport.Node) bool { return n == child })
+		var props []cloudimport.Prop
+		if p := propAt(child.Body, []string{"Properties"}); p != nil {
+			props = cloneProps(p.Props)
 		}
-		d := cloudimport.Report(cloudimport.CodeResourceFolded, child.ID+" ("+child.Type+") is read in place of "+
-			"the reference to it of "+andList(parents[id])+stays)
-		d.SourceRef = child.Source
-		r.note(d)
+		at := propAt(n.Body, rd.path)
+		at.Value, at.Props, at.Items = nil, props, nil
+		depend(n, child.DependsOn)
+		says := "it references " + child.ID + " (" + child.Type + ") at " + rd.rule.Path + ", whose properties are " +
+			"read there in place of the reference"
+		if referenced[child.ID] {
+			says += ", " + child.ID + " staying a resource of its own, as another resource reads it too"
+		}
+		n.SaysIfMapped = append(append(n.SaysIfMapped, says), child.SaysIfMapped...)
+		if !referenced[child.ID] {
+			if len(child.ReadIn) == 0 {
+				n.ReportsIfMapped = append(n.ReportsIfMapped, child.ReportsIfMapped...)
+			}
+			child.ReadIn = append(child.ReadIn, n.ID)
+		}
 	}
 }
 

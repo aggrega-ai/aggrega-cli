@@ -26,7 +26,7 @@ spec:
         overrides:
           DeletionPolicy: "Snapshot"
           DBInstanceClass: "db.t4g.micro"
-    # Properties the source writes and the draft does not place: Properties.LaunchType, Properties.LoadBalancers.0.ContainerName, Properties.LoadBalancers.0.ContainerPort, Properties.TaskDefinition.ContainerDefinitions.0.Essential, Properties.TaskDefinition.ContainerDefinitions.0.LogConfiguration.LogDriver, Properties.TaskDefinition.ContainerDefinitions.0.Name, Properties.TaskDefinition.ContainerDefinitions.1, Properties.TaskDefinition.Cpu, Properties.TaskDefinition.Family, Properties.TaskDefinition.Memory, Properties.TaskDefinition.NetworkMode, Properties.TaskDefinition.RequiresCompatibilities.
+    # Properties the source writes and the draft does not place: Properties.LaunchType, Properties.LoadBalancers.0.ContainerName, Properties.LoadBalancers.0.ContainerPort, Properties.TaskDefinition.ContainerDefinitions.0.Essential, Properties.TaskDefinition.ContainerDefinitions.0.LogConfiguration.LogDriver, Properties.TaskDefinition.ContainerDefinitions.0.Name, Properties.TaskDefinition.Cpu, Properties.TaskDefinition.Family, Properties.TaskDefinition.Memory, Properties.TaskDefinition.NetworkMode, Properties.TaskDefinition.RequiresCompatibilities.
     # Environment variables the source sets and no connection delivers: LOG_LEVEL = info.
     api:
       infra:
@@ -36,7 +36,7 @@ spec:
         port: 8080
         overrides:
           # From the template parameter Subnets, its literal default.
-          Subnets: "subnet-0a1b2c3d,subnet-4e5f6a7b"
+          Subnets: ["subnet-0a1b2c3d", "subnet-4e5f6a7b"]
           AssignPublicIp: "DISABLED"
           ExecutionRoleArn: "arn:aws:iam::123456789012:role/orders-exec"
           # Left for the Release, since the source cannot supply it: infra.overrides.Cluster, the pointer to the resource Cluster (AWS::ECS::Cluster), which the draft leaves to the operator; the catalog Recipe takes the resource's literal identifier: write it

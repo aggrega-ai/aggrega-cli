@@ -29,8 +29,8 @@ const (
 	cacheSubnetGroupSays = "the subnet group a cache is placed in is the operator's: the ElastiCache Recipes take " +
 		"it by name under infra.overrides.CacheSubnetGroupName" + leftForAnswers
 	loadBalancerSays = "a load balancer and its listeners are the operator's: the server Recipe on Amazon ECS " +
-		"registers its tasks with a target group of it the operator names under infra.overrides.TargetGroupArn" +
-		leftForAnswers
+		"registers its tasks with a target group of it, which the operator names under " +
+		"infra.overrides.TargetGroupArn"
 	scalingSays = "scaling a service is the operator's: the Recipes of the catalog keep the count of tasks or " +
 		"the concurrency their infra names, and a scaling target and its policies are applied to the deployed " +
 		"service outside the draft"
@@ -40,7 +40,9 @@ const (
 		"it by its ID under infra.overrides.HostedZoneId" + leftForAnswers
 	targetGroupSays = "a target group is the operator's load balancer's: the server Recipe on Amazon ECS takes " +
 		"one by its ARN under infra.overrides.TargetGroupArn, and the hub holds no Feature realizing public " +
-		"ingress for Amazon ECS that would carry it, so the key reading it is left for the Release's answers file"
+		"ingress for Amazon ECS that would carry it, so a service's TargetGroupArn reading it is not written and " +
+		"is reported value-not-carried: set infra.overrides.TargetGroupArn in the Release to the ARN of a target " +
+		"group of the operator's load balancer"
 	listenerRuleSays = "a listener rule forwarding to a target group is the operator's load balancer's, as the " +
 		"target group is, and the hub holds no Feature realizing public ingress for Amazon ECS that would carry it"
 	alarmSays = "the catalog's alarm on cloudformation realizes an example Feature, to which an import maps " +

@@ -140,7 +140,7 @@ func (r *reader) supply(params []cloudimport.Parameter, h *handed, at, key strin
 		r.notRead(h, at, "the parameters file "+h.name()+" gives the parameter "+key+" a value that is no text, "+
 			"number or boolean, so it is not read: write its value as text")
 	default:
-		params[i].Supplied = literal(raw)
+		params[i].Supplied = listedLiteral(&params[i], raw)
 	}
 }
 
