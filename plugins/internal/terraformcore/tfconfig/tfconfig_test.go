@@ -59,3 +59,51 @@ func TestSyntaxNamesOnlyConfigurationFiles(t *testing.T) {
 		}
 	}
 }
+
+// TestIsOverrideFileNamesTheFilesTheEngineMerges pins which configuration files
+// the engine merges into the module's other blocks rather than loading.
+func TestIsOverrideFileNamesTheFilesTheEngineMerges(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{name: "override.tf", want: true},
+		{name: "override.tf.json", want: true},
+		{name: "main_override.tf", want: true},
+		{name: "envs/prod/network_override.tf.json", want: true},
+		{name: "main.tf"},
+		{name: "overrides.tf"},
+		{name: "myoverride.tf"},
+		{name: "override_main.tf"},
+		{name: "override.tfvars"},
+		{name: "override/main.tf"},
+	} {
+		if got := tfconfig.IsOverrideFile(tc.name); got != tc.want {
+			t.Errorf("IsOverrideFile(%q) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestIsIgnoredFileNamesTheFilesTheEngineSkips pins which files of a module
+// directory the engine skips by their name.
+func TestIsIgnoredFileNamesTheFilesTheEngineSkips(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		want bool
+	}{
+		{name: ".main.tf", want: true},
+		{name: "envs/prod/.network.tf.json", want: true},
+		{name: "main.tf~", want: true},
+		{name: "#main.tf#", want: true},
+		{name: "main.tf"},
+		{name: ".hidden/main.tf"},
+		{name: "#main.tf"},
+		{name: "main~.tf"},
+	} {
+		if got := tfconfig.IsIgnoredFile(tc.name); got != tc.want {
+			t.Errorf("IsIgnoredFile(%q) = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

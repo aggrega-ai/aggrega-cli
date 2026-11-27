@@ -10,6 +10,7 @@
 package tfconfig
 
 import (
+	"path"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
@@ -34,6 +35,33 @@ func ParseConfigFile(name string, content []byte) (*hcl.File, hcl.Diagnostics, b
 		f, d := hclsyntax.ParseConfig(content, name, hcl.Pos{Line: 1, Column: 1})
 		return f, d, true
 	}
+}
+
+// IsIgnoredFile reports whether the engine skips a file of a module directory
+// by its name alone, whatever its extension: a name starting with ".", ending
+// in "~", or starting and ending with "#", as editors name their hidden, backup
+// and autosave files. The name may carry its directory; its last element is
+// read.
+func IsIgnoredFile(name string) bool {
+	base := path.Base(name)
+	return strings.HasPrefix(base, ".") || strings.HasSuffix(base, "~") ||
+		strings.HasPrefix(base, "#") && strings.HasSuffix(base, "#")
+}
+
+// IsOverrideFile reports whether a configuration file name is an override
+// file — override.tf, override.tf.json, or a name ending in _override.tf or
+// _override.tf.json — whose blocks the engine merges into the blocks of the
+// same address the module's other files declare, rather than loading them as
+// blocks of their own. The name may carry its directory; its last element is
+// read.
+func IsOverrideFile(name string) bool {
+	base := path.Base(name)
+	for _, ext := range []string{".tf.json", ".tf"} {
+		if stem, ok := strings.CutSuffix(base, ext); ok {
+			return stem == "override" || strings.HasSuffix(stem, "_override")
+		}
+	}
+	return false
 }
 
 // Syntax reports whether a file name is one of the configuration files the
