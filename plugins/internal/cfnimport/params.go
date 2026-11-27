@@ -81,7 +81,7 @@ func (r *reader) fill(params []cloudimport.Parameter, h *handed) {
 	case formList:
 		items, _ := itemsOf(h.tree)
 		for i, item := range items {
-			at := importer.Pointer(strconv.Itoa(i))
+			at := jsonPointer(strconv.Itoa(i))
 			o, _ := objectOf(item)
 			key, _ := schemadraft.JSONText(o.get("ParameterKey"))
 			if isTrue(o.get("UsePreviousValue")) {
@@ -103,20 +103,20 @@ func (r *reader) fill(params []cloudimport.Parameter, h *handed) {
 		for i, item := range items {
 			pair, _ := schemadraft.JSONText(item)
 			key, value, _ := strings.Cut(pair, "=")
-			r.supply(params, h, importer.Pointer(strconv.Itoa(i)), key, importer.String(value))
+			r.supply(params, h, jsonPointer(strconv.Itoa(i)), key, importer.String(value))
 		}
 	case formObject:
 		top, _ := objectOf(h.tree)
 		for _, e := range top {
 			if e.Key != "Parameters" {
-				r.notRead(h, importer.Pointer(e.Key), "the parameters file "+h.name()+" holds "+e.Key+" beside its "+
+				r.notRead(h, jsonPointer(e.Key), "the parameters file "+h.name()+" holds "+e.Key+" beside its "+
 					"Parameters, and the import reads its Parameters alone, so "+e.Key+" is not carried: set it where "+
 					"the stack is deployed")
 				continue
 			}
 			values, _ := objectOf(e.Value)
 			for _, v := range values {
-				r.supply(params, h, importer.Pointer("Parameters", v.Key), v.Key, v.Value)
+				r.supply(params, h, jsonPointer("Parameters", v.Key), v.Key, v.Value)
 			}
 		}
 	}

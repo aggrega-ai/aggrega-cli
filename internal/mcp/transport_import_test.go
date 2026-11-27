@@ -433,6 +433,10 @@ func TestShapeDetectionReachesTheImportToolOverAListener(t *testing.T) {
 			readImportFixture(t, armTemplateFixture), "arm"},
 		{"an Azure Resource Manager parameters file, told by its schema address and its parameters",
 			"main.parameters.json", readImportFixture(t, armParametersFixture), "arm"},
+		{"a CloudFormation template, told by its version line", "template.yaml",
+			readImportFixture(t, cfnTemplateFixture), "cloudformation"},
+		{"a CloudFormation parameters file, told by its first entry's ParameterKey", "params.json",
+			readImportFixture(t, cfnParametersFixture), "cloudformation"},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {
 			f := newScopeGridFixture(t, false)

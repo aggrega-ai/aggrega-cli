@@ -12,7 +12,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
-	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // template is one template the import reads, with its top-level sections,
@@ -64,7 +63,7 @@ func (r *reader) nodes(t *template) []*cloudimport.Node {
 	r.serverlessResources(t)
 	var out []*cloudimport.Node
 	for _, e := range t.resources {
-		at := importer.Pointer("Resources", e.Key)
+		at := jsonPointer("Resources", e.Key)
 		o, isObject := objectOf(e.Value)
 		typ, typed := schemadraft.JSONText(o.get("Type"))
 		if !isObject || !typed || typ == "" {

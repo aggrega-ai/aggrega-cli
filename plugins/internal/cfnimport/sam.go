@@ -218,14 +218,14 @@ func (r *reader) globals(t *template) []typeGlobals {
 	}
 	section, isObject := objectOf(raw)
 	if !isObject || isIntrinsic(section) {
-		at := importer.Pointer(globalsSection)
+		at := jsonPointer(globalsSection)
 		refused(at, "its Globals at "+at+" as no object of each resource type's properties by the type's name",
 			"write the properties of each resource type under its name")
 		return nil
 	}
 	var out []typeGlobals
 	for _, e := range section {
-		at := importer.Pointer(globalsSection, e.Key)
+		at := jsonPointer(globalsSection, e.Key)
 		read, known := globalsRead(e.Key)
 		if !known {
 			r.warnAt(cloudimport.CodeValueNotCarried, t.file, at, "the template "+t.file+" writes Globals for "+e.Key+
@@ -246,7 +246,7 @@ func (r *reader) globals(t *template) []typeGlobals {
 				g.props = append(g.props, p)
 				continue
 			}
-			here := at + importer.Pointer(p.Key)
+			here := at + jsonPointer(p.Key)
 			r.warnAt(cloudimport.CodeValueNotCarried, t.file, here, "the template "+t.file+" writes "+p.Key+
 				" under Globals for "+e.Key+" at "+here+", which the transform "+serverlessTransform+" does not read "+
 				"from Globals for an "+serverlessPrefix+e.Key+" and refuses when the stack deploys, so no resource "+
@@ -420,10 +420,10 @@ func (r *reader) serverlessFunctions(g *cloudimport.Graph) {
 				continue
 			}
 			file := h.s.t.file
-			at := importer.Pointer("Resources", h.id, "Properties", p.property)
+			at := jsonPointer("Resources", h.id, "Properties", p.property)
 			where := "the template " + file + " writes " + p.property + " on the function " + h.id + " at " + at
 			if slices.Contains(h.s.t.fromGlobals[h.id], p.property) {
-				at = importer.Pointer(globalsSection, "Function", p.property)
+				at = jsonPointer(globalsSection, "Function", p.property)
 				where = "the template " + file + " writes " + p.property + " under Globals for Function at " + at +
 					", which the function " + h.id + " takes"
 			}

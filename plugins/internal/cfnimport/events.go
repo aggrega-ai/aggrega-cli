@@ -11,7 +11,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
-	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // eventKind is how the import reads the events of one Type a serverless
@@ -161,7 +160,7 @@ func connects(from, to []string) string {
 func (r *reader) connector(h home, byID map[string]*cloudimport.Node) {
 	res, _ := objectOf(h.s.t.resources.get(h.id))
 	props, _ := objectOf(res.get("Properties"))
-	at := importer.Pointer("Resources", h.id)
+	at := jsonPointer("Resources", h.id)
 	r.connectorRead(h, r.connectorEnds(h.s, props.get("Source")), props.get("Destination"), at,
 		"the connector "+h.id+" ("+h.n.Type+") at "+at, byID)
 }
@@ -179,7 +178,7 @@ func (r *reader) embeddedConnectors(h home, byID map[string]*cloudimport.Node) {
 	for _, e := range connectors {
 		conn, _ := objectOf(e.Value)
 		props, _ := objectOf(conn.get("Properties"))
-		at := importer.Pointer("Resources", h.id, "Connectors", e.Key)
+		at := jsonPointer("Resources", h.id, "Connectors", e.Key)
 		r.connectorRead(h, []string{h.n.ID}, props.get("Destination"), at, "the connector "+e.Key+" of "+h.id+
 			" at "+at, byID)
 	}
@@ -240,7 +239,7 @@ func (r *reader) events(h home, byID map[string]*cloudimport.Node) {
 	}
 	h.n.Body = withoutProperty(h.n.Body, "Events")
 	file := h.s.t.file
-	at := importer.Pointer("Resources", h.id, "Properties", "Events")
+	at := jsonPointer("Resources", h.id, "Properties", "Events")
 	events, isObject := objectOf(raw)
 	if !isObject || isIntrinsic(events) {
 		r.warnAt(cloudimport.CodeResourceNotCarried, file, at, fmt.Sprintf("the template %s writes the Events of %s "+
@@ -249,7 +248,7 @@ func (r *reader) events(h home, byID map[string]*cloudimport.Node) {
 		return
 	}
 	for _, e := range events {
-		r.event(h, e.Key, e.Value, at+importer.Pointer(e.Key), byID)
+		r.event(h, e.Key, e.Value, at+jsonPointer(e.Key), byID)
 	}
 }
 
@@ -270,7 +269,7 @@ func (r *reader) event(h home, name string, raw json.RawMessage, at string, byID
 	writes, fix, edge := k.writes, "write what invokes "+h.n.ID+" by hand where the stack deploys", ""
 	switch {
 	case k.reads != "":
-		if read := r.eventReads(h, props.get(k.reads), at+importer.Pointer("Properties", k.reads)); len(read) > 0 {
+		if read := r.eventReads(h, props.get(k.reads), at+jsonPointer("Properties", k.reads)); len(read) > 0 {
 			connect(byID, []string{h.n.ID}, read)
 			edge = "; " + connects([]string{h.n.ID}, read)
 		}
@@ -283,7 +282,7 @@ func (r *reader) event(h home, name string, raw json.RawMessage, at string, byID
 		}
 		fix = "write the route, and the permission letting the API invoke " + h.n.ID + ", in the API's definition " +
 			"by hand"
-		if apis := r.eventReads(h, api, at+importer.Pointer("Properties", k.via)); len(apis) > 0 {
+		if apis := r.eventReads(h, api, at+jsonPointer("Properties", k.via)); len(apis) > 0 {
 			connect(byID, apis, []string{h.n.ID})
 			edge = "; " + connects(apis, []string{h.n.ID})
 		}

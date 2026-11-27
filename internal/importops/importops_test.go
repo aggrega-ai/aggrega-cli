@@ -329,6 +329,20 @@ func TestSelectFormat(t *testing.T) {
 		`"contentVersion":"1.0.0.0","parameters":{"name":{"value":"x"}}}`)
 	armSchemaless := []byte(`{"contentVersion":"1.0.0.0","resources":[]}`)
 	armOtherSchema := []byte(`{"$schema":"https://example.test/schemas/deploymentTemplate.json#","resources":[]}`)
+	// A CloudFormation template with short forms and an unquoted version date, a
+	// SAM template with no version line, a JSON template, a parameters file in
+	// each of the three forms the AWS CLI reads, a YAML file with resources and
+	// no transform, and a JSON object holding resources beside its parameters.
+	cfnShortForms := []byte("AWSTemplateFormatVersion: 2010-09-09\nResources:\n  Queue:\n    Type: AWS::SQS::Queue\n" +
+		"    Properties:\n      QueueName: !Sub \"${AWS::StackName}-q\"\n      Tags: [!Ref Env]\n")
+	cfnSam := []byte("Transform: AWS::Serverless-2016-10-31\nResources:\n  Fn:\n    Type: AWS::Serverless::Function\n")
+	cfnJSON := []byte(`{"AWSTemplateFormatVersion":"2010-09-09","Resources":{}}`)
+	cfnSamJSON := []byte(`{"Transform":"AWS::Serverless-2016-10-31","Resources":{}}`)
+	cfnParamsList := []byte(`[{"ParameterKey":"Env","ParameterValue":"prod"}]`)
+	cfnParamsPairs := []byte(`["Env=prod"]`)
+	cfnParamsObject := []byte(`{"Parameters":{"Env":"prod"}}`)
+	cfnNoTransform := []byte("Resources:\n  Queue:\n    Type: AWS::SQS::Queue\n")
+	cfnResourcesAndParameters := []byte(`{"Parameters":{"Env":"prod"},"Resources":{}}`)
 
 	cases := []struct {
 		name     string
@@ -474,6 +488,24 @@ func TestSelectFormat(t *testing.T) {
 			wantErr: true},
 		{name: "an Azure Resource Manager template under another extension is refused", source: "main.txt",
 			content: armTemplate, wantErr: true},
+		{name: "a CloudFormation template with short forms and an unquoted version date", source: "template.yaml",
+			content: cfnShortForms, want: "cloudformation"},
+		{name: "a CloudFormation template under the .template extension", source: "stack.template",
+			content: cfnShortForms, want: "cloudformation"},
+		{name: "a SAM template with no version line", source: "template.yml", content: cfnSam, want: "cloudformation"},
+		{name: "a CloudFormation template in JSON", source: "stack.json", content: cfnJSON, want: "cloudformation"},
+		{name: "a SAM template in JSON with no version line", source: "stack.json", content: cfnSamJSON,
+			want: "cloudformation"},
+		{name: "a parameters file of ParameterKey entries", source: "params.json", content: cfnParamsList,
+			want: "cloudformation"},
+		{name: "a parameters file of Key=Value text", source: "params.json", content: cfnParamsPairs,
+			want: "cloudformation"},
+		{name: "a parameters file of an object at Parameters", source: "params.json", content: cfnParamsObject,
+			want: "cloudformation"},
+		{name: "a template with neither a version line nor a transform is refused", source: "template.yaml",
+			content: cfnNoTransform, wantErr: true},
+		{name: "a JSON object holding resources beside its parameters is refused", source: "stack.json",
+			content: cfnResourcesAndParameters, wantErr: true},
 		{name: "explicit terraform-schema wins over a Compose file", explicit: "terraform-schema",
 			source: "compose.yaml", content: composeFile, want: "terraform-schema"},
 	}
@@ -493,7 +525,7 @@ func TestSelectFormat(t *testing.T) {
 					t.Fatalf("UndetectedFormatError.Path() = %q; want %q", undetected.Path(), tc.source)
 				}
 				if want := []string{"langflow", "flowise", "n8n", "mcp", "compose", "dify", "crewai", "langgraph", "google-adk",
-					"agent-framework", "cloudformation-schema", "terraform-schema", "arm-schema", "arm"}; !slices.Equal(undetected.Formats(), want) {
+					"agent-framework", "cloudformation-schema", "terraform-schema", "arm-schema", "arm", "cloudformation"}; !slices.Equal(undetected.Formats(), want) {
 					t.Fatalf("the refusal offers %v as the formats to name; the catalog's importers advertise %v",
 						undetected.Formats(), want)
 				}
@@ -520,6 +552,7 @@ func TestSchemaImportersRecognisedAndNotCrossMatched(t *testing.T) {
 	seam := referenceDetectionSeam(t)
 	const schemas = "../../plugins/internal/schemadraft/"
 	const armTestdata = "../../plugins/internal/armimport/testdata/"
+	const cfnTestdata = "../../plugins/internal/cfnimport/testdata/"
 	read := func(path string) []byte {
 		t.Helper()
 		body, err := os.ReadFile(path)
@@ -544,6 +577,12 @@ func TestSchemaImportersRecognisedAndNotCrossMatched(t *testing.T) {
 		{"an Azure Resource Manager template with comments", "main.json", armTestdata + "topology/one.json", "arm"},
 		{"an Azure Resource Manager template of language version 2.0", "main.json", armTestdata + "topology/two.json", "arm"},
 		{"an Azure Resource Manager parameters file", "main.parameters.json", armTestdata + "parameters/one.parameters.json", "arm"},
+		{"a CloudFormation template with short forms", "template.yaml", cfnTestdata + "forms/long.yaml", "cloudformation"},
+		{"a CloudFormation template in JSON", "template.json", cfnTestdata + "forms/template.json", "cloudformation"},
+		{"a SAM template", "template.yaml", cfnTestdata + "sam/template.yaml", "cloudformation"},
+		{"a CloudFormation parameters file of ParameterKey entries", "list.json", cfnTestdata + "params/list.json", "cloudformation"},
+		{"a CloudFormation parameters file of Key=Value text", "pairs.json", cfnTestdata + "params/pairs.json", "cloudformation"},
+		{"a CloudFormation parameters file of an object", "object.json", cfnTestdata + "params/object.json", "cloudformation"},
 		{"a Compose file", "compose.yaml", "testdata/compose/compose-for-agents/langgraph.compose.yaml", "compose"},
 		{"a Langflow export", "flow.json", "../compiler/importersocket/testdata/langflow-flow.json", "langflow"},
 		{"a Flowise export", "flow.json", "../compiler/importersocket/testdata/flowise-flow.json", "flowise"},

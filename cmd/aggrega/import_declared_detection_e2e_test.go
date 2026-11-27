@@ -61,6 +61,12 @@ var everyAgentFlowFixture = []struct {
 	{"arm", "../../plugins/internal/armimport/testdata/topology/two.json"},
 	{"arm", "../../plugins/internal/armimport/testdata/avm/maps/account/0.2.2/main.json"},
 	{"arm", "../../plugins/internal/armimport/testdata/parameters/one.parameters.json"},
+	{"cloudformation", "../../plugins/internal/cfnimport/testdata/forms/long.yaml"},
+	{"cloudformation", "../../plugins/internal/cfnimport/testdata/forms/template.json"},
+	{"cloudformation", "../../plugins/internal/cfnimport/testdata/sam/template.yaml"},
+	{"cloudformation", "../../plugins/internal/cfnimport/testdata/params/list.json"},
+	{"cloudformation", "../../plugins/internal/cfnimport/testdata/params/pairs.json"},
+	{"cloudformation", "../../plugins/internal/cfnimport/testdata/params/object.json"},
 }
 
 // toolImportAnswer is what the assistant's import tool answered one call with.
@@ -327,17 +333,17 @@ func TestASourceNoImporterRecognisesIsRefusedNamingTheAdvertisedFormats(t *testi
 
 	code, _, _, process := runImportAtTheRoot(t, root, filepath.Join(root, "mystery.json"), "--dry-run")
 	if code == 0 || !strings.Contains(process,
-		"(for example --format agent-framework, --format arm-schema, --format arm, --format cloudformation-schema, --format compose, "+
+		"(for example --format agent-framework, --format arm-schema, --format arm, --format cloudformation-schema, --format cloudformation, --format compose, "+
 			"--format crewai, --format dify, --format flowise, --format google-adk, --format langflow, "+
 			"--format langgraph, --format mcp, --format n8n or --format terraform-schema)") {
 		t.Errorf("the command's refusal (exit %d) does not offer the advertised formats:\n%s", code, process)
 	}
 	if answer := importThroughTheTool(t, root, map[string]any{"source": "mystery.json"}); !answer.refused ||
-		!strings.Contains(answer.text, `one of "agent-framework", "arm-schema", "arm", "cloudformation-schema", "compose", "crewai", "dify", "flowise", "google-adk", "langflow", "langgraph", "mcp", "n8n", "terraform-schema"`) {
+		!strings.Contains(answer.text, `one of "agent-framework", "arm-schema", "arm", "cloudformation-schema", "cloudformation", "compose", "crewai", "dify", "flowise", "google-adk", "langflow", "langgraph", "mcp", "n8n", "terraform-schema"`) {
 		t.Errorf("the tool's refusal (refused=%v) does not offer the advertised formats: %s", answer.refused, answer.text)
 	}
 	if answer := importThroughTheSession(t, root, map[string]any{"source": "mystery.json", "outputDir": "drafts"}); !strings.Contains(
-		answer.refusal, "(for example agent-framework or arm-schema or arm or cloudformation-schema or compose or crewai or dify or flowise or google-adk or langflow or langgraph or mcp or n8n or terraform-schema)") {
+		answer.refusal, "(for example agent-framework or arm-schema or arm or cloudformation-schema or cloudformation or compose or crewai or dify or flowise or google-adk or langflow or langgraph or mcp or n8n or terraform-schema)") {
 		t.Errorf("the session's refusal does not offer the advertised formats: %q", answer.refusal)
 	}
 }

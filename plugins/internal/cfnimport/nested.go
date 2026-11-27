@@ -385,7 +385,7 @@ func (r *reader) leftOn(s, child *stack) {
 func (r *reader) bind(s, child *stack) {
 	res, _ := objectOf(s.t.resources.get(child.at))
 	props, _ := objectOf(res.get("Properties"))
-	at := importer.Pointer("Resources", child.at, "Properties", "Parameters")
+	at := jsonPointer("Resources", child.at, "Properties", "Parameters")
 	raw := props.get("Parameters")
 	binds, isObject := objectOf(raw)
 	if raw != nil && !isNull(raw) && (!isObject || len(binds) == 1 && cfntemplate.IsIntrinsicKey(binds[0].Key)) {
@@ -396,7 +396,7 @@ func (r *reader) bind(s, child *stack) {
 	}
 	for _, e := range binds {
 		if child.t.params.get(e.Key) == nil {
-			here := at + importer.Pointer(e.Key)
+			here := at + jsonPointer(e.Key)
 			r.warnAt(cloudimport.CodeValueNotCarried, s.t.file, here, "the template "+s.t.file+" binds the "+
 				"parameter "+e.Key+" of the "+child.kind()+" "+child.at+" at "+here+", which its template "+
 				child.t.file+" declares no parameter of, so it is not read: remove it from the stack's Parameters, or "+
@@ -409,10 +409,10 @@ func (r *reader) bind(s, child *stack) {
 		child.args[p.Name] = a
 		decl, _ := objectOf(child.t.params.get(p.Name))
 		if p.Default != nil {
-			a.def, a.file, a.at = decl.get("Default"), child.t.file, importer.Pointer("Parameters", p.Name, "Default")
+			a.def, a.file, a.at = decl.get("Default"), child.t.file, jsonPointer("Parameters", p.Name, "Default")
 		}
 		if b := binds.get(p.Name); b != nil && !isNoValue(b) {
-			a.bound, a.file, a.at = b, s.t.file, at+importer.Pointer(p.Name)
+			a.bound, a.file, a.at = b, s.t.file, at+jsonPointer(p.Name)
 		}
 		if a.bound != nil || a.def != nil {
 			continue
@@ -635,7 +635,7 @@ func (r *reader) resolve(s *stack, a *argument) {
 		}
 	}
 	if !present {
-		p, _ := r.scope(s).prop(a.def, importer.Pointer("Parameters", a.decl.Name, "Default"))
+		p, _ := r.scope(s).prop(a.def, jsonPointer("Parameters", a.decl.Name, "Default"))
 		v = p.Value
 	}
 	v = r.ssmValue(s, a, v)
@@ -780,7 +780,7 @@ func (r *reader) outputOf(s *stack, name string) (cloudimport.Value, bool) {
 	if o == nil {
 		return nil, false
 	}
-	at := importer.Pointer("Outputs", name, "Value")
+	at := jsonPointer("Outputs", name, "Value")
 	switch o.state {
 	case settled:
 		return o.value, true
@@ -835,7 +835,7 @@ func (r *reader) inherit(h home) {
 		h.n.Condition = cloudimport.Param{Name: params[0]}
 	default:
 		h.n.Condition = nil
-		r.warnAt(cloudimport.CodeConditionNotCarried, h.s.t.file, importer.Pointer("Resources", h.id), "the template "+
+		r.warnAt(cloudimport.CodeConditionNotCarried, h.s.t.file, jsonPointer("Resources", h.id), "the template "+
 			h.s.t.file+" deploys "+h.id+", and the nested stacks deploying it, under conditions switched by the "+
 			"template parameters "+strings.Join(params, ", ")+", which the draft cannot carry together, as one "+
 			"parameter switches an instance on, so the resource is drafted as deployed whatever the conditions "+

@@ -16,7 +16,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
-	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // target is the target the cloudformation format's own Recipes deploy on,
@@ -107,7 +106,7 @@ func (r *reader) lower(g *cloudimport.Graph) {
 	}
 	for _, n := range g.Nodes {
 		h := r.home[n]
-		n.Body = r.scope(h.s).props(n.Body, importer.Pointer("Resources", h.id), true)
+		n.Body = r.scope(h.s).props(n.Body, jsonPointer("Resources", h.id), true)
 	}
 	root := r.scope(r.stacks[0])
 	for i := range g.Outputs {
@@ -230,7 +229,7 @@ func (l *lowerer) parameterValues() {
 		p := &l.params[i]
 		if shortFormText(p.Default) {
 			p.Default = nil
-			l.warn(cloudimport.CodeValueNotCarried, importer.Pointer("Parameters", p.Name, "Default"), "the template "+
+			l.warn(cloudimport.CodeValueNotCarried, jsonPointer("Parameters", p.Name, "Default"), "the template "+
 				l.t.file+" gives the parameter "+p.Name+" a default that is wholly a CloudFormation short form, which "+
 				"CloudFormation reads as text and a catalog Recipe placing it would read as an intrinsic function, so "+
 				"the default is not carried: write the value by hand where the stack deploys")
@@ -271,7 +270,7 @@ func (l *lowerer) props(in []cloudimport.Prop, at string, named bool) []cloudimp
 		if !named {
 			seg = strconv.Itoa(i)
 		}
-		here := at + importer.Pointer(seg)
+		here := at + jsonPointer(seg)
 		var lowered cloudimport.Prop
 		present := true
 		switch lit, isLiteral := p.Value.(cloudimport.Literal); {
@@ -318,7 +317,7 @@ func (l *lowerer) prop(raw json.RawMessage, at string) (cloudimport.Prop, bool) 
 		}
 		var p cloudimport.Prop
 		for _, e := range o {
-			m, present := l.prop(e.Value, at+importer.Pointer(e.Key))
+			m, present := l.prop(e.Value, at+jsonPointer(e.Key))
 			if !present {
 				continue
 			}
@@ -333,7 +332,7 @@ func (l *lowerer) prop(raw json.RawMessage, at string) (cloudimport.Prop, bool) 
 		items, _ := itemsOf(raw)
 		var p cloudimport.Prop
 		for i, item := range items {
-			m, present := l.prop(item, at+importer.Pointer(strconv.Itoa(i)))
+			m, present := l.prop(item, at+jsonPointer(strconv.Itoa(i)))
 			if present {
 				p.Items = append(p.Items, m)
 			}
@@ -542,7 +541,7 @@ func subArgs(arg json.RawMessage) (string, obj, bool) {
 // reference, or name is a pseudo parameter.
 func (l *lowerer) variable(name string, vars obj, at string) (cloudimport.Value, bool) {
 	if raw := vars.get(name); raw != nil {
-		p, present := l.prop(raw, at+importer.Pointer("Fn::Sub", "1", name))
+		p, present := l.prop(raw, at+jsonPointer("Fn::Sub", "1", name))
 		if !present {
 			return nil, false
 		}
@@ -593,7 +592,7 @@ func (l *lowerer) join(arg, raw json.RawMessage, at string) cloudimport.Value {
 		if !l.spent.Spend(1) {
 			return l.opaque(raw, at)
 		}
-		p, present := part.prop(item, at+importer.Pointer("Fn::Join", "1", strconv.Itoa(i)))
+		p, present := part.prop(item, at+jsonPointer("Fn::Join", "1", strconv.Itoa(i)))
 		if !present {
 			continue
 		}
@@ -722,10 +721,10 @@ func (l *lowerer) branch(arg, raw json.RawMessage, at string) (cloudimport.Prop,
 	if !holds {
 		chosen, other, makes, otherwise = 2, 1, "false", "true"
 	}
-	carried := at + importer.Pointer("Fn::If", strconv.Itoa(chosen))
+	carried := at + jsonPointer("Fn::If", strconv.Itoa(chosen))
 	l.warn(cloudimport.CodeValueNotCarried, at, "the template "+l.t.file+" writes Fn::If on the condition "+
 		condition+" at "+at+", which the value the template parameter "+param+" is given makes "+makes+", so the "+
-		"draft carries its branch at "+carried+" and not the one at "+at+importer.Pointer("Fn::If",
+		"draft carries its branch at "+carried+" and not the one at "+at+jsonPointer("Fn::If",
 		strconv.Itoa(other))+": where the stack deploys with a value of "+param+" that makes "+condition+" "+
 		otherwise+", write that branch by hand")
 	return l.prop(args[chosen], carried)
@@ -739,7 +738,7 @@ func (l *lowerer) output(o cloudimport.Output) cloudimport.Value {
 	if !ok {
 		return o.Value
 	}
-	at := importer.Pointer("Outputs", o.Name, "Value")
+	at := jsonPointer("Outputs", o.Name, "Value")
 	inner, keep := l.trial()
 	p, present := inner.prop(lit.JSON, at)
 	switch {

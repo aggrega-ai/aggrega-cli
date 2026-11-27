@@ -415,6 +415,11 @@ func TestMigratePromptNamesTheImportToolBeforeTheHandPath(t *testing.T) {
 	if !strings.Contains(body, "the part you do by hand for a format no importer covers") {
 		t.Error("the body's first step does not say the reading is the hand path's own part")
 	}
+	for _, covered := range []string{"Azure Resource Manager templates", "CloudFormation templates", "Compose applications"} {
+		if !strings.Contains(body, covered) {
+			t.Errorf("the body does not name %q among the formats an importer covers", covered)
+		}
+	}
 	for _, denied := range []string{"the part no tool does", "no tool on this surface", "rather than among these tools", "not a score", "no score"} {
 		if strings.Contains(body, denied) {
 			t.Errorf("the body still says %q", denied)

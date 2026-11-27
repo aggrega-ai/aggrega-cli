@@ -9,7 +9,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
-	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // condition lowers the condition the node n, read from the resource of the
@@ -40,7 +39,7 @@ func (l *lowerer) condition(n *cloudimport.Node, id string) {
 	if !isText {
 		named = "a condition it names by no text"
 	}
-	at := importer.Pointer("Resources", id, "Condition")
+	at := jsonPointer("Resources", id, "Condition")
 	l.warn(cloudimport.CodeConditionNotCarried, at, "the template "+l.t.file+" deploys "+id+" under "+named+
 		", which is not one template parameter allowing only true and false compared with true, so the "+
 		"condition is not carried and the resource is drafted as deployed whatever the condition decides: write "+

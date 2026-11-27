@@ -11,7 +11,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
-	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // readTransforms are the transforms under which the import reads a template
@@ -69,11 +68,11 @@ func declaredTransforms(raw json.RawMessage) []transform {
 	}
 	items, isList := itemsOf(raw)
 	if !isList {
-		return []transform{one(raw, importer.Pointer("Transform"))}
+		return []transform{one(raw, jsonPointer("Transform"))}
 	}
 	out := make([]transform, len(items))
 	for i, item := range items {
-		out[i] = one(item, importer.Pointer("Transform", strconv.Itoa(i)))
+		out[i] = one(item, jsonPointer("Transform", strconv.Itoa(i)))
 	}
 	return out
 }
@@ -116,7 +115,7 @@ func (r *reader) refuseTransforms() {
 			}
 		}
 		for _, e := range t.top {
-			r.refuseCalls(t, e.Value, importer.Pointer(e.Key))
+			r.refuseCalls(t, e.Value, jsonPointer(e.Key))
 		}
 	}
 }
@@ -128,7 +127,7 @@ func (r *reader) refuseCalls(t *template, raw json.RawMessage, at string) {
 	case '{':
 		o, _ := objectOf(raw)
 		for _, e := range o {
-			here := at + importer.Pointer(e.Key)
+			here := at + jsonPointer(e.Key)
 			switch {
 			case e.Key == transformKey:
 				call, _ := objectOf(e.Value)
@@ -149,7 +148,7 @@ func (r *reader) refuseCalls(t *template, raw json.RawMessage, at string) {
 	case '[':
 		items, _ := itemsOf(raw)
 		for i, item := range items {
-			r.refuseCalls(t, item, at+importer.Pointer(strconv.Itoa(i)))
+			r.refuseCalls(t, item, at+jsonPointer(strconv.Itoa(i)))
 		}
 	}
 }

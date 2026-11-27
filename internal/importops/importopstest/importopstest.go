@@ -101,6 +101,7 @@ var referenceImporters = []referenceImporter{
 	{format: "terraform-schema", fixture: "terraform-schema-importer.wasm", name: "import-terraform-schema"},
 	{format: "arm-schema", fixture: "arm-schema-importer.wasm", name: "import-arm-schema"},
 	{format: "arm", fixture: "arm-importer.wasm", name: "import-arm"},
+	{format: "cloudformation", fixture: "cloudformation-importer.wasm", name: "import-cloudformation"},
 }
 
 // referenceImporterFor returns the reference importer serving format, failing
@@ -166,7 +167,7 @@ type Importer struct {
 	Version string
 	// Format is the format whose reference importer the entity is generated from,
 	// written as the bare format (langflow, flowise, n8n, mcp, compose, dify, crewai, langgraph, google-adk,
-	// agent-framework, cloudformation-schema, terraform-schema, arm-schema) — and so the one format the
+	// agent-framework, cloudformation-schema, terraform-schema, arm-schema, arm, cloudformation) — and so the one format the
 	// entity advertises, which is what the catalog selects an importer by.
 	Format string
 }

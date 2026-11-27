@@ -97,7 +97,7 @@ var migrateDeploymentPromptSpec = promptSpec{
 
 const migrateDeploymentBody = `You are bringing an existing deployment description — a chart, an infrastructure module, a container-compose file — into Aggrega.
 
-Start with the import tool when the source is in a format an importer covers — Azure Resource Manager templates and Compose applications among them. Call import with source set to the file or directory; it drafts the Aggregate, the Release and the catalog entities a unit no Component covers is drafted as, and what it returns is draft files to review and complete, which the sequence below then checks. Read cli://import for the formats it covers and what an importer needs attached.
+Start with the import tool when the source is in a format an importer covers — Azure Resource Manager templates, CloudFormation templates and Compose applications among them. Call import with source set to the file or directory; it drafts the Aggregate, the Release and the catalog entities a unit no Component covers is drafted as, and what it returns is draft files to review and complete, which the sequence below then checks. Read cli://import for the formats it covers and what an importer needs attached.
 
 For a source in a format no importer covers, the translation is yours to perform, by reading the source and authoring Aggrega entities from what you find. The same tools check your work at each point and show you what it renders to, which is what makes the translation verifiable rather than a guess. The sequence below is that hand path, and it is also how you complete what an import drafted.
 

@@ -71,6 +71,8 @@ const (
 	bicepTypesFixture     = "../../plugins/internal/schemadraft/arm/testdata/vault.json"
 	armTemplateFixture    = "../../plugins/internal/armimport/testdata/topology/one.json"
 	armParametersFixture  = "../../plugins/internal/armimport/testdata/parameters/one.parameters.json"
+	cfnTemplateFixture    = "../../plugins/internal/cfnimport/testdata/forms/long.yaml"
+	cfnParametersFixture  = "../../plugins/internal/cfnimport/testdata/params/list.json"
 )
 
 // importWorkspaceConfig is the configuration every fixture workspace here

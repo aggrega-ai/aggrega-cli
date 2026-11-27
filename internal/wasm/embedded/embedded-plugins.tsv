@@ -55,3 +55,4 @@ importer	cloudformation-schema	./plugins/cloudformation-schema-importer	go		no
 importer	terraform-schema	./plugins/terraform-schema-importer	go		no
 importer	arm-schema	./plugins/arm-schema-importer	go		no
 importer	arm	./plugins/arm-importer	go		no
+importer	cloudformation	./plugins/cloudformation-importer	go		no
