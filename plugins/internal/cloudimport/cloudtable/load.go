@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -48,7 +49,8 @@ func readDirs(capability string) []string {
 
 // hubCatalog is a hub checkout's catalog as the generator reads it for one
 // capability: loaded by the compiler's own loader from the capability's Recipes
-// and FeatureRecipes, the Components and the libraries, and the labels of each
+// and FeatureRecipes, the Components and the libraries, each extending
+// Component's chain resolved as a build resolves it, and the labels of each
 // Component as an import is handed them.
 type hubCatalog struct {
 	root, capability string
@@ -58,7 +60,8 @@ type hubCatalog struct {
 	// naming it without one resolves to, its extends chain resolved.
 	labels map[string]map[string]string
 	// requires holds, by the same name and version, the values keys each
-	// Component requires and declares no default for, with their types.
+	// Component requires and declares no default for, with their types, an
+	// extending Component's read off the schema its resolved chain gives it.
 	requires map[string][]cloudimport.Requirement
 }
 
@@ -77,6 +80,15 @@ func loadHub(root, capability string) (*hubCatalog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load the %s Recipes of %s and what they read: %w", capability, root, err)
 	}
+	// The loader keeps an extending Component as written; a build resolves its
+	// chain before reading its schema, and so does this.
+	if extErrs := cat.ResolveAllExtends(); len(extErrs) > 0 {
+		errs := make([]error, 0, len(extErrs))
+		for _, e := range extErrs {
+			errs = append(errs, e)
+		}
+		return nil, fmt.Errorf("resolve the extends chains of the Components of %s: %w", root, errors.Join(errs...))
+	}
 	h := &hubCatalog{root: root, capability: capability, cat: cat, libs: cat.DefaultLibraries(),
 		labels: map[string]map[string]string{}, requires: map[string][]cloudimport.Requirement{}}
 	if view := importersocket.ProjectCatalog(cat); view != nil {
@@ -94,8 +106,9 @@ func loadHub(root, capability string) (*hubCatalog, error) {
 
 // requiredValues returns the values keys the Component named name requires and
 // declares no default for, at the version a reference naming it without one
-// resolves to, its contract compiled as a build compiles it
-// ([resolver.CompileComponentContract]): each a requirement of the key under
+// resolves to, its extends chain resolved by loadHub and its contract compiled
+// as a build compiles it ([resolver.CompileComponentContract]): each a
+// requirement of the key under
 // values, with the type its schema declares, in the order its schema lists
 // them. A declared contract that does not compile is refused, naming the
 // Component and why.

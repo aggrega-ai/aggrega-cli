@@ -579,3 +579,35 @@ func TestARowRequiresTheValuesItsComponentRequires(t *testing.T) {
 		t.Errorf("the rendered table does not write\n%s\nin\n%s", line, text)
 	}
 }
+
+// TestARowRequiresTheValuesAnExtendedComponentRequires generates the row of a
+// Recipe whose Component extends another, inheriting its schema, and requires
+// the values key the extended Component requires, as a build reads the
+// extending Component's schema.
+func TestARowRequiresTheValuesAnExtendedComponentRequires(t *testing.T) {
+	t.Parallel()
+	root := hubWith(t, map[string]string{
+		"aggrega-catalog/component/core/compute/acme-fn/1.0.0/component.yaml": "apiVersion: aggrega.ai/v1beta1\n" +
+			"kind: Component\nmetadata:\n  name: core/compute/acme-fn\n  version: 1.0.0\n  labels:\n" +
+			"    component.aggrega.ai/category: compute\n    component.aggrega.ai/type: function\nspec:\n" +
+			"  schema:\n    values:\n      properties:\n        runtime: { type: string }\n      required: [runtime]\n",
+		"aggrega-catalog/component/core/compute/acme-gpu-fn/1.0.0/component.yaml": "apiVersion: aggrega.ai/v1beta1\n" +
+			"kind: Component\nmetadata:\n  name: core/compute/acme-gpu-fn\n  version: 1.0.0\n  labels:\n" +
+			"    component.aggrega.ai/category: compute\n    component.aggrega.ai/type: function\nspec:\n" +
+			"  extends: core/compute/acme-fn:1.0.0\n  schema: inherited\n",
+		"aggrega-catalog/recipe/arm/gpu-fn-module/1.0.0/recipe.yaml": moduleRecipe("gpu-fn-module",
+			"core/compute/acme-gpu-fn", "acme/gpu-fn", "Function"),
+	})
+	rows, notes, err := generateFromHub(root, armFormatOrFail(t), cloudimport.Table{})
+	if err != nil {
+		t.Fatalf("generate the table: %v (%v)", err, notes)
+	}
+	i := slices.IndexFunc(rows, func(r cloudimport.Row) bool { return r.Recipe == "gpu-fn-module" })
+	if i < 0 {
+		t.Fatalf("no row of gpu-fn-module among %+v", rows)
+	}
+	if want := []cloudimport.Requirement{{Key: "values.runtime", Type: "string"}}; !reflect.DeepEqual(rows[i].Requires,
+		want) {
+		t.Errorf("the row of the extending Component requires %+v, want %+v", rows[i].Requires, want)
+	}
+}
