@@ -51,14 +51,21 @@ type config struct {
 	// Blocks are the directory's blocks of the kinds read: its files in name
 	// order, each file's blocks in the order it writes them.
 	Blocks []block
-	// NotRead names what the directory holds that is not read, in the same
-	// order: each moved, import, removed and check block, each backend and
-	// cloud block of a terraform block, and each block of a kind the reader
-	// does not know, as "<kind> at <file>:<line>"; then, once, the
-	// directory's .terraform/, where the import was handed a file beneath it
-	// other than the record of its installed modules.
+	// NotRead names the blocks the directory's files hold that are not read,
+	// in the same order: each moved, import, removed and check block, each
+	// backend and cloud block of a terraform block, and each block of a kind
+	// the reader does not know, as "<kind> at <file>:<line>".
 	NotRead []string
+	// Skipped names the files of the directory the import was handed and
+	// does not read as configuration: each override file, in name order, with
+	// why, then, once, the directory's .terraform/, where the import was
+	// handed a file beneath it other than the record of its installed
+	// modules.
+	Skipped []string
 }
+
+// overrideNotMerged says why an override file is not read.
+const overrideNotMerged = " (an override file, whose blocks Terraform merges into the configuration's; not merged)"
 
 // readKinds are the kinds of block the reader reads.
 var readKinds = []string{"resource", "data", "module", "variable", "output", "provider", "terraform", "locals"}
@@ -86,8 +93,8 @@ func known(kind string) bool {
 }
 
 // readDir reads the configuration files directly in the directory dir — a
-// .tf or .tf.json file outside .terraform/, never one beneath it — into its
-// blocks, each parsed in the syntax its name declares, as Terraform reads it:
+// .tf or .tf.json file outside .terraform/, never one beneath it, nor an
+// override file, nor a file Terraform skips by its name — into its blocks, each parsed in the syntax its name declares, as Terraform reads it:
 // a .tf file opening with a byte-order mark or ending its lines with CRLF
 // reads as the same file without them, and a .tf.json file opening with a
 // byte-order mark is refused. A file that
@@ -98,7 +105,7 @@ func known(kind string) bool {
 func readDir(dir string, files []file) (*config, []aggrega.Diagnostic) {
 	dir = path.Clean(dir)
 	cfg := &config{Dir: dir}
-	var own []file
+	var own, overrides []file
 	initialised := false
 	for _, f := range files {
 		switch classify(f.Name) {
@@ -106,19 +113,25 @@ func readDir(dir string, files []file) (*config, []aggrega.Diagnostic) {
 			if path.Dir(f.Name) == dir {
 				own = append(own, f)
 			}
+		case kindOverride:
+			if path.Dir(f.Name) == dir {
+				overrides = append(overrides, f)
+			}
 		case kindSkipped:
 			if holder, _, _ := underDotTerraform(f.Name); holder == dir {
 				initialised = true
 			}
 		}
 	}
-	slices.SortStableFunc(own, func(a, b file) int { return strings.Compare(a.Name, b.Name) })
+	byName := func(a, b file) int { return strings.Compare(a.Name, b.Name) }
+	slices.SortStableFunc(own, byName)
+	slices.SortStableFunc(overrides, byName)
 
 	var halts []aggrega.Diagnostic
 	for _, f := range own {
 		read, diags := readFile(f)
-		if errs := errorsOf(diags); len(errs) > 0 {
-			halts = append(halts, importer.ParseFailed(aggrega.ImportSource{Name: f.Name}, formatName, errs))
+		if diags.HasErrors() {
+			halts = append(halts, parseFailed(f, diags))
 			continue
 		}
 		cfg.Blocks = append(cfg.Blocks, read.blocks...)
@@ -127,21 +140,26 @@ func readDir(dir string, files []file) (*config, []aggrega.Diagnostic) {
 	if len(halts) > 0 {
 		return nil, halts
 	}
+	for _, f := range overrides {
+		cfg.Skipped = append(cfg.Skipped, f.Name+overrideNotMerged)
+	}
 	if initialised {
-		cfg.NotRead = append(cfg.NotRead, path.Join(dir, dotTerraform)+"/")
+		cfg.Skipped = append(cfg.Skipped, path.Join(dir, dotTerraform)+"/")
 	}
 	return cfg, nil
 }
 
-// errorsOf returns the errors among diags.
-func errorsOf(diags hcl.Diagnostics) hcl.Diagnostics {
-	var out hcl.Diagnostics
+// parseFailed is the importer kit's parse-failed for the file f, which reading
+// reported the errors among diags for, naming the file, the line and the
+// column of the first.
+func parseFailed(f file, diags hcl.Diagnostics) aggrega.Diagnostic {
+	var errs hcl.Diagnostics
 	for _, d := range diags {
 		if d.Severity == hcl.DiagError {
-			out = append(out, d)
+			errs = append(errs, d)
 		}
 	}
-	return out
+	return importer.ParseFailed(aggrega.ImportSource{Name: f.Name}, formatName, errs)
 }
 
 // fileRead is what the reader reads of one configuration file: its blocks of
@@ -295,9 +313,11 @@ type member struct {
 // JSON every member of the body is an argument, its object an object and its
 // array a list. In both, an object or a list expression is read into its
 // members or items, and so is every object and list inside it, as long as
-// each key is literal text; a "//" member of a JSON object is a comment and
-// no member. It returns what reading a JSON body reports: one that is no
-// object, a name written twice.
+// each key is literal text. A "//" member of a JSON object is a comment and no
+// member: Terraform reads it so in a block's body, and keeps it as a key of a
+// map an argument writes, which the reader, holding no provider's schema to
+// tell a nested block from a map, does not. It returns what reading a JSON
+// body reports: one that is no object, a name written twice.
 func members(body hcl.Body) ([]member, hcl.Diagnostics) {
 	if native, ok := body.(*hclsyntax.Body); ok {
 		return nativeMembers(native), nil
@@ -345,12 +365,14 @@ func nativeMembers(body *hclsyntax.Body) []member {
 }
 
 // blockGroup gathers the nested blocks of a native body under their type and
-// then under each of their labels, each name where it is first written.
+// then under each of their labels, each name where it is first written:
+// children in that order, byName indexing them.
 type blockGroup struct {
 	name     string
 	rng      hcl.Range
 	blocks   []*hclsyntax.Block
 	children []*blockGroup
+	byName   map[string]*blockGroup
 }
 
 // add places b beneath g, depth names of its type and labels already read.
@@ -363,14 +385,15 @@ func (g *blockGroup) add(b *hclsyntax.Block, depth int) {
 	if depth > 0 {
 		name, rng = b.Labels[depth-1], b.LabelRanges[depth-1]
 	}
-	for _, c := range g.children {
-		if c.name == name {
-			c.add(b, depth+1)
-			return
+	c, seen := g.byName[name]
+	if !seen {
+		if g.byName == nil {
+			g.byName = map[string]*blockGroup{}
 		}
+		c = &blockGroup{name: name, rng: rng}
+		g.byName[name] = c
+		g.children = append(g.children, c)
 	}
-	c := &blockGroup{name: name, rng: rng}
-	g.children = append(g.children, c)
 	c.add(b, depth+1)
 }
 

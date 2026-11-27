@@ -51,18 +51,20 @@ func unitPaths(units []cloudimport.Unit) []string {
 	return out
 }
 
-// sourceRefused fails t unless d halts source-refused naming each of names.
-func sourceRefused(t *testing.T, d *aggrega.Diagnostic, names ...string) {
+// sourceRefused fails t unless diags is one source-refused halt naming each
+// of names, and returns its message.
+func sourceRefused(t *testing.T, diags []aggrega.Diagnostic, names ...string) string {
 	t.Helper()
 	want := cloudimport.Report(cloudimport.CodeSourceRefused, "")
-	if d == nil || d.Code != want.Code || d.Severity != want.Severity {
-		t.Fatalf("diagnostic = %+v, want a source-refused halt", d)
+	if len(diags) != 1 || diags[0].Code != want.Code || diags[0].Severity != want.Severity {
+		t.Fatalf("diagnostics = %+v, want one source-refused halt", diags)
 	}
 	for _, name := range names {
-		if !strings.Contains(d.Message, name) {
-			t.Fatalf("message %q does not name %s", d.Message, name)
+		if !strings.Contains(diags[0].Message, name) {
+			t.Fatalf("message %q does not name %s", diags[0].Message, name)
 		}
 	}
+	return diags[0].Message
 }
 
 func TestClassify(t *testing.T) {
@@ -96,6 +98,16 @@ func TestClassify(t *testing.T) {
 		{"scripts/deploy.sh", kindOther},
 		{"main.tf.bak", kindOther},
 		{"terraform.tfstate", kindOther},
+		{"x.terraform/main.tf", kindConfig},
+		{"override.tf", kindOverride},
+		{"override.tf.json", kindOverride},
+		{"main_override.tf", kindOverride},
+		{"envs/prod/network_override.tf.json", kindOverride},
+		{".terraform/modules/db/override.tf", kindSkipped},
+		{".main.tf", kindOther},
+		{"envs/prod/.network.tf.json", kindOther},
+		{"main.tf~", kindOther},
+		{"#main.tf#", kindOther},
 	}
 	for _, c := range cases {
 		if got := classify(c.name); got != c.want {
@@ -112,12 +124,9 @@ func TestUnitsOnePerConfigurationDirectory(t *testing.T) {
 		file{Name: "envs/prod/prod.tfvars", Bytes: []byte("name = \"orders\"\n")},
 		file{Name: "README.md", Bytes: []byte("notes\n")})
 	got := units(files)
-	// SelectRoot resolves a link against the directory holding the unit's
-	// own, so each link is written from there: envs/prod's
-	// ../../modules/db is prod/../../modules/db, which is ../modules/db.
 	want := []cloudimport.Unit{
-		{Path: "envs/dev/", Links: []string{"../modules/db"}},
-		{Path: "envs/prod/", Links: []string{"../modules/db"}},
+		{Path: "envs/dev/", Links: []string{"../../modules/db"}},
+		{Path: "envs/prod/", Links: []string{"../../modules/db"}},
 		{Path: "modules/db/"},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -166,37 +175,56 @@ module "outside" {
 }
 
 func TestRootOneCandidate(t *testing.T) {
-	root, others, d := selectRoot(fixture(t, "single"), cloudimport.Settings{})
-	if d != nil || root.Path != "./" || len(others) != 0 {
-		t.Fatalf("root = %+v, others = %+v, diagnostic = %+v", root, others, d)
+	root, others, diags := selectRoot(fixture(t, "single"), cloudimport.Settings{})
+	if len(diags) != 0 || root.Path != "./" || len(others) != 0 {
+		t.Fatalf("root = %+v, others = %+v, diagnostics = %+v", root, others, diags)
 	}
 }
 
 func TestRootSeveralCandidatesAndNoRootRefused(t *testing.T) {
-	_, _, d := selectRoot(fixture(t, "layout"), cloudimport.Settings{})
-	sourceRefused(t, d, "envs/prod", "envs/dev", "root")
-	if strings.Contains(d.Message, "modules/db") {
-		t.Fatalf("message %q names the called module as a candidate", d.Message)
+	_, _, diags := selectRoot(fixture(t, "layout"), cloudimport.Settings{})
+	if message := sourceRefused(t, diags, "envs/prod/", "envs/dev/", "root"); strings.Contains(message, "modules/db") {
+		t.Fatalf("message %q names the called module as a candidate", message)
 	}
 }
 
 func TestRootSettingNamesOneCandidate(t *testing.T) {
 	for _, setting := range []string{"envs/prod", "envs/prod/", "./envs/prod"} {
-		root, others, d := selectRoot(fixture(t, "layout"), cloudimport.Settings{Root: setting})
-		if d != nil || root.Path != "envs/prod/" || !reflect.DeepEqual(unitPaths(others), []string{"envs/dev/"}) {
-			t.Fatalf("root %q: root = %+v, others = %+v, diagnostic = %+v", setting, root, others, d)
+		root, others, diags := selectRoot(fixture(t, "layout"), cloudimport.Settings{Root: setting})
+		if len(diags) != 0 || root.Path != "envs/prod/" || !reflect.DeepEqual(unitPaths(others), []string{"envs/dev/"}) {
+			t.Fatalf("root %q: root = %+v, others = %+v, diagnostics = %+v", setting, root, others, diags)
 		}
 	}
 }
 
 func TestRootSettingNamesTheImportedDirectory(t *testing.T) {
-	root, others, d := selectRoot(fixture(t, "single"), cloudimport.Settings{Root: "."})
-	if d != nil || root.Path != "./" || len(others) != 0 {
-		t.Fatalf("root = %+v, others = %+v, diagnostic = %+v", root, others, d)
+	root, others, diags := selectRoot(fixture(t, "single"), cloudimport.Settings{Root: "."})
+	if len(diags) != 0 || root.Path != "./" || len(others) != 0 {
+		t.Fatalf("root = %+v, others = %+v, diagnostics = %+v", root, others, diags)
 	}
 }
 
 func TestRootOnlyVariableFilesRefused(t *testing.T) {
-	_, _, d := selectRoot(fixture(t, "varsonly"), cloudimport.Settings{})
-	sourceRefused(t, d, ".tf", ".tf.json")
+	_, _, diags := selectRoot(fixture(t, "varsonly"), cloudimport.Settings{})
+	sourceRefused(t, diags, "the .tf and .tf.json files")
+}
+
+// TestRootCallingFileThatDoesNotParseHaltsParseFailed reads a root module
+// whose one file, calling ./modules/queue, does not parse: the root rule finds
+// two candidates, and the halt names the file that does not parse rather than
+// asking for the root setting.
+func TestRootCallingFileThatDoesNotParseHaltsParseFailed(t *testing.T) {
+	files := fixture(t, "brokencall")
+	_, _, diags := selectRoot(files, cloudimport.Settings{})
+	if len(diags) != 1 {
+		t.Fatalf("diagnostics = %+v, want one parse-failed halt", diags)
+	}
+	d := diags[0]
+	if d.Code != kitParseFailed.Code || d.Severity != kitParseFailed.Severity || d.SourceRef != "main.tf" ||
+		!strings.Contains(d.Message, "main.tf:3,") {
+		t.Fatalf("diagnostic = %+v, want parse-failed naming main.tf at line 3", d)
+	}
+	if root, _, diags := selectRoot(files, cloudimport.Settings{Root: "."}); len(diags) != 0 || root.Path != "./" {
+		t.Fatalf("with root set, root = %+v, diagnostics = %+v; want the imported directory", root, diags)
+	}
 }

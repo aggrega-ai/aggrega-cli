@@ -4,11 +4,13 @@ Every file here is synthetic, written for the reader's tests; none is copied fro
 published module.
 
 - `same/native/main.tf`, `same/json/main.tf.json` — one configuration written in the native syntax and in JSON: a
-  `terraform` block with its required providers, a provider, a variable, locals, a security group writing two
-  `ingress` blocks, one `egress` block, a map of tags (one key quoted) and lists of addresses, a data source, a module
-  call and an output, each in the same order in both files.
-- `order/a.tf.json`, `order/b.tf` — an output and locals in JSON, and a queue and a variable in the native syntax, so
-  that files read in name order and blocks in the order each file writes them.
+  `terraform` block with its required providers, a provider, two variables (one defaulting to a list), locals, a
+  security group writing two `ingress` blocks, one `egress` block, a map of tags (one key quoted), lists of addresses
+  and two `dynamic` blocks labelled `ingress` and `egress`, a data source, a module call and an output, each in the
+  same order in both files.
+- `order/a.tf.json`, `order/b.tf` — locals and an output in JSON, and a variable, a queue and another variable in the
+  native syntax, so that files read in name order and blocks in the order each file writes them, not grouped by
+  kind.
 - `notread/native/main.tf` — a queue beside the blocks the reader does not read: an S3 `backend` inside the
   `terraform` block, `moved`, `import`, `removed`, a `check`, and an `ephemeral` resource, a kind the reader does not
   know.
@@ -16,6 +18,9 @@ published module.
   and an `ephemeral` resource, in JSON.
 - `broken/main.tf` — a queue whose `visibility_timeout_seconds` has no value, so the file does not parse at line 3,
   column 31.
+- `override/` — a queue in `main.tf` and the same queue renamed in the override file `main_override.tf`.
+- `brokencall/` — a root module calling `./modules/queue` whose `name` argument has no value, so its one file does not
+  parse at line 3, beside the module it calls.
 - `layout/` — `envs/prod/` and `envs/dev/`, each calling `../../modules/db`, which declares a variable and a
   database instance.
 - `single/` — a root module calling `./modules/queue`, beside a `terraform.tfvars`.

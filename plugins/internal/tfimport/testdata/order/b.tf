@@ -1,8 +1,12 @@
+variable "retention" {
+  default = 86400
+}
+
 resource "aws_sqs_queue" "jobs" {
-  name                      = "jobs"
+  name                      = var.name
   message_retention_seconds = var.retention
 }
 
-variable "retention" {
-  default = 86400
+variable "name" {
+  default = "jobs"
 }

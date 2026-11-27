@@ -14,10 +14,13 @@ import (
 // Unit is one source an import is handed that it could start from — a
 // template, a stack, a root module — with the sources it links.
 type Unit struct {
-	// Path is the unit's slash-separated path inside the imported directory.
+	// Path is the unit's slash-separated path inside the imported directory:
+	// a file's path, or, for a unit that is a directory, the directory's path
+	// ending in "/" ("./" for the imported directory itself).
 	Path string
 	// Links are the paths of the sources the unit links, each relative to the
-	// unit's own directory, as the source writes them.
+	// unit's own directory — the one holding a file, a directory unit itself —
+	// as the source writes them.
 	Links []string
 }
 
@@ -35,7 +38,7 @@ func SelectRoot(units []Unit, root string) (Unit, []Unit, *aggrega.Diagnostic) {
 	for _, u := range sorted {
 		own := path.Clean(u.Path)
 		for _, link := range u.Links {
-			if target := path.Join(path.Dir(own), link); target != own {
+			if target := path.Join(path.Dir(u.Path), link); target != own {
 				linked[target] = true
 			}
 		}

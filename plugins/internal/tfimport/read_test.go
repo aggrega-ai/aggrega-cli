@@ -18,9 +18,9 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-// parseFailed is the importer kit's parse-failed diagnostic, its code and
+// kitParseFailed is the importer kit's parse-failed diagnostic, its code and
 // severity read off the kit's own constructor.
-var parseFailed = importer.ParseFailed(aggrega.ImportSource{}, formatName, errors.New(""))
+var kitParseFailed = importer.ParseFailed(aggrega.ImportSource{}, formatName, errors.New(""))
 
 // render writes blocks as text, each with its kind, its labels and its
 // members, so that a configuration read from either syntax compares alike;
@@ -143,16 +143,17 @@ func placeOf(blocks []block) []string {
 func TestReadDirBlocksInSourceOrder(t *testing.T) {
 	cfg := readFixture(t, "order")
 	want := []string{
-		"output jobs_url at a.tf.json:3",
-		"locals  at a.tf.json:7",
-		"resource aws_sqs_queue.jobs at b.tf:1",
-		"variable retention at b.tf:6",
+		"locals  at a.tf.json:2",
+		"output jobs_url at a.tf.json:6",
+		"variable retention at b.tf:1",
+		"resource aws_sqs_queue.jobs at b.tf:5",
+		"variable name at b.tf:10",
 	}
 	if got := placeOf(cfg.Blocks); !reflect.DeepEqual(got, want) {
 		t.Fatalf("blocks = %q, want %q", got, want)
 	}
-	if cfg.Dir != "." || len(cfg.NotRead) != 0 {
-		t.Fatalf("dir = %q, not read = %q", cfg.Dir, cfg.NotRead)
+	if cfg.Dir != "." || len(cfg.NotRead) != 0 || len(cfg.Skipped) != 0 {
+		t.Fatalf("dir = %q, not read = %q, skipped = %q", cfg.Dir, cfg.NotRead, cfg.Skipped)
 	}
 }
 
@@ -178,7 +179,7 @@ func TestReadDirParseFailedNamesFileLineAndColumn(t *testing.T) {
 		t.Fatalf("readDir = %v, %+v; want one halt and no configuration", cfg != nil, diags)
 	}
 	d := diags[0]
-	if d.Code != parseFailed.Code || d.Severity != parseFailed.Severity || d.SourceRef != "main.tf" ||
+	if d.Code != kitParseFailed.Code || d.Severity != kitParseFailed.Severity || d.SourceRef != "main.tf" ||
 		!strings.Contains(d.Message, "main.tf:3,31") || !strings.Contains(d.Message, "Invalid expression") {
 		t.Fatalf("diagnostic = %+v, want parse-failed naming main.tf at line 3, column 31", d)
 	}
@@ -203,8 +204,8 @@ func TestReadDirNotRead(t *testing.T) {
 
 // sameConfig is the configuration of testdata/same, as render writes it: a
 // nested block written once is an object, the blocks of one type written
-// several times a list, an object expression an object and a list
-// expression a list.
+// several times a list, a labelled nested block an object beneath its labels,
+// an object expression an object and a list expression a list.
 const sameConfig = `terraform
   required_version = ">= 1.6"
   required_providers {
@@ -218,6 +219,11 @@ provider aws
 variable region
   description = "where the queue runs"
   default = "eu-west-1"
+variable extra_ports
+  default [
+    - 8080
+    - 8443
+  ]
 locals
   name = refs(var.region)
 resource aws_security_group web
@@ -250,6 +256,24 @@ resource aws_security_group web
   tags {
     Name = "web"
     Tier = "edge"
+  }
+  dynamic {
+    ingress {
+      for_each = refs(var.extra_ports)
+      content {
+        from_port = refs(ingress.value)
+        to_port = refs(ingress.value)
+        protocol = "tcp"
+      }
+    }
+    egress {
+      for_each = refs(var.extra_ports)
+      content {
+        from_port = refs(egress.value)
+        to_port = refs(egress.value)
+        protocol = "udp"
+      }
+    }
   }
 data aws_vpc main
   default = true
@@ -293,8 +317,8 @@ func TestInitialisedDirectorySkipsDotTerraform(t *testing.T) {
 	if got := placeOf(cfg.Blocks); !reflect.DeepEqual(got, wantBlocks) {
 		t.Fatalf("blocks = %q, want %q", got, wantBlocks)
 	}
-	if !reflect.DeepEqual(cfg.NotRead, []string{".terraform/"}) {
-		t.Fatalf("not read = %q, want .terraform/ once", cfg.NotRead)
+	if len(cfg.NotRead) != 0 || !reflect.DeepEqual(cfg.Skipped, []string{".terraform/"}) {
+		t.Fatalf("not read = %q, skipped = %q; want .terraform/ skipped once", cfg.NotRead, cfg.Skipped)
 	}
 	if cfg, diags := readDir(".terraform/modules/db", files); len(diags) != 0 || cfg == nil || len(cfg.Blocks) != 0 {
 		t.Fatalf("readDir of the installed module read %+v, %+v; want nothing", cfg, diags)
@@ -342,13 +366,33 @@ output jobs_url
   value = refs(aws_sqs_queue.jobs.url)
 `
 
+// TestReadDirOverrideFileNotRead reads a queue beside the override file
+// writing the same queue: the override file's block is not read, and the file
+// is named skipped, with why.
+func TestReadDirOverrideFileNotRead(t *testing.T) {
+	files := fixture(t, "override")
+	if got := units(files); len(got) != 1 || got[0].Path != "./" {
+		t.Fatalf("units = %+v, want the imported directory alone", got)
+	}
+	cfg := readFixture(t, "override")
+	want := []string{"resource aws_sqs_queue.jobs at main.tf:1"}
+	if got := placeOf(cfg.Blocks); !reflect.DeepEqual(got, want) || len(cfg.NotRead) != 0 {
+		t.Fatalf("blocks = %q, not read = %q; want %q", got, cfg.NotRead, want)
+	}
+	wantSkipped := []string{"main_override.tf (an override file, whose blocks Terraform merges into the " +
+		"configuration's; not merged)"}
+	if !reflect.DeepEqual(cfg.Skipped, wantSkipped) {
+		t.Fatalf("skipped = %q, want %q", cfg.Skipped, wantSkipped)
+	}
+}
+
 func TestCdktfCommentKeysIgnored(t *testing.T) {
 	cfg := readFixture(t, "cdktf")
 	if got := render(cfg.Blocks, false); got != cdktfConfig {
 		t.Fatalf("reads\n%s\nwant\n%s", got, cdktfConfig)
 	}
-	if len(cfg.NotRead) != 0 {
-		t.Fatalf("not read = %q, want none", cfg.NotRead)
+	if len(cfg.NotRead) != 0 || len(cfg.Skipped) != 0 {
+		t.Fatalf("not read = %q, skipped = %q; want none", cfg.NotRead, cfg.Skipped)
 	}
 }
 
@@ -370,7 +414,7 @@ func TestByteOrderMarkAndCRLFReadAsTofuReadsThem(t *testing.T) {
 		t.Fatalf("readDir = %v, %+v; want one halt and no configuration", cfg != nil, diags)
 	}
 	d := diags[0]
-	if d.Code != parseFailed.Code || d.Severity != parseFailed.Severity || d.SourceRef != "main.tf.json" ||
+	if d.Code != kitParseFailed.Code || d.Severity != kitParseFailed.Severity || d.SourceRef != "main.tf.json" ||
 		!strings.Contains(d.Message, "main.tf.json:1,1-") {
 		t.Fatalf("diagnostic = %+v, want parse-failed naming main.tf.json at line 1, column 1", d)
 	}

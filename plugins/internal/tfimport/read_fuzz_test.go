@@ -57,14 +57,14 @@ func FuzzReadDir(f *testing.F) {
 // text.
 func readAll(files []file) string {
 	var b strings.Builder
-	root, others, d := selectRoot(files, cloudimport.Settings{})
-	fmt.Fprintf(&b, "root %+v, others %+v, diagnostic %+v\n", root, others, d)
+	root, others, diags := selectRoot(files, cloudimport.Settings{})
+	fmt.Fprintf(&b, "root %+v, others %+v, diagnostics %+v\n", root, others, diags)
 	for _, u := range units(files) {
 		cfg, diags := readDir(u.Path, files)
 		fmt.Fprintf(&b, "%s: %+v\n", u.Path, diags)
 		if cfg != nil {
 			b.WriteString(render(cfg.Blocks, true))
-			fmt.Fprintf(&b, "not read: %q\n", cfg.NotRead)
+			fmt.Fprintf(&b, "not read: %q, skipped: %q\n", cfg.NotRead, cfg.Skipped)
 		}
 	}
 	return b.String()

@@ -18,6 +18,10 @@ variable "region" {
   default     = "eu-west-1"
 }
 
+variable "extra_ports" {
+  default = [8080, 8443]
+}
+
 locals {
   name = "orders-${var.region}"
 }
@@ -49,6 +53,24 @@ resource "aws_security_group" "web" {
   tags = {
     Name = "web"
     "Tier" = "edge"
+  }
+
+  dynamic "ingress" {
+    for_each = var.extra_ports
+    content {
+      from_port = ingress.value
+      to_port   = ingress.value
+      protocol  = "tcp"
+    }
+  }
+
+  dynamic "egress" {
+    for_each = var.extra_ports
+    content {
+      from_port = egress.value
+      to_port   = egress.value
+      protocol  = "udp"
+    }
   }
 }
 

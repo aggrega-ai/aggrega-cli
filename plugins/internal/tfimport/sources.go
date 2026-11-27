@@ -28,10 +28,14 @@ type sourceKind int
 
 // The kinds of a handed file.
 const (
-	// kindOther is a file Terraform does not load.
+	// kindOther is a file Terraform does not load, a configuration file's name
+	// it skips among them.
 	kindOther sourceKind = iota
 	// kindConfig is a configuration file, .tf or .tf.json, outside .terraform/.
 	kindConfig
+	// kindOverride is an override file, outside .terraform/, whose blocks
+	// Terraform merges into the configuration's blocks of the same address.
+	kindOverride
 	// kindVarsAuto is a variable file Terraform loads on its own:
 	// terraform.tfvars, terraform.tfvars.json, *.auto.tfvars and
 	// *.auto.tfvars.json.
@@ -77,10 +81,13 @@ func classify(name string) sourceKind {
 	case strings.HasSuffix(base, ".tfvars"), strings.HasSuffix(base, ".tfvars.json"):
 		return kindVarsOther
 	}
-	if _, ok := tfconfig.Syntax(name); ok {
-		return kindConfig
+	switch _, ok := tfconfig.Syntax(name); {
+	case !ok, tfconfig.IsIgnoredFile(name):
+		return kindOther
+	case tfconfig.IsOverrideFile(name):
+		return kindOverride
 	}
-	return kindOther
+	return kindConfig
 }
 
 // underDotTerraform splits name at its first directory named .terraform: the
@@ -104,14 +111,18 @@ func unitPath(dir string) string {
 
 // units returns one unit for each directory holding configuration outside
 // .terraform/, in path order, each linking the directories its literal local
-// module sources reach inside the import, in name order.
-//
-// A unit's path is its directory's, ending in a slash ("envs/prod/", "./" for
-// the imported directory). [cloudimport.SelectRoot] resolves a unit's link
-// against the directory holding the one its cleaned path names, so each link
-// is written from there: a call of ../../modules/db in envs/prod is the link
-// prod/../../modules/db, which is ../modules/db.
+// module sources reach inside the import, in name order, each as the source
+// writes it. A unit's path is its directory's, ending in a slash
+// ("envs/prod/", "./" for the imported directory).
 func units(files []file) []cloudimport.Unit {
+	us, _ := readUnits(files)
+	return us
+}
+
+// readUnits returns the units the files form, as units does, and the importer
+// kit's parse-failed for each configuration file that does not parse, whose
+// links are unread, in name order.
+func readUnits(files []file) ([]cloudimport.Unit, []aggrega.Diagnostic) {
 	var dirs []string
 	byDir := map[string][]file{}
 	for _, f := range files {
@@ -126,10 +137,14 @@ func units(files []file) []cloudimport.Unit {
 	}
 	slices.Sort(dirs)
 	out := make([]cloudimport.Unit, 0, len(dirs))
+	var refused []aggrega.Diagnostic
 	for _, dir := range dirs {
 		var links []string
 		for _, f := range byDir[dir] {
-			read, _ := readFile(f)
+			read, diags := readFile(f)
+			if diags.HasErrors() {
+				refused = append(refused, parseFailed(f, diags))
+			}
 			for _, b := range read.blocks {
 				if b.Kind != "module" {
 					continue
@@ -141,13 +156,14 @@ func units(files []file) []cloudimport.Unit {
 				if target := path.Join(dir, source); target == ".." || strings.HasPrefix(target, "../") {
 					continue
 				}
-				links = append(links, path.Join(path.Base(dir), source))
+				links = append(links, path.Clean(source))
 			}
 		}
 		slices.Sort(links)
 		out = append(out, cloudimport.Unit{Path: unitPath(dir), Links: slices.Compact(links)})
 	}
-	return out
+	slices.SortStableFunc(refused, func(a, b aggrega.Diagnostic) int { return strings.Compare(a.SourceRef, b.SourceRef) })
+	return out, refused
 }
 
 // sourceSchema reads a module call's source.
@@ -171,14 +187,24 @@ func moduleSource(body hcl.Body) (string, bool) {
 // and the other candidates, through the core's rule over the units the files
 // form: one candidate, or the one the root setting names. A request holding
 // no configuration file outside .terraform/ halts source-refused naming the
-// files a module is.
-func selectRoot(files []file, s cloudimport.Settings) (cloudimport.Unit, []cloudimport.Unit, *aggrega.Diagnostic) {
-	us := units(files)
+// files a module is. Where the rule halts and a configuration file does not
+// parse, so that the links it writes are unread, the halt is the importer
+// kit's parse-failed for each such file, in name order, rather than the
+// rule's.
+func selectRoot(files []file, s cloudimport.Settings) (cloudimport.Unit, []cloudimport.Unit, []aggrega.Diagnostic) {
+	us, refused := readUnits(files)
 	if len(us) == 0 {
-		d := cloudimport.Report(cloudimport.CodeSourceRefused, "the import holds no Terraform configuration "+
-			"file: a module is the .tf and .tf.json files of one directory, outside .terraform/; import the "+
-			"directory holding the root module's .tf or .tf.json files")
-		return cloudimport.Unit{}, nil, &d
+		return cloudimport.Unit{}, nil, []aggrega.Diagnostic{cloudimport.Report(cloudimport.CodeSourceRefused,
+			"the import holds no Terraform configuration file: a module is the .tf and .tf.json files of one "+
+				"directory, outside .terraform/; import the directory holding the root module's .tf or .tf.json "+
+				"files")}
 	}
-	return cloudimport.SelectRoot(us, s.Root)
+	root, others, halt := cloudimport.SelectRoot(us, s.Root)
+	if halt == nil {
+		return root, others, nil
+	}
+	if len(refused) == 0 {
+		return cloudimport.Unit{}, nil, []aggrega.Diagnostic{*halt}
+	}
+	return cloudimport.Unit{}, nil, refused
 }

@@ -72,6 +72,27 @@ func TestSelectRoot(t *testing.T) {
 		_, d := ReadSettings(json.RawMessage(`{"root": 3}`))
 		sourceRefused(t, d, "root")
 	})
+	t.Run("a directory unit's links are relative to the directory itself", func(t *testing.T) {
+		units := []Unit{
+			{Path: "envs/prod/", Links: []string{"../../modules/db"}},
+			{Path: "envs/dev/", Links: []string{"../../modules/db", "./"}},
+			{Path: "modules/db/"},
+		}
+		_, _, d := SelectRoot(units, "")
+		sourceRefused(t, d, "envs/prod/", "envs/dev/", "root")
+		if strings.Contains(d.Message, "modules/db") {
+			t.Fatalf("message %q names a linked directory as a candidate", d.Message)
+		}
+		root, others, d := SelectRoot(units, "envs/prod")
+		if d != nil || root.Path != "envs/prod/" || !reflect.DeepEqual(paths(others), []string{"envs/dev/"}) {
+			t.Fatalf("root = %+v, others = %+v, diagnostic = %+v", root, others, d)
+		}
+		imported := []Unit{{Path: "./", Links: []string{"./modules/db"}}, {Path: "modules/db/"}}
+		root, others, d = SelectRoot(imported, "")
+		if d != nil || root.Path != "./" || len(others) != 0 {
+			t.Fatalf("root = %+v, others = %+v, diagnostic = %+v", root, others, d)
+		}
+	})
 	t.Run("a unit linked by another is never a candidate", func(t *testing.T) {
 		// The link is relative to the linking template's own directory.
 		units := []Unit{{Path: "env/prod.json", Links: []string{"../shared/net.json"}}, {Path: "shared/net.json"}}
