@@ -132,8 +132,10 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 			if child.Class != ClassFolded || child.Into != n.ID || len(w.cs.folding[child.Node.ID]) > 0 {
 				continue
 			}
-			if fold := childFold(cl.Row, child.Node.Type); fold != nil && len(fold.Key) > 1 && fold.Key[0] == "infra" {
-				b.place(childRead(child.Node, fold.From), fold.Key, "", false)
+			for _, fold := range childFolds(cl.Row, child.Node.Type) {
+				if len(fold.Key) > 1 && fold.Key[0] == "infra" {
+					b.place(childRead(child.Node, fold.From), fold.Key, "", false)
+				}
 			}
 		}
 		b.e.Secrets = append(w.mappedSecrets(cl), w.attachedSecrets(cl)...)
@@ -213,9 +215,9 @@ func unplacedIn(out [][]string, p Prop, at []string, paths [][]string) [][]strin
 // parameters its row does not translate; for an instance a fold of its row
 // makes of a child, the properties the parent folded into it writes that the
 // row does not place either; for each child folded into it, the properties
-// the child writes that its fold does not; and for each node whose first
-// attachment it takes, the properties the node writes that its attach rule
-// places nowhere.
+// the child writes that no fold of its type places; and for each node whose
+// first attachment it takes, the properties the node writes that its attach
+// rule places nowhere.
 func (w *aggregateWriter) unplacedComments(cl *Classified) []string {
 	var out []string
 	n := cl.Node
@@ -244,11 +246,15 @@ func (w *aggregateWriter) unplacedComments(cl *Classified) []string {
 		if child.Class != ClassFolded || child.Into != n.ID || len(w.cs.folding[child.Node.ID]) > 0 {
 			continue
 		}
-		fold := childFold(cl.Row, child.Node.Type)
-		if fold == nil {
+		folds := childFolds(cl.Row, child.Node.Type)
+		if len(folds) == 0 {
 			continue
 		}
-		if paths := unplaced(child.Node.Body, [][]string{fold.From}); len(paths) > 0 {
+		var from [][]string
+		for _, f := range folds {
+			from = append(from, f.From)
+		}
+		if paths := unplaced(child.Node.Body, from); len(paths) > 0 {
 			out = append(out, "Properties "+draftyaml.Comment(child.Node.ID)+", folded into this instance, writes "+
 				"and the draft does not place: "+draftyaml.CommentList(pathTexts(paths))+".")
 		}

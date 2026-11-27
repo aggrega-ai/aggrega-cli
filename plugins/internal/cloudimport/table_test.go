@@ -185,7 +185,7 @@ func TestHandRowsMergeFoldsAndEquivalencesRegardlessOfCase(t *testing.T) {
 		if !errors.As(err, &c) {
 			t.Fatalf("Rows() error = %v, want a *Contradiction", err)
 		}
-		want := Contradiction{Key: serverType, Field: "Folds." + genChild,
+		want := Contradiction{Key: serverType, Field: "Folds." + genChild + " at values.database",
 			Generated: "into values.database from name, one value",
 			Hand:      "into values.database from properties.charset, one value"}
 		if !reflect.DeepEqual(*c, want) {
@@ -195,11 +195,36 @@ func TestHandRowsMergeFoldsAndEquivalencesRegardlessOfCase(t *testing.T) {
 
 	t.Run("a hand fold with a reason supersedes the generated fold of its child type", func(t *testing.T) {
 		got, err := rows(Row{Folds: []Fold{genFold}}, Row{Folds: []Fold{handFold},
-			Supersedes: map[string]string{"Folds." + handChild: "the Recipe names the database by its charset"}})
+			Supersedes: map[string]string{"Folds." + handChild + " at values.database": "the Recipe names the " +
+				"database by its charset"}})
 		if err != nil {
 			t.Fatalf("Rows() error = %v", err)
 		}
 		if want := []Fold{handFold}; len(got) != 1 || !reflect.DeepEqual(got[0].Folds, want) {
+			t.Fatalf("rows = %+v, want one row folding %+v", got, want)
+		}
+	})
+
+	t.Run("a hand fold of the child type under another key is added beside the generated one", func(t *testing.T) {
+		other := Fold{Type: handChild, Key: []string{"infra", "overrides", "charset"}, From: []string{"properties",
+			"charset"}}
+		got, err := rows(Row{Folds: []Fold{genFold}}, Row{Folds: []Fold{other}})
+		if err != nil {
+			t.Fatalf("Rows() error = %v", err)
+		}
+		if want := []Fold{genFold, other}; len(got) != 1 || !reflect.DeepEqual(got[0].Folds, want) {
+			t.Fatalf("rows = %+v, want one row folding %+v", got, want)
+		}
+	})
+
+	t.Run("a hand fold under a key differing from the generated one's in case is another fold", func(t *testing.T) {
+		other := databasesFold(genChild, "name")
+		other.Key = []string{"values", "Database"}
+		got, err := rows(Row{Folds: []Fold{genFold}}, Row{Folds: []Fold{other}})
+		if err != nil {
+			t.Fatalf("Rows() error = %v", err)
+		}
+		if want := []Fold{genFold, other}; len(got) != 1 || !reflect.DeepEqual(got[0].Folds, want) {
 			t.Fatalf("rows = %+v, want one row folding %+v", got, want)
 		}
 	})

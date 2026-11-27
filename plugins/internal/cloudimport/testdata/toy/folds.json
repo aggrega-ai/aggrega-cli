@@ -1,0 +1,8 @@
+{
+  "resources": [
+    {"id": "db", "type": "Toy.Data/servers", "name": "pg-main",
+     "properties": {"location": "westeurope", "version": "16"}},
+    {"id": "dbSetting", "type": "Toy.Data/servers/settings", "parent": "db", "name": "max-connections",
+     "properties": {"value": "200", "unit": "connections", "scope": "global"}}
+  ]
+}

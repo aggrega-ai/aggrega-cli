@@ -100,6 +100,17 @@ type Opaque struct {
 	// its key is left for the Release's answers file, and value-not-carried
 	// warns of it.
 	Owed string
+	// Reads are the IDs of the graph's resources Text reads, in the order it
+	// reads them, each by the ID the source declares it under: Text reads one
+	// as written only where the draft declares it under that ID, which is
+	// known once every node is classed, and the format's [Format.Declares]
+	// says. Owed names each of them among what Text owes, and OwedBesideReads
+	// names what Text owes beside them, empty where it owes nothing else.
+	// Where Declares holds of every one of Reads, Text owes what
+	// OwedBesideReads names, and is written as it is where that is empty;
+	// otherwise it owes what Owed names.
+	Reads           []string
+	OwedBesideReads string
 }
 
 // Stored is a secret a secret store holds, which the source reads by its

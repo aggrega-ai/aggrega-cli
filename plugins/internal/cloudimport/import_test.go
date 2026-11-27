@@ -41,7 +41,8 @@ const toyModuleURL = "oci://registry.example/toy/search"
 // literal, or an object naming a parameter ($param), an attribute of another
 // resource ($ref, with its path under attr), a credential read from another
 // resource ($credential, with the call reading it under what) or text
-// evaluated when the source deploys ($text).
+// evaluated when the source deploys ($text, with the IDs of the resources it
+// reads under reads and what else it owes under owes).
 
 // toyFormat is the toy format: its table maps a server to the catalog's
 // PostgreSQL Component, folding each of its settings into its instance, and
@@ -218,8 +219,8 @@ func toyProp(name string, raw json.RawMessage) Prop {
 // toySpecial reads an object naming a parameter, an attribute, a credential or
 // deploy-time text, nil for any other object.
 func toySpecial(entries []importer.ObjectEntry) Value {
-	var attr []string
-	var what string
+	var attr, reads []string
+	var what, owes string
 	for _, e := range entries {
 		switch e.Key {
 		case "attr":
@@ -228,6 +229,12 @@ func toySpecial(entries []importer.ObjectEntry) Value {
 			}
 		case "what":
 			what = toyString(e.Value)
+		case "reads":
+			for _, id := range toyItems(e.Value) {
+				reads = append(reads, toyString(id))
+			}
+		case "owes":
+			owes = toyString(e.Value)
 		}
 	}
 	for _, e := range entries {
@@ -239,7 +246,12 @@ func toySpecial(entries []importer.ObjectEntry) Value {
 		case "$credential":
 			return Credential{Node: toyString(e.Value), What: what}
 		case "$text":
-			return Opaque{Text: toyString(e.Value), Target: "toy"}
+			o := Opaque{Text: toyString(e.Value), Target: "toy", Reads: reads, OwedBesideReads: owes}
+			if len(reads) > 0 {
+				o.Owed = "it reads " + andList(reads) + ", which the toy target may declare under other IDs"
+			}
+			o.Owed = joinNonEmpty(", and ", o.Owed, owes)
+			return o
 		}
 	}
 	return nil

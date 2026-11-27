@@ -305,9 +305,11 @@ func (w *aggregateWriter) carriedValues(cl *Classified) []Value {
 			at(nodeRead, func(path []string) bool { return !childWrites(child, path) }, placedPaths(inst.Row)...)
 		}
 	case cl.Class == ClassFolded:
-		if fold := childFold(cl.Row, n.Type); fold != nil {
-			at(childRead, every, fold.From)
+		var paths [][]string
+		for _, f := range childFolds(cl.Row, n.Type) {
+			paths = append(paths, f.From)
 		}
+		at(childRead, every, paths...)
 	case cl.Class == ClassAttached:
 		var paths [][]string
 		for _, a := range cl.Attach {
@@ -361,6 +363,11 @@ func isName(path []string) bool {
 func (w *aggregateWriter) instance(b *strings.Builder, cl *Classified) {
 	if cl.Key != cl.Node.ID {
 		b.WriteString(draftyaml.CommentLine("    ", "The resource "+draftyaml.Comment(cl.Node.ID)+"."))
+	}
+	if w.f.InstanceComment != nil {
+		if line := w.f.InstanceComment(*cl); line != "" {
+			b.WriteString(draftyaml.CommentLine("    ", line))
+		}
 	}
 	for _, comment := range cl.Comments {
 		b.WriteString(draftyaml.CommentLine("    ", comment))
@@ -457,8 +464,8 @@ type valueRead struct {
 // valueReads returns the values cl's instance reads, in the order Aggregate
 // writes them: a mapped instance's row's Values, the value of the child an
 // instance a fold of its row makes is, and the value of each child folded into
-// it its fold writes under values; a drafted instance's inputs read from
-// values.
+// it each fold of its type writes under values; a drafted instance's inputs
+// read from values.
 func (w *aggregateWriter) valueReads(cl *Classified) []valueRead {
 	var out []valueRead
 	n := cl.Node
@@ -474,7 +481,7 @@ func (w *aggregateWriter) valueReads(cl *Classified) []valueRead {
 			if child.Class != ClassFolded || child.Into != n.ID || len(w.cs.folding[child.Node.ID]) > 0 {
 				continue
 			}
-			if f := childFold(cl.Row, child.Node.Type); f != nil {
+			for _, f := range childFolds(cl.Row, child.Node.Type) {
 				out = append(out, valueRead{r: childRead(child.Node, f.From), key: valuesKey(f.Key)})
 			}
 		}
@@ -805,8 +812,8 @@ func (w *aggregateWriter) leafText(v Value, conv Conv) (string, outcome) {
 			return "", outcome{why: fmt.Sprintf("it is text the %s target evaluates when the source deploys, and "+
 				"the import drafts for %s", v.Target, targetName(w.in.Target)), leave: true}
 		}
-		if v.Owed != "" {
-			return "", outcome{why: v.Owed, leave: true, warn: true}
+		if owed := w.owed(v); owed != "" {
+			return "", outcome{why: owed, leave: true, warn: true}
 		}
 		if conv != "" && conv != "string" {
 			return "", outcome{why: "the converter " + string(conv) + " cannot convert text evaluated when the " +
@@ -842,6 +849,24 @@ func (w *aggregateWriter) leafText(v Value, conv Conv) (string, outcome) {
 		return "", outcome{why: "it is a credential of " + v.Node + ", which the draft never carries"}
 	}
 	return "", outcome{why: "it is no value the draft writes"}
+}
+
+// owed returns what the deploy-time text o owes once every node is classed:
+// what its OwedBesideReads names where the format's Declares says the draft
+// declares every resource o reads under the ID o reads it by, and what its
+// Owed names otherwise. A resource no node of the classification is, such as
+// a repeated node's, is declared under no ID o reads.
+func (w *aggregateWriter) owed(o Opaque) string {
+	if len(o.Reads) == 0 || w.f.Declares == nil {
+		return o.Owed
+	}
+	for _, id := range o.Reads {
+		cl := w.cs.byID[id]
+		if cl == nil || !w.f.Declares(*cl) {
+			return o.Owed
+		}
+	}
+	return o.OwedBesideReads
 }
 
 // escape writes text read from the source for the document being written: for

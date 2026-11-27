@@ -355,3 +355,75 @@ func TestFoldInstanceNamesWhatItsFoldedParentWritesUnplaced(t *testing.T) {
 		t.Errorf("the Release does not hold\n%s\n%s", want, release)
 	}
 }
+
+// settingFolds are the folds of the toy server's row writing a setting into
+// the server's instance beside the toy format's own: its name under values
+// and its unit under infra.overrides, as a row folding one child resource
+// writes one fold for each key it places the child under.
+func settingFolds() []Fold {
+	return []Fold{
+		{Type: toySetting, Key: []string{"values", "setting"}, From: []string{"name"}},
+		{Type: toySetting, Key: []string{"infra", "overrides", "unit"}, From: []string{"unit"}},
+	}
+}
+
+// TestFoldEveryFoldOfAChildTypePlacesTheChild folds a setting into the
+// server's instance by three folds of its type: the setting is written under
+// every fold's key, in the Aggregate and the Release alike, the record names
+// each key, and the Release names only the property no fold places.
+func TestFoldEveryFoldOfAChildTypePlacesTheChild(t *testing.T) {
+	f := toyFormat(nil)
+	f.Table.Generated[0].Folds = append(f.Table.Generated[0].Folds, settingFolds()...)
+	out := Import(toyInput(t, "toy", "", []string{"folds.json"}), f, toyParse)
+	noHalt(t, out.Diagnostics)
+	wantBlock(t, fileOf(t, out, "aggregate.yaml"), "db", `    db:
+      type: core/datastore/postgres
+      values:
+        version: "16"
+        setting: "max-connections"
+`)
+	wantBlock(t, fileOf(t, out, "release.yaml"), "db", `    # Properties dbSetting, folded into this instance, writes and the draft does not place: scope.
+    db:
+      infra:
+        location: "westeurope"
+        overrides:
+          settings: "200"
+          unit: "connections"
+`)
+	folded := withCode(out.Diagnostics, CodeResourceFolded)
+	if len(folded) != 1 {
+		t.Fatalf("folded records %+v, want one on dbSetting", folded)
+	}
+	if want := "dbSetting (" + toySetting + ") is folded into the instance of db, written at " +
+		"infra.overrides.settings, values.setting and infra.overrides.unit"; folded[0].Message != want {
+		t.Errorf("the record reads %q, want %q", folded[0].Message, want)
+	}
+}
+
+// TestFoldHandFoldBesideAGeneratedOneOfItsType merges a hand row folding the
+// setting's unit into the generated row folding its value: the two folds of
+// one type are two folds of the merged row, neither contradicting nor
+// replacing the other, and the setting is written under both keys.
+func TestFoldHandFoldBesideAGeneratedOneOfItsType(t *testing.T) {
+	f := toyFormat(nil)
+	gen := f.Table.Generated[0]
+	f.Table.Hand = []Row{{Key: gen.Key, Origin: "hand", Folds: settingFolds()[1:]}}
+	rows, err := f.Table.Rows()
+	if err != nil {
+		t.Fatalf("Rows() error = %v", err)
+	}
+	if want := append(slices.Clone(gen.Folds), settingFolds()[1]); len(rows) != 1 ||
+		!slices.EqualFunc(rows[0].Folds, want, foldsSame) {
+		t.Fatalf("rows = %+v, want one row folding %+v", rows, want)
+	}
+	out := Import(toyInput(t, "toy", "", []string{"folds.json"}), f, toyParse)
+	noHalt(t, out.Diagnostics)
+	wantBlock(t, fileOf(t, out, "release.yaml"), "db", `    # Properties dbSetting, folded into this instance, writes and the draft does not place: scope.
+    db:
+      infra:
+        location: "westeurope"
+        overrides:
+          settings: "200"
+          unit: "connections"
+`)
+}

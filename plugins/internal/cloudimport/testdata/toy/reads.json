@@ -1,0 +1,13 @@
+{
+  "resources": [
+    {"id": "db", "type": "Toy.Data/servers", "name": "pg-main",
+     "properties": {"location": "westeurope", "version": "16"}},
+    {"id": "net", "type": "Toy.Network/networks", "name": "net-core"},
+    {"id": "queue", "type": "Toy.Messaging/queues", "name": "orders",
+     "properties": {"location": "westeurope",
+                    "endpoint": {"$text": "concat(db.host, ':5432')", "reads": ["db"]},
+                    "peer": {"$text": "id(net)", "reads": ["net"]},
+                    "tier": {"$text": "pick(db.tier, settings.tier)", "reads": ["db"],
+                             "owes": "it reads the toy setting tier, which no draft declares"}}}
+  ]
+}

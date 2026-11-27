@@ -59,13 +59,15 @@ func (c *classifier) fold(n *Node) bool {
 	return false
 }
 
-// folded writes n into a's instance at f's key.
+// folded writes n into a's instance at the key of each fold of row writing
+// its type, f the first.
 func (c *classifier) folded(n, a *Node, row *Row, f Fold) {
+	at := foldedAt(row, n.Type)
 	c.set(n, &Classified{Class: ClassFolded, Row: row, Into: a.ID, Decision: decisionFor(n, joinNonEmpty("; ",
 		fmt.Sprintf("folded: written into the instance of %s at %s, by the fold of %s in the row of %s (%s)", a.ID,
-			pathText(f.Key), f.Type, row.Key, row.Component), c.says(n)))})
+			at, f.Type, row.Key, row.Component), c.says(n)))})
 	c.note(n, Report(CodeResourceFolded, fmt.Sprintf("%s (%s) is folded into the instance of %s, written at %s",
-		n.ID, n.Type, a.ID, pathText(f.Key))))
+		n.ID, n.Type, a.ID, at)))
 }
 
 // notCarriedByFold leaves n not carried, by a fold of a's row that carries
@@ -101,14 +103,15 @@ func (c *classifier) settleOneValueFolds() {
 		slices.SortStableFunc(one.nodes, func(x, y *Node) int { return strings.Compare(x.ID, y.ID) })
 		first := one.nodes[0]
 		c.folded(first, one.parent, one.row, one.fold)
+		at := foldedAt(one.row, first.Type)
 		for _, n := range one.nodes[1:] {
 			c.set(n, &Classified{Class: ClassNotCarried, Row: one.row, Decision: decisionFor(n, joinNonEmpty("; ",
 				fmt.Sprintf("not carried: the fold of %s in the row of %s takes one value, the first by ID, %s, "+
 					"written into the instance of %s at %s", one.fold.Type, one.row.Key, first.ID, one.parent.ID,
-					pathText(one.fold.Key)), c.says(n)))})
+					at), c.says(n)))})
 			c.note(n, Report(CodeResourceNotCarried, fmt.Sprintf("%s (%s) is not carried: the instance of %s takes "+
 				"one %s at %s, the first by ID, %s; where %s is wanted, write it as an instance of its own in the "+
-				"Aggregate", n.ID, n.Type, one.parent.ID, one.fold.Type, pathText(one.fold.Key), first.ID, n.ID)))
+				"Aggregate", n.ID, n.Type, one.parent.ID, one.fold.Type, at, first.ID, n.ID)))
 		}
 	}
 }

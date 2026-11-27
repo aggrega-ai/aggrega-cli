@@ -164,18 +164,39 @@ func instancesFold(r *Row, typ string) *Fold {
 	return nil
 }
 
-// childFold returns the fold of r writing a child of typ into the instance,
-// nil where r has none.
-func childFold(r *Row, typ string) *Fold {
+// childFolds returns the folds of r writing a child of typ into the
+// instance, in the order r holds them: each fold of the type but one making
+// each child an instance and one carrying none of it. The folds of one type
+// are the placements of one child, each writing what the child writes at its
+// From under its Key, so a child is written by every one of them; whether the
+// row takes every child of the type, one or none is the first fold's of the
+// type, as the classifier's fold reads it.
+func childFolds(r *Row, typ string) []Fold {
 	if r == nil {
 		return nil
 	}
-	for i, f := range r.Folds {
-		if !f.Instances && f.Type != "" && strings.EqualFold(f.Type, typ) {
-			return &r.Folds[i]
+	var out []Fold
+	for _, f := range r.Folds {
+		if !f.Instances && f.NotCarried == "" && f.Type != "" && strings.EqualFold(f.Type, typ) {
+			out = append(out, f)
 		}
 	}
-	return nil
+	return out
+}
+
+// foldedAt names the keys the folds of r write a child of typ under, in the
+// order r holds them, each once; empty where they write it under none.
+func foldedAt(r *Row, typ string) string {
+	var keys []string
+	for _, f := range childFolds(r, typ) {
+		if key := pathText(f.Key); key != "" && !slices.Contains(keys, key) {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	return andList(keys)
 }
 
 // into returns the IDs of the instances the folded node cl is written into:

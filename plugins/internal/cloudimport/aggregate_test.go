@@ -283,3 +283,44 @@ func TestAggregateWithNoInstanceWritesNoComponent(t *testing.T) {
 		t.Errorf("the Aggregate is\n%s\nwant an empty components map", entity.Body)
 	}
 }
+
+// TestAggregateInstanceCommentWritesTheFormatsLine writes the line the
+// format's InstanceComment gives an instance after the line naming its
+// resource, and opens the comment with it where no such line is written; a
+// format giving none writes nothing.
+func TestAggregateInstanceCommentWritesTheFormatsLine(t *testing.T) {
+	keyed := func(comment func(Classified) string) string {
+		f := toyFormat(nil)
+		f.Key = func(id string) string {
+			if id == "queue" {
+				return id
+			}
+			return "toy-" + id
+		}
+		f.InstanceComment = comment
+		out := Import(toyInput(t, "toy", "", []string{"main.json"}), f, toyParse)
+		noHalt(t, out.Diagnostics)
+		return fileOf(t, out, "aggregate.yaml")
+	}
+	aggregate := keyed(func(cl Classified) string {
+		return "The toy target names it " + strings.ToUpper(cl.Key) + ", as a " + cl.Class.String() + " instance."
+	})
+	for _, want := range []struct{ key, opening string }{
+		{"toy-db", "    # The resource db.\n    # The toy target names it TOY-DB, as a mapped instance.\n    toy-db:\n"},
+		{"queue", "    # The toy target names it QUEUE, as a drafted instance.\n    queue:\n"},
+	} {
+		if block := instanceBlock(t, aggregate, want.key); !strings.HasPrefix(block, want.opening) {
+			t.Errorf("the instance %s opens\n%s\nwant\n%s", want.key, block, want.opening)
+		}
+	}
+	for _, comment := range []func(Classified) string{nil, func(Classified) string { return "" }} {
+		aggregate := keyed(comment)
+		block := instanceBlock(t, aggregate, "toy-db")
+		if !strings.HasPrefix(block, "    # The resource db.\n    toy-db:\n") {
+			t.Errorf("the instance toy-db opens\n%s\nwant the line naming its resource alone", block)
+		}
+		if block := instanceBlock(t, aggregate, "queue"); !strings.HasPrefix(block, "    queue:\n") {
+			t.Errorf("the instance queue opens\n%s\nwant no comment", block)
+		}
+	}
+}

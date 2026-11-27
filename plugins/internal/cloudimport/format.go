@@ -39,6 +39,13 @@ type Format struct {
 	// then makes unique as every importer's keys are; nil keys a node by its
 	// ID alone.
 	Key func(id string) string
+	// InstanceComment gives a line the Aggregate writes in the comment above
+	// the instance of cl, a mapped or drafted node with its instance key, as
+	// Classify classes it: after the line naming the resource, where the key
+	// is not the node's ID, and first otherwise. The line is one line of text,
+	// each text it holds read from the source written as draftyaml.Comment
+	// writes it. Empty writes none, and so does a nil InstanceComment.
+	InstanceComment func(cl Classified) string
 	// Pointer returns the target's deterministic pointer text for a value
 	// referencing a substrate or existing resource, read in g, the graph the
 	// value is read from, its repetitions expanded; false where the target has
@@ -46,6 +53,16 @@ type Format struct {
 	Pointer func(v Value, g *Graph) (string, bool)
 	// Text writes a literal string as the target's text; nil writes it as is.
 	Text func(s string) string
+	// Declares reports whether the draft declares the resource of read, a
+	// node deploy-time text reads by its ID ([Opaque.Reads]), under that same
+	// ID, so the text reads the resource the source means as it is written.
+	// read is the node as Classify classes it: its class, its instance key
+	// where it is a mapped or drafted node, and for a mapped node the row
+	// whose Recipe declares it, nil where a mapping_overrides entry maps it
+	// to a Component no row names. It is asked once every node is classed, of
+	// text the import writes for the format's own target. Nil declares none,
+	// and text reading a resource owes what its Owed names.
+	Declares func(read Classified) bool
 	// Draft is how the format drafts a Component and a Recipe for a resource
 	// no row maps: its naming, its categories, the provider its Recipes
 	// target, its placement rules and its Recipe writer.

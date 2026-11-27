@@ -544,3 +544,56 @@ func TestAParameterInTextNotWrittenIsCarriedNowhere(t *testing.T) {
 		}
 	}
 }
+
+// TestDeployTimeTextReadingResourcesTheDraftDeclaresIsWritten writes deploy-time
+// text whose only debt is the resources it reads where the format's Declares
+// says the draft declares every one of them under the ID the text reads it by;
+// it leaves text reading a resource the draft does not declare so, naming what
+// it reads, and text owing something beside its reads, naming that; and with
+// no Declares, it leaves every such text, as the format's Owed says.
+func TestDeployTimeTextReadingResourcesTheDraftDeclaresIsWritten(t *testing.T) {
+	var asked []string
+	declaring := toyFormat(nil)
+	declaring.Declares = func(read Classified) bool {
+		asked = append(asked, read.Node.ID+" "+read.Class.String()+" "+read.Key)
+		return read.Class == ClassMapped && read.Key == read.Node.ID
+	}
+	out := Import(toyInput(t, "toy", "", []string{"reads.json"}), declaring, toyParse)
+	noHalt(t, out.Diagnostics)
+	wantBlock(t, fileOf(t, out, "release.yaml"), "queue", `    queue:
+      infra:
+        location: "westeurope"
+        overrides:
+          endpoint: "concat(db.host, ':5432')"
+          # Left for the Release, since the source cannot supply it: infra.overrides.peer, the source's value, which the draft does not write
+          peer: ""
+          # Left for the Release, since the source cannot supply it: infra.overrides.tier, the source's value, which the draft does not write
+          tier: ""
+`)
+	if got, want := slices.Compact(slices.Sorted(slices.Values(asked))), []string{"db mapped db",
+		"net substrate "}; !slices.Equal(got, want) {
+		t.Errorf("Declares is asked of %q, want of %q", got, want)
+	}
+	got := onlyCode(t, out.Diagnostics, CodeValueNotCarried, 2)
+	for i, want := range []string{
+		"infra.overrides.peer, and it reads net, which the toy target may declare under other IDs, so it is not " +
+			"written",
+		"infra.overrides.tier, and it reads the toy setting tier, which no draft declares, so it is not written",
+	} {
+		if !strings.Contains(got[i].Message, want) {
+			t.Errorf("value-not-carried reads %q, want it to say %q", got[i].Message, want)
+		}
+	}
+
+	out = Import(toyInput(t, "toy", "", []string{"reads.json"}), toyFormat(nil), toyParse)
+	noHalt(t, out.Diagnostics)
+	if block := instanceBlock(t, fileOf(t, out, "release.yaml"), "queue"); !strings.Contains(block,
+		"infra.overrides.endpoint, the source's value, which the draft does not write\n          endpoint: \"\"\n") {
+		t.Errorf("with no Declares, the text reading db is written:\n%s", block)
+	}
+	got = onlyCode(t, out.Diagnostics, CodeValueNotCarried, 3)
+	if want := "infra.overrides.endpoint, and it reads db, which the toy target may declare under other IDs, so it " +
+		"is not written"; !strings.Contains(got[0].Message, want) {
+		t.Errorf("value-not-carried reads %q, want it to say %q", got[0].Message, want)
+	}
+}
