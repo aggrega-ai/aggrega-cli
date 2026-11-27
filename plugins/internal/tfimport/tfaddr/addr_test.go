@@ -157,3 +157,27 @@ func TestGitURLRoundTrips(t *testing.T) {
 		}
 	}
 }
+
+func TestParseMalformed(t *testing.T) {
+	cases := []struct {
+		name, source string
+		want         Kind
+	}{
+		{"empty source", "", Other},
+		{"only a subdirectory marker", "//", Other},
+		{"git prefix with no URL", "git::", Other},
+		{"git URL with a repeated ref", "git::https://example.com/x.git?ref=v1&ref=v2", Git},
+		{"five-segment registry-shaped source", "a/b/c/d/e", Other},
+		{"registry host with too many segments", "registry.terraform.io/a/b/c/d", Other},
+		{"registry source with a trailing slash", "terraform-aws-modules/rds/aws/", Other},
+		{"github shorthand with only an organisation", "github.com/acme", Other},
+		{"github shorthand with a trailing slash", "github.com/acme/x/", Other},
+		{"github shorthand with three path segments", "github.com/a/b/c", Other},
+	}
+	for _, tc := range cases {
+		got := Parse(tc.source)
+		if got.Kind != tc.want {
+			t.Errorf("%s: Parse(%q).Kind = %v, want %v", tc.name, tc.source, got.Kind, tc.want)
+		}
+	}
+}

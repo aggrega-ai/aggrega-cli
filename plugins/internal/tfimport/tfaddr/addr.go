@@ -65,17 +65,21 @@ type Alias struct {
 }
 
 // Aliases lists the registry modules whose addresses read under another namespace. Parse applies the first match in
-// order.
+// order. The mapping reads one way: a repository under the To organisation keys as the To address, and a From address
+// is read as its To address.
 var Aliases = []Alias{{From: "GoogleCloudPlatform/sql-db", To: "terraform-google-modules/sql-db"}}
 
 // Parse reads a module source string into its kind and parts. It never fails: a source it does not recognise is Other.
 func Parse(source string) Address {
-	a := Address{Raw: source}
+	a := Address{Kind: Other, Raw: source}
 	switch {
 	case strings.HasPrefix(source, "./"), strings.HasPrefix(source, "../"):
 		a.Kind = Local
 	case strings.HasPrefix(source, "git::"):
 		base, subdir, query := splitLocator(strings.TrimPrefix(source, "git::"))
+		if base == "" {
+			return a
+		}
 		a.Kind, a.URL, a.Subdir, a.Ref = Git, base, subdir, query.Get("ref")
 	case strings.HasPrefix(source, "github.com/"):
 		base, subdir, query := splitLocator(source)
