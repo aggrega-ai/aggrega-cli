@@ -1,0 +1,17 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Env:
+    Type: String
+    Default: prod
+Resources:
+  OrdersDb:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: postgres
+      DBInstanceClass: db.t4g.micro
+      AllocatedStorage: "20"
+      DBName: !Sub "${Env}orders"
+      DBSubnetGroupName: !ImportValue shared-db-subnets
+      VPCSecurityGroups:
+        - !ImportValue shared-db-security-group
+        - !Ref Env

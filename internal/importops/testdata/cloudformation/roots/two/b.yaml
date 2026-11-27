@@ -1,0 +1,6 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  BetaQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: beta-queue

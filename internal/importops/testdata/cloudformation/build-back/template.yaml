@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Orders database, an event stream and a consumer.
+Resources:
+  AppLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 14
+  OrdersDb:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      EngineVersion: "16.3"
+      DBInstanceClass: db.t4g.micro
+      AllocatedStorage: "20"
+      DBName: orders
+      MasterUsername: orders_app
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !ImportValue shared-db-subnets
+      VPCSecurityGroups:
+        - !ImportValue shared-db-security-group
+  Events:
+    Type: AWS::MSK::Cluster
+    Properties:
+      ClusterName: orders-events
+      KafkaVersion: 3.6.0
+      NumberOfBrokerNodes: 3
+      BrokerNodeGroupInfo:
+        InstanceType: kafka.m5.large
+        ClientSubnets:
+          - subnet-0a1b2c3d
+          - subnet-4e5f6a7b
+          - subnet-8c9d0e1f

@@ -1,0 +1,10 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Net:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/example-templates/net.yaml
+  LocalQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: local-queue
