@@ -710,6 +710,42 @@ Resources:
 	}
 }
 
+// TestDeployTimeTextReadingARetypedResourceIsLeft leaves deploy-time text
+// reading a Redis cache cluster, which its Recipe deploys as a replication
+// group under the logical ID the template gives it: the stack the build
+// writes holds a resource of another type there, without the attribute the
+// text reads, so the text names what it owes and the bucket policy holding it
+// is left for the Release.
+func TestDeployTimeTextReadingARetypedResourceIsLeft(t *testing.T) {
+	t.Parallel()
+	out := importText(t, `AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Cache:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties: {Engine: redis, CacheNodeType: cache.t3.micro, NumCacheNodes: 1}
+  Uploads:
+    Type: AWS::S3::Bucket
+  UploadsPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Uploads
+      PolicyDocument: {Statement: [{Effect: Deny, Action: s3:*, Resource: !Sub 'arn:${AWS::Partition}:s3:::${Uploads}/*',
+        Condition: {StringNotEquals: {"aws:Referer": !Sub '${Cache.RedisEndpoint.Address}.${AWS::URLSuffix}'}}}]}
+`)
+	mappedTo(t, out, "Cache", "core/datastore/redis")
+	release := fileText(t, out, "release.yaml")
+	holds(t, "the Release", release, "        overrides:\n          # Left for the Release, since the source "+
+		"cannot supply it: infra.overrides.policy, the source's value, which the draft does not write\n"+
+		"          policy: \"\"\n")
+	lacks(t, "the Release", release, "${Cache.RedisEndpoint.Address}")
+	if !slices.ContainsFunc(coded(out, cloudimport.CodeValueNotCarried), func(d aggrega.Diagnostic) bool {
+		return strings.Contains(d.Message, "the resource Cache, which the drafted stack may declare under "+
+			"another logical ID")
+	}) {
+		t.Errorf("the text reading Cache is not reported owed: %+v", out.Diagnostics)
+	}
+}
+
 // TestInstanceCommentSaysHowTheBuildNamesTheResource writes, above an
 // instance whose resource the stack the build writes names otherwise than
 // the template does, the name it takes, as its Recipe names it, and why

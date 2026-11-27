@@ -25,7 +25,12 @@ type alias struct {
 // with; a placement whose path no alias covers is left out. Promoted are the
 // folds of that row whose child the type writes as a property of its own, each
 // read as an infra placement at the alias's Derived path. Why says why Key's
-// resources deploy as From's, in the derived row's origin.
+// resources deploy as From's, in the derived row's origin. Retypes reports
+// that the Recipe deploys a resource of From's type where the stack the
+// template deployed holds one of Key's, under the same logical ID, so the
+// stack the build writes holds there a resource whose attributes are not the
+// ones the template reads; the serverless types are not retyped, as the
+// transform itself deploys each as From's type.
 type derivation struct {
 	Key, From string
 	FromWhen  []cloudimport.Pred
@@ -33,6 +38,7 @@ type derivation struct {
 	Why       string
 	Aliases   []alias
 	Promoted  []alias
+	Retypes   bool
 }
 
 // same is an alias of a path both types write alike.
@@ -96,6 +102,7 @@ var derivations = []derivation{
 		When:     []cloudimport.Pred{engine(cloudimport.OpEquals, "redis")},
 		Why: "the Recipe deploys a replication group of one node in place of the cache cluster, so a stack the " +
 			"template deployed takes a resource of another type",
+		Retypes: true,
 		Aliases: []alias{
 			same("Properties", "CacheNodeType"),
 			same("Properties", "CacheSubnetGroupName"),
@@ -122,6 +129,17 @@ func derivedRows(rows []cloudimport.Row) []cloudimport.Row {
 		out = append(out, d.derive(rows[i]))
 	}
 	return out
+}
+
+// retyped reports whether r is the row a derivation that retypes its
+// resource derives ([derivation.Retypes]).
+func retyped(r *cloudimport.Row) bool {
+	for _, d := range derivations {
+		if d.Retypes && (cloudimport.Row{Key: d.Key, When: d.When}).Identity() == r.Identity() {
+			return true
+		}
+	}
+	return false
 }
 
 // derive returns the row d derives from r.

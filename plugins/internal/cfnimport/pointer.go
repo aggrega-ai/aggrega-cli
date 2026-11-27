@@ -27,9 +27,12 @@ func pointer(v cloudimport.Value, _ *cloudimport.Graph) (string, bool) {
 // of read under its logical ID in the template, so deploy-time text naming it
 // by that ID reads it: a resource drafted from the source is declared under
 // the capitalised words of its instance key, and a mapped one is where the
-// Recipe of its row names it by those words alone ([logicalIDSuffix]); in
-// both, only where those words are the ID the template declares it under. Any
-// other resource is no resource of that stack under its ID.
+// Recipe of its row names it by those words alone ([logicalIDSuffix]) and
+// deploys a resource of the type the template writes; in both, only where
+// those words are the ID the template declares it under. A mapped resource
+// whose Recipe deploys one of another type in its place ([retyped]) is none,
+// as the text reads attributes the resource the build writes does not have,
+// and any other resource is no resource of that stack under its ID.
 func declares(read cloudimport.Classified) bool {
 	if read.Node == nil || read.Key == "" {
 		return false
@@ -37,7 +40,7 @@ func declares(read cloudimport.Classified) bool {
 	switch read.Class {
 	case cloudimport.ClassDrafted:
 	case cloudimport.ClassMapped:
-		if read.Row == nil {
+		if read.Row == nil || retyped(read.Row) {
 			return false
 		}
 		if suffix, known := logicalIDSuffix(read.Row.Recipe); !known || suffix != "" {
