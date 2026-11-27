@@ -213,7 +213,7 @@ spec:
 				t.Fatalf("Compile: %v", err)
 			}
 			auth := out["properties"].(Schema)["auth"].(Schema)
-			got := requiredNames(auth["required"])
+			got := RequiredNames(auth["required"])
 			if !reflect.DeepEqual(got, row.want) {
 				t.Errorf("required = %v, want %v", got, row.want)
 			}
@@ -250,7 +250,7 @@ secondary:
 	if _, ok := secondary["required"]; ok {
 		t.Errorf("the per-leaf marker was left on the node: %v", secondary["required"])
 	}
-	if got := requiredNames(out["required"]); !reflect.DeepEqual(got, []string{"secondary"}) {
+	if got := RequiredNames(out["required"]); !reflect.DeepEqual(got, []string{"secondary"}) {
 		t.Errorf("parent required = %v, want [secondary]", got)
 	}
 

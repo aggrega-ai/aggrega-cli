@@ -10,9 +10,6 @@ spec:
   aggregate: imported/flow
   # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
   manifest: ""
-  parameters:
-    # Left for the Release, since the source cannot supply it: consumer_runtime, values.runtime of the instance consumer, which its Component core/compute/function requires and the source does not give
-    consumer_runtime: ""
   components:
     events:
       infra:

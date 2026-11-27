@@ -15,8 +15,8 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/libraryimport"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
 	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
+	"github.com/aggrega-ai/aggrega-cli/pkg/resolver"
 	"github.com/aggrega-ai/aggrega-cli/pkg/types"
-	"github.com/aggrega-ai/aggrega-cli/pkg/validator"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 )
 
@@ -94,25 +94,18 @@ func loadHub(root, capability string) (*hubCatalog, error) {
 
 // requiredValues returns the values keys the Component named name requires and
 // declares no default for, at the version a reference naming it without one
-// resolves to and its extends chain resolved, as a build reads its schema:
-// each a requirement of the key under values, with the type its schema
-// declares, in the order its schema lists them. A schema the compiler cannot
-// compile is refused, naming the Component.
+// resolves to, its contract compiled as a build compiles it
+// ([resolver.CompileComponentContract]): each a requirement of the key under
+// values, with the type its schema declares, in the order its schema lists
+// them. A declared contract that does not compile is refused, naming the
+// Component and why.
 func (h *hubCatalog) requiredValues(name string) ([]cloudimport.Requirement, error) {
-	lookup := h.cat.CatalogLookup()
-	comp, ok := lookup.Component(name)
-	if !ok || comp.Spec.Schema.Kind == 0 {
-		return nil, nil
-	}
-	if comp.Spec.Extends != "" {
-		if resolved, errs := validator.ResolveComponentExtends(comp, lookup.Component); len(errs) == 0 {
-			comp = resolved
-		}
-	}
-	compiled, err := compactform.Compile(&comp.Spec.Schema, compactform.WithSchemaLibraries(h.libs.Schemas))
+	compiled, declared, err := resolver.CompileComponentContract(h.cat.CatalogLookup(), name)
 	if err != nil {
-		return nil, fmt.Errorf("compile the schema of the Component %s:%s: %w", comp.Metadata.Name,
-			comp.Metadata.Version, err)
+		return nil, fmt.Errorf("compile the schema of the Component %s: %w", name, err)
+	}
+	if !declared {
+		return nil, nil
 	}
 	var out []cloudimport.Requirement
 	for _, f := range compactform.PillarRequired(compiled, "values") {

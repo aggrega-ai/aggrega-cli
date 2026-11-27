@@ -272,6 +272,15 @@ func CompileComponentSchema(catalog CatalogLookup, compType string) (compactform
 	return compiled, true
 }
 
+// CompileComponentContract is the classifying form of [CompileComponentSchema],
+// for a reader that must tell a contract that does not compile from one that is
+// absent: the compiled schema; whether the catalog holds the type and it
+// declares a schema; and, where the declared schema does not compile, the
+// compile's error.
+func CompileComponentContract(catalog CatalogLookup, compType string) (compactform.Schema, bool, error) {
+	return compileComponentSchema(catalog, compType)
+}
+
 // CompileFeatureSchema resolves a Feature type's declared contract for
 // conformance reading. Returns (nil, false) when the catalog holds no such
 // Feature, the Feature declares no contract, or the contract does not resolve.

@@ -337,8 +337,7 @@ Resources:
 // TestFunctionRuntimeIsTheFunctionsRuntimeValue places the runtime a Lambda
 // function or a SAM function writes as the function's runtime value, which
 // the Component requires; a function whose source writes none, run from an
-// image, reads it from an Aggregate parameter of its own declaring no default,
-// which the Release leaves for the answers file.
+// image, has its runtime written empty in the Aggregate, left for the author.
 func TestFunctionRuntimeIsTheFunctionsRuntimeValue(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"AWS::Lambda::Function", "AWS::Serverless::Function"} {
@@ -376,23 +375,17 @@ Resources:
       Code: {ImageUri: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/orders:1.0.0}
       Role: arn:aws:iam::123456789012:role/orders
 `)
-	holds(t, "the Aggregate of an image function", fileText(t, image, "aggregate.yaml"), `  parameters:
-    orders_runtime:
-      type: string
-      description: "values.runtime of the instance orders, which its Component core/compute/function requires and the source does not give."
-  components:
-    # The resource Orders.
-    orders:
+	holds(t, "the Aggregate of an image function", fileText(t, image, "aggregate.yaml"), `    orders:
       type: core/compute/function
       values:
-        runtime: "{{ .parameters.orders_runtime }}"
+        # Left for the author, since the source does not give it: values.runtime, which its Component core/compute/function requires.
+        runtime: ""
 `)
+	lacks(t, "the Aggregate of an image function", fileText(t, image, "aggregate.yaml"), "parameters:")
 	release := fileText(t, image, "release.yaml")
-	holds(t, "the Release of an image function", release, `  parameters:
-    # Left for the Release, since the source cannot supply it: orders_runtime, values.runtime of the instance orders, which its Component core/compute/function requires and the source does not give
-    orders_runtime: ""
-`, `        image: "123456789012.dkr.ecr.eu-west-1.amazonaws.com/orders:1.0.0"
+	holds(t, "the Release of an image function", release, `        image: "123456789012.dkr.ecr.eu-west-1.amazonaws.com/orders:1.0.0"
 `)
+	lacks(t, "the Release of an image function", release, "parameters:")
 	lacks(t, "the Release of an image function", release, `image: ""`)
 }
 

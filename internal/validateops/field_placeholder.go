@@ -7,6 +7,8 @@ import (
 	"math"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/aggrega-ai/aggrega-cli/pkg/compactform"
 )
 
 // placeholderString is the value a build of one fills a required string with
@@ -252,7 +254,7 @@ func arrayPlaceholder(field map[string]any, depth int) []any {
 func objectPlaceholder(field map[string]any, depth int) map[string]any {
 	out := map[string]any{}
 	props, _ := field["properties"].(map[string]any)
-	for _, name := range toStringSlice(field["required"]) {
+	for _, name := range compactform.RequiredNames(field["required"]) {
 		if name == "" {
 			continue
 		}

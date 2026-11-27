@@ -5,11 +5,12 @@ package main
 
 // End-to-end proof, through the real command tree, that a template whose
 // resources the catalog maps but which leaves a value their Component or
-// Recipe requires drafts a Release owing that value, and that once the answers
-// file the import writes is answered, the drafts validate and build: a SAM
-// function packaged as a .zip owes its container image, a Lambda function run
-// from an image and stating no runtime owes its runtime, and a bucket owes its
-// Region. Nothing the import drafted is edited.
+// Recipe requires drafts an Aggregate or a Release owing that value, and that
+// once the answers file the import writes is answered, the drafts validate and
+// build: a SAM function packaged as a .zip owes its container image in the
+// Release, a Lambda function run from an image and stating no runtime owes its
+// runtime in the Aggregate, and a bucket owes its Region in the Release.
+// Nothing the import drafted is edited.
 
 import (
 	"encoding/json"
@@ -73,7 +74,7 @@ func TestCloudFormationImportOwesWhatItsMappedResourcesRequireAndBuildsOnceAnswe
 		{
 			name: "function-image",
 			answers: map[string]map[string]string{
-				"release.yaml": {"spec.parameters.resize_image_runtime": "python3.13"},
+				"aggregate.yaml": {"spec.components.resize-image.values.runtime": "python3.13"},
 			},
 			check: func(t *testing.T, stack cfnStack) {
 				fn := objectAt(t, stack.Resources["ResizeImage"], "Properties")
@@ -148,8 +149,8 @@ func TestCloudFormationImportOwesWhatItsMappedResourcesRequireAndBuildsOnceAnswe
 			mustRunDriftCommand(t, "the validation of the Release", "validate", "--release", "release.yaml")
 			mustRunDriftCommand(t, "the build", "build", "--release", "release.yaml")
 			var stack cfnStack
-			if err := json.Unmarshal(mustReadFile(t, filepath.Join(root, "dist/cloudformation/cloudformation-stack.json")),
-				&stack); err != nil {
+			stackFile := filepath.Join(root, "dist", "cloudformation", "cloudformation-stack.json")
+			if err := json.Unmarshal(mustReadFile(t, stackFile), &stack); err != nil {
 				t.Fatalf("the stack template is not JSON: %v", err)
 			}
 			if names := sortedKeys(stack.Resources); !slices.Equal(names, []string{map[string]string{

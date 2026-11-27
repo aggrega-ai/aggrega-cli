@@ -78,3 +78,15 @@ func TestInjectWritesOneMechanismsEntries(t *testing.T) {
 		t.Errorf("no entry wrote %q, want nothing", got)
 	}
 }
+
+// TestLeftForAuthorWritesTheCommentAndTheEmptyValue writes a value no source
+// supplies: the comment line naming it, its reason and what it is, then its key
+// holding an empty string, both at the indent given.
+func TestLeftForAuthorWritesTheCommentAndTheEmptyValue(t *testing.T) {
+	got := LeftForAuthor("        ", "model", "the configuration names no model", "the name of the model acme/llm serves")
+	want := "        # Left for the author, since the configuration names no model: values.model, the name of the " +
+		"model acme/llm serves.\n        model: \"\"\n"
+	if got != want {
+		t.Errorf("LeftForAuthor writes\n%s\nwant\n%s", got, want)
+	}
+}

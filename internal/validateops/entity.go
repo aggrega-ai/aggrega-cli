@@ -1452,26 +1452,6 @@ func requiredFieldPlaceholders(compiled map[string]any, pillar string) map[strin
 	return out
 }
 
-// toStringSlice normalizes a compiled schema's `required` value into a string
-// slice, tolerating both the []string and []any shapes a compiled schema may
-// carry for the keyword.
-func toStringSlice(v any) []string {
-	switch s := v.(type) {
-	case []string:
-		return s
-	case []any:
-		out := make([]string, 0, len(s))
-		for _, e := range s {
-			if str, ok := e.(string); ok {
-				out = append(out, str)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
 // artifactKeysSorted returns the artifact paths in lexical order for a
 // deterministic report regardless of the render's internal map ordering.
 func artifactKeysSorted(files map[string][]byte) []string {

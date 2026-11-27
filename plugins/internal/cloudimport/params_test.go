@@ -316,37 +316,25 @@ func requiringFormat() Format {
 	return f
 }
 
-// TestARequiredStringValueTheSourceDoesNotGiveIsAParameterTheReleaseSupplies
-// declares, for a string values key the row's Component requires and the
-// instance's values do not hold, an Aggregate parameter of no default written
-// as the value, and leaves it under the Release's spec.parameters for the
-// answers file. A required key the node writes stays as written, and a
-// required key that is no string is not declared.
-func TestARequiredStringValueTheSourceDoesNotGiveIsAParameterTheReleaseSupplies(t *testing.T) {
+// TestARequiredStringValueTheSourceDoesNotGiveIsLeftForTheAuthor writes, for a
+// string values key the row's Component requires and the instance's values do
+// not hold, the key empty in the Aggregate, its comment saying it is left for
+// the author, so the import owes it there; it declares no parameter and the
+// Release leaves nothing for it. A required key the node writes stays as
+// written, and a required key that is no string is not written.
+func TestARequiredStringValueTheSourceDoesNotGiveIsLeftForTheAuthor(t *testing.T) {
 	in := edgeView()
 	in.Target = "arm"
 	_, aggregate, release, _, diags := released(t, in, requiringFormat(), &Graph{Nodes: []*Node{mappedServer()}})
-	wantParams := `  parameters:
-    server_database:
-      type: string
-      description: "values.database of the instance server, which its Component core/datastore/postgres requires and the source does not give."
-  components:
-`
-	if !strings.Contains(aggregate, wantParams) {
-		t.Errorf("the Aggregate does not declare the parameter as\n%swant in\n%s", wantParams, aggregate)
-	}
 	wantBlock(t, aggregate, "server", `    server:
       type: core/datastore/postgres
       values:
         version: "16"
-        database: "{{ .parameters.server_database }}"
+        # Left for the author, since the source does not give it: values.database, which its Component core/datastore/postgres requires.
+        database: ""
 `)
-	wantLeft := `  parameters:
-    # Left for the Release, since the source cannot supply it: server_database, values.database of the instance server, which its Component core/datastore/postgres requires and the source does not give
-    server_database: ""
-`
-	if !strings.Contains(release, wantLeft) {
-		t.Errorf("the Release does not leave the parameter as\n%swant in\n%s", wantLeft, release)
+	if strings.Contains(aggregate, "parameters:") || strings.Contains(release, "parameters:") {
+		t.Errorf("the drafts declare or leave a parameter:\n%s\n%s", aggregate, release)
 	}
 	onlyCode(t, diags, CodeValueNotCarried, 0)
 }

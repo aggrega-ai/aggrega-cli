@@ -65,9 +65,8 @@ func renderAggregate(name, target string, read []*application, parts []*datastor
 		b.WriteString("    " + model.key + ":\n")
 		b.WriteString("      type: " + model.component + "\n")
 		b.WriteString("      values:\n")
-		b.WriteString(commentLine("        ", "Left for the author, since the configuration names no model: values.model, "+
-			"the name of the model "+model.component+" serves."))
-		b.WriteString("        model: \"\"\n")
+		b.WriteString(draftyaml.LeftForAuthor("        ", "model", "the configuration names no model",
+			"the name of the model "+model.component+" serves"))
 	}
 	return b.String()
 }

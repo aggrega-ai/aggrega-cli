@@ -30,7 +30,7 @@ func PillarRequired(compiled Schema, pillar string) []RequiredField {
 		return nil
 	}
 	var out []RequiredField
-	for _, name := range requiredNames(pillarNode["required"]) {
+	for _, name := range RequiredNames(pillarNode["required"]) {
 		if name == "" {
 			continue
 		}
@@ -43,9 +43,10 @@ func PillarRequired(compiled Schema, pillar string) []RequiredField {
 	return out
 }
 
-// requiredNames reads a compiled schema's required keyword, in either the
-// []string or the []any shape a compiled schema carries it in.
-func requiredNames(raw any) []string {
+// RequiredNames returns the names a compiled schema's required keyword lists,
+// raw, in order, read in either the []string or the []any shape a compiled
+// schema carries it in; none where raw is neither.
+func RequiredNames(raw any) []string {
 	var out []string
 	switch list := raw.(type) {
 	case []string:

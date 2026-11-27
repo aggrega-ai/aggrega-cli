@@ -23,10 +23,8 @@ import (
 // Its spec.parameters leaves each parameter of the Aggregate that has no
 // default for the answers file: for a parameter naming an existing resource,
 // which declares no default, the comment above it names the value the
-// parameters file supplies, where it supplies one; and for a parameter
-// standing for a value an instance's Component requires and its source does
-// not give, the comment names the instance, the values key and the Component.
-// It has one entry for each instance, in the Aggregate's order:
+// parameters file supplies, where it supplies one. It has one entry for each
+// instance, in the Aggregate's order:
 //
 //   - a mapped instance's infra and infra.overrides hold what its row places
 //     there, read as the Aggregate reads its values — off its node, or for an
@@ -91,9 +89,6 @@ func Release(in aggrega.ImportInput, f Format, g *Graph, classified []Classified
 				draft.Parameters = append(draft.Parameters, importer.LeftItem{Path: key, Text: w.leftParameter(p)})
 			}
 		}
-	}
-	for _, p := range analysis.required {
-		draft.Parameters = append(draft.Parameters, importer.LeftItem{Path: p.param, Text: p.what()})
 	}
 	for _, cl := range w.out {
 		if cl.Key != "" && isInstance(cl) {

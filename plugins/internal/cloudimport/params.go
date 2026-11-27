@@ -30,11 +30,7 @@ import (
 // key as any parameter is, but the Aggregate parameter standing for it
 // declares no default, whatever the template or the parameters file gives it:
 // the Release fulfils it, the comment above it naming the value the parameters
-// file supplies. A string values key a mapped instance's Component requires
-// and its source does not give is an Aggregate parameter too, of no template
-// parameter: a string declaring no default, keyed by the snake_case of the
-// instance's key and the values key, which the Release leaves for the answers
-// file.
+// file supplies.
 
 // paramRef is the text standing for an Aggregate parameter in a value being
 // written, resolved to its key once the value is written whole.
@@ -308,47 +304,17 @@ func (w *aggregateWriter) instanceParts(cl *Classified) (string, []*valueTree) {
 	return active, w.values(cl)
 }
 
-// requiredParam is the Aggregate parameter standing for a string values key
-// the Component of a mapped instance requires and its source does not give:
-// the parameter's key, the instance's key, the values key and the Component.
-type requiredParam struct {
-	param, instance, key, component string
-}
-
-// what says what the parameter stands for and why the Release supplies it.
-func (p requiredParam) what() string {
-	return "values." + p.key + " of the instance " + p.instance + ", which its Component " + p.component +
-		" requires and the source does not give"
-}
-
-// requiredValue declares the Aggregate parameter standing for the values key
-// key of cl's instance, keyed by the snake_case of the instance's key and the
-// values key, numbered where that key is taken, and returns the value reading
-// it. The parameter is a string declaring no default, so the Release supplies
-// it and leaves it for the answers file.
-func (w *aggregateWriter) requiredValue(cl *Classified, key string) string {
-	name := schemadraft.UniqueSnakeKey(w.keys, cl.Key+"_"+key)
-	w.required = append(w.required, requiredParam{param: name, instance: cl.Key, key: key, component: cl.Row.Component})
-	return draftyaml.String("{{ .parameters." + name + " }}")
-}
-
 // parametersBlock writes the spec.parameters of the Aggregate: each template
 // parameter an instance reads into a key, in the order the template declares
-// them, then each parameter standing for a value an instance's Component
-// requires and its source does not give, in the order the instances are
-// written; nothing where none is.
+// them; nothing where none is.
 func (w *aggregateWriter) parametersBlock() string {
-	if len(w.hoisted) == 0 && len(w.required) == 0 {
+	if len(w.hoisted) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("  parameters:\n")
 	done := map[string]bool{}
-	var params []Parameter
-	if w.g != nil {
-		params = w.g.Params
-	}
-	for _, p := range params {
+	for _, p := range w.g.Params {
 		key, ok := w.hoisted[p.Name]
 		if !ok || done[p.Name] {
 			continue
@@ -400,11 +366,6 @@ func (w *aggregateWriter) parametersBlock() string {
 		if p.MaxLength != nil {
 			b.WriteString("      maxLength: " + strconv.Itoa(*p.MaxLength) + "\n")
 		}
-	}
-	for _, p := range w.required {
-		b.WriteString("    " + p.param + ":\n")
-		b.WriteString("      type: string\n")
-		b.WriteString("      description: " + draftyaml.String(w.escape(p.what()+".")) + "\n")
 	}
 	return b.String()
 }

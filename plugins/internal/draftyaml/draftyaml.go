@@ -37,6 +37,18 @@ var CommentLine = importer.CommentLine
 // writers.
 var String = importer.QuotedString
 
+// LeftForAuthor writes, at indent, a values key of a drafted Aggregate that no
+// source supplies: the comment line "Left for the author, since <why>:
+// values.<key>, <what>." written through CommentLine, then the key holding an
+// empty string. The import owes the value, asking for it in the answers file
+// in the comment's words where the Component's schema gives it no description
+// of its own. Every importer leaving an Aggregate value for the author writes
+// it through this, so one is written one way.
+func LeftForAuthor(indent, key, why, what string) string {
+	return CommentLine(indent, "Left for the author, since "+why+": values."+key+", "+what+".") + indent + key +
+		": " + String("") + "\n"
+}
+
 // Comment writes text read from a source into a comment: as it is where it holds
 // only letters, digits, spaces and the punctuation a name, a path or a variable
 // reference is written with, and otherwise quoted as String writes it, so nothing

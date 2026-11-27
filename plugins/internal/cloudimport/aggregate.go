@@ -43,36 +43,35 @@ import (
 // its node, or, for an instance a fold of its row makes of a child, off that
 // child where it writes the placement's path and off the parent folded into it
 // otherwise, followed by the value of that child the fold writes under values;
-// then the value under values of each child folded into it; then each string
-// values key its row requires that none of these writes, reading an Aggregate
-// parameter declared for it with no default, which the Release supplies. A
-// child's name, where a fold or a row reads it off a mapped instance's own
-// node or a child, is its own name within its parent: its Leaf where the
-// source composes its Name of its parent's and its own, and not written,
-// warned value-not-carried, where the source composes them so its own part
-// cannot be told apart. The values of a drafted instance are those its Recipe reads from
-// values, read off its node. A placement's converter turns the value read into
-// the one written: string writes its text, integer an integer, unit:<suffix>
-// its text followed by the suffix, map:<from>=<to>,… the <to> of the <from> its
-// text is, regardless of case, or nothing where it is none of them. A literal
-// is written as YAML reading back as the literal, each string in it — an object's keys included — written through the
-// format's Text where the import's target is f.Target, so the format's own
-// Recipes read it as the literal it is; deploy-time text is written as it is
-// for its own target, beneath a comment naming each parameter whose value the
-// format wrote in it, and for any other target is not written and warned
-// value-not-carried, as is text owing what it reads and a value a converter
-// cannot convert. A value read
-// from a parameter of the template is written as a reference to a parameter of
-// the Aggregate, declared under spec.parameters, as params.go describes; a
-// value read from a secure parameter, a reference, a credential or text that
-// names a secure parameter is not written, and is warned value-not-carried
-// with the key it would be written at, as is every object or list holding
-// one. A secret a store holds is
-// written as the source's text for it where the import's target is f.Target,
-// and is not written otherwise. Every
-// text read from the source is escaped through EscapeTemplateText, so it reads
-// back as written once the compiler evaluates the Aggregate as a template, and
-// every comment line is written through draftyaml.CommentLine.
+// then the value under values of each child folded into it; then, left for the
+// author as draftyaml.LeftForAuthor writes it, each string values key its row
+// requires that none of these writes. A child's name, where a fold or a row
+// reads it off a mapped instance's own node or a child, is its own name within
+// its parent: its Leaf where the source composes its Name of its parent's and
+// its own, and not written, warned value-not-carried, where the source composes
+// them so its own part cannot be told apart. The values of a drafted instance
+// are those its Recipe reads from values, read off its node. A placement's
+// converter turns the value read into the one written: string writes its text,
+// integer an integer, unit:<suffix> its text followed by the suffix,
+// map:<from>=<to>,… the <to> of the <from> its text is, regardless of case, or
+// nothing where it is none of them. A literal is written as YAML reading back
+// as the literal, each string in it — an object's keys included — written
+// through the format's Text where the import's target is f.Target, so the
+// format's own Recipes read it as the literal it is; deploy-time text is
+// written as it is for its own target, beneath a comment naming each parameter
+// whose value the format wrote in it, and for any other target is not written
+// and warned value-not-carried, as is text owing what it reads and a value a
+// converter cannot convert. A value read from a parameter of the template is
+// written as a reference to a parameter of the Aggregate, declared under
+// spec.parameters, as params.go describes; a value read from a secure
+// parameter, a reference, a credential or text that names a secure parameter is
+// not written, and is warned value-not-carried with the key it would be written
+// at, as is every object or list holding one. A secret a store holds is written
+// as the source's text for it where the import's target is f.Target, and is not
+// written otherwise. Every text read from the source is escaped through
+// EscapeTemplateText, so it reads back as written once the compiler evaluates
+// the Aggregate as a template, and every comment line is written through
+// draftyaml.CommentLine.
 //
 // An instance whose node carries a condition is written with active reading the
 // parameter the condition is, where it is one boolean parameter and no
@@ -144,10 +143,6 @@ type aggregateWriter struct {
 	hoisted map[string]string
 	keys    map[string]bool
 	pending []string
-	// required holds the Aggregate parameters standing for the values the
-	// instances' Components require and their sources do not give, in the order
-	// declared.
-	required []requiredParam
 	// noted holds the secure parameters whose values were judged, and secure the
 	// patterns that find each secure parameter's name in text.
 	noted  map[string]bool
@@ -420,15 +415,16 @@ func (w *aggregateWriter) instance(b *strings.Builder, cl *Classified) {
 }
 
 // valueTree is a values key holding either text or members, and the comment
-// written above it.
+// written above it; or, where left is set, a key no source supplies, left for
+// the author, left saying what the value is.
 type valueTree struct {
-	key, text, comment string
-	members            []*valueTree
+	key, text, comment, left string
+	members                  []*valueTree
 }
 
 // values returns the values of cl's instance, as Aggregate states them, and
 // for a mapped instance each string values key its row requires that they do
-// not hold, reading the Aggregate parameter declared for it (requiredValue).
+// not hold, left for the author.
 func (w *aggregateWriter) values(cl *Classified) []*valueTree {
 	var tree []*valueTree
 	for _, v := range w.valueReads(cl) {
@@ -439,11 +435,11 @@ func (w *aggregateWriter) values(cl *Classified) []*valueTree {
 	}
 	for _, req := range cl.Row.Requires {
 		key, ok := strings.CutPrefix(req.Key, "values.")
-		if !ok || key == "" || strings.Contains(key, ".") || req.Type != "string" ||
+		if !ok || !plainKey.MatchString(key) || req.Type != "string" ||
 			slices.ContainsFunc(tree, func(v *valueTree) bool { return v.key == key }) {
 			continue
 		}
-		tree = plant(tree, []string{key}, w.requiredValue(cl, key), "")
+		tree = append(tree, &valueTree{key: key, left: "which its Component " + cl.Row.Component + " requires"})
 	}
 	return tree
 }
@@ -678,9 +674,16 @@ func plant(tree []*valueTree, key []string, text, comment string) []*valueTree {
 	return append(tree, t)
 }
 
+// leftWhy is why the draft leaves a value its row requires for the author.
+const leftWhy = "the source does not give it"
+
 // writeTree writes tree at indent.
 func writeTree(b *strings.Builder, indent string, tree []*valueTree) {
 	for _, t := range tree {
+		if t.left != "" {
+			b.WriteString(draftyaml.LeftForAuthor(indent, t.key, leftWhy, t.left))
+			continue
+		}
 		if t.comment != "" {
 			b.WriteString(draftyaml.CommentLine(indent, t.comment))
 		}
