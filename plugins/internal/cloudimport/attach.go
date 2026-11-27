@@ -36,9 +36,10 @@ const (
 // A node is taken by the first rule of its type, matched regardless of case,
 // whose When holds of it, each predicate read as a row's is read; a predicate
 // a value set only when the source deploys leaves undecided does not hold. A
-// node the source reads and does not create is taken only by a rule with Secret
-// set, and one a fold of an ancestor's row writes is never taken. A node the rule holds for that no instance takes,
-// as Via says, is classed as any other node is.
+// node the source reads and does not create is taken only by a rule with
+// Secret set, and one a fold of an ancestor's row writes is never taken. A
+// node the rule holds for that no instance takes, as Via says, is classed as
+// any other node is.
 type AttachRule struct {
 	// Type is the vendor type of the nodes the rule takes.
 	Type string
@@ -168,8 +169,8 @@ func attachRefused(rules []AttachRule) *aggrega.Diagnostic {
 }
 
 // attachRule returns the first attach rule of n's type whose When holds of n;
-// nil where none does, or where the source reads n and does not create it and
-// no rule of its type has Secret set.
+// nil where none does, which includes a node the source reads and does not
+// create where no rule of its type with Secret set holds of it.
 func (c *classifier) attachRule(n *Node) *AttachRule {
 	rd := reader{g: c.g}
 	for i, r := range c.f.Attach {

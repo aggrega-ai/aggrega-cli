@@ -781,10 +781,15 @@ func (w *aggregateWriter) notCarriedHere(site valueSite, why string) {
 // all: one member not written is the whole's outcome. A value the source
 // writes as JSON text, whose every leaf is a literal, is written as that text.
 func (w *aggregateWriter) propText(p Prop, conv Conv) (string, outcome) {
-	if p.Encoded && (conv == "" || conv == "string") {
+	if p.Encoded && (p.Value != nil || len(p.Props) > 0 || len(p.Items) > 0) {
+		if conv != "" && conv != "string" {
+			return "", outcome{why: "the converter " + string(conv) + " converts a scalar, not JSON text"}
+		}
 		if text, ok := encodedText(p); ok {
 			return w.stringText(text), written()
 		}
+		return "", outcome{why: "it is JSON text the source encodes from a value that is no literal, which the " +
+			"draft does not encode", leave: true, warn: true}
 	}
 	switch {
 	case p.Value != nil:

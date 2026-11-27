@@ -4,7 +4,6 @@
 package cloudimport
 
 import (
-	"cmp"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -31,7 +30,7 @@ func (c *classifier) groupModule(n *Node, name string, located ModuleSource) {
 
 // label is where the module is: its URL, or its address where it has no URL.
 func (s ModuleSource) label() string {
-	return cmp.Or(s.URL, s.AddressOnly)
+	return schemadraft.ModuleLabel(s.URL, s.AddressOnly)
 }
 
 // moduleRef is the module n calls, the empty one where its reader names none.
@@ -122,14 +121,14 @@ func (c *classifier) heldBeside(n *Node, name string, resources []*Node) {
 // calls, from where the format's Module locates it, at the version that node
 // states; where the format gives an address and no URL, the Recipe's url is
 // left for the author and the module writer's draft warns
-// linked-source-not-read once. Each parameter a secret feeds is left out of the Recipe, and
-// value-not-carried warns of it on each node setting it.
+// linked-source-not-read once. Each parameter a secret feeds is left out of
+// the Recipe, and value-not-carried warns of it on each node setting it.
 func (c *classifier) draftModule(grp *draftGroup) {
 	first := grp.nodes[0]
 	located := c.located[first.ID]
 	inputs, secrets := c.moduleParameters(grp)
 	m := schemadraft.WrappedModule{
-		Type:        &schemadraft.Type{Name: cmp.Or(located.TypeName, first.Type), Source: first.ID},
+		Type:        &schemadraft.Type{Name: located.TypeName, Source: first.ID},
 		SourceKind:  located.Kind,
 		URL:         located.URL,
 		Subdir:      located.Subdir,

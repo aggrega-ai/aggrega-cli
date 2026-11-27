@@ -83,9 +83,10 @@ type Format struct {
 	// the Recipe Wrap writes sources it from, and the parameters that Recipe
 	// binds itself. The version the Recipe sources is the one the ModuleRef
 	// states. A module whose ModuleSource has no kind, or neither a URL nor
-	// an AddressOnly, is not located: its node is not carried, nothing is drafted for it, and a
-	// linked-source-not-read warning names it. Nil where Wrap is nil; a format
-	// setting Wrap and no Module halts on a module no row maps.
+	// an AddressOnly, is not located: its node is not carried, nothing is
+	// drafted for it, and a linked-source-not-read warning names it. Nil where
+	// Wrap is nil; a format setting Wrap and no Module halts on a module no row
+	// maps.
 	Module func(ref ModuleRef) ModuleSource
 }
 

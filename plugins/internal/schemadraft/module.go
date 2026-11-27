@@ -273,12 +273,17 @@ func withSource(body, block string) string {
 	return strings.Join(rows[:at+1], "") + b.String() + strings.Join(rows[at+1:], "")
 }
 
-// label names the module: its URL, or its address where it has no URL.
-func (m WrappedModule) label() string {
-	if m.URL == "" {
-		return m.AddressOnly
+// ModuleLabel names a module: its URL, or its address where it has no URL.
+func ModuleLabel(url, address string) string {
+	if url == "" {
+		return address
 	}
-	return m.URL
+	return url
+}
+
+// label names the module m as ModuleLabel does.
+func (m WrappedModule) label() string {
+	return ModuleLabel(m.URL, m.AddressOnly)
 }
 
 // sourceLeftForAuthor warns that the source of the module m cannot be derived

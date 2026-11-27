@@ -609,6 +609,29 @@ func TestEncodedPropWrittenAsJSONText(t *testing.T) {
 		t.Errorf("the site's Release entry does not hold\n%s\n%s", want, block)
 	}
 	onlyCode(t, diags, CodeValueNotCarried, 0)
+	for _, in := range written[0].Inputs {
+		if pathText(in.Property.Path) == "policy" && !slices.Equal(in.Property.Kinds, []schemadraft.Kind{schemadraft.KindString}) {
+			t.Errorf("the drafted property policy has the kinds %v, want string alone", in.Property.Kinds)
+		}
+	}
+}
+
+// TestEncodedPropHoldingAParameterIsLeftForTheAuthor drafts a resource writing
+// JSON text built from a template parameter's value: the Release writes no
+// object in its place, leaves the key, and value-not-carried names the
+// property once.
+func TestEncodedPropHoldingAParameterIsLeftForTheAuthor(t *testing.T) {
+	p := encodedPolicy()
+	p.Props[0] = Prop{Name: "version", Value: Param{Name: "policyVersion"}}
+	g := &Graph{Nodes: []*Node{staticSite(p)}, Params: []Parameter{{Name: "policyVersion", Type: "string",
+		Default: text("2012")}}}
+	_, _, release, _, diags := released(t, edgeView(), edgeFormat(nil), g)
+	warnsAbout(t, diags, CodeValueNotCarried, "site", "policy")
+	onlyCode(t, diags, CodeValueNotCarried, 1)
+	if block := instanceBlock(t, release, "site"); strings.Contains(block, "policy: {") || strings.Contains(block, `\"statements\"`) ||
+		!strings.Contains(block, `policy: ""`) {
+		t.Errorf("the Release does not leave policy empty for the answers file:\n%s", block)
+	}
 }
 
 // TestEdgesInsideAnEncodedProp reads a reference inside a value the source

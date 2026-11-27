@@ -707,11 +707,13 @@ type draftGroup struct {
 }
 
 // settleUnmatched holds back each node no Component maps whose draft's name
-// the catalog holds (a module's, the name its located source gives), classes not carried each module whose source the format
-// does not locate, and groups the others by name and form, each group to be
-// drafted once its instances are wired; a module whose name a resource takes
-// is held back. It returns a halt where the format has no writer for a node it
-// would draft.
+// the catalog holds (a module's name is the one its located source gives),
+// classes not carried each module whose source the format does not locate,
+// and groups the others by name and form, each group to be drafted once its
+// instances are wired; a module whose name a resource takes is held back. A
+// located module's TypeName is resolved here: the format's, else its node's
+// type. It returns a halt where the format has no writer for a node it would
+// draft.
 func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 	var unwritable []string
 	for _, n := range c.nodes {
@@ -722,7 +724,8 @@ func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 		var located ModuleSource
 		if isModule(n.Form) && c.f.Wrap != nil && c.f.Module != nil {
 			located = c.f.Module(moduleRef(n))
-			name = schemadraft.NameForModule(c.in, c.f.Draft, cmp.Or(located.TypeName, n.Type), located.Name)
+			located.TypeName = cmp.Or(located.TypeName, n.Type)
+			name = schemadraft.NameForModule(c.in, c.f.Draft, located.TypeName, located.Name)
 		}
 		held, holds := c.held(name)
 		switch {
