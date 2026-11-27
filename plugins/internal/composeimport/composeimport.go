@@ -118,6 +118,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/imageref"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
@@ -318,7 +319,7 @@ type serviceDecision struct {
 // identifier under, are added to the decision's rationale once the service's
 // environment is read.
 func decide(in aggrega.ImportInput, s *service) (aggrega.ImportDecision, aggrega.EmittedEntity) {
-	repository, ok := Repository(s.image)
+	repository, ok := imageref.Repository(s.image)
 	var decision aggrega.ImportDecision
 	var entity aggrega.EmittedEntity
 	mapped := false

@@ -10,7 +10,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/composeimport"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/imageref"
 )
 
 // imageLocal is the locals entry a container product's Recipe holds its
@@ -34,7 +34,7 @@ func imageRowOf(r recipeSource) (cloudimport.ImageRow, bool) {
 	if !ok {
 		return cloudimport.ImageRow{}, false
 	}
-	repository, ok := composeimport.Repository(image)
+	repository, ok := imageref.Repository(image)
 	if !ok {
 		return cloudimport.ImageRow{}, false
 	}

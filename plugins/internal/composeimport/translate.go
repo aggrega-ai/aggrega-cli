@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/imageref"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
@@ -75,7 +76,7 @@ func translate(in aggrega.ImportInput, read []*project, types map[*service]strin
 		for _, s := range p.services {
 			s.translated = map[string]bool{}
 			s.inject = map[string][]draftyaml.Injected{}
-			repository, tag, ok := Reference(s.image)
+			repository, tag, ok := imageref.Reference(s.image)
 			row, listed := rowsByRepository[repository]
 			if !ok || !listed || !referenced[s] || types[s] != row.Component {
 				continue

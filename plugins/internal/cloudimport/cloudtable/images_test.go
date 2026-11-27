@@ -12,7 +12,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/armimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/composeimport"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/imageref"
 )
 
 // productRecipe writes an arm Recipe named name implementing the compute
@@ -118,7 +118,7 @@ func TestTwoProductsClaimingOneRepositoryAreRefused(t *testing.T) {
 	root := hubWith(t, map[string]string{"aggrega-catalog/recipe/arm/rival/1.0.0/recipe.yaml": productRecipe("rival",
 		"    default_image: ghcr.io/acme/product:2.0.0\n")})
 	images, err := generateImagesFromHub(root, armFormatOrFail(t))
-	if repo, ok := composeimport.Repository("ghcr.io/acme/product:2.0.0"); !ok || repo != "ghcr.io/acme/product" {
+	if repo, ok := imageref.Repository("ghcr.io/acme/product:2.0.0"); !ok || repo != "ghcr.io/acme/product" {
 		t.Fatalf("the fixture's repository reads as %q, %v", repo, ok)
 	}
 	var conflict *imageConflict

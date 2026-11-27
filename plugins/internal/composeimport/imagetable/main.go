@@ -67,7 +67,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/importersocket"
 	"github.com/aggrega-ai/aggrega-cli/pkg/catalog"
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/composeimport"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/imageref"
 )
 
 // Where a hub checkout keeps, beneath its root, its Compose Recipes, its
@@ -635,7 +635,7 @@ func unquote(value string) string {
 func repositoriesOf(image string, locals map[string]any) ([]string, string) {
 	parts := splitActions(image)
 	if len(parts) == 1 && !parts[0].action {
-		if r, ok := composeimport.Repository(parts[0].text); ok {
+		if r, ok := imageref.Repository(parts[0].text); ok {
 			return []string{r}, ""
 		}
 		return nil, "its main image " + quoted(image) + " is not a reference"
@@ -650,7 +650,7 @@ func repositoriesOf(image string, locals map[string]any) ([]string, string) {
 			if !isString || strings.Contains(value, "{{") {
 				return nil, "its main image is the locals entry " + name + ", which is not a literal reference"
 			}
-			if r, ok := composeimport.Repository(value); ok {
+			if r, ok := imageref.Repository(value); ok {
 				return []string{r}, ""
 			}
 			return nil, "its main image is the locals entry " + name + ", which is not a reference"
@@ -676,7 +676,7 @@ func repositoriesOf(image string, locals map[string]any) ([]string, string) {
 		if candidate == "" {
 			continue
 		}
-		if r, ok := composeimport.Repository(candidate); ok && !slices.Contains(out, r) {
+		if r, ok := imageref.Repository(candidate); ok && !slices.Contains(out, r) {
 			out = append(out, r)
 		}
 	}

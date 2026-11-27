@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/aggrega-ai/aggrega-cli/plugins/internal/composeimport"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/imageref"
 )
 
 // Resolve returns the row of t that maps n. The rows keyed by n's type,
@@ -78,7 +78,7 @@ const imagePlaced = "image"
 // product returns r, the row mapping n, as the row of the container product
 // whose image row of t names the repository of the image n runs — the value r
 // places under infra.image, read as literal text, a parameter through its
-// literal default, its repository read as composeimport.Repository reads it:
+// literal default, its repository read as imageref.Repository reads it:
 // that row's Component and Recipe, the image placed under the image row's
 // ImageKey, or placed nowhere where it names none, each other field r's own.
 // It returns r as it is where t holds no image row naming that repository, r
@@ -103,7 +103,7 @@ func (t Table) product(r Row, n *Node, read reader) Row {
 		return r
 	}
 	text, got := read.text(v, 0)
-	repository, ok := composeimport.Repository(text)
+	repository, ok := imageref.Repository(text)
 	if got != stateRead || !ok {
 		return r
 	}
