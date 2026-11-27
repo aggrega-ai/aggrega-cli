@@ -6,6 +6,8 @@ package cloudimport
 import (
 	"encoding/json"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -305,6 +307,37 @@ func TestResolveLacksHoldsWhereContainsDoesNot(t *testing.T) {
 	} {
 		if got := (reader{g: g}).row(lacks.Generated[0], c.node); got != c.want {
 			t.Errorf("%s: lacks reads %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// TestLiteralTextReadsAScalarAsWritten reads a string's text, and a number's
+// and a boolean's text as written, and no text of null, an object, a list or
+// nothing: what decoding the value with numbers kept as written gives, the
+// decoding here an independent cross-check of the reading under test.
+func TestLiteralTextReadsAScalarAsWritten(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{
+		`"plain"`, `"esc\"aped\\ \u00e9 \u2028 \n"`, `""`, ` "spaced" `, `0`, `-12`, `3.25`, `1e+30`, `-0.5E-3`,
+		`123456789012345678901234567890`, `true`, `false`, `null`, `{"a":1}`, `[1]`, `{}`, `[]`, ``, ` `,
+	} {
+		want, wantRead := "", false
+		dec := json.NewDecoder(strings.NewReader(raw))
+		dec.UseNumber()
+		var v any
+		if dec.Decode(&v) == nil {
+			switch v := v.(type) {
+			case string:
+				want, wantRead = v, true
+			case json.Number:
+				want, wantRead = v.String(), true
+			case bool:
+				want, wantRead = strconv.FormatBool(v), true
+			}
+		}
+		got, st := literalText(json.RawMessage(raw))
+		if got != want || (st == stateRead) != wantRead {
+			t.Errorf("%s reads as %q (read: %v), want %q (read: %v)", raw, got, st == stateRead, want, wantRead)
 		}
 	}
 }

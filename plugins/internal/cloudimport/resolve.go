@@ -483,21 +483,23 @@ func (rd reader) text(v Value, hops int) (string, state) {
 	return "", stateUndecided
 }
 
-// literalText returns a JSON scalar as text.
+// literalText returns a JSON scalar as text: a string's text, and a number's
+// or a boolean's as written. It reads raw where it holds one JSON value, and
+// decodes only a string, as it runs for every leaf a draft writes.
 func literalText(raw json.RawMessage) (string, state) {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	var v any
-	if dec.Decode(&v) != nil {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || !json.Valid(trimmed) {
 		return "", stateNone
 	}
-	switch v := v.(type) {
-	case string:
-		return v, stateRead
-	case json.Number:
-		return v.String(), stateRead
-	case bool:
-		return strconv.FormatBool(v), stateRead
+	switch c := trimmed[0]; {
+	case c == '"':
+		var text string
+		if json.Unmarshal(trimmed, &text) != nil {
+			return "", stateNone
+		}
+		return text, stateRead
+	case c == 't', c == 'f', c == '-', c >= '0' && c <= '9':
+		return string(trimmed), stateRead
 	}
 	return "", stateNone
 }
