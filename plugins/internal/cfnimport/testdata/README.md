@@ -25,6 +25,15 @@ Every file here is synthetic, written for the reader's tests; none is copied fro
 - `sam/` — a SAM project after `sam build`: its template, the template the build writes under
   `.aws-sam/build/`, a test event, a truncated test event the template reader refuses, and a `package.json`.
 - `refused/template.yaml` — a template whose YAML breaks off, which the template reader refuses.
+- `nested/flat/` — a root template deploying `network.yaml` as a nested stack, binding its parameters (one to a root
+  parameter whole, one to text composed of one, one to text) and reading its outputs; `network.yaml` declares a
+  parameter with a default, one with none, a mapping and a condition of the same names as the root's, and deploys
+  `subnets.yaml` as a nested stack of its own.
+- `nested/application/` — a SAM template deploying `apps/orders.yaml` as a serverless application whose `Location` is a
+  local path, reading its output.
+- `nested/remote/` — a root template deploying nested stacks linked by a URL of the web, a URL of Amazon S3 and a value
+  the template computes, and a serverless application located by its ID, with a resource reading their outputs.
+- `nested/outside/` — a root template deploying a nested stack linked by a path leaving the directory.
 - `stray/` — a template beside sources the template reader refuses: `docs/notes.yaml`, indented with a tab and
   naming `AWSTemplateFormatVersion` in a comment, and `broken.yaml`, whose YAML breaks off, linked by `other.yaml`
   and by `main.yaml`.

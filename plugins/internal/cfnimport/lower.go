@@ -24,31 +24,38 @@ import (
 const target = "cloudformation"
 
 // Read reads the CloudFormation templates and the parameters file a request
-// carries into the core's graph, as read reads them, and lowers each value of
-// its nodes, their conditions and its outputs into the core's values, as
+// carries into the core's graph, as read reads them; reads each nested stack
+// and serverless application deploying a template it reads as that
+// template's resources ([reader.flatten]); and lowers each value of its
+// nodes, their conditions and its outputs into the core's values, as
 // [reader.lower] says. It is the cloudformation format's reader.
 func Read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.ParseFunc) (*cloudimport.Graph,
 	[]aggrega.Diagnostic) {
 	r := &reader{in: in, parse: parse}
 	g := r.read(s)
-	if g != nil {
-		r.lower(g)
+	if g == nil {
+		return nil, r.diags
 	}
+	r.flatten(g)
+	r.lower(g)
 	return g, r.diags
 }
 
-// lower lowers each value r read into g from the root template, held as the
-// long form the template reader writes, into the core's values, as
-// CloudFormation reads each when the stack deploys:
+// lower lowers each value r read into g, held as the long form the template
+// reader writes, into the core's values, as CloudFormation reads each when
+// the stack deploys, each in the template it is written in:
 //
 //   - Ref to a template parameter is that Param — but for a parameter of a
 //     Systems Manager parameter type naming one value and given a literal
 //     value, which is the dynamic reference resolving that Systems Manager
-//     parameter —; Ref to a pseudo parameter is deploy-time text; Ref to
-//     AWS::NoValue leaves the member or the item holding it absent; Ref to
-//     any other name is a Ref to that resource's identifier;
+//     parameter —; a parameter of a nested template reads what the resource
+//     deploying it binds it to, as [reader.resolve] says; Ref to a pseudo
+//     parameter is deploy-time text; Ref to AWS::NoValue leaves the member or
+//     the item holding it absent; Ref to any other name is a Ref to the
+//     identifier of the node that resource is;
 //   - Fn::GetAtt, as a list or as one string, is a Ref to the attribute, its
-//     path the attribute's name split at each dot;
+//     path the attribute's name split at each dot; an output of a nested
+//     template is the value it holds ([lowerer.reference]);
 //   - Fn::Sub, in its string or its list form, and Fn::Join with a literal
 //     delimiter and a literal list are composed text where each part is
 //     literal text, a parameter or a reference: a variable the list form
@@ -75,21 +82,27 @@ func Read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.Pars
 // A value not carried is reported value-not-carried, naming where the
 // template writes it, and its member is kept with no value. A parameter's
 // default or supplied value that is wholly a short form is not carried
-// either, and a resource's condition is lowered as [lowerer.condition] says.
-// A nested function is reported on, where it is, only once the value holding
-// it is lowered to more than deploy-time text.
+// either, and a resource's condition is lowered as [lowerer.condition] says,
+// a resource of a nested template taking that of each resource deploying it
+// beside its own ([reader.inherit]). A nested function is reported on, where
+// it is, only once the value holding it is lowered to more than deploy-time
+// text. g is the graph [reader.flatten] flattened.
 func (r *reader) lower(g *cloudimport.Graph) {
 	var notes []aggrega.Diagnostic
-	l := &lowerer{r: r, t: r.root, params: g.Params, notes: &notes}
-	l.parameterValues()
+	r.lowering = &notes
+	r.scope(r.stacks[0]).parameterValues()
 	for _, n := range g.Nodes {
-		l.condition(n)
+		h := r.home[n]
+		r.scope(h.s).condition(n, h.id)
+		r.inherit(h)
 	}
 	for _, n := range g.Nodes {
-		n.Body = l.props(n.Body, importer.Pointer("Resources", n.ID), true)
+		h := r.home[n]
+		n.Body = r.scope(h.s).props(n.Body, importer.Pointer("Resources", h.id), true)
 	}
+	root := r.scope(r.stacks[0])
 	for i := range g.Outputs {
-		g.Outputs[i].Value = l.output(g.Outputs[i])
+		g.Outputs[i].Value = root.output(g.Outputs[i])
 	}
 	for _, d := range notes {
 		r.note(d)
@@ -100,8 +113,11 @@ func (r *reader) lower(g *cloudimport.Graph) {
 type lowerer struct {
 	r *reader
 	t *template
-	// params are the template's parameters as the graph holds them, filled
-	// from the parameters file.
+	// s is the stack whose template t is.
+	s *stack
+	// params are the graph's parameters: the root template's, filled from the
+	// parameters file, and those the graph takes for parameters of nested
+	// templates.
 	params []cloudimport.Parameter
 	// notes collects what lowering reports.
 	notes *[]aggrega.Diagnostic
@@ -125,9 +141,16 @@ func (l *lowerer) trial() (*lowerer, func()) {
 	return &t, func() { *l.notes = append(*l.notes, held...) }
 }
 
-// param returns the template parameter named name, nil where the template
-// declares none.
+// param returns the graph's parameter a Ref to the template parameter name
+// reads ([lowerer.binding]), nil where the template declares none or the
+// parameter reads a value.
 func (l *lowerer) param(name string) *cloudimport.Parameter {
+	return l.binding(name).param
+}
+
+// graphParam returns the graph's parameter named name, nil where the graph
+// holds none.
+func (l *lowerer) graphParam(name string) *cloudimport.Parameter {
 	for i := range l.params {
 		if l.params[i].Name == name {
 			return &l.params[i]
@@ -378,12 +401,17 @@ func (l *lowerer) call(fn string, arg, raw json.RawMessage, at string) (cloudimp
 		case isPseudo(name):
 			return cloudimport.Prop{Value: l.opaque(raw, at)}, true
 		}
-		if p := l.param(name); p != nil {
-			return cloudimport.Prop{Value: l.paramValue(p)}, true
+		switch b := l.binding(name); {
+		case b.param != nil:
+			return cloudimport.Prop{Value: l.paramValue(b.param)}, true
+		case b.declared:
+			return cloudimport.Prop{Value: listed(b.decl, b.value)}, true
 		}
-		return cloudimport.Prop{Value: cloudimport.Ref{Node: name}}, true
+		if v, ok := l.reference(name, nil, at); ok {
+			return cloudimport.Prop{Value: v}, true
+		}
 	case "Fn::GetAtt":
-		if v, ok := l.getAtt(arg); ok {
+		if v, ok := l.getAtt(arg, at); ok {
 			return cloudimport.Prop{Value: v}, true
 		}
 	case "Fn::Sub":
@@ -422,19 +450,20 @@ func (l *lowerer) paramValue(p *cloudimport.Parameter) cloudimport.Value {
 	return cloudimport.Opaque{Text: text, Target: target, Params: []string{p.Name}}
 }
 
-// getAtt returns the reference Fn::GetAtt reading arg is: to the attribute of
-// the resource it names, the attribute's name split at each dot; false where
-// it names no resource and an attribute written as text.
-func (l *lowerer) getAtt(arg json.RawMessage) (cloudimport.Value, bool) {
+// getAtt returns what Fn::GetAtt reading arg, written at the JSON pointer
+// at, reads: the attribute of the resource it names, the attribute's name
+// split at each dot, as [lowerer.reference] reads it; false where it names no
+// resource and an attribute written as text, or reads deploy-time text.
+func (l *lowerer) getAtt(arg json.RawMessage, at string) (cloudimport.Value, bool) {
 	var v any
 	if json.Unmarshal(arg, &v) != nil {
 		return nil, false
 	}
 	id, attr, ok := cfntemplate.GetAttParts(v)
-	if !ok || attr == "" || isPseudo(id) || l.param(id) != nil {
+	if !ok || attr == "" || isPseudo(id) || l.declares(id) {
 		return nil, false
 	}
-	return cloudimport.Ref{Node: id, Attr: strings.Split(attr, ".")}, true
+	return l.reference(id, strings.Split(attr, "."), at)
 }
 
 // sub lowers Fn::Sub reading arg, which raw writes whole at the JSON pointer
@@ -492,17 +521,26 @@ func (l *lowerer) variable(name string, vars obj, at string) (cloudimport.Value,
 		return textPart(p.Value)
 	}
 	id, attr, dotted := strings.Cut(name, ".")
-	switch p := l.param(id); {
-	case isPseudo(id):
+	if isPseudo(id) {
 		return nil, false
-	case p != nil && dotted:
-		return nil, false
-	case p != nil:
-		return textPart(l.paramValue(p))
-	case dotted:
-		return cloudimport.Ref{Node: id, Attr: strings.Split(attr, ".")}, true
 	}
-	return cloudimport.Ref{Node: name}, true
+	switch b := l.binding(id); {
+	case b.declared && dotted:
+		return nil, false
+	case b.param != nil:
+		return textPart(l.paramValue(b.param))
+	case b.declared:
+		return textPart(b.value)
+	}
+	var path []string
+	if dotted {
+		path = strings.Split(attr, ".")
+	}
+	v, ok := l.reference(id, path, at)
+	if !ok {
+		return nil, false
+	}
+	return textPart(v)
 }
 
 // join lowers Fn::Join reading arg, which raw writes whole at the JSON
@@ -602,7 +640,7 @@ func (l *lowerer) credential(v cloudimport.Value) (cloudimport.Credential, bool)
 	closing, _ := c.Parts[2].(cloudimport.Literal)
 	first, _ := schemadraft.JSONText(open.JSON)
 	rest, _ := schemadraft.JSONText(closing.JSON)
-	if first != secretsManagerOpen || !isRef || len(ref.Attr) > 0 || !l.isResource(ref.Node) ||
+	if first != secretsManagerOpen || !isRef || len(ref.Attr) > 0 || !l.r.isNode(ref.Node) ||
 		!strings.HasSuffix(rest, "}}") || strings.ContainsAny(strings.TrimSuffix(rest, "}}"), "{}") ||
 		!(strings.HasPrefix(rest, ":") || rest == "}}") {
 		return cloudimport.Credential{}, false
@@ -833,28 +871,77 @@ func (p *placing) call(fn string, arg any) any {
 }
 
 // ref walks a Ref to name: a template parameter written in place where it
-// can be, and a pseudo parameter kept; anything else is read and owed.
+// can be ([placing.bound]), and a pseudo parameter kept, owed where it reads
+// what the draft does not deploy ([placing.pseudo]); anything else is read
+// and owed.
 func (p *placing) ref(name string) any {
 	keep := map[string]any{"Ref": name}
 	if isPseudo(name) {
+		p.pseudo(name)
 		return keep
 	}
-	param := p.l.param(name)
-	if param == nil {
+	b := p.l.binding(name)
+	if !b.declared {
 		p.reads(name)
 		return keep
 	}
-	v, ok := p.value(param)
+	v, ok := p.bound(name, b)
 	if !ok {
 		return keep
 	}
-	p.placed(param.Name)
+	if b.param != nil {
+		p.placed(b.param.Name)
+	}
 	return v
+}
+
+// bound returns the literal value b, what a Ref to the template parameter
+// name reads, written in place, as [placing.value] writes the parameter
+// [binding.parameter] reads; false, owing it, where it can write none.
+func (p *placing) bound(name string, b binding) (any, bool) {
+	if q := b.parameter(); q != nil {
+		return p.value(q)
+	}
+	of := "the template " + p.l.t.file
+	if p.l.s != nil && p.l.s.up != nil {
+		of = "the " + p.l.s.kind() + " " + p.l.s.at
+	}
+	p.owe("the parameter " + name + " of " + of + ", whose value no one-line text can hold in its place")
+	return nil, false
+}
+
+// pseudoStack are the pseudo parameters reading the stack a template deploys
+// in: in a nested template, the nested stack, which the draft does not
+// deploy.
+var pseudoStack = []string{"AWS::StackId", "AWS::StackName"}
+
+// pseudo owes the pseudo parameter name where it reads the nested stack the
+// template deploys in.
+func (p *placing) pseudo(name string) {
+	if p.l.s == nil || p.l.s.up == nil || !slices.Contains(pseudoStack, name) {
+		return
+	}
+	p.owe("the pseudo parameter " + name + ", which in the " + p.l.s.kind() + " " + p.l.s.at + " names that stack, " +
+		"which the draft reads as the resources of its template and does not deploy")
+}
+
+// nested returns the stack the resource id of the text's template deploys
+// into the graph, nil where it deploys none.
+func (p *placing) nested(id string) *stack {
+	if p.l.s == nil {
+		return nil
+	}
+	return p.l.s.nested[id]
 }
 
 // reads owes the resource id the text reads, or the name id where the
 // template declares no resource of it.
 func (p *placing) reads(id string) {
+	if child := p.nested(id); child != nil {
+		p.owe("the " + child.kind() + " " + id + ", which the draft reads as the resources of its template, and " +
+			"declares no stack of")
+		return
+	}
 	if p.l.isResource(id) {
 		p.owe("the resource " + id + ", which the drafted stack may declare under another logical ID, or not at all")
 		return
@@ -932,21 +1019,24 @@ func (p *placing) sub(arg any) any {
 			continue
 		}
 		id, _, dotted := strings.Cut(name, ".")
-		param := p.l.param(id)
+		b := p.l.binding(id)
 		switch {
 		case isPseudo(id):
-		case param == nil || dotted:
+			p.pseudo(id)
+		case !b.declared || dotted:
 			p.reads(id)
 		default:
-			v, ok := p.value(param)
+			v, ok := p.bound(id, b)
 			if _, list := v.([]any); !ok || list {
 				if list {
-					p.owe("the template parameter " + param.Name + ", a list, which Fn::Sub cannot write in text")
+					p.owe("the template parameter " + id + ", a list, which Fn::Sub cannot write in text")
 				}
 				continue
 			}
 			bound[name] = v
-			p.placed(param.Name)
+			if b.param != nil {
+				p.placed(b.param.Name)
+			}
 		}
 	}
 	if len(bound) == 0 && isText && vars == nil {

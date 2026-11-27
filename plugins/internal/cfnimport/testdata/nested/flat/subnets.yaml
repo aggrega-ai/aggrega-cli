@@ -1,0 +1,10 @@
+Parameters:
+  VpcId: {Type: String}
+Resources:
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VpcId
+Outputs:
+  SubnetId:
+    Value: !Ref Subnet

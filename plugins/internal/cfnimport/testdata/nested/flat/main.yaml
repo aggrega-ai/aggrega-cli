@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Env: {Type: String, Default: dev}
+  Enabled: {Type: String, Default: 'true', AllowedValues: ['true', 'false']}
+Mappings:
+  Sizes:
+    dev: {Class: large}
+Conditions:
+  IsOn: !Equals [!Ref Env, prod]
+Resources:
+  Network:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./network.yaml
+      Parameters:
+        Env: !Ref Env
+        Enabled: !Ref Enabled
+        Cidr: 10.0.0.0/16
+        Prefix: !Sub '${Env}-net'
+  Api:
+    Type: AWS::ECS::Service
+    DependsOn: Network
+    Properties:
+      VpcId: !GetAtt Network.Outputs.VpcId
+      SubnetId: !GetAtt [Network, Outputs.SubnetId]
+      Label: !Sub '${Network.Outputs.Label}'
+Outputs:
+  Vpc:
+    Value: !GetAtt Network.Outputs.VpcId

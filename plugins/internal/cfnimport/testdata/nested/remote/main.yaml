@@ -1,0 +1,27 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Bucket: {Type: String}
+Resources:
+  Remote:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://example-bucket.s3.amazonaws.com/remote.yaml
+  Stored:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: s3://example-bucket/stored.yaml
+  Computed:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://${Bucket}.s3.amazonaws.com/computed.yaml'
+  Published:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location:
+        ApplicationId: arn:aws:serverlessrepo:us-east-1:123456789012:applications/example
+        SemanticVersion: 1.0.0
+  Api:
+    Type: AWS::ECS::Service
+    Properties:
+      Endpoint: !GetAtt Remote.Outputs.Endpoint
+      Url: !Sub 'https://${Published.Outputs.Host}/'

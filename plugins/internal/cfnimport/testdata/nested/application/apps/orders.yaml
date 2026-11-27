@@ -1,0 +1,11 @@
+Transform: AWS::Serverless-2016-10-31
+Parameters:
+  Stage: {Type: String}
+Resources:
+  Queue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub 'orders-${Stage}'
+Outputs:
+  QueueUrl:
+    Value: !Ref Queue

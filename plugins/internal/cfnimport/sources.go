@@ -104,14 +104,8 @@ func links(top obj) []string {
 	var out []string
 	for _, e := range resources {
 		res, _ := objectOf(e.Value)
-		props, _ := objectOf(res.get("Properties"))
-		var raw json.RawMessage
-		switch typ, _ := schemadraft.JSONText(res.get("Type")); typ {
-		case stackType:
-			raw = props.get(stackLink)
-		case applicationType:
-			raw = props.get(applicationLink)
-		default:
+		raw, _, deploys := linkOf(res)
+		if !deploys {
 			continue
 		}
 		if link, ok := schemadraft.JSONText(raw); ok && isLocal(link) {
@@ -119,6 +113,19 @@ func links(top obj) []string {
 		}
 	}
 	return out
+}
+
+// linkOf returns the member of the resource res locating the template it
+// deploys — the TemplateURL of a nested stack, the Location of a serverless
+// application —, nil where res writes none, and res's type; false where res
+// deploys no template.
+func linkOf(res obj) (json.RawMessage, string, bool) {
+	typ, _ := schemadraft.JSONText(res.get("Type"))
+	if typ != stackType && typ != applicationType {
+		return nil, typ, false
+	}
+	props, _ := objectOf(res.get("Properties"))
+	return props.get(linkProperty(typ)), typ, true
 }
 
 // isLocal reports whether a template's location names a file by a relative

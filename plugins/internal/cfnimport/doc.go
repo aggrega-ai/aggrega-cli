@@ -17,6 +17,17 @@
 // becomes a node keyed by its logical ID, and an instance drafted from it is
 // keyed by the ID's words ([Key]).
 //
+// A nested stack or a serverless application deploying a template the import
+// reads is read as that template's resources, so the draft deploys them as
+// one stack: each a node whose ID is the deploying resource's logical ID
+// before its own, its parameters reading the values the deploying resource
+// binds them to, and an output of it read where the template reads it. One
+// deploying a template linked by a URL, or located by a value the template
+// computes or by an application's ID, is reported and stays a node. A
+// template the import reads under a transform that rewrites it when the
+// stack deploys — AWS::Include, AWS::CodeDeployBlueGreen, a macro of the
+// account, or a loop of the language extensions — is refused, naming it.
+//
 // [Read] then lowers each intrinsic function, dynamic reference and condition
 // the template writes into the core's values: a parameter, a reference to a
 // resource or its attribute, text composed of those, a secret a store holds,

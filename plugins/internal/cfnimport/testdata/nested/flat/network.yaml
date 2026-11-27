@@ -1,0 +1,35 @@
+Parameters:
+  Env: {Type: String}
+  Enabled: {Type: String, AllowedValues: ['true', 'false']}
+  Cidr: {Type: String}
+  Prefix: {Type: String}
+  Tier: {Type: String, Default: standard}
+  Zone: {Type: String}
+Mappings:
+  Sizes:
+    dev: {Class: small}
+Conditions:
+  IsOn: !Equals [!Ref Enabled, 'true']
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Condition: IsOn
+    Properties:
+      CidrBlock: !Ref Cidr
+      Name: !Ref Prefix
+      Tier: !Ref Tier
+      Zone: !Ref Zone
+      Size: !FindInMap [Sizes, dev, Class]
+  Subnets:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: subnets.yaml
+      Parameters:
+        VpcId: !Ref Vpc
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+  Label:
+    Value: !Sub '${Prefix}-${Tier}'
+  SubnetId:
+    Value: !GetAtt Subnets.Outputs.SubnetId

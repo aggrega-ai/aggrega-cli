@@ -47,7 +47,8 @@ const (
 // the root setting is not set, where its text holds AWSTemplateFormatVersion;
 // any other is named not read, with the reader's reason in a note. A request
 // holding no template halts source-refused; several parameters files are none
-// read.
+// read. A template the import reads under a transform it cannot read halts
+// source-refused, as [reader.refuseTransforms] says.
 //
 // The root template's resources become the graph's nodes, keyed by their
 // logical IDs and ordered by them; its parameters, filled from the one
@@ -74,6 +75,26 @@ type reader struct {
 	diags     []aggrega.Diagnostic
 	// halted reports a halting diagnostic among diags.
 	halted bool
+
+	// graph is the graph [Read] flattens and lowers; byFile holds each
+	// template read by its path.
+	graph  *cloudimport.Graph
+	byFile map[string]*template
+	// stacks are the root template and each template a nested stack or a
+	// serverless application deploys into the graph, root first, each before
+	// the templates it deploys; home holds the stack and the logical ID of
+	// each node, and nodeIDs the ID of each.
+	stacks  []*stack
+	home    map[*cloudimport.Node]home
+	nodeIDs map[string]bool
+	// taken and paramTaken hold the IDs of the nodes and the names of the
+	// parameters of the graph; nestedRead counts the resources of the nested
+	// templates read; noted names the nested templates the notes name.
+	taken, paramTaken map[string]bool
+	nestedRead        int
+	noted             []string
+	// lowering collects what lowering the graph reports, nil before it.
+	lowering *[]aggrega.Diagnostic
 }
 
 // read reads the request's sources into the graph, nil where the read halts.
@@ -89,6 +110,9 @@ func (r *reader) read(s cloudimport.Settings) *cloudimport.Graph {
 		if h == sel.root {
 			r.root = t
 		}
+	}
+	if r.refuseTransforms(); r.halted {
+		return nil
 	}
 	t := r.root
 	g := &cloudimport.Graph{Format: formatName, Read: sel.read, NotRead: sel.notRead}

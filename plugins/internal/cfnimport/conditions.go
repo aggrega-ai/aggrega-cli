@@ -12,18 +12,19 @@ import (
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
-// condition lowers the condition the node n is deployed under, which the
-// reader holds as the condition's name. A condition comparing, with Fn::Equals
-// either way round, one template parameter that allows exactly the values
-// true and false with true, as text or as a boolean, is that parameter, which
-// is read as a boolean ([lowerer.boolean]): the core writes the Aggregate
+// condition lowers the condition the node n, read from the resource of the
+// logical ID id, is deployed under, which the reader holds as the condition's
+// name. A condition comparing, with Fn::Equals either way round, one template
+// parameter that allows exactly the values true and false with true, as text
+// or as a boolean, is that parameter, which is read as a boolean
+// ([lowerer.boolean]): the core writes the Aggregate
 // instance's active from a boolean parameter. Any other condition — composed,
 // comparing with false, reading a parameter allowing other values, a NoEcho
 // parameter or a pseudo parameter, declared nowhere or named by no text — is
 // not carried: condition-not-carried names it, and says that switching the
 // instance off by hand takes switching off with it every instance whose
 // connection reaches it, and n is read as deployed unconditionally.
-func (l *lowerer) condition(n *cloudimport.Node) {
+func (l *lowerer) condition(n *cloudimport.Node, id string) {
 	lit, ok := n.Condition.(cloudimport.Literal)
 	if !ok {
 		return
@@ -39,17 +40,18 @@ func (l *lowerer) condition(n *cloudimport.Node) {
 	if !isText {
 		named = "a condition it names by no text"
 	}
-	at := importer.Pointer("Resources", n.ID, "Condition")
-	l.warn(cloudimport.CodeConditionNotCarried, at, "the template "+l.t.file+" deploys "+n.ID+" under "+named+
+	at := importer.Pointer("Resources", id, "Condition")
+	l.warn(cloudimport.CodeConditionNotCarried, at, "the template "+l.t.file+" deploys "+id+" under "+named+
 		", which is not one template parameter allowing only true and false compared with true, so the "+
 		"condition is not carried and the resource is drafted as deployed whatever the condition decides: write "+
 		"active on its instance by hand, switching off with it every instance whose connection reaches it, as a "+
 		"switched-off target halts the build")
 }
 
-// switchParam returns the template parameter the condition named name
-// switches on: one that is not NoEcho, allowing exactly the values true and
-// false, which the condition compares with true; nil where it is none.
+// switchParam returns the graph's parameter the condition named name switches
+// on: the one a template parameter reads ([lowerer.param]) that is not
+// NoEcho, allowing exactly the values true and false, which the condition
+// compares with true; nil where it is none.
 func (l *lowerer) switchParam(name string) *cloudimport.Parameter {
 	param, compared, ok := l.equality(name)
 	if !ok || compared != "true" {
@@ -90,7 +92,7 @@ func (l *lowerer) equality(name string) (param, compared string, ok bool) {
 		}
 		param, isText := schemadraft.JSONText(ref[0].Value)
 		compared, isScalar := draftyaml.ScalarText(args[1-i])
-		if !isText || !isScalar || l.param(param) == nil {
+		if !isText || !isScalar || !l.declares(param) {
 			return "", "", false
 		}
 		return param, compared, true
@@ -101,14 +103,18 @@ func (l *lowerer) equality(name string) (param, compared string, ok bool) {
 // decides returns whether the condition named name holds, and the template
 // parameter that decides it: the condition compares one parameter with a
 // literal ([lowerer.equality]), and the parameter is given a literal value —
-// the value the parameters file supplies, else its default — which is no
+// the value the parameters file supplies, else its default, or for a
+// parameter of a nested template the literal value it reads — which is no
 // NoEcho value and no Systems Manager parameter's name; false otherwise.
 func (l *lowerer) decides(name string) (holds bool, param string, ok bool) {
 	param, compared, ok := l.equality(name)
 	if !ok {
 		return false, "", false
 	}
-	p := l.param(param)
+	p := l.binding(param).parameter()
+	if p == nil {
+		return false, "", false
+	}
 	value, isGiven := given(p)
 	if p.Secure || isSSMValue(p.Type) || !isGiven {
 		return false, "", false

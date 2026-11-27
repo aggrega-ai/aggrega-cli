@@ -284,27 +284,13 @@ func (t *template) declared() []string {
 }
 
 // transformNames returns the name of each transform raw declares, written
-// for a comment, in order: one name, a list of names, or a transform written
-// as an object naming it.
+// for a comment, in order, as [declaredTransforms] reads them; a transform
+// named by no text is left out.
 func transformNames(raw json.RawMessage) []string {
-	one := func(item json.RawMessage) (string, bool) {
-		if name, ok := schemadraft.JSONText(item); ok {
-			return draftyaml.Comment(name), true
-		}
-		o, _ := objectOf(item)
-		if name, ok := schemadraft.JSONText(o.get("Name")); ok {
-			return draftyaml.Comment(name), true
-		}
-		return "", false
-	}
-	if name, ok := one(raw); ok {
-		return []string{name}
-	}
-	items, _ := itemsOf(raw)
 	var out []string
-	for _, item := range items {
-		if name, ok := one(item); ok {
-			out = append(out, name)
+	for _, tr := range declaredTransforms(raw) {
+		if tr.name != "" {
+			out = append(out, draftyaml.Comment(tr.name))
 		}
 	}
 	return out
