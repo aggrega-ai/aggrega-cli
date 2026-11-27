@@ -110,7 +110,7 @@ func TestCloudFormationImportBuildsBack(t *testing.T) {
 		"DBName":                   "orders",
 		"DBSubnetGroupName":        map[string]any{"Fn::ImportValue": "shared-db-subnets"},
 		"Engine":                   "postgres",
-		"EngineVersion":            "16.3",
+		"EngineVersion":            "16.15",
 		"ManageMasterUserPassword": true,
 		"MasterUsername":           "orders_app",
 		"MultiAZ":                  false,
