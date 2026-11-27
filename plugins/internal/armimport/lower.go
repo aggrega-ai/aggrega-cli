@@ -159,9 +159,8 @@ type lowerer struct {
 	// itself through others is read as opaque rather than followed for ever.
 	inside []string
 	// spent counts the variables followed and the property copies written,
-	// shared by every lowerer of one value, so a template whose variables or
-	// loops multiply each other cannot grow the graph without bound.
-	spent *int
+	// shared by every lowerer of one value.
+	spent *cloudimport.Budget
 	// via is the lowerer of the Microsoft.Resources/deployments resource
 	// deploying the lowerer's template, through which the template's
 	// parameters are read; nil for the root template.
@@ -172,18 +171,11 @@ type lowerer struct {
 	known map[string]taken
 }
 
-// maxExpansion bounds the variables one lowerer follows and the property
-// copies it writes; past it a variable is deploy-time text and a property
-// copy loop is not carried.
-const maxExpansion = 10000
-
-// spend records one expansion, false where the lowerer has spent its bound.
+// spend records n expansions, false where the lowerer has spent
+// cloudimport.MaxExpansion: past it a variable is deploy-time text and a
+// property copy loop is not carried.
 func (l *lowerer) spend(n int) bool {
-	if *l.spent+n > maxExpansion {
-		return false
-	}
-	*l.spent += n
-	return true
+	return l.spent.Spend(n)
 }
 
 // lowerer returns the lowerer of res in t; res is nil for t's parameters and

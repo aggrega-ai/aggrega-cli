@@ -131,8 +131,24 @@ func linkOf(res obj) (json.RawMessage, string, bool) {
 // isLocal reports whether a template's location names a file by a relative
 // path rather than by a URL.
 func isLocal(link string) bool {
-	return link != "" && !strings.Contains(link, "://") && !strings.HasPrefix(link, "/") &&
-		!strings.Contains(link, `\`)
+	return notLocal(link) == ""
+}
+
+// notLocal says what a template's location is where it names no file by a
+// relative path: a URL, or an empty, absolute or backslashed path; empty
+// where it names one.
+func notLocal(link string) string {
+	switch {
+	case link == "":
+		return "an empty path"
+	case strings.Contains(link, "://"):
+		return "a URL"
+	case strings.HasPrefix(link, "/"):
+		return "an absolute path"
+	case strings.Contains(link, `\`):
+		return "a path written with a backslash"
+	}
+	return ""
 }
 
 // linked resolves a local path written in the template at from to the path it

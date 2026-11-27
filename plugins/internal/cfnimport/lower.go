@@ -121,6 +121,9 @@ type lowerer struct {
 	params []cloudimport.Parameter
 	// notes collects what lowering reports.
 	notes *[]aggrega.Diagnostic
+	// spent counts the parts the lowering of one value composes, shared by
+	// every lowerer of it.
+	spent *cloudimport.Budget
 }
 
 // warn records a diagnostic of code on the value at the JSON pointer at of
@@ -468,7 +471,8 @@ func (l *lowerer) getAtt(arg json.RawMessage, at string) (cloudimport.Value, boo
 
 // sub lowers Fn::Sub reading arg, which raw writes whole at the JSON pointer
 // at: composed text of its literal runs and its variables, or deploy-time text
-// where a variable is no literal text, parameter or reference.
+// where a variable is no literal text, parameter or reference, or past the
+// parts the lowering composes ([cloudimport.MaxExpansion]).
 func (l *lowerer) sub(arg, raw json.RawMessage, at string) cloudimport.Value {
 	text, vars, ok := subArgs(arg)
 	if !ok {
@@ -480,6 +484,9 @@ func (l *lowerer) sub(arg, raw json.RawMessage, at string) cloudimport.Value {
 		if !piece.Variable {
 			parts = append(parts, cloudimport.Text(piece.Text))
 			continue
+		}
+		if !l.spent.Spend(1) {
+			return l.opaque(raw, at)
 		}
 		v, ok := part.variable(piece.Text, vars, at)
 		if !ok {
@@ -546,8 +553,9 @@ func (l *lowerer) variable(name string, vars obj, at string) (cloudimport.Value,
 // join lowers Fn::Join reading arg, which raw writes whole at the JSON
 // pointer at: with a literal delimiter and a literal list, composed text of
 // its items, an item that is AWS::NoValue left out; deploy-time text where
-// the delimiter or the list is computed, or an item is no literal text,
-// parameter or reference.
+// the delimiter or the list is computed, an item is no literal text,
+// parameter or reference, or past the parts the lowering composes
+// ([cloudimport.MaxExpansion]).
 func (l *lowerer) join(arg, raw json.RawMessage, at string) cloudimport.Value {
 	args, _ := itemsOf(arg)
 	if len(args) != 2 {
@@ -561,6 +569,9 @@ func (l *lowerer) join(arg, raw json.RawMessage, at string) cloudimport.Value {
 	part, keep := l.trial()
 	var parts []cloudimport.Value
 	for i, item := range list {
+		if !l.spent.Spend(1) {
+			return l.opaque(raw, at)
+		}
 		p, present := part.prop(item, at+importer.Pointer("Fn::Join", "1", strconv.Itoa(i)))
 		if !present {
 			continue
@@ -897,16 +908,21 @@ func (p *placing) ref(name string) any {
 
 // bound returns the literal value b, what a Ref to the template parameter
 // name reads, written in place, as [placing.value] writes the parameter
-// [binding.parameter] reads; false, owing it, where it can write none.
+// [binding.parameter] reads; false, owing it, where it can write none, which
+// is a parameter of a nested template reading a value no one line can hold
+// or one the draft does not carry, each with its reason.
 func (p *placing) bound(name string, b binding) (any, bool) {
 	if q := b.parameter(); q != nil {
 		return p.value(q)
 	}
-	of := "the template " + p.l.t.file
-	if p.l.s != nil && p.l.s.up != nil {
-		of = "the " + p.l.s.kind() + " " + p.l.s.at
+	why := "whose value no one-line text can hold in its place"
+	switch {
+	case b.why != "":
+		why = b.why
+	case b.value == nil:
+		why = "whose value the draft does not carry"
 	}
-	p.owe("the parameter " + name + " of " + of + ", whose value no one-line text can hold in its place")
+	p.owe("the parameter " + name + " of the " + p.l.s.kind() + " " + p.l.s.at + ", " + why)
 	return nil, false
 }
 
@@ -918,26 +934,17 @@ var pseudoStack = []string{"AWS::StackId", "AWS::StackName"}
 // pseudo owes the pseudo parameter name where it reads the nested stack the
 // template deploys in.
 func (p *placing) pseudo(name string) {
-	if p.l.s == nil || p.l.s.up == nil || !slices.Contains(pseudoStack, name) {
+	if p.l.s.up == nil || !slices.Contains(pseudoStack, name) {
 		return
 	}
 	p.owe("the pseudo parameter " + name + ", which in the " + p.l.s.kind() + " " + p.l.s.at + " names that stack, " +
 		"which the draft reads as the resources of its template and does not deploy")
 }
 
-// nested returns the stack the resource id of the text's template deploys
-// into the graph, nil where it deploys none.
-func (p *placing) nested(id string) *stack {
-	if p.l.s == nil {
-		return nil
-	}
-	return p.l.s.nested[id]
-}
-
 // reads owes the resource id the text reads, or the name id where the
 // template declares no resource of it.
 func (p *placing) reads(id string) {
-	if child := p.nested(id); child != nil {
+	if child := p.l.s.nested[id]; child != nil {
 		p.owe("the " + child.kind() + " " + id + ", which the draft reads as the resources of its template, and " +
 			"declares no stack of")
 		return

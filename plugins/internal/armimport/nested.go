@@ -16,18 +16,6 @@ import (
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
-const (
-	// maxNestedResources bounds the resources of nested templates one read
-	// takes into the graph, so templates linking one another many times over
-	// cannot grow it without bound; past it a nested template is not read.
-	maxNestedResources = 10000
-	// maxValueSize bounds the size of the value one output or one parameter of
-	// a nested template holds, in bytes of text and parts, so outputs or
-	// parameters composing each other cannot grow it without bound; past it
-	// the value is not carried.
-	maxValueSize = 1 << 16
-)
-
 // frame is one Microsoft.Resources/deployments resource deploying a nested
 // template, with the template holding it.
 type frame struct {
@@ -101,12 +89,12 @@ func (r *reader) lowererAt(t *template, res *resource, level, index int) *lowere
 		quiet = true
 	}
 	for i, f := range t.frames {
-		l := &lowerer{r: r, t: f.t, res: f.res, via: via, spent: new(int)}
+		l := &lowerer{r: r, t: f.t, res: f.res, via: via, spent: new(cloudimport.Budget)}
 		loop(i, l)
 		l.quiet = quiet
 		via = l
 	}
-	l := &lowerer{r: r, t: t, res: res, via: via, spent: new(int)}
+	l := &lowerer{r: r, t: t, res: res, via: via, spent: new(cloudimport.Budget)}
 	loop(len(t.frames), l)
 	l.quiet = quiet
 	return l
@@ -212,8 +200,8 @@ func (t *template) bound(name string, l *lowerer, st *inlining) (armexpr.Node, b
 // template declares, a path the value holds nothing at, or a parameter
 // reading itself. A parameter given no value and declaring no default is not
 // carried, with a value-not-carried warning, and so is one whose value is
-// larger than maxValueSize. A parameter read whole is lowered once for the
-// lowerer of the resource deploying its template.
+// larger than cloudimport.MaxValueSize. A parameter read whole is lowered
+// once for the lowerer of the resource deploying its template.
 func (l *lowerer) parameter(name string, path []string) (cloudimport.Prop, json.RawMessage, bool) {
 	sl := l.scoped()
 	s := sl.t
@@ -239,11 +227,10 @@ func (l *lowerer) parameter(name string, path []string) (cloudimport.Prop, json.
 	}
 	defer sl.leave()
 	p, raw, handled := sl.parameterValue(declared, path)
-	if handled && propSize(p) > maxValueSize {
+	if handled && cloudimport.PropSize(p) > cloudimport.MaxValueSize {
 		sl.warn(s.at+importer.Pointer("parameters", declared), fmt.Sprintf("the template %s takes at %s a value of "+
-			"its parameter %s larger than the %d bytes the draft carries of one value, its parts composing one "+
-			"another, so what reads it is not carried", s.file, s.at+importer.Pointer("parameters", declared),
-			declared, maxValueSize))
+			"its parameter %s %s", s.file, s.at+importer.Pointer("parameters", declared), declared,
+			cloudimport.TooLarge()))
 		p, raw = cloudimport.Prop{}, nil
 	}
 	if len(path) == 0 {
@@ -424,7 +411,7 @@ func (l *lowerer) output(dep *resource, attr []string, whole armexpr.Node) cloud
 // outputValue returns the value the output key of the template dep deploys
 // holds, value written at the JSON pointer at, lowered in that template once
 // for the whole read: an output read again is the value lowered the first
-// time. A value larger than maxValueSize is not carried, with a
+// time. A value larger than cloudimport.MaxValueSize is not carried, with a
 // value-not-carried warning.
 func (r *reader) outputValue(dep *resource, key string, value json.RawMessage, at string) cloudimport.Value {
 	memo := dep.symbol + "\x00" + key
@@ -435,57 +422,15 @@ func (r *reader) outputValue(dep *resource, key string, value json.RawMessage, a
 	inner := dep.nested
 	v := r.lowererAt(inner, nil, -1, 0).leaf(value, at+importer.Pointer("value"), "the output "+key)
 	r.resolving = r.resolving[:len(r.resolving)-1]
-	if size(v) > maxValueSize {
+	if cloudimport.Size(v) > cloudimport.MaxValueSize {
 		d := cloudimport.Report(cloudimport.CodeValueNotCarried, fmt.Sprintf("the template %s computes the output "+
-			"%s at %s as a value larger than the %d bytes the draft carries of one value, its parts composing "+
-			"one another, so what reads it is not carried", inner.file, key, at, maxValueSize))
+			"%s at %s as a value %s", inner.file, key, at, cloudimport.TooLarge()))
 		d.SourceRef = inner.file + "#" + at
 		r.note(d)
 		v = nil
 	}
 	r.known[memo] = v
 	return v
-}
-
-// size returns how large v is: the bytes of the text and JSON it holds, and
-// one for each part of composed text.
-func size(v cloudimport.Value) int {
-	switch v := v.(type) {
-	case cloudimport.Literal:
-		return len(v.JSON)
-	case cloudimport.Param:
-		return len(v.Name)
-	case cloudimport.Compose:
-		n := 0
-		for _, p := range v.Parts {
-			n += 1 + size(p)
-		}
-		return n
-	case cloudimport.Ref:
-		n := len(v.Node)
-		for _, a := range v.Attr {
-			n += len(a)
-		}
-		return n
-	case cloudimport.Credential:
-		return len(v.Node) + len(v.What)
-	case cloudimport.Opaque:
-		return len(v.Text)
-	}
-	return 0
-}
-
-// propSize returns how large p is: the size of its value, and one for each
-// member and item below it with theirs.
-func propSize(p cloudimport.Prop) int {
-	n := size(p.Value)
-	for _, c := range p.Props {
-		n += 1 + propSize(c)
-	}
-	for _, c := range p.Items {
-		n += 1 + propSize(c)
-	}
-	return n
 }
 
 // resourceAcross returns the resource whose symbol is id, with the template
@@ -642,9 +587,9 @@ func (r *reader) planNested(t *template, res *resource) {
 		return
 	}
 	count := len(resourceValues(top.exact("resources")))
-	if r.nestedRead+count > maxNestedResources {
+	if r.nestedRead+count > cloudimport.MaxNestedResources {
 		r.notFlattened(t, res, fmt.Sprintf("the nested templates of the import deploy more than the %d "+
-			"resources it reads of them", maxNestedResources))
+			"resources it reads of them", cloudimport.MaxNestedResources))
 		return
 	}
 	r.nestedRead += count

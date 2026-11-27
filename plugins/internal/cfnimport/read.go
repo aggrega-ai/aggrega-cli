@@ -123,9 +123,9 @@ func (r *reader) read(s cloudimport.Settings) *cloudimport.Graph {
 	g.Params = params
 	g.Nodes = r.nodes(t)
 	sort.SliceStable(g.Nodes, func(i, j int) bool { return g.Nodes[i].ID < g.Nodes[j].ID })
-	outputs, outputNotes := t.outputsRead()
+	outputs, outputNotes := t.outputsRead("")
 	g.Outputs = outputs
-	g.Notes = append(append(append(append([]string(nil), sel.notes...), t.declared()...), paramNotes...),
+	g.Notes = append(append(append(append([]string(nil), sel.notes...), t.declared("The template")...), paramNotes...),
 		outputNotes...)
 	return g
 }
@@ -196,13 +196,30 @@ func isNull(raw json.RawMessage) bool {
 }
 
 // compacted returns raw with no insignificant space, as one leaf of the graph
-// holds it.
+// holds it: <, > and &, which the template reader writes escaped for HTML,
+// are written as themselves, so a leaf holds its text as written and measures
+// as its text ([cloudimport.Size]).
 func compacted(raw json.RawMessage) json.RawMessage {
 	var b bytes.Buffer
 	if json.Compact(&b, raw) != nil {
 		return raw
 	}
-	return b.Bytes()
+	if !bytes.Contains(b.Bytes(), []byte(`\u00`)) {
+		return b.Bytes()
+	}
+	dec := json.NewDecoder(bytes.NewReader(b.Bytes()))
+	dec.UseNumber()
+	var v any
+	if dec.Decode(&v) != nil {
+		return b.Bytes()
+	}
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	if enc.Encode(v) != nil {
+		return b.Bytes()
+	}
+	return bytes.TrimSuffix(out.Bytes(), []byte("\n"))
 }
 
 // literal is the leaf holding raw.

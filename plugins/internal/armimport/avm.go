@@ -405,7 +405,7 @@ func (l *lowerer) moduleNode(n *cloudimport.Node) {
 	n.Module = &cloudimport.ModuleRef{Path: m.path, Version: m.version, Prefix: m.prefix}
 	if m.name != nil {
 		named := &resource{symbol: l.res.symbol, names: []json.RawMessage{m.name}, nameAt: []string{m.nameAt}}
-		n.Name = (&lowerer{r: l.r, t: m.tmpl, res: named, via: l, quiet: true, spent: new(int)}).name()
+		n.Name = (&lowerer{r: l.r, t: m.tmpl, res: named, via: l, quiet: true, spent: new(cloudimport.Budget)}).name()
 	}
 	n.Body = l.moduleParameters(m.dropped)
 }

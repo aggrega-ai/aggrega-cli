@@ -19,19 +19,6 @@ import (
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
-const (
-	// maxNestedResources bounds the resources of nested templates one read
-	// takes into the graph, so templates deploying one another many times over
-	// cannot grow it without bound; past it a nested stack's template is not
-	// read.
-	maxNestedResources = 10000
-	// maxValueSize bounds, in bytes of its JSON encoding, the value one
-	// parameter or one output of a nested template carries across the stack
-	// deploying it, so outputs and parameters composing each other cannot grow
-	// it without bound; past it the value is not carried.
-	maxValueSize = 1 << 16
-)
-
 // stack is a template as the graph holds it: the root template, or the
 // template a nested stack or a serverless application deploys, read once for
 // each resource deploying it.
@@ -99,9 +86,11 @@ type argument struct {
 	// graph names the graph's parameter it reads: the one it is bound to
 	// whole, or the one the graph takes for it where it is bound to nothing
 	// and declares no default; value is the value it reads where graph is
-	// empty, once state is settled.
+	// empty, once state is settled, and why says why the draft carries none,
+	// for a note, where it is not carried.
 	graph string
 	value cloudimport.Value
+	why   string
 	state progress
 }
 
@@ -221,11 +210,11 @@ func (r *reader) build(s *stack, nodes []*cloudimport.Node) {
 		r.keep(s, n)
 	}
 	for _, d := range later {
-		if r.nestedRead+len(d.t.resources) > maxNestedResources {
+		if r.nestedRead+len(d.t.resources) > cloudimport.MaxNestedResources {
 			r.warnNode(cloudimport.CodeResourceNotCarried, d.n, fmt.Sprintf("%s (%s) of %s deploys the template %s, "+
 				"which is not read, as the nested stacks of the import deploy more than the %d resources it reads of "+
 				"them: no resource of that template is drafted, and %s is drafted as written", d.n.ID, d.n.Type,
-				s.t.file, d.t.file, maxNestedResources, d.n.ID))
+				s.t.file, d.t.file, cloudimport.MaxNestedResources, d.n.ID))
 			r.keep(s, d.n)
 			continue
 		}
@@ -304,14 +293,9 @@ func (r *reader) linkedTemplate(from string, raw json.RawMessage, typ string) (*
 		return nil, "located by a value the template computes when the stack deploys"
 	case !isText:
 		return nil, "located by a value that is no path"
-	case strings.Contains(link, "://"):
-		return nil, "linked by a URL"
-	case link == "":
-		return nil, "linked by an empty path"
-	case strings.HasPrefix(link, "/"):
-		return nil, "linked by an absolute path"
-	case strings.Contains(link, `\`):
-		return nil, "linked by a path written with a backslash"
+	}
+	if why := notLocal(link); why != "" {
+		return nil, "linked by " + why
 	}
 	target, inside := linked(from, link)
 	if !inside {
@@ -335,30 +319,27 @@ func (r *reader) warnNode(code cloudimport.Code, n *cloudimport.Node, message st
 // writes beside its template and its parameters is not carried, and is
 // reported value-not-carried; each parameter of t takes the value n's
 // Parameters bind it to, as [reader.bind] says; and t's resources are read
-// into the stack as s's are. The notes name n read as t's resources, and the
-// transforms t declares, once for each template.
+// into the stack as s's are. The notes name n read as t's resources, and,
+// once for each template, what t declares that no resource carries, as the
+// root template's are named: its transforms, its Metadata, its Rules and the
+// names its outputs are exported under.
 func (r *reader) descend(s *stack, n *cloudimport.Node, t *template) {
 	child := &stack{t: t, up: s, at: n.ID, node: n, prefix: s.prefix + n.ID, ids: map[string]string{},
 		nested: map[string]*stack{}, args: map[string]*argument{}, outputs: map[string]*outputRead{}}
 	s.nested[n.ID] = child
 	r.stacks = append(r.stacks, child)
 	r.nestedRead += len(t.resources)
-	outputs, _ := t.outputsRead()
+	file := draftyaml.Comment(t.file)
+	outputs, exports := t.outputsRead(" of the template " + file)
 	for _, o := range outputs {
 		child.outputs[o.Name] = &outputRead{o: o}
 	}
 	r.graph.Notes = append(r.graph.Notes, "The "+child.kind()+" "+draftyaml.Comment(n.ID)+" of "+
-		draftyaml.Comment(s.t.file)+" is read as the resources of its template "+draftyaml.Comment(t.file)+", each "+
-		"drafted with "+draftyaml.Comment(child.prefix)+" before its logical ID.")
+		draftyaml.Comment(s.t.file)+" is read as the resources of its template "+file+", each drafted with "+
+		draftyaml.Comment(child.prefix)+" before its logical ID.")
 	if !slices.Contains(r.noted, t.file) {
 		r.noted = append(r.noted, t.file)
-		if names := transformNames(t.top.get("Transform")); len(names) == 1 {
-			r.graph.Notes = append(r.graph.Notes, "The template "+draftyaml.Comment(t.file)+" declares the transform "+
-				names[0]+".")
-		} else if len(names) > 1 {
-			r.graph.Notes = append(r.graph.Notes, "The template "+draftyaml.Comment(t.file)+" declares the transforms "+
-				strings.Join(names, ", ")+".")
-		}
+		r.graph.Notes = append(append(r.graph.Notes, t.declared("The template "+file)...), exports...)
 	}
 	r.leftOn(s, child)
 	r.bind(s, child)
@@ -396,10 +377,11 @@ func (r *reader) leftOn(s, child *stack) {
 // resource deploying it, of s's template, binds it to under its Parameters —
 // lowered where that resource is written, once something reads it —, else
 // its default, else a parameter the graph takes for it, named by the
-// stack's prefix and the parameter's name, named in the notes. A NoEcho
-// parameter's default is never read, so one bound to nothing is such a
-// parameter, secure. A binding of a parameter the template does not declare,
-// and Parameters written as no object, are reported value-not-carried.
+// stack's prefix and the parameter's name, named in the notes with the
+// AllowedPattern it declares. A NoEcho parameter's default is never read, so
+// one bound to nothing is such a parameter, secure. A binding of a parameter
+// the template does not declare, and Parameters written as no object, are
+// reported value-not-carried.
 func (r *reader) bind(s, child *stack) {
 	res, _ := objectOf(s.t.resources.get(child.at))
 	props, _ := objectOf(res.get("Properties"))
@@ -426,12 +408,13 @@ func (r *reader) bind(s, child *stack) {
 		a := &argument{decl: p}
 		child.args[p.Name] = a
 		decl, _ := objectOf(child.t.params.get(p.Name))
-		if b := binds.get(p.Name); b != nil && !isNoValue(b) {
-			a.bound, a.file, a.at = b, s.t.file, at+importer.Pointer(p.Name)
-			continue
-		}
 		if p.Default != nil {
 			a.def, a.file, a.at = decl.get("Default"), child.t.file, importer.Pointer("Parameters", p.Name, "Default")
+		}
+		if b := binds.get(p.Name); b != nil && !isNoValue(b) {
+			a.bound, a.file, a.at = b, s.t.file, at+importer.Pointer(p.Name)
+		}
+		if a.bound != nil || a.def != nil {
 			continue
 		}
 		q := p
@@ -445,6 +428,9 @@ func (r *reader) bind(s, child *stack) {
 		r.graph.Notes = append(r.graph.Notes, "The "+child.kind()+" "+draftyaml.Comment(child.at)+" binds no value to "+
 			"the parameter "+draftyaml.Comment(p.Name)+" of "+draftyaml.Comment(child.t.file)+", "+why+", so the "+
 			"draft reads it as the template parameter "+draftyaml.Comment(q.Name)+".")
+		if pattern, ok := schemadraft.JSONText(decl.get("AllowedPattern")); ok {
+			r.graph.Notes = append(r.graph.Notes, patternNote(q.Name, pattern))
+		}
 	}
 }
 
@@ -520,9 +506,9 @@ func (r *reader) warnAt(code cloudimport.Code, file, at, message string) {
 }
 
 // scope returns a lowerer of s's template, reporting what it lowers among
-// what lowering the graph reports.
+// what lowering the graph reports, with an expansion budget of its own.
 func (r *reader) scope(s *stack) *lowerer {
-	return &lowerer{r: r, t: s.t, s: s, params: r.graph.Params, notes: r.lowering}
+	return &lowerer{r: r, t: s.t, s: s, params: r.graph.Params, notes: r.lowering, spent: new(cloudimport.Budget)}
 }
 
 // binding is what a Ref to a parameter of the lowerer's template reads.
@@ -534,9 +520,11 @@ type binding struct {
 	// graph takes for it; nil where it reads value.
 	param *cloudimport.Parameter
 	// value is the value it reads where param is nil, and decl the parameter
-	// as its nested template declares it; nil for the root template's.
+	// as its nested template declares it; nil for the root template's. why
+	// says why the draft carries no value, where it carries none.
 	value cloudimport.Value
 	decl  *cloudimport.Parameter
+	why   string
 }
 
 // parameter returns the parameter b reads as the graph holds one: the
@@ -569,7 +557,7 @@ func (l *lowerer) binding(name string) binding {
 	if !l.declares(name) {
 		return binding{}
 	}
-	if l.s == nil || l.s.up == nil {
+	if l.s.up == nil {
 		return binding{declared: true, param: l.graphParam(name)}
 	}
 	a := l.s.args[name]
@@ -577,7 +565,7 @@ func (l *lowerer) binding(name string) binding {
 	if a.graph != "" {
 		return binding{declared: true, param: l.graphParam(a.graph), decl: &a.decl}
 	}
-	return binding{declared: true, value: a.value, decl: &a.decl}
+	return binding{declared: true, value: a.value, decl: &a.decl, why: a.why}
 }
 
 // resolve reads, once, the value the parameter a of the nested template of s
@@ -585,15 +573,18 @@ func (l *lowerer) binding(name string) binding {
 // parameter of the graph whole reads that parameter, unless it reads the
 // Systems Manager parameter its value names and that parameter is of another
 // type. Any other reads the value the binding lowers to where the resource
-// is written, else its default lowered in the nested template: a parameter
-// reading the Systems Manager parameter its value names reads the dynamic
-// reference resolving the one its literal value names, and is not carried
-// where its value is no literal name. A NoEcho parameter's value is carried
-// only where it is the graph's parameter, a reference to a resource or a
-// secret; one written in the template is never written. A binding to an
-// object or a list, a value reading itself through the parameters and
-// outputs of nested stacks, and one larger than maxValueSize are not
-// carried. Each value not carried is reported value-not-carried.
+// is written; one the binding gives no value — its Fn::If carrying the
+// branch AWS::NoValue — or bound to nothing reads its default, lowered in
+// the nested template, as CloudFormation reads it, and is not carried where
+// it declares none, as CloudFormation requires a value. A parameter reading
+// the Systems Manager parameter its value names reads the dynamic reference
+// resolving the one its literal value names, and is not carried where its
+// value is no literal name. A NoEcho parameter's value is carried only where
+// it is a parameter, a reference to a resource or a secret; one written in
+// the template is never written. A binding to an object or a list, a value
+// reading itself through the parameters and outputs of nested stacks, and
+// one larger than cloudimport.MaxValueSize are not carried. Each value not
+// carried is reported value-not-carried, and why says why.
 func (r *reader) resolve(s *stack, a *argument) {
 	switch a.state {
 	case settled:
@@ -602,6 +593,7 @@ func (r *reader) resolve(s *stack, a *argument) {
 		r.warnAt(cloudimport.CodeValueNotCarried, a.file, a.at, "the value of the parameter "+a.decl.Name+" of the "+
 			s.kind()+" "+s.at+" reads itself through the parameters and outputs of nested stacks, so it is not "+
 			"carried: bind each parameter to a value that does not read its own stack's outputs")
+		a.why = "whose value reads itself through the parameters and outputs of nested stacks"
 		return
 	}
 	a.state = inProgress
@@ -609,45 +601,69 @@ func (r *reader) resolve(s *stack, a *argument) {
 	if a.graph != "" {
 		return
 	}
+	a.why = ""
 	var v cloudimport.Value
-	switch {
-	case a.bound != nil:
-		p, present := r.scope(s.up).prop(a.bound, a.at)
-		if len(p.Props) > 0 || len(p.Items) > 0 {
+	present := a.bound != nil
+	if present {
+		var p cloudimport.Prop
+		p, present = r.scope(s.up).prop(a.bound, a.at)
+		v = p.Value
+		switch param, isParam := v.(cloudimport.Param); {
+		case len(p.Props) > 0 || len(p.Items) > 0:
 			r.warnAt(cloudimport.CodeValueNotCarried, a.file, a.at, "the template "+a.file+" binds the parameter "+
 				a.decl.Name+" of the "+s.kind()+" "+s.at+" at "+a.at+" to an object or a list, which a nested "+
 				"stack's parameter does not take, so it is not carried: bind it to text")
+			a.why = "which its stack binds to an object or a list"
 			return
-		}
-		if !present {
-			return
-		}
-		v = p.Value
-		if param, ok := v.(cloudimport.Param); ok && sameType(&a.decl, r.scope(s.up).graphParam(param.Name)) {
+		case !present:
+			if a.def == nil {
+				r.noValue(s, a)
+				return
+			}
+		case isParam && sameType(&a.decl, r.scope(s.up).graphParam(param.Name)):
 			a.graph = param.Name
 			return
-		}
-		if a.decl.Secure && !isReference(v) {
+		case a.decl.Secure && !isReference(v):
 			if v != nil {
 				r.warnAt(cloudimport.CodeValueNotCarried, a.file, a.at, "the template "+a.file+" binds the NoEcho "+
 					"parameter "+a.decl.Name+" of the "+s.kind()+" "+s.at+" at "+a.at+" to a value written in the "+
 					"template, which the draft never writes, so it is not carried: pass it through a NoEcho parameter "+
 					"of "+a.file)
+				a.why = "whose value the template writes, which the draft never writes, as it is NoEcho"
 			}
 			return
 		}
-	case a.def != nil:
-		p, _ := r.scope(s).prop(a.def, a.at)
+	}
+	if !present {
+		p, _ := r.scope(s).prop(a.def, importer.Pointer("Parameters", a.decl.Name, "Default"))
 		v = p.Value
 	}
 	v = r.ssmValue(s, a, v)
-	if v != nil && tooLarge(v) {
-		r.warnAt(cloudimport.CodeValueNotCarried, a.file, a.at, fmt.Sprintf("the value of the parameter %s of the %s "+
-			"%s is larger than the %d bytes the draft carries of one value, its parts composing one another, so what "+
-			"reads it is not carried", a.decl.Name, s.kind(), s.at, maxValueSize))
+	if v != nil && cloudimport.Size(v) > cloudimport.MaxValueSize {
+		r.warnAt(cloudimport.CodeValueNotCarried, a.file, a.at, "the value of the parameter "+a.decl.Name+" of the "+
+			s.kind()+" "+s.at+" is "+cloudimport.TooLarge())
+		a.why = "whose value is larger than the draft carries of one value"
 		v = nil
 	}
 	a.value = v
+}
+
+// noValue warns value-not-carried of the parameter a of the nested template
+// of s, which the resource deploying it binds to no value, its Fn::If
+// carrying the branch AWS::NoValue, and whose default the draft cannot read:
+// CloudFormation then requires one.
+func (r *reader) noValue(s *stack, a *argument) {
+	decl, _ := objectOf(s.t.params.get(a.decl.Name))
+	why := "its template " + s.t.file + " declares no default for it, while CloudFormation requires a value, so it " +
+		"is not carried: bind it to a value, or declare a default for it in " + s.t.file
+	if raw := decl.get("Default"); raw != nil && !isNull(raw) {
+		why = "the default its template " + s.t.file + " declares for it is NoEcho, which the draft never writes, so " +
+			"it is not carried: pass it through a NoEcho parameter of " + a.file
+	}
+	r.warnAt(cloudimport.CodeValueNotCarried, a.file, a.at, "the template "+a.file+" binds the parameter "+a.decl.Name+
+		" of the "+s.kind()+" "+s.at+" at "+a.at+" to no value, as the branch of Fn::If it carries is AWS::NoValue, "+
+		"and "+why)
+	a.why = "which its stack binds to no value"
 }
 
 // sameType reports whether the parameter decl of a nested template reads
@@ -687,14 +703,8 @@ func (r *reader) ssmValue(s *stack, a *argument, v cloudimport.Value) cloudimpor
 	r.warnAt(cloudimport.CodeValueNotCarried, a.file, a.at, "the parameter "+a.decl.Name+" of the "+s.kind()+" "+
 		s.at+" reads the Systems Manager parameter its value names, and the value it is given is no literal name of "+
 		"one parameter, so it is not carried: give it the name of one Systems Manager parameter")
+	a.why = "whose value names no one Systems Manager parameter"
 	return nil
-}
-
-// tooLarge reports whether v is larger than maxValueSize, in bytes of its
-// JSON encoding.
-func tooLarge(v cloudimport.Value) bool {
-	b, err := json.Marshal(v)
-	return err != nil || len(b) > maxValueSize
 }
 
 // listed returns v, the value a Ref to the nested template's parameter decl
@@ -726,9 +736,6 @@ func listed(decl *cloudimport.Parameter, v cloudimport.Value) cloudimport.Value 
 // template the import does not read, false for an output; of any other, a
 // Ref to the node the name is. False is read as deploy-time text.
 func (l *lowerer) reference(id string, attr []string, at string) (cloudimport.Value, bool) {
-	if l.s == nil {
-		return cloudimport.Ref{Node: id, Attr: attr}, true
-	}
 	if child := l.s.nested[id]; child != nil {
 		if len(attr) != 2 || attr[0] != "Outputs" {
 			return nil, false
@@ -758,8 +765,8 @@ func (l *lowerer) reference(id string, attr []string, at string) (cloudimport.Va
 // outputOf returns, read once, the value of the output name of the nested
 // template of s, lowered in it; false where the template declares no output
 // of that name. An output reading itself through the parameters and outputs
-// of nested stacks, and one larger than maxValueSize, are not carried, and
-// are reported value-not-carried.
+// of nested stacks, and one larger than cloudimport.MaxValueSize, are not
+// carried, and are reported value-not-carried.
 func (r *reader) outputOf(s *stack, name string) (cloudimport.Value, bool) {
 	o := s.outputs[name]
 	if o == nil {
@@ -777,10 +784,9 @@ func (r *reader) outputOf(s *stack, name string) (cloudimport.Value, bool) {
 	}
 	o.state = inProgress
 	v := r.scope(s).output(o.o)
-	if v != nil && tooLarge(v) {
-		r.warnAt(cloudimport.CodeValueNotCarried, s.t.file, at, fmt.Sprintf("the output %s of %s, read for the %s "+
-			"%s, is larger than the %d bytes the draft carries of one value, its parts composing one another, so "+
-			"what reads it is not carried", name, s.t.file, s.kind(), s.at, maxValueSize))
+	if v != nil && cloudimport.Size(v) > cloudimport.MaxValueSize {
+		r.warnAt(cloudimport.CodeValueNotCarried, s.t.file, at, "the output "+name+" of "+s.t.file+", read for the "+
+			s.kind()+" "+s.at+", is "+cloudimport.TooLarge())
 		v = nil
 	}
 	o.value, o.state = v, settled

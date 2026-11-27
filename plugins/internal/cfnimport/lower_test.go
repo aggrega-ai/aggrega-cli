@@ -599,6 +599,36 @@ func TestQuotedShortFormLiteralIsNotCarried(t *testing.T) {
 	}
 }
 
+// TestLowerJoinAndSubPastTheExpansionBoundAreDeployTimeText composes an
+// Fn::Join of as many items, and an Fn::Sub of as many variables, as one
+// resource's lowering composes, and writes one more as deploy-time text.
+func TestLowerJoinAndSubPastTheExpansionBoundAreDeployTimeText(t *testing.T) {
+	t.Parallel()
+	items := func(n int) string { return strings.TrimSuffix(strings.Repeat("x, ", n), ", ") }
+	join, diags := valueOfP(t, "!Join ['-', ["+items(cloudimport.MaxExpansion)+"]]")
+	noDiagnostics(t, diags)
+	want := cloudimport.Text(strings.TrimSuffix(strings.Repeat("x-", cloudimport.MaxExpansion), "-"))
+	if !reflect.DeepEqual(join, want) {
+		t.Errorf("a join of %d items reads %d bytes of %T, want them composed", cloudimport.MaxExpansion,
+			cloudimport.Size(join), join)
+	}
+	join, diags = valueOfP(t, "!Join ['-', ["+items(cloudimport.MaxExpansion+1)+"]]")
+	noDiagnostics(t, diags)
+	if _, ok := join.(cloudimport.Opaque); !ok {
+		t.Errorf("a join of %d items reads %T, want deploy-time text", cloudimport.MaxExpansion+1, join)
+	}
+	sub, diags := valueOfP(t, "!Sub '"+strings.Repeat("${Env}", cloudimport.MaxExpansion)+"'")
+	noDiagnostics(t, diags)
+	if c, ok := sub.(cloudimport.Compose); !ok || len(c.Parts) != cloudimport.MaxExpansion {
+		t.Errorf("a substitution of %d variables reads %T, want them composed", cloudimport.MaxExpansion, sub)
+	}
+	sub, diags = valueOfP(t, "!Sub '"+strings.Repeat("${Env}", cloudimport.MaxExpansion+1)+"'")
+	noDiagnostics(t, diags)
+	if _, ok := sub.(cloudimport.Opaque); !ok {
+		t.Errorf("a substitution of %d variables reads %T, want deploy-time text", cloudimport.MaxExpansion+1, sub)
+	}
+}
+
 // replaceOnce returns s with old, which it holds once, replaced by new.
 func replaceOnce(t *testing.T, s, old, new string) string {
 	t.Helper()

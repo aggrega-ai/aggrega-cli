@@ -174,8 +174,7 @@ func (t *template) parameters() ([]cloudimport.Parameter, []string) {
 		p.Secure = isTrue(o.get("NoEcho"))
 		p.Pointer = strings.HasPrefix(p.Type, "AWS::") || strings.HasPrefix(p.Type, "List<AWS::")
 		if pattern, ok := schemadraft.JSONText(o.get("AllowedPattern")); ok {
-			notes = append(notes, "The template parameter "+draftyaml.Comment(e.Key)+" allows only values matching "+
-				"its AllowedPattern, "+draftyaml.Comment(pattern)+", which the draft does not carry.")
+			notes = append(notes, patternNote(e.Key, pattern))
 		}
 		switch raw := o.get("Default"); {
 		case raw == nil || isNull(raw):
@@ -188,6 +187,13 @@ func (t *template) parameters() ([]cloudimport.Parameter, []string) {
 		out = append(out, p)
 	}
 	return out, notes
+}
+
+// patternNote is the note naming the AllowedPattern pattern of the template
+// parameter name, which the draft does not carry.
+func patternNote(name, pattern string) string {
+	return "The template parameter " + draftyaml.Comment(name) + " allows only values matching its AllowedPattern, " +
+		draftyaml.Comment(pattern) + ", which the draft does not carry."
 }
 
 // isTrue reports whether raw is true, written as a boolean or as text.
@@ -228,8 +234,9 @@ func length(raw json.RawMessage) *int {
 
 // outputsRead returns the outputs t declares, in name order, each with its
 // value, and the notes naming the name each is exported under, which the
-// draft does not export.
-func (t *template) outputsRead() ([]cloudimport.Output, []string) {
+// draft does not export, each output named in them with of after its name:
+// empty for the root template, the template for a nested one.
+func (t *template) outputsRead(of string) ([]cloudimport.Output, []string) {
 	var (
 		out   []cloudimport.Output
 		notes []string
@@ -247,11 +254,11 @@ func (t *template) outputsRead() ([]cloudimport.Output, []string) {
 			continue
 		}
 		if name, ok := schemadraft.JSONText(raw); ok {
-			notes = append(notes, "The output "+draftyaml.Comment(e.Key)+" is exported as "+draftyaml.Comment(name)+
-				", which the draft does not export.")
+			notes = append(notes, "The output "+draftyaml.Comment(e.Key)+of+" is exported as "+
+				draftyaml.Comment(name)+", which the draft does not export.")
 			continue
 		}
-		notes = append(notes, "The output "+draftyaml.Comment(e.Key)+" is exported under a name the template "+
+		notes = append(notes, "The output "+draftyaml.Comment(e.Key)+of+" is exported under a name the template "+
 			"computes when the stack deploys, which the draft does not export.")
 	}
 	return out, notes
@@ -259,25 +266,27 @@ func (t *template) outputsRead() ([]cloudimport.Output, []string) {
 
 // declared returns the notes naming what t declares at its top level that no
 // resource carries, in order: the transforms it names, the keys of its
-// Metadata and the names of its Rules.
-func (t *template) declared() []string {
+// Metadata and the names of its Rules, t named in them as subject names it:
+// "The template" for the root template, the template and its file for a
+// nested one.
+func (t *template) declared(subject string) []string {
 	var notes []string
 	if transforms := transformNames(t.top.get("Transform")); len(transforms) == 1 {
-		notes = append(notes, "The template declares the transform "+transforms[0]+".")
+		notes = append(notes, subject+" declares the transform "+transforms[0]+".")
 	} else if len(transforms) > 1 {
-		notes = append(notes, "The template declares the transforms "+strings.Join(transforms, ", ")+".")
+		notes = append(notes, subject+" declares the transforms "+strings.Join(transforms, ", ")+".")
 	}
 	if raw := t.top.get("Metadata"); raw != nil && !isNull(raw) {
 		o, _ := objectOf(raw)
 		if len(o) == 0 {
-			notes = append(notes, "The template's Metadata is not carried.")
+			notes = append(notes, subject+"'s Metadata is not carried.")
 		} else {
-			notes = append(notes, "The template's Metadata, which the draft does not carry, holds "+
+			notes = append(notes, subject+"'s Metadata, which the draft does not carry, holds "+
 				draftyaml.CommentList(keys(o))+".")
 		}
 	}
 	if rules, _ := objectOf(t.top.get("Rules")); len(rules) > 0 {
-		notes = append(notes, "The template's Rules, which the draft does not carry, check its parameters when the "+
+		notes = append(notes, subject+"'s Rules, which the draft does not carry, check its parameters when the "+
 			"stack deploys: "+draftyaml.CommentList(keys(rules))+".")
 	}
 	return notes

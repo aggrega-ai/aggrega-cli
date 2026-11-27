@@ -588,7 +588,7 @@ func TestNestedOutputsComposingEachOtherAreBounded(t *testing.T) {
 		t.Fatalf("diagnostics %+v", diags)
 	}
 	if got := at(t, node(t, g, "web"), "properties", "x"); got != nil {
-		t.Errorf("the outermost output reads a value of %d bytes, want none carried", size(got))
+		t.Errorf("the outermost output reads a value of %d bytes, want none carried", cloudimport.Size(got))
 	}
 	notCarried := withCode(diags, cloudimport.CodeValueNotCarried)
 	if len(notCarried) != 1 || !strings.Contains(notCarried[0].Message, "larger than") {
@@ -625,7 +625,7 @@ func TestNestedParametersComposingEachOtherAreBounded(t *testing.T) {
 		t.Fatalf("nodes %v, diagnostics %+v", ids(g), diags)
 	}
 	if got := at(t, g.Nodes[0], "properties", "p"); got != nil {
-		t.Errorf("the innermost parameter reads a value of %d bytes, want none carried", size(got))
+		t.Errorf("the innermost parameter reads a value of %d bytes, want none carried", cloudimport.Size(got))
 	}
 	notCarried := withCode(diags, cloudimport.CodeValueNotCarried)
 	if len(notCarried) != 1 || !strings.Contains(notCarried[0].Message, "larger than") {

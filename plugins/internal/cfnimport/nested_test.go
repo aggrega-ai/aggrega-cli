@@ -410,6 +410,168 @@ Resources:
 	}
 }
 
+// TestNestedValueMeasuresAsItsText carries a parameter of a nested template
+// bound to text of 12,000 angle brackets: the value measures as its text,
+// which the template reader writes escaped for HTML, and is within the size
+// the draft carries of one value.
+func TestNestedValueMeasuresAsItsText(t *testing.T) {
+	t.Parallel()
+	brackets := strings.Repeat("<", 12000)
+	main := "AWSTemplateFormatVersion: \"2010-09-09\"\nResources:\n  Network:\n    Type: AWS::CloudFormation::Stack\n" +
+		"    Properties:\n      TemplateURL: net.yaml\n      Parameters: {Name: '" + brackets + "'}\n"
+	net := "Parameters:\n  Name: {Type: String}\nResources:\n  Vpc:\n    Type: AWS::EC2::VPC\n" +
+		"    Properties: {Name: !Ref Name}\n"
+	g, diags := readNested("", src("main.yaml", []byte(main)), src("net.yaml", []byte(net)))
+	onlyDiagnostic(t, diags, folded("main.yaml", "Network", stackType, "net.yaml", "NetworkVpc"))
+	if got := valueAt(t, node(t, g, "NetworkVpc").Body, "Properties", "Name"); !reflect.DeepEqual(got,
+		cloudimport.Text(brackets)) {
+		t.Errorf("the VPC's name reads %d bytes of value, want the text bound", cloudimport.Size(got))
+	}
+}
+
+// TestNestedNoValueBindingReadsTheDefault reads a parameter of a nested
+// template bound to Fn::If whose branch the template's values select is
+// AWS::NoValue as CloudFormation does: as its default, lowered in the nested
+// template; one declaring no default is not carried, CloudFormation requiring
+// a value.
+func TestNestedNoValueBindingReadsTheDefault(t *testing.T) {
+	t.Parallel()
+	main := `AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Env: {Type: String, Default: dev}
+Conditions:
+  IsProd: !Equals [!Ref Env, prod]
+Resources:
+  Network:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: net.yaml
+      Parameters:
+        Size: !If [IsProd, large, !Ref AWS::NoValue]
+`
+	branch := aggrega.Diagnostic{Severity: aggrega.SeverityWarn, Code: "value-not-carried", Message: "the template " +
+		"main.yaml writes Fn::If on the condition IsProd at /Resources/Network/Properties/Parameters/Size, which the " +
+		"value the template parameter Env is given makes false, so the draft carries its branch at " +
+		"/Resources/Network/Properties/Parameters/Size/Fn::If/2 and not the one at " +
+		"/Resources/Network/Properties/Parameters/Size/Fn::If/1: where the stack deploys with a value of Env that " +
+		"makes IsProd true, write that branch by hand",
+		SourceRef: "main.yaml#/Resources/Network/Properties/Parameters/Size"}
+	net := func(size string) []byte {
+		return []byte("Parameters:\n  Size: " + size + "\nResources:\n  Vpc:\n    Type: AWS::EC2::VPC\n" +
+			"    Properties: {Name: !Ref Size}\n")
+	}
+	t.Run("a default", func(t *testing.T) {
+		t.Parallel()
+		g, diags := readNested("", src("main.yaml", []byte(main)), src("net.yaml", net("{Type: String, Default: small}")))
+		want := []aggrega.Diagnostic{folded("main.yaml", "Network", stackType, "net.yaml", "NetworkVpc"), branch}
+		if !reflect.DeepEqual(diags, want) {
+			t.Fatalf("the read reports\n%+v\nwant\n%+v", diags, want)
+		}
+		if got := valueAt(t, node(t, g, "NetworkVpc").Body, "Properties", "Name"); !reflect.DeepEqual(got,
+			cloudimport.Text("small")) {
+			t.Errorf("the VPC's name reads %#v, want the default small", got)
+		}
+	})
+	t.Run("no default", func(t *testing.T) {
+		t.Parallel()
+		g, diags := readNested("", src("main.yaml", []byte(main)), src("net.yaml", net("{Type: String}")))
+		want := []aggrega.Diagnostic{folded("main.yaml", "Network", stackType, "net.yaml", "NetworkVpc"), branch,
+			{Severity: aggrega.SeverityWarn, Code: "value-not-carried", Message: "the template main.yaml binds the " +
+				"parameter Size of the nested stack Network at /Resources/Network/Properties/Parameters/Size to no " +
+				"value, as the branch of Fn::If it carries is AWS::NoValue, and its template net.yaml declares no " +
+				"default for it, while CloudFormation requires a value, so it is not carried: bind it to a value, or " +
+				"declare a default for it in net.yaml",
+				SourceRef: "main.yaml#/Resources/Network/Properties/Parameters/Size"}}
+		if !reflect.DeepEqual(diags, want) {
+			t.Fatalf("the read reports\n%+v\nwant\n%+v", diags, want)
+		}
+		if got := propsOf(t, node(t, g, "NetworkVpc")); !reflect.DeepEqual(got, []cloudimport.Prop{{Name: "Name"}}) {
+			t.Errorf("the VPC's properties read %#v, want its name with no value", got)
+		}
+	})
+}
+
+// TestNestedTemplateNotesNameWhatItDeclares names in the notes what a nested
+// template declares that no resource carries, as the root template's are
+// named: its Metadata, its Rules, the name an output is exported under, and
+// the AllowedPattern of a parameter the graph takes for it.
+func TestNestedTemplateNotesNameWhatItDeclares(t *testing.T) {
+	t.Parallel()
+	main := `AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Network:
+    Type: AWS::CloudFormation::Stack
+    Properties: {TemplateURL: net.yaml}
+`
+	net := `Metadata:
+  Owner: platform
+Parameters:
+  Zone: {Type: String, AllowedPattern: '[a-z]+'}
+Rules:
+  CheckZone:
+    Assertions:
+      - Assert: !Not [!Equals [!Ref Zone, '']]
+Resources:
+  Vpc: {Type: AWS::EC2::VPC}
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+    Export: {Name: shared-vpc}
+`
+	g, _ := readNested("", src("main.yaml", []byte(main)), src("net.yaml", []byte(net)))
+	want := []string{
+		"The nested stack Network of main.yaml is read as the resources of its template net.yaml, each drafted " +
+			"with Network before its logical ID.",
+		"The template net.yaml's Metadata, which the draft does not carry, holds Owner.",
+		"The template net.yaml's Rules, which the draft does not carry, check its parameters when the stack " +
+			"deploys: CheckZone.",
+		"The output VpcId of the template net.yaml is exported as shared-vpc, which the draft does not export.",
+		"The nested stack Network binds no value to the parameter Zone of net.yaml, which declares no default for " +
+			"it, so the draft reads it as the template parameter NetworkZone.",
+		"The template parameter NetworkZone allows only values matching its AllowedPattern, \"[a-z]+\", which the " +
+			"draft does not carry.",
+	}
+	if !slices.Equal(g.Notes, want) {
+		t.Errorf("the notes read\n%q\nwant\n%q", g.Notes, want)
+	}
+}
+
+// TestNestedParameterNotCarriedIsOwedWithItsReason owes, in deploy-time text,
+// a parameter of a nested template whose value the draft does not carry,
+// saying why: a NoEcho value the template writes, and a binding to a list.
+func TestNestedParameterNotCarriedIsOwedWithItsReason(t *testing.T) {
+	t.Parallel()
+	main := `AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Network:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: net.yaml
+      Parameters: {Token: written, Zones: [a, b]}
+`
+	net := `Parameters:
+  Token: {Type: String, NoEcho: true}
+  Zones: {Type: String}
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      Token: {'Fn::Base64': !Sub '${Token}'}
+      Zones: {'Fn::Base64': !Sub '${Zones}'}
+`
+	g, _ := readNested("", src("main.yaml", []byte(main)), src("net.yaml", []byte(net)))
+	vpc := node(t, g, "NetworkVpc")
+	for prop, why := range map[string]string{
+		"Token": "whose value the template writes, which the draft never writes, as it is NoEcho",
+		"Zones": "which its stack binds to an object or a list",
+	} {
+		got, _ := valueAt(t, vpc.Body, "Properties", prop).(cloudimport.Opaque)
+		if want := owes("the parameter " + prop + " of the nested stack Network, " + why); got.Owed != want {
+			t.Errorf("%s owes %q, want %q", prop, got.Owed, want)
+		}
+	}
+}
+
 // TestNestedStackConditionAndDependenciesReachItsResources reads a nested
 // stack deployed under a condition and after another resource: each resource
 // of its template is deployed under that condition and after that resource,
