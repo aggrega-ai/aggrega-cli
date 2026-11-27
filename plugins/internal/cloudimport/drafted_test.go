@@ -4,6 +4,7 @@
 package cloudimport
 
 import (
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -384,20 +385,8 @@ func TestHeldBackDraftsNothingAndIsNamed(t *testing.T) {
 // the Release writing the list whole; a list holding a neighbour's value keeps
 // its item, into which a connection delivers it.
 func TestDraftedListOfScalarsIsOneInput(t *testing.T) {
-	var written []schemadraft.Resource
-	f := toyFormat(nil)
-	draft := fixtureDraft(&written)
-	draft.Name, draft.Capability, draft.Syntax = f.Draft.Name, f.Draft.Capability, f.Draft.Syntax
-	f.Draft = draft
-	out := Import(toyInput(t, "toy", "", []string{"lists.json"}), f, toyParse)
-	noHalt(t, out.Diagnostics)
-	if len(written) != 1 {
-		t.Fatalf("the writer is handed %d resources, want the queue alone", len(written))
-	}
-	var inputs []string
-	for _, in := range written[0].Inputs {
-		inputs = append(inputs, pathText(in.Property.Path)+" from "+in.Source.Template())
-	}
+	read, out := draftedQueue(t, "lists.json")
+	inputs := inputNames(read)
 	if want := []string{`name from (index .values "name")`, `location from (index .infra "location")`,
 		`zones from (index .infra "overrides" "zones")`, `ports from (index .infra "overrides" "ports")`,
 		`cors.methods from (index .infra "overrides" "methods")`,
@@ -413,4 +402,74 @@ func TestDraftedListOfScalarsIsOneInput(t *testing.T) {
           ports: [80, 443]
           methods: ["GET", "PUT"]
 `)
+}
+
+// draftedQueue imports the toy source, read from testdata/toy, whose queue no
+// row maps, and returns the inputs of the queue's drafted Recipe and the
+// import's output.
+func draftedQueue(t *testing.T, source string) ([]schemadraft.Input, aggrega.ImportOutput) {
+	t.Helper()
+	var written []schemadraft.Resource
+	f := toyFormat(nil)
+	draft := fixtureDraft(&written)
+	draft.Name, draft.Capability, draft.Syntax = f.Draft.Name, f.Draft.Capability, f.Draft.Syntax
+	f.Draft = draft
+	out := Import(toyInput(t, "toy", "", []string{source}), f, toyParse)
+	noHalt(t, out.Diagnostics)
+	if len(written) != 1 {
+		t.Fatalf("the writer is handed %d resources, want the queue alone", len(written))
+	}
+	return written[0].Inputs, out
+}
+
+// inputNames names each of inputs by its path and where it is read.
+func inputNames(inputs []schemadraft.Input) []string {
+	var out []string
+	for _, in := range inputs {
+		out = append(out, pathText(in.Property.Path)+" from "+in.Source.Template())
+	}
+	return out
+}
+
+// TestDraftedListOfObjectsIsOneInput drafts a list of objects every value in
+// which is a scalar — a literal or a parameter's value — as one input at the
+// list's path, the Release writing the list whole; a list one of whose items
+// holds a neighbour's value keeps each member at its own path, the connection
+// delivering into that member.
+func TestDraftedListOfObjectsIsOneInput(t *testing.T) {
+	read, out := draftedQueue(t, "objects.json")
+	inputs := inputNames(read)
+	if want := []string{`name from (index .values "name")`, `location from (index .infra "location")`,
+		`tags from (index .infra "overrides" "tags")`, `routes.0.to from (index .infra "overrides" "to")`,
+		`routes.0.port from (index .infra "overrides" "port")`,
+		`routes.1.port from (index .infra "overrides" "routes.1.port")`,
+		`routes.1.to from (index (default dict .context.inject) "property" "routes_1_to")`}; !slices.Equal(inputs,
+		want) {
+		t.Errorf("the queue's Recipe reads\n%q\nwant\n%q", inputs, want)
+	}
+	block := instanceBlock(t, fileOf(t, out, "release.yaml"), "queue")
+	want := "          # From the template parameter stage, its literal default.\n" +
+		`          tags: [{"key": "team", "value": "orders"}, {"key": "stage", "value": "prod"}]` + "\n"
+	if !strings.Contains(block, want) {
+		t.Errorf("the queue's Release entry does not hold\n%s\n%s", want, block)
+	}
+}
+
+// TestDraftedListHoldingASecretKeepsItsItems drafts a list one of whose items
+// a secure parameter feeds item by item — its value, or deploy-time text
+// naming it: the secret is an input of its own at its item's path, the text
+// is left at its own, and each literal item keeps its own input.
+func TestDraftedListHoldingASecretKeepsItsItems(t *testing.T) {
+	read, _ := draftedQueue(t, "secretitem.json")
+	var got []string
+	for _, in := range read {
+		got = append(got, fmt.Sprintf("%s %d", pathText(in.Property.Path), in.Source.Pillar))
+	}
+	want := []string{fmt.Sprintf("name %d", schemadraft.PillarValues), fmt.Sprintf("location %d",
+		schemadraft.PillarInfra), fmt.Sprintf("keys.0 %d", schemadraft.PillarOverrides), fmt.Sprintf("keys.1 %d",
+		schemadraft.PillarSecret), fmt.Sprintf("seals.0 %d", schemadraft.PillarOverrides), fmt.Sprintf("seals.1 %d",
+		schemadraft.PillarOverrides)}
+	if !slices.Equal(got, want) {
+		t.Errorf("the queue's Recipe reads, by path and pillar,\n%q\nwant\n%q", got, want)
+	}
 }

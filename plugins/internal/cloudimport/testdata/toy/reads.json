@@ -5,9 +5,13 @@
     {"id": "net", "type": "Toy.Network/networks", "name": "net-core"},
     {"id": "queue", "type": "Toy.Messaging/queues", "name": "orders",
      "properties": {"location": "westeurope",
-                    "endpoint": {"$text": "concat(db.host, ':5432')", "reads": ["db"]},
-                    "peer": {"$text": "id(net)", "reads": ["net"]},
+                    "endpoint": {"$text": "concat(db.host, ':5432')", "reads": ["db"],
+                                 "owed": "it reads db, which the toy target may declare under other IDs"},
+                    "peer": {"$text": "id(net)", "reads": ["net"],
+                             "owed": "it reads net, which the toy target may declare under other IDs"},
                     "tier": {"$text": "pick(db.tier, settings.tier)", "reads": ["db"],
-                             "owes": "it reads the toy setting tier, which no draft declares"}}}
+                             "owed": "it reads db, which the toy target may declare under other IDs, and the toy setting tier, which no draft declares",
+                             "owes": "it reads the toy setting tier, which no draft declares"},
+                    "route": {"$text": "route(net)", "reads": ["net"]}}}
   ]
 }

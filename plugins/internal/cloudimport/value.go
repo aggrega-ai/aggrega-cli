@@ -108,7 +108,9 @@ type Opaque struct {
 	// names what Text owes beside them, empty where it owes nothing else.
 	// Where Declares holds of every one of Reads, Text owes what
 	// OwedBesideReads names, and is written as it is where that is empty;
-	// otherwise it owes what Owed names.
+	// otherwise it owes what Owed names, or where Owed is empty, what the core
+	// says of the resources not so declared: Text reading one is never
+	// written.
 	Reads           []string
 	OwedBesideReads string
 }

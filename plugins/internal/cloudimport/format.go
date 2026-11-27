@@ -61,7 +61,8 @@ type Format struct {
 	// whose Recipe declares it, nil where a mapping_overrides entry maps it
 	// to a Component no row names. It is asked once every node is classed, of
 	// text the import writes for the format's own target. Nil declares none,
-	// and text reading a resource owes what its Owed names.
+	// and text reading a resource owes what its Owed names, or where Owed is
+	// empty, what the core says of the resources it reads.
 	Declares func(read Classified) bool
 	// Draft is how the format drafts a Component and a Recipe for a resource
 	// no row maps: its naming, its categories, the provider its Recipes

@@ -549,8 +549,9 @@ func TestAParameterInTextNotWrittenIsCarriedNowhere(t *testing.T) {
 // text whose only debt is the resources it reads where the format's Declares
 // says the draft declares every one of them under the ID the text reads it by;
 // it leaves text reading a resource the draft does not declare so, naming what
-// it reads, and text owing something beside its reads, naming that; and with
-// no Declares, it leaves every such text, as the format's Owed says.
+// it reads as the format's Owed says, or where the format says nothing, as the
+// core does; it leaves text owing something beside its reads, naming that;
+// and with no Declares, it leaves every such text.
 func TestDeployTimeTextReadingResourcesTheDraftDeclaresIsWritten(t *testing.T) {
 	var asked []string
 	declaring := toyFormat(nil)
@@ -569,16 +570,21 @@ func TestDeployTimeTextReadingResourcesTheDraftDeclaresIsWritten(t *testing.T) {
           peer: ""
           # Left for the Release, since the source cannot supply it: infra.overrides.tier, the source's value, which the draft does not write
           tier: ""
+          # Left for the Release, since the source cannot supply it: infra.overrides.route, the source's value, which the draft does not write
+          route: ""
 `)
 	if got, want := slices.Compact(slices.Sorted(slices.Values(asked))), []string{"db mapped db",
 		"net substrate "}; !slices.Equal(got, want) {
 		t.Errorf("Declares is asked of %q, want of %q", got, want)
 	}
-	got := onlyCode(t, out.Diagnostics, CodeValueNotCarried, 2)
+	unsaid := "infra.overrides.route, and it reads the resource net by its ID in the source, and the draft may " +
+		"declare no resource under that ID, so it is not written"
+	got := onlyCode(t, out.Diagnostics, CodeValueNotCarried, 3)
 	for i, want := range []string{
 		"infra.overrides.peer, and it reads net, which the toy target may declare under other IDs, so it is not " +
 			"written",
 		"infra.overrides.tier, and it reads the toy setting tier, which no draft declares, so it is not written",
+		unsaid,
 	} {
 		if !strings.Contains(got[i].Message, want) {
 			t.Errorf("value-not-carried reads %q, want it to say %q", got[i].Message, want)
@@ -591,9 +597,14 @@ func TestDeployTimeTextReadingResourcesTheDraftDeclaresIsWritten(t *testing.T) {
 		"infra.overrides.endpoint, the source's value, which the draft does not write\n          endpoint: \"\"\n") {
 		t.Errorf("with no Declares, the text reading db is written:\n%s", block)
 	}
-	got = onlyCode(t, out.Diagnostics, CodeValueNotCarried, 3)
-	if want := "infra.overrides.endpoint, and it reads db, which the toy target may declare under other IDs, so it " +
-		"is not written"; !strings.Contains(got[0].Message, want) {
-		t.Errorf("value-not-carried reads %q, want it to say %q", got[0].Message, want)
+	got = onlyCode(t, out.Diagnostics, CodeValueNotCarried, 4)
+	for i, want := range map[int]string{
+		0: "infra.overrides.endpoint, and it reads db, which the toy target may declare under other IDs, so it is " +
+			"not written",
+		3: unsaid,
+	} {
+		if !strings.Contains(got[i].Message, want) {
+			t.Errorf("value-not-carried reads %q, want it to say %q", got[i].Message, want)
+		}
 	}
 }

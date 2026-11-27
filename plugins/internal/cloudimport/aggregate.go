@@ -854,19 +854,39 @@ func (w *aggregateWriter) leafText(v Value, conv Conv) (string, outcome) {
 // owed returns what the deploy-time text o owes once every node is classed:
 // what its OwedBesideReads names where the format's Declares says the draft
 // declares every resource o reads under the ID o reads it by, and what its
-// Owed names otherwise. A resource no node of the classification is, such as
-// a repeated node's, is declared under no ID o reads.
+// Owed names otherwise — or, where the format leaves Owed empty, the core's
+// own phrase naming each resource not so declared, so text reading one is
+// never written. A nil Declares declares none, and a resource no node of the
+// classification is, such as a repeated node's, is declared under no ID o
+// reads.
 func (w *aggregateWriter) owed(o Opaque) string {
-	if len(o.Reads) == 0 || w.f.Declares == nil {
-		return o.Owed
-	}
+	var undeclared []string
 	for _, id := range o.Reads {
 		cl := w.cs.byID[id]
-		if cl == nil || !w.f.Declares(*cl) {
-			return o.Owed
+		if w.f.Declares == nil || cl == nil || !w.f.Declares(*cl) {
+			undeclared = append(undeclared, id)
 		}
 	}
-	return o.OwedBesideReads
+	switch {
+	case len(o.Reads) == 0:
+		return o.Owed
+	case len(undeclared) == 0:
+		return o.OwedBesideReads
+	case o.Owed != "":
+		return o.Owed
+	}
+	return joinNonEmpty("; ", undeclaredReads(undeclared), o.OwedBesideReads)
+}
+
+// undeclaredReads says why deploy-time text reading the resources ids by their
+// IDs in the source cannot be written, where its format says nothing of them.
+func undeclaredReads(ids []string) string {
+	if len(ids) == 1 {
+		return "it reads the resource " + ids[0] + " by its ID in the source, and the draft may declare no " +
+			"resource under that ID"
+	}
+	return "it reads the resources " + andList(ids) + " by their IDs in the source, and the draft may declare no " +
+		"resource under those IDs"
 }
 
 // escape writes text read from the source for the document being written: for

@@ -62,10 +62,13 @@ func (c *classifier) fold(n *Node) bool {
 // folded writes n into a's instance at the key of each fold of row writing
 // its type, f the first.
 func (c *classifier) folded(n, a *Node, row *Row, f Fold) {
-	at := foldedAt(row, n.Type)
+	at, by := foldedAt(row, n.Type), "the fold"
+	if len(childFolds(row, n.Type)) > 1 {
+		by = "the folds"
+	}
 	c.set(n, &Classified{Class: ClassFolded, Row: row, Into: a.ID, Decision: decisionFor(n, joinNonEmpty("; ",
-		fmt.Sprintf("folded: written into the instance of %s at %s, by the fold of %s in the row of %s (%s)", a.ID,
-			at, f.Type, row.Key, row.Component), c.says(n)))})
+		fmt.Sprintf("folded: written into the instance of %s at %s, by %s of %s in the row of %s (%s)", a.ID, at,
+			by, f.Type, row.Key, row.Component), c.says(n)))})
 	c.note(n, Report(CodeResourceFolded, fmt.Sprintf("%s (%s) is folded into the instance of %s, written at %s",
 		n.ID, n.Type, a.ID, at)))
 }

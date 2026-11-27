@@ -218,23 +218,32 @@ func paramSource(p *Parameter) string {
 	return "its literal default"
 }
 
-// secureReads returns the names of the secure parameters text names, in the
-// order the template declares them. A name is read where it stands apart from
-// other letters, digits and underscores, so a parameter's name inside a longer
-// word is not, and a name inside a string the text holds is.
+// secureReads returns the names of the secure parameters text names, as
+// secureNamed reads them.
 func (w *aggregateWriter) secureReads(text string) []string {
-	if w.g == nil {
+	return secureNamed(w.g, w.secure, text)
+}
+
+// secureNamed returns the names of the secure parameters of g text names, in
+// the order the template declares them. A name is read where it stands apart
+// from other letters, digits and underscores, so a parameter's name inside a
+// longer word is not, and a name inside a string the text holds is. patterns
+// holds the pattern finding each name, where it is not nil.
+func secureNamed(g *Graph, patterns map[string]*regexp.Regexp, text string) []string {
+	if g == nil {
 		return nil
 	}
 	var out []string
-	for _, p := range w.g.Params {
+	for _, p := range g.Params {
 		if !p.Secure || p.Name == "" {
 			continue
 		}
-		re := w.secure[p.Name]
+		re := patterns[p.Name]
 		if re == nil {
 			re = regexp.MustCompile(`(?i)(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(p.Name) + `($|[^A-Za-z0-9_])`)
-			w.secure[p.Name] = re
+			if patterns != nil {
+				patterns[p.Name] = re
+			}
 		}
 		if re.MatchString(text) {
 			out = append(out, p.Name)

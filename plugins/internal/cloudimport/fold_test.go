@@ -368,9 +368,10 @@ func settingFolds() []Fold {
 }
 
 // TestFoldEveryFoldOfAChildTypePlacesTheChild folds a setting into the
-// server's instance by three folds of its type: the setting is written under
-// every fold's key, in the Aggregate and the Release alike, the record names
-// each key, and the Release names only the property no fold places.
+// server's instance by several folds of its type: the setting is written
+// under every fold's key, in the Aggregate and the Release alike, the record
+// and the decision name each key and the folds, and the Release names only
+// the property no fold places.
 func TestFoldEveryFoldOfAChildTypePlacesTheChild(t *testing.T) {
 	f := toyFormat(nil)
 	f.Table.Generated[0].Folds = append(f.Table.Generated[0].Folds, settingFolds()...)
@@ -397,6 +398,16 @@ func TestFoldEveryFoldOfAChildTypePlacesTheChild(t *testing.T) {
 	if want := "dbSetting (" + toySetting + ") is folded into the instance of db, written at " +
 		"infra.overrides.settings, values.setting and infra.overrides.unit"; folded[0].Message != want {
 		t.Errorf("the record reads %q, want %q", folded[0].Message, want)
+	}
+	for _, d := range out.Decisions {
+		if d.SourceNode.ID != "dbSetting" {
+			continue
+		}
+		if want := "folded: written into the instance of db at infra.overrides.settings, values.setting and " +
+			"infra.overrides.unit, by the folds of " + toySetting + " in the row of " + toyServer; !strings.HasPrefix(
+			d.Rationale, want) {
+			t.Errorf("the decision on dbSetting reads %q, want it to open %q", d.Rationale, want)
+		}
 	}
 }
 
