@@ -51,8 +51,9 @@ type Format struct {
 	// to replace; empty writes schema file.
 	SchemaFile string
 	// SchemaCommand is the command writing that file for one type, with %s
-	// where the type's name goes; a hint offering the schema import names it
-	// beside the file. Empty names none.
+	// where the type's name goes, or holding none where one command writes the
+	// schema of every type; a hint offering the schema import names it beside
+	// the file. Empty names none.
 	SchemaCommand string
 }
 

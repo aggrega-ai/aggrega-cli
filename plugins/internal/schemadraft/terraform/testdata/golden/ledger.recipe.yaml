@@ -63,35 +63,35 @@ spec:
       {{- end -}}
   valuesMapping: |
     {{- if (hasKey (optional .infra "overrides" dict) "alert") }}
-    alert: {{ toJson (index .infra "overrides" "alert") }}
+    alert: {{ toJson (index .infra "overrides" "alert") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey (optional .infra "overrides" dict) "capacity") }}
-    capacity: {{ toJson (index .infra "overrides" "capacity") }}
+    capacity: {{ toJson (index .infra "overrides" "capacity") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey (optional .infra "overrides" dict) "enabled") }}
-    enabled: {{ toJson (index .infra "overrides" "enabled") }}
+    enabled: {{ toJson (index .infra "overrides" "enabled") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey .values "identifier") }}
-    identifier: {{ toJson (index .values "identifier") }}
+    identifier: {{ toJson (index .values "identifier") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey (optional .infra "overrides" dict) "label") }}
-    label: {{ toJson (index .infra "overrides" "label") }}
+    label: {{ toJson (index .infra "overrides" "label") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey .values "ledger") }}
-    ledger: {{ toJson (index .values "ledger") }}
+    ledger: {{ toJson (index .values "ledger") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey (optional .infra "overrides" dict) "legacy_mode") }}
-    legacy_mode: {{ toJson (index .infra "overrides" "legacy_mode") }}
+    legacy_mode: {{ toJson (index .infra "overrides" "legacy_mode") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey (optional .infra "overrides" dict) "limits") }}
-    limits: {{ toJson (index .infra "overrides" "limits") }}
+    limits: {{ toJson (index .infra "overrides" "limits") | replace "${" "$${" }}
     {{- end }}
-    name: {{ toJson (index .values "name") }}
+    name: {{ toJson (index .values "name") | replace "${" "$${" }}
     {{- if (hasKey (optional .infra "overrides" dict) "one_time") }}
-    one_time: {{ toJson (index .infra "overrides" "one_time") }}
+    one_time: {{ toJson (index .infra "overrides" "one_time") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey (optional .infra "overrides" dict) "pair") }}
-    pair: {{ toJson (index .infra "overrides" "pair") }}
+    pair: {{ toJson (index .infra "overrides" "pair") | replace "${" "$${" }}
     {{- end }}
     {{- with (optional . "features" dict).password }}
     {{- if not (hasKey (optional (default dict $.context.inject) "env" dict) .values.key) }}
@@ -100,21 +100,21 @@ spec:
     password: {{ toJson (index (optional (default dict $.context.inject) "env" dict) .values.key) }}
     {{- end }}
     {{- if (hasKey (optional .infra "overrides" dict) "payload") }}
-    payload: {{ toJson (index .infra "overrides" "payload") }}
+    payload: {{ toJson (index .infra "overrides" "payload") | replace "${" "$${" }}
     {{- end }}
-    retention: {{ $out1 := list }}{{ range $item1 := (index .infra "retention") }}{{ $in2 := $item1 }}{{ $out2 := dict }}{{ if hasKey $in2 "archive" }}{{ $in3 := (index $in2 "archive") }}{{ $out3 := dict }}{{ if hasKey $in3 "target" }}{{ $_ := set $out3 "target" (index $in3 "target") }}{{ end }}{{ $_ := set $out2 "archive" $out3 }}{{ end }}{{ if hasKey $in2 "days" }}{{ $_ := set $out2 "days" (index $in2 "days") }}{{ end }}{{ $out1 = append $out1 $out2 }}{{ end }}{{ toJson $out1 }}
+    retention: {{ $out1 := list }}{{ range $item1 := (index .infra "retention") }}{{ $in2 := $item1 }}{{ $out2 := dict }}{{ if hasKey $in2 "archive" }}{{ $in3 := (index $in2 "archive") }}{{ $out3 := dict }}{{ if hasKey $in3 "target" }}{{ $_ := set $out3 "target" (index $in3 "target") }}{{ end }}{{ $_ := set $out2 "archive" $out3 }}{{ end }}{{ if hasKey $in2 "days" }}{{ $_ := set $out2 "days" (index $in2 "days") }}{{ end }}{{ $out1 = append $out1 $out2 }}{{ end }}{{ toJson $out1 | replace "${" "$${" }}
     {{- if (hasKey (optional .infra "overrides" dict) "rows") }}
-    rows: {{ toJson (index .infra "overrides" "rows") }}
+    rows: {{ toJson (index .infra "overrides" "rows") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey (optional .infra "overrides" dict) "settings") }}
-    settings: {{ toJson (index .infra "overrides" "settings") }}
+    settings: {{ toJson (index .infra "overrides" "settings") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey (optional .infra "overrides" dict) "tags") }}
-    tags: {{ toJson (index .infra "overrides" "tags") }}
+    tags: {{ toJson (index .infra "overrides" "tags") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey (optional .infra "overrides" dict) "window") }}
-    window: {{ toJson (index .infra "overrides" "window") }}
+    window: {{ toJson (index .infra "overrides" "window") | replace "${" "$${" }}
     {{- end }}
     {{- if (hasKey (optional .infra "overrides" dict) "zones") }}
-    zones: {{ toJson (index .infra "overrides" "zones") }}
+    zones: {{ toJson (index .infra "overrides" "zones") | replace "${" "$${" }}
     {{- end }}

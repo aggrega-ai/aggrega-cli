@@ -472,7 +472,7 @@ func TestValuesMappingWritesOnlyInputsWithValues(t *testing.T) {
 			map[string]any{"name": "orders", "label": "x"},
 			map[string]any{"subnet_group": "private-a", "zone": "z1",
 				"overrides": map[string]any{"deletion_protection": true, "kms_key_id": "${module.key.arn}"}},
-			`{"deletion_protection":true,"kms_key_id":"${module.key.arn}","label":"x","name":"orders","subnet_group":"private-a","zone":"z1"}`},
+			`{"deletion_protection":true,"kms_key_id":"$${module.key.arn}","label":"x","name":"orders","subnet_group":"private-a","zone":"z1"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := renderMapping(t, d.ValuesMapping, mappingContext(tc.values, tc.infra, nil, nil))
@@ -1016,5 +1016,140 @@ func TestModuleNestedInputOutsideABlockHalts(t *testing.T) {
 	}
 	if len(d.Files) != 0 || d.ValuesMapping != "" {
 		t.Errorf("a halted writer drafted %+v", d)
+	}
+}
+
+// TestFromWrittenCarriesTheProvider drafts a resource from the source with the
+// provider the source names: the module requires it at the locked version, and
+// the decision's swap hint offers the schema import with the command writing its
+// input, which holds no type name.
+func TestFromWrittenCarriesTheProvider(t *testing.T) {
+	w := schemadraft.WrittenResource{Type: "aws_sqs_queue",
+		Provider:   &schemadraft.ProviderAddress{Namespace: "hashicorp", Type: "aws", Version: "~> 5.40"},
+		Properties: []schemadraft.WrittenProperty{{Path: []string{"name"}, Value: json.RawMessage(`"jobs"`), Identity: true}}}
+	if typ, _ := schemadraft.FromWritten(w); typ.Provider == nil || typ.Provider.Type != "aws" {
+		t.Fatalf("FromWritten drops the provider: %+v", typ.Provider)
+	}
+	drafted, diags := schemadraft.DraftResource(wrappedInput(), Format, w)
+	if halts := haltsOf(diags); len(halts) != 0 {
+		t.Fatalf("halts %+v", halts)
+	}
+	for _, d := range diags {
+		if d.Code == codeUnconstrained {
+			t.Errorf("a provider with a version warns %+v", d)
+		}
+	}
+	var module string
+	for _, e := range drafted.Entities {
+		if strings.Contains(e.Entity.Body, "kind: Recipe") {
+			module = e.Entity.Body
+		}
+	}
+	if module == "" {
+		t.Fatalf("no Recipe drafted: %+v", drafted.Entities)
+	}
+	hint := drafted.Decision.SwapHint
+	for _, want := range []string{"aggrega import --format terraform-schema", "terraform providers schema -json"} {
+		if !strings.Contains(hint, want) {
+			t.Errorf("the swap hint lacks %q: %s", want, hint)
+		}
+	}
+	if strings.Contains(hint, "%!") {
+		t.Errorf("the swap hint is malformed: %s", hint)
+	}
+}
+
+// writtenOf is a resource written in a source, of the properties given.
+func writtenOf(props ...schemadraft.WrittenProperty) schemadraft.WrittenResource {
+	return schemadraft.WrittenResource{Type: "aws_lambda_function",
+		Provider:   &schemadraft.ProviderAddress{Namespace: "hashicorp", Type: "aws", Version: "5.40.0"},
+		Properties: props}
+}
+
+// TestWrittenPropertyInsideABlockIsSetAtItsPath sets a property drafted from
+// the source at its path inside the object or list the source writes, each from
+// its own variable, and passes a list of objects the core hands whole as one
+// variable.
+func TestWrittenPropertyInsideABlockIsSetAtItsPath(t *testing.T) {
+	w := writtenOf(
+		schemadraft.WrittenProperty{Path: []string{"environment", "variables", "MODE"}, Value: json.RawMessage(`"fast"`)},
+		schemadraft.WrittenProperty{Path: []string{"environment", "variables", "DB_HOST"}, Inject: "environment_variables_db_host"},
+		schemadraft.WrittenProperty{Path: []string{"ingress", "0", "from_port"}, Inject: "ingress_0_from_port"},
+		schemadraft.WrittenProperty{Path: []string{"egress"}, Value: json.RawMessage(`[{"to_port":0}]`)},
+	)
+	typ, inputs := schemadraft.FromWritten(w)
+	m := Module{Provider: *typ.Provider, Type: typ, Inputs: inputs}
+	d, diags := WriteModule(m)
+	if len(diags) != 0 {
+		t.Fatalf("diagnostics %+v", diags)
+	}
+	doc := mainTF(t, d)
+	names := VariableNames(m)
+	variable := func(path ...string) string {
+		for i, in := range inputs {
+			if strings.Join(in.Property.Path, ".") == strings.Join(path, ".") {
+				return names[i]
+			}
+		}
+		t.Fatalf("no input at %v", path)
+		return ""
+	}
+	body := at(doc, "resource", "aws_lambda_function", "this")
+	want := `{"egress":"${var.` + variable("egress") + `}",` +
+		`"environment":{"variables":{"DB_HOST":"${var.` + variable("environment", "variables", "DB_HOST") +
+		`}","MODE":"${var.` + variable("environment", "variables", "MODE") + `}"}},` +
+		`"ingress":[{"from_port":"${var.` + variable("ingress", "0", "from_port") + `}"}]}`
+	if got := canon(t, body); got != want {
+		t.Errorf("the resource is\n%s\nwant\n%s", got, want)
+	}
+	if got := canon(t, at(doc, "variable", variable("egress"))); got != `{"default":null,"type":"any"}` {
+		t.Errorf("the egress variable is %s", got)
+	}
+	ctx := mappingContext(nil, map[string]any{"overrides": map[string]any{"MODE": "fast", "egress": []any{map[string]any{"to_port": 0}}}},
+		map[string]any{"property": map[string]any{"environment_variables_db_host": "${module.db.address}", "ingress_0_from_port": 443}}, nil)
+	got, err := renderMapping(t, d.ValuesMapping, ctx)
+	if err != nil {
+		t.Fatalf("the valuesMapping halts: %v\n%s", err, d.ValuesMapping)
+	}
+	if want := `{"egress":[{"to_port":0}],"environment_variables_db_host":"${module.db.address}","ingress_0_from_port":443,"mode":"fast"}`; canon(t, got) != want {
+		t.Errorf("the valuesMapping renders %s, want %s", canon(t, got), want)
+	}
+}
+
+// TestWrittenPropertyAtAPathUnderAWholeValueHalts refuses a property set below
+// a value the module sets whole from one variable.
+func TestWrittenPropertyAtAPathUnderAWholeValueHalts(t *testing.T) {
+	w := writtenOf(
+		schemadraft.WrittenProperty{Path: []string{"tags"}, Value: json.RawMessage(`{"a":"b"}`)},
+		schemadraft.WrittenProperty{Path: []string{"tags", "owner"}, Inject: "tags_owner"},
+	)
+	typ, inputs := schemadraft.FromWritten(w)
+	_, diags := WriteModule(Module{Provider: *typ.Provider, Type: typ, Inputs: inputs})
+	halts := haltsOf(diags)
+	if len(halts) != 1 || halts[0].Code != schemadraft.CodeResourceTypeRefused || !strings.Contains(halts[0].Message, "tags.owner") {
+		t.Fatalf("diagnostics %+v, want one resource-type-refused naming tags.owner", diags)
+	}
+}
+
+// TestValuesMappingWritesAnOwnValueInterpolationAsText escapes a dollar-brace
+// in a value of the author's, so the root configuration reads it as text, and
+// leaves a neighbour's reference a reference.
+func TestValuesMappingWritesAnOwnValueInterpolationAsText(t *testing.T) {
+	m := moduleOf("vault_store", address(terraformHost, "example", "vault", "1.0.0"), []schemadraft.Input{
+		in(prop(kString, "name"), schemadraft.PillarValues, "name", true),
+		in(prop(kString, "zone"), schemadraft.PillarInfra, "zone", true),
+		in(prop(kString, "label"), schemadraft.PillarOverrides, "label", false),
+		injected(prop(kString, "target_arn"), schemadraft.MechanismProperty, "target_arn", true),
+	})
+	d, _ := written(t, m)
+	ctx := mappingContext(map[string]any{"name": "n-${a}"},
+		map[string]any{"zone": "z-${b}", "overrides": map[string]any{"label": "a-${b}"}},
+		map[string]any{"property": map[string]any{"target_arn": "${module.db.arn}"}}, nil)
+	got, err := renderMapping(t, d.ValuesMapping, ctx)
+	if err != nil {
+		t.Fatalf("the valuesMapping halts: %v\n%s", err, d.ValuesMapping)
+	}
+	if want := `{"label":"a-$${b}","name":"n-$${a}","target_arn":"${module.db.arn}","zone":"z-$${b}"}`; canon(t, got) != want {
+		t.Errorf("the valuesMapping renders %s, want %s", canon(t, got), want)
 	}
 }

@@ -239,7 +239,11 @@ func schemaImportHint(f Format, t *Type) string {
 		"properties a source does not state, run `aggrega import --format %s <%s>` with %s in the importer's "+
 		"resource_types setting", t.Name, f.Name, file, typeName(t))
 	if f.SchemaCommand != "" {
-		hint += fmt.Sprintf("; <%s> is the output of `%s`", file, fmt.Sprintf(f.SchemaCommand, t.Name))
+		command := f.SchemaCommand
+		if strings.Contains(command, "%s") {
+			command = fmt.Sprintf(command, t.Name)
+		}
+		hint += fmt.Sprintf("; <%s> is the output of `%s`", file, command)
 	}
 	return hint
 }

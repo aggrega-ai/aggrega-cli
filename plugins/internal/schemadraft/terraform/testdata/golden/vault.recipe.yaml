@@ -14,15 +14,15 @@ spec:
     arn: "${module.{{ .context.instance_id }}.arn}"
     endpoint: "${module.{{ .context.instance_id }}.endpoint}"
   valuesMapping: |
-    name: {{ toJson (index .values "name") }}
+    name: {{ toJson (index .values "name") | replace "${" "$${" }}
     {{- if (hasKey (optional .infra "overrides" dict) "capacity") }}
-    capacity: {{ toJson (index .infra "overrides" "capacity") }}
+    capacity: {{ toJson (index .infra "overrides" "capacity") | replace "${" "$${" }}
     {{- end }}
     {{- if not (hasKey (optional (default dict .context.inject) "env" dict) (index .features "password" "values" "key")) }}
     {{- fail "the attachment on the featuresSchema slot password delivers no value on the env inject mechanism under the key its values name, and the module variable password takes the value delivered there: attach to the slot password a secret Feature delivering its value on env, such as core/secret-value" }}
     {{- end }}
     password: {{ toJson (index (optional (default dict .context.inject) "env" dict) (index .features "password" "values" "key")) }}
-    retention: {{ $out1 := list }}{{ range $item1 := (index .infra "retention") }}{{ $in2 := $item1 }}{{ $out2 := dict }}{{ if hasKey $in2 "archive" }}{{ $in3 := (index $in2 "archive") }}{{ $out3 := dict }}{{ if hasKey $in3 "target" }}{{ $_ := set $out3 "target" (index $in3 "target") }}{{ end }}{{ $_ := set $out2 "archive" $out3 }}{{ end }}{{ if hasKey $in2 "days" }}{{ $_ := set $out2 "days" (index $in2 "days") }}{{ end }}{{ $out1 = append $out1 $out2 }}{{ end }}{{ toJson $out1 }}
+    retention: {{ $out1 := list }}{{ range $item1 := (index .infra "retention") }}{{ $in2 := $item1 }}{{ $out2 := dict }}{{ if hasKey $in2 "archive" }}{{ $in3 := (index $in2 "archive") }}{{ $out3 := dict }}{{ if hasKey $in3 "target" }}{{ $_ := set $out3 "target" (index $in3 "target") }}{{ end }}{{ $_ := set $out2 "archive" $out3 }}{{ end }}{{ if hasKey $in2 "days" }}{{ $_ := set $out2 "days" (index $in2 "days") }}{{ end }}{{ $out1 = append $out1 $out2 }}{{ end }}{{ toJson $out1 | replace "${" "$${" }}
     {{- if (hasKey (optional .infra "overrides" dict) "window") }}
-    window: {{ toJson (index .infra "overrides" "window") }}
+    window: {{ toJson (index .infra "overrides" "window") | replace "${" "$${" }}
     {{- end }}

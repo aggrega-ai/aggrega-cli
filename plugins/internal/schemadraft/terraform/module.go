@@ -104,7 +104,11 @@ type Module struct {
 // names the item of a list in decimal, the key of a map or the item 0 of a
 // single block, in which alone the attribute is set, the other items keeping
 // the value their block's variable gives it, or else a member of the block's
-// content; the last segment names an attribute. Each output publishes an
+// content; the last segment names an attribute. An input of a type read from a
+// source that writes the resource, whose properties are marked Written, is set
+// at its path inside the object or list the source writes, each made where
+// none is there, a segment of decimal digits naming an item of a list, and
+// halts where the path or a prefix of it is set from one variable whole. Each output publishes an
 // attribute read back, sensitive where the attribute is, under the name
 // outputNames gives it.
 //
@@ -112,8 +116,9 @@ type Module struct {
 // required input always, an optional one where its source holds it, so one set
 // to false, 0 or "" is written. An input at a deeper path halts where the
 // optional input whose block it is set inside is not set, naming its path. A
-// value is written with toJson, whole; a values or infra input is rebuilt under
-// the vendor's names, as schemadraft.Respell writes it. A secret is the value
+// value is written with toJson, whole, a "${" in it written as "$${" but for a
+// value a neighbour supplies; a values or infra input is rebuilt under the
+// vendor's names, as schemadraft.Respeller writes it. A secret is the value
 // its slot's attachment delivers on the env inject mechanism, under the key the
 // attachment's values name; a slot whose attachment delivers nothing there
 // halts naming the slot, and an optional slot holding no attachment leaves its
@@ -156,6 +161,15 @@ func WriteModule(m Module) (importer.RecipeDraft, []aggrega.Diagnostic) {
 	var placed []string
 	for _, i := range nested {
 		in := m.Inputs[i]
+		if in.Property.Written {
+			if why := setWritten(body, in.Property.Path, "var."+names[i]); why != "" {
+				halts = append(halts, nestedRefused(m, in, why))
+				continue
+			}
+			placed = append(placed, fmt.Sprintf("The module variable %s sets %s, inside %s.", names[i],
+				dotted(in.Property.Path), in.Property.Path[0]))
+			continue
+		}
 		if why := w.nested(body, m.Inputs, in, "var."+names[i]); why != "" {
 			halts = append(halts, nestedRefused(m, in, why))
 			continue
@@ -398,6 +412,62 @@ func (w *bodyWriter) member(body map[string]any, p *schemadraft.Property, value 
 		body["dynamic"] = dynamic
 	}
 	dynamic[p.Name] = block
+}
+
+// setWritten sets the expression value at path inside body, the resource's
+// body, for a property read from a source that writes the resource: the
+// segments name the members of objects, and the items of lists by their index in
+// decimal, each container made where none is there, so the object or list the
+// source writes is written member by member. It returns "", or why it cannot:
+// the path, or a prefix of it, is already set from one variable whole.
+func setWritten(body map[string]any, path []string, value string) string {
+	node, why := setAt(body, path, value)
+	if why != "" {
+		return why
+	}
+	_ = node // setAt changes body in place
+	return ""
+}
+
+// setAt returns node with the expression value set at path below it, or why it
+// cannot be. A nil node is made an object, or a list where path opens with an
+// index; a list is extended with empty objects up to the index. A map node is
+// changed in place.
+func setAt(node any, path []string, value string) (any, string) {
+	if len(path) == 0 {
+		if m, ok := node.(map[string]any); node != nil && (!ok || len(m) > 0) {
+			return nil, "it is set more than once"
+		}
+		return "${" + value + "}", ""
+	}
+	if index, err := strconv.Atoi(path[0]); err == nil && strings.Trim(path[0], "0123456789") == "" {
+		list, ok := node.([]any)
+		if node != nil && !ok {
+			return nil, path[0] + " is an item of a list, and the module sets the container as an object or whole"
+		}
+		for len(list) <= index {
+			list = append(list, map[string]any{})
+		}
+		item, why := setAt(list[index], path[1:], value)
+		if why != "" {
+			return nil, why
+		}
+		list[index] = item
+		return list, ""
+	}
+	members, ok := node.(map[string]any)
+	if node == nil {
+		members, ok = map[string]any{}, true
+	}
+	if !ok {
+		return nil, "the module sets the container of " + path[0] + " from one variable whole or as a list"
+	}
+	member, why := setAt(members[path[0]], path[1:], value)
+	if why != "" {
+		return nil, why
+	}
+	members[path[0]] = member
+	return members, ""
 }
 
 // nested sets in, at a path of more than one segment, from the expression value
@@ -659,13 +729,26 @@ func blockGuard(inputs []schemadraft.Input, in schemadraft.Input) []string {
 }
 
 // inputValue is the template text writing in's value as JSON: a values or infra
-// input rebuilt under the vendor's names, any other as it is read.
+// input rebuilt under the vendor's names, any other as it is read, each with a
+// `${` in it written as `$${` but for a value a neighbour supplies.
 func inputValue(in schemadraft.Input) string {
-	if in.Source.Pillar == schemadraft.PillarValues || in.Source.Pillar == schemadraft.PillarInfra {
-		return schemadraft.Respell(in.Property, in.Source.Template())
+	switch in.Source.Pillar {
+	case schemadraft.PillarValues, schemadraft.PillarInfra:
+		var r schemadraft.Respeller
+		statements, value := r.Value(in.Property, in.Source.Template())
+		return statements + "{{ toJson " + value + escapeInterpolation + " }}"
+	case schemadraft.PillarInject:
+		return "{{ toJson " + in.Source.Template() + " }}"
 	}
-	return "{{ toJson " + in.Source.Template() + " }}"
+	return "{{ toJson " + in.Source.Template() + escapeInterpolation + " }}"
 }
+
+// escapeInterpolation is the template pipeline step writing a dollar sign and
+// brace of a value as two dollar signs and the brace, as the catalog's Recipes
+// write the text they read: the root configuration then reads the value as the
+// author wrote it, never as a reference. A value a neighbour supplies is not
+// escaped, since its references stay references.
+const escapeInterpolation = ` | replace "${" "$${"`
 
 // secretLines set the variable v, written as key, to the secret in: the value
 // the attachment on its slot delivers on the env mechanism under the key its

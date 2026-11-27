@@ -5,6 +5,7 @@ package schemadraft
 
 import (
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 
@@ -22,6 +23,12 @@ const CodeValueNotCarried = "value-not-carried"
 // left empty for the author to write.
 const CodeModuleVersionUnpinned = "module-version-unpinned"
 
+// CodeLinkedSourceNotRead warns of a linked template, nested stack or module
+// whose source the import does not hold; for a module-wrapping draft, of a
+// module whose address the source states and whose source it cannot derive, so
+// the drafted Recipe's spec.source.url is left for the author.
+const CodeLinkedSourceNotRead = "linked-source-not-read"
+
 // WrappedModule is a published module drafted as a Recipe that sources it whole.
 type WrappedModule struct {
 	// Type is the resource type the module realizes, which names the Component
@@ -34,6 +41,17 @@ type WrappedModule struct {
 	// an empty Version leaves the Recipe's source version for the author and
 	// warns.
 	URL, Version string
+	// Subdir is the directory of the module inside the repository or archive
+	// at URL; empty where the module is its root.
+	Subdir string
+	// Name names the Component, and so the Recipe, in place of the slug of
+	// Type's name, where it is set.
+	Name string
+	// AddressOnly is the module's address as the source writes it, set where
+	// that address is known and the source URL cannot be derived from it: with
+	// URL empty, the draft is written with the URL left for the author rather
+	// than halting.
+	AddressOnly string
 	// Inputs are the parameters the source sets, each read from
 	// infra.overrides under the parameter's name, or off the inject pipe; the
 	// properties are marked Written, since no vendor schema describes them.
@@ -62,9 +80,13 @@ type ModuleWriter func(m WrappedModule) (importer.RecipeDraft, []aggrega.Diagnos
 // from the module. The naming, the shared assertions and the decision are those
 // DraftResource takes. A Fixed parameter is never an input.
 //
+// A module with Name set takes it for the last segment of the Component's name.
 // Without a version the Recipe's source version stays empty and a warning
 // module-version-unpinned names the module and the field to write. A module with
-// no type, no URL or no source kind halts resource-schema-unreadable. Where it
+// no URL and an AddressOnly is drafted with its url empty, and a warning
+// linked-source-not-read names the module and that the url is the author's to
+// write. A module with no type, no URL and no AddressOnly, or no source kind
+// halts resource-schema-unreadable. Where it
 // halts, or w halts, nothing is drafted and the diagnostics are returned alone.
 // Every list is built in m's order, so two runs give one byte sequence.
 func DraftWrapped(in aggrega.ImportInput, f Format, m WrappedModule, w ModuleWriter) (Drafted, []aggrega.Diagnostic) {
@@ -77,6 +99,9 @@ func DraftWrapped(in aggrega.ImportInput, f Format, m WrappedModule, w ModuleWri
 		id = typeName(m.Type)
 	}
 	name, category := componentName(importer.TargetNamespace(in.Settings), f, m.Type)
+	if m.Name != "" {
+		name = path.Dir(name) + "/" + importer.Slug(m.Name)
+	}
 	format := in.Format
 	if format == "" {
 		format = f.Name
@@ -106,6 +131,9 @@ func DraftWrapped(in aggrega.ImportInput, f Format, m WrappedModule, w ModuleWri
 	for _, in := range superseded {
 		diags = append(diags, inputBoundByRecipe(m, in, id))
 	}
+	if m.URL == "" {
+		diags = append(diags, sourceLeftForAuthor(m, id))
+	}
 	if m.Version == "" {
 		diags = append(diags, moduleVersionUnpinned(m, id))
 	}
@@ -121,13 +149,13 @@ func malformedModule(m WrappedModule) []aggrega.Diagnostic {
 			Severity: aggrega.SeverityHalt,
 			Code:     CodeResourceSchemaUnreadable,
 			Message: fmt.Sprintf("the module %q %s, and a Recipe sourcing it cannot be written: state it in the source "+
-				"the module is read from", m.URL, fault),
+				"the module is read from", m.label(), fault),
 		})
 	}
 	if m.Type == nil || m.Type.Name == "" {
 		halt("realizes no resource type")
 	}
-	if m.URL == "" {
+	if m.URL == "" && m.AddressOnly == "" {
 		halt("has no address")
 	}
 	if m.SourceKind == "" {
@@ -175,7 +203,7 @@ func inputBoundByRecipe(m WrappedModule, in Input, id string) aggrega.Diagnostic
 		Severity: aggrega.SeverityWarn,
 		Code:     CodeValueNotCarried,
 		Message: fmt.Sprintf("the source sets the parameter %s of the module %s, and the drafted Recipe binds that "+
-			"parameter itself, so the value the source sets is not carried", in.Parameter(), m.URL),
+			"parameter itself, so the value the source sets is not carried", in.Parameter(), m.label()),
 		SourceRef: id,
 	}
 }
@@ -232,6 +260,27 @@ func withSource(body, block string) string {
 	return strings.Join(rows[:at+1], "") + b.String() + strings.Join(rows[at+1:], "")
 }
 
+// label names the module: its URL, or its address where it has no URL.
+func (m WrappedModule) label() string {
+	if m.URL == "" {
+		return m.AddressOnly
+	}
+	return m.URL
+}
+
+// sourceLeftForAuthor warns that the source of the module m cannot be derived
+// from its address, so the drafted Recipe leaves spec.source.url empty.
+func sourceLeftForAuthor(m WrappedModule, id string) aggrega.Diagnostic {
+	return aggrega.Diagnostic{
+		Severity: aggrega.SeverityWarn,
+		Code:     CodeLinkedSourceNotRead,
+		Message: fmt.Sprintf("the source of the module %s is not read, so the drafted Recipe leaves spec.source.url "+
+			"empty and does not validate until it is written: set spec.source.url to the address the module's "+
+			"files are fetched from", m.label()),
+		SourceRef: id,
+	}
+}
+
 // moduleVersionUnpinned warns that the module of m states no version, so the
 // Recipe drafted for it leaves spec.source.version empty.
 func moduleVersionUnpinned(m WrappedModule, id string) aggrega.Diagnostic {
@@ -240,7 +289,7 @@ func moduleVersionUnpinned(m WrappedModule, id string) aggrega.Diagnostic {
 		Code:     CodeModuleVersionUnpinned,
 		Message: fmt.Sprintf("the source states no version of the module %s, so the drafted Recipe leaves "+
 			"spec.source.version empty and does not validate until it is written: set spec.source.version to the "+
-			"module's version, a tag or a sha256: manifest digest", m.URL),
+			"module's version, a tag or a sha256: manifest digest", m.label()),
 		SourceRef: id,
 	}
 }
@@ -274,7 +323,7 @@ func moduleRationale(f Format, m WrappedModule, superseded []Input, name string,
 		counted(len(provided), "provides key ("+andList(provided)+")", "provides keys ("+andList(provided)+")"),
 	)
 	text := fmt.Sprintf("drafted the Component %s and its Recipe on %s, which sources the published module %s whole "+
-		"and reads no vendor schema: %s", name, f.Capability, m.URL, counts)
+		"and reads no vendor schema: %s", name, f.Capability, m.label(), counts)
 	if len(fixed) > 0 {
 		text += "; the Recipe binds " + andList(fixed) + " itself, which no Release sets"
 	}

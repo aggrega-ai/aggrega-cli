@@ -24,7 +24,7 @@ const (
 	CodeParameterFilesNotRead Code = "parameter-files-not-read"
 	// CodeLinkedSourceNotRead warns of a linked template, nested stack or
 	// module whose source the import does not hold.
-	CodeLinkedSourceNotRead Code = "linked-source-not-read"
+	CodeLinkedSourceNotRead = Code(schemadraft.CodeLinkedSourceNotRead)
 	// CodeSubstrateLeftToOperator warns of a substrate resource the source
 	// creates and the draft leaves to the operator.
 	CodeSubstrateLeftToOperator Code = "substrate-left-to-operator"

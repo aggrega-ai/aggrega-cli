@@ -1,0 +1,36 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: aws-rds-aws
+  version: 0.1.0
+  description: "Draft Recipe realizing imported/datastore/aws-rds-aws on terraform that sources the published module https://github.com/terraform-aws-modules/terraform-aws-rds.git whole, imported from a source in the terraform-schema format."
+spec:
+  # This Recipe realizes imported/datastore/aws-rds-aws by sourcing the published module https://github.com/terraform-aws-modules/terraform-aws-rds.git whole; no vendor schema was read. It reads the keys below, each with its type and its rule; any other key under infra.overrides halts the build naming it.
+  # infra.overrides.engine_version: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of engine_version.
+  # context.inject.property.db_subnet_group_name: string, required; inject: a value a neighbour publishes, delivered by the Aggregate's uses edge on the property mechanism and written at db_subnet_group_name
+  # The source writing the resource gives no description of db_subnet_group_name.
+  # The terraform provider fetches the published module named by spec.source and calls it as the module block of this instance, setting each argument valuesMapping writes; an argument it leaves out takes the module's own default.
+  capability: terraform
+  implements: imported/datastore/aws-rds-aws:0.1.0
+  source:
+    kind: git-repository
+    url: https://github.com/terraform-aws-modules/terraform-aws-rds.git
+    ref: v6.1.0
+  provides:
+    # Each value is the module's output of that name, which the root configuration resolves where it declares the module; the String Pipe pipes it as written into a consumer's context.
+    endpoint: "${module.{{ .context.instance_id }}.db_instance_endpoint}"
+  assertions:
+    # Halts naming any key under infra.overrides this Recipe does not read.
+    overrides_this_recipe_reads: |
+      {{- $o := optional .infra "overrides" dict -}}
+      {{- range $k, $v := $o -}}
+      {{- if not (has $k (list "engine_version")) -}}
+      {{- fail (printf "infra.overrides.%s is not a setting this Recipe reads: it reads %s from infra.overrides; remove infra.overrides.%s from the Release" $k "engine_version" $k) -}}
+      {{- end -}}
+      {{- end -}}
+  valuesMapping: |
+    {{- if (hasKey (optional .infra "overrides" dict) "engine_version") }}
+    engine_version: {{ toJson (index .infra "overrides" "engine_version") | replace "${" "$${" }}
+    {{- end }}
+    db_subnet_group_name: {{ toJson (index (default dict .context.inject) "property" "db_subnet_group_name") }}

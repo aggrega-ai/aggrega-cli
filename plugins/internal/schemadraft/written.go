@@ -35,7 +35,10 @@ type WrittenResource struct {
 	// it and the entities it drafts refer to; empty refers to its type.
 	ID               string
 	Type, APIVersion string
-	Properties       []WrittenProperty
+	// Provider is the provider the source names for the resource, with its
+	// locked version where it states one; nil where the source names none.
+	Provider   *ProviderAddress
+	Properties []WrittenProperty
 	// Provides are the resource's id and name, plus every attribute another
 	// node references, each under the key its consumers read; no two share a
 	// key.
@@ -93,6 +96,10 @@ func (l leftProperty) note() string { return l.path + " is left out: " + l.why }
 // a property read back.
 func placeWritten(w WrittenResource, rules Rules) writtenDraft {
 	d := writtenDraft{t: &Type{Name: w.Type, APIVersion: w.APIVersion}}
+	if w.Provider != nil {
+		provider := *w.Provider
+		d.t.Provider = &provider
+	}
 	placeable := &Type{Name: w.Type, APIVersion: w.APIVersion}
 	flags := map[*Property]WrittenProperty{}
 	var injects []Placed

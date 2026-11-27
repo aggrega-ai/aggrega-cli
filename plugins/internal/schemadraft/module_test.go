@@ -4,6 +4,7 @@
 package schemadraft
 
 import (
+	"path"
 	"reflect"
 	"strings"
 	"testing"
@@ -182,5 +183,37 @@ func TestWrappedFixedValueOnOneLine(t *testing.T) {
 	}
 	if !reflect.DeepEqual(drafted, Drafted{}) || len(handed) != 0 {
 		t.Errorf("drafted %+v, writer called %d times", drafted, len(handed))
+	}
+}
+
+// TestWrappedNameOverridesTheSlug names the Component and the Recipe by Name
+// where it is set, and by the type's name otherwise.
+func TestWrappedNameOverridesTheSlug(t *testing.T) {
+	var handed []WrappedModule
+	plain, _ := DraftWrapped(writtenInput(""), fxFormat(), queueModule("1"), moduleWriter(&handed))
+	m := queueModule("1")
+	m.Name = "Jobs"
+	named, _ := DraftWrapped(writtenInput(""), fxFormat(), m, moduleWriter(&handed))
+	if want := NameFor(writtenInput(""), fxFormat(), fxQueue); plain.Name != want {
+		t.Errorf("without Name the Component is %q, want %q", plain.Name, want)
+	}
+	if want := path.Dir(plain.Name) + "/jobs"; named.Name != want || named.Recipe != "jobs" {
+		t.Errorf("with Name the Component is %q and the Recipe %q, want %q and jobs", named.Name, named.Recipe, want)
+	}
+}
+
+// TestWrappedWithAnAddressAndNoURLIsDrafted drafts a module whose address is
+// known and whose URL is not, warning that the url is the author's to write.
+func TestWrappedWithAnAddressAndNoURLIsDrafted(t *testing.T) {
+	m := queueModule("1")
+	m.URL, m.AddressOnly = "", "app.terraform.io/acme/queue/aws"
+	var handed []WrappedModule
+	drafted, diags := DraftWrapped(writtenInput(""), fxFormat(), m, moduleWriter(&handed))
+	if len(drafted.Entities) != 2 || len(handed) != 1 {
+		t.Fatalf("drafted %+v, writer called %d times", drafted.Entities, len(handed))
+	}
+	if len(diags) != 1 || diags[0].Code != CodeLinkedSourceNotRead || diags[0].Severity != aggrega.SeverityWarn ||
+		!strings.Contains(diags[0].Message, m.AddressOnly) {
+		t.Errorf("diagnostics %+v", diags)
 	}
 }

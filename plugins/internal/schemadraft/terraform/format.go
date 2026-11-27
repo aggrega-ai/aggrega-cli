@@ -41,6 +41,10 @@ var Format = schemadraft.Format{
 	},
 	Category: category,
 	Write:    Write,
+	// SchemaFile is the export a schema import reads, and SchemaCommand the
+	// command writing it, which exports every provider's types at once.
+	SchemaFile:    "providers-schema.json",
+	SchemaCommand: "terraform providers schema -json",
 }
 
 // placements are the attributes each provider type, with the -beta suffix of
