@@ -261,8 +261,8 @@ func (r *reader) deployed(s *stack, n *cloudimport.Node) *template {
 		r.warnNode(cloudimport.CodeLinkedSourceNotRead, n, fmt.Sprintf("%s (%s) of %s deploys a template %s, which "+
 			"the import does not read: no resource of that template is drafted, %s is drafted as written, and each "+
 			"output of it the template reads is carried as text CloudFormation evaluates when the stack deploys; to "+
-			"draft its resources, place the template inside the imported directory and write its %s as a relative "+
-			"path to it", n.ID, typ, s.t.file, how, n.ID, linkProperty(typ)))
+			"draft its resources, import the directory holding both templates, each named %s, and write its %s as "+
+			"a relative path to it", n.ID, typ, s.t.file, how, n.ID, templateNames(), linkProperty(typ)))
 		return nil
 	}
 	for x := s; x != nil; x = x.up {

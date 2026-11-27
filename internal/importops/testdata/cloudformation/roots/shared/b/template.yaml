@@ -3,8 +3,8 @@ Resources:
   Net:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: ../shared/net.yaml
-  AQueue:
+      TemplateURL: ../shared/net.template.yaml
+  BQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: a-queue
+      QueueName: b-queue

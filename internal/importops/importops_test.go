@@ -334,8 +334,9 @@ func TestSelectFormat(t *testing.T) {
 	// each of the three forms the AWS CLI reads, a YAML file with resources and
 	// no transform, and a JSON object holding resources beside its parameters.
 	// Of the parameters files, the list of ParameterKey entries alone is
-	// recognised: a list of text and an object at Parameters are shapes JSON
-	// files of other kinds share, read only beside a template.
+	// recognised, under a name a parameters file is given: a list of text and
+	// an object at Parameters are shapes JSON files of other kinds share, read
+	// only beside a template. A template is recognised under any name.
 	cfnShortForms := []byte("AWSTemplateFormatVersion: 2010-09-09\nResources:\n  Queue:\n    Type: AWS::SQS::Queue\n" +
 		"    Properties:\n      QueueName: !Sub \"${AWS::StackName}-q\"\n      Tags: [!Ref Env]\n")
 	cfnSam := []byte("Transform: AWS::Serverless-2016-10-31\nResources:\n  Fn:\n    Type: AWS::Serverless::Function\n")
@@ -501,8 +502,12 @@ func TestSelectFormat(t *testing.T) {
 		{name: "a CloudFormation template in JSON", source: "stack.json", content: cfnJSON, want: "cloudformation"},
 		{name: "a SAM template in JSON with no version line", source: "stack.json", content: cfnSamJSON,
 			want: "cloudformation"},
+		{name: "a CloudFormation template under a name of its author's choosing", source: "orders/main.yml",
+			content: cfnShortForms, want: "cloudformation"},
 		{name: "a parameters file of ParameterKey entries", source: "params.json", content: cfnParamsList,
 			want: "cloudformation"},
+		{name: "a parameters file of ParameterKey entries under another name is refused", source: "prod.json",
+			content: cfnParamsList, wantErr: true},
 		{name: "a parameters file of Key=Value text alone is refused", source: "params.json", content: cfnParamsPairs,
 			wantErr: true},
 		{name: "a parameters file of an object at Parameters alone is refused", source: "params.json",
@@ -590,7 +595,7 @@ func TestSchemaImportersRecognisedAndNotCrossMatched(t *testing.T) {
 		{"a CloudFormation template with short forms", "template.yaml", cfnTestdata + "forms/long.yaml", "cloudformation"},
 		{"a CloudFormation template in JSON", "template.json", cfnTestdata + "forms/template.json", "cloudformation"},
 		{"a SAM template", "template.yaml", cfnTestdata + "sam/template.yaml", "cloudformation"},
-		{"a CloudFormation parameters file of ParameterKey entries", "list.json", cfnTestdata + "params/list.json", "cloudformation"},
+		{"a CloudFormation parameters file of ParameterKey entries", "parameters.json", cfnTestdata + "params/list.json", "cloudformation"},
 		{"a Compose file", "compose.yaml", "testdata/compose/compose-for-agents/langgraph.compose.yaml", "compose"},
 		{"a Langflow export", "flow.json", "../compiler/importersocket/testdata/langflow-flow.json", "langflow"},
 		{"a Flowise export", "flow.json", "../compiler/importersocket/testdata/flowise-flow.json", "flowise"},
@@ -645,6 +650,56 @@ func TestSchemaImportersRecognisedAndNotCrossMatched(t *testing.T) {
 			var undetected *UndetectedFormatError
 			if !errors.As(err, &undetected) {
 				t.Fatalf("SelectFormat(%q) = %q, %v; want an *UndetectedFormatError", name, got, err)
+			}
+		})
+	}
+}
+
+// TestACloudFormationDirectoryIsRecognisedByItsTemplatesName recognises a
+// directory as cloudformation through a template under a name a directory
+// import reads — SAM's template.yaml at any depth, a name ending
+// .template.yaml or .cfn.json — and a directory whose one template is named
+// otherwise as nothing, since its patterns select no file of it.
+func TestACloudFormationDirectoryIsRecognisedByItsTemplatesName(t *testing.T) {
+	seam := referenceDetectionSeam(t)
+	const template = "AWSTemplateFormatVersion: \"2010-09-09\"\nResources: {}\n"
+	for _, tc := range []struct {
+		name string
+		want string
+	}{
+		{"infra/template.yaml", "cloudformation"},
+		{"orders.template.yaml", "cloudformation"},
+		{"orders.cfn.json", "cloudformation"},
+		{"main.yaml", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, filepath.FromSlash(tc.name))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			body := template
+			if strings.HasSuffix(tc.name, ".json") {
+				body = `{"AWSTemplateFormatVersion": "2010-09-09", "Resources": {}}`
+			}
+			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			src, err := readSource(dir, filepath.Base(dir), "")
+			if err != nil {
+				t.Fatalf("read the directory: %v", err)
+			}
+			got, err := SelectFormat(context.Background(), "", src, seam)
+			if tc.want == "" {
+				var undetected *UndetectedFormatError
+				if !errors.As(err, &undetected) || !undetected.IsDirectory() {
+					t.Fatalf("SelectFormat over a directory holding %s = %q, %v; want it refused as unrecognised",
+						tc.name, got, err)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("SelectFormat over a directory holding %s = %q, %v; want %s", tc.name, got, err, tc.want)
 			}
 		})
 	}

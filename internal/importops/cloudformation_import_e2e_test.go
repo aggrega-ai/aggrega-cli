@@ -310,7 +310,7 @@ func importForCfnRoots(t *testing.T, name string, settings map[string]any) Resul
 func TestCloudFormationTwoRootsRefused(t *testing.T) {
 	res := importForCfnRoots(t, "roots/two", nil)
 	halts := diagnosticsCodedAs(res, "source-refused")
-	if !res.Halted() || len(halts) != 1 || !strings.Contains(halts[0].Message, "a.yaml, b.yaml") ||
+	if !res.Halted() || len(halts) != 1 || !strings.Contains(halts[0].Message, "a.template.yaml, b.template.yaml") ||
 		!strings.Contains(halts[0].Message, "root") {
 		t.Fatalf("the import of two roots reports %+v", res.Diagnostics)
 	}
@@ -323,13 +323,13 @@ func TestCloudFormationTwoRootsRefused(t *testing.T) {
 // root setting: the import starts from it alone, drafting its queue and none of
 // the other's.
 func TestCloudFormationRootSettingChoosesOne(t *testing.T) {
-	res := importForCfnRoots(t, "roots/two", map[string]any{"root": "b.yaml"})
+	res := importForCfnRoots(t, "roots/two", map[string]any{"root": "b.template.yaml"})
 	if res.Halted() {
 		t.Fatalf("the import halted: %+v", res.Diagnostics)
 	}
 	got := fileNamed(t, res, "aggregate.yaml")
-	if !strings.Contains(got, "# Sources read: b.yaml.") || !strings.Contains(got, "BetaQueue") || strings.Contains(got, "AlphaQueue") {
-		t.Errorf("the Aggregate is\n%s\nwant b.yaml's queue alone, b.yaml the one source read", got)
+	if !strings.Contains(got, "# Sources read: b.template.yaml.") || !strings.Contains(got, "BetaQueue") || strings.Contains(got, "AlphaQueue") {
+		t.Errorf("the Aggregate is\n%s\nwant b.template.yaml's queue alone, b.template.yaml the one source read", got)
 	}
 }
 
@@ -338,14 +338,14 @@ func TestCloudFormationRootSettingChoosesOne(t *testing.T) {
 // own directory, starting from one of them: the shared template is read with it,
 // so its topic is drafted, and the other template is not read.
 func TestCloudFormationSharedChildFromTheCommonAncestor(t *testing.T) {
-	res := importForCfnRoots(t, "roots/shared", map[string]any{"root": "a/main.yaml"})
+	res := importForCfnRoots(t, "roots/shared", map[string]any{"root": "a/template.yaml"})
 	if res.Halted() {
 		t.Fatalf("the import halted: %+v", res.Diagnostics)
 	}
 	got := fileNamed(t, res, "aggregate.yaml")
-	if !strings.Contains(got, "# Sources read: a/main.yaml, shared/net.yaml.") || !strings.Contains(got, "AQueue") ||
+	if !strings.Contains(got, "# Sources read: a/template.yaml, shared/net.template.yaml.") || !strings.Contains(got, "AQueue") ||
 		!strings.Contains(got, "SharedTopic") || strings.Contains(got, "BQueue") {
-		t.Errorf("the Aggregate is\n%s\nwant a's queue and the shared template's topic, from a/main.yaml and shared/net.yaml", got)
+		t.Errorf("the Aggregate is\n%s\nwant a's queue and the shared template's topic, from a/template.yaml and shared/net.template.yaml", got)
 	}
 	if links := diagnosticsCodedAs(res, "linked-source-not-read"); len(links) != 0 {
 		t.Errorf("the shared template was not read: %+v", links)
@@ -430,5 +430,53 @@ func TestCloudFormationParametersFileBesideTheTemplateIsRead(t *testing.T) {
 					drafts)
 			}
 		})
+	}
+}
+
+// TestCloudFormationDirectoryIsReadThroughItsTemplatesAndParametersFileByName
+// imports, naming no format, a directory holding template.yaml, which deploys
+// a nested stack from network.yaml, beside parameters.json, a stray
+// notes.yaml, the import's answers file and a parameters file named
+// prod.json, the last three unreadable: the directory is recognised and read
+// through template.yaml and parameters.json alone, so nothing else is opened;
+// network.yaml, a name a directory import does not read, is not handed, and
+// the nested stack is drafted as written, its warning naming the names a
+// template is read under.
+func TestCloudFormationDirectoryIsReadThroughItsTemplatesAndParametersFileByName(t *testing.T) {
+	skipWhereNoFileIsUnreadable(t)
+	rw, ws := cfnWorkspace(t, nil)
+	dir := filepath.Join(t.TempDir(), "orders")
+	for name, body := range map[string]string{
+		"template.yaml": "AWSTemplateFormatVersion: \"2010-09-09\"\nParameters:\n  DbName:\n    Type: String\n" +
+			"    Default: orders_dev\nResources:\n  Net:\n    Type: AWS::CloudFormation::Stack\n    Properties:\n" +
+			"      TemplateURL: ./network.yaml\n  Db:\n    Type: AWS::RDS::DBInstance\n    Properties:\n" +
+			"      Engine: postgres\n      DBName: !Ref DbName\n",
+		"network.yaml": "AWSTemplateFormatVersion: \"2010-09-09\"\nResources:\n  Topic:\n" +
+			"    Type: AWS::SNS::Topic\n",
+		"parameters.json": `[{"ParameterKey": "DbName", "ParameterValue": "orders_prod"}]`,
+		"notes.yaml":      "note: a file of the project no importer reads\n",
+		AnswersFileName:   "aggregate.yaml: {}\n",
+		"prod.json":       `[{"ParameterKey": "DbName", "ParameterValue": "orders_other"}]`,
+	} {
+		importopstest.WriteSource(t, filepath.Join(dir, name), body)
+	}
+	for _, name := range []string{"notes.yaml", AnswersFileName, "prod.json"} {
+		makeUnreadable(t, filepath.Join(dir, name))
+	}
+	res, err := cfnImport(t, rw, dir, "", filepath.Join(ws, "out"), false, authoredcontent.DeliveryReport)
+	if err != nil || res.Halted() || res.Format != "cloudformation" {
+		t.Fatalf("the import read the directory as %q: %v %+v", res.Format, err, res.Diagnostics)
+	}
+	aggregate := fileNamed(t, res, "aggregate.yaml")
+	if !strings.Contains(aggregate, "# Sources read: parameters.json, template.yaml.\n") ||
+		strings.Contains(aggregate, "Not read:") || !strings.Contains(aggregate, `default: "orders_prod"`) {
+		t.Errorf("the Aggregate is\n%s\nwant template.yaml and parameters.json read and nothing named not read",
+			aggregate)
+	}
+	links := diagnosticsCodedAs(res, "linked-source-not-read")
+	if len(links) != 1 || !strings.Contains(links[0].Message, "deploys a template linked by a path naming no "+
+		"template the import holds") || !strings.Contains(links[0].Message, "each named template.yaml, "+
+		"template.yml, template.json, or a name ending .template, ") {
+		t.Errorf("linked-source-not-read diagnostics are %+v", links)
 	}
 }

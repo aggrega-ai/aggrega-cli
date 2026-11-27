@@ -202,8 +202,10 @@ func notReadLink(at, typ, how, property string) aggrega.Diagnostic {
 	return aggrega.Diagnostic{Severity: aggrega.SeverityWarn, Code: "linked-source-not-read", Message: at + " (" + typ +
 		") of main.yaml deploys a template " + how + ", which the import does not read: no resource of that " +
 		"template is drafted, " + at + " is drafted as written, and each output of it the template reads is carried " +
-		"as text CloudFormation evaluates when the stack deploys; to draft its resources, place the template inside " +
-		"the imported directory and write its " + property + " as a relative path to it",
+		"as text CloudFormation evaluates when the stack deploys; to draft its resources, import the directory " +
+		"holding both templates, each named template.yaml, template.yml, template.json, or a name ending " +
+		".template, .template.yaml, .template.yml, .cfn.yaml, .cfn.yml, .template.json or .cfn.json, and write its " +
+		property + " as a relative path to it",
 		SourceRef: "main.yaml#/Resources/" + at}
 }
 

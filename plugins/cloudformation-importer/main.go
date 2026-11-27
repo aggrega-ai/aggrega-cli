@@ -77,25 +77,35 @@ func descriptor() aggrega.PluginDescriptor {
 // entity: a file stating AWSTemplateFormatVersion, or holding resources under a
 // Transform, is a template, and a JSON list whose first entry names a
 // ParameterKey is a parameters file. The version line is read as a string
-// whether or not it is quoted. No signature names a parameters file of
-// Key=Value text or of an object holding parameters and no resources, as JSON
-// files of other kinds hold a list of text, or such an object, too: a
-// directory holding one beside its template is recognised by the template,
-// and the reader reads every JSON file the patterns hand it and tells a
-// parameters file itself. The host evaluates the signatures without knowing
-// what CloudFormation is.
-var detect = []aggrega.DetectSignature{
-	{Syntax: "yaml", Files: []string{"*.yaml", "*.yml", "*.template"},
-		Match: []aggrega.PathMatch{{Path: "AWSTemplateFormatVersion", Is: "string"}}},
-	{Syntax: "yaml", Files: []string{"*.yaml", "*.yml", "*.template"},
-		Match: []aggrega.PathMatch{{Path: "Resources", Is: "object"}, {Path: "Transform", Is: "present"}}},
-	{Syntax: "json", Files: []string{"*.json", "*.template"},
-		Match: []aggrega.PathMatch{{Path: "AWSTemplateFormatVersion", Is: "string"}}},
-	{Syntax: "json", Files: []string{"*.json"},
-		Match: []aggrega.PathMatch{{Path: "Resources", Is: "object"}, {Path: "Transform", Is: "present"}}},
-	{Syntax: "json", Files: []string{"*.json"},
-		Match: []aggrega.PathMatch{{Path: "0.ParameterKey", Is: "string"}}},
-}
+// whether or not it is quoted. The host evaluates the signatures without
+// knowing what CloudFormation is.
+//
+// A template imported as a file on its own is recognised whatever its name, by
+// the signatures naming no file, which apply to no file of a directory. A
+// directory is recognised, and read, through the files its templates and its
+// parameters file are named by (cfnimport.YAMLTemplateFiles,
+// cfnimport.JSONTemplateFiles, cfnimport.ParametersFiles), so no other file it
+// holds is opened; the reader tells each file it is handed itself. No
+// signature names a parameters file of Key=Value text or of an object holding
+// parameters and no resources, as JSON files of other kinds hold a list of
+// text, or such an object, too: one beside a template is handed by its name.
+var detect = func() []aggrega.DetectSignature {
+	version := []aggrega.PathMatch{{Path: "AWSTemplateFormatVersion", Is: "string"}}
+	transformed := []aggrega.PathMatch{{Path: "Resources", Is: "object"}, {Path: "Transform", Is: "present"}}
+	jsonVersionFiles := append(append([]string(nil), cfnimport.JSONTemplateFiles...), "*.template")
+	return []aggrega.DetectSignature{
+		{Syntax: "yaml", Match: version},
+		{Syntax: "yaml", Match: transformed},
+		{Syntax: "json", Match: version},
+		{Syntax: "json", Match: transformed},
+		{Syntax: "yaml", Files: cfnimport.YAMLTemplateFiles, Match: version},
+		{Syntax: "yaml", Files: cfnimport.YAMLTemplateFiles, Match: transformed},
+		{Syntax: "json", Files: jsonVersionFiles, Match: version},
+		{Syntax: "json", Files: cfnimport.JSONTemplateFiles, Match: transformed},
+		{Syntax: "json", Files: cfnimport.ParametersFiles,
+			Match: []aggrega.PathMatch{{Path: "0.ParameterKey", Is: "string"}}},
+	}
+}()
 
 //go:wasmexport describe
 func describe() int32 {

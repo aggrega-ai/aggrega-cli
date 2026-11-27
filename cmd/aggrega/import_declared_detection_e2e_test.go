@@ -38,7 +38,8 @@ import (
 // everyAgentFlowFixture is every Langflow, Flowise and n8n export committed in
 // this module, keyed by its format — the Langflow and Flowise ones by the format
 // the host recognised them as before the formats were declared by their
-// importers — the census a change to recognition is held to.
+// importers — the census a change to recognition is held to. A fixture is
+// imported under its own file name, or under the name importedUnder gives it.
 var everyAgentFlowFixture = []struct {
 	format string
 	path   string
@@ -65,6 +66,12 @@ var everyAgentFlowFixture = []struct {
 	{"cloudformation", "../../plugins/internal/cfnimport/testdata/forms/template.json"},
 	{"cloudformation", "../../plugins/internal/cfnimport/testdata/sam/template.yaml"},
 	{"cloudformation", "../../plugins/internal/cfnimport/testdata/params/list.json"},
+}
+
+// importedUnder gives the census's fixtures whose file in the test data is not
+// named as their importer's patterns read them the name each is imported under.
+var importedUnder = map[string]string{
+	"../../plugins/internal/cfnimport/testdata/params/list.json": "parameters.json",
 }
 
 // toolImportAnswer is what the assistant's import tool answered one call with.
@@ -201,9 +208,12 @@ func TestEveryAgentFlowFixtureIsRecognisedByItsImportersDeclaration(t *testing.T
 	isolateMachineConfiguration(t)
 
 	for _, fx := range everyAgentFlowFixture {
-		t.Run(filepath.Base(fx.path), func(t *testing.T) {
+		name := filepath.Base(fx.path)
+		if under, ok := importedUnder[fx.path]; ok {
+			name = under
+		}
+		t.Run(name, func(t *testing.T) {
 			root, _ := catalogFolderWorkspace(t, true)
-			name := filepath.Base(fx.path)
 			seedSource(t, root, name, readCatalogFolderSource(t, fx.path))
 
 			_, _, commentary, process := runImportAtTheRoot(t, root, filepath.Join(root, name), "--dry-run")
