@@ -30,3 +30,6 @@ spec:
     parameter_group_family: "redis7"
     maintenance:
       window: "{{ .values.maintenance_window }}"
+    users:
+      "{{ .values.user }}":
+        name: "{{ .values.user }}"

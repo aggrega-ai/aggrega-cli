@@ -30,7 +30,9 @@ import (
 // a subdirectory of one; server-cloud-run, passing its input through the
 // pass-through module to an ArtifactLibrary body and reading its valuesMapping
 // from a MappingLibrary; server-ecs and task-ecs, each writing a task
-// definition its instance references; and the FeatureRecipe generated-secret.
+// definition its instance references; s3-object-store-amazon-s3, writing a
+// bucket beside resources a count and a for_each repeat; and the
+// FeatureRecipe generated-secret.
 const tfMiniatureHub = "testdata/terraform/hub"
 
 // tfFaults holds Recipes the miniature hub lacks, each carrying one fault.
@@ -232,7 +234,8 @@ func TestTerraformRawResourceRow(t *testing.T) {
 // published module by its repository, and requires a row of the module form
 // keyed by the module's registry address: the engine its valuesMapping writes
 // as a literal as the When, and another literal as none; each input one
-// action reads a value or an infra key whole at, a nested input by its path;
+// action reads a value or an infra key whole at, a nested input by its path,
+// and none beneath a key the build decides, which no configuration writes;
 // each override the header names an input for; and the output the provides
 // publish in a branch of a decision.
 func TestTerraformGitModuleRow(t *testing.T) {
@@ -297,11 +300,11 @@ func TestTerraformLibraryBackedRow(t *testing.T) {
 	r := oneRowOf(t, rows, "server-cloud-run")
 	equal(t, "the key", r.Key, "google_cloud_run_v2_service")
 	equal(t, "the form", r.Form, cloudimport.FormRaw)
-	equal(t, "the infra", r.Infra, []cloudimport.Placement{{From: []string{"template", "0", "containers", "0",
-		"image"}, Key: "image", Conv: "string"}})
+	equal(t, "the infra", r.Infra, []cloudimport.Placement{{From: []string{"template", "containers", "image"},
+		Key: "image", Conv: "string"}})
 	equal(t, "the overrides", r.Overrides, []cloudimport.Placement{
 		placedAt("region", "location"),
-		placedAt("service_account", "template", "0", "service_account"),
+		placedAt("service_account", "template", "service_account"),
 	})
 	equal(t, "the provides", r.Provides, []cloudimport.Placement{placedAt("url", "uri"), placedAt("name", "name")})
 	n := noteOf(t, notes, "server-cloud-run")
@@ -354,29 +357,49 @@ func TestTerraformLibraryBackedRow(t *testing.T) {
 // TestTerraformSeveralResourcesKeyedByTheUnreferencedOne requires, of the
 // resources a Recipe writes, the one no other references to be the instance:
 // the schedule task-ecs writes beside the task definition it starts, and the
-// service server-ecs writes beside its task definition and log group; and a
-// Recipe writing two resources of two types neither of which another
-// references to give no row, the note naming both, and the coverage check to
-// ask for it.
+// service server-ecs writes beside its task definition and log group; a
+// resource a count or a for_each repeats to be neither the instance nor to
+// make another referenced, so the bucket s3-object-store-amazon-s3 writes is
+// the instance and the versioning and policies are left out; and a Recipe
+// whose text does not say which resource stands for the instance to give no
+// row, the note saying why, and the coverage check to ask for it: one writing
+// two resources of two types neither of which another references, and one
+// whose unreferenced client references, through no read-in rule, a user pool
+// written once.
 func TestTerraformSeveralResourcesKeyedByTheUnreferencedOne(t *testing.T) {
 	t.Parallel()
-	hub := tfHubWith(t, "two-unreferenced")
+	hub := tfHubWith(t, "two-unreferenced", "chained-pair")
 	rows, notes := tfRowsOrFail(t, hub)
 	task := oneRowOf(t, rows, "task-ecs")
 	equal(t, "the task's key", task.Key, "aws_scheduler_schedule")
 	equal(t, "the task's values", task.Values, []cloudimport.Placement{{From: []string{"schedule_expression"},
 		Key: "schedule", Conv: "string"}})
-	equal(t, "the task's infra", task.Infra, []cloudimport.Placement{{From: []string{"target", "0",
-		"ecs_parameters", "0", "task_definition_arn", "container_definitions", "0", "image"}, Key: "image",
-		Conv: "string"}})
+	equal(t, "the task's infra", task.Infra, []cloudimport.Placement{{From: []string{"target", "ecs_parameters",
+		"task_definition_arn", "container_definitions", "0", "image"}, Key: "image", Conv: "string"}})
 	equal(t, "the task's provides", task.Provides, []cloudimport.Placement(nil))
 	equal(t, "the server's key", oneRowOf(t, rows, "server-ecs").Key, "aws_ecs_service")
 
-	equal(t, "the rows of two-unreferenced", rowsOf(rows, "two-unreferenced"), []cloudimport.Row(nil))
-	if n := noteOf(t, notes, "two-unreferenced"); !strings.Contains(n, "no row, since it writes "+
-		"aws_apigatewayv2_route.this (main.tf) and aws_apigatewayv2_stage.this (main.tf), of 2 types no other "+
-		"resource of the Recipe references") {
-		t.Errorf("the note does not name the two resources: %s", n)
+	bucket := oneRowOf(t, rows, "s3-object-store-amazon-s3")
+	equal(t, "the bucket's key", bucket.Key, "aws_s3_bucket")
+	equal(t, "the bucket's provides", bucket.Provides, []cloudimport.Placement{placedAt("bucket", "bucket")})
+	n := noteOf(t, notes, "s3-object-store-amazon-s3")
+	for _, left := range []string{"aws_s3_bucket_versioning.this (main.tf)", "aws_s3_bucket_policy.readers (main.tf)"} {
+		if !strings.Contains(n, "the resource "+left+" is read as part of the instance by no read-in rule") {
+			t.Errorf("the note does not name %s left out: %s", left, n)
+		}
+	}
+
+	for recipe, want := range map[string]string{
+		"two-unreferenced": "no row, since it writes aws_apigatewayv2_route.this (main.tf) and " +
+			"aws_apigatewayv2_stage.this (main.tf), of 2 types no other resource of the Recipe references",
+		"chained-pair": "no row, since the resource aws_cognito_user_pool_client.this (main.tf), which no other " +
+			"resource references, references aws_cognito_user_pool.this (main.tf), written once, which no read-in " +
+			"rule reads in place of the reference",
+	} {
+		equal(t, "the rows of "+recipe, rowsOf(rows, recipe), []cloudimport.Row(nil))
+		if n := noteOf(t, notes, recipe); !strings.Contains(n, want) {
+			t.Errorf("the note of %s does not say %q: %s", recipe, want, n)
+		}
 	}
 	h, err := loadHub(hub, "terraform")
 	if err != nil {
@@ -386,16 +409,19 @@ func TestTerraformSeveralResourcesKeyedByTheUnreferencedOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(findings, "the Recipe terraform/two-unreferenced is reached by no row and listed in no "+
-		"notImported entry") {
-		t.Errorf("the coverage check does not ask for two-unreferenced: %v", findings)
+	for _, recipe := range []string{"chained-pair", "two-unreferenced"} {
+		if !slices.Contains(findings, "the Recipe terraform/"+recipe+" is reached by no row and listed in no "+
+			"notImported entry") {
+			t.Errorf("the coverage check does not ask for %s: %v", recipe, findings)
+		}
 	}
 }
 
 // TestTerraformDiscriminatorOnASingleRecipeKey requires the engine type the
 // one Amazon MQ Recipe writes as a literal to be its When though no other
 // Recipe maps the type, read through a local module, and a literal its
-// valuesMapping passes to another attribute to be none; a Recipe the
+// valuesMapping passes to another attribute to be none; a Recipe writing its
+// engine through a local, which says no engine, to give no row; a Recipe the
 // importer's table writes Whens for to give a row for each, after its own
 // When; two Recipes left on one type and When to be refused, naming both,
 // and the generator to write the table once notImported lists one of them.
@@ -407,7 +433,7 @@ func TestTerraformDiscriminatorOnASingleRecipeKey(t *testing.T) {
 	equal(t, "the form", r.Form, cloudimport.FormRaw)
 	equal(t, "the When", r.When, []cloudimport.Pred{{Path: []string{"engine_type"}, Op: cloudimport.OpEquals,
 		Value: "RabbitMQ"}})
-	equal(t, "the values", r.Values, []cloudimport.Placement{{From: []string{"user", "0", "username"},
+	equal(t, "the values", r.Values, []cloudimport.Placement{{From: []string{"user", "username"},
 		Key: "user", Conv: "string"}})
 	equal(t, "the infra", r.Infra, []cloudimport.Placement{{From: []string{"engine_version"},
 		Key: "engine_version", Conv: "string"}})
@@ -430,6 +456,13 @@ func TestTerraformDiscriminatorOnASingleRecipeKey(t *testing.T) {
 	}
 	equal(t, "the When of mysql-rds with a When written for it", oneRowOf(t, told, "mysql-rds").When,
 		[]cloudimport.Pred{{Path: []string{"engine"}, Op: cloudimport.OpEquals, Value: "mysql"}, present})
+
+	loose, notes := tfRowsOrFail(t, tfHubWith(t, "engine-from-a-local"))
+	equal(t, "the rows of engine-from-a-local", rowsOf(loose, "engine-from-a-local"), []cloudimport.Row(nil))
+	if n := noteOf(t, notes, "engine-from-a-local"); !strings.Contains(n, "no row, since its text writes engine "+
+		"of the resource aws_db_instance.this (main.tf) as no literal outside every branch") {
+		t.Errorf("the note does not say the engine is no literal: %s", n)
+	}
 
 	hub := tfHubWith(t, "rival-postgres")
 	_, _, err = generateFromHub(hub, tfFormatOrFail(t), cloudimport.Table{})
@@ -505,7 +538,9 @@ func TestTerraformUnresolvableImportRefused(t *testing.T) {
 // definitions read, and the infra key its CPU reads, placed beneath the
 // service's task_definition; the log group the task definition references,
 // which no read-in rule reads, left out with a note naming it; and the
-// service's own values and output placed as written.
+// service's own values and output placed as written, a nested block it
+// writes once by its type, as an object, and each of two blocks of one type
+// by the type and its index.
 func TestTerraformPlacementReadInPlaceOfAReference(t *testing.T) {
 	t.Parallel()
 	rows, notes := tfRowsOrFail(t, tfMiniatureHub)
@@ -513,6 +548,9 @@ func TestTerraformPlacementReadInPlaceOfAReference(t *testing.T) {
 	equal(t, "the key", r.Key, "aws_ecs_service")
 	equal(t, "the infra", r.Infra, []cloudimport.Placement{
 		placedAt("replicas", "desired_count"),
+		placedAt("subnets", "network_configuration", "subnets"),
+		placedAt("base_tasks", "capacity_provider_strategy", "0", "base"),
+		placedAt("spot_weight", "capacity_provider_strategy", "1", "weight"),
 		{From: []string{"task_definition", "cpu"}, Key: "compute.cpu", Conv: "string"},
 		{From: []string{"task_definition", "container_definitions", "0", "image"}, Key: "image", Conv: "string"},
 	})

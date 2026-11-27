@@ -314,8 +314,10 @@ func parseTerraformFile(f fragment, template bool) (*tfFile, string) {
 }
 
 // tfResource is one resource block of a Recipe's files: its type as written,
-// its name in canonical text, its file and block, and whether it opens inside
-// a template branch, and inside a range, which repeats it.
+// its name in canonical text, its file and block, whether it opens inside a
+// template branch, and whether it is written once or not at all, any number of
+// times, or as the configuration decides — inside a template range, or under
+// its own count or for_each.
 type tfResource struct {
 	typ, name        string
 	file             *tfFile
@@ -369,8 +371,11 @@ func readTerraformModule(r recipeSource) (tfModule, string) {
 			switch {
 			case b.Type == "resource" && len(b.Labels) == 2:
 				st := f.lineAt(b.TypeRange.Start.Line)
+				_, counted := b.Body.Attributes["count"]
+				_, each := b.Body.Attributes["for_each"]
 				m.resources = append(m.resources, &tfResource{typ: f.canonical(b.Labels[0]),
-					name: f.canonical(b.Labels[1]), file: f, block: b, branch: st.conditional, repeated: st.repeated})
+					name: f.canonical(b.Labels[1]), file: f, block: b, branch: st.conditional,
+					repeated: st.repeated || counted || each})
 			case b.Type == "output" && len(b.Labels) == 1:
 				key := f.dir + "\x00" + f.canonical(b.Labels[0])
 				if a, ok := b.Body.Attributes["value"]; ok {
@@ -426,15 +431,16 @@ func traversalsOf(body *hclsyntax.Body) []hcl.Traversal {
 // instanceResource returns the resource of m that is the instance: of the
 // resources no other resource of m references, which must all be of one type,
 // the one opening outside every template branch, or the one alone. A resource
-// a template range writes is one the template repeats, and neither is the
-// instance nor makes another resource referenced. It returns why where m's
-// text does not say which.
+// a template range repeats, or its own count or for_each, may stand for no
+// one instance, and neither is the instance nor makes another resource
+// referenced. It returns why where m's text does not say which.
 func (m tfModule) instanceResource() (*tfResource, string) {
 	switch {
 	case len(m.resources) == 0:
 		return nil, "it writes no resource"
 	case !slices.ContainsFunc(m.resources, func(r *tfResource) bool { return !r.repeated }):
-		return nil, "it writes each of its resources inside a template range, which repeats it"
+		return nil, "it writes each of its resources inside a template range or under a count or for_each, so " +
+			"none stands for one instance"
 	}
 	referenced := map[*tfResource]bool{}
 	for _, r := range m.resources {
@@ -564,6 +570,9 @@ type tfRowBuilder struct {
 	// varDirs are the directories of the module whose variables are the ones
 	// the Recipe's valuesMapping writes.
 	varDirs []string
+	// discriminated are the discriminators the instance's resource, or the
+	// Recipe's valuesMapping at an input it reads, writes in any form.
+	discriminated []string
 }
 
 // place adds a placement of what s reads from the path from, keeping the
@@ -578,6 +587,25 @@ func (b *tfRowBuilder) place(s sym, from []string, conv cloudimport.Conv) {
 	}
 }
 
+// discriminates records that path, where it is a discriminator, is written.
+func (b *tfRowBuilder) discriminates(path []string) {
+	if len(path) == 1 && slices.Contains(terraformDiscriminators, path[0]) &&
+		!slices.Contains(b.discriminated, path[0]) {
+		b.discriminated = append(b.discriminated, path[0])
+	}
+}
+
+// looseDiscriminator returns a discriminator written and given no When, a
+// literal outside every branch giving none.
+func (b *tfRowBuilder) looseDiscriminator() (string, bool) {
+	for _, d := range b.discriminated {
+		if !slices.ContainsFunc(b.row.When, func(p cloudimport.Pred) bool { return slices.Equal(p.Path, []string{d}) }) {
+			return d, true
+		}
+	}
+	return "", false
+}
+
 // when adds the predicate a discriminator's literal at path gives.
 func (b *tfRowBuilder) when(path []string, literal string) {
 	if len(path) != 1 || !slices.Contains(terraformDiscriminators, path[0]) {
@@ -590,11 +618,13 @@ func (b *tfRowBuilder) when(path []string, literal string) {
 }
 
 // walkBody calls visit with each value body writes and the path it writes it
-// at beneath prefix, in the order written: an attribute by its name, a nested
-// block's by the block's type and its index among the blocks of that type,
-// and a value inside an object, a tuple or a value jsonencode encodes by the
-// member's key or the item's index. A dynamic block, which repeats its
-// content, gives nothing.
+// at beneath prefix, in the order written: an attribute by its name; a nested
+// block's by the block's type where body writes one block of that type, as a
+// configuration written as JSON writes it as an object, and by the type and
+// the block's index among them where it writes several, a list; and a value
+// inside an object, a tuple or a value jsonencode encodes by the member's key
+// or the item's index. A dynamic block, which repeats its content, gives
+// nothing.
 func walkBody(body *hclsyntax.Body, prefix []string, visit func([]string, hclsyntax.Expression)) {
 	type item struct {
 		at    int
@@ -609,6 +639,12 @@ func walkBody(body *hclsyntax.Body, prefix []string, visit func([]string, hclsyn
 		items = append(items, item{at: b.TypeRange.Start.Byte, block: b})
 	}
 	slices.SortFunc(items, func(x, y item) int { return x.at - y.at })
+	written := map[string]int{}
+	for _, b := range body.Blocks {
+		if b.Type != "dynamic" {
+			written[b.Type]++
+		}
+	}
 	index := map[string]int{}
 	for _, it := range items {
 		if it.attr != nil {
@@ -618,9 +654,12 @@ func walkBody(body *hclsyntax.Body, prefix []string, visit func([]string, hclsyn
 		if it.block.Type == "dynamic" {
 			continue
 		}
-		i := index[it.block.Type]
-		index[it.block.Type]++
-		walkBody(it.block.Body, slices.Concat(prefix, []string{it.block.Type, strconv.Itoa(i)}), visit)
+		at := slices.Concat(prefix, []string{it.block.Type})
+		if written[it.block.Type] > 1 {
+			at = append(at, strconv.Itoa(index[it.block.Type]))
+			index[it.block.Type]++
+		}
+		walkBody(it.block.Body, at, visit)
 	}
 }
 
@@ -692,6 +731,9 @@ func (b *tfRowBuilder) readResource(r *tfResource, prefix []string, own bool) ([
 	inputs := slices.Contains(b.varDirs, r.file.dir)
 	walkBody(r.block.Body, prefix, func(p []string, e hclsyntax.Expression) {
 		b.written = append(b.written, p)
+		if own {
+			b.discriminates(p)
+		}
 		st := r.file.lineAt(e.Range().Start.Line)
 		if a, quoted, ok := r.file.masked(e); ok {
 			if st.repeated || !readsDataIn(r.file.pipes, a.start, a.end) {
@@ -777,14 +819,20 @@ func (b *tfRowBuilder) declares(name string) bool {
 // readValuesMapping reads the Recipe's valuesMapping, each input it writes
 // read through at: one action reading a value or an infra key whole placed
 // from the path at gives, and a discriminator written as a literal outside
-// every branch at a path at gives one segment of a predicate.
+// every branch at a path at gives one segment of a predicate. An input whose
+// path holds an action is at a key the build decides, which no configuration
+// writes, and gives nothing.
 func (b *tfRowBuilder) readValuesMapping(text string, at func([]string) ([]string, bool)) {
 	doc := readTemplateYAML(text)
 	for _, l := range doc.leaves {
+		if slices.ContainsFunc(l.path, func(seg string) bool { return strings.Contains(seg, "{{") }) {
+			continue
+		}
 		from, ok := at(l.path)
 		if !ok {
 			continue
 		}
+		b.discriminates(from)
 		if doc.readsData(l) {
 			if s, conv, ok := readWhole(l.value); ok {
 				b.place(s, from, conv)
@@ -882,15 +930,15 @@ func (m tfModule) attributePath(f *tfFile, t hcl.Traversal, r *tfResource) ([]st
 // extractTerraform reads one terraform Recipe's row literally, evaluating no
 // template, or returns why it gives none.
 //
-// A Recipe sourcing a module by a git-repository or terraform-module-oci
-// source gives a row of the module form keyed by the module's registry
-// address, which the repository the source names gives
-// ([tfaddr.FromGitURL]) with its module_subdir: each input its valuesMapping
-// writes as one action reading a value or an infra key whole is placed from
-// the input's path, a discriminator it writes as a literal outside every
-// branch is the When, each key the overrides header names a path for is
-// placed from it, and each provides key publishing one output of the
-// instance's module whole is placed at that output.
+// A Recipe sourcing a module by a git-repository source gives a row of the
+// module form keyed by the module's registry address, which the repository
+// the source names gives ([tfaddr.FromGitURL]) with its module_subdir: each
+// input its valuesMapping writes as one action reading a value or an infra key
+// whole is placed from the input's path, a discriminator it writes as a
+// literal outside every branch is the When, each key the overrides header
+// names a path for is placed from it, and each provides key publishing one
+// output of the instance's module whole is placed at that output. A module
+// from an OCI registry gives no row, its address not read.
 //
 // Any other Recipe is read from its configuration: the files of the local
 // directory it sources, copied as they are, and its artifacts, the files of
@@ -899,21 +947,26 @@ func (m tfModule) attributePath(f *tfFile, t hcl.Traversal, r *tfResource) ([]st
 // directory whose main.tf is the hub's pass-through module writes no resource
 // and hands its input to the body it calls. Of the resources the files write,
 // the one no other resource references is the instance, and its type the
-// row's key: a resource a template range repeats is none, and of several of
-// one type, the one written outside every template branch is. Each value the
+// row's key: a resource a template range, a count or a for_each repeats is
+// none, and of several of one type, the one written outside every template
+// branch is; where it references another resource written once, which no
+// read-in rule reads in place of the reference, the text does not say which
+// stands for the instance, and the Recipe gives no row. Each value the
 // instance's resource writes as one action reading a value or an infra key
 // whole, outside a range, is placed from its path, and so is each value of a
 // resource a read-in rule ([tfimport.ReadIns]) reads in place of the
 // instance's reference to it, beneath the referencing attribute; each other
 // resource is left out, and the note says so. A discriminator the instance's
-// resource writes as a literal outside every template branch is the When. A
-// valuesMapping input the module reads whole at an attribute of those
-// resources is placed, or gives the When, from that attribute; each key the
-// overrides header names a path for is placed from it, a module input's path
-// read at the attribute reading it; and each provides key publishing one
-// output of the instance's module, or of the body the pass-through module
-// calls, whose value is an attribute of the instance's resource, is placed at
-// that attribute.
+// resource writes as a literal outside every template branch is the When, and
+// a discriminator written in any other form gives no row, the text not saying
+// which product the row maps. A valuesMapping input the module reads whole at
+// an attribute of those resources is placed, or gives the When, from that
+// attribute; each key the overrides header names a path for is placed from
+// it, a module input's path read at the attribute reading it; and each
+// provides key publishing one output of the instance's module, or of the body
+// the pass-through module calls, whose value is an attribute of the instance's
+// resource, is placed at that attribute. A nested block is placed as
+// walkBody says.
 func extractTerraform(r recipeSource) (cloudimport.Row, string, error) {
 	if r.source != nil {
 		return terraformModuleRow(r)
@@ -944,6 +997,13 @@ func extractTerraform(r recipeSource) (cloudimport.Row, string, error) {
 	for i, c := range children {
 		b.readResource(c, at[i], false)
 	}
+	for _, t := range traversalsOf(key.block.Body) {
+		if s := mod.referenced(key.file, t); s != nil && s != key && !s.repeated && !slices.Contains(children, s) {
+			return cloudimport.Row{}, "the resource " + key.String() + ", which no other resource references, " +
+				"references " + s.String() + ", written once, which no read-in rule reads in place of the " +
+				"reference, so its text does not say which of the two stands for the instance", nil
+		}
+	}
 
 	var notes []string
 	for _, res := range mod.resources {
@@ -954,6 +1014,9 @@ func extractTerraform(r recipeSource) (cloudimport.Row, string, error) {
 	}
 	if len(r.module) > 0 {
 		b.readValuesMapping(r.valuesMapping, b.translate)
+	}
+	if d, ok := b.looseDiscriminator(); ok {
+		return cloudimport.Row{}, looseWhy("the resource "+key.String(), d), nil
 	}
 	for _, p := range headerOverrides(r.document) {
 		if len(r.module) > 0 && !b.writes(p.From) && b.declares(p.From[0]) {
@@ -998,6 +1061,13 @@ func extractTerraform(r recipeSource) (cloudimport.Row, string, error) {
 	return b.row, strings.Join(notes, "; "), nil
 }
 
+// looseWhy is why a Recipe whose text writes the discriminator d of what it
+// names as no literal outside every branch gives no row.
+func looseWhy(of, d string) string {
+	return "its text writes " + d + " of " + of + " as no literal outside every branch, so it does not say which " +
+		d + " its row maps"
+}
+
 // terraformModuleRow reads the row of a Recipe sourcing a module, as
 // extractTerraform says.
 func terraformModuleRow(r recipeSource) (cloudimport.Row, string, error) {
@@ -1006,6 +1076,10 @@ func terraformModuleRow(r recipeSource) (cloudimport.Row, string, error) {
 		return cloudimport.Row{}, fmt.Sprintf("it sources a %q source, which names no Terraform module", kind), nil
 	}
 	url, _ := r.source["url"].(string)
+	if kind == "terraform-module-oci" {
+		return cloudimport.Row{}, fmt.Sprintf("it sources the module %q from an OCI registry, whose module address "+
+			"the generator does not read", url), nil
+	}
 	subdir, _ := r.source["module_subdir"].(string)
 	key, ok := tfaddr.FromGitURL(url, strings.Trim(subdir, "/"))
 	if !ok {
@@ -1014,6 +1088,9 @@ func terraformModuleRow(r recipeSource) (cloudimport.Row, string, error) {
 	}
 	b := tfRowBuilder{row: cloudimport.Row{Key: key, Form: cloudimport.FormModule}}
 	b.readValuesMapping(r.valuesMapping, func(p []string) ([]string, bool) { return p, true })
+	if d, ok := b.looseDiscriminator(); ok {
+		return cloudimport.Row{}, looseWhy("the module it sources", d), nil
+	}
 	b.row.Overrides = headerOverrides(r.document)
 	for _, e := range r.provides {
 		if ref, ok := providedOutput(e.value); ok && len(ref) == 1 {

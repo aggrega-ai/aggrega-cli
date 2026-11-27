@@ -36,6 +36,20 @@ spec:
         name            = "{{ .context.instance_id }}"
         task_definition = aws_ecs_task_definition.this.arn
         desired_count   = {{ .infra.replicas }}
+
+        network_configuration {
+          subnets = {{ toJson .infra.subnets }}
+        }
+
+        capacity_provider_strategy {
+          capacity_provider = "FARGATE"
+          base              = {{ .infra.base_tasks }}
+        }
+
+        capacity_provider_strategy {
+          capacity_provider = "FARGATE_SPOT"
+          weight            = {{ .infra.spot_weight }}
+        }
       }
 
       output "name" {

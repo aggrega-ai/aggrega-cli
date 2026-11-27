@@ -139,17 +139,6 @@ func (t tmpl) canonical(text string, at int, sc scope) string {
 	return b.String()
 }
 
-// controlWord returns the keyword opening an action that opens, divides or
-// closes a branch, a range or a definition, empty for any other action.
-func controlWord(inner string) string {
-	word, _, _ := strings.Cut(normalize(inner), " ")
-	switch word {
-	case "if", "with", "range", "else", "end", "define", "block":
-		return word
-	}
-	return ""
-}
-
 // decision is what the extractor reads of whether a branch is written.
 type decision int
 

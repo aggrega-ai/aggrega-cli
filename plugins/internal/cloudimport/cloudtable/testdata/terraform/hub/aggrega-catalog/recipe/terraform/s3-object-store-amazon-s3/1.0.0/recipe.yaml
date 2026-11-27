@@ -1,0 +1,32 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: s3-object-store-amazon-s3
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/storage/s3-object-store:1.0.0
+
+  provides:
+    bucket: "${module.{{ .context.instance_id }}.bucket}"
+
+  artifacts:
+    main.tf: |
+      resource "aws_s3_bucket" "this" {
+        bucket = "{{ .context.instance_id }}"
+      }
+
+      resource "aws_s3_bucket_versioning" "this" {
+        count  = {{ if .values.versioned }}1{{ else }}0{{ end }}
+        bucket = aws_s3_bucket.this.id
+      }
+
+      resource "aws_s3_bucket_policy" "readers" {
+        for_each = toset({{ toJson .infra.readers }})
+        bucket   = aws_s3_bucket.this.id
+        policy   = each.value
+      }
+
+      output "bucket" {
+        value = aws_s3_bucket.this.bucket
+      }

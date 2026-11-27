@@ -10,8 +10,9 @@
 // Recipe sourcing a published module by its repository gives a row keyed by
 // the module's registry address, and one writing its resources, in its
 // artifacts, in a local directory it sources or in an ArtifactLibrary body it
-// imports, a row keyed by the type of the one resource no other resource of
-// the Recipe references. The rows the hand file writes, the Whens it writes
+// imports, a row keyed by the type of the one resource, written once, that no
+// other such resource references and that references no other the row does not
+// read. The rows the hand file writes, the Whens it writes
 // for Recipes whose text does not tell their resources apart, and the Recipes
 // no row reaches, each with why, sit beside them ([Table]).
 //
@@ -19,6 +20,6 @@
 // another it owns, such as the task definition an Amazon ECS service runs: the
 // owned resource's attributes are read in place of the reference, beneath that
 // attribute, so the referencing resource's row places them as its own. The
-// importer reads a configuration by these rules and the table's generator
-// reads the hub's Recipes by the same ones.
+// table's generator reads the hub's Recipes by these rules, which this package
+// holds so that one list serves every reader of Terraform resources.
 package tfimport

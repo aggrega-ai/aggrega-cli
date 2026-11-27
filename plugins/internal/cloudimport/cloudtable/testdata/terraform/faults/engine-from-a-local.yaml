@@ -1,0 +1,18 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: engine-from-a-local
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/datastore/acme-sql:1.0.0
+
+  locals:
+    engine: '{{ optional (optional .infra "overrides" dict) "engine" "sqlserver-ex" }}'
+
+  artifacts:
+    main.tf: |
+      resource "aws_db_instance" "this" {
+        engine  = "{{ .locals.engine }}"
+        db_name = "{{ .values.database }}"
+      }

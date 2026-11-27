@@ -12,8 +12,10 @@ type ReadIn struct {
 	// Parent is the referencing resource's type, such as aws_ecs_service.
 	Parent string
 	// Path is the parent's attribute holding the reference, its segments
-	// joined by dots, such as task_definition; a nested block's item is a
-	// segment of its index, and a segment * stands for any item.
+	// joined by dots, such as task_definition: a nested block the parent
+	// writes once is a segment of its type, as an object's member is, and
+	// one of several blocks of a type is followed by a segment of its index;
+	// a segment * stands for any item.
 	Path string
 	// Child is the type of the resource the attribute references, such as
 	// aws_ecs_task_definition.
@@ -22,7 +24,7 @@ type ReadIn struct {
 
 var readIns = []ReadIn{
 	{Parent: "aws_ecs_service", Path: "task_definition", Child: "aws_ecs_task_definition"},
-	{Parent: "aws_scheduler_schedule", Path: "target.*.ecs_parameters.*.task_definition_arn",
+	{Parent: "aws_scheduler_schedule", Path: "target.ecs_parameters.task_definition_arn",
 		Child: "aws_ecs_task_definition"},
 }
 

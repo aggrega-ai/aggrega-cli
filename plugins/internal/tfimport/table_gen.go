@@ -32,103 +32,6 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/terraform/athena/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "aws_bedrock_guardrail_version",
-		Component: "core/security/bedrock-guardrails",
-		Category:  "security",
-		Recipe:    "bedrock-guardrails",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "resource",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form: cloudimport.FormRaw,
-		Overrides: []cloudimport.Placement{
-			{From: []string{"kms_key_arn"}, Key: "kms_key_id"},
-		},
-		Provides: []cloudimport.Placement{
-			{From: []string{"version"}, Key: "guardrail_version"},
-		},
-		Requires: []cloudimport.Requirement{
-			{Key: "values.blocked_input_messaging", Type: "string"},
-			{Key: "values.blocked_outputs_messaging", Type: "string"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/bedrock-guardrails/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "aws_bedrockagent_data_source",
-		Component: "core/datastore/bedrock-knowledge-bases",
-		Category:  "datastore",
-		Recipe:    "bedrock-knowledge-bases",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "stateful-server",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-			"datastore.aggrega.ai/engine":             "semantic-memory",
-		},
-		Form: cloudimport.FormRaw,
-		Overrides: []cloudimport.Placement{
-			{From: []string{"role_arn"}, Key: "role_arn"},
-			{From: []string{"knowledge_base_configuration", "vector_knowledge_base_configuration", "embedding_model_arn"}, Key: "embedding_model_arn"},
-			{From: []string{"storage_configuration"}, Key: "storage_configuration"},
-			{From: []string{"data_source_configuration", "s3_configuration", "inclusion_prefixes"}, Key: "inclusion_prefixes"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/bedrock-knowledge-bases/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "aws_cognito_user_pool_client",
-		Component: "core/security/cognito",
-		Category:  "security",
-		Recipe:    "cognito",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "resource",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form: cloudimport.FormRaw,
-		Values: []cloudimport.Placement{
-			{From: []string{"explicit_auth_flows"}, Key: "explicit_auth_flows"},
-		},
-		Overrides: []cloudimport.Placement{
-			{From: []string{"aws_cognito_user_pool", "user_pool_tier"}, Key: "user_pool_tier"},
-		},
-		Provides: []cloudimport.Placement{
-			{From: []string{"id"}, Key: "client_id"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/cognito/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "aws_db_instance",
-		Component: "core/datastore/sql-server",
-		Category:  "datastore",
-		Recipe:    "sql-server-rds",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "stateful-server",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form: cloudimport.FormRaw,
-		Values: []cloudimport.Placement{
-			{From: []string{"username"}, Key: "user", Conv: "string"},
-		},
-		Infra: []cloudimport.Placement{
-			{From: []string{"port"}, Key: "port"},
-		},
-		Overrides: []cloudimport.Placement{
-			{From: []string{"license_model"}, Key: "license_model"},
-			{From: []string{"instance_class"}, Key: "instance_class"},
-			{From: []string{"multi_az"}, Key: "multi_az"},
-			{From: []string{"db_subnet_group_name"}, Key: "subnet_group"},
-			{From: []string{"parameter_group_name"}, Key: "parameter_group"},
-			{From: []string{"vpc_security_group_ids"}, Key: "vpc_security_groups"},
-			{From: []string{"deletion_protection"}, Key: "deletion_protection"},
-			{From: []string{"tags"}, Key: "tags"},
-		},
-		Provides: []cloudimport.Placement{
-			{From: []string{"address"}, Key: "host"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/sql-server-rds/1.0.0/recipe.yaml",
-	},
-	{
 		Key:       "aws_db_instance",
 		Component: "core/datastore/mariadb",
 		Category:  "datastore",
@@ -257,13 +160,29 @@ var generatedRows = []cloudimport.Row{
 		Form: cloudimport.FormRaw,
 		Overrides: []cloudimport.Placement{
 			{From: []string{"cluster"}, Key: "cluster"},
-			{From: []string{"network_configuration", "0", "subnets"}, Key: "subnet_ids"},
-			{From: []string{"network_configuration", "0", "security_groups"}, Key: "vpc_security_groups"},
+			{From: []string{"network_configuration", "subnets"}, Key: "subnet_ids"},
+			{From: []string{"network_configuration", "security_groups"}, Key: "vpc_security_groups"},
 			{From: []string{"task_definition", "execution_role_arn"}, Key: "execution_role_arn"},
 			{From: []string{"task_definition", "task_role_arn"}, Key: "task_role_arn"},
-			{From: []string{"network_configuration", "0", "assign_public_ip"}, Key: "assign_public_ip"},
+			{From: []string{"network_configuration", "assign_public_ip"}, Key: "assign_public_ip"},
 		},
 		Origin: "generated aggrega-catalog/recipe/terraform/server-ecs/1.2.0/recipe.yaml",
+	},
+	{
+		Key:       "aws_ecs_task_definition",
+		Component: "core/compute/task",
+		Category:  "compute",
+		Recipe:    "task-ecs",
+		Traits: map[string]string{
+			"component.aggrega.ai/type":               "task",
+			"component.aggrega.ai/upstream-licensing": "not-applicable",
+		},
+		Form: cloudimport.FormRaw,
+		Overrides: []cloudimport.Placement{
+			{From: []string{"execution_role_arn"}, Key: "execution_role_arn"},
+			{From: []string{"task_role_arn"}, Key: "task_role_arn"},
+		},
+		Origin: "generated aggrega-catalog/recipe/terraform/task-ecs/1.1.0/recipe.yaml",
 	},
 	{
 		Key:       "aws_glue_catalog_database",
@@ -299,7 +218,7 @@ var generatedRows = []cloudimport.Row{
 		},
 		Form: cloudimport.FormRaw,
 		Values: []cloudimport.Placement{
-			{From: []string{"extended_s3_configuration", "0", "compression_format"}, Key: "compression_format", Conv: "string"},
+			{From: []string{"extended_s3_configuration", "compression_format"}, Key: "compression_format", Conv: "string"},
 		},
 		Overrides: []cloudimport.Placement{
 			{From: []string{"extended_s3_configuration", "bucket_arn"}, Key: "bucket_arn"},
@@ -353,25 +272,6 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/terraform/rabbitmq-amazon-mq/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "aws_redshiftserverless_workgroup",
-		Component: "core/bigdata/redshift",
-		Category:  "bigdata",
-		Recipe:    "redshift",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "resource",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form: cloudimport.FormRaw,
-		Infra: []cloudimport.Placement{
-			{From: []string{"port"}, Key: "port"},
-		},
-		Provides: []cloudimport.Placement{
-			{From: []string{"endpoint", "0", "address"}, Key: "host"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/redshift/1.0.0/recipe.yaml",
-	},
-	{
 		Key:       "aws_route53_record",
 		Component: "core/network/dns-record",
 		Category:  "network",
@@ -397,49 +297,6 @@ var generatedRows = []cloudimport.Row{
 			{Key: "values.records", Type: "array"},
 		},
 		Origin: "generated aggrega-catalog/recipe/terraform/dns-record-route-53/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "aws_scheduler_schedule",
-		Component: "core/compute/task",
-		Category:  "compute",
-		Recipe:    "task-ecs",
-		Traits: map[string]string{
-			"component.aggrega.ai/type":               "task",
-			"component.aggrega.ai/upstream-licensing": "not-applicable",
-		},
-		Form: cloudimport.FormRaw,
-		Overrides: []cloudimport.Placement{
-			{From: []string{"target", "0", "arn"}, Key: "cluster"},
-			{From: []string{"target", "0", "role_arn"}, Key: "scheduler_role_arn"},
-			{From: []string{"target", "0", "ecs_parameters", "0", "network_configuration", "0", "subnets"}, Key: "subnet_ids"},
-			{From: []string{"target", "0", "ecs_parameters", "0", "network_configuration", "0", "security_groups"}, Key: "vpc_security_groups"},
-			{From: []string{"target", "0", "ecs_parameters", "0", "task_definition_arn", "execution_role_arn"}, Key: "execution_role_arn"},
-			{From: []string{"target", "0", "ecs_parameters", "0", "task_definition_arn", "task_role_arn"}, Key: "task_role_arn"},
-			{From: []string{"target", "0", "ecs_parameters", "0", "network_configuration", "0", "assign_public_ip"}, Key: "assign_public_ip"},
-			{From: []string{"schedule_expression_timezone"}, Key: "schedule_expression_timezone"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/task-ecs/1.1.0/recipe.yaml",
-	},
-	{
-		Key:       "awscc_lex_bot_alias",
-		Component: "core/ai-agent/lex",
-		Category:  "ai-agent",
-		Recipe:    "lex",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "resource",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form: cloudimport.FormRaw,
-		Provides: []cloudimport.Placement{
-			{From: []string{"bot_alias_id"}, Key: "bot_alias_id"},
-		},
-		Requires: []cloudimport.Requirement{
-			{Key: "values.child_directed", Type: "boolean"},
-			{Key: "values.idle_session_ttl_in_seconds", Type: "integer"},
-			{Key: "values.bot_locales", Type: "array"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/lex/1.0.0/recipe.yaml",
 	},
 	{
 		Key:       "Azure/avm-res-containerregistry-registry/azurerm",
@@ -527,7 +384,6 @@ var generatedRows = []cloudimport.Row{
 		Form: cloudimport.FormModule,
 		Values: []cloudimport.Placement{
 			{From: []string{"administrator_login"}, Key: "user", Conv: "string"},
-			{From: []string{"databases", "{{ .values.database }}", "name"}, Key: "database", Conv: "string"},
 		},
 		Overrides: []cloudimport.Placement{
 			{From: []string{"resource_group_name"}, Key: "resource_group_name"},
@@ -683,23 +539,6 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/terraform/sql-server-azure-sql-database/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "azurerm_app_service_certificate_binding",
-		Component: "core/compute/server",
-		Category:  "compute",
-		Recipe:    "server-app-service",
-		Traits: map[string]string{
-			"component.aggrega.ai/type":               "server",
-			"component.aggrega.ai/upstream-licensing": "not-applicable",
-		},
-		Form: cloudimport.FormRaw,
-		Overrides: []cloudimport.Placement{
-			{From: []string{"identity", "identity_ids"}, Key: "identity_ids"},
-			{From: []string{"site_config", "application_stack", "docker_registry_username"}, Key: "registry_username"},
-			{From: []string{"key_vault_reference_identity_id"}, Key: "registry_password_identity"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/server-app-service/1.1.0/recipe.yaml",
-	},
-	{
 		Key:       "azurerm_application_insights",
 		Component: "core/observability/azure-application-insights",
 		Category:  "observability",
@@ -722,29 +561,6 @@ var generatedRows = []cloudimport.Row{
 			{From: []string{"connection_string"}, Key: "connection_string"},
 		},
 		Origin: "generated aggrega-catalog/recipe/terraform/azure-application-insights/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "azurerm_cognitive_deployment",
-		Component: "core/ai-model/azure-openai",
-		Category:  "ai-model",
-		Recipe:    "azure-openai",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "resource",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-			"model.aggrega.ai/api":                    "native",
-			"model.aggrega.ai/capability":             "generative",
-		},
-		Form: cloudimport.FormRaw,
-		Values: []cloudimport.Placement{
-			{From: []string{"name"}, Key: "deployment_name"},
-			{From: []string{"model", "0", "name"}, Key: "model"},
-		},
-		Requires: []cloudimport.Requirement{
-			{Key: "values.model", Type: "string"},
-			{Key: "values.deployment_name", Type: "string"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/azure-openai/1.0.0/recipe.yaml",
 	},
 	{
 		Key:       "azurerm_container_app",
@@ -802,7 +618,7 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/terraform/azure-event-grid/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "azurerm_eventhub",
+		Key:       "azurerm_eventhub_namespace",
 		Component: "core/messaging/azure-event-hubs",
 		Category:  "messaging",
 		Recipe:    "azure-event-hubs",
@@ -811,7 +627,13 @@ var generatedRows = []cloudimport.Row{
 			"component.aggrega.ai/type":               "resource",
 			"component.aggrega.ai/upstream-licensing": "proprietary",
 		},
-		Form:   cloudimport.FormRaw,
+		Form: cloudimport.FormRaw,
+		Overrides: []cloudimport.Placement{
+			{From: []string{"resource_group_name"}, Key: "resource_group_name"},
+			{From: []string{"location"}, Key: "location"},
+			{From: []string{"capacity"}, Key: "sku_capacity"},
+			{From: []string{"public_network_access_enabled"}, Key: "public_network_access_enabled"},
+		},
 		Origin: "generated aggrega-catalog/recipe/terraform/azure-event-hubs/1.0.0/recipe.yaml",
 	},
 	{
@@ -863,6 +685,27 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/terraform/function-azure-functions/1.0.0/recipe.yaml",
 	},
 	{
+		Key:       "azurerm_linux_web_app",
+		Component: "core/compute/server",
+		Category:  "compute",
+		Recipe:    "server-app-service",
+		Traits: map[string]string{
+			"component.aggrega.ai/type":               "server",
+			"component.aggrega.ai/upstream-licensing": "not-applicable",
+		},
+		Form: cloudimport.FormRaw,
+		Overrides: []cloudimport.Placement{
+			{From: []string{"resource_group_name"}, Key: "resource_group_name"},
+			{From: []string{"location"}, Key: "location"},
+			{From: []string{"service_plan_id"}, Key: "service_plan_id"},
+			{From: []string{"virtual_network_subnet_id"}, Key: "virtual_network_subnet_id"},
+			{From: []string{"identity", "identity_ids"}, Key: "identity_ids"},
+			{From: []string{"site_config", "application_stack", "docker_registry_username"}, Key: "registry_username"},
+			{From: []string{"key_vault_reference_identity_id"}, Key: "registry_password_identity"},
+		},
+		Origin: "generated aggrega-catalog/recipe/terraform/server-app-service/1.1.0/recipe.yaml",
+	},
+	{
 		Key:       "azurerm_managed_redis",
 		Component: "core/datastore/redis",
 		Category:  "datastore",
@@ -880,20 +723,7 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/terraform/redis-azure-managed/1.0.2/recipe.yaml",
 	},
 	{
-		Key:       "azurerm_mssql_managed_database",
-		Component: "core/datastore/sql-server",
-		Category:  "datastore",
-		Recipe:    "sql-server-azure-sql-managed-instance",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "stateful-server",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form:   cloudimport.FormRaw,
-		Origin: "generated aggrega-catalog/recipe/terraform/sql-server-azure-sql-managed-instance/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "azurerm_storage_container",
+		Key:       "azurerm_storage_account",
 		Component: "core/storage/azure-blob-storage",
 		Category:  "storage",
 		Recipe:    "azure-blob-storage",
@@ -902,7 +732,18 @@ var generatedRows = []cloudimport.Row{
 			"component.aggrega.ai/type":               "resource",
 			"component.aggrega.ai/upstream-licensing": "proprietary",
 		},
-		Form:   cloudimport.FormRaw,
+		Form: cloudimport.FormRaw,
+		Overrides: []cloudimport.Placement{
+			{From: []string{"resource_group_name"}, Key: "resource_group_name"},
+			{From: []string{"location"}, Key: "location"},
+			{From: []string{"access_tier"}, Key: "access_tier"},
+			{From: []string{"public_network_access"}, Key: "public_network_access"},
+		},
+		Provides: []cloudimport.Placement{
+			{From: []string{"primary_blob_host"}, Key: "host"},
+			{From: []string{"primary_blob_endpoint"}, Key: "endpoint"},
+			{From: []string{"primary_dfs_endpoint"}, Key: "dfs_endpoint"},
+		},
 		Origin: "generated aggrega-catalog/recipe/terraform/azure-blob-storage/1.0.0/recipe.yaml",
 	},
 	{
@@ -974,6 +815,28 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/terraform/bigquery/1.0.0/recipe.yaml",
 	},
 	{
+		Key:       "google_cloud_run_v2_job",
+		Component: "core/compute/task",
+		Category:  "compute",
+		Recipe:    "task-cloud-run",
+		Traits: map[string]string{
+			"component.aggrega.ai/type":               "task",
+			"component.aggrega.ai/upstream-licensing": "not-applicable",
+		},
+		Form: cloudimport.FormRaw,
+		Overrides: []cloudimport.Placement{
+			{From: []string{"project"}, Key: "project_id"},
+			{From: []string{"location"}, Key: "region"},
+			{From: []string{"template", "template", "vpc_access", "network_interfaces", "network"}, Key: "private_network"},
+			{From: []string{"template", "template", "service_account"}, Key: "service_account"},
+			{From: []string{"template", "template", "vpc_access", "network_interfaces", "subnetwork"}, Key: "subnetwork"},
+			{From: []string{"template", "template", "vpc_access", "network_interfaces", "tags"}, Key: "network_tags"},
+			{From: []string{"deletion_protection"}, Key: "deletion_protection"},
+			{From: []string{"template", "template", "timeout"}, Key: "timeout"},
+		},
+		Origin: "generated aggrega-catalog/recipe/terraform/task-cloud-run/1.0.0/recipe.yaml",
+	},
+	{
 		Key:       "google_cloud_run_v2_service",
 		Component: "core/compute/server",
 		Category:  "compute",
@@ -986,10 +849,10 @@ var generatedRows = []cloudimport.Row{
 		Overrides: []cloudimport.Placement{
 			{From: []string{"project"}, Key: "project_id"},
 			{From: []string{"location"}, Key: "region"},
-			{From: []string{"template", "0", "vpc_access", "0", "network_interfaces", "0", "network"}, Key: "private_network"},
-			{From: []string{"template", "0", "service_account"}, Key: "service_account"},
-			{From: []string{"template", "0", "vpc_access", "0", "network_interfaces", "0", "subnetwork"}, Key: "subnetwork"},
-			{From: []string{"template", "0", "vpc_access", "0", "network_interfaces", "0", "tags"}, Key: "network_tags"},
+			{From: []string{"template", "vpc_access", "network_interfaces", "network"}, Key: "private_network"},
+			{From: []string{"template", "service_account"}, Key: "service_account"},
+			{From: []string{"template", "vpc_access", "network_interfaces", "subnetwork"}, Key: "subnetwork"},
+			{From: []string{"template", "vpc_access", "network_interfaces", "tags"}, Key: "network_tags"},
 			{From: []string{"deletion_protection"}, Key: "deletion_protection"},
 		},
 		Origin: "generated aggrega-catalog/recipe/terraform/server-cloud-run/1.2.0/recipe.yaml",
@@ -1007,31 +870,13 @@ var generatedRows = []cloudimport.Row{
 		Overrides: []cloudimport.Placement{
 			{From: []string{"project"}, Key: "project_id"},
 			{From: []string{"location"}, Key: "region"},
-			{From: []string{"template", "0", "vpc_access", "0", "network_interfaces", "0", "network"}, Key: "private_network"},
-			{From: []string{"template", "0", "service_account"}, Key: "service_account"},
-			{From: []string{"template", "0", "vpc_access", "0", "network_interfaces", "0", "subnetwork"}, Key: "subnetwork"},
-			{From: []string{"template", "0", "vpc_access", "0", "network_interfaces", "0", "tags"}, Key: "network_tags"},
+			{From: []string{"template", "vpc_access", "network_interfaces", "network"}, Key: "private_network"},
+			{From: []string{"template", "service_account"}, Key: "service_account"},
+			{From: []string{"template", "vpc_access", "network_interfaces", "subnetwork"}, Key: "subnetwork"},
+			{From: []string{"template", "vpc_access", "network_interfaces", "tags"}, Key: "network_tags"},
 			{From: []string{"deletion_protection"}, Key: "deletion_protection"},
 		},
 		Origin: "generated aggrega-catalog/recipe/terraform/worker-cloud-run/1.1.0/recipe.yaml",
-	},
-	{
-		Key:       "google_cloud_scheduler_job",
-		Component: "core/compute/task",
-		Category:  "compute",
-		Recipe:    "task-cloud-run",
-		Traits: map[string]string{
-			"component.aggrega.ai/type":               "task",
-			"component.aggrega.ai/upstream-licensing": "not-applicable",
-		},
-		Form: cloudimport.FormRaw,
-		Overrides: []cloudimport.Placement{
-			{From: []string{"project"}, Key: "project_id"},
-			{From: []string{"region"}, Key: "region"},
-			{From: []string{"http_target", "0", "oauth_token", "0", "service_account_email"}, Key: "service_account"},
-			{From: []string{"time_zone"}, Key: "time_zone"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/task-cloud-run/1.0.0/recipe.yaml",
 	},
 	{
 		Key:       "google_composer_environment",
@@ -1161,24 +1006,21 @@ var generatedRows = []cloudimport.Row{
 		Origin: "generated aggrega-catalog/recipe/terraform/document-ai/1.0.0/recipe.yaml",
 	},
 	{
-		Key:       "google_firestore_backup_schedule",
-		Component: "core/datastore/firestore",
+		Key:       "google_healthcare_dataset",
+		Component: "core/datastore/cloud-healthcare-api",
 		Category:  "datastore",
-		Recipe:    "firestore",
+		Recipe:    "cloud-healthcare-api",
 		Traits: map[string]string{
 			"component.aggrega.ai/hosting":            "managed",
 			"component.aggrega.ai/type":               "stateful-server",
 			"component.aggrega.ai/upstream-licensing": "proprietary",
-			"datastore.aggrega.ai/engine":             "document",
 		},
 		Form: cloudimport.FormRaw,
 		Overrides: []cloudimport.Placement{
-			{From: []string{"location_id"}, Key: "location"},
-			{From: []string{"database_edition"}, Key: "edition"},
-			{From: []string{"delete_protection_state"}, Key: "deletion_protection"},
-			{From: []string{"cmek_config", "kms_key_name"}, Key: "kms_key_name"},
+			{From: []string{"encryption_spec", "kms_key_name"}, Key: "kms_key_name"},
+			{From: []string{"deletion_policy"}, Key: "deletion_protection"},
 		},
-		Origin: "generated aggrega-catalog/recipe/terraform/firestore/1.0.0/recipe.yaml",
+		Origin: "generated aggrega-catalog/recipe/terraform/cloud-healthcare-api/1.0.0/recipe.yaml",
 	},
 	{
 		Key:       "google_identity_platform_config",
@@ -1238,7 +1080,7 @@ var generatedRows = []cloudimport.Row{
 		Overrides: []cloudimport.Placement{
 			{From: []string{"project"}, Key: "project_id"},
 			{From: []string{"location"}, Key: "region"},
-			{From: []string{"desired_auto_created_endpoints", "0", "network"}, Key: "private_network"},
+			{From: []string{"desired_auto_created_endpoints", "network"}, Key: "private_network"},
 			{From: []string{"node_type"}, Key: "node_type"},
 			{From: []string{"replica_count"}, Key: "replica_count"},
 		},
@@ -1290,32 +1132,6 @@ var generatedRows = []cloudimport.Row{
 			{From: []string{"host"}, Key: "host"},
 		},
 		Origin: "generated aggrega-catalog/recipe/terraform/redis-memorystore/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "google_vertex_ai_index_endpoint_deployed_index",
-		Component: "core/datastore/vertex-ai-vector-search",
-		Category:  "datastore",
-		Recipe:    "vertex-ai-vector-search",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "stateful-server",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-			"datastore.aggrega.ai/engine":             "vector",
-		},
-		Form: cloudimport.FormRaw,
-		Overrides: []cloudimport.Placement{
-			{From: []string{"dedicated_resources", "machine_spec", "machine_type"}, Key: "machine_type"},
-			{From: []string{"metadata", "config", "shard_size"}, Key: "shard_size"},
-			{From: []string{"metadata", "contents_delta_uri"}, Key: "contents_delta_uri"},
-		},
-		Provides: []cloudimport.Placement{
-			{From: []string{"private_endpoints", "0", "match_grpc_address"}, Key: "host"},
-			{From: []string{"deployed_index_id"}, Key: "deployed_index_id"},
-		},
-		Requires: []cloudimport.Requirement{
-			{Key: "values.dimensions", Type: "integer"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/vertex-ai-vector-search/1.0.0/recipe.yaml",
 	},
 	{
 		Key:       "GoogleCloudPlatform/alloy-db/google",
@@ -1392,28 +1208,6 @@ var generatedRows = []cloudimport.Row{
 			{From: []string{"cloudfront_distribution_domain_name"}, Key: "host"},
 		},
 		Origin: "generated aggrega-catalog/recipe/terraform/cloudfront/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "terraform-aws-modules/cloudwatch/aws//modules/log-group",
-		Component: "core/observability/cloudwatch",
-		Category:  "observability",
-		Recipe:    "cloudwatch",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "resource",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form: cloudimport.FormModule,
-		Overrides: []cloudimport.Placement{
-			{From: []string{"log_group_class"}, Key: "log_group_class"},
-			{From: []string{"kms_key_id"}, Key: "kms_key_id"},
-			{From: []string{"tags"}, Key: "tags"},
-		},
-		Provides: []cloudimport.Placement{
-			{From: []string{"cloudwatch_log_group_name"}, Key: "log_group_name"},
-			{From: []string{"cloudwatch_log_group_arn"}, Key: "arn"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/cloudwatch/1.0.0/recipe.yaml",
 	},
 	{
 		Key:       "terraform-aws-modules/dynamodb-table/aws",
@@ -2120,24 +1914,6 @@ var generatedRows = []cloudimport.Row{
 		},
 		Origin: "generated aggrega-catalog/recipe/terraform/postgres-cloud-sql/1.0.0/recipe.yaml",
 	},
-	{
-		Key:       "terraform_data",
-		Component: "example/storage/external-object-store",
-		Category:  "storage",
-		Recipe:    "external-object-store",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "external",
-			"component.aggrega.ai/type":               "resource",
-			"component.aggrega.ai/upstream-licensing": "not-applicable",
-		},
-		Form: cloudimport.FormRaw,
-		Requires: []cloudimport.Requirement{
-			{Key: "values.bucket", Type: "string"},
-			{Key: "values.access_key_id", Type: "string"},
-			{Key: "values.secret_access_key", Type: "string"},
-		},
-		Origin: "generated aggrega-catalog/recipe/terraform/external-object-store/1.0.0/recipe.yaml",
-	},
 }
 
 // generatedImages are the mapping table's container product rows read from the hub's terraform
@@ -2163,8 +1939,5 @@ var generatedSlotFeatures = []SlotFeature{
 	{Recipe: "postgres-rds-terraform-aws-modules", Slot: "password", Feature: "core/generated-secret"},
 	{Recipe: "rabbitmq-amazon-mq", Slot: "password", Feature: "core/random-password"},
 	{Recipe: "redis-elasticache", Slot: "password", Feature: "core/random-password"},
-	{Recipe: "redshift", Slot: "password", Feature: "core/generated-secret"},
-	{Recipe: "sql-server-azure-sql-managed-instance", Slot: "password", Feature: "core/random-password"},
-	{Recipe: "sql-server-rds", Slot: "password", Feature: "core/generated-secret"},
 	{Recipe: "valkey-elasticache", Slot: "password", Feature: "core/random-password"},
 }

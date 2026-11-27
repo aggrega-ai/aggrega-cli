@@ -12,7 +12,8 @@ spec:
         }
 
         resource "google_secret_manager_secret" "file" {
-          secret_id = "${var.config.name}-file"
+          for_each  = var.config.files
+          secret_id = "${var.config.name}-${each.key}"
         }
 
         resource "google_cloud_run_v2_service" "this" {
@@ -30,7 +31,7 @@ spec:
             volumes {
               name = "file"
               secret {
-                secret = google_secret_manager_secret.file.secret_id
+                secret = google_secret_manager_secret.file["config"].secret_id
               }
             }
           }

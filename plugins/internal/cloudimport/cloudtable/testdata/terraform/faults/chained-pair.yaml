@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: chained-pair
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/gateway/acme-api:1.0.0
+
+  artifacts:
+    main.tf: |
+      resource "aws_cognito_user_pool" "this" {
+        name = "{{ .context.instance_id }}"
+      }
+
+      resource "aws_cognito_user_pool_client" "this" {
+        name         = "{{ .context.instance_id }}"
+        user_pool_id = aws_cognito_user_pool.this.id
+      }
