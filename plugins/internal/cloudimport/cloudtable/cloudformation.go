@@ -14,6 +14,7 @@ import (
 	"text/template/parse"
 
 	"github.com/aggrega-ai/aggrega-cli/internal/gotmpl"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cfncore/cfntemplate"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cfnimport/cfnrules"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 )
@@ -953,12 +954,11 @@ func (f *cfnFragment) overrideRead(text string, at int, sc scope) (string, bool)
 }
 
 // secretPath returns the property a credential read at path is placed at:
-// path cut before its first segment naming an intrinsic function.
+// path cut before its first segment naming an intrinsic function in its long
+// form.
 func secretPath(path []string) []string {
-	for i, s := range path {
-		if s == "Ref" || strings.HasPrefix(s, "Fn::") {
-			return slices.Clone(path[:i])
-		}
+	if i := slices.IndexFunc(path, cfntemplate.IsIntrinsicKey); i >= 0 {
+		return slices.Clone(path[:i])
 	}
 	return slices.Clone(path)
 }
