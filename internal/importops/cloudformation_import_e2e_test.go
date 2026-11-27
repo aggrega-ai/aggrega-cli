@@ -389,3 +389,46 @@ func TestCloudFormationRemoteChildNotRead(t *testing.T) {
 		t.Errorf("the Aggregate is\n%s\nwant the template's own queue", got)
 	}
 }
+
+// TestCloudFormationParametersFileBesideTheTemplateIsRead imports, naming no
+// format, a directory holding a template beside a parameters file of
+// Key=Value text, and one beside a parameters file of an object at
+// Parameters: neither form is recognised on its own, so the directory is
+// recognised by its template, and the importer reads the parameters file
+// beside it, the drafts carrying the value it supplies in place of the
+// template's default.
+func TestCloudFormationParametersFileBesideTheTemplateIsRead(t *testing.T) {
+	const template = "AWSTemplateFormatVersion: \"2010-09-09\"\nParameters:\n  DbName:\n    Type: String\n" +
+		"    Default: orders_dev\nResources:\n  Db:\n    Type: AWS::RDS::DBInstance\n    Properties:\n" +
+		"      Engine: postgres\n      DBName: !Ref DbName\n"
+	rw, ws := cfnWorkspace(t, nil)
+	for form, params := range map[string]string{
+		"pairs":  `["DbName=orders_prod"]`,
+		"object": `{"Parameters": {"DbName": "orders_prod"}}`,
+	} {
+		t.Run(form, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "orders")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for name, body := range map[string]string{"template.yaml": template, "parameters.json": params} {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+					t.Fatalf("write %s: %v", name, err)
+				}
+			}
+			res, err := cfnImport(t, rw, dir, "", filepath.Join(ws, form), false, authoredcontent.DeliveryReport)
+			if err != nil || res.Halted() {
+				t.Fatalf("the import: %v %+v", err, res.Diagnostics)
+			}
+			if res.Format != "cloudformation" {
+				t.Errorf("the directory was read as %q, want cloudformation", res.Format)
+			}
+			drafts := fileNamed(t, res, "aggregate.yaml") + fileNamed(t, res, "release.yaml")
+			if !strings.Contains(drafts, "# Sources read: parameters.json, template.yaml.") ||
+				!strings.Contains(drafts, `default: "orders_prod"`) || strings.Contains(drafts, "orders_dev") {
+				t.Errorf("the drafts are\n%s\nwant parameters.json read and its orders_prod in place of orders_dev",
+					drafts)
+			}
+		})
+	}
+}

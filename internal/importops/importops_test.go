@@ -333,6 +333,9 @@ func TestSelectFormat(t *testing.T) {
 	// SAM template with no version line, a JSON template, a parameters file in
 	// each of the three forms the AWS CLI reads, a YAML file with resources and
 	// no transform, and a JSON object holding resources beside its parameters.
+	// Of the parameters files, the list of ParameterKey entries alone is
+	// recognised: a list of text and an object at Parameters are shapes JSON
+	// files of other kinds share, read only beside a template.
 	cfnShortForms := []byte("AWSTemplateFormatVersion: 2010-09-09\nResources:\n  Queue:\n    Type: AWS::SQS::Queue\n" +
 		"    Properties:\n      QueueName: !Sub \"${AWS::StackName}-q\"\n      Tags: [!Ref Env]\n")
 	cfnSam := []byte("Transform: AWS::Serverless-2016-10-31\nResources:\n  Fn:\n    Type: AWS::Serverless::Function\n")
@@ -343,6 +346,8 @@ func TestSelectFormat(t *testing.T) {
 	cfnParamsObject := []byte(`{"Parameters":{"Env":"prod"}}`)
 	cfnNoTransform := []byte("Resources:\n  Queue:\n    Type: AWS::SQS::Queue\n")
 	cfnResourcesAndParameters := []byte(`{"Parameters":{"Env":"prod"},"Resources":{}}`)
+	// A JavaScript package's data file, a list of text.
+	packageList := []byte(`["3dm","3ds","3g2"]`)
 
 	cases := []struct {
 		name     string
@@ -498,10 +503,12 @@ func TestSelectFormat(t *testing.T) {
 			want: "cloudformation"},
 		{name: "a parameters file of ParameterKey entries", source: "params.json", content: cfnParamsList,
 			want: "cloudformation"},
-		{name: "a parameters file of Key=Value text", source: "params.json", content: cfnParamsPairs,
-			want: "cloudformation"},
-		{name: "a parameters file of an object at Parameters", source: "params.json", content: cfnParamsObject,
-			want: "cloudformation"},
+		{name: "a parameters file of Key=Value text alone is refused", source: "params.json", content: cfnParamsPairs,
+			wantErr: true},
+		{name: "a parameters file of an object at Parameters alone is refused", source: "params.json",
+			content: cfnParamsObject, wantErr: true},
+		{name: "a package's list of text is refused", source: "binary-extensions.json", content: packageList,
+			wantErr: true},
 		{name: "a template with neither a version line nor a transform is refused", source: "template.yaml",
 			content: cfnNoTransform, wantErr: true},
 		{name: "a JSON object holding resources beside its parameters is refused", source: "stack.json",
@@ -547,7 +554,10 @@ func TestSelectFormat(t *testing.T) {
 // CloudFormation provider schema and a describe-type output, the directory that
 // holds them, a Terraform export and a Bicep types.json — and each source of
 // another format is recognised as its own and as no schema format, so no
-// signature reaches a source it was not written for.
+// signature reaches a source it was not written for. A CloudFormation
+// parameters file of Key=Value text or of an object at Parameters is
+// recognised by nothing on its own, as JSON files of other kinds share both
+// shapes.
 func TestSchemaImportersRecognisedAndNotCrossMatched(t *testing.T) {
 	seam := referenceDetectionSeam(t)
 	const schemas = "../../plugins/internal/schemadraft/"
@@ -581,8 +591,6 @@ func TestSchemaImportersRecognisedAndNotCrossMatched(t *testing.T) {
 		{"a CloudFormation template in JSON", "template.json", cfnTestdata + "forms/template.json", "cloudformation"},
 		{"a SAM template", "template.yaml", cfnTestdata + "sam/template.yaml", "cloudformation"},
 		{"a CloudFormation parameters file of ParameterKey entries", "list.json", cfnTestdata + "params/list.json", "cloudformation"},
-		{"a CloudFormation parameters file of Key=Value text", "pairs.json", cfnTestdata + "params/pairs.json", "cloudformation"},
-		{"a CloudFormation parameters file of an object", "object.json", cfnTestdata + "params/object.json", "cloudformation"},
 		{"a Compose file", "compose.yaml", "testdata/compose/compose-for-agents/langgraph.compose.yaml", "compose"},
 		{"a Langflow export", "flow.json", "../compiler/importersocket/testdata/langflow-flow.json", "langflow"},
 		{"a Flowise export", "flow.json", "../compiler/importersocket/testdata/flowise-flow.json", "flowise"},
@@ -630,6 +638,53 @@ func TestSchemaImportersRecognisedAndNotCrossMatched(t *testing.T) {
 			t.Errorf("SelectFormat over the directory = %q; want cloudformation-schema", got)
 		}
 	})
+
+	for _, name := range []string{"pairs.json", "object.json"} {
+		t.Run("a CloudFormation parameters file "+name+" alone is recognised by nothing", func(t *testing.T) {
+			got, err := SelectFormat(context.Background(), "", fileSource(t, name, read(cfnTestdata+"params/"+name)), seam)
+			var undetected *UndetectedFormatError
+			if !errors.As(err, &undetected) {
+				t.Fatalf("SelectFormat(%q) = %q, %v; want an *UndetectedFormatError", name, got, err)
+			}
+		})
+	}
+}
+
+// TestADirectoryIsRecognisedByItsOwnSourceBesideJSONOfOtherKinds recognises a
+// Compose project's directory as compose where it also holds a JavaScript
+// package's data file, a list of text, or a JSON file holding an object at
+// Parameters and no resources: neither is a source of any format on its own,
+// so no other importer's signature recognises the directory through it.
+func TestADirectoryIsRecognisedByItsOwnSourceBesideJSONOfOtherKinds(t *testing.T) {
+	seam := referenceDetectionSeam(t)
+	for _, tc := range []struct{ name, path, body string }{
+		{"a package's list of text", "node_modules/binary-extensions/binary-extensions.json", `["3dm","3ds","3g2"]`},
+		{"an object at Parameters", "config/settings.json", `{"Parameters":{"retries":3}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for name, body := range map[string]string{
+				"compose.yaml": "services:\n  web:\n    image: nginx:1.27\n",
+				tc.path:        tc.body,
+			} {
+				path := filepath.Join(dir, filepath.FromSlash(name))
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatalf("make the folder of %s: %v", name, err)
+				}
+				if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+					t.Fatalf("write %s: %v", name, err)
+				}
+			}
+			src, err := readSource(dir, filepath.Base(dir), "")
+			if err != nil {
+				t.Fatalf("read the directory: %v", err)
+			}
+			got, err := SelectFormat(context.Background(), "", src, seam)
+			if err != nil || got != "compose" {
+				t.Fatalf("SelectFormat over the directory holding %s = %q, %v; want compose", tc.path, got, err)
+			}
+		})
+	}
 }
 
 // TestUndetectedFormatMessageNamesTheTerminalRemedy pins the sentence the

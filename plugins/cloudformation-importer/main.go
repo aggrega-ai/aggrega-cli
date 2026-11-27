@@ -75,11 +75,15 @@ func descriptor() aggrega.PluginDescriptor {
 // detect is how a template and a parameters file are recognised when an import
 // names no format, declared in describe() and recorded on the importer's Plugin
 // entity: a file stating AWSTemplateFormatVersion, or holding resources under a
-// Transform, is a template; a JSON file whose first entry is a list of
-// ParameterKey entries, a list of Key=Value text, or an object holding
-// parameters and no resources is a parameters file. The version line is read as
-// a string whether or not it is quoted. The host evaluates the signatures
-// without knowing what CloudFormation is.
+// Transform, is a template, and a JSON list whose first entry names a
+// ParameterKey is a parameters file. The version line is read as a string
+// whether or not it is quoted. No signature names a parameters file of
+// Key=Value text or of an object holding parameters and no resources, as JSON
+// files of other kinds hold a list of text, or such an object, too: a
+// directory holding one beside its template is recognised by the template,
+// and the reader reads every JSON file the patterns hand it and tells a
+// parameters file itself. The host evaluates the signatures without knowing
+// what CloudFormation is.
 var detect = []aggrega.DetectSignature{
 	{Syntax: "yaml", Files: []string{"*.yaml", "*.yml", "*.template"},
 		Match: []aggrega.PathMatch{{Path: "AWSTemplateFormatVersion", Is: "string"}}},
@@ -91,10 +95,6 @@ var detect = []aggrega.DetectSignature{
 		Match: []aggrega.PathMatch{{Path: "Resources", Is: "object"}, {Path: "Transform", Is: "present"}}},
 	{Syntax: "json", Files: []string{"*.json"},
 		Match: []aggrega.PathMatch{{Path: "0.ParameterKey", Is: "string"}}},
-	{Syntax: "json", Files: []string{"*.json"},
-		Match: []aggrega.PathMatch{{Path: "0", Is: "string"}}},
-	{Syntax: "json", Files: []string{"*.json"},
-		Match: []aggrega.PathMatch{{Path: "Parameters", Is: "object"}, {Path: "Resources", Is: "absent"}}},
 }
 
 //go:wasmexport describe

@@ -65,8 +65,6 @@ var everyAgentFlowFixture = []struct {
 	{"cloudformation", "../../plugins/internal/cfnimport/testdata/forms/template.json"},
 	{"cloudformation", "../../plugins/internal/cfnimport/testdata/sam/template.yaml"},
 	{"cloudformation", "../../plugins/internal/cfnimport/testdata/params/list.json"},
-	{"cloudformation", "../../plugins/internal/cfnimport/testdata/params/pairs.json"},
-	{"cloudformation", "../../plugins/internal/cfnimport/testdata/params/object.json"},
 }
 
 // toolImportAnswer is what the assistant's import tool answered one call with.

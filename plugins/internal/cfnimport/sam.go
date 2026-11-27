@@ -399,14 +399,24 @@ var notTaken = []struct {
 const codeFix = "the Recipe deploying a function runs a container image, infra.image, which is left for the " +
 	"operator, so build the code into an image in Amazon ECR"
 
+// roleFix is the fix of the execution role SAM writes for a serverless
+// function writing neither Role nor Policies, which the Recipe deploying a
+// function does not write.
+const roleFix = "the Recipe deploying a function takes an existing role, infra.overrides.Role, so set " +
+	"infra.overrides.Role in the Release to the ARN of a role the function runs under"
+
 // serverlessFunctions records, on each serverless function of g, what the
 // Recipe deploying a function, which a row maps it to, does not take of it:
 // each property of notTaken it writes, or takes from the Globals, reported
 // value-not-carried where it is written — under the Globals where the
-// function takes it from them — and, for a function whose code is a .zip
-// package, the decision saying that the Recipe runs a container image
-// infra.image names, left for the operator. A function drafted from the
-// source keeps them all, so none is reported where no row maps it.
+// function takes it from them —; for a function writing neither Role nor
+// Policies, the execution role SAM writes for it, reported value-not-carried
+// at the function, with the decision saying that the Recipe takes an existing
+// role at infra.overrides.Role, left for the operator; and, for a function
+// whose code is a .zip package, the decision saying that the Recipe runs a
+// container image infra.image names, left for the operator. A function
+// drafted from the source keeps them all, so none is reported where no row
+// maps it.
 func (r *reader) serverlessFunctions(g *cloudimport.Graph) {
 	for _, n := range g.Nodes {
 		if n.Type != functionType {
@@ -417,6 +427,22 @@ func (r *reader) serverlessFunctions(g *cloudimport.Graph) {
 			continue
 		}
 		props := propAt(n.Body, []string{"Properties"})
+		var written []cloudimport.Prop
+		if props != nil {
+			written = props.Props
+		}
+		if propAt(written, []string{"Role"}) == nil && propAt(written, []string{"Policies"}) == nil {
+			file, at := h.s.t.file, jsonPointer("Resources", h.id)
+			d := cloudimport.Report(cloudimport.CodeValueNotCarried, "the template "+file+" writes neither Role nor "+
+				"Policies on the function "+h.id+" at "+at+", so SAM writes an execution role for the function, "+
+				"which is not carried: "+roleFix)
+			d.SourceRef = file + "#" + at
+			n.ReportsIfMapped = append(n.ReportsIfMapped, d)
+			n.SaysIfMapped = append(n.SaysIfMapped, "the function writes neither Role nor Policies, so SAM writes an "+
+				"execution role for it, and the Recipe deploying a function takes an existing one, "+
+				"infra.overrides.Role, which is left for the operator: set infra.overrides.Role in the Release to the "+
+				"ARN of a role the function runs under")
+		}
 		if props == nil {
 			continue
 		}

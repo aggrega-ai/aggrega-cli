@@ -312,7 +312,8 @@ Resources:
 // whose code is a .zip package to the function, its decision saying the
 // Recipe runs a container image built from its CodeUri, infra.image left in
 // its Release entry for the answers file, and the CodeUri reported not
-// carried.
+// carried, beside the execution role SAM writes for a function writing no
+// role.
 func TestZipPackagedSamFunctionLeavesTheImageToTheOperator(t *testing.T) {
 	t.Parallel()
 	out := importText(t, `AWSTemplateFormatVersion: "2010-09-09"
@@ -326,12 +327,64 @@ Resources:
 		"the Recipe deploying a function runs a container image, infra.image, which is left for the operator: "+
 			"build the code at ./src, its CodeUri, into an image in Amazon ECR and set infra.image to it")
 	notCarried := coded(out, cloudimport.CodeValueNotCarried)
-	if len(notCarried) != 1 || notCarried[0].SourceRef != "template.yaml#/Resources/Orders/Properties/CodeUri" ||
-		!strings.Contains(notCarried[0].Message, "the function's code as a .zip package, so it is not carried") {
-		t.Errorf("the CodeUri is reported %+v", notCarried)
+	refs := []string{"template.yaml#/Resources/Orders", "template.yaml#/Resources/Orders/Properties/CodeUri"}
+	if len(notCarried) != 2 || notCarried[0].SourceRef != refs[0] || notCarried[1].SourceRef != refs[1] ||
+		!strings.Contains(notCarried[1].Message, "the function's code as a .zip package, so it is not carried") {
+		t.Errorf("the role and the CodeUri are reported %+v", notCarried)
 	}
 	holds(t, "the Release", fileText(t, out, "release.yaml"), "    orders:\n      infra:\n        # Left for the "+
 		"Release, since the source cannot supply it: infra.image, "+functionImage+"\n        image: \"\"\n")
+}
+
+// TestSamFunctionWritingNoRoleLeavesTheRoleToTheOperator maps three SAM
+// functions to the function: one writing neither Role nor Policies, for which
+// SAM writes an execution role, is reported value-not-carried at the function
+// and its decision says the Recipe takes an existing role at
+// infra.overrides.Role, to set in the Release; one writing its Role, and one
+// writing Policies, which is reported as that property, carry no such report
+// and no such decision.
+func TestSamFunctionWritingNoRoleLeavesTheRoleToTheOperator(t *testing.T) {
+	t.Parallel()
+	out := importText(t, `AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  Orders:
+    Type: AWS::Serverless::Function
+    Properties: {PackageType: Image, ImageUri: "123456789012.dkr.ecr.eu-west-1.amazonaws.com/orders:1.0.0"}
+  Billing:
+    Type: AWS::Serverless::Function
+    Properties: {PackageType: Image, ImageUri: "123456789012.dkr.ecr.eu-west-1.amazonaws.com/billing:1.0.0",
+      Role: "arn:aws:iam::123456789012:role/billing"}
+  Mailer:
+    Type: AWS::Serverless::Function
+    Properties: {PackageType: Image, ImageUri: "123456789012.dkr.ecr.eu-west-1.amazonaws.com/mailer:1.0.0",
+      Policies: [AWSLambdaBasicExecutionRole]}
+`)
+	const decided = "the function writes neither Role nor Policies, so SAM writes an execution role for it, and " +
+		"the Recipe deploying a function takes an existing one, infra.overrides.Role, which is left for the " +
+		"operator: set infra.overrides.Role in the Release to the ARN of a role the function runs under"
+	holds(t, "the decision on Orders", mappedTo(t, out, "Orders", "core/compute/function").Rationale, decided)
+	for _, id := range []string{"Billing", "Mailer"} {
+		lacks(t, "the decision on "+id, mappedTo(t, out, id, "core/compute/function").Rationale, decided)
+	}
+	want := []aggrega.Diagnostic{
+		{Severity: aggrega.SeverityWarn, Code: string(cloudimport.CodeValueNotCarried), Message: "the template " +
+			"template.yaml writes Policies on the function Mailer at /Resources/Mailer/Properties/Policies, from " +
+			"which SAM writes an execution role for the function, so it is not carried: the Recipe takes an " +
+			"existing role: infra.overrides.Role, so grant what the policies allow in the role the operator " +
+			"supplies there", SourceRef: "template.yaml#/Resources/Mailer/Properties/Policies"},
+		{Severity: aggrega.SeverityWarn, Code: string(cloudimport.CodeValueNotCarried), Message: "the template " +
+			"template.yaml writes neither Role nor Policies on the function Orders at /Resources/Orders, so SAM " +
+			"writes an execution role for the function, which is not carried: the Recipe deploying a function " +
+			"takes an existing role, infra.overrides.Role, so set infra.overrides.Role in the Release to the ARN " +
+			"of a role the function runs under", SourceRef: "template.yaml#/Resources/Orders"},
+	}
+	if got := coded(out, cloudimport.CodeValueNotCarried); !slices.EqualFunc(got, want,
+		func(a, b aggrega.Diagnostic) bool {
+			return a.Severity == b.Severity && a.Code == b.Code && a.Message == b.Message && a.SourceRef == b.SourceRef
+		}) {
+		t.Errorf("value-not-carried reports\n%+v\nwant\n%+v", got, want)
+	}
 }
 
 // TestFunctionRuntimeIsTheFunctionsRuntimeValue places the runtime a Lambda
