@@ -240,34 +240,3 @@ func TestFetchedModuleCallDiagnostic(t *testing.T) {
 		t.Errorf("ModuleFetchedAtInitDiagnostics(nil) = %#v, want nil", got)
 	}
 }
-
-// TestParseConfigFile pins which file names are configuration files and in which
-// syntax, the one classification both the parse check and the walk read.
-func TestParseConfigFile(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name     string
-		file     string
-		content  string
-		ok       bool
-		wantErrs bool
-	}{
-		{name: "native syntax", file: "main.tf", content: "variable \"x\" {}\n", ok: true},
-		{name: "JSON syntax", file: "main.tf.json", content: "{\"variable\": {\"x\": {}}}\n", ok: true},
-		{name: "native syntax that does not parse", file: "main.tf", content: "variable \"x\" {\n", ok: true, wantErrs: true},
-		{name: "JSON syntax that does not parse", file: "main.tf.json", content: "{", ok: true, wantErrs: true},
-		{name: "a file the engine does not load", file: "README.md", content: "# x\n", ok: false},
-		{name: "a test file the engine does not load at initialisation", file: "x.tftest.hcl", content: "run \"x\" {}\n", ok: false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			_, diags, ok := terraformcore.ParseConfigFile(tc.file, []byte(tc.content))
-			if ok != tc.ok {
-				t.Fatalf("ok = %v, want %v", ok, tc.ok)
-			}
-			if diags.HasErrors() != tc.wantErrs {
-				t.Errorf("errors = %v, want %v: %v", diags.HasErrors(), tc.wantErrs, diags)
-			}
-		})
-	}
-}

@@ -10,9 +10,8 @@ import (
 
 	abi "github.com/aggrega-ai/aggrega-abi/go/pkg/abi"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/terraformcore/tfconfig"
 	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/hclsyntax"
-	hcljson "github.com/hashicorp/hcl/v2/json"
 	"github.com/zclconf/go-cty/cty"
 )
 
@@ -28,38 +27,6 @@ const ModuleFetchedAtInitCode = "module-fetched-at-init"
 type ConfigFile struct {
 	Path    string
 	Content []byte
-}
-
-// ParseConfigFile parses one Terraform configuration file in the syntax its name
-// declares — a name ending in .tf.json as the JSON variant, one ending in .tf as
-// native syntax — and reports false for any other name, which is not a
-// configuration file the engine loads. The parse resolves nothing and evaluates
-// nothing; the returned file may be nil when the bytes do not parse at all.
-func ParseConfigFile(name string, content []byte) (*hcl.File, hcl.Diagnostics, bool) {
-	jsonSyntax, ok := configSyntax(name)
-	switch {
-	case !ok:
-		return nil, nil, false
-	case jsonSyntax:
-		f, d := hcljson.Parse(content, name)
-		return f, d, true
-	default:
-		f, d := hclsyntax.ParseConfig(content, name, hcl.Pos{Line: 1, Column: 1})
-		return f, d, true
-	}
-}
-
-// configSyntax reports whether a file name is one of the configuration files the
-// engine loads and, when it is, whether it is written in the JSON variant.
-func configSyntax(name string) (jsonSyntax, ok bool) {
-	switch {
-	case strings.HasSuffix(name, ".tf.json"):
-		return true, true
-	case strings.HasSuffix(name, ".tf"):
-		return false, true
-	default:
-		return false, false
-	}
 }
 
 // FetchedModuleCall is one `module` block the engine fetches when it initialises
@@ -107,7 +74,7 @@ type FetchedModuleCall struct {
 func FetchedModuleCalls(files []ConfigFile) []FetchedModuleCall {
 	byDir := make(map[string][]int, len(files))
 	for i, f := range files {
-		if _, ok := configSyntax(f.Path); !ok {
+		if _, ok := tfconfig.Syntax(f.Path); !ok {
 			continue
 		}
 		dir := path.Dir(f.Path)
@@ -202,7 +169,7 @@ var (
 // moduleCallsIn reads the `module` blocks one configuration file declares, in
 // declaration order, and classifies each block's source.
 func moduleCallsIn(f ConfigFile) []moduleCall {
-	file, _, _ := ParseConfigFile(f.Path, f.Content)
+	file, _, _ := tfconfig.ParseConfigFile(f.Path, f.Content)
 	if file == nil || file.Body == nil {
 		return nil
 	}
@@ -225,7 +192,7 @@ func moduleCallsIn(f ConfigFile) []moduleCall {
 		}
 		rng := attr.Expr.Range()
 		mc := moduleCall{name: b.Labels[0], line: rng.Start.Line, written: writtenText(f.Content, rng)}
-		jsonSyntax, _ := configSyntax(f.Path)
+		jsonSyntax, _ := tfconfig.Syntax(f.Path)
 		classifySource(&mc, attr.Expr, jsonSyntax)
 		out = append(out, mc)
 	}

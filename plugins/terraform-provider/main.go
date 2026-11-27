@@ -105,6 +105,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/rendercore"
 	"github.com/aggrega-ai/aggrega-cli/internal/compiler/renderctx"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/terraformcore"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/terraformcore/tfconfig"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 	pdk "github.com/extism/go-pdk"
 	"github.com/hashicorp/hcl/v2"
@@ -451,7 +452,7 @@ func validateTerraformModule(proj *aggrega.SourceProjection) []renderctx.Diagnos
 	files := make([]terraformcore.ConfigFile, 0, len(proj.Files))
 	for _, f := range proj.Files {
 		files = append(files, terraformcore.ConfigFile{Path: f.Path, Content: f.Content})
-		if _, hd, ok := terraformcore.ParseConfigFile(f.Path, f.Content); ok {
+		if _, hd, ok := tfconfig.ParseConfigFile(f.Path, f.Content); ok {
 			diags = append(diags, convertHCLDiagnostics(hd)...)
 		}
 	}
