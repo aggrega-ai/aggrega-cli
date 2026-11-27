@@ -3,7 +3,12 @@
 
 package cloudimport
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
+)
 
 // Value is one value a source writes: a property, a resource name, a
 // condition, a parameter's default or an output. Each format lowers what it
@@ -20,6 +25,54 @@ type Param struct{ Name string }
 
 // Compose is the string concatenation of its parts, in order.
 type Compose struct{ Parts []Value }
+
+// Text is the literal text s.
+func Text(s string) Literal {
+	return Literal{JSON: importer.String(s)}
+}
+
+// Concat returns the concatenation of parts, as Compose holds it: composed
+// parts flattened, adjacent literal text joined and empty literal text
+// dropped; one part is itself, and none is the empty text. A literal that is
+// no text is a part of its own.
+func Concat(parts []Value) Value {
+	var flat []Value
+	var add func(v Value)
+	add = func(v Value) {
+		if c, ok := v.(Compose); ok {
+			for _, p := range c.Parts {
+				add(p)
+			}
+			return
+		}
+		lit, isLit := v.(Literal)
+		s, isText := schemadraft.JSONText(lit.JSON)
+		if isLit && isText {
+			if s == "" {
+				return
+			}
+			if n := len(flat); n > 0 {
+				if prev, ok := flat[n-1].(Literal); ok {
+					if before, ok := schemadraft.JSONText(prev.JSON); ok {
+						flat[n-1] = Text(before + s)
+						return
+					}
+				}
+			}
+		}
+		flat = append(flat, v)
+	}
+	for _, p := range parts {
+		add(p)
+	}
+	switch len(flat) {
+	case 0:
+		return Text("")
+	case 1:
+		return flat[0]
+	}
+	return Compose{Parts: flat}
+}
 
 // Ref is an attribute of a node of the graph, read at the path Attr; an empty
 // Attr is the node's identifier.

@@ -182,11 +182,12 @@ func TestReadKeysTwoZeroResourcesBySymbolicName(t *testing.T) {
 		t.Fatalf("nodes %v, want %v in ID order", ids, want)
 	}
 	if v := node(t, g, "vault"); !v.Existing || v.Type != "Microsoft.KeyVault/vaults" || v.APIVersion != "2023-07-01" ||
-		!reflect.DeepEqual(v.Name, str("kv-core")) {
+		!reflect.DeepEqual(v.Name, cloudimport.Text("kv-core")) {
 		t.Errorf("vault reads %+v", v)
 	}
-	if k := node(t, g, "vault::key"); k.Parent != "vault" || !reflect.DeepEqual(k.Name, str("kv-core/cmk")) ||
-		!reflect.DeepEqual(at(t, k, "properties", "kty"), str("RSA")) {
+	if k := node(t, g, "vault::key"); k.Parent != "vault" ||
+		!reflect.DeepEqual(k.Name, cloudimport.Text("kv-core/cmk")) ||
+		!reflect.DeepEqual(at(t, k, "properties", "kty"), cloudimport.Text("RSA")) {
 		t.Errorf("vault::key reads parent %q, name %+v", k.Parent, k.Name)
 	}
 	if s := node(t, g, "store"); !reflect.DeepEqual(s.Condition, owing("[equals(parameters('name'), 'on')]",
@@ -200,7 +201,8 @@ func TestReadKeysTwoZeroResourcesBySymbolicName(t *testing.T) {
 	if q.Repeat == nil || !slices.Equal(q.Repeat.Keys, []string{"0", "1"}) {
 		t.Fatalf("queues repeats %+v, want two instances", q.Repeat)
 	}
-	if inst := q.Repeat.Instance("1"); inst == nil || !reflect.DeepEqual(inst.Name, str("stcore/default/q1")) {
+	if inst := q.Repeat.Instance("1"); inst == nil ||
+		!reflect.DeepEqual(inst.Name, cloudimport.Text("stcore/default/q1")) {
 		t.Errorf("the second queue is named %+v", inst)
 	}
 	if want := "resourceId('Microsoft.Storage/storageAccounts/queueServices', 'stcore', 'default')"; q.Parent != want {
@@ -236,7 +238,7 @@ func TestReadFlattensOneZeroChildResources(t *testing.T) {
 	db := node(t, g, "orders")
 	if db.Type != "Microsoft.Sql/servers/databases" || db.Parent != "servers" || db.Source != "main.json#/resources/0/resources/0" ||
 		!reflect.DeepEqual(db.Name, cloudimport.Compose{Parts: []cloudimport.Value{cloudimport.Param{Name: "name"},
-			str("/orders")}}) {
+			cloudimport.Text("/orders")}}) {
 		t.Errorf("the nested database reads type %q, parent %q, source %q, name %+v", db.Type, db.Parent, db.Source, db.Name)
 	}
 	policy := node(t, g, "default")
@@ -327,8 +329,9 @@ func TestOneAndTwoDraftTheSameGraph(t *testing.T) {
 	}
 	web := node(t, one, "web")
 	if got := at(t, web, "properties", "template", "containers", "0", "env", "1", "value"); !reflect.DeepEqual(got,
-		cloudimport.Compose{Parts: []cloudimport.Value{str("postgres://"), cloudimport.Ref{Node: "flexibleservers",
-			Attr: []string{"properties", "fullyQualifiedDomainName"}}, str(":5432/appdb")}}) {
+		cloudimport.Compose{Parts: []cloudimport.Value{cloudimport.Text("postgres://"),
+			cloudimport.Ref{Node: "flexibleservers", Attr: []string{"properties", "fullyQualifiedDomainName"}},
+			cloudimport.Text(":5432/appdb")}}) {
 		t.Errorf("DB_URL reads %+v", got)
 	}
 	if !slices.Equal(web.DependsOn, []string{"appdb", "storageaccounts"}) {
@@ -591,8 +594,8 @@ func TestReadKeepsAChildsOwnName(t *testing.T) {
 		t.Fatalf("the template reads with %+v", diags)
 	}
 	for id, want := range map[string]cloudimport.Value{
-		"appdb":     str("appdb"),
-		"orders":    str("orders"),
+		"appdb":     cloudimport.Text("appdb"),
+		"orders":    cloudimport.Text("orders"),
 		"databases": cloudimport.Param{Name: "dbName"},
 	} {
 		n := node(t, g, id)
@@ -615,7 +618,7 @@ func TestReadKeepsAChildsOwnName(t *testing.T) {
 	if len(diags) > 0 {
 		t.Fatalf("the 2.0 template reads with %+v", diags)
 	}
-	if n := node(t, g2, "db"); n.Composed || n.Leaf != nil || !reflect.DeepEqual(n.Name, str("appdb")) {
+	if n := node(t, g2, "db"); n.Composed || n.Leaf != nil || !reflect.DeepEqual(n.Name, cloudimport.Text("appdb")) {
 		t.Errorf("the 2.0 child naming its parent is %#v, composed %v, own %#v; want its own name alone", n.Name,
 			n.Composed, n.Leaf)
 	}

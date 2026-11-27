@@ -94,7 +94,7 @@ func TestAVMRecognisedByLiteralAndByVariablePrefix(t *testing.T) {
 				t.Errorf("%s: the node reads form %s, type %s, API version %s, module %+v", name, n.Form, n.Type,
 					n.APIVersion, n.Module)
 			}
-			if !reflect.DeepEqual(n.Name, str("psql-orders")) {
+			if !reflect.DeepEqual(n.Name, cloudimport.Text("psql-orders")) {
 				t.Errorf("%s: the server is named %+v", name, n.Name)
 			}
 			want := []string{"administratorLogin", "availabilityZone", "databases", "location", "name", "skuName", "tier"}
@@ -104,7 +104,7 @@ func TestAVMRecognisedByLiteralAndByVariablePrefix(t *testing.T) {
 			if got := at(t, n, "administratorLogin"); !reflect.DeepEqual(got, cloudimport.Param{Name: "adminLogin"}) {
 				t.Errorf("%s: the administrator's login reads %+v", name, got)
 			}
-			if got := at(t, n, "databases", "0", "name"); !reflect.DeepEqual(got, str("orders")) {
+			if got := at(t, n, "databases", "0", "name"); !reflect.DeepEqual(got, cloudimport.Text("orders")) {
 				t.Errorf("%s: the database reads %+v", name, got)
 			}
 			if len(diags) != 1 || diags[0].Code != string(cloudimport.CodeAVMModuleRecognised) ||
@@ -204,7 +204,7 @@ func TestAVMResourceTypeFromTheIndexElseItsOneResource(t *testing.T) {
 	if want := (cloudimport.ModuleRef{Path: "avm/res/kusto/cluster", Version: "0.11.1",
 		Prefix: "46d3xbcp.res.07a6150"}); cluster.Type != "Microsoft.Kusto/clusters" ||
 		cluster.APIVersion != "2024-04-13" || cluster.Module == nil || *cluster.Module != want ||
-		!reflect.DeepEqual(cluster.Name, str("adx-core")) {
+		!reflect.DeepEqual(cluster.Name, cloudimport.Text("adx-core")) {
 		t.Errorf("the cluster reads type %s, API version %s, module %+v, name %+v", cluster.Type, cluster.APIVersion,
 			cluster.Module, cluster.Name)
 	}
@@ -220,7 +220,7 @@ func TestAVMResourceTypeFromTheIndexElseItsOneResource(t *testing.T) {
 	if want := []string{"web/plan", "web/site", "web/site_lock"}; g == nil || !slices.Equal(ids(g), want) {
 		t.Fatalf("a module of two resources: nodes %v, want %v; diagnostics %+v", ids(g), want, diags)
 	}
-	if site := node(t, g, "web/site"); !reflect.DeepEqual(site.Name, str("app-orders")) {
+	if site := node(t, g, "web/site"); !reflect.DeepEqual(site.Name, cloudimport.Text("app-orders")) {
 		t.Errorf("the site is named %+v", site.Name)
 	}
 	recognised := withCode(diags, cloudimport.CodeAVMModuleRecognised)
@@ -245,7 +245,7 @@ func TestLegacyModuleNoRowMapsIsFlattened(t *testing.T) {
 	}
 	account := node(t, g, "maps/mapsAccount")
 	if account.Form != cloudimport.FormRaw || account.Type != "Microsoft.Maps/accounts" ||
-		!reflect.DeepEqual(account.Name, str("maps-core")) {
+		!reflect.DeepEqual(account.Name, cloudimport.Text("maps-core")) {
 		t.Errorf("the account reads form %s, type %s, name %+v", account.Form, account.Type, account.Name)
 	}
 	for _, n := range g.Nodes {
@@ -302,13 +302,13 @@ func TestAVMPatternAndUtilityModulesAreFlattened(t *testing.T) {
 	}
 	db := node(t, g, "stack/db")
 	if db.Form != cloudimport.FormAVM || db.Module == nil || db.Module.Path != "avm/res/db-for-postgre-sql/flexible-server" ||
-		!reflect.DeepEqual(db.Name, str("orders-db")) {
+		!reflect.DeepEqual(db.Name, cloudimport.Text("orders-db")) {
 		t.Errorf("the pattern's server reads form %s, module %+v, name %+v", db.Form, db.Module, db.Name)
 	}
 	if got := at(t, db, "administratorLogin"); !reflect.DeepEqual(got, cloudimport.Param{Name: "adminLogin"}) {
 		t.Errorf("the pattern's server's login reads %+v, want the root template's parameter", got)
 	}
-	if got := at(t, node(t, g, "web"), "properties", "appName"); !reflect.DeepEqual(got, str("app-core")) {
+	if got := at(t, node(t, g, "web"), "properties", "appName"); !reflect.DeepEqual(got, cloudimport.Text("app-core")) {
 		t.Errorf("the utility's output reads %+v", got)
 	}
 	recognised := withCode(diags, cloudimport.CodeAVMModuleRecognised)

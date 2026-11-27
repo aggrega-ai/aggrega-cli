@@ -38,8 +38,8 @@ func TestEscapedBracketIsALiteral(t *testing.T) {
 	if len(diags) != 0 {
 		t.Fatalf("diagnostics %v", diags)
 	}
-	for path, want := range map[string]cloudimport.Value{"a": str("[x]"), "b": str("[parameters('name')]"),
-		"c": str("[x")} {
+	for path, want := range map[string]cloudimport.Value{"a": cloudimport.Text("[x]"),
+		"b": cloudimport.Text("[parameters('name')]"), "c": cloudimport.Text("[x")} {
 		if got := at(t, web, "properties", path); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s reads %+v, want %+v", path, got, want)
 		}
@@ -71,8 +71,9 @@ func TestLowerLiteralsParametersAndVariables(t *testing.T) {
 		{[]string{"empty"}, lit("{}")},
 		{[]string{"none"}, lit("[]")},
 		{[]string{"param"}, cloudimport.Param{Name: "name"}},
-		{[]string{"full"}, cloudimport.Compose{Parts: []cloudimport.Value{str("app-"), cloudimport.Param{Name: "name"}}}},
-		{[]string{"tags", "team"}, str("core")},
+		{[]string{"full"}, cloudimport.Compose{Parts: []cloudimport.Value{cloudimport.Text("app-"),
+			cloudimport.Param{Name: "name"}}}},
+		{[]string{"tags", "team"}, cloudimport.Text("core")},
 		{[]string{"cycle"}, owing("[variables('loopA')]", "the variable loopA")},
 		{[]string{"computed", "owner"}, cloudimport.Param{Name: "name"}},
 		{[]string{"member"}, cloudimport.Param{Name: "name"}},
@@ -101,11 +102,13 @@ func TestLowerConcatAndFormatCompose(t *testing.T) {
 		path string
 		want cloudimport.Value
 	}{
-		{"concat", cloudimport.Compose{Parts: []cloudimport.Value{str("https://"), name, str(".example.com")}}},
-		{"format", cloudimport.Compose{Parts: []cloudimport.Value{str("https://"), name, str(".example.com:443/{x}")}}},
+		{"concat", cloudimport.Compose{Parts: []cloudimport.Value{cloudimport.Text("https://"), name,
+			cloudimport.Text(".example.com")}}},
+		{"format", cloudimport.Compose{Parts: []cloudimport.Value{cloudimport.Text("https://"), name,
+			cloudimport.Text(".example.com:443/{x}")}}},
 		{"arrays", cloudimport.Opaque{Text: "[concat(createArray('a'), createArray('b'))]", Target: "arm"}},
 		{"specifier", owing("[format('{0:N2}', parameters('count'))]", unsetParameter("count"))},
-		{"literal", str("ab")},
+		{"literal", cloudimport.Text("ab")},
 	} {
 		if got := at(t, web, "properties", row.path); !reflect.DeepEqual(got, row.want) {
 			t.Errorf("%s reads %+v, want %+v", row.path, got, row.want)
@@ -198,7 +201,7 @@ func TestLowerListFunctionsAreCredentials(t *testing.T) {
 		{"key", keys},
 		{"outputs", keys},
 		{"nested", keys},
-		{"connection", cloudimport.Compose{Parts: []cloudimport.Value{str("AccountKey="), keys}}},
+		{"connection", cloudimport.Compose{Parts: []cloudimport.Value{cloudimport.Text("AccountKey="), keys}}},
 	} {
 		if got := at(t, web, "properties", row.path); !reflect.DeepEqual(got, row.want) {
 			t.Errorf("%s reads %+v, want %+v", row.path, got, row.want)
@@ -243,7 +246,7 @@ func TestLowerAStringThatDoesNotParseIsNotCarried(t *testing.T) {
 	if got := at(t, web, "properties", "broken"); got != nil {
 		t.Errorf("the broken expression is carried as %+v", got)
 	}
-	if got := at(t, web, "properties", "kept"); !reflect.DeepEqual(got, str("x")) {
+	if got := at(t, web, "properties", "kept"); !reflect.DeepEqual(got, cloudimport.Text("x")) {
 		t.Errorf("the property beside it reads %+v", got)
 	}
 }
@@ -271,8 +274,8 @@ func TestLowerCopyLoopsRepeat(t *testing.T) {
 		t.Fatalf("the interfaces repeat %+v", nic.Repeat)
 	}
 	inst := nic.Repeat.Instance("1")
-	if !reflect.DeepEqual(inst.Name, str("nic-2")) || !reflect.DeepEqual(at(t, inst, "properties", "ipConfigurations",
-		"0", "name"), str("ip1")) {
+	if !reflect.DeepEqual(inst.Name, cloudimport.Text("nic-2")) || !reflect.DeepEqual(at(t, inst, "properties",
+		"ipConfigurations", "0", "name"), cloudimport.Text("ip1")) {
 		t.Errorf("the second interface reads name %+v", inst.Name)
 	}
 	if pip := node(t, g, "publicipaddresses"); pip.Repeat == nil || pip.Repeat.Keys != nil {

@@ -198,10 +198,7 @@ func (w *aggregateWriter) paramLiteral(p *Parameter) (Value, outcome) {
 		return nil, outcome{why: "the template parameter " + p.Name + " is secure, and a secure value is never " +
 			"written as a value", warn: true}
 	}
-	if l, ok := p.Supplied.(Literal); ok {
-		return l, written()
-	}
-	if l, ok := p.Default.(Literal); ok {
+	if l, ok := p.Given(); ok {
 		return l, written()
 	}
 	why := "the template parameter " + p.Name + " has no value in the parameters file and no literal default"
@@ -371,10 +368,8 @@ func (w *aggregateWriter) defaultOf(p Parameter) (string, bool) {
 	if p.Pointer {
 		return "", false
 	}
-	for _, v := range []Value{p.Supplied, p.Default} {
-		if l, ok := v.(Literal); ok {
-			return w.jsonText(l.JSON)
-		}
+	if l, ok := p.Given(); ok {
+		return w.jsonText(l.JSON)
 	}
 	return "", false
 }

@@ -151,12 +151,11 @@ func isPseudo(name string) bool {
 // value the parameters file supplies, else its default; a number or a boolean
 // as written — false where it is given none.
 func given(p *cloudimport.Parameter) (string, bool) {
-	for _, v := range []cloudimport.Value{p.Supplied, p.Default} {
-		if lit, ok := v.(cloudimport.Literal); ok {
-			return draftyaml.ScalarText(lit.JSON)
-		}
+	lit, ok := p.Given()
+	if !ok {
+		return "", false
 	}
-	return "", false
+	return draftyaml.ScalarText(lit.JSON)
 }
 
 // isList reports whether a parameter of type typ is a list: CloudFormation
@@ -450,7 +449,7 @@ func (l *lowerer) sub(arg, raw json.RawMessage, at string) cloudimport.Value {
 	var parts []cloudimport.Value
 	for _, piece := range cfntemplate.SubPieces(text) {
 		if !piece.Variable {
-			parts = append(parts, str(piece.Text))
+			parts = append(parts, cloudimport.Text(piece.Text))
 			continue
 		}
 		v, ok := part.variable(piece.Text, vars, at)
@@ -533,7 +532,7 @@ func (l *lowerer) join(arg, raw json.RawMessage, at string) cloudimport.Value {
 			return l.opaque(raw, at)
 		}
 		if len(parts) > 0 {
-			parts = append(parts, str(delimiter))
+			parts = append(parts, cloudimport.Text(delimiter))
 		}
 		parts = append(parts, v)
 	}
@@ -548,7 +547,7 @@ func textPart(v cloudimport.Value) (cloudimport.Value, bool) {
 	switch v := v.(type) {
 	case cloudimport.Literal:
 		if s, ok := draftyaml.ScalarText(v.JSON); ok {
-			return str(s), true
+			return cloudimport.Text(s), true
 		}
 	case cloudimport.Param, cloudimport.Ref, cloudimport.Compose:
 		return v, true
@@ -556,24 +555,32 @@ func textPart(v cloudimport.Value) (cloudimport.Value, bool) {
 	return nil, false
 }
 
-// str is the literal text s.
-func str(s string) cloudimport.Literal {
-	return cloudimport.Literal{JSON: importer.String(s)}
-}
-
 // composed returns the concatenation of parts, written at the JSON pointer
 // at: the credential it reads where it is wholly a Secrets Manager dynamic
 // reference to a resource of the template; literal text, lowered as
 // [lowerer.text] lowers it, where every part is literal; composed text
-// otherwise.
+// otherwise. Composed text whose opening literal text is a short form's tag,
+// alone or with its argument begun, is not carried: CloudFormation reads it
+// as text, and a catalog Recipe placing the text it composes would read it as
+// the function.
 func (l *lowerer) composed(parts []cloudimport.Value, at string) cloudimport.Value {
-	v := compose(parts)
+	v := cloudimport.Concat(parts)
 	if c, ok := l.credential(v); ok {
 		return c
 	}
 	if lit, ok := v.(cloudimport.Literal); ok {
 		s, _ := schemadraft.JSONText(lit.JSON)
 		return l.text(s, lit.JSON, at)
+	}
+	if c, ok := v.(cloudimport.Compose); ok {
+		open, _ := c.Parts[0].(cloudimport.Literal)
+		if s, isText := schemadraft.JSONText(open.JSON); isText && cfntemplate.LooksLikeShortForm(s) {
+			l.warn(cloudimport.CodeValueNotCarried, at, "the template "+l.t.file+" writes text at "+at+" that opens as "+
+				"a CloudFormation short form, which CloudFormation reads as text and a catalog Recipe placing it "+
+				"would read as an intrinsic function, so it is not carried: write the value by hand where the stack "+
+				"deploys")
+			return nil
+		}
 	}
 	return v
 }
@@ -605,48 +612,6 @@ func (l *lowerer) credential(v cloudimport.Value) (cloudimport.Credential, bool)
 		what = "SecretString"
 	}
 	return cloudimport.Credential{Node: ref.Node, What: what}, true
-}
-
-// compose returns the concatenation of parts: composed parts flattened,
-// adjacent literal text joined and empty text dropped; one part is itself,
-// and none is the empty text.
-func compose(parts []cloudimport.Value) cloudimport.Value {
-	var flat []cloudimport.Value
-	var add func(v cloudimport.Value)
-	add = func(v cloudimport.Value) {
-		if c, ok := v.(cloudimport.Compose); ok {
-			for _, p := range c.Parts {
-				add(p)
-			}
-			return
-		}
-		lit, isLit := v.(cloudimport.Literal)
-		s, isText := schemadraft.JSONText(lit.JSON)
-		if isLit && isText {
-			if s == "" {
-				return
-			}
-			if n := len(flat); n > 0 {
-				if prev, ok := flat[n-1].(cloudimport.Literal); ok {
-					if before, ok := schemadraft.JSONText(prev.JSON); ok {
-						flat[n-1] = str(before + s)
-						return
-					}
-				}
-			}
-		}
-		flat = append(flat, v)
-	}
-	for _, p := range parts {
-		add(p)
-	}
-	switch len(flat) {
-	case 0:
-		return str("")
-	case 1:
-		return flat[0]
-	}
-	return cloudimport.Compose{Parts: flat}
 }
 
 // findInMap lowers Fn::FindInMap reading arg, which raw writes whole at the

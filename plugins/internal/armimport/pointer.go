@@ -142,10 +142,8 @@ func paramLiteral(params []cloudimport.Parameter, name string) (json.RawMessage,
 		if !strings.EqualFold(p.Name, name) || p.Secure {
 			continue
 		}
-		for _, v := range []cloudimport.Value{p.Supplied, p.Default} {
-			if lit, ok := v.(cloudimport.Literal); ok {
-				return json.RawMessage(lit.JSON), true
-			}
+		if lit, ok := p.Given(); ok {
+			return lit.JSON, true
 		}
 		return nil, false
 	}

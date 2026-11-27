@@ -435,13 +435,15 @@ func TestArmPointerNamesAResourceByItsTypeAndName(t *testing.T) {
 	g := &cloudimport.Graph{
 		Nodes: []*cloudimport.Node{
 			{ID: "subnet", Type: "Microsoft.Network/virtualNetworks/subnets",
-				Name: cloudimport.Compose{Parts: []cloudimport.Value{cloudimport.Param{Name: "vnet"}, str("/snet-db")}}},
+				Name: cloudimport.Compose{Parts: []cloudimport.Value{cloudimport.Param{Name: "vnet"},
+					cloudimport.Text("/snet-db")}}},
 			{ID: "vault", Type: "Microsoft.KeyVault/vaults",
 				Name: cloudimport.Opaque{Text: "[uniqueString(resourceGroup().id)]", Target: target}},
 		},
 		Params: []cloudimport.Parameter{
-			{Name: "vnet", Type: "string", Default: str("vnet-core")},
-			{Name: "zone", Type: "string", Default: str("example.com"), Supplied: str("example.org")},
+			{Name: "vnet", Type: "string", Default: cloudimport.Text("vnet-core")},
+			{Name: "zone", Type: "string", Default: cloudimport.Text("example.com"),
+				Supplied: cloudimport.Text("example.org")},
 			{Name: "unset", Type: "string"},
 		},
 	}
@@ -457,7 +459,7 @@ func TestArmPointerNamesAResourceByItsTypeAndName(t *testing.T) {
 		{cloudimport.Ref{Node: "resourceId('Microsoft.Network/dnsZones', parameters('unset'))"}, ""},
 		{cloudimport.Ref{Node: "vault"}, ""},
 		{cloudimport.Ref{Node: "subnet", Attr: []string{"properties", "addressPrefix"}}, ""},
-		{str("vnet-core"), ""},
+		{cloudimport.Text("vnet-core"), ""},
 	} {
 		got, ok := pointer(c.v, g)
 		if got != c.want || ok != (c.want != "") {

@@ -13,7 +13,6 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
-	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 // base is a template declaring a parameter of each kind the lowering reads, a
@@ -99,9 +98,6 @@ func notCarriedAtP(message string) aggrega.Diagnostic {
 	return aggrega.Diagnostic{Severity: aggrega.SeverityWarn, Code: "value-not-carried", Message: message,
 		SourceRef: "template.yaml#" + atP}
 }
-
-// strLit is the literal text s, as a leaf holds it.
-func strLit(s string) cloudimport.Literal { return cloudimport.Literal{JSON: importer.String(s)} }
 
 // cf is deploy-time text for the cloudformation target reading nothing the
 // draft owes.
@@ -297,16 +293,17 @@ func TestLowerSubComposesLiteralsParametersAndReferences(t *testing.T) {
 	t.Parallel()
 	for value, want := range map[string]cloudimport.Value{
 		"!Sub 'arn:aws:s3:::${Db}/${Env}-${!Literal}'": cloudimport.Compose{Parts: []cloudimport.Value{
-			strLit("arn:aws:s3:::"), cloudimport.Ref{Node: "Db"}, strLit("/"), cloudimport.Param{Name: "Env"},
-			strLit("-${Literal}")}},
+			cloudimport.Text("arn:aws:s3:::"), cloudimport.Ref{Node: "Db"}, cloudimport.Text("/"),
+			cloudimport.Param{Name: "Env"}, cloudimport.Text("-${Literal}")}},
 		"!Sub ['postgres://${Host}:${Port}/${Db.Endpoint.Port}', {Host: !GetAtt Db.Endpoint.Address}]": cloudimport.
-			Compose{Parts: []cloudimport.Value{strLit("postgres://"),
-			cloudimport.Ref{Node: "Db", Attr: []string{"Endpoint", "Address"}}, strLit(":"),
-			cloudimport.Param{Name: "Port"}, strLit("/"), cloudimport.Ref{Node: "Db", Attr: []string{"Endpoint", "Port"}}}},
+			Compose{Parts: []cloudimport.Value{cloudimport.Text("postgres://"),
+			cloudimport.Ref{Node: "Db", Attr: []string{"Endpoint", "Address"}}, cloudimport.Text(":"),
+			cloudimport.Param{Name: "Port"}, cloudimport.Text("/"),
+			cloudimport.Ref{Node: "Db", Attr: []string{"Endpoint", "Port"}}}},
 		"!Sub ['${Db}-${Env}', {Db: orders, Env: !Ref Name}]": cloudimport.Compose{Parts: []cloudimport.Value{
-			strLit("orders-"), cloudimport.Param{Name: "Name"}}},
-		"!Sub ['${Count} items', {Count: 3}]": strLit("3 items"),
-		"!Sub 'plain ${!Text}'":               strLit("plain ${Text}"),
+			cloudimport.Text("orders-"), cloudimport.Param{Name: "Name"}}},
+		"!Sub ['${Count} items', {Count: 3}]": cloudimport.Text("3 items"),
+		"!Sub 'plain ${!Text}'":               cloudimport.Text("plain ${Text}"),
 		"!Sub '${AWS::Region}-${Env}'": cloudimport.Opaque{Text: "!Sub ['${AWS::Region}-${Env}', {Env: dev}]",
 			Target: "cloudformation", Params: []string{"Env"}},
 	} {
@@ -327,11 +324,11 @@ func TestLowerJoinWithALiteralDelimiterComposes(t *testing.T) {
 	t.Parallel()
 	for value, want := range map[string]cloudimport.Value{
 		"!Join ['', ['postgres://', !GetAtt Db.Endpoint.Address, ':', !Ref Port]]": cloudimport.Compose{
-			Parts: []cloudimport.Value{strLit("postgres://"), cloudimport.Ref{Node: "Db",
-				Attr: []string{"Endpoint", "Address"}}, strLit(":"), cloudimport.Param{Name: "Port"}}},
-		"!Join [',', [a, 1, true]]":              strLit("a,1,true"),
-		"!Join [',', [a, !Ref AWS::NoValue, b]]": strLit("a,b"),
-		"!Join ['-', []]":                        strLit(""),
+			Parts: []cloudimport.Value{cloudimport.Text("postgres://"), cloudimport.Ref{Node: "Db",
+				Attr: []string{"Endpoint", "Address"}}, cloudimport.Text(":"), cloudimport.Param{Name: "Port"}}},
+		"!Join [',', [a, 1, true]]":              cloudimport.Text("a,1,true"),
+		"!Join [',', [a, !Ref AWS::NoValue, b]]": cloudimport.Text("a,b"),
+		"!Join ['-', []]":                        cloudimport.Text(""),
 	} {
 		got, diags := valueOfP(t, value)
 		noDiagnostics(t, diags)
@@ -349,7 +346,7 @@ func TestLowerJoinWithALiteralDelimiterComposes(t *testing.T) {
 func TestLowerFindInMapWithLiteralKeysIsTheMappingsValue(t *testing.T) {
 	t.Parallel()
 	for value, want := range map[string]cloudimport.Value{
-		"!FindInMap [Sizes, prod, Class]": strLit("db.r6g.large"),
+		"!FindInMap [Sizes, prod, Class]": cloudimport.Text("db.r6g.large"),
 	} {
 		got, diags := valueOfP(t, value)
 		noDiagnostics(t, diags)
@@ -373,7 +370,7 @@ func TestLowerIfOnAParameterEqualityIsTheBranchItsValueSelects(t *testing.T) {
 		atP+", which the value the template parameter Env is given makes false, so the draft carries its branch at "+
 		atP+"/Fn::If/2 and not the one at "+atP+"/Fn::If/1: where the stack deploys with a value of Env that "+
 		"makes IsProd true, write that branch by hand"))
-	if want := strLit("db.t3.micro"); !reflect.DeepEqual(got, want) {
+	if want := cloudimport.Text("db.t3.micro"); !reflect.DeepEqual(got, want) {
 		t.Errorf("%s lowers to %#v, want %#v", value, got, want)
 	}
 
@@ -382,7 +379,7 @@ func TestLowerIfOnAParameterEqualityIsTheBranchItsValueSelects(t *testing.T) {
 		atP+", which the value the template parameter Env is given makes true, so the draft carries its branch at "+
 		atP+"/Fn::If/1 and not the one at "+atP+"/Fn::If/2: where the stack deploys with a value of Env that "+
 		"makes IsProd false, write that branch by hand"))
-	if want := strLit("db.r6g.large"); !reflect.DeepEqual(got, want) {
+	if want := cloudimport.Text("db.r6g.large"); !reflect.DeepEqual(got, want) {
 		t.Errorf("%s with Env prod lowers to %#v, want %#v", value, got, want)
 	}
 
@@ -499,8 +496,8 @@ func TestLowerDynamicReferences(t *testing.T) {
 		"!Join ['', ['{{resolve:secretsmanager:', !Ref DbSecret, ':SecretString:password}}']]": cloudimport.Credential{
 			Node: "DbSecret", What: "SecretString:password"},
 		"!Sub '{{resolve:secretsmanager:${Env}:SecretString:password}}'": cloudimport.Compose{
-			Parts: []cloudimport.Value{strLit("{{resolve:secretsmanager:"), cloudimport.Param{Name: "Env"},
-				strLit(":SecretString:password}}")}},
+			Parts: []cloudimport.Value{cloudimport.Text("{{resolve:secretsmanager:"), cloudimport.Param{Name: "Env"},
+				cloudimport.Text(":SecretString:password}}")}},
 	} {
 		got, diags := valueOfP(t, value)
 		noDiagnostics(t, diags)
@@ -547,7 +544,7 @@ func TestLowerOutputsLikeProperties(t *testing.T) {
 // template writes it: a property, an item of a list, a mapping's value read by
 // Fn::FindInMap, the text an Fn::Sub with no variable writes, and a
 // parameter's default, each warned value-not-carried naming where it is
-// written.
+// written. Composed text opening as a short form is not carried either.
 func TestQuotedShortFormLiteralIsNotCarried(t *testing.T) {
 	t.Parallel()
 	message := func(at string) string {
@@ -558,6 +555,16 @@ func TestQuotedShortFormLiteralIsNotCarried(t *testing.T) {
 	for _, value := range []string{"'!Ref Db'", `"!GetAtt Db.Endpoint.Address"`, "!Sub '!Ref Db'"} {
 		got, diags := valueOfP(t, value)
 		onlyDiagnostic(t, diags, notCarriedAtP(message(atP)))
+		if got != nil {
+			t.Errorf("%s lowers to %#v, want no value", value, got)
+		}
+	}
+
+	for _, value := range []string{"!Sub '!Ref ${Env}'", "!Sub '!GetAtt ${Db}.Arn'"} {
+		got, diags := valueOfP(t, value)
+		onlyDiagnostic(t, diags, notCarriedAtP("the template template.yaml writes text at "+atP+" that opens as a "+
+			"CloudFormation short form, which CloudFormation reads as text and a catalog Recipe placing it would "+
+			"read as an intrinsic function, so it is not carried: write the value by hand where the stack deploys"))
 		if got != nil {
 			t.Errorf("%s lowers to %#v, want no value", value, got)
 		}

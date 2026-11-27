@@ -85,7 +85,8 @@ func TestFlattenInnerResourcesJoinTheGraph(t *testing.T) {
 		t.Fatalf("nodes %v, want %v", ids(g), want)
 	}
 	vnet := node(t, g, "net/vnet")
-	if want := (cloudimport.Compose{Parts: []cloudimport.Value{cloudimport.Param{Name: "name"}, str("-vnet")}}); !reflect.DeepEqual(vnet.Name, want) {
+	want := cloudimport.Compose{Parts: []cloudimport.Value{cloudimport.Param{Name: "name"}, cloudimport.Text("-vnet")}}
+	if !reflect.DeepEqual(vnet.Name, want) {
 		t.Errorf("the network is named %+v, want %+v", vnet.Name, want)
 	}
 	if vnet.Source != "main.json#/resources/0/properties/template/resources/0" {
@@ -95,7 +96,7 @@ func TestFlattenInnerResourcesJoinTheGraph(t *testing.T) {
 		t.Errorf("the network's tag reads %+v, want the outer parameter env", got)
 	}
 	if got := at(t, vnet, "properties", "addressSpace", "addressPrefixes", "0"); !reflect.DeepEqual(got,
-		str("10.0.0.0/16")) {
+		cloudimport.Text("10.0.0.0/16")) {
 		t.Errorf("the address prefix reads %+v, want the parameter's default", got)
 	}
 	subnet := node(t, g, "net/apps")
@@ -121,8 +122,8 @@ func TestFlattenInnerResourcesJoinTheGraph(t *testing.T) {
 // the value given.
 func TestFlattenOuterScopeResolvesInTheOuterTemplate(t *testing.T) {
 	t.Parallel()
-	outer := cloudimport.Compose{Parts: []cloudimport.Value{str("app-"), cloudimport.Param{Name: "name"}}}
-	inner := str("inner-bound")
+	outer := cloudimport.Compose{Parts: []cloudimport.Value{cloudimport.Text("app-"), cloudimport.Param{Name: "name"}}}
+	inner := cloudimport.Text("inner-bound")
 	nested := func(options, version string) string {
 		resources := `[{"type": "Microsoft.Web/sites", "apiVersion": "2023-01-01",
 			"name": "[concat(variables('prefix'), '-', parameters('name'))]"}]`
@@ -331,7 +332,7 @@ func TestNestedCopyRepeatsTheInnerResources(t *testing.T) {
 	if vnet.Repeat == nil || !slices.Equal(vnet.Repeat.Keys, []string{"0", "1"}) {
 		t.Fatalf("the network repeats %+v, want once per index", vnet.Repeat)
 	}
-	if inst := vnet.Repeat.Instance("1"); inst == nil || !reflect.DeepEqual(inst.Name, str("vnet-1")) {
+	if inst := vnet.Repeat.Instance("1"); inst == nil || !reflect.DeepEqual(inst.Name, cloudimport.Text("vnet-1")) {
 		t.Errorf("the second network reads %+v", inst)
 	}
 	g, diags = readTemplate(nested(`"[parameters('count')]"`))

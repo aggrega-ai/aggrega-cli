@@ -20,8 +20,9 @@ import (
 // instance's active from a boolean parameter. Any other condition — composed,
 // comparing with false, reading a parameter allowing other values, a NoEcho
 // parameter or a pseudo parameter, declared nowhere or named by no text — is
-// not carried: condition-not-carried names it, and n is read as deployed
-// unconditionally.
+// not carried: condition-not-carried names it, and says that switching the
+// instance off by hand takes switching off with it every instance whose
+// connection reaches it, and n is read as deployed unconditionally.
 func (l *lowerer) condition(n *cloudimport.Node) {
 	lit, ok := n.Condition.(cloudimport.Literal)
 	if !ok {
@@ -42,7 +43,8 @@ func (l *lowerer) condition(n *cloudimport.Node) {
 	l.warn(cloudimport.CodeConditionNotCarried, at, "the template "+l.t.file+" deploys "+n.ID+" under "+named+
 		", which is not one template parameter allowing only true and false compared with true, so the "+
 		"condition is not carried and the resource is drafted as deployed whatever the condition decides: write "+
-		"active on its instance by hand")
+		"active on its instance by hand, switching off with it every instance whose connection reaches it, as a "+
+		"switched-off target halts the build")
 }
 
 // switchParam returns the template parameter the condition named name

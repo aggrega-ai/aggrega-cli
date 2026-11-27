@@ -75,7 +75,8 @@ func TestConditionOtherwiseIsNotCarried(t *testing.T) {
 			Message: "the template template.yaml deploys Queue under " + named + ", which is not " +
 				"one template parameter allowing only true and false compared with true, so the condition is not " +
 				"carried and the resource is drafted as deployed whatever the condition decides: write active on its " +
-				"instance by hand", SourceRef: "template.yaml#/Resources/Queue/Condition"}
+				"instance by hand, switching off with it every instance whose connection reaches it, as a " +
+				"switched-off target halts the build", SourceRef: "template.yaml#/Resources/Queue/Condition"}
 	}
 	for name, c := range map[string]struct{ old, new, condition string }{
 		"compared with false": {"!Equals [!Ref Enabled, 'true']", "!Equals [!Ref Enabled, 'false']", "IsEnabled"},

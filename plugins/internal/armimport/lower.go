@@ -104,11 +104,6 @@ func isNull(raw json.RawMessage) bool {
 	return jsonKind(raw) == 'n'
 }
 
-// str is the literal string s.
-func str(s string) cloudimport.Literal {
-	return cloudimport.Literal{JSON: importer.String(s)}
-}
-
 // hasExpression reports whether a string raw holds, at any depth, is read as
 // an expression or escapes a bracket.
 func hasExpression(raw json.RawMessage, depth int) bool {
@@ -245,7 +240,7 @@ func (l *lowerer) names() (full, own cloudimport.Value) {
 			return nil, nil
 		}
 		if i > 0 {
-			parts = append(parts, str("/"))
+			parts = append(parts, cloudimport.Text("/"))
 		}
 		v := l.leaf(raw, l.res.nameAt[i], "the name of "+l.res.symbol)
 		if v == nil {
@@ -254,7 +249,7 @@ func (l *lowerer) names() (full, own cloudimport.Value) {
 		parts = append(parts, v)
 		own = v
 	}
-	return compose(parts), own
+	return cloudimport.Concat(parts), own
 }
 
 // ownName returns whether the name full of res is the full name the template
@@ -292,7 +287,7 @@ func afterLastSlash(v cloudimport.Value) cloudimport.Value {
 		if !isLit || !isText || j < 0 {
 			continue
 		}
-		tail := compose(append([]cloudimport.Value{str(s[j+1:])}, parts[i+1:]...))
+		tail := cloudimport.Concat(append([]cloudimport.Value{cloudimport.Text(s[j+1:])}, parts[i+1:]...))
 		if t, ok := tail.(cloudimport.Literal); ok {
 			if rest, _ := text(t.JSON); rest == "" {
 				return nil
@@ -500,7 +495,7 @@ func (l *lowerer) propertyLoops(raw json.RawMessage, at string) []cloudimport.Pr
 // value-not-carried warning.
 func (l *lowerer) text(s, at string) cloudimport.Prop {
 	if !armexpr.IsExpression(s) {
-		return cloudimport.Prop{Value: str(armexpr.LiteralText(s))}
+		return cloudimport.Prop{Value: cloudimport.Text(armexpr.LiteralText(s))}
 	}
 	n, err := armexpr.Parse(s)
 	if err != nil {
@@ -555,7 +550,7 @@ func oneTextArgument(n armexpr.Node, name string) (string, bool) {
 func (l *lowerer) expr(n armexpr.Node) cloudimport.Value {
 	switch v := n.(type) {
 	case armexpr.String:
-		return str(v.Value)
+		return cloudimport.Text(v.Value)
 	case armexpr.Int:
 		if i, err := strconv.ParseInt(v.Text, 10, 64); err == nil {
 			return cloudimport.Literal{JSON: json.RawMessage(strconv.FormatInt(i, 10))}
@@ -756,7 +751,7 @@ func (l *lowerer) concat(c armexpr.Call) cloudimport.Value {
 		}
 		parts = append(parts, part)
 	}
-	return compose(parts)
+	return cloudimport.Concat(parts)
 }
 
 // format lowers a format call whose format text is literal to composed text:
@@ -779,7 +774,7 @@ func (l *lowerer) format(c armexpr.Call) cloudimport.Value {
 	var parts []cloudimport.Value
 	for _, p := range pieces {
 		if p.arg < 0 {
-			parts = append(parts, str(p.text))
+			parts = append(parts, cloudimport.Text(p.text))
 			continue
 		}
 		if p.arg+1 >= len(c.Args) {
@@ -795,7 +790,7 @@ func (l *lowerer) format(c armexpr.Call) cloudimport.Value {
 		}
 		parts = append(parts, part)
 	}
-	return compose(parts)
+	return cloudimport.Concat(parts)
 }
 
 // formatPiece is one piece of a format text: literal text, or the index of
@@ -864,7 +859,7 @@ func (l *lowerer) textPart(v cloudimport.Value) (cloudimport.Value, bool) {
 		case '{', '[', 'n', 0:
 			return nil, false
 		}
-		return str(strings.TrimSpace(string(v.JSON))), true
+		return cloudimport.Text(strings.TrimSpace(string(v.JSON))), true
 	case cloudimport.Param:
 		typ, _ := l.r.root.paramType(v.Name)
 		return v, typ != "array" && typ != "object"
@@ -879,48 +874,6 @@ func (l *lowerer) textPart(v cloudimport.Value) (cloudimport.Value, bool) {
 		}
 	}
 	return v, true
-}
-
-// compose returns the concatenation of parts: composed parts flattened,
-// adjacent literal text joined and empty text dropped; one part is itself,
-// and none is the empty text.
-func compose(parts []cloudimport.Value) cloudimport.Value {
-	var flat []cloudimport.Value
-	var add func(v cloudimport.Value)
-	add = func(v cloudimport.Value) {
-		if c, ok := v.(cloudimport.Compose); ok {
-			for _, p := range c.Parts {
-				add(p)
-			}
-			return
-		}
-		lit, isLit := v.(cloudimport.Literal)
-		s, isText := text(lit.JSON)
-		if isLit && isText {
-			if s == "" {
-				return
-			}
-			if n := len(flat); n > 0 {
-				if prev, ok := flat[n-1].(cloudimport.Literal); ok {
-					if before, ok := text(prev.JSON); ok {
-						flat[n-1] = str(before + s)
-						return
-					}
-				}
-			}
-		}
-		flat = append(flat, v)
-	}
-	for _, p := range parts {
-		add(p)
-	}
-	switch len(flat) {
-	case 0:
-		return str("")
-	case 1:
-		return flat[0]
-	}
-	return cloudimport.Compose{Parts: flat}
 }
 
 // copyIndex returns the index copyIndex call c reads, false where it is not

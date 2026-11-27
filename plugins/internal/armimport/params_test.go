@@ -43,8 +43,8 @@ func TestParamsReadTheirDeclarations(t *testing.T) {
 	}
 	server := param(t, g, "serverName")
 	if server.Type != "string" || server.Description != "The name of the PostgreSQL flexible server." ||
-		!reflect.DeepEqual(server.Default, str("pg-main")) || server.MinLength == nil || *server.MinLength != 3 ||
-		server.MaxLength == nil || *server.MaxLength != 63 || server.Secure {
+		!reflect.DeepEqual(server.Default, cloudimport.Text("pg-main")) || server.MinLength == nil ||
+		*server.MinLength != 3 || server.MaxLength == nil || *server.MaxLength != 63 || server.Secure {
 		t.Errorf("serverName reads %+v", server)
 	}
 	if p := param(t, g, "administratorPassword"); p.Type != "string" || !p.Secure || p.Default != nil {

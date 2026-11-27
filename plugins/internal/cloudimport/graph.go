@@ -142,6 +142,17 @@ type Parameter struct {
 	Pointer bool
 }
 
+// Given returns the literal value p is given: the value the parameters file
+// supplies, else its literal default; false where it is given neither.
+func (p Parameter) Given() (Literal, bool) {
+	for _, v := range []Value{p.Supplied, p.Default} {
+		if l, ok := v.(Literal); ok {
+			return l, true
+		}
+	}
+	return Literal{}, false
+}
+
 // Output is one output the source declares.
 type Output struct {
 	Name  string
