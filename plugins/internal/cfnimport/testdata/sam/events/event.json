@@ -1,0 +1,11 @@
+{
+  "body": "{\"order\": \"42\"}",
+  "resource": "/orders",
+  "path": "/orders",
+  "httpMethod": "POST",
+  "isBase64Encoded": false,
+  "queryStringParameters": {"verbose": "true"},
+  "pathParameters": null,
+  "stageVariables": null,
+  "headers": {"Content-Type": "application/json"}
+}

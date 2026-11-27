@@ -1,0 +1,5 @@
+[
+  {"ParameterKey": "Env", "ParameterValue": "prod"},
+  {"ParameterKey": "ImageTag", "ParameterValue": "1.4.2"},
+  {"ParameterKey": "Expression", "ParameterValue": "a=b=c"}
+]

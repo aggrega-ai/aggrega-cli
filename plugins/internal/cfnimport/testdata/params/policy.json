@@ -1,0 +1,4 @@
+{
+  "Parameters": {"ImageTag": "1.4.2"},
+  "StackPolicy": {"Statement": [{"Effect": "Allow", "Action": "Update:*", "Principal": "*", "Resource": "*"}]}
+}

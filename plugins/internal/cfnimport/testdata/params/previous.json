@@ -1,0 +1,4 @@
+[
+  {"ParameterKey": "Env", "UsePreviousValue": true},
+  {"ParameterKey": "ImageTag", "ParameterValue": "1.4.2"}
+]

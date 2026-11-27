@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: Orders service with its database and queue.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: {default: Database}
+        Parameters: [DbName]
+  Owner: orders-team
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, prod]
+    Description: The environment the stack runs in.
+  DbName:
+    Type: String
+    Default: orders
+    AllowedPattern: '[a-z][a-z0-9]*'
+    MinLength: 1
+    MaxLength: 63
+  DbPort:
+    Type: Number
+    Default: 5432
+    MinValue: 1024
+    MaxValue: '65535'
+  DbPassword:
+    Type: String
+    NoEcho: true
+    Default: placeholder-not-a-secret
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+Mappings:
+  Sizes:
+    dev: {Class: db.t3.micro}
+    prod: {Class: db.r6g.large}
+Conditions:
+  IsProd: !Equals [!Ref Env, prod]
+Rules:
+  ProdNeedsSubnets:
+    RuleCondition: !Equals [!Ref Env, prod]
+    Assertions:
+      - Assert: !Not [!Equals [!Join ['', !Ref SubnetIds], '']]
+Resources:
+  OrdersDb:
+    Type: AWS::RDS::DBInstance
+    Condition: IsProd
+    DependsOn: OrdersQueue
+    DeletionPolicy: Snapshot
+    Metadata:
+      Comment: kept out of the body
+    Properties:
+      Engine: postgres
+      DBName: !Ref DbName
+      Port: !Ref DbPort
+      DBInstanceClass: !FindInMap [Sizes, !Ref Env, Class]
+      MasterUserPassword: !Ref DbPassword
+      Tags: []
+      VPCSecurityGroups:
+        - !GetAtt DbSecurityGroup.GroupId
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: database access
+      VpcId: !Ref VpcId
+  OrdersQueue:
+    Type: AWS::SQS::Queue
+    DependsOn: [DbSecurityGroup, OrdersDb]
+    Properties: {}
+  Broken: not a resource
+Outputs:
+  DbAddress:
+    Value: !GetAtt OrdersDb.Endpoint.Address
+    Export:
+      Name: orders-db-address
+  QueueUrl:
+    Value: !Ref OrdersQueue
+    Export:
+      Name: !Sub '${AWS::StackName}-queue-url'
+  Plain:
+    Value: plain text

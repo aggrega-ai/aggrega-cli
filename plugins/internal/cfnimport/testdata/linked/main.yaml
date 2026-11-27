@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  Network:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./network.yaml
+  Api:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: services/api.yaml
+  Remote:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://example-bucket.s3.amazonaws.com/remote.yaml
+  Published:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location:
+        ApplicationId: arn:aws:serverlessrepo:us-east-1:123456789012:applications/example
+        SemanticVersion: 1.0.0
+  Outside:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../outside.yaml

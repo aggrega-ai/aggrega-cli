@@ -36,6 +36,13 @@ func LooksLikeShortForm(s string) bool {
 	return IsShortFormTag(tag)
 }
 
+// IsIntrinsicKey reports whether key, as the one member of a mapping, makes the
+// mapping one intrinsic function in its long form: Ref, Condition, or a name
+// opening Fn::.
+func IsIntrinsicKey(key string) bool {
+	return key == "Ref" || key == "Condition" || strings.HasPrefix(key, "Fn::")
+}
+
 // isBangTag reports whether s opens with a single "!", the way a custom tag does, as
 // opposed to a "!!" standard tag.
 func isBangTag(s string) bool {

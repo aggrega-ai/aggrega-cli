@@ -123,3 +123,25 @@ func TestIsDynamicReferenceAndShortFormTag(t *testing.T) {
 		t.Error("IsShortFormTag disagrees with the tag set")
 	}
 }
+
+func TestIsIntrinsicKeyNamesTheLongFormKeys(t *testing.T) {
+	t.Parallel()
+	for key, want := range map[string]bool{
+		"Ref":                true,
+		"Condition":          true,
+		"Fn::GetAtt":         true,
+		"Fn::Sub":            true,
+		"Fn::Transform":      true,
+		"Fn::ForEach::Items": true,
+		"Fn:":                false,
+		"Fn":                 false,
+		"ref":                false,
+		"Conditions":         false,
+		"Properties":         false,
+		"":                   false,
+	} {
+		if got := IsIntrinsicKey(key); got != want {
+			t.Errorf("IsIntrinsicKey(%q) = %v, want %v", key, got, want)
+		}
+	}
+}

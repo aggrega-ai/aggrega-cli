@@ -729,7 +729,7 @@ func isIntrinsicObject(m map[string]any) bool {
 		return false
 	}
 	for k := range m {
-		return k == intrinsicRef || k == "Condition" || strings.HasPrefix(k, "Fn::")
+		return cfntemplate.IsIntrinsicKey(k)
 	}
 	return false
 }

@@ -1,0 +1,25 @@
+# CloudFormation reader fixtures
+
+Every file here is synthetic, written for the reader's tests; none is copied from a published template.
+
+- `sections/template.yaml` — one template writing every top-level section the reader reads: a transform, Metadata,
+  parameters of each kind (allowed values, an allowed pattern, length and value bounds, a `NoEcho` parameter with a
+  default, two resource-pointer types), Mappings, Conditions, Rules, resources with a condition, dependencies written
+  as one name and as a list, Metadata, a deletion policy and short-form values, one resource that is no object, and
+  outputs exported under a literal name and under a computed one.
+- `values/template.yaml` — two resources, one reading the other with `!Ref`, which the YAML parser reads as plain
+  text.
+- `params/template.yaml` — a template declaring three parameters.
+- `params/list.json`, `params/pairs.json`, `params/object.json` — one set of values for those parameters in each form
+  the AWS CLI reads a parameters file in: a `ParameterKey`/`ParameterValue` list, a list of `Key=Value` strings (one
+  value holding `=`), and a `Parameters` object.
+- `params/previous.json` — a list keeping one parameter at its previous value with `UsePreviousValue`.
+- `params/tags.json`, `params/policy.json` — a `Parameters` object beside stack tags, and beside a stack policy.
+- `params/undeclared.json` — a list setting one parameter the template does not declare.
+- `linked/` — a root template linking a nested stack by `./network.yaml`, a serverless application by
+  `services/api.yaml`, which links `../shared/queue.yaml`; none of the linked templates declares a format version.
+  The root also links a template by URL, an application by its ID, and a path leaving the directory.
+- `cycle/a.yaml`, `cycle/b.yaml` — two templates each linking the other.
+- `sam/` — a SAM project after `sam build`: its template, the template the build writes under
+  `.aws-sam/build/`, a test event, a truncated test event the template reader refuses, and a `package.json`.
+- `refused/template.yaml` — a template whose YAML breaks off, which the template reader refuses.

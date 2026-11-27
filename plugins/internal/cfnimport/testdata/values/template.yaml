@@ -1,0 +1,10 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Db:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: postgres
+  Api:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      DbHost: !Ref Db

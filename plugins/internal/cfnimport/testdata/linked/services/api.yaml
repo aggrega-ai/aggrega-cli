@@ -1,0 +1,5 @@
+Resources:
+  Queues:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ../shared/queue.yaml
