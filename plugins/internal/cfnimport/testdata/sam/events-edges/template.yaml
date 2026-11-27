@@ -1,0 +1,119 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  Worker:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageUri: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/worker:1.0
+      Events:
+        FromQueue:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt Queue.Arn
+            BatchSize: 10
+        FromStream:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt Stream.Arn
+            StartingPosition: LATEST
+        FromTable:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt Table.StreamArn
+            StartingPosition: TRIM_HORIZON
+        FromBucket:
+          Type: S3
+          Properties:
+            Bucket: !Ref Bucket
+            Events: s3:ObjectCreated:*
+        FromTopic:
+          Type: SNS
+          Properties:
+            Topic: !Ref Topic
+        Rest:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RestApi
+            Path: /orders
+            Method: post
+        Http:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /orders
+            Method: GET
+        ImplicitRest:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: get
+        ImplicitHttp:
+          Type: HttpApi
+        Nightly:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 day)
+        Hourly:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: rate(1 hour)
+        DefaultBus:
+          Type: EventBridgeRule
+          Properties:
+            Pattern:
+              source: [orders]
+        CustomBus:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref Bus
+            Pattern:
+              source: [billing]
+        Logs:
+          Type: CloudWatchLogs
+          Properties:
+            LogGroupName: !Ref LogGroup
+            FilterPattern: ERROR
+        SignUp:
+          Type: Cognito
+          Properties:
+            UserPool: !Ref Pool
+            Trigger: PreSignUp
+        Things:
+          Type: IoTRule
+          Properties:
+            Sql: SELECT * FROM 'orders'
+        Skill:
+          Type: AlexaSkill
+          Properties:
+            SkillId: amzn1.ask.skill.00000000-0000-0000-0000-000000000000
+  Queue:
+    Type: AWS::SQS::Queue
+  Stream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      ShardCount: 1
+  Table:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
+  Bucket:
+    Type: AWS::S3::Bucket
+  Topic:
+    Type: AWS::SNS::Topic
+  RestApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+  Bus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: billing
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+  Pool:
+    Type: AWS::Cognito::UserPool

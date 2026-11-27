@@ -1,0 +1,49 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Parameters:
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+Globals:
+  Function:
+    Timeout: 10
+    MemorySize: 512
+    Architectures: [x86_64]
+    Environment:
+      Variables:
+        STAGE: production
+        TABLE: global-table
+    Layers:
+      - arn:aws:lambda:eu-west-1:123456789012:layer:shared:1
+    VpcConfig:
+      SecurityGroupIds: [sg-global]
+      SubnetIds: !Ref Subnets
+  SimpleTable:
+    SSESpecification:
+      SSEEnabled: true
+Resources:
+  Orders:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageUri: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/orders:1.0
+      Timeout: 30
+      Architectures: [arm64]
+      Environment:
+        Variables:
+          TABLE: orders-table
+          QUEUE: orders-queue
+      Layers:
+        - arn:aws:lambda:eu-west-1:123456789012:layer:orders:3
+      VpcConfig:
+        SubnetIds: [subnet-orders]
+  Billing:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      ImageUri: 123456789012.dkr.ecr.eu-west-1.amazonaws.com/billing:1.0
+  Ledger:
+    Type: AWS::Serverless::SimpleTable
+  Queue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 60

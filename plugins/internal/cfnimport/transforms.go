@@ -24,7 +24,7 @@ var readTransforms = []string{
 	"AWS::SecretsManager-2020-07-23",
 	"AWS::SecretsManager-2024-09-16",
 	"AWS::ServiceCatalog",
-	"AWS::Serverless-2016-10-31",
+	serverlessTransform,
 }
 
 const (

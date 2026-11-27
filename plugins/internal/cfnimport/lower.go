@@ -26,7 +26,9 @@ const target = "cloudformation"
 // Read reads the CloudFormation templates and the parameters file a request
 // carries into the core's graph, as read reads them; reads each nested stack
 // and serverless application deploying a template it reads as that
-// template's resources ([reader.flatten]); and lowers each value of its
+// template's resources ([reader.flatten]); leaves out what the serverless
+// transform writes for its serverless resources, reading each event and
+// connector as an edge ([reader.serverless]); and lowers each value of its
 // nodes, their conditions and its outputs into the core's values, as
 // [reader.lower] says. It is the cloudformation format's reader.
 func Read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.ParseFunc) (*cloudimport.Graph,
@@ -86,11 +88,15 @@ func Read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.Pars
 // a resource of a nested template taking that of each resource deploying it
 // beside its own ([reader.inherit]). A nested function is reported on, where
 // it is, only once the value holding it is lowered to more than deploy-time
-// text. g is the graph [reader.flatten] flattened.
+// text. What the serverless transform writes for the graph's serverless
+// resources is left out first, each event and connector read as an edge
+// ([reader.serverless]), so no value the draft leaves out is lowered. g is
+// the graph [reader.flatten] flattened.
 func (r *reader) lower(g *cloudimport.Graph) {
 	var notes []aggrega.Diagnostic
 	r.lowering = &notes
 	r.scope(r.stacks[0]).parameterValues()
+	r.serverless(g)
 	for _, n := range g.Nodes {
 		h := r.home[n]
 		r.scope(h.s).condition(n, h.id)

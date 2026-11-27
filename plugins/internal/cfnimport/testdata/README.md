@@ -24,6 +24,15 @@ Every file here is synthetic, written for the reader's tests; none is copied fro
 - `cycle/a.yaml`, `cycle/b.yaml` — two templates each linking the other.
 - `sam/` — a SAM project after `sam build`: its template, the template the build writes under
   `.aws-sam/build/`, a test event, a truncated test event the template reader refuses, and a `package.json`.
+- `sam/globals/template.yaml` — SAM Globals for functions and simple tables (a primitive, a map of variables, a list of
+  layers, the architectures, and a network setting reading a parameter) beside two functions, one overriding each,
+  a simple table writing no properties, and a queue no Globals name.
+- `sam/events-edges/template.yaml` — a SAM function writing an event of each type SAM reads, beside the queue, stream,
+  table, bucket, topic, APIs, event bus, log group and user pool its events name.
+- `sam/connectors/template.yaml` — a SAM connector resource with a list of destinations and a function depending on it,
+  and a connector a function writes under its `Connectors`.
+- `sam/properties/template.yaml` — two SAM functions writing, or taking from the Globals, an alias, a
+  `DeploymentPreference`, policies, packaged code and inline code.
 - `refused/template.yaml` — a template whose YAML breaks off, which the template reader refuses.
 - `nested/flat/` — a root template deploying `network.yaml` as a nested stack, binding its parameters (one to a root
   parameter whole, one to text composed of one, one to text) and reading its outputs; `network.yaml` declares a

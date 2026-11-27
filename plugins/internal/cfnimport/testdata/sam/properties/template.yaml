@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Globals:
+  Function:
+    AutoPublishAlias: live
+Resources:
+  Api:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.handler
+      Runtime: python3.12
+      DeploymentPreference:
+        Type: Canary10Percent5Minutes
+      Policies:
+        - AWSLambdaBasicExecutionRole
+  Hook:
+    Type: AWS::Serverless::Function
+    Properties:
+      InlineCode: "def handler(event, context): return event"
+      Handler: index.handler
+      Runtime: python3.12

@@ -26,6 +26,12 @@ type template struct {
 	// those names: Mappings and Conditions are held for the values that read
 	// them.
 	params, mappings, conditions, resources, outputs obj
+	// serverlessRead reports that the Globals are merged into its serverless
+	// resources ([reader.serverlessResources]), and fromGlobals holds, by
+	// the logical ID of each resource taking any, the properties it takes
+	// from the Globals and does not write itself.
+	serverlessRead bool
+	fromGlobals    map[string][]string
 }
 
 // sections reads the sections of the template h holds.
@@ -47,12 +53,15 @@ var consumed = []string{"Type", "Condition", "DependsOn", "Metadata"}
 // type, the name of the condition it is deployed under, the resources it
 // depends on, written as one name or a list, the file and JSON pointer it is
 // read from, and a body of every other member — its Properties and its
-// policies — each value a property of the long form ([prop]). A node's name is
-// left unset: a resource's name is one of its Properties, and the core drafts
-// a node's name as a property of its own. A resource that is no object, or
-// whose Type is not text, is not carried, with a resource-not-carried warning
-// naming where it is written.
+// policies — each value a property of the long form ([prop]). A serverless
+// resource is read with the Globals of its type merged in, as the serverless
+// transform reads it ([reader.serverlessResources]). A node's name is left unset:
+// a resource's name is one of its Properties, and the core drafts a node's
+// name as a property of its own. A resource that is no object, or whose Type
+// is not text, is not carried, with a resource-not-carried warning naming
+// where it is written.
 func (r *reader) nodes(t *template) []*cloudimport.Node {
+	r.serverlessResources(t)
 	var out []*cloudimport.Node
 	for _, e := range t.resources {
 		at := importer.Pointer("Resources", e.Key)
@@ -265,7 +274,8 @@ func (t *template) outputsRead(of string) ([]cloudimport.Output, []string) {
 }
 
 // declared returns the notes naming what t declares at its top level that no
-// resource carries, in order: the transforms it names, the keys of its
+// resource carries, in order: the transforms it names, Globals it declares
+// without the serverless transform ([template.globalsNotes]), the keys of its
 // Metadata and the names of its Rules, t named in them as subject names it:
 // "The template" for the root template, the template and its file for a
 // nested one.
@@ -276,6 +286,7 @@ func (t *template) declared(subject string) []string {
 	} else if len(transforms) > 1 {
 		notes = append(notes, subject+" declares the transforms "+strings.Join(transforms, ", ")+".")
 	}
+	notes = append(notes, t.globalsNotes(subject)...)
 	if raw := t.top.get("Metadata"); raw != nil && !isNull(raw) {
 		o, _ := objectOf(raw)
 		if len(o) == 0 {

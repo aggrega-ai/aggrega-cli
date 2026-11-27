@@ -28,6 +28,19 @@
 // stack deploys — AWS::Include, AWS::CodeDeployBlueGreen, a macro of the
 // account, or a loop of the language extensions — is refused, naming it.
 //
+// A template under the transform of the AWS Serverless Application Model,
+// SAM, is read as that transform reads it, each serverless resource keeping
+// its type: the Globals the template declares are merged into each resource
+// of the type they name, as the transform merges them, before any of its
+// values is read. An event of a serverless function or state machine, and a
+// connector, are each read as a dependency — of the function on the resource
+// whose messages or records invoke it, of the API an event routes through on
+// the function, of a connector's source on its destinations — and are not
+// carried, as no instance of the draft deploys what the transform writes for
+// them. A function's properties from which the transform writes what no
+// Recipe deploying a function takes, such as its policies and its packaged
+// code, are reported and left out.
+//
 // [Read] then lowers each intrinsic function, dynamic reference and condition
 // the template writes into the core's values: a parameter, a reference to a
 // resource or its attribute, text composed of those, a secret a store holds,
