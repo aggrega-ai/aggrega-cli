@@ -52,7 +52,7 @@ func recipeDraft(f Format, s recipeSpec, d importer.RecipeDraft) importer.Recipe
 		"source in the %s format.", s.component, f.Capability, typeName(s.res.Type), s.format)
 	if s.module != nil {
 		d.Description = fmt.Sprintf("Draft Recipe realizing %s on %s that sources the published module %s whole, "+
-			"imported from a source in the %s format.", s.component, f.Capability, s.module.URL, s.format)
+			"imported from a source in the %s format.", s.component, f.Capability, s.module.label(), s.format)
 	}
 	d.Header = append(recipeHeader(s), d.Header...)
 	d.Assertions = append(sharedAssertions(s), d.Assertions...)
@@ -76,7 +76,7 @@ func recipeHeader(s recipeSpec) []string {
 	case s.module != nil:
 		opening = fmt.Sprintf("This Recipe realizes %s by sourcing the published module %s whole; no vendor schema "+
 			"was read. It reads the keys below, each with its type and its rule; any other key under "+
-			"infra.overrides halts the build naming it.", s.component, s.module.URL)
+			"infra.overrides halts the build naming it.", s.component, s.module.label())
 	case slices.ContainsFunc(t.Properties, func(p *Property) bool { return p.Written }):
 		opening = fmt.Sprintf("This Recipe realizes %s with one resource of the type %s, drafted from the "+
 			"resource as a source writes it. It reads the keys below, each with its type and its rule, and none "+

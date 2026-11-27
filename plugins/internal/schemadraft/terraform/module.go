@@ -107,7 +107,8 @@ type Module struct {
 // content; the last segment names an attribute. An input of a type read from a
 // source that writes the resource, whose properties are marked Written, is set
 // at its path inside the object or list the source writes, each made where
-// none is there, a segment of decimal digits naming an item of a list, and
+// none is there, a segment of decimal digits naming an item of a list only where the
+// list is already there or the index is 0, and
 // halts where the path or a prefix of it is set from one variable whole. Each output publishes an
 // attribute read back, sensitive where the attribute is, under the name
 // outputNames gives it.
@@ -430,23 +431,29 @@ func setWritten(body map[string]any, path []string, value string) string {
 }
 
 // setAt returns node with the expression value set at path below it, or why it
-// cannot be. A nil node is made an object, or a list where path opens with an
-// index; a list is extended with empty objects up to the index. A map node is
-// changed in place.
+// cannot be. A nil node is made an object; a segment of decimal digits names an
+// item of a list only where node is already a list and the index is an item it
+// holds or the next one, or where node is nil and the index is 0, which makes a
+// list; in any other node it is the key of an object's member, so a member named
+// by digits is never read as an index and no item is made that the path does not
+// name. A map node is changed in place.
 func setAt(node any, path []string, value string) (any, string) {
 	if len(path) == 0 {
-		if m, ok := node.(map[string]any); node != nil && (!ok || len(m) > 0) {
+		if node != nil {
 			return nil, "it is set more than once"
 		}
 		return "${" + value + "}", ""
 	}
-	if index, err := strconv.Atoi(path[0]); err == nil && strings.Trim(path[0], "0123456789") == "" {
-		list, ok := node.([]any)
-		if node != nil && !ok {
-			return nil, path[0] + " is an item of a list, and the module sets the container as an object or whole"
+	digits := path[0] != "" && strings.Trim(path[0], "0123456789") == ""
+	list, isList := node.([]any)
+	if isList || (node == nil && digits && path[0] == "0") {
+		index, err := strconv.Atoi(path[0])
+		if !digits || err != nil || index > len(list) {
+			return nil, path[0] + " does not name an item of the list the module writes there, which holds " +
+				strconv.Itoa(len(list)) + " items and takes an item at the next index only"
 		}
-		for len(list) <= index {
-			list = append(list, map[string]any{})
+		if index == len(list) {
+			list = append(list, nil)
 		}
 		item, why := setAt(list[index], path[1:], value)
 		if why != "" {
@@ -460,7 +467,7 @@ func setAt(node any, path []string, value string) (any, string) {
 		members, ok = map[string]any{}, true
 	}
 	if !ok {
-		return nil, "the module sets the container of " + path[0] + " from one variable whole or as a list"
+		return nil, "the module sets the container of " + path[0] + " from one variable whole"
 	}
 	member, why := setAt(members[path[0]], path[1:], value)
 	if why != "" {

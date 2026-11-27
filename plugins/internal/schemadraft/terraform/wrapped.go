@@ -24,8 +24,8 @@ const ociKind = "terraform-module-oci"
 // valuesMapping binding each input under the module's own variable name, as the
 // local module's line writer binds one, an input that is not required only where
 // it is present; then each fixed parameter as written; and each output
-// published as ${module.<instance>.<output>}, named by the first segment of its
-// attribute, or by its key where it has none. No module file is written: the
+// published as ${module.<instance>.<output>}, named by its attribute's path
+// joined by dots, or by its key where it has none. No module file is written: the
 // terraform provider fetches the module. DraftWrapped completes it.
 func WriteWrapped(m schemadraft.WrappedModule) (importer.RecipeDraft, []aggrega.Diagnostic) {
 	d := importer.RecipeDraft{
@@ -77,7 +77,7 @@ func sourceBlock(m schemadraft.WrappedModule) string {
 	} else {
 		lines = append(lines, field+": "+scalar(m.Version))
 	}
-	if m.Subdir != "" && m.SourceKind != ociKind {
+	if m.Subdir != "" {
 		lines = append(lines, "module_subdir: "+scalar(m.Subdir))
 	}
 	return strings.Join(lines, "\n") + "\n"

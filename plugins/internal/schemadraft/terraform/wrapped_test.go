@@ -17,8 +17,8 @@ import (
 
 const (
 	rdsURL    = "https://github.com/terraform-aws-modules/terraform-aws-rds.git"
-	codeUnpin = "module-version-unpinned"
-	codeLink  = "linked-source-not-read"
+	codeUnpin = schemadraft.CodeModuleVersionUnpinned
+	codeLink  = schemadraft.CodeLinkedSourceNotRead
 )
 
 func wrappedInput() aggrega.ImportInput {
@@ -132,17 +132,21 @@ func TestWriteWrappedSubdirAndOCI(t *testing.T) {
 	}
 
 	m = rdsModule("1.2.0")
+	m.Subdir = "modules/rds"
 	m.SourceKind, m.URL = "terraform-module-oci", "oci://registry.example/modules/rds"
 	drafted, diags := schemadraft.DraftWrapped(wrappedInput(), Format, m, WriteWrapped)
 	if len(diags) != 0 {
 		t.Fatalf("diagnostics %+v", diags)
 	}
 	source := specAt(t, drafted.Entities[1].Entity.Body, "source")
-	var got struct{ Kind, URL, Version, Ref string }
+	var got struct {
+		Kind, URL, Version, Ref string
+		ModuleSubdir            string `yaml:"module_subdir"`
+	}
 	if err := source.Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Kind != "terraform-module-oci" || got.URL != m.URL || got.Version != "1.2.0" || got.Ref != "" {
+	if got.Kind != "terraform-module-oci" || got.URL != m.URL || got.Version != "1.2.0" || got.Ref != "" || got.ModuleSubdir != "modules/rds" {
 		t.Errorf("source %+v", got)
 	}
 }

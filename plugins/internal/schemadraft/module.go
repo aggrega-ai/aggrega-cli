@@ -86,8 +86,7 @@ type ModuleWriter func(m WrappedModule) (importer.RecipeDraft, []aggrega.Diagnos
 // no URL and an AddressOnly is drafted with its url empty, and a warning
 // linked-source-not-read names the module and that the url is the author's to
 // write. A module with no type, no URL and no AddressOnly, or no source kind
-// halts resource-schema-unreadable. Where it
-// halts, or w halts, nothing is drafted and the diagnostics are returned alone.
+// halts resource-schema-unreadable. Where it halts, or w halts, nothing is drafted and the diagnostics are returned alone.
 // Every list is built in m's order, so two runs give one byte sequence.
 func DraftWrapped(in aggrega.ImportInput, f Format, m WrappedModule, w ModuleWriter) (Drafted, []aggrega.Diagnostic) {
 	if halts := malformedModule(m); len(halts) > 0 {
@@ -141,7 +140,7 @@ func DraftWrapped(in aggrega.ImportInput, f Format, m WrappedModule, w ModuleWri
 }
 
 // malformedModule halts on a module a draft cannot be written for: no type, no
-// URL or no source kind.
+// URL and no AddressOnly, or no source kind.
 func malformedModule(m WrappedModule) []aggrega.Diagnostic {
 	var out []aggrega.Diagnostic
 	halt := func(fault string) {

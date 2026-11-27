@@ -212,6 +212,10 @@ func TestWrappedWithAnAddressAndNoURLIsDrafted(t *testing.T) {
 	if len(drafted.Entities) != 2 || len(handed) != 1 {
 		t.Fatalf("drafted %+v, writer called %d times", drafted.Entities, len(handed))
 	}
+	body := drafted.Entities[1].Entity.Body
+	if want := "the published module " + m.AddressOnly + " whole"; strings.Count(body, want) != 2 {
+		t.Errorf("the description and the header do not both name the module (%q):\n%s", want, body)
+	}
 	if len(diags) != 1 || diags[0].Code != CodeLinkedSourceNotRead || diags[0].Severity != aggrega.SeverityWarn ||
 		!strings.Contains(diags[0].Message, m.AddressOnly) {
 		t.Errorf("diagnostics %+v", diags)

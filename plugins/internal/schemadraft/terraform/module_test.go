@@ -1041,12 +1041,19 @@ func TestFromWrittenCarriesTheProvider(t *testing.T) {
 	}
 	var module string
 	for _, e := range drafted.Entities {
-		if strings.Contains(e.Entity.Body, "kind: Recipe") {
-			module = e.Entity.Body
+		for _, f := range e.Files {
+			if strings.HasSuffix(f.Path, moduleFilePath) {
+				module = f.Content
+			}
 		}
 	}
-	if module == "" {
-		t.Fatalf("no Recipe drafted: %+v", drafted.Entities)
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(module), &doc); err != nil {
+		t.Fatalf("%s is not JSON: %v ", moduleFilePath, err)
+	}
+	want := map[string]any{"aws": map[string]any{"source": "hashicorp/aws", "version": "~> 5.40"}}
+	if got := at(doc, "terraform", "required_providers"); !reflect.DeepEqual(got, want) {
+		t.Errorf("required_providers is %v, want %v", got, want)
 	}
 	hint := drafted.Decision.SwapHint
 	for _, want := range []string{"aggrega import --format terraform-schema", "terraform providers schema -json"} {
@@ -1151,5 +1158,54 @@ func TestValuesMappingWritesAnOwnValueInterpolationAsText(t *testing.T) {
 	}
 	if want := `{"label":"a-$${b}","name":"n-$${a}","target_arn":"${module.db.arn}","zone":"z-$${b}"}`; canon(t, got) != want {
 		t.Errorf("the valuesMapping renders %s, want %s", canon(t, got), want)
+	}
+}
+
+// writtenBody drafts the resource of the properties given and returns the
+// body of its resource, or the halts.
+func writtenBody(t *testing.T, props ...schemadraft.WrittenProperty) (any, []aggrega.Diagnostic) {
+	t.Helper()
+	typ, inputs := schemadraft.FromWritten(writtenOf(props...))
+	d, diags := WriteModule(Module{Provider: *typ.Provider, Type: typ, Inputs: inputs})
+	if len(haltsOf(diags)) != 0 {
+		return nil, diags
+	}
+	return at(mainTF(t, d), "resource", "aws_lambda_function", "this"), diags
+}
+
+// TestWrittenMemberNamedByDigitsIsAMemberKey sets a member of an object named
+// by digits, such as an account id, as that key, never as a list index, and
+// makes no list.
+func TestWrittenMemberNamedByDigitsIsAMemberKey(t *testing.T) {
+	body, diags := writtenBody(t,
+		schemadraft.WrittenProperty{Path: []string{"tags", "123456789012"}, Inject: "tags_account"},
+		schemadraft.WrittenProperty{Path: []string{"labels", "3"}, Inject: "labels_3"})
+	if body == nil {
+		t.Fatalf("halts %+v", diags)
+	}
+	got := canon(t, body)
+	for _, want := range []string{`"tags":{"123456789012":"${var.tags_account}"}`, `"labels":{"3":"${var.labels_3}"}`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the resource is %s, want it to hold %s", got, want)
+		}
+	}
+}
+
+// TestWrittenListItemsAreNeverPadded refuses an item at an index past the next
+// one rather than writing items the source never declared.
+func TestWrittenListItemsAreNeverPadded(t *testing.T) {
+	body, diags := writtenBody(t,
+		schemadraft.WrittenProperty{Path: []string{"ingress", "0", "from_port"}, Inject: "ingress_0_from_port"},
+		schemadraft.WrittenProperty{Path: []string{"ingress", "2", "from_port"}, Inject: "ingress_2_from_port"})
+	halts := haltsOf(diags)
+	if body != nil || len(halts) != 1 || halts[0].Code != schemadraft.CodeResourceTypeRefused ||
+		!strings.Contains(halts[0].Message, "ingress.2.from_port") {
+		t.Fatalf("body %v, diagnostics %+v, want one resource-type-refused naming ingress.2.from_port", body, diags)
+	}
+	body, _ = writtenBody(t,
+		schemadraft.WrittenProperty{Path: []string{"ingress", "0", "from_port"}, Inject: "ingress_0_from_port"},
+		schemadraft.WrittenProperty{Path: []string{"ingress", "1", "from_port"}, Inject: "ingress_1_from_port"})
+	if got := canon(t, body); got != `{"ingress":[{"from_port":"${var.ingress_0_from_port}"},{"from_port":"${var.ingress_1_from_port}"}]}` {
+		t.Errorf("contiguous items give %s", got)
 	}
 }
