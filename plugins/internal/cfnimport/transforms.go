@@ -4,7 +4,6 @@
 package cfnimport
 
 import (
-	"encoding/json"
 	"slices"
 	"strconv"
 	"strings"
@@ -51,24 +50,24 @@ type transform struct {
 	name, at string
 }
 
-// declaredTransforms returns each transform raw, a template's Transform
+// declaredTransforms returns each transform v, a template's Transform
 // section, declares, in order: one name, a list of names, or a transform
 // written as an object naming it, each item at its JSON pointer.
-func declaredTransforms(raw json.RawMessage) []transform {
-	one := func(item json.RawMessage, at string) transform {
-		if name, ok := schemadraft.JSONText(item); ok {
+func declaredTransforms(v *value) []transform {
+	one := func(item *value, at string) transform {
+		if name, ok := schemadraft.JSONText(item.raw); ok {
 			return transform{name: name, at: at}
 		}
 		o, _ := objectOf(item)
-		name, _ := schemadraft.JSONText(o.get("Name"))
+		name, _ := schemadraft.JSONText(o.get("Name").json())
 		return transform{name: name, at: at}
 	}
-	if raw == nil || isNull(raw) {
+	if v == nil || isNull(v) {
 		return nil
 	}
-	items, isList := itemsOf(raw)
+	items, isList := itemsOf(v)
 	if !isList {
-		return []transform{one(raw, jsonPointer("Transform"))}
+		return []transform{one(v, jsonPointer("Transform"))}
 	}
 	out := make([]transform, len(items))
 	for i, item := range items {
@@ -121,17 +120,17 @@ func (r *reader) refuseTransforms() {
 }
 
 // refuseCalls halts on each call of Fn::Transform and each Fn::ForEach loop
-// raw, written in t at the JSON pointer at, holds.
-func (r *reader) refuseCalls(t *template, raw json.RawMessage, at string) {
-	switch kind(raw) {
+// v, written in t at the JSON pointer at, holds.
+func (r *reader) refuseCalls(t *template, v *value, at string) {
+	switch kind(v) {
 	case '{':
-		o, _ := objectOf(raw)
+		o, _ := objectOf(v)
 		for _, e := range o {
 			here := at + jsonPointer(e.Key)
 			switch {
 			case e.Key == transformKey:
 				call, _ := objectOf(e.Value)
-				name, _ := schemadraft.JSONText(call.get("Name"))
+				name, _ := schemadraft.JSONText(call.get("Name").json())
 				named, does := transformDoes(name)
 				if does == "" {
 					named, does = "the transform "+name, "which rewrites the template when the stack deploys"
@@ -146,7 +145,7 @@ func (r *reader) refuseCalls(t *template, raw json.RawMessage, at string) {
 			}
 		}
 	case '[':
-		items, _ := itemsOf(raw)
+		items, _ := itemsOf(v)
 		for i, item := range items {
 			r.refuseCalls(t, item, at+jsonPointer(strconv.Itoa(i)))
 		}

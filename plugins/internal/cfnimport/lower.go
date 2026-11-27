@@ -190,10 +190,10 @@ func given(p *cloudimport.Parameter) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	if items, isList := itemsOf(lit.JSON); isList {
+	if items, isList := itemsOf(decoded(lit.JSON)); isList {
 		members := make([]string, len(items))
 		for i, item := range items {
-			text, isText := schemadraft.JSONText(item)
+			text, isText := schemadraft.JSONText(item.raw)
 			if !isText {
 				return "", false
 			}
@@ -275,7 +275,7 @@ func (l *lowerer) props(in []cloudimport.Prop, at string, named bool) []cloudimp
 		present := true
 		switch lit, isLiteral := p.Value.(cloudimport.Literal); {
 		case isLiteral:
-			lowered, present = l.prop(lit.JSON, here)
+			lowered, present = l.prop(decoded(lit.JSON), here)
 		case p.Value != nil:
 			lowered = p
 		case len(p.Props) > 0:
@@ -298,22 +298,22 @@ func (l *lowerer) props(in []cloudimport.Prop, at string, named bool) []cloudimp
 	return out
 }
 
-// prop lowers the JSON value raw, written at the JSON pointer at, into a
+// prop lowers the JSON value v, written at the JSON pointer at, into a
 // property: an intrinsic function — an object whose one member is named Ref,
 // Condition, or Fn:: and a function's name — as [lowerer.call] lowers it, any
 // other object into its members and an array into its items, each lowered, an
 // empty object or array, or one left with no member or item, as its empty
 // literal, text as [lowerer.text] lowers it, and any other value as its
-// literal. It is false where raw is AWS::NoValue: the member or the item
+// literal. It is false where v is AWS::NoValue: the member or the item
 // holding it is absent.
-func (l *lowerer) prop(raw json.RawMessage, at string) (cloudimport.Prop, bool) {
-	switch kind(raw) {
+func (l *lowerer) prop(v *value, at string) (cloudimport.Prop, bool) {
+	switch kind(v) {
 	case 0:
 		return cloudimport.Prop{}, true
 	case '{':
-		o, _ := objectOf(raw)
+		o, _ := objectOf(v)
 		if len(o) == 1 && cfntemplate.IsIntrinsicKey(o[0].Key) {
-			return l.call(o[0].Key, o[0].Value, raw, at)
+			return l.call(o[0].Key, o[0].Value, v, at)
 		}
 		var p cloudimport.Prop
 		for _, e := range o {
@@ -329,7 +329,7 @@ func (l *lowerer) prop(raw json.RawMessage, at string) (cloudimport.Prop, bool) 
 		}
 		return p, true
 	case '[':
-		items, _ := itemsOf(raw)
+		items, _ := itemsOf(v)
 		var p cloudimport.Prop
 		for i, item := range items {
 			m, present := l.prop(item, at+jsonPointer(strconv.Itoa(i)))
@@ -342,10 +342,10 @@ func (l *lowerer) prop(raw json.RawMessage, at string) (cloudimport.Prop, bool) 
 		}
 		return p, true
 	case '"':
-		s, _ := schemadraft.JSONText(raw)
-		return cloudimport.Prop{Value: l.text(s, raw, at)}, true
+		s, _ := schemadraft.JSONText(v.raw)
+		return cloudimport.Prop{Value: l.text(s, v.raw, at)}, true
 	}
-	return cloudimport.Prop{Value: literal(raw)}, true
+	return cloudimport.Prop{Value: literal(v.raw)}, true
 }
 
 // text lowers the string s, which raw writes, written at the JSON pointer at:
@@ -412,10 +412,10 @@ func secretID(rest string) string {
 
 // call lowers the intrinsic function fn reading arg, which raw writes whole at
 // the JSON pointer at, as [reader.lower] says.
-func (l *lowerer) call(fn string, arg, raw json.RawMessage, at string) (cloudimport.Prop, bool) {
+func (l *lowerer) call(fn string, arg, raw *value, at string) (cloudimport.Prop, bool) {
 	switch fn {
 	case "Ref":
-		name, ok := schemadraft.JSONText(arg)
+		name, ok := schemadraft.JSONText(arg.raw)
 		switch {
 		case !ok:
 			return cloudimport.Prop{Value: l.opaque(raw, at)}, true
@@ -477,9 +477,9 @@ func (l *lowerer) paramValue(p *cloudimport.Parameter) cloudimport.Value {
 // at, reads: the attribute of the resource it names, the attribute's name
 // split at each dot, as [lowerer.reference] reads it; false where it names no
 // resource and an attribute written as text, or reads deploy-time text.
-func (l *lowerer) getAtt(arg json.RawMessage, at string) (cloudimport.Value, bool) {
+func (l *lowerer) getAtt(arg *value, at string) (cloudimport.Value, bool) {
 	var v any
-	if json.Unmarshal(arg, &v) != nil {
+	if json.Unmarshal(arg.raw, &v) != nil {
 		return nil, false
 	}
 	id, attr, ok := cfntemplate.GetAttParts(v)
@@ -493,7 +493,7 @@ func (l *lowerer) getAtt(arg json.RawMessage, at string) (cloudimport.Value, boo
 // at: composed text of its literal runs and its variables, or deploy-time text
 // where a variable is no literal text, parameter or reference, or past the
 // parts the lowering composes ([cloudimport.MaxExpansion]).
-func (l *lowerer) sub(arg, raw json.RawMessage, at string) cloudimport.Value {
+func (l *lowerer) sub(arg, raw *value, at string) cloudimport.Value {
 	text, vars, ok := subArgs(arg)
 	if !ok {
 		return l.opaque(raw, at)
@@ -521,15 +521,15 @@ func (l *lowerer) sub(arg, raw json.RawMessage, at string) cloudimport.Value {
 // subArgs returns the text of Fn::Sub reading arg and the variables its list
 // form binds; false where arg is neither text nor a list of text and an
 // object.
-func subArgs(arg json.RawMessage) (string, obj, bool) {
-	if text, ok := schemadraft.JSONText(arg); ok {
+func subArgs(arg *value) (string, obj, bool) {
+	if text, ok := schemadraft.JSONText(arg.raw); ok {
 		return text, nil, true
 	}
 	items, _ := itemsOf(arg)
 	if len(items) != 2 {
 		return "", nil, false
 	}
-	text, isText := schemadraft.JSONText(items[0])
+	text, isText := schemadraft.JSONText(items[0].raw)
 	vars, isObject := objectOf(items[1])
 	return text, vars, isText && isObject
 }
@@ -540,8 +540,8 @@ func subArgs(arg json.RawMessage) (string, obj, bool) {
 // the template names by it; false where that is no literal text, parameter or
 // reference, or name is a pseudo parameter.
 func (l *lowerer) variable(name string, vars obj, at string) (cloudimport.Value, bool) {
-	if raw := vars.get(name); raw != nil {
-		p, present := l.prop(raw, at+jsonPointer("Fn::Sub", "1", name))
+	if v := vars.get(name); v != nil {
+		p, present := l.prop(v, at+jsonPointer("Fn::Sub", "1", name))
 		if !present {
 			return nil, false
 		}
@@ -576,12 +576,12 @@ func (l *lowerer) variable(name string, vars obj, at string) (cloudimport.Value,
 // the delimiter or the list is computed, an item is no literal text,
 // parameter or reference, or past the parts the lowering composes
 // ([cloudimport.MaxExpansion]).
-func (l *lowerer) join(arg, raw json.RawMessage, at string) cloudimport.Value {
+func (l *lowerer) join(arg, raw *value, at string) cloudimport.Value {
 	args, _ := itemsOf(arg)
 	if len(args) != 2 {
 		return l.opaque(raw, at)
 	}
-	delimiter, isText := schemadraft.JSONText(args[0])
+	delimiter, isText := schemadraft.JSONText(args[0].raw)
 	list, isList := itemsOf(args[1])
 	if !isText || !isList {
 		return l.opaque(raw, at)
@@ -686,12 +686,12 @@ func (l *lowerer) credential(v cloudimport.Value) (cloudimport.Credential, bool)
 // findInMap lowers Fn::FindInMap reading arg, which raw writes whole at the
 // JSON pointer at: with literal keys the mapping holds a value at, that value,
 // lowered; deploy-time text otherwise.
-func (l *lowerer) findInMap(arg, raw json.RawMessage, at string) (cloudimport.Prop, bool) {
+func (l *lowerer) findInMap(arg, raw *value, at string) (cloudimport.Prop, bool) {
 	args, _ := itemsOf(arg)
 	if len(args) == 3 || len(args) == 4 {
-		name, n := schemadraft.JSONText(args[0])
-		first, f := schemadraft.JSONText(args[1])
-		second, s := schemadraft.JSONText(args[2])
+		name, n := schemadraft.JSONText(args[0].raw)
+		first, f := schemadraft.JSONText(args[1].raw)
+		second, s := schemadraft.JSONText(args[2].raw)
 		if n && f && s {
 			mapping, _ := objectOf(l.t.mappings.get(name))
 			top, _ := objectOf(mapping.get(first))
@@ -707,12 +707,12 @@ func (l *lowerer) findInMap(arg, raw json.RawMessage, at string) (cloudimport.Pr
 // at: on a condition comparing one template parameter with a literal, the
 // branch the parameter's value selects, lowered, a value-not-carried warning
 // naming the other; deploy-time text otherwise.
-func (l *lowerer) branch(arg, raw json.RawMessage, at string) (cloudimport.Prop, bool) {
+func (l *lowerer) branch(arg, raw *value, at string) (cloudimport.Prop, bool) {
 	args, _ := itemsOf(arg)
 	if len(args) != 3 {
 		return cloudimport.Prop{Value: l.opaque(raw, at)}, true
 	}
-	condition, _ := schemadraft.JSONText(args[0])
+	condition, _ := schemadraft.JSONText(args[0].raw)
 	holds, param, ok := l.decides(condition)
 	if !ok {
 		return cloudimport.Prop{Value: l.opaque(raw, at)}, true
@@ -740,7 +740,7 @@ func (l *lowerer) output(o cloudimport.Output) cloudimport.Value {
 	}
 	at := jsonPointer("Outputs", o.Name, "Value")
 	inner, keep := l.trial()
-	p, present := inner.prop(lit.JSON, at)
+	p, present := inner.prop(decoded(lit.JSON), at)
 	switch {
 	case !present:
 		return nil
@@ -768,8 +768,8 @@ func (l *lowerer) output(o cloudimport.Output) cloudimport.Value {
 // each. A pseudo parameter and Fn::ImportValue read what the stack deploys
 // beside, and owe nothing. A function with no one-line short form, or holding
 // text no one line can hold where a Recipe places it, is not carried.
-func (l *lowerer) opaque(raw json.RawMessage, at string) cloudimport.Value {
-	dec := json.NewDecoder(bytes.NewReader(raw))
+func (l *lowerer) opaque(raw *value, at string) cloudimport.Value {
+	dec := json.NewDecoder(bytes.NewReader(raw.raw))
 	dec.UseNumber()
 	var v any
 	if dec.Decode(&v) != nil {

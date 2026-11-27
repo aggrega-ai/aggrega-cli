@@ -7,10 +7,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"sort"
+	"unicode/utf8"
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
-	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 const (
@@ -146,21 +146,151 @@ func (r *reader) note(d aggrega.Diagnostic) {
 	r.diags = append(r.diags, d)
 }
 
+// value is one JSON value the reader reads, decoded once: its text, as the
+// document holding it writes it, and the members of an object or the items of
+// an array, each a value of its own, so reading any part of a document decodes
+// none of it again.
+type value struct {
+	// raw is the value's text, a slice of the document's.
+	raw json.RawMessage
+	// members are an object's members, in the order the document writes them,
+	// and items an array's items; both nil for any other value.
+	members obj
+	items   []*value
+}
+
+// member is one member of a JSON object: its key and its value.
+type member struct {
+	Key   string
+	Value *value
+}
+
 // obj is a JSON object's members in the order the reader is handed them: the
 // template reader and the host's parser both write them sorted by key.
-type obj []importer.ObjectEntry
+type obj []member
 
-// objectOf returns the members of raw, false where raw is no object.
-func objectOf(raw json.RawMessage) (obj, bool) {
-	if kind(raw) != '{' {
+// decoded returns the JSON value raw writes, decoded once; nil where raw holds
+// nothing. Text that is no JSON value is a value holding that text alone.
+func decoded(raw json.RawMessage) *value {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return nil
+	}
+	if !json.Valid(trimmed) {
+		return &value{raw: trimmed}
+	}
+	d := decoder{doc: trimmed}
+	return d.value()
+}
+
+// decoder walks a document holding one valid JSON value, at its offset at.
+type decoder struct {
+	doc []byte
+	at  int
+}
+
+// space moves d past the space before the next token.
+func (d *decoder) space() {
+	for d.at < len(d.doc) {
+		switch d.doc[d.at] {
+		case ' ', '\t', '\n', '\r':
+			d.at++
+		default:
+			return
+		}
+	}
+}
+
+// value decodes the value at d's offset, and moves d past it.
+func (d *decoder) value() *value {
+	d.space()
+	start := d.at
+	v := &value{}
+	switch d.doc[d.at] {
+	case '{':
+		d.at++
+		for d.space(); d.doc[d.at] != '}'; d.space() {
+			key := d.key()
+			d.space()
+			d.at++ // the colon
+			v.members = append(v.members, member{Key: key, Value: d.value()})
+			if d.space(); d.doc[d.at] == ',' {
+				d.at++
+			}
+		}
+		d.at++
+	case '[':
+		d.at++
+		for d.space(); d.doc[d.at] != ']'; d.space() {
+			v.items = append(v.items, d.value())
+			if d.space(); d.doc[d.at] == ',' {
+				d.at++
+			}
+		}
+		d.at++
+	case '"':
+		d.text()
+	default:
+		for d.at < len(d.doc) && !closes(d.doc[d.at]) {
+			d.at++
+		}
+	}
+	v.raw = d.doc[start:d.at:d.at]
+	return v
+}
+
+// closes reports whether c ends a number, a boolean or null.
+func closes(c byte) bool {
+	switch c {
+	case ',', ']', '}', ' ', '\t', '\n', '\r':
+		return true
+	}
+	return false
+}
+
+// text moves d past the string at its offset.
+func (d *decoder) text() {
+	for d.at++; d.doc[d.at] != '"'; d.at++ {
+		if d.doc[d.at] == '\\' {
+			d.at++
+		}
+	}
+	d.at++
+}
+
+// key decodes the string at d's offset, a member's key, and moves d past it:
+// text with no escape and in UTF-8 is its own key, as decoding it gives.
+func (d *decoder) key() string {
+	start := d.at
+	d.text()
+	quoted := d.doc[start:d.at]
+	if inner := quoted[1 : len(quoted)-1]; bytes.IndexByte(inner, '\\') < 0 && utf8.Valid(inner) {
+		return string(inner)
+	}
+	var key string
+	_ = json.Unmarshal(quoted, &key)
+	return key
+}
+
+// json returns v's text, nil where v is nil.
+func (v *value) json() json.RawMessage {
+	if v == nil {
+		return nil
+	}
+	return v.raw
+}
+
+// objectOf returns the members of v, false where v is no object.
+func objectOf(v *value) (obj, bool) {
+	if kind(v) != '{' {
 		return nil, false
 	}
-	return obj(importer.ObjectEntries(raw)), true
+	return v.members, true
 }
 
 // get returns the member of o named key, matched exactly, as CloudFormation
 // matches a key; nil where o has none.
-func (o obj) get(key string) json.RawMessage {
+func (o obj) get(key string) *value {
 	for _, e := range o {
 		if e.Key == key {
 			return e.Value
@@ -169,30 +299,26 @@ func (o obj) get(key string) json.RawMessage {
 	return nil
 }
 
-// itemsOf returns the items of raw, false where raw is no array.
-func itemsOf(raw json.RawMessage) ([]json.RawMessage, bool) {
-	if kind(raw) != '[' {
+// itemsOf returns the items of v, false where v is no array.
+func itemsOf(v *value) ([]*value, bool) {
+	if kind(v) != '[' {
 		return nil, false
 	}
-	var items []json.RawMessage
-	if json.Unmarshal(raw, &items) != nil {
-		return nil, false
-	}
-	return items, true
+	return v.items, true
 }
 
-// kind returns the first character of raw past any space: '{', '[', '"', or
-// the first character of a number, a boolean or null; 0 for nothing.
-func kind(raw json.RawMessage) byte {
-	if trimmed := bytes.TrimSpace(raw); len(trimmed) > 0 {
-		return trimmed[0]
+// kind returns the first character of v: '{', '[', '"', or the first
+// character of a number, a boolean or null; 0 for nothing.
+func kind(v *value) byte {
+	if raw := v.json(); len(raw) > 0 {
+		return raw[0]
 	}
 	return 0
 }
 
-// isNull reports whether raw is the JSON null.
-func isNull(raw json.RawMessage) bool {
-	return kind(raw) == 'n'
+// isNull reports whether v is the JSON null.
+func isNull(v *value) bool {
+	return kind(v) == 'n'
 }
 
 // compacted returns raw with no insignificant space, as one leaf of the graph

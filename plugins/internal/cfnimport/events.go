@@ -169,12 +169,12 @@ func (r *reader) connector(h home, byID map[string]*cloudimport.Node) {
 // Connectors as [reader.serverless] says, and leaves them out of its body.
 func (r *reader) embeddedConnectors(h home, byID map[string]*cloudimport.Node) {
 	res, _ := objectOf(h.s.t.resources.get(h.id))
-	raw := res.get("Connectors")
-	if raw == nil {
+	v := res.get("Connectors")
+	if v == nil {
 		return
 	}
 	h.n.Body = slices.DeleteFunc(h.n.Body, func(p cloudimport.Prop) bool { return p.Name == "Connectors" })
-	connectors, _ := objectOf(raw)
+	connectors, _ := objectOf(v)
 	for _, e := range connectors {
 		conn, _ := objectOf(e.Value)
 		props, _ := objectOf(conn.get("Properties"))
@@ -187,7 +187,7 @@ func (r *reader) embeddedConnectors(h home, byID map[string]*cloudimport.Node) {
 // connectorRead draws the edges of a connector written at the JSON pointer
 // at of h's template, named as what names it, from each node of sources to
 // each node destination names, and reports it.
-func (r *reader) connectorRead(h home, sources []string, destination json.RawMessage, at, what string,
+func (r *reader) connectorRead(h home, sources []string, destination *value, at, what string,
 	byID map[string]*cloudimport.Node) {
 	destinations := r.connectorEnds(h.s, destination)
 	edge := "the draft connects nothing for it, as it names no resource of the template as both its source and a " +
@@ -201,20 +201,20 @@ func (r *reader) connectorRead(h home, sources []string, destination json.RawMes
 		"and nothing is drafted for it; "+edge+": grant the permissions in the policies the operator supplies")
 }
 
-// connectorEnds returns the IDs of the nodes raw, a connector's Source or
+// connectorEnds returns the IDs of the nodes v, a connector's Source or
 // Destination of a resource of s's template, names: one object or a list of
 // objects, each naming a resource by its logical ID as its Id; a resource
 // read as its template's resources names each node that template
 // contributes. An end named otherwise, by its ARN, names no node.
-func (r *reader) connectorEnds(s *stack, raw json.RawMessage) []string {
-	ends := []json.RawMessage{raw}
-	if items, isList := itemsOf(raw); isList {
+func (r *reader) connectorEnds(s *stack, v *value) []string {
+	ends := []*value{v}
+	if items, isList := itemsOf(v); isList {
 		ends = items
 	}
 	var out []string
 	for _, end := range ends {
 		o, _ := objectOf(end)
-		id, ok := schemadraft.JSONText(o.get("Id"))
+		id, ok := schemadraft.JSONText(o.get("Id").json())
 		if !ok {
 			continue
 		}
@@ -233,14 +233,14 @@ func (r *reader) connectorEnds(s *stack, raw json.RawMessage) []string {
 func (r *reader) events(h home, byID map[string]*cloudimport.Node) {
 	res, _ := objectOf(h.s.t.resources.get(h.id))
 	props, _ := objectOf(res.get("Properties"))
-	raw := props.get("Events")
-	if raw == nil || isNull(raw) {
+	v := props.get("Events")
+	if v == nil || isNull(v) {
 		return
 	}
 	h.n.Body = withoutProperty(h.n.Body, "Events")
 	file := h.s.t.file
 	at := jsonPointer("Resources", h.id, "Properties", "Events")
-	events, isObject := objectOf(raw)
+	events, isObject := objectOf(v)
 	if !isObject || isIntrinsic(events) {
 		r.warnAt(cloudimport.CodeResourceNotCarried, file, at, fmt.Sprintf("the template %s writes the Events of %s "+
 			"(%s) at %s as no object of events by their names, so no event is read and none is carried: write each "+
@@ -253,12 +253,12 @@ func (r *reader) events(h home, byID map[string]*cloudimport.Node) {
 }
 
 // event reads the event name the serverless function or state machine h
-// writes as raw at the JSON pointer at, as [reader.serverless] says.
-func (r *reader) event(h home, name string, raw json.RawMessage, at string, byID map[string]*cloudimport.Node) {
+// writes as v at the JSON pointer at, as [reader.serverless] says.
+func (r *reader) event(h home, name string, v *value, at string, byID map[string]*cloudimport.Node) {
 	file := h.s.t.file
 	written := fmt.Sprintf("the template %s writes the event %s of %s (%s) at %s", file, name, h.id, h.n.Type, at)
-	o, _ := objectOf(raw)
-	typ, typed := schemadraft.JSONText(o.get("Type"))
+	o, _ := objectOf(v)
+	typ, typed := schemadraft.JSONText(o.get("Type").json())
 	if !typed || typ == "" {
 		r.warnAt(cloudimport.CodeResourceNotCarried, file, at, written+", declaring no Type as text, which SAM "+
 			"refuses when the stack deploys, so the event is not carried: write the event's Type")
@@ -291,16 +291,15 @@ func (r *reader) event(h home, name string, raw json.RawMessage, at string, byID
 		"instance of the draft writes, so the event is not carried"+edge+": "+fix)
 }
 
-// eventReads returns the IDs of the nodes, other than h's own, the value raw
-// of an event of h, written at the JSON pointer at, references, lowered in
-// h's template; what lowering it reports is dropped, as the event is not
-// carried.
-func (r *reader) eventReads(h home, raw json.RawMessage, at string) []string {
-	if raw == nil {
+// eventReads returns the IDs of the nodes, other than h's own, the value v of
+// an event of h, written at the JSON pointer at, references, lowered in h's
+// template; what lowering it reports is dropped, as the event is not carried.
+func (r *reader) eventReads(h home, v *value, at string) []string {
+	if v == nil {
 		return nil
 	}
 	l, _ := r.scope(h.s).trial()
-	p, present := l.prop(raw, at)
+	p, present := l.prop(v, at)
 	if !present {
 		return nil
 	}

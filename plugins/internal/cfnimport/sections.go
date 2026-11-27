@@ -65,7 +65,7 @@ func (r *reader) nodes(t *template) []*cloudimport.Node {
 	for _, e := range t.resources {
 		at := jsonPointer("Resources", e.Key)
 		o, isObject := objectOf(e.Value)
-		typ, typed := schemadraft.JSONText(o.get("Type"))
+		typ, typed := schemadraft.JSONText(o.get("Type").json())
 		if !isObject || !typed || typ == "" {
 			d := cloudimport.Report(cloudimport.CodeResourceNotCarried, "the template "+t.file+" writes the resource "+
 				e.Key+" at "+at+", which is no object declaring its Type as text, so it is not drafted: write it as "+
@@ -75,8 +75,8 @@ func (r *reader) nodes(t *template) []*cloudimport.Node {
 			continue
 		}
 		n := &cloudimport.Node{ID: e.Key, Type: typ, Form: cloudimport.FormRaw, Source: t.file + "#" + at}
-		if raw := o.get("Condition"); raw != nil {
-			n.Condition = literal(raw)
+		if v := o.get("Condition"); v != nil {
+			n.Condition = literal(v.raw)
 		}
 		n.DependsOn = names(o.get("DependsOn"))
 		for _, m := range o {
@@ -103,35 +103,35 @@ func isConsumed(key string) bool {
 	return false
 }
 
-// names returns the names raw writes, as one text or a list of texts, in
+// names returns the names v writes, as one text or a list of texts, in
 // order; an item that is no text names nothing.
-func names(raw json.RawMessage) []string {
-	if name, ok := schemadraft.JSONText(raw); ok {
+func names(v *value) []string {
+	if name, ok := schemadraft.JSONText(v.json()); ok {
 		return []string{name}
 	}
-	items, _ := itemsOf(raw)
+	items, _ := itemsOf(v)
 	var out []string
 	for _, item := range items {
-		if name, ok := schemadraft.JSONText(item); ok {
+		if name, ok := schemadraft.JSONText(item.raw); ok {
 			out = append(out, name)
 		}
 	}
 	return out
 }
 
-// prop returns the JSON value raw as a property: an intrinsic function — an
+// prop returns the JSON value v as a property: an intrinsic function — an
 // object whose one member is named Ref, Condition, or Fn:: followed by a
 // function's name — as one leaf holding its long form, any other object as its
 // members and an array as its items, an empty object or array as its literal,
 // and any other value as its literal.
-func prop(raw json.RawMessage) cloudimport.Prop {
-	switch kind(raw) {
+func prop(v *value) cloudimport.Prop {
+	switch kind(v) {
 	case 0:
 		return cloudimport.Prop{}
 	case '{':
-		o, _ := objectOf(raw)
+		o, _ := objectOf(v)
 		if len(o) == 0 || len(o) == 1 && cfntemplate.IsIntrinsicKey(o[0].Key) {
-			return cloudimport.Prop{Value: literal(raw)}
+			return cloudimport.Prop{Value: literal(v.raw)}
 		}
 		var p cloudimport.Prop
 		for _, e := range o {
@@ -141,9 +141,9 @@ func prop(raw json.RawMessage) cloudimport.Prop {
 		}
 		return p
 	case '[':
-		items, _ := itemsOf(raw)
+		items, _ := itemsOf(v)
 		if len(items) == 0 {
-			return cloudimport.Prop{Value: literal(raw)}
+			return cloudimport.Prop{Value: literal(v.raw)}
 		}
 		var p cloudimport.Prop
 		for _, item := range items {
@@ -151,7 +151,7 @@ func prop(raw json.RawMessage) cloudimport.Prop {
 		}
 		return p
 	}
-	return cloudimport.Prop{Value: literal(raw)}
+	return cloudimport.Prop{Value: literal(v.raw)}
 }
 
 // parameters returns the parameters t declares, in name order, with the notes
@@ -170,27 +170,27 @@ func (t *template) parameters() ([]cloudimport.Parameter, []string) {
 	for _, e := range t.params {
 		o, _ := objectOf(e.Value)
 		p := cloudimport.Parameter{Name: e.Key}
-		p.Type, _ = schemadraft.JSONText(o.get("Type"))
-		p.Description, _ = schemadraft.JSONText(o.get("Description"))
+		p.Type, _ = schemadraft.JSONText(o.get("Type").json())
+		p.Description, _ = schemadraft.JSONText(o.get("Description").json())
 		if allowed, ok := itemsOf(o.get("AllowedValues")); ok {
 			for _, a := range allowed {
-				p.Allowed = append(p.Allowed, compacted(a))
+				p.Allowed = append(p.Allowed, compacted(a.raw))
 			}
 		}
 		p.Min, p.Max = number(o.get("MinValue")), number(o.get("MaxValue"))
 		p.MinLength, p.MaxLength = length(o.get("MinLength")), length(o.get("MaxLength"))
 		p.Secure = isTrue(o.get("NoEcho"))
 		p.Pointer = strings.HasPrefix(p.Type, "AWS::") || strings.HasPrefix(p.Type, "List<AWS::")
-		if pattern, ok := schemadraft.JSONText(o.get("AllowedPattern")); ok {
+		if pattern, ok := schemadraft.JSONText(o.get("AllowedPattern").json()); ok {
 			notes = append(notes, patternNote(e.Key, pattern))
 		}
-		switch raw := o.get("Default"); {
-		case raw == nil || isNull(raw):
+		switch v := o.get("Default"); {
+		case v == nil || isNull(v):
 		case p.Secure:
 			notes = append(notes, "The template parameter "+draftyaml.Comment(e.Key)+" is NoEcho, so the draft "+
 				"never writes its default.")
 		default:
-			p.Default = listedLiteral(&p, raw)
+			p.Default = listedLiteral(&p, v.raw)
 		}
 		out = append(out, p)
 	}
@@ -204,19 +204,19 @@ func patternNote(name, pattern string) string {
 		draftyaml.Comment(pattern) + ", which the draft does not carry."
 }
 
-// isTrue reports whether raw is true, written as a boolean or as text.
-func isTrue(raw json.RawMessage) bool {
-	if s, ok := schemadraft.JSONText(raw); ok {
+// isTrue reports whether v is true, written as a boolean or as text.
+func isTrue(v *value) bool {
+	if s, ok := schemadraft.JSONText(v.json()); ok {
 		return strings.EqualFold(strings.TrimSpace(s), "true")
 	}
-	return string(compacted(raw)) == "true"
+	return string(compacted(v.json())) == "true"
 }
 
-// number returns the number raw holds, written as a number or as text; nil
+// number returns the number v holds, written as a number or as text; nil
 // where it holds none.
-func number(raw json.RawMessage) *json.Number {
-	s := string(compacted(raw))
-	if text, ok := schemadraft.JSONText(raw); ok {
+func number(v *value) *json.Number {
+	s := string(compacted(v.json()))
+	if text, ok := schemadraft.JSONText(v.json()); ok {
 		s = strings.TrimSpace(text)
 	}
 	if s == "" || !(s[0] == '-' || s[0] >= '0' && s[0] <= '9') || !json.Valid([]byte(s)) {
@@ -226,11 +226,11 @@ func number(raw json.RawMessage) *json.Number {
 	return &n
 }
 
-// length returns the length raw holds, a whole number written as a number or
+// length returns the length v holds, a whole number written as a number or
 // as text; nil where it holds none.
-func length(raw json.RawMessage) *int {
-	s := string(compacted(raw))
-	if text, ok := schemadraft.JSONText(raw); ok {
+func length(v *value) *int {
+	s := string(compacted(v.json()))
+	if text, ok := schemadraft.JSONText(v.json()); ok {
 		s = strings.TrimSpace(text)
 	}
 	n, err := strconv.Atoi(s)
@@ -252,16 +252,16 @@ func (t *template) outputsRead(of string) ([]cloudimport.Output, []string) {
 	for _, e := range t.outputs {
 		o, _ := objectOf(e.Value)
 		output := cloudimport.Output{Name: e.Key}
-		if raw := o.get("Value"); raw != nil {
-			output.Value = literal(raw)
+		if v := o.get("Value"); v != nil {
+			output.Value = literal(v.raw)
 		}
 		out = append(out, output)
 		export, _ := objectOf(o.get("Export"))
-		raw := export.get("Name")
-		if raw == nil {
+		exported := export.get("Name")
+		if exported == nil {
 			continue
 		}
-		if name, ok := schemadraft.JSONText(raw); ok {
+		if name, ok := schemadraft.JSONText(exported.raw); ok {
 			notes = append(notes, "The output "+draftyaml.Comment(e.Key)+of+" is exported as "+
 				draftyaml.Comment(name)+", which the draft does not export.")
 			continue
@@ -286,8 +286,8 @@ func (t *template) declared(subject string) []string {
 		notes = append(notes, subject+" declares the transforms "+strings.Join(transforms, ", ")+".")
 	}
 	notes = append(notes, t.globalsNotes(subject)...)
-	if raw := t.top.get("Metadata"); raw != nil && !isNull(raw) {
-		o, _ := objectOf(raw)
+	if v := t.top.get("Metadata"); v != nil && !isNull(v) {
+		o, _ := objectOf(v)
 		if len(o) == 0 {
 			notes = append(notes, subject+"'s Metadata is not carried.")
 		} else {
@@ -302,12 +302,12 @@ func (t *template) declared(subject string) []string {
 	return notes
 }
 
-// transformNames returns the name of each transform raw declares, written
-// for a comment, in order, as [declaredTransforms] reads them; a transform
-// named by no text is left out.
-func transformNames(raw json.RawMessage) []string {
+// transformNames returns the name of each transform v declares, written for
+// a comment, in order, as [declaredTransforms] reads them; a transform named
+// by no text is left out.
+func transformNames(v *value) []string {
 	var out []string
-	for _, tr := range declaredTransforms(raw) {
+	for _, tr := range declaredTransforms(v) {
 		if tr.name != "" {
 			out = append(out, draftyaml.Comment(tr.name))
 		}

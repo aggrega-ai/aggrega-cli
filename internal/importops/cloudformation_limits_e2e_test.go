@@ -44,8 +44,8 @@ const (
 	// runs, in milliseconds. The runtime reports no peak, so the measured
 	// values are recorded here and the limits are held to the margins over them.
 	cloudFormationMinimumPages, cloudFormationMinimumTimeoutMs = 2048, 30000
-	cloudFormationMeasuredPeakPages                            = 10240
-	cloudFormationMeasuredGuestMs                              = 52158
+	cloudFormationMeasuredPeakPages                            = 5888
+	cloudFormationMeasuredGuestMs                              = 25086
 )
 
 // largeCloudFormationTemplate writes a template of cloudFormationResources

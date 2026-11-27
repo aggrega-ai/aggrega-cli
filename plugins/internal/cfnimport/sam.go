@@ -13,7 +13,6 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
-	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
 const (
@@ -129,7 +128,7 @@ func (t *template) serverless() bool {
 // not declare the serverless transform, the one transform reading them, so
 // no resource takes them; t named as subject names it.
 func (t *template) globalsNotes(subject string) []string {
-	if raw := t.top.get(globalsSection); raw == nil || isNull(raw) || t.serverless() {
+	if v := t.top.get(globalsSection); v == nil || isNull(v) || t.serverless() {
 		return nil
 	}
 	return []string{subject + " declares Globals, which the transform " + serverlessTransform + " alone reads, and " +
@@ -166,9 +165,12 @@ func (r *reader) serverlessResources(t *template) {
 		return
 	}
 	globals := r.globals(t)
-	for i, e := range t.resources {
+	// The members are the decoded document's own: the merged resources
+	// replace them in a copy, so the template's top level keeps what it writes.
+	resources := slices.Clone(t.resources)
+	for i, e := range resources {
 		res, isObject := objectOf(e.Value)
-		typ, _ := schemadraft.JSONText(res.get("Type"))
+		typ, _ := schemadraft.JSONText(res.get("Type").json())
 		if !isObject || !strings.HasPrefix(typ, serverlessPrefix) {
 			continue
 		}
@@ -183,7 +185,7 @@ func (r *reader) serverlessResources(t *template) {
 		}
 		own := res.get("Properties")
 		if own == nil {
-			own = json.RawMessage("{}")
+			own = decoded(json.RawMessage("{}"))
 		}
 		ownProps, _ := objectOf(own)
 		for _, g := range global {
@@ -194,9 +196,10 @@ func (r *reader) serverlessResources(t *template) {
 				t.fromGlobals[e.Key] = append(t.fromGlobals[e.Key], g.Key)
 			}
 		}
-		props := merged(global.encoded(), own, []string{strings.TrimPrefix(typ, serverlessPrefix)})
-		t.resources[i].Value = res.with("Properties", props).encoded()
+		props := merged(decoded(global.encoded()), own, []string{strings.TrimPrefix(typ, serverlessPrefix)})
+		resources[i].Value = decoded(res.with("Properties", props).encoded())
 	}
+	t.resources = resources
 }
 
 // globals returns the properties the Globals of t, which declares the
@@ -208,15 +211,15 @@ func (r *reader) serverlessResources(t *template) {
 // object, and a property it does not read for the type — is merged into no
 // resource, and is reported value-not-carried, naming where it is written.
 func (r *reader) globals(t *template) []typeGlobals {
-	raw := t.top.get(globalsSection)
-	if raw == nil || isNull(raw) {
+	v := t.top.get(globalsSection)
+	if v == nil || isNull(v) {
 		return nil
 	}
 	refused := func(at, what, fix string) {
 		r.warnAt(cloudimport.CodeValueNotCarried, t.file, at, "the template "+t.file+" writes "+what+", which "+
 			"the transform "+serverlessTransform+" refuses when the stack deploys, so no resource takes them: "+fix)
 	}
-	section, isObject := objectOf(raw)
+	section, isObject := objectOf(v)
 	if !isObject || isIntrinsic(section) {
 		at := jsonPointer(globalsSection)
 		refused(at, "its Globals at "+at+" as no object of each resource type's properties by the type's name",
@@ -273,13 +276,13 @@ const (
 	mergeList
 )
 
-// tokenOf returns what the serverless transform reads raw as: an object, a
+// tokenOf returns what the serverless transform reads v as: an object, a
 // list, or a primitive — text, a number, a boolean, null, or an intrinsic
 // function, which the transform merges as it merges text.
-func tokenOf(raw json.RawMessage) mergeToken {
-	switch kind(raw) {
+func tokenOf(v *value) mergeToken {
+	switch kind(v) {
 	case '{':
-		if o, _ := objectOf(raw); isIntrinsic(o) {
+		if o, _ := objectOf(v); isIntrinsic(o) {
 			return mergePrimitive
 		}
 		return mergeObject
@@ -292,7 +295,7 @@ func tokenOf(raw json.RawMessage) mergeToken {
 // merged returns the value a resource takes where the Globals write global
 // and the resource writes local, at path, as [reader.serverlessResources]
 // says.
-func merged(global, local json.RawMessage, path []string) json.RawMessage {
+func merged(global, local *value, path []string) *value {
 	token := tokenOf(global)
 	if token != tokenOf(local) || token == mergePrimitive {
 		return local
@@ -304,7 +307,9 @@ func merged(global, local json.RawMessage, path []string) json.RawMessage {
 	if token == mergeList {
 		globalItems, _ := itemsOf(global)
 		localItems, _ := itemsOf(local)
-		return encodedItems(append(globalItems, localItems...))
+		// The items are the decoded document's own, so they are appended to in
+		// a copy.
+		return decoded(encodedItems(append(slices.Clone(globalItems), localItems...)))
 	}
 	g, _ := objectOf(global)
 	l, _ := objectOf(local)
@@ -322,27 +327,27 @@ func merged(global, local json.RawMessage, path []string) json.RawMessage {
 		}
 		out = append(out, e)
 	}
-	return out.encoded()
+	return decoded(out.encoded())
 }
 
-// with returns o with the member named key holding value, added where o has
+// with returns o with the member named key holding v, added where o has
 // none.
-func (o obj) with(key string, value json.RawMessage) obj {
+func (o obj) with(key string, v *value) obj {
 	out := slices.Clone(o)
 	for i := range out {
 		if out[i].Key == key {
-			out[i].Value = value
+			out[i].Value = v
 			return out
 		}
 	}
-	return append(out, importer.ObjectEntry{Key: key, Value: value})
+	return append(out, member{Key: key, Value: v})
 }
 
 // encoded returns o as a JSON object, its members sorted by key as the
 // template reader writes them.
 func (o obj) encoded() json.RawMessage {
 	sorted := slices.Clone(o)
-	slices.SortStableFunc(sorted, func(a, b importer.ObjectEntry) int { return strings.Compare(a.Key, b.Key) })
+	slices.SortStableFunc(sorted, func(a, b member) int { return strings.Compare(a.Key, b.Key) })
 	var b bytes.Buffer
 	b.WriteByte('{')
 	for i, e := range sorted {
@@ -352,21 +357,21 @@ func (o obj) encoded() json.RawMessage {
 		key, _ := json.Marshal(e.Key)
 		b.Write(key)
 		b.WriteByte(':')
-		b.Write(e.Value)
+		b.Write(e.Value.raw)
 	}
 	b.WriteByte('}')
 	return b.Bytes()
 }
 
 // encodedItems returns items as a JSON array.
-func encodedItems(items []json.RawMessage) json.RawMessage {
+func encodedItems(items []*value) json.RawMessage {
 	var b bytes.Buffer
 	b.WriteByte('[')
 	for i, item := range items {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.Write(item)
+		b.Write(item.raw)
 	}
 	b.WriteByte(']')
 	return b.Bytes()

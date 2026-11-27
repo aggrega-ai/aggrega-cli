@@ -5,7 +5,6 @@ package cfnimport
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"path"
 	"slices"
@@ -49,7 +48,7 @@ type handed struct {
 	linked bool
 	// tree is the source as the host's JSON parser reads it, held where it is
 	// a parameters file, and form the form the file writes its values in.
-	tree json.RawMessage
+	tree *value
 	form paramsForm
 }
 
@@ -68,11 +67,12 @@ func (r *reader) classify() []*handed {
 		if tree, err := cfntemplate.Normalize(src.Bytes); err != nil {
 			h.refusal = err
 		} else {
-			h.top, _ = objectOf(tree)
+			h.top, _ = objectOf(decoded(tree))
 			h.template = holdsTemplate(h.top)
 		}
 		if !h.template && r.parse != nil {
-			if tree, err := r.parse(paramsSyntax, src.Bytes); err == nil {
+			if raw, err := r.parse(paramsSyntax, src.Bytes); err == nil {
+				tree := decoded(raw)
 				if h.form = formOf(tree); h.form != formNone {
 					h.tree = tree
 				}
@@ -87,7 +87,7 @@ func (r *reader) classify() []*handed {
 // what it holds: an AWSTemplateFormatVersion written as text, or a Resources
 // object and a Transform.
 func holdsTemplate(top obj) bool {
-	if _, ok := schemadraft.JSONText(top.get(versionKey)); ok {
+	if _, ok := schemadraft.JSONText(top.get(versionKey).json()); ok {
 		return true
 	}
 	transform := top.get("Transform")
@@ -104,11 +104,11 @@ func links(top obj) []string {
 	var out []string
 	for _, e := range resources {
 		res, _ := objectOf(e.Value)
-		raw, _, deploys := linkOf(res)
+		v, _, deploys := linkOf(res)
 		if !deploys {
 			continue
 		}
-		if link, ok := schemadraft.JSONText(raw); ok && isLocal(link) {
+		if link, ok := schemadraft.JSONText(v.json()); ok && isLocal(link) {
 			out = append(out, link)
 		}
 	}
@@ -119,8 +119,8 @@ func links(top obj) []string {
 // deploys — the TemplateURL of a nested stack, the Location of a serverless
 // application —, nil where res writes none, and res's type; false where res
 // deploys no template.
-func linkOf(res obj) (json.RawMessage, string, bool) {
-	typ, _ := schemadraft.JSONText(res.get("Type"))
+func linkOf(res obj) (*value, string, bool) {
+	typ, _ := schemadraft.JSONText(res.get("Type").json())
 	if typ != stackType && typ != applicationType {
 		return nil, typ, false
 	}
@@ -356,10 +356,10 @@ func (r *reader) selectSources(srcs []*handed, s cloudimport.Settings) *selectio
 
 // setsAny reports whether the list of Key=Value strings tree sets one of the
 // parameters declared.
-func setsAny(tree json.RawMessage, declared obj) bool {
+func setsAny(tree *value, declared obj) bool {
 	items, _ := itemsOf(tree)
 	for _, item := range items {
-		pair, _ := schemadraft.JSONText(item)
+		pair, _ := schemadraft.JSONText(item.raw)
 		if key, _, _ := strings.Cut(pair, "="); declared.get(key) != nil {
 			return true
 		}

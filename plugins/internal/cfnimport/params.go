@@ -4,7 +4,6 @@
 package cfnimport
 
 import (
-	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -39,7 +38,7 @@ const (
 // JSON parser reads it, is tree; formNone where it is no parameters file: a
 // list is one where it holds items and each is an object holding a
 // ParameterKey written as text, or each is text holding =.
-func formOf(tree json.RawMessage) paramsForm {
+func formOf(tree *value) paramsForm {
 	if o, ok := objectOf(tree); ok {
 		if kind(o.get("Parameters")) == '{' && o.get("Resources") == nil {
 			return formObject
@@ -53,10 +52,10 @@ func formOf(tree json.RawMessage) paramsForm {
 	list, pairs := true, true
 	for _, item := range items {
 		o, _ := objectOf(item)
-		if _, keyed := schemadraft.JSONText(o.get("ParameterKey")); !keyed {
+		if _, keyed := schemadraft.JSONText(o.get("ParameterKey").json()); !keyed {
 			list = false
 		}
-		if s, text := schemadraft.JSONText(item); !text || !strings.Contains(s, "=") {
+		if s, text := schemadraft.JSONText(item.raw); !text || !strings.Contains(s, "=") {
 			pairs = false
 		}
 	}
@@ -83,7 +82,7 @@ func (r *reader) fill(params []cloudimport.Parameter, h *handed) {
 		for i, item := range items {
 			at := jsonPointer(strconv.Itoa(i))
 			o, _ := objectOf(item)
-			key, _ := schemadraft.JSONText(o.get("ParameterKey"))
+			key, _ := schemadraft.JSONText(o.get("ParameterKey").json())
 			if isTrue(o.get("UsePreviousValue")) {
 				r.notRead(h, at, "the parameters file "+h.name()+" keeps the parameter "+key+" at the value the "+
 					"deployed stack holds, with UsePreviousValue, which the import cannot read, so no value is "+
@@ -101,9 +100,9 @@ func (r *reader) fill(params []cloudimport.Parameter, h *handed) {
 	case formPairs:
 		items, _ := itemsOf(h.tree)
 		for i, item := range items {
-			pair, _ := schemadraft.JSONText(item)
+			pair, _ := schemadraft.JSONText(item.raw)
 			key, value, _ := strings.Cut(pair, "=")
-			r.supply(params, h, jsonPointer(strconv.Itoa(i)), key, importer.String(value))
+			r.supply(params, h, jsonPointer(strconv.Itoa(i)), key, decoded(importer.String(value)))
 		}
 	case formObject:
 		top, _ := objectOf(h.tree)
@@ -122,9 +121,9 @@ func (r *reader) fill(params []cloudimport.Parameter, h *handed) {
 	}
 }
 
-// supply supplies the parameter of params named key the value raw the
+// supply supplies the parameter of params named key the value v the
 // parameters file h gives it at the JSON pointer at.
-func (r *reader) supply(params []cloudimport.Parameter, h *handed, at, key string, raw json.RawMessage) {
+func (r *reader) supply(params []cloudimport.Parameter, h *handed, at, key string, v *value) {
 	i := -1
 	for j, p := range params {
 		if p.Name == key {
@@ -136,11 +135,11 @@ func (r *reader) supply(params []cloudimport.Parameter, h *handed, at, key strin
 	case i < 0:
 		r.notRead(h, at, "the parameters file "+h.name()+" sets the parameter "+key+", which the template declares "+
 			"no parameter of, so it is not read: remove it from the file, or declare it in the template")
-	case kind(raw) == '{' || kind(raw) == '[' || kind(raw) == 0 || isNull(raw):
+	case kind(v) == '{' || kind(v) == '[' || kind(v) == 0 || isNull(v):
 		r.notRead(h, at, "the parameters file "+h.name()+" gives the parameter "+key+" a value that is no text, "+
 			"number or boolean, so it is not read: write its value as text")
 	default:
-		params[i].Supplied = listedLiteral(&params[i], raw)
+		params[i].Supplied = listedLiteral(&params[i], v.raw)
 	}
 }
 

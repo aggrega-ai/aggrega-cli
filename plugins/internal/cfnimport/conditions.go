@@ -89,8 +89,8 @@ func (l *lowerer) equality(name string) (param, compared string, ok bool) {
 		if len(ref) != 1 || ref[0].Key != "Ref" {
 			continue
 		}
-		param, isText := schemadraft.JSONText(ref[0].Value)
-		compared, isScalar := draftyaml.ScalarText(args[1-i])
+		param, isText := schemadraft.JSONText(ref[0].Value.raw)
+		compared, isScalar := draftyaml.ScalarText(args[1-i].raw)
 		if !isText || !isScalar || !l.declares(param) {
 			return "", "", false
 		}

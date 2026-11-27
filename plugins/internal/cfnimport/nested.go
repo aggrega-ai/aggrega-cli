@@ -81,7 +81,7 @@ type argument struct {
 	// written in that resource's template at the JSON pointer at; def is its
 	// default, written in the nested template at at, where nothing binds it;
 	// file is the template either is written in.
-	bound, def json.RawMessage
+	bound, def *value
 	at, file   string
 	// graph names the graph's parameter it reads: the one it is bound to
 	// whole, or the one the graph takes for it where it is bound to nothing
@@ -252,11 +252,11 @@ func unique(taken map[string]bool, id string) string {
 // serverless application it warns, and returns nil.
 func (r *reader) deployed(s *stack, n *cloudimport.Node) *template {
 	res, _ := objectOf(s.t.resources.get(n.ID))
-	raw, typ, deploys := linkOf(res)
+	link, typ, deploys := linkOf(res)
 	if !deploys {
 		return nil
 	}
-	t, how := r.linkedTemplate(s.t.file, raw, typ)
+	t, how := r.linkedTemplate(s.t.file, link, typ)
 	if t == nil {
 		r.warnNode(cloudimport.CodeLinkedSourceNotRead, n, fmt.Sprintf("%s (%s) of %s deploys a template %s, which "+
 			"the import does not read: no resource of that template is drafted, %s is drafted as written, and each "+
@@ -277,15 +277,15 @@ func (r *reader) deployed(s *stack, n *cloudimport.Node) *template {
 	return t
 }
 
-// linkedTemplate returns the template the import reads that raw, the
+// linkedTemplate returns the template the import reads that v, the
 // TemplateURL or Location of a resource of type typ written in the template
 // at from, names; nil where it names none, with how it locates the template
 // it deploys, for a warning.
-func (r *reader) linkedTemplate(from string, raw json.RawMessage, typ string) (*template, string) {
-	link, isText := schemadraft.JSONText(raw)
-	o, isObject := objectOf(raw)
+func (r *reader) linkedTemplate(from string, v *value, typ string) (*template, string) {
+	link, isText := schemadraft.JSONText(v.json())
+	o, isObject := objectOf(v)
 	switch {
-	case raw == nil || isNull(raw):
+	case v == nil || isNull(v):
 		return nil, "it names by no " + linkProperty(typ)
 	case isObject && typ == applicationType && o.get("ApplicationId") != nil:
 		return nil, "located by the ID of an application the AWS Serverless Application Repository publishes"
@@ -386,9 +386,9 @@ func (r *reader) bind(s, child *stack) {
 	res, _ := objectOf(s.t.resources.get(child.at))
 	props, _ := objectOf(res.get("Properties"))
 	at := jsonPointer("Resources", child.at, "Properties", "Parameters")
-	raw := props.get("Parameters")
-	binds, isObject := objectOf(raw)
-	if raw != nil && !isNull(raw) && (!isObject || len(binds) == 1 && cfntemplate.IsIntrinsicKey(binds[0].Key)) {
+	v := props.get("Parameters")
+	binds, isObject := objectOf(v)
+	if v != nil && !isNull(v) && (!isObject || len(binds) == 1 && cfntemplate.IsIntrinsicKey(binds[0].Key)) {
 		r.warnAt(cloudimport.CodeValueNotCarried, s.t.file, at, "the template "+s.t.file+" writes the Parameters "+
 			"of the "+child.kind()+" "+child.at+" at "+at+" as no object of each parameter's value by its name, so no "+
 			"parameter of its template "+child.t.file+" is bound: write each parameter's value under Parameters")
@@ -422,23 +422,23 @@ func (r *reader) bind(s, child *stack) {
 		a.graph = q.Name
 		r.graph.Params = append(r.graph.Params, q)
 		why := "which declares no default for it"
-		if raw := decl.get("Default"); raw != nil && !isNull(raw) {
+		if def := decl.get("Default"); def != nil && !isNull(def) {
 			why = "whose default the draft never writes, as it is NoEcho"
 		}
 		r.graph.Notes = append(r.graph.Notes, "The "+child.kind()+" "+draftyaml.Comment(child.at)+" binds no value to "+
 			"the parameter "+draftyaml.Comment(p.Name)+" of "+draftyaml.Comment(child.t.file)+", "+why+", so the "+
 			"draft reads it as the template parameter "+draftyaml.Comment(q.Name)+".")
-		if pattern, ok := schemadraft.JSONText(decl.get("AllowedPattern")); ok {
+		if pattern, ok := schemadraft.JSONText(decl.get("AllowedPattern").json()); ok {
 			r.graph.Notes = append(r.graph.Notes, patternNote(q.Name, pattern))
 		}
 	}
 }
 
-// isNoValue reports whether raw is a Ref to AWS::NoValue: a parameter a
-// stack binds to it is bound to nothing.
-func isNoValue(raw json.RawMessage) bool {
-	o, _ := objectOf(raw)
-	name, _ := schemadraft.JSONText(o.get("Ref"))
+// isNoValue reports whether v is a Ref to AWS::NoValue: a parameter a stack
+// binds to it is bound to nothing.
+func isNoValue(v *value) bool {
+	o, _ := objectOf(v)
+	name, _ := schemadraft.JSONText(o.get("Ref").json())
 	return len(o) == 1 && name == "AWS::NoValue"
 }
 
@@ -656,7 +656,7 @@ func (r *reader) noValue(s *stack, a *argument) {
 	decl, _ := objectOf(s.t.params.get(a.decl.Name))
 	why := "its template " + s.t.file + " declares no default for it, while CloudFormation requires a value, so it " +
 		"is not carried: bind it to a value, or declare a default for it in " + s.t.file
-	if raw := decl.get("Default"); raw != nil && !isNull(raw) {
+	if def := decl.get("Default"); def != nil && !isNull(def) {
 		why = "the default its template " + s.t.file + " declares for it is NoEcho, which the draft never writes, so " +
 			"it is not carried: pass it through a NoEcho parameter of " + a.file
 	}

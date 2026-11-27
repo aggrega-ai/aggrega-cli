@@ -153,11 +153,12 @@ func TestSectionsMappingsAndConditionsAreKept(t *testing.T) {
 	if g := r.read(cloudimport.Settings{}); g == nil {
 		t.Fatalf("the read halts: %+v", r.diags)
 	}
-	if got, want := compact(t, r.root.mappings.get("Sizes")), `{"dev":{"Class":"db.t3.micro"},"prod":{"Class":`+
+	if got, want := compact(t, r.root.mappings.get("Sizes").json()), `{"dev":{"Class":"db.t3.micro"},"prod":{"Class":`+
 		`"db.r6g.large"}}`; got != want {
 		t.Errorf("the mapping Sizes is kept as %s, want %s", got, want)
 	}
-	if got, want := compact(t, r.root.conditions.get("IsProd")), `{"Fn::Equals":[{"Ref":"Env"},"prod"]}`; got != want {
+	if got, want := compact(t, r.root.conditions.get("IsProd").json()), `{"Fn::Equals":[{"Ref":"Env"},`+
+		`"prod"]}`; got != want {
 		t.Errorf("the condition IsProd is kept as %s, want %s", got, want)
 	}
 }
