@@ -158,3 +158,89 @@ func TestSourcesSeveralParametersFilesAreNoneRead(t *testing.T) {
 		}
 	}
 }
+
+// TestSourcesRootSettingRoutesPastARefusedSource reads, with the root setting
+// set, past a source the template reader refuses that the root does not reach
+// — one whose text holds AWSTemplateFormatVersion, one linked by a template
+// the import does not read — naming it not read with the reader's reason, and
+// halts parse-failed on one a template the root reaches links.
+func TestSourcesRootSettingRoutesPastARefusedSource(t *testing.T) {
+	t.Parallel()
+	t.Run("holding AWSTemplateFormatVersion", func(t *testing.T) {
+		t.Parallel()
+		g, diags := readAll("template.yaml", fixtures(t, "stray", "docs/notes.yaml", "template.yaml")...)
+		noDiagnostics(t, diags)
+		if want := []string{"template.yaml"}; !slices.Equal(g.Read, want) {
+			t.Errorf("the read reads %q, want %q", g.Read, want)
+		}
+		if want := []string{"docs/notes.yaml"}; !slices.Equal(g.NotRead, want) {
+			t.Errorf("the read names %q not read, want %q", g.NotRead, want)
+		}
+		want := []string{"docs/notes.yaml is not read, as the template reader refuses it: invalid YAML template: " +
+			"yaml: line 3: found character that cannot start any token."}
+		if !slices.Equal(g.Notes, want) {
+			t.Errorf("the notes are %q, want %q", g.Notes, want)
+		}
+	})
+	t.Run("linked by a template the import does not read", func(t *testing.T) {
+		t.Parallel()
+		g, diags := readAll("template.yaml", fixtures(t, "stray", "broken.yaml", "other.yaml", "template.yaml")...)
+		noDiagnostics(t, diags)
+		if want := []string{"template.yaml"}; !slices.Equal(g.Read, want) {
+			t.Errorf("the read reads %q, want %q", g.Read, want)
+		}
+		if want := []string{"broken.yaml", "other.yaml"}; !slices.Equal(g.NotRead, want) {
+			t.Errorf("the read names %q not read, want %q", g.NotRead, want)
+		}
+		want := []string{"broken.yaml is not read, as the template reader refuses it: invalid YAML template: yaml: " +
+			"line 4: did not find expected node content."}
+		if !slices.Equal(g.Notes, want) {
+			t.Errorf("the notes are %q, want %q", g.Notes, want)
+		}
+	})
+	t.Run("linked by a template the root reaches", func(t *testing.T) {
+		t.Parallel()
+		g, diags := readAll("main.yaml", fixtures(t, "stray", "broken.yaml", "main.yaml", "template.yaml")...)
+		onlyDiagnostic(t, diags, aggrega.Diagnostic{Severity: aggrega.SeverityHalt, Code: "parse-failed",
+			Message: `could not parse source "broken.yaml" as cloudformation: invalid YAML template: yaml: line 4: ` +
+				`did not find expected node content`, SourceRef: "broken.yaml"})
+		if g != nil {
+			t.Errorf("a halted read gives a graph")
+		}
+	})
+}
+
+// TestSourcesRootSettingNamesATemplateWithoutAVersionLine starts from the
+// source the root setting names where the template reader reads it as an
+// object holding Resources, though it declares no AWSTemplateFormatVersion and
+// nothing links it, and halts source-refused, saying it is no template, where
+// the source it names holds no Resources.
+func TestSourcesRootSettingNamesATemplateWithoutAVersionLine(t *testing.T) {
+	t.Parallel()
+	sources := []aggrega.ImportSource{src("network.yaml", fixture(t, "linked/network.yaml")),
+		src("package.json", fixture(t, "sam/package.json"))}
+	t.Run("holding Resources", func(t *testing.T) {
+		t.Parallel()
+		g, diags := readAll("network.yaml", sources...)
+		noDiagnostics(t, diags)
+		if want := []string{"network.yaml"}; !slices.Equal(g.Read, want) {
+			t.Errorf("the read reads %q, want %q", g.Read, want)
+		}
+		if want := []string{"package.json"}; !slices.Equal(g.NotRead, want) {
+			t.Errorf("the read names %q not read, want %q", g.NotRead, want)
+		}
+		if got, want := nodeIDs(g), []string{"Vpc"}; !slices.Equal(got, want) {
+			t.Errorf("the graph holds %q, want %q", got, want)
+		}
+	})
+	t.Run("holding no Resources", func(t *testing.T) {
+		t.Parallel()
+		g, diags := readAll("package.json", sources...)
+		onlyDiagnostic(t, diags, aggrega.Diagnostic{Severity: aggrega.SeverityHalt, Code: "source-refused",
+			Message: "the root setting names package.json, which holds no Resources object, so it is no template the " +
+				"import can start from: set root to the path of a template, one holding Resources"})
+		if g != nil {
+			t.Errorf("a halted read gives a graph")
+		}
+	})
+}

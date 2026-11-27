@@ -32,19 +32,22 @@ const (
 // reads as JSON only the sources the template reader does not read as one, for
 // a parameters file. A template is a source holding an
 // AWSTemplateFormatVersion written as text, or a Resources object and a
-// Transform, or one a template links by a local path; a parameters file is one
-// of the forms the AWS CLI reads parameters from a file in — a list of
-// ParameterKey and ParameterValue, a list of Key=Value strings, or an object
-// holding a Parameters object and no Resources; every other source is named
-// among those not read. The root template is chosen by the core's rule over
-// the templates and the local links between them — the TemplateURL of a nested
-// stack and the Location of a serverless application, written as a path
-// inside the imported directory — and the root and every template it links are
-// read. A source the template reader refuses halts parse-failed where the
-// import was handed it alone, the root setting names it, its text holds
-// AWSTemplateFormatVersion or a template links it, and is otherwise named not
-// read, with the reader's reason in a note. A request holding no template
-// halts source-refused; several parameters files are none read.
+// Transform, or one a template links by a local path, or one holding a
+// Resources object the root setting names; a parameters file is one of the
+// forms the AWS CLI reads parameters from a file in — a list of ParameterKey
+// and ParameterValue, a list of Key=Value strings one of whose keys the root
+// template declares, or an object holding a Parameters object and no
+// Resources; every other source is named among those not read. The root
+// template is chosen by the core's rule over the templates and the local links
+// between them — the TemplateURL of a nested stack and the Location of a
+// serverless application, written as a path inside the imported directory —
+// and the root and every template it links are read. A source the template
+// reader refuses halts parse-failed where the import was handed it alone, the
+// root setting names it or a template the import reads links it, and, where
+// the root setting is not set, where its text holds AWSTemplateFormatVersion;
+// any other is named not read, with the reader's reason in a note. A request
+// holding no template halts source-refused; several parameters files are none
+// read.
 //
 // The root template's resources become the graph's nodes, keyed by their
 // logical IDs and ordered by them; its parameters, filled from the one

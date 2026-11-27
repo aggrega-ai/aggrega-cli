@@ -184,8 +184,9 @@ func TestTemplateValuesComeFromTheLeafReader(t *testing.T) {
 // TestParseFailureHaltsNamingTheTemplate halts parse-failed, naming the file,
 // on a source the template reader refuses where it is a template the import
 // starts from or reads: the one source handed, the source the root setting
-// names, a source whose text holds AWSTemplateFormatVersion, and one a
-// template the import reads links.
+// names, one a template the import reads links, and, where the root setting is
+// not set, a source whose text holds AWSTemplateFormatVersion, the halt saying
+// the root setting leaves it unread.
 func TestParseFailureHaltsNamingTheTemplate(t *testing.T) {
 	t.Parallel()
 	refused := fixture(t, "refused/template.yaml")
@@ -222,7 +223,11 @@ func TestParseFailureHaltsNamingTheTemplate(t *testing.T) {
 	t.Run("holding AWSTemplateFormatVersion", func(t *testing.T) {
 		t.Parallel()
 		_, diags := readAll("", src("template.yaml", refused), src("queue.yaml", queue))
-		onlyDiagnostic(t, diags, failed("template.yaml", "5"))
+		held := failed("template.yaml", "5")
+		held.Message += "; it is read as a template, as its text holds AWSTemplateFormatVersion: where it is no " +
+			"template the import reads, set root to the path of the template the import starts from, and it is " +
+			"named not read"
+		onlyDiagnostic(t, diags, held)
 	})
 	t.Run("linked by a template", func(t *testing.T) {
 		t.Parallel()

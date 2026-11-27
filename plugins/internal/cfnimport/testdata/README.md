@@ -16,6 +16,8 @@ Every file here is synthetic, written for the reader's tests; none is copied fro
 - `params/previous.json` — a list keeping one parameter at its previous value with `UsePreviousValue`.
 - `params/tags.json`, `params/policy.json` — a `Parameters` object beside stack tags, and beside a stack policy.
 - `params/undeclared.json` — a list setting one parameter the template does not declare.
+- `params/env.json` — a list of `Key=Value` strings setting an environment variable no template declares.
+- `params/extra.json` — a list of `Key=Value` strings setting one declared parameter and one undeclared.
 - `linked/` — a root template linking a nested stack by `./network.yaml`, a serverless application by
   `services/api.yaml`, which links `../shared/queue.yaml`; none of the linked templates declares a format version.
   The root also links a template by URL, an application by its ID, and a path leaving the directory.
@@ -23,3 +25,6 @@ Every file here is synthetic, written for the reader's tests; none is copied fro
 - `sam/` — a SAM project after `sam build`: its template, the template the build writes under
   `.aws-sam/build/`, a test event, a truncated test event the template reader refuses, and a `package.json`.
 - `refused/template.yaml` — a template whose YAML breaks off, which the template reader refuses.
+- `stray/` — a template beside sources the template reader refuses: `docs/notes.yaml`, indented with a tab and
+  naming `AWSTemplateFormatVersion` in a comment, and `broken.yaml`, whose YAML breaks off, linked by `other.yaml`
+  and by `main.yaml`.

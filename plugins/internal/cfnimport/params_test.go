@@ -95,3 +95,40 @@ func TestParamsUndeclaredParameterIsNotRead(t *testing.T) {
 		t.Errorf("undeclared.json supplies %#v, want %#v", got, want)
 	}
 }
+
+// TestParamsKeyValueListMustSetADeclaredParameter takes a list of Key=Value
+// strings for a parameters file only where one of its keys is a parameter the
+// root template declares: an environment list beside a parameters file is
+// named not read and leaves that file read, while a list setting a declared
+// parameter and one the template does not declare is read, the other named.
+func TestParamsKeyValueListMustSetADeclaredParameter(t *testing.T) {
+	t.Parallel()
+	t.Run("an environment list", func(t *testing.T) {
+		t.Parallel()
+		g, diags := readAll("", fixtures(t, "params", "env.json", "list.json", "template.yaml")...)
+		noDiagnostics(t, diags)
+		if want := []string{"list.json", "template.yaml"}; !slices.Equal(g.Read, want) {
+			t.Errorf("the read reads %q, want %q", g.Read, want)
+		}
+		if want := []string{"env.json"}; !slices.Equal(g.NotRead, want) {
+			t.Errorf("the read names %q not read, want %q", g.NotRead, want)
+		}
+		want := map[string]cloudimport.Value{"Env": lit(`"prod"`), "Expression": lit(`"a=b=c"`),
+			"ImageTag": lit(`"1.4.2"`)}
+		if got := supplied(g); !reflect.DeepEqual(got, want) {
+			t.Errorf("list.json supplies %#v, want %#v", got, want)
+		}
+	})
+	t.Run("a list setting a declared parameter", func(t *testing.T) {
+		t.Parallel()
+		g, diags := readParams(t, "extra.json")
+		onlyDiagnostic(t, diags, aggrega.Diagnostic{Severity: aggrega.SeverityWarn, Code: "value-not-carried",
+			Message: "the parameters file extra.json sets the parameter Region, which the template declares no " +
+				"parameter of, so it is not read: remove it from the file, or declare it in the template",
+			SourceRef: "extra.json#/1"})
+		want := map[string]cloudimport.Value{"Env": nil, "Expression": nil, "ImageTag": lit(`"1.4.2"`)}
+		if got := supplied(g); !reflect.DeepEqual(got, want) {
+			t.Errorf("extra.json supplies %#v, want %#v", got, want)
+		}
+	})
+}

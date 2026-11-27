@@ -6,6 +6,7 @@ package cfnimport
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"path"
 	"slices"
 	"strings"
@@ -41,7 +42,8 @@ type handed struct {
 	top     obj
 	refusal error
 	// template reports a template: a source holding a format version written
-	// as text, or Resources and a Transform, or one a template links.
+	// as text, or Resources and a Transform, or one a template links, or one
+	// holding Resources the root setting names.
 	template bool
 	// linked reports that a template links the source.
 	linked bool
@@ -160,19 +162,32 @@ type selection struct {
 // template, through the core's rule over the templates and the local links
 // between them, every template it links, transitively, and the one parameters
 // file handed. A source a template links is a template too, whatever it
-// holds. A source the template reader refuses halts parse-failed where the
-// import was handed it alone, the root setting names it, its text holds
-// AWSTemplateFormatVersion or a template links it; any other is named not
-// read, with the reader's reason. A request holding no template halts
-// source-refused; several parameters files are none read, with a
-// parameter-files-not-read warning naming them.
+// holds, and so is one holding Resources the root setting names; the root
+// setting naming a source that holds no Resources halts source-refused.
+//
+// A source the template reader refuses halts parse-failed where the import was
+// handed it alone, the root setting names it, or a template the import reads
+// links it; where the root setting is not set, it halts too where its text
+// holds AWSTemplateFormatVersion, the halt saying that setting root leaves it
+// unread. Any other is named not read, with the reader's reason.
+//
+// A list of Key=Value strings is a parameters file only where one of its keys
+// is a parameter the root template declares, so a list of environment
+// variables is not taken for one; a file may set parameters a template does
+// not declare, which the AWS CLI leaves unused, so one key suffices. A request
+// holding no template halts source-refused; several parameters files are none
+// read, with a parameter-files-not-read warning naming them.
 func (r *reader) selectSources(srcs []*handed, s cloudimport.Settings) *selection {
 	byPath := map[string]*handed{}
 	for _, h := range srcs {
 		byPath[path.Clean(h.name())] = h
 	}
+	named := func(h *handed) bool { return s.Root != "" && path.Clean(s.Root) == path.Clean(h.name()) }
 	var queue []*handed
 	for _, h := range srcs {
+		if named(h) && h.refusal == nil && kind(h.top.get("Resources")) == '{' {
+			h.template = true
+		}
 		if h.template {
 			queue = append(queue, h)
 		}
@@ -195,12 +210,15 @@ func (r *reader) selectSources(srcs []*handed, s cloudimport.Settings) *selectio
 	}
 
 	for _, h := range srcs {
-		if h.refusal == nil || (h.form != formNone && !h.linked) {
-			continue
-		}
-		named := s.Root != "" && path.Clean(s.Root) == path.Clean(h.name())
-		if len(srcs) == 1 || named || h.linked || bytes.Contains(h.src.Bytes, []byte(versionKey)) {
+		switch {
+		case h.refusal == nil:
+		case len(srcs) == 1, named(h):
 			r.halt(importer.ParseFailed(h.src, formatName, h.refusal))
+		case h.form != formNone && !h.linked:
+		case s.Root == "" && bytes.Contains(h.src.Bytes, []byte(versionKey)):
+			r.halt(importer.ParseFailed(h.src, formatName, fmt.Errorf("%w; it is read as a template, as its text "+
+				"holds "+versionKey+": where it is no template the import reads, set root to the path of the "+
+				"template the import starts from, and it is named not read", h.refusal)))
 		}
 	}
 	if r.halted {
@@ -211,6 +229,14 @@ func (r *reader) selectSources(srcs []*handed, s cloudimport.Settings) *selectio
 	for _, h := range srcs {
 		if h.template {
 			units = append(units, cloudimport.Unit{Path: h.name(), Links: links(h.top)})
+		}
+	}
+	for _, h := range srcs {
+		if named(h) && !h.template {
+			r.halt(cloudimport.Report(cloudimport.CodeSourceRefused, "the root setting names "+h.name()+", which "+
+				"holds no Resources object, so it is no template the import can start from: set root to the path "+
+				"of a template, one holding Resources"))
+			return nil
 		}
 	}
 	if len(units) == 0 {
@@ -228,6 +254,7 @@ func (r *reader) selectSources(srcs []*handed, s cloudimport.Settings) *selectio
 
 	sel := &selection{root: byPath[path.Clean(root.Path)]}
 	reads := map[*handed]bool{}
+	refusedLink := map[*handed]bool{}
 	queue = []*handed{sel.root}
 	for len(queue) > 0 {
 		h := queue[0]
@@ -237,12 +264,26 @@ func (r *reader) selectSources(srcs []*handed, s cloudimport.Settings) *selectio
 		}
 		reads[h] = true
 		for _, link := range links(h.top) {
-			if target, inside := linked(h.name(), link); inside && byPath[target] != nil && byPath[target].template {
-				queue = append(queue, byPath[target])
+			target, inside := linked(h.name(), link)
+			switch t := byPath[target]; {
+			case !inside || t == nil:
+			case t.template:
+				queue = append(queue, t)
+			case t.refusal != nil:
+				refusedLink[t] = true
 			}
 		}
 	}
+	for _, h := range srcs {
+		if refusedLink[h] {
+			r.halt(importer.ParseFailed(h.src, formatName, h.refusal))
+		}
+	}
+	if r.halted {
+		return nil
+	}
 
+	declared, _ := objectOf(sel.root.top.get("Parameters"))
 	var params []*handed
 	var refused []*handed
 	for _, h := range srcs {
@@ -252,7 +293,8 @@ func (r *reader) selectSources(srcs []*handed, s cloudimport.Settings) *selectio
 			sel.read = append(sel.read, h.name())
 		case h.template:
 			sel.notRead = append(sel.notRead, h.name())
-		case h.form != formNone:
+		case !h.linked && (h.form == formList || h.form == formObject ||
+			h.form == formPairs && setsAny(h.tree, declared)):
 			params = append(params, h)
 		case h.refusal != nil:
 			refused = append(refused, h)
@@ -287,4 +329,17 @@ func (r *reader) selectSources(srcs []*handed, s cloudimport.Settings) *selectio
 	slices.Sort(sel.read)
 	slices.Sort(sel.notRead)
 	return sel
+}
+
+// setsAny reports whether the list of Key=Value strings tree sets one of the
+// parameters declared.
+func setsAny(tree json.RawMessage, declared obj) bool {
+	items, _ := itemsOf(tree)
+	for _, item := range items {
+		pair, _ := schemadraft.JSONText(item)
+		if key, _, _ := strings.Cut(pair, "="); declared.get(key) != nil {
+			return true
+		}
+	}
+	return false
 }
