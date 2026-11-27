@@ -47,8 +47,9 @@ func (b *Budget) Spend(n int) bool {
 	return true
 }
 
-// Size returns how large v is: the bytes of the text and JSON it holds, and
-// one for each part of composed text.
+// Size returns how large v is: the bytes of the text and JSON it holds, a
+// stored secret's reference text among them, and one for each part of
+// composed text.
 func Size(v Value) int {
 	switch v := v.(type) {
 	case Literal:
@@ -70,6 +71,8 @@ func Size(v Value) int {
 	case Credential:
 		return len(v.Node) + len(v.What)
 	case Opaque:
+		return len(v.Text)
+	case Stored:
 		return len(v.Text)
 	}
 	return 0

@@ -9,8 +9,9 @@ import (
 )
 
 // TestSizeMeasuresTextAndParts measures each kind of value by the bytes of
-// the text and JSON it holds, one more for each part of composed text, and a
-// property by its value and one more for each member and item.
+// the text and JSON it holds — a stored secret by its reference text — one
+// more for each part of composed text, and a property by its value and one
+// more for each member and item.
 func TestSizeMeasuresTextAndParts(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {
@@ -23,7 +24,7 @@ func TestSizeMeasuresTextAndParts(t *testing.T) {
 		{Credential{Node: "Db", What: "SecretString"}, 14},
 		{Opaque{Text: "!Ref AWS::Region", Target: "cloudformation", Params: []string{"Env"}}, 16},
 		{Compose{Parts: []Value{Param{Name: "Env"}, Text("-net")}}, 1 + 3 + 1 + 6},
-		{Stored{Store: "ssm-secure", Locator: "/db", Text: "{{resolve:ssm-secure:/db}}"}, 0},
+		{Stored{Store: "ssm-secure", Locator: "/db", Text: "{{resolve:ssm-secure:/db}}"}, len("{{resolve:ssm-secure:/db}}")},
 		{nil, 0},
 	} {
 		if got := Size(c.v); got != c.want {
