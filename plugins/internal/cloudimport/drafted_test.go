@@ -377,3 +377,40 @@ func TestHeldBackDraftsNothingAndIsNamed(t *testing.T) {
 		t.Errorf("the Release writes an entry for the held-back queue:\n%s", release)
 	}
 }
+
+// TestDraftedListOfScalarsIsOneInput drafts a resource writing lists of
+// scalars — literals and a parameter's value, at the top and inside an object
+// — each as one input at the list's path, under its name in infra.overrides,
+// the Release writing the list whole; a list holding a neighbour's value keeps
+// its item, into which a connection delivers it.
+func TestDraftedListOfScalarsIsOneInput(t *testing.T) {
+	var written []schemadraft.Resource
+	f := toyFormat(nil)
+	draft := fixtureDraft(&written)
+	draft.Name, draft.Capability, draft.Syntax = f.Draft.Name, f.Draft.Capability, f.Draft.Syntax
+	f.Draft = draft
+	out := Import(toyInput(t, "toy", "", []string{"lists.json"}), f, toyParse)
+	noHalt(t, out.Diagnostics)
+	if len(written) != 1 {
+		t.Fatalf("the writer is handed %d resources, want the queue alone", len(written))
+	}
+	var inputs []string
+	for _, in := range written[0].Inputs {
+		inputs = append(inputs, pathText(in.Property.Path)+" from "+in.Source.Template())
+	}
+	if want := []string{`name from (index .values "name")`, `location from (index .infra "location")`,
+		`zones from (index .infra "overrides" "zones")`, `ports from (index .infra "overrides" "ports")`,
+		`cors.methods from (index .infra "overrides" "methods")`,
+		`peers.0 from (index (default dict .context.inject) "property" "peers_0")`}; !slices.Equal(inputs, want) {
+		t.Errorf("the queue's Recipe reads\n%q\nwant\n%q", inputs, want)
+	}
+	wantBlock(t, fileOf(t, out, "release.yaml"), "queue", `    queue:
+      infra:
+        location: "westeurope"
+        overrides:
+          # From the template parameter zone, its literal default.
+          zones: ["1", "2", "3"]
+          ports: [80, 443]
+          methods: ["GET", "PUT"]
+`)
+}

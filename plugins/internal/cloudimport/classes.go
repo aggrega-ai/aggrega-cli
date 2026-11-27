@@ -4,6 +4,7 @@
 package cloudimport
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -790,14 +791,16 @@ type writtenProp struct {
 }
 
 // union returns every property any of nodes writes, as Classify states: the
-// properties the Component and the Recipe of nodes are drafted from.
+// properties the Component and the Recipe of nodes are drafted from. A list
+// every item of which is a scalar, as listedScalar says, is one property at
+// the list's path, typed from its items, and a secret where one of them is:
+// its items are no properties of their own.
 func (c *classifier) union(nodes []*Node) []*writtenProp {
 	var props []*writtenProp
 	at := map[string]*writtenProp{}
 	spelled := map[string]string{}
-	add := func(path []string, v Value, identity bool) {
+	add := func(path []string, raw json.RawMessage, secret, identity bool) {
 		path = spelling(spelled, path)
-		raw, secret := c.typedValue(v)
 		if p := at[foldedPath(path)]; p != nil {
 			p.secret, p.identity = p.secret || secret, p.identity || identity
 			return
@@ -808,13 +811,61 @@ func (c *classifier) union(nodes []*Node) []*writtenProp {
 	}
 	for _, n := range nodes {
 		if n.Name != nil {
-			add([]string{"name"}, n.Name, true)
+			raw, secret := c.typedValue(n.Name)
+			add([]string{"name"}, raw, secret, true)
 		}
-		for _, l := range leaves(n.Body) {
-			add(l.path, l.value, false)
+		for _, l := range leavesWith(n.Body, c.listedScalar) {
+			raw, secret := c.typedLeaf(l)
+			add(l.path, raw, secret, false)
 		}
 	}
 	return outermost(props)
+}
+
+// listedScalar reports whether v, an item of a list, is a scalar the list a
+// draft reads whole holds: a literal string, number or boolean, the value of
+// a parameter of a scalar type, deploy-time text, a stored secret's
+// reference, or a composition of these. A reference to another resource or a
+// credential read from one is none, as a connection delivers the one and the
+// draft names the other at the item's own path.
+func (c *classifier) listedScalar(v Value) bool {
+	switch v := v.(type) {
+	case Literal:
+		_, st := literalText(v.JSON)
+		return st == stateRead
+	case Param:
+		p := c.param(v.Name)
+		if p == nil {
+			return false
+		}
+		_, st := literalText(zeroOf(*p))
+		return st == stateRead
+	case Opaque, Stored:
+		return true
+	case Compose:
+		return !slices.ContainsFunc(v.Parts, func(part Value) bool { return !c.listedScalar(part) })
+	}
+	return false
+}
+
+// typedLeaf returns the JSON a drafted property is typed from for the leaf l,
+// and whether l is a secret, as typedValue does; for a list of scalars, the
+// list of its items' JSON, a secret where one of them is.
+func (c *classifier) typedLeaf(l leafAt) (json.RawMessage, bool) {
+	if l.items == nil {
+		return c.typedValue(l.value)
+	}
+	parts := make([]string, len(l.items))
+	secret := false
+	for i, item := range l.items {
+		raw, s := c.typedValue(item)
+		secret = secret || s
+		parts[i] = "null"
+		if len(bytes.TrimSpace(raw)) > 0 {
+			parts[i] = string(raw)
+		}
+	}
+	return json.RawMessage("[" + strings.Join(parts, ",") + "]"), secret
 }
 
 // written returns the resource the Component and the Recipe of grp are
@@ -1128,38 +1179,66 @@ func origin(r *Row) string {
 }
 
 // leafAt is one leaf of a node's properties: the path it sits at and its
-// value, nil for an object or array the source writes with nothing in it.
+// value, nil for an object or array the source writes with nothing in it; or,
+// read by leavesWith, a list read whole, the values of its items in order.
 type leafAt struct {
 	path  []string
 	value Value
+	items []Value
 }
 
 // leaves returns the leaves of body in its order: each member's and each
 // item's leaves at their paths, an item's segment its index in decimal.
 func leaves(body []Prop) []leafAt {
+	return leavesWith(body, nil)
+}
+
+// leavesWith returns the leaves of body as leaves does, but for each list
+// every item of which is a value whole holds, which is one leaf at the list's
+// path holding its items; a nil whole reads no list whole.
+func leavesWith(body []Prop, whole func(Value) bool) []leafAt {
 	var out []leafAt
 	for _, p := range body {
-		out = leavesOf(out, p, []string{p.Name})
+		out = leavesOf(out, p, []string{p.Name}, whole)
 	}
 	return out
 }
 
-func leavesOf(out []leafAt, p Prop, path []string) []leafAt {
+func leavesOf(out []leafAt, p Prop, path []string, whole func(Value) bool) []leafAt {
 	switch {
 	case p.Value != nil:
 		return append(out, leafAt{path: path, value: p.Value})
 	case len(p.Props) > 0:
 		for _, m := range p.Props {
-			out = leavesOf(out, m, extend(path, m.Name))
+			out = leavesOf(out, m, extend(path, m.Name), whole)
 		}
 	case len(p.Items) > 0:
+		if items, ok := wholeList(p.Items, whole); ok {
+			return append(out, leafAt{path: path, items: items})
+		}
 		for i, item := range p.Items {
-			out = leavesOf(out, item, extend(path, strconv.Itoa(i)))
+			out = leavesOf(out, item, extend(path, strconv.Itoa(i)), whole)
 		}
 	default:
 		out = append(out, leafAt{path: path})
 	}
 	return out
+}
+
+// wholeList returns the values of items, false unless whole holds of each,
+// an item holding no members and no items of its own.
+func wholeList(items []Prop, whole func(Value) bool) ([]Value, bool) {
+	if whole == nil {
+		return nil, false
+	}
+	values := make([]Value, len(items))
+	for i, item := range items {
+		if item.Value == nil || len(item.Props) > 0 || len(item.Items) > 0 || !whole(item.Value) {
+			return nil, false
+		}
+		values[i] = item.Value
+	}
+	return values, true
 }
 
 // readsList names each node and parameter n's properties read, with the

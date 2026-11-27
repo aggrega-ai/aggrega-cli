@@ -1,0 +1,13 @@
+{
+  "parameters": [
+    {"name": "zone", "type": "string", "default": "3"}
+  ],
+  "resources": [
+    {"id": "db", "type": "Toy.Data/servers", "name": "pg-main",
+     "properties": {"location": "westeurope", "version": "16"}},
+    {"id": "queue", "type": "Toy.Messaging/queues", "name": "orders",
+     "properties": {"location": "westeurope", "zones": ["1", "2", {"$param": "zone"}], "ports": [80, 443],
+                    "cors": {"methods": ["GET", "PUT"]},
+                    "peers": [{"$ref": "db", "attr": ["host"]}]}}
+  ]
+}
