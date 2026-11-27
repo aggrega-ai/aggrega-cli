@@ -1,0 +1,36 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: task-ecs
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/compute/task:1.0.0
+
+  provides:
+    arn: "${module.{{ .context.instance_id }}.arn}"
+
+  artifacts:
+    main.tf: |
+      resource "aws_ecs_task_definition" "this" {
+        family = "{{ .context.instance_id }}"
+        container_definitions = jsonencode([{ name = "main", image = "{{ .infra.image }}" }])
+      }
+
+      resource "aws_scheduler_schedule" "this" {
+        count               = {{ if .values.schedule }}1{{ else }}0{{ end }}
+        name                = "{{ .context.instance_id }}"
+        schedule_expression = "{{ .values.schedule }}"
+
+        target {
+          arn = "{{ .infra.overrides.cluster }}"
+
+          ecs_parameters {
+            task_definition_arn = aws_ecs_task_definition.this.arn
+          }
+        }
+      }
+
+      output "arn" {
+        value = aws_ecs_task_definition.this.arn
+      }

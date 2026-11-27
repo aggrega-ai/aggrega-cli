@@ -141,6 +141,20 @@ func TestTheCloudFormationTableIsWhatTheHubGenerates(t *testing.T) {
 	checkTableIsWhatTheHubGenerates(t, cfnFormatOrFail(t))
 }
 
+// TestTheTerraformTableIsWhatTheHubGenerates is the check of
+// TestTheArmTableIsWhatTheHubGenerates for the Terraform importer's table, its
+// slot features included, regenerated with
+// `go generate ./plugins/internal/tfimport`.
+//
+// 🔴 PLANTED DEFECTS: edit one generated row of tfimport/table_gen.go by hand,
+// or name a revision the hub holds no commit of — the cases below do each to a
+// copy — and the check names it; a copy naming an older commit that changed
+// what the table reads, its rows the same, passes.
+func TestTheTerraformTableIsWhatTheHubGenerates(t *testing.T) {
+	t.Parallel()
+	checkTableIsWhatTheHubGenerates(t, tfFormatOrFail(t))
+}
+
 // checkTableIsWhatTheHubGenerates regenerates f's table from [hub] and
 // requires the committed one to be what it writes, and each planted defect
 // to be named.
@@ -272,6 +286,17 @@ func TestEveryArmRecipeIsAccountedFor(t *testing.T) {
 func TestEveryCloudFormationRecipeIsAccountedFor(t *testing.T) {
 	t.Parallel()
 	checkEveryRecipeIsAccountedFor(t, cfnFormatOrFail(t))
+}
+
+// TestEveryTerraformRecipeIsAccountedFor is the check of
+// TestEveryArmRecipeIsAccountedFor for the Terraform importer's table.
+//
+// 🔴 PLANTED DEFECT: delete a row — the case below does so to a copy of the
+// table, dropping a generated row no other row's Recipe shares — and the
+// check names its Recipe.
+func TestEveryTerraformRecipeIsAccountedFor(t *testing.T) {
+	t.Parallel()
+	checkEveryRecipeIsAccountedFor(t, tfFormatOrFail(t))
 }
 
 // checkEveryRecipeIsAccountedFor requires every Recipe and FeatureRecipe of
@@ -410,16 +435,37 @@ func TestEveryCloudFormationHandRowNamesAHubEntity(t *testing.T) {
 	t.Parallel()
 	f := cfnFormatOrFail(t)
 	checkEveryHandRowNamesAHubEntity(t, f, "AWS::Planted::Needle")
+	checkHandWhensNameHubRecipes(t, f, []string{"Properties", "X"})
+}
 
+// TestEveryTerraformHandRowNamesAHubEntity is the check of
+// TestEveryCloudFormationHandRowNamesAHubEntity for the Terraform importer's
+// table.
+//
+// 🔴 PLANTED DEFECTS: name a Component the hub does not hold in a hand row,
+// give one a category other than its Component's, a trait its Component does
+// not carry, or write Whens for a Recipe the hub does not hold — the cases
+// below add each to a copy of the table — and the check names it.
+func TestEveryTerraformHandRowNamesAHubEntity(t *testing.T) {
+	t.Parallel()
+	f := tfFormatOrFail(t)
+	checkEveryHandRowNamesAHubEntity(t, f, "aws_planted_needle")
+	checkHandWhensNameHubRecipes(t, f, []string{"planted"})
+}
+
+// checkHandWhensNameHubRecipes requires Whens written by hand for a Recipe
+// [hub] does not hold, each a When at the path given, to be named.
+func checkHandWhensNameHubRecipes(t *testing.T, f format, path []string) {
+	t.Helper()
 	h := loadHubOrFail(t, f)
 	whens := f.whens()
 	f.whens = func() map[string][][]cloudimport.Pred {
 		out := maps.Clone(whens)
-		out["planted-needle"] = [][]cloudimport.Pred{{{Path: []string{"Properties", "X"}, Op: cloudimport.OpPresent}}}
+		out["planted-needle"] = [][]cloudimport.Pred{{{Path: path, Op: cloudimport.OpPresent}}}
 		return out
 	}
 	if found := missingEntities(h, f.table(), f); !slices.ContainsFunc(found, func(d string) bool {
-		return strings.Contains(d, "Whens are written for the Recipe cloudformation/planted-needle")
+		return strings.Contains(d, "Whens are written for the Recipe "+f.capability+"/planted-needle")
 	}) {
 		t.Errorf("Whens written for a Recipe the hub does not hold pass the existence check: %v", found)
 	}

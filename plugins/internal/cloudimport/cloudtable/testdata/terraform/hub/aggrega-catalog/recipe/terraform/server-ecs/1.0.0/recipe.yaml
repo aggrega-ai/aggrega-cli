@@ -1,0 +1,43 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: server-ecs
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/compute/server:1.0.0
+
+  provides:
+    name: "${module.{{ .context.instance_id }}.name}"
+
+  artifacts:
+    main.tf: |
+      resource "aws_cloudwatch_log_group" "logs" {
+        name = "/ecs/{{ .context.instance_id }}"
+      }
+
+      resource "aws_ecs_task_definition" "this" {
+        family = "{{ .context.instance_id }}"
+        cpu    = "{{ .infra.compute.cpu }}"
+        container_definitions = jsonencode([
+          {
+            name  = "main"
+            image = "{{ .infra.image }}"
+            logConfiguration = {
+              options = {
+                "awslogs-group" = aws_cloudwatch_log_group.logs.name
+              }
+            }
+          }
+        ])
+      }
+
+      resource "aws_ecs_service" "this" {
+        name            = "{{ .context.instance_id }}"
+        task_definition = aws_ecs_task_definition.this.arn
+        desired_count   = {{ .infra.replicas }}
+      }
+
+      output "name" {
+        value = aws_ecs_service.this.name
+      }

@@ -1,0 +1,32 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: redis-elasticache
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/datastore/redis:1.0.0
+
+  source:
+    kind: git-repository
+    url: https://github.com/terraform-aws-modules/terraform-aws-elasticache.git
+    ref: v1.0.0
+
+  provides:
+    host: "{{ if .infra.overrides.host }}{{ .infra.overrides.host }}{{ else }}${module.{{ .context.instance_id }}.primary_endpoint_address}{{ end }}"
+    port: "{{ .infra.port }}"
+
+  # This Recipe reads from infra.overrides:
+  #   node_type    - string (node_type; default "cache.t4g.small")
+  #   subnet_group - string (subnet_group_name), required
+
+  valuesMapping: |
+    replication_group_id: "{{ .context.instance_id }}"
+    engine: "redis"
+    engine_version: "{{ .infra.engine_version }}"
+    port: {{ .infra.port }}
+    node_type: "{{ optional .infra.overrides "node_type" "cache.t4g.small" }}"
+    subnet_group_name: "{{ .infra.overrides.subnet_group }}"
+    parameter_group_family: "redis7"
+    maintenance:
+      window: "{{ .values.maintenance_window }}"

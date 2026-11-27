@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: server-cloud-run
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/compute/server:1.0.0
+
+  source: ./module
+
+  # This Recipe reads from infra.overrides:
+  #   region          - string (config.region), required
+  #   service_account - string (config.service_account)
+  #   ingress         - string (config.ingress)
+
+  artifacts:
+    service:
+      $import: CloudRunModule#/artifacts/Service
+
+  provides:
+    url: "${module.{{ .context.instance_id }}.service.uri}"
+    name: "${module.{{ .context.instance_id }}.service.name}"
+
+  valuesMapping:
+    $import: CloudRunArguments#/mappings/ServiceArguments

@@ -1,0 +1,45 @@
+apiVersion: aggrega.ai/v1beta1
+kind: ArtifactLibrary
+metadata:
+  name: CloudRunModule
+  version: 1.0.0
+spec:
+  artifacts:
+    Service:
+      main.tf: |
+        variable "config" {
+          type = any
+        }
+
+        resource "google_secret_manager_secret" "file" {
+          secret_id = "${var.config.name}-file"
+        }
+
+        resource "google_cloud_run_v2_service" "this" {
+          name            = var.config.name
+          location        = var.config.region
+          ingress         = var.config.ingress == null ? "INGRESS_TRAFFIC_ALL" : var.config.ingress
+
+          template {
+            service_account = var.config.service_account
+
+            containers {
+              image = var.config.image
+            }
+
+            volumes {
+              name = "file"
+              secret {
+                secret = google_secret_manager_secret.file.secret_id
+              }
+            }
+          }
+        }
+
+        output "uri" {
+          value = google_cloud_run_v2_service.this.uri
+        }
+
+        output "name" {
+          value = "${google_cloud_run_v2_service.this.name}"
+        }

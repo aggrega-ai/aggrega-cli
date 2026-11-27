@@ -1,0 +1,9 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Component
+metadata:
+  name: core/messaging/rabbitmq
+  version: 1.0.0
+  labels:
+    component.aggrega.ai/category: messaging
+    component.aggrega.ai/type: stateful-server
+spec: {}

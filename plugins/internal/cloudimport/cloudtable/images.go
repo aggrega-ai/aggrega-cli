@@ -39,7 +39,11 @@ func imageRowOf(r recipeSource) (cloudimport.ImageRow, bool) {
 		return cloudimport.ImageRow{}, false
 	}
 	row := cloudimport.ImageRow{Repository: repository, Component: r.component, Recipe: r.name}
-	for _, text := range append([]string{r.valuesMapping}, r.fragments...) {
+	texts := []string{r.valuesMapping}
+	for _, f := range r.fragments {
+		texts = append(texts, f.text)
+	}
+	for _, text := range texts {
 		if readsInfraKey(text, imageKey) {
 			row.ImageKey = imageKey
 			break

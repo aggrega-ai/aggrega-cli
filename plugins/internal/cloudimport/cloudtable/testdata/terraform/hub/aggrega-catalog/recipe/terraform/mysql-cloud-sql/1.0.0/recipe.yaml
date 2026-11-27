@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: mysql-cloud-sql
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/datastore/mysql:1.0.0
+
+  source:
+    kind: git-repository
+    url: https://github.com/terraform-google-modules/terraform-google-sql-db.git
+    ref: v28.0.0
+    module_subdir: modules/mysql
+
+  provides:
+    host: "${module.{{ .context.instance_id }}.private_ip_address}"
+
+  valuesMapping: |
+    name: "{{ .context.instance_id }}"
+    database_version: "MYSQL_8_0"
+    db_name: "{{ .values.database }}"
+    disk_size: {{ trimSuffix "Gi" .infra.storage.size }}

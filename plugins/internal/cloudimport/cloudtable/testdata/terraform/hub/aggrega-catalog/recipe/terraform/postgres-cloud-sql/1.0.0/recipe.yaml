@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: postgres-cloud-sql
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/datastore/postgres:1.0.0
+
+  source:
+    kind: git-repository
+    url: https://github.com/terraform-google-modules/terraform-google-sql-db.git
+    ref: v28.0.0
+    module_subdir: modules/postgresql
+
+  provides:
+    host: "${module.{{ .context.instance_id }}.private_ip_address}"
+
+  valuesMapping: |
+    name: "{{ .context.instance_id }}"
+    database_version: "POSTGRES_16"
+    db_name: "{{ .values.database }}"
+    disk_size: {{ trimSuffix "Gi" .infra.storage.size }}

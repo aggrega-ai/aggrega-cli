@@ -186,35 +186,39 @@ func writeRequires(b *bytes.Buffer, reqs []cloudimport.Requirement) {
 }
 
 // renderTable writes f's table: the rows and the image rows as render writes
-// them and, for a format whose table lists them, after them the feature types
+// them and after them, for a format whose table lists them, the feature types
 // the Recipes admit at a credential slot, ordered by Recipe and slot, and how
 // each Recipe names the resource that is its instance, ordered by Recipe,
 // formatted as gofmt formats it.
 func renderTable(rows []cloudimport.Row, images []cloudimport.ImageRow, facts recipeFacts, revision string,
 	f format) ([]byte, error) {
 	content, err := render(rows, images, revision, f)
-	if err != nil || !f.slots {
+	if err != nil || !f.slots && !f.logicalIDs {
 		return content, err
 	}
 	b := bytes.NewBuffer(content)
-	fmt.Fprintf(b, "\n// generatedSlotFeatures are the feature types the hub's %s Recipes admit at a\n",
-		f.capability)
-	b.WriteString("// credential slot, one per Recipe and slot whose assertions admit one alone,\n")
-	b.WriteString("// ordered by Recipe and slot.\n")
-	b.WriteString("var generatedSlotFeatures = []SlotFeature{\n")
-	for _, s := range facts.slots {
-		fmt.Fprintf(b, "{Recipe: %q, Slot: %q, Feature: %q},\n", s.recipe, s.slot, s.feature)
+	if f.slots {
+		fmt.Fprintf(b, "\n// generatedSlotFeatures are the feature types the hub's %s Recipes admit at a\n",
+			f.capability)
+		b.WriteString("// credential slot, one per Recipe and slot whose assertions admit one alone,\n")
+		b.WriteString("// ordered by Recipe and slot.\n")
+		b.WriteString("var generatedSlotFeatures = []SlotFeature{\n")
+		for _, s := range facts.slots {
+			fmt.Fprintf(b, "{Recipe: %q, Slot: %q, Feature: %q},\n", s.recipe, s.slot, s.feature)
+		}
+		b.WriteString("}\n")
 	}
-	b.WriteString("}\n")
-	fmt.Fprintf(b, "\n// generatedLogicalIDs are how the hub's %s Recipes name the resource that is\n",
-		f.capability)
-	b.WriteString("// their instance: the capitalised words of the instance's key followed by\n")
-	b.WriteString("// Suffix, one per Recipe whose text keys it so, ordered by Recipe.\n")
-	b.WriteString("var generatedLogicalIDs = []RecipeLogicalID{\n")
-	for _, id := range facts.ids {
-		fmt.Fprintf(b, "{Recipe: %q, Suffix: %q},\n", id.recipe, id.suffix)
+	if f.logicalIDs {
+		fmt.Fprintf(b, "\n// generatedLogicalIDs are how the hub's %s Recipes name the resource that is\n",
+			f.capability)
+		b.WriteString("// their instance: the capitalised words of the instance's key followed by\n")
+		b.WriteString("// Suffix, one per Recipe whose text keys it so, ordered by Recipe.\n")
+		b.WriteString("var generatedLogicalIDs = []RecipeLogicalID{\n")
+		for _, id := range facts.ids {
+			fmt.Fprintf(b, "{Recipe: %q, Suffix: %q},\n", id.recipe, id.suffix)
+		}
+		b.WriteString("}\n")
 	}
-	b.WriteString("}\n")
 	formatted, err := gofmt.Source(b.Bytes())
 	if err != nil {
 		return nil, fmt.Errorf("format the generated table: %w", err)

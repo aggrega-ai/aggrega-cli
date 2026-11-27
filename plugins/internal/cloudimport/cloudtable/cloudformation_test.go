@@ -49,14 +49,22 @@ func cfnFormatOrFail(t *testing.T) format {
 // named Recipe of cfnFaults beside its own.
 func cfnHubWith(t *testing.T, faults ...string) string {
 	t.Helper()
+	return hubWithFaults(t, cfnMiniatureHub, cfnFaults, "cloudformation", faults...)
+}
+
+// hubWithFaults returns a copy of the miniature hub at hub holding, beside its
+// own, each named Recipe of the directory faults, written as the capability's
+// Recipe of that name at 1.0.0.
+func hubWithFaults(t *testing.T, hub, faults, capability string, names ...string) string {
+	t.Helper()
 	root := t.TempDir()
-	copyTree(t, cfnMiniatureHub, root)
-	for _, name := range faults {
-		body, err := os.ReadFile(filepath.Join(cfnFaults, name+".yaml"))
+	copyTree(t, hub, root)
+	for _, name := range names {
+		body, err := os.ReadFile(filepath.Join(faults, name+".yaml"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		dir := filepath.Join(root, "aggrega-catalog", "recipe", "cloudformation", name, "1.0.0")
+		dir := filepath.Join(root, "aggrega-catalog", "recipe", capability, name, "1.0.0")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}

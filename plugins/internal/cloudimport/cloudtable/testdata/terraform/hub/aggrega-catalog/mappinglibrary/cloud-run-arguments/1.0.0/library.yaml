@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1beta1
+kind: MappingLibrary
+metadata:
+  name: CloudRunArguments
+  version: 1.0.0
+spec:
+  mappings:
+    ServiceArguments: |
+      {{- $o := optional .infra "overrides" dict }}
+      config:
+        name: {{ toJson .context.instance_id }}
+        image: "{{ .infra.image }}"
+        region: {{ toJson $o.region }}
+        {{- with optional $o "service_account" "" }}
+        service_account: {{ toJson . }}
+        {{- end }}

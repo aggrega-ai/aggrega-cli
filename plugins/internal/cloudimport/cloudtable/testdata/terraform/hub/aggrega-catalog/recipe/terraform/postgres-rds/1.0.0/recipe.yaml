@@ -1,0 +1,65 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: postgres-rds
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/datastore/postgres:1.0.0
+
+  locals:
+    db_identifier: "{{ .context.instance_id }}"
+    operator_host: '{{ optional (optional .infra "overrides" dict) "host" "" }}'
+
+  provides:
+    host: "{{ if .locals.operator_host }}{{ .locals.operator_host }}{{ else }}${module.{{ .context.instance_id }}.address}{{ end }}"
+    port: "{{ .infra.port }}"
+
+  # This Recipe reads from infra.overrides:
+  #   instance_class - string (instance_class; default "db.t3.small")
+  #   subnet_group   - string (db_subnet_group_name), required
+  #   host           - string (published as provides.host; renders nothing)
+  assertions:
+    credentials: >-
+      {{- $f := default dict .features -}}
+      {{- if hasKey $f "password" -}}
+      {{- if ne (first (splitList ":" (toString (optional $f.password "type" "")))) "core/generated-secret" -}}
+      {{- fail "the password slot takes core/generated-secret alone" -}}
+      {{- end -}}
+      {{- end -}}
+
+  artifacts:
+    main.tf: |
+      {{- /* The retention, read once for the body below. */ -}}
+      {{- $retention := 7 -}}
+      resource "aws_db_instance" "{{ .locals.db_identifier }}" {
+        identifier     = "{{ .locals.db_identifier }}"
+        engine         = "postgres"
+        engine_version = "{{ .infra.engine_version }}"
+        port           = {{ .infra.port }}
+        {{- if .infra.overrides.instance_class }}
+        instance_class = "{{ .infra.overrides.instance_class }}"
+        {{- else }}
+        instance_class = "db.t3.small"
+        {{- end }}
+        allocated_storage = {{ trimSuffix "Gi" .infra.storage.size }}
+        storage_type      = "{{ .infra.storage.type | default "gp3" }}"
+        db_name           = "{{ .values.database }}"
+        username          = "{{ .values.user }}"
+        tags              = {{ toJson .infra.tags }}
+        backup_retention_period = {{ $retention }}
+        {{- with .infra.overrides.subnet_group }}
+        db_subnet_group_name = "{{ . }}"
+        {{- end }}
+      }
+
+      output "address" {
+        value = aws_db_instance.{{ .locals.db_identifier }}.address
+      }
+
+      {{- range $i := until (int .infra.replicas) }}
+      resource "aws_db_instance" "{{ $.locals.db_identifier }}_replica_{{ $i }}" {
+        replicate_source_db = aws_db_instance.{{ $.locals.db_identifier }}.identifier
+        storage_type        = "{{ $.infra.storage.type }}"
+      }
+      {{- end }}

@@ -6,6 +6,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -63,6 +64,9 @@ type hubCatalog struct {
 	// Component requires and declares no default for, with their types, an
 	// extending Component's read off the schema its resolved chain gives it.
 	requires map[string][]cloudimport.Requirement
+	// files holds the text of each file beneath the root the format reads
+	// beside the catalog, by its path there with slashes.
+	files map[string]string
 }
 
 // loadHub loads the catalog of the hub checkout at root for capability.
@@ -158,6 +162,50 @@ func (h *hubCatalog) recipe(name string) (types.Recipe, bool) {
 	return h.cat.RecipeByURI(h.capability + "/" + name)
 }
 
+// moduleFiles returns the files of the local directory dir a Recipe's source
+// names, which the catalog's load anchored to the Recipe's directory, each by
+// its path within dir with slashes, in lexical order; none where dir is no
+// directory, as a source naming no local path is not.
+func moduleFiles(dir string) ([]fragment, error) {
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return nil, nil
+	}
+	var out []fragment
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		out = append(out, fragment{name: filepath.ToSlash(rel), text: string(body)})
+		return nil
+	})
+	return out, err
+}
+
+// readFiles reads each file of paths, beneath the hub's root with slashes, that
+// the checkout holds, for every Recipe read after it to carry.
+func (h *hubCatalog) readFiles(paths []string) error {
+	h.files = map[string]string{}
+	for _, p := range paths {
+		body, err := os.ReadFile(filepath.Join(h.root, filepath.FromSlash(p)))
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+		case err != nil:
+			return fmt.Errorf("read %s of %s: %w", p, h.root, err)
+		default:
+			h.files[p] = string(body)
+		}
+	}
+	return nil
+}
+
 // importError is a Recipe's import the hub's catalog does not resolve.
 type importError struct {
 	identity, path, ref string
@@ -176,8 +224,9 @@ func (e *importError) Unwrap() error { return e.err }
 // read returns what an extractor reads of r, its valuesMapping and every file
 // of its artifacts resolved as a build resolves them: a library entry through
 // the catalog's libraries, and a file at the path the catalog's load anchored
-// to the Recipe's directory. An import that does not resolve is refused,
-// naming r and the reference.
+// to the Recipe's directory, each named as the output names it. The files of
+// the local directory its source names are read beside them. An import that
+// does not resolve is refused, naming r and the reference.
 func (h *hubCatalog) read(r types.Recipe) (recipeSource, error) {
 	identity := h.capability + "/" + r.Metadata.Name + ":" + r.Metadata.Version
 	rel := filepath.Join(recipeDir(h.capability), r.Metadata.Name, r.Metadata.Version, "recipe.yaml")
@@ -236,7 +285,7 @@ func (h *hubCatalog) read(r types.Recipe) (recipeSource, error) {
 			}
 			for _, name := range bundle.Files.Keys() {
 				body, _ := bundle.Files.Get(name)
-				out.fragments = append(out.fragments, body)
+				out.fragments = append(out.fragments, fragment{name: k + "/" + name, text: body})
 			}
 			continue
 		}
@@ -245,9 +294,17 @@ func (h *hubCatalog) read(r types.Recipe) (recipeSource, error) {
 			return refuse(a.Import, err)
 		}
 		if text != "" {
-			out.fragments = append(out.fragments, text)
+			out.fragments = append(out.fragments, fragment{name: k, text: text})
 		}
 	}
+	if dir, ok := r.Spec.Source.(string); ok {
+		module, err := moduleFiles(dir)
+		if err != nil {
+			return refuse(dir, err)
+		}
+		out.module = module
+	}
+	out.hubFiles = h.files
 
 	if document, ok := h.cat.EntityBytes("Recipe", identity); ok {
 		out.document = string(document)

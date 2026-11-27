@@ -4,6 +4,7 @@
 package main
 
 import (
+	"maps"
 	"regexp"
 	"slices"
 	"strconv"
@@ -19,17 +20,24 @@ import (
 // calls an action makes, parsed with the build's own function set and walked
 // by the walk every reader of a template's pipelines shares.
 
-// span is one action of a line: where it starts and ends, and its text less
-// its delimiters and trim markers.
+// span is one action of a line: where it starts and ends, its text less its
+// delimiters and trim markers, and whether it is a comment.
 type span struct {
 	start, end int
 	inner      string
+	comment    bool
 }
 
 // scanActions returns the actions text writes, in order; a quoted string inside
 // an action may hold braces of its own, and an action left open runs to the
 // end of text. A comment action is passed over.
 func scanActions(text string) []span {
+	return slices.DeleteFunc(scanAllActions(text), func(s span) bool { return s.comment })
+}
+
+// scanAllActions returns the actions text writes as scanActions does, each
+// comment action among them.
+func scanAllActions(text string) []span {
 	var out []span
 	for i := 0; i < len(text); {
 		open := strings.Index(text[i:], "{{")
@@ -61,9 +69,7 @@ func scanActions(text string) []span {
 		if strings.HasSuffix(inner, " -") {
 			inner = strings.TrimSpace(strings.TrimSuffix(inner, "-"))
 		}
-		if !strings.HasPrefix(inner, "/*") {
-			out = append(out, span{start: open, end: end, inner: inner})
-		}
+		out = append(out, span{start: open, end: end, inner: inner, comment: strings.HasPrefix(inner, "/*")})
 		i = end
 	}
 	return out
@@ -117,9 +123,16 @@ type pipeAt struct {
 // range, which rebind it — so a field the value reads is the field of that
 // data. false where the template does not parse, or the value holds no action.
 func (d templateDoc) readsData(l leaf) bool {
+	return readsDataIn(d.pipes, l.at, l.at+len(l.value))
+}
+
+// readsDataIn reports whether every pipeline of pipes starting from start to
+// end sees the dot as the data the template is handed; false where none
+// starts there.
+func readsDataIn(pipes []pipeAt, start, end int) bool {
 	seen := false
-	for _, p := range d.pipes {
-		if p.pos >= l.at && p.pos < l.at+len(l.value) {
+	for _, p := range pipes {
+		if p.pos >= start && p.pos < end {
 			if !p.dotIsData {
 				return false
 			}
@@ -239,13 +252,23 @@ func readTemplateYAML(text string) templateDoc {
 				conditional: conditional})
 		}
 	}
-	if root, err := gotmpl.ParseTree(text, "{{", "}}"); err == nil {
-		doc.root = root
-		gotmpl.WalkPipelines(root, func(p *parse.PipeNode, dotIsData bool) {
-			doc.pipes = append(doc.pipes, pipeAt{pos: int(p.Pos), dotIsData: dotIsData})
-		})
-	}
+	doc.root, doc.pipes, _ = pipelinesOf(text)
 	return doc
+}
+
+// pipelinesOf parses text with the build's function set and returns its tree's
+// root and each of its pipelines by where it starts, read from the shared
+// walk; false, with neither, where text does not parse.
+func pipelinesOf(text string) (parse.Node, []pipeAt, bool) {
+	root, err := gotmpl.ParseTree(text, "{{", "}}")
+	if err != nil {
+		return nil, nil, false
+	}
+	var pipes []pipeAt
+	gotmpl.WalkPipelines(root, func(p *parse.PipeNode, dotIsData bool) {
+		pipes = append(pipes, pipeAt{pos: int(p.Pos), dotIsData: dotIsData})
+	})
+	return root, pipes, true
 }
 
 // actionsAlone reports whether line holds actions and nothing else.
@@ -425,4 +448,279 @@ func eachCommand(root parse.Node, visit func([]argument)) {
 			visit(args)
 		}
 	})
+}
+
+// symKind is what a reader of a template reads a pipeline to yield.
+type symKind int
+
+// The kinds of what a pipeline yields.
+const (
+	symOther symKind = iota
+	symData
+	symValues
+	symValue
+	symInfra
+	symInfraKey
+	symOverrides
+	symOverride
+	symFeatures
+	symSlot
+	symSlotPart
+	symSlotType
+	symLocals
+	symLocal
+	symContext
+	symInstanceID
+	symLogicalID
+	symLiteral
+)
+
+// sym is what a pipeline yields: its kind and the key, slot or literal text
+// it names, and whether a literal holds.
+type sym struct {
+	kind   symKind
+	key    string
+	truthy bool
+}
+
+// member returns what the member name of s yields.
+func (s sym) member(name string) sym {
+	switch s.kind {
+	case symData:
+		switch name {
+		case "values":
+			return sym{kind: symValues}
+		case "infra":
+			return sym{kind: symInfra}
+		case "features":
+			return sym{kind: symFeatures}
+		case "locals":
+			return sym{kind: symLocals}
+		case "context":
+			return sym{kind: symContext}
+		}
+	case symValues:
+		return sym{kind: symValue, key: name}
+	case symValue:
+		return sym{kind: symValue, key: s.key + "." + name}
+	case symInfra:
+		if name == "overrides" {
+			return sym{kind: symOverrides}
+		}
+		return sym{kind: symInfraKey, key: name}
+	case symInfraKey:
+		return sym{kind: symInfraKey, key: s.key + "." + name}
+	case symOverrides:
+		return sym{kind: symOverride, key: name}
+	case symFeatures:
+		return sym{kind: symSlot, key: name}
+	case symSlot:
+		if name == "type" {
+			return sym{kind: symSlotType, key: s.key}
+		}
+		return sym{kind: symSlotPart, key: s.key}
+	case symSlotPart:
+		return s
+	case symLocals:
+		if name == "logical_id" {
+			return sym{kind: symLogicalID}
+		}
+		return sym{kind: symLocal, key: name}
+	case symContext:
+		if name == "instance_id" {
+			return sym{kind: symInstanceID}
+		}
+	}
+	return sym{}
+}
+
+// members returns what the members names of s, in turn, yield.
+func (s sym) members(names []string) sym {
+	for _, n := range names {
+		s = s.member(n)
+	}
+	return s
+}
+
+// readsSlot reports whether s is a credential slot's attachment or anything
+// read off one.
+func (s sym) readsSlot() bool {
+	return s.kind == symSlot || s.kind == symSlotPart || s.kind == symSlotType
+}
+
+// passThrough are the functions whose result a reader reads as the value
+// handed them last: a default taken where that value is empty, and the
+// conversions of a value to its text, its JSON text or the first item of its
+// text split.
+var passThrough = []string{"default", "toJson", "toString", "first", "splitList"}
+
+// scope is what the dot and each variable yield where an action is written.
+type scope struct {
+	dot  sym
+	vars map[string]sym
+}
+
+// dataScope is the scope at a template's start: the dot is the data the
+// template is handed, and no variable is bound.
+func dataScope() scope {
+	return scope{dot: sym{kind: symData}, vars: map[string]sym{}}
+}
+
+// declare returns sc with the variables p declares bound to what p yields: a
+// variable p assigns, or one unknown names, yields nothing a reader
+// reads.
+func (sc scope) declare(p *parse.PipeNode, unknown map[string]bool) scope {
+	if p == nil || len(p.Decl) == 0 {
+		return sc
+	}
+	v := sym{}
+	if !p.IsAssign && len(p.Decl) == 1 {
+		v = sc.pipe(p)
+	}
+	vars := maps.Clone(sc.vars)
+	for _, d := range p.Decl {
+		if unknown[d.Ident[0]] {
+			vars[d.Ident[0]] = sym{}
+		} else {
+			vars[d.Ident[0]] = v
+		}
+	}
+	return scope{dot: sc.dot, vars: vars}
+}
+
+// pipe returns what p yields.
+func (sc scope) pipe(p *parse.PipeNode) sym {
+	if p == nil || len(p.Cmds) == 0 {
+		return sym{}
+	}
+	s := sc.command(p.Cmds[0], nil)
+	for _, c := range p.Cmds[1:] {
+		s = sc.command(c, &s)
+	}
+	return s
+}
+
+// command returns what c yields, handed piped as its last argument where a
+// pipeline's earlier command yields it.
+func (sc scope) command(c *parse.CommandNode, piped *sym) sym {
+	if c == nil || len(c.Args) == 0 {
+		return sym{}
+	}
+	fn, ok := c.Args[0].(*parse.IdentifierNode)
+	if !ok {
+		if len(c.Args) == 1 && piped == nil {
+			return sc.node(c.Args[0])
+		}
+		return sym{}
+	}
+	args := c.Args[1:]
+	last := sym{}
+	switch {
+	case piped != nil:
+		last = *piped
+	case len(args) > 0:
+		last = sc.node(args[len(args)-1])
+	}
+	switch {
+	case fn.Ident == "optional" || fn.Ident == "index":
+		if piped != nil || len(args) < 2 {
+			return sym{}
+		}
+		key, ok := args[1].(*parse.StringNode)
+		if !ok {
+			return sym{}
+		}
+		return sc.node(args[0]).member(key.Text)
+	case fn.Ident == "capitalizedWords":
+		if last.kind == symInstanceID {
+			return sym{kind: symLogicalID}
+		}
+	case slices.Contains(passThrough, fn.Ident):
+		return last
+	}
+	return sym{}
+}
+
+// node returns what an argument yields.
+func (sc scope) node(n parse.Node) sym {
+	switch n := n.(type) {
+	case *parse.DotNode:
+		return sc.dot
+	case *parse.FieldNode:
+		return sc.dot.members(n.Ident)
+	case *parse.VariableNode:
+		if n.Ident[0] == "$" {
+			return sym{kind: symData}.members(n.Ident[1:])
+		}
+		v, ok := sc.vars[n.Ident[0]]
+		if !ok {
+			return sym{}
+		}
+		return v.members(n.Ident[1:])
+	case *parse.ChainNode:
+		return sc.node(n.Node).members(n.Field)
+	case *parse.PipeNode:
+		return sc.pipe(n)
+	case *parse.StringNode:
+		return sym{kind: symLiteral, key: n.Text, truthy: n.Text != ""}
+	case *parse.BoolNode:
+		return sym{kind: symLiteral, key: strconv.FormatBool(n.True), truthy: n.True}
+	case *parse.NumberNode:
+		return sym{kind: symLiteral, key: n.Text, truthy: n.IsInt && n.Int64 != 0 || n.IsFloat && n.Float64 != 0}
+	case *parse.NilNode:
+		return sym{kind: symLiteral}
+	}
+	return sym{}
+}
+
+// wholeRead returns what one action reading a field yields — a field of the
+// dot or of the data the template is handed, written bare or handed to
+// toJson — and whether it is handed to toJson.
+func wholeRead(p *parse.PipeNode, sc scope) (sym, bool, bool) {
+	if p == nil || len(p.Decl) > 0 || len(p.Cmds) != 1 {
+		return sym{}, false, false
+	}
+	args := p.Cmds[0].Args
+	toJSON := false
+	if len(args) == 2 {
+		if fn, ok := args[0].(*parse.IdentifierNode); ok && fn.Ident == "toJson" {
+			toJSON, args = true, args[1:]
+		}
+	}
+	if len(args) != 1 {
+		return sym{}, false, false
+	}
+	s, ok := fieldRead(args[0], sc)
+	return s, toJSON, ok
+}
+
+// fieldRead returns what an argument reading a field yields — a field of the
+// dot, or of the data the template is handed through $ — and false for any
+// other argument.
+func fieldRead(arg parse.Node, sc scope) (sym, bool) {
+	switch a := arg.(type) {
+	case *parse.FieldNode:
+	case *parse.VariableNode:
+		if a.Ident[0] != "$" || len(a.Ident) < 2 {
+			return sym{}, false
+		}
+	default:
+		return sym{}, false
+	}
+	return sc.node(arg), true
+}
+
+// pathIs reports whether path is the dotted rule path pattern, a segment *
+// matching any segment; segments are compared regardless of case.
+func pathIs(path []string, pattern string) bool {
+	segs := strings.Split(pattern, ".")
+	if len(segs) != len(path) {
+		return false
+	}
+	for i, s := range segs {
+		if s != "*" && !strings.EqualFold(s, path[i]) {
+			return false
+		}
+	}
+	return true
 }

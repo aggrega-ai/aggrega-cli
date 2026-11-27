@@ -1,0 +1,16 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: unresolvable-import
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/compute/server:1.0.0
+
+  source: ./module
+
+  provides: {}
+
+  artifacts:
+    service:
+      $import: MissingModule#/artifacts/Service

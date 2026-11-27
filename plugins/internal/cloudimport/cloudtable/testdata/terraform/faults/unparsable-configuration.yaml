@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: unparsable-configuration
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/datastore/acme-sql:1.0.0
+
+  artifacts:
+    main.tf: |
+      resource "aws_rds_cluster" "this" {
+        engine = {{ if .values.serverless }}"aurora-postgresql"{{ else }}"aurora-mysql"{{ end }}
+      }

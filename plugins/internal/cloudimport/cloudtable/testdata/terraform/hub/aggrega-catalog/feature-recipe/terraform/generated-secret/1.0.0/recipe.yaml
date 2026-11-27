@@ -1,0 +1,8 @@
+apiVersion: aggrega.ai/v1beta1
+kind: FeatureRecipe
+metadata:
+  name: generated-secret
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/generated-secret:1.0.0

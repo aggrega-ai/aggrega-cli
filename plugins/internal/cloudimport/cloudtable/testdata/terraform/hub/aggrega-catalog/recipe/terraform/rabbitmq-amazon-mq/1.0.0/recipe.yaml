@@ -1,0 +1,26 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: rabbitmq-amazon-mq
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/messaging/rabbitmq:1.0.0
+
+  source: ./module
+
+  provides:
+    endpoint: "${module.{{ .context.instance_id }}.endpoint}"
+
+  # This Recipe reads from infra.overrides:
+  #   instance_type   - string (host_instance_type; default "mq.m7g.medium")
+  #   subnet_ids      - []string (subnet_ids), required
+  #   deployment_mode - string (deployment_mode)
+
+  valuesMapping: |
+    name: "{{ .context.instance_id }}"
+    engine_version: "{{ .infra.engine_version }}"
+    instance_type: "{{ optional .infra.overrides "instance_type" "mq.m7g.medium" }}"
+    username: "{{ .values.user }}"
+    subnet_ids: {{ toJson .infra.overrides.subnet_ids }}
+    mode: SINGLE_INSTANCE

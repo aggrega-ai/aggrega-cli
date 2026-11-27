@@ -5,6 +5,7 @@ package main
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -14,6 +15,16 @@ import (
 // symbolLocal is the locals entry holding the instance's symbol, as the hub's
 // arm Recipes declare it.
 const symbolLocal = "{{ capitalizedWords .context.instance_id }}"
+
+// artifacts returns texts as the files of a Recipe's artifacts, each named by
+// its place among them.
+func artifacts(texts ...string) []fragment {
+	out := make([]fragment, len(texts))
+	for i, text := range texts {
+		out[i] = fragment{name: "artifact-" + strconv.Itoa(i), text: text}
+	}
+	return out
+}
 
 // fragmentOf writes a fragment whose resources block holds one resource keyed
 // key, its lines body indented beneath it.
@@ -55,7 +66,7 @@ func TestAResourceKeyedByTheSymbolIsReadFromItsTypeLine(t *testing.T) {
 			nil, ""},
 		{"a key the symbol begins", fragmentOf("{{ capitalizedWords .context.instance_id }}Api", body), nil, ""},
 	} {
-		row, why := extractARM(recipeSource{name: "r", locals: c.locals, fragments: []string{c.fragment}})
+		row, why := extractARM(recipeSource{name: "r", locals: c.locals, fragments: artifacts(c.fragment)})
 		if row.Key != c.want {
 			t.Errorf("%s: the key is %q (%s), want %q", c.name, row.Key, why, c.want)
 		}
@@ -84,7 +95,7 @@ func TestADictBuiltResourceGivesItsKeyAndKindAlone(t *testing.T) {
 		"{{- $plan := dict \"existing\" true \"type\" \"Microsoft.Web/serverfarms\" }}\n" +
 		"{{- $nested := dict \"type\" \"Microsoft.Resources/deployments\" \"properties\" (dict \"template\" (dict \"resources\" (list $site $child $rel $plan))) }}\n" +
 		"resources:\n  {{ $sym }}: {{ toJson $nested }}\n"
-	r := recipeSource{name: "r", locals: map[string]string{"symbol": symbolLocal}, fragments: []string{fragment},
+	r := recipeSource{name: "r", locals: map[string]string{"symbol": symbolLocal}, fragments: artifacts(fragment),
 		provides: []entry{{"host", "[reference('{{ .locals.symbol }}').outputs.host.value]"}},
 		document: "spec:\n  # This Recipe reads from infra.overrides:\n  #   plan_id - string (properties.serverFarmId)\n"}
 	row, why := extractARM(r)
@@ -97,7 +108,7 @@ func TestADictBuiltResourceGivesItsKeyAndKindAlone(t *testing.T) {
 	two := "{{- $a := dict \"type\" \"Microsoft.Web/sites\" }}\n{{- $b := dict \"type\" \"Microsoft.Storage/storageAccounts\" }}\n" +
 		"resources:\n  {{ .locals.symbol }}: {{ toJson (dict \"type\" \"Microsoft.Resources/deployments\" \"properties\" (dict \"template\" (dict \"resources\" (list $a $b)))) }}\n"
 	row, why = extractARM(recipeSource{name: "r", locals: map[string]string{"symbol": symbolLocal},
-		fragments: []string{two}})
+		fragments: artifacts(two)})
 	if row.Key != "" || !strings.Contains(why, "Microsoft.Storage/storageAccounts") {
 		t.Errorf("a fragment building two unrelated resources gave %q (%s), want no row naming both", row.Key, why)
 	}
@@ -221,8 +232,8 @@ func TestOnlyOnePointerFormIsAProvides(t *testing.T) {
 		t.Errorf("the module Recipe's provides gave %#v, want %#v", row.Provides, want)
 	}
 
-	raw := recipeSource{name: "r", fragments: []string{fragmentOf("{{ capitalizedWords .context.instance_id }}",
-		"type: Microsoft.Acme/stores\n")},
+	raw := recipeSource{name: "r", fragments: artifacts(fragmentOf("{{ capitalizedWords .context.instance_id }}",
+		"type: Microsoft.Acme/stores\n")),
 		provides: []entry{
 			{"id", "[resourceId('microsoft.acme/stores', '{{ .context.instance_id }}')]"},
 			{"self", "[reference('{{ capitalizedWords .context.instance_id }}', '2025-01-01', 'Full').id]"},
@@ -283,7 +294,7 @@ func TestTheOverridesHeaderIsReadLiterally(t *testing.T) {
 func TestARecipeWritingNoResourceGivesNoRow(t *testing.T) {
 	t.Parallel()
 	for _, r := range []recipeSource{
-		{name: "reference", fragments: []string{"resources: {}\noutputs:\n  endpoint:\n    type: string\n"}},
+		{name: "reference", fragments: artifacts("resources: {}\noutputs:\n  endpoint:\n    type: string\n")},
 		{name: "empty"},
 	} {
 		row, why := extractARM(r)

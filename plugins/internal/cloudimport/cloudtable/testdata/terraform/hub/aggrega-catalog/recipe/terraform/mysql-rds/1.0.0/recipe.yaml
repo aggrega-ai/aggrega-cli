@@ -1,0 +1,23 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: mysql-rds
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/datastore/mysql:1.0.0
+
+  provides:
+    host: "${module.{{ .context.instance_id }}.address}"
+
+  artifacts:
+    main.tf: |
+      resource "aws_db_instance" "this" {
+        identifier = "{{ .context.instance_id }}"
+        engine     = "mysql"
+        db_name    = "{{ .values.database }}"
+      }
+
+      output "address" {
+        value = aws_db_instance.this.address
+      }

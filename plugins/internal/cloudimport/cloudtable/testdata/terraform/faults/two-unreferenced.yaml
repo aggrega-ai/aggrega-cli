@@ -1,0 +1,22 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: two-unreferenced
+  version: 1.0.0
+spec:
+  capability: terraform
+  implements: core/gateway/acme-api:1.0.0
+
+  artifacts:
+    main.tf: |
+      resource "aws_apigatewayv2_api" "this" {
+        name = "{{ .context.instance_id }}"
+      }
+
+      resource "aws_apigatewayv2_route" "this" {
+        api_id = aws_apigatewayv2_api.this.id
+      }
+
+      resource "aws_apigatewayv2_stage" "this" {
+        api_id = aws_apigatewayv2_api.this.id
+      }

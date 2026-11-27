@@ -20,19 +20,38 @@ type entry struct{ key, value string }
 // recipeSource is what the generator hands an extractor of one Recipe, every
 // import already resolved: its name, its path beneath the hub's root, the
 // Component it implements less its version, its source, its locals, its
-// provides in the order written, its valuesMapping text, the text of each of
-// its artifacts' files in the order written, its document as written,
-// comments included, and the text of each of its assertions in the order
-// written.
+// provides in the order written, its valuesMapping text, each of its
+// artifacts' files in the order written, each file of the local directory it
+// sources, its document as written, comments included, the text of each of
+// its assertions in the order written, and the text of each file beneath the
+// hub's root its format reads beside the catalog.
 type recipeSource struct {
 	name, path, component string
-	source                map[string]any
-	locals                map[string]string
-	provides              []entry
-	valuesMapping         string
-	fragments             []string
-	document              string
-	assertions            []string
+	// source is the source a Recipe writes as a mapping, nil for one written
+	// as a path or not written.
+	source        map[string]any
+	locals        map[string]string
+	provides      []entry
+	valuesMapping string
+	fragments     []fragment
+	// module holds the files of the local directory a Recipe writes its
+	// source as the path of, each named by its path within that directory
+	// with slashes, in lexical order; none for a Recipe sourcing no local
+	// directory.
+	module     []fragment
+	document   string
+	assertions []string
+	// hubFiles holds the text of each file the format reads beside the
+	// catalog, by its path beneath the hub's root with slashes; a file the
+	// checkout does not hold is absent.
+	hubFiles map[string]string
+}
+
+// fragment is one file of a Recipe's output: the name it lands under — an
+// artifact's key, or the key followed by a slash and the file's own name for
+// each file of a bundle the artifact imports — and its text.
+type fragment struct {
+	name, text string
 }
 
 // avmResource is the prefix of the path of an Azure Verified Modules resource
@@ -98,8 +117,8 @@ func extractARM(r recipeSource) (cloudimport.Row, string) {
 		return cloudimport.Row{}, "it sources no module and writes no fragment"
 	}
 	var whys []string
-	for _, text := range r.fragments {
-		res := fragmentResource(text, symbols)
+	for _, f := range r.fragments {
+		res := fragmentResource(f.text, symbols)
 		if res.key == "" {
 			whys = append(whys, res.why)
 			continue

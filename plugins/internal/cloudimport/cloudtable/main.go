@@ -12,9 +12,10 @@
 // libraries they read, and the mapping and artifact libraries a Recipe imports
 // — and reads, of each Recipe at the version a reference naming it without one
 // resolves to, its text literally, every library import resolved as a build
-// resolves it; it renders nothing and evaluates no template. Each format reads
-// its Recipes by rules of its own (arm.go for arm, cloudformation.go for
-// cloudformation), and a format's reader may refuse a Recipe whose text it
+// resolves it, and the files of the local directory it sources; it renders
+// nothing and evaluates no template. Each format reads its Recipes by rules of
+// its own (arm.go for arm, cloudformation.go for cloudformation, terraform.go
+// for terraform), and a format's reader may refuse a Recipe whose text it
 // cannot read a row from, naming the Recipe and what to fix; no table is then
 // written. A row carries its Component's category label as its category,
 // every other label of the Component, as an import is handed them, as its
@@ -49,11 +50,14 @@
 // repository, as the Compose image table reads one, to the Recipe and its
 // Component, with the infra key the Recipe reads the image's tag from. For a
 // format that asks for them it writes, too, the one feature type each Recipe's
-// assertions admit at a credential slot, where they admit one.
+// assertions admit at a credential slot, where they admit one, and how each
+// Recipe names the resource that is its instance.
 //
 // The table names the aggrega-hub commit it was generated from: the last
-// commit that changed a path the generator reads, so a commit to anything else
-// in the checkout leaves the table as it is. It is refused where the
+// commit that changed a path the generator reads — the catalog's directories
+// above, and each file beside them a format reads, such as the module the
+// terraform Recipes wrapping a library's body pass their input through — so
+// a commit to anything else in the checkout leaves the table as it is. It is refused where the
 // directories the generator reads hold changes no commit records, unless
 // -revision names what the table is read from.
 //
@@ -66,6 +70,7 @@
 //
 //	go run ./plugins/internal/cloudimport/cloudtable -format arm -hub ../aggrega-hub -out plugins/internal/armimport/table_gen.go
 //	go run ./plugins/internal/cloudimport/cloudtable -format cloudformation -hub ../aggrega-hub -out plugins/internal/cfnimport/table_gen.go
+//	go run ./plugins/internal/cloudimport/cloudtable -format terraform -hub ../aggrega-hub -out plugins/internal/tfimport/table_gen.go
 //	go run ./plugins/internal/cloudimport/cloudtable -format arm -hub DIR -revision NAME -report
 //	go run ./plugins/internal/cloudimport/cloudtable -avm-index BicepResourceModules.csv -avm-commit COMMIT -out plugins/internal/armimport/avmindex_gen.go
 package main
@@ -87,6 +92,7 @@ import (
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cfnimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/tfimport"
 )
 
 // format is one importer whose table the generator writes: its name, the
@@ -107,9 +113,14 @@ type format struct {
 	// for the generated rows of the Recipes it names.
 	whens func() map[string][][]cloudimport.Pred
 	// slots makes the table list, beside the rows, the one feature type each
-	// Recipe's assertions admit at a credential slot, and how each Recipe names
-	// the resource that is its instance.
+	// Recipe's assertions admit at a credential slot.
 	slots bool
+	// logicalIDs makes the table list, beside the rows, how each Recipe names
+	// the resource that is its instance in the stack the build writes.
+	logicalIDs bool
+	// hubFiles are the files beneath the hub's root, with slashes, that read
+	// reads beside the catalog, handed to it in every Recipe's source.
+	hubFiles []string
 }
 
 // formats are the formats the generator writes a table for.
@@ -117,7 +128,9 @@ var formats = []format{
 	{name: "arm", capability: "arm", pkg: "armimport", extract: extractARM, moduleType: avmResourceType,
 		table: armimport.Table},
 	{name: "cloudformation", capability: "cloudformation", pkg: "cfnimport", read: extractCloudFormation,
-		table: cfnimport.Table, whens: cfnimport.RecipeWhens, slots: true},
+		table: cfnimport.Table, whens: cfnimport.RecipeWhens, slots: true, logicalIDs: true},
+	{name: "terraform", capability: "terraform", pkg: "tfimport", read: extractTerraform,
+		table: tfimport.Table, whens: tfimport.RecipeWhens, slots: true, hubFiles: []string{passThroughFile}},
 }
 
 // avmResourceType returns the type of the resource the Azure Verified Modules
@@ -138,8 +151,8 @@ func formatNamed(name string) (format, bool) {
 }
 
 func main() {
-	name := flag.String("format", "", "the format whose table is generated: arm or cloudformation (required, unless "+
-		"-avm-index is given)")
+	name := flag.String("format", "", "the format whose table is generated: arm, cloudformation or terraform "+
+		"(required, unless -avm-index is given)")
 	hub := flag.String("hub", "", "the aggrega-hub checkout whose Recipes the table is generated from (required)")
 	out := flag.String("out", "", "the file the table is written to; standard output where empty")
 	revision := flag.String("revision", "", "what the table names as the revision it was read from; the checkout's HEAD where empty")
@@ -161,8 +174,8 @@ func main() {
 	}
 	f, ok := formatNamed(*name)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "cloudtable: -format names %q, which is no format a table is generated for; name arm "+
-			"or cloudformation\n", *name)
+		fmt.Fprintf(os.Stderr, "cloudtable: -format names %q, which is no format a table is generated for; name arm, "+
+			"cloudformation or terraform\n", *name)
 		os.Exit(2)
 	}
 	if *hub == "" {
@@ -220,6 +233,9 @@ func run(f format, hub, out, revision string, report bool) error {
 func generateFromHub(hub string, f format, hand cloudimport.Table) ([]cloudimport.Row, []string, error) {
 	h, err := loadHub(hub, f.capability)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := h.readFiles(f.hubFiles); err != nil {
 		return nil, nil, err
 	}
 	return generate(h, f, hand)
@@ -515,12 +531,12 @@ func lastReadCommit(hub string, f format) (string, error) {
 	return revision, nil
 }
 
-// readPaths returns the directories the generator reads for f, as git
-// pathspecs.
+// readPaths returns the directories and files the generator reads for f, as
+// git pathspecs.
 func readPaths(f format) []string {
 	var paths []string
 	for _, d := range readDirs(f.capability) {
 		paths = append(paths, filepath.ToSlash(d))
 	}
-	return paths
+	return append(paths, f.hubFiles...)
 }
