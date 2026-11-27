@@ -49,3 +49,21 @@ Every file here is synthetic, written for the reader's tests; none is copied fro
 - `stray/` — a template beside sources the template reader refuses: `docs/notes.yaml`, indented with a tab and
   naming `AWSTemplateFormatVersion` in a comment, and `broken.yaml`, whose YAML breaks off, linked by `other.yaml`
   and by `main.yaml`.
+- `golden/<name>/source/` — the templates each golden import reads, and `golden/<name>/want/` the files, diagnostics
+  and decisions the import writes, rewritten with `UPDATE_GOLDEN=1`:
+  - `rds-server` — an RDS for PostgreSQL instance taking a parameter group, and an Amazon ECS service behind the
+    operator's load balancer whose task definition, holding a sidecar beside its main container, reads the instance's
+    address into its environment, with the cluster, log group, load balancer, listener, target group and listener
+    rule it runs with;
+  - `sam` — an AWS SAM template: a function packaged as a .zip and one running an image, taking Globals, a simple
+    table, an HTTP API one function's event routes through, and a REST API;
+  - `drafted-from-source` — a resource no catalog Recipe deploys, read by a function's environment;
+  - `nested` — a template deploying a local nested stack holding a queue and its queue policy, whose output a
+    function reads;
+  - `condition` — buckets deployed under a condition on a boolean parameter and under one on another parameter, a
+    bucket policy reading its bucket in deploy-time text, and a name chosen by `Fn::If`;
+  - `dynamic-reference` — a Systems Manager parameter's dynamic reference, and the secrets Secrets Manager and a
+    SecureString parameter hold, read by dynamic reference at credential slots;
+  - `import-value` — values another stack exports, read whole and inside other functions.
+- `forms/long.yaml`, `forms/template.json` — the template of `golden/rds-server/source/template.yaml` written in the
+  YAML long form and in JSON.

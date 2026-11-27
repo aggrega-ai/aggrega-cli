@@ -1,0 +1,25 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: sql-server-rds
+  version: 1.0.0
+spec:
+  capability: cloudformation
+  implements: core/datastore/sql-server:1.0.0
+
+  locals:
+    logical_id: '{{ capitalizedWords .context.instance_id }}'
+    engine: 'sqlserver-{{ optional .infra "edition" "ex" }}'
+
+  provides:
+    host: "!GetAtt {{ .locals.logical_id }}.Endpoint.Address"
+
+  artifacts:
+    template.yaml: |
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::RDS::DBInstance
+          Properties:
+            Engine: {{ .locals.engine }}
+            Port: {{ .infra.port }}
+            ManageMasterUserPassword: true

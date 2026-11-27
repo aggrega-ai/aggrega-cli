@@ -1,0 +1,37 @@
+# Sources read: template.yaml.
+# Outputs of the source:
+#   - DatabaseAddress: carried by the instance orders-db, provides key host
+# Substrate the source creates, left to the operator: AppLogs (AWS::Logs::LogGroup), Balancer (AWS::ElasticLoadBalancingV2::LoadBalancer), Cluster (AWS::ECS::Cluster), Listener (AWS::ElasticLoadBalancingV2::Listener).
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the cloudformation format.
+spec:
+  components:
+    # The resource OrdersDbParams.
+    orders-db-params:
+      type: imported/datastore/aws-rds-dbparametergroup
+    # The resource OrdersDb.
+    orders-db:
+      type: core/datastore/postgres
+      values:
+        database: "orders"
+        user: "orders_app"
+      uses:
+        # Not wired: OrdersDb reads the identifier of OrdersDbParams at Properties.DBParameterGroupName; the Recipe of core/datastore/postgres reads no neighbour's value there.
+        orders-db-params:
+          orders-db-params:
+            target: orders-db-params
+    # The resource Api.
+    api:
+      type: core/compute/server
+      uses:
+        orders-db:
+          orders-db:
+            target: orders-db
+            inject:
+              env:
+                - in: "DB_HOST"
+                  from: host

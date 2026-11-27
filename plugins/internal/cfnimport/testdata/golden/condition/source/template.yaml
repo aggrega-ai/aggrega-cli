@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  WithArchive:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "false"
+  Region:
+    Type: String
+    Default: eu
+Conditions:
+  ArchiveOn: !Equals [!Ref WithArchive, "true"]
+  InEu: !Equals [!Ref Region, eu]
+Resources:
+  Archive:
+    Type: AWS::S3::Bucket
+    Condition: ArchiveOn
+    Properties:
+      BucketName: orders-archive
+  Uploads:
+    Type: AWS::S3::Bucket
+    Condition: InEu
+    Properties:
+      BucketName: !If [InEu, orders-uploads-eu, orders-uploads]
+  UploadsPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Uploads
+      PolicyDocument:
+        Statement:
+          - Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource: !Sub arn:${AWS::Partition}:s3:::${Uploads}/*
+            Condition:
+              Bool: {aws:SecureTransport: "false"}

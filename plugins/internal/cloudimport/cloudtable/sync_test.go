@@ -84,7 +84,7 @@ var revisionLine = regexp.MustCompile(`(?m)^const TableRevision = "([^"]*)"$`)
 // checkout without its history cannot say which commits it holds, so there
 // the revision is held to nothing.
 func tableDrift(t *testing.T, committed []byte, rows []cloudimport.Row, images []cloudimport.ImageRow,
-	slots []slotFeature, hub string, f format) []string {
+	facts recipeFacts, hub string, f format) []string {
 	t.Helper()
 	m := revisionLine.FindSubmatch(committed)
 	if m == nil {
@@ -92,7 +92,7 @@ func tableDrift(t *testing.T, committed []byte, rows []cloudimport.Row, images [
 	}
 	revision := string(m[1])
 	var out []string
-	want, err := renderTable(rows, images, slots, revision, f)
+	want, err := renderTable(rows, images, facts, revision, f)
 	if err != nil {
 		t.Fatalf("render the %s table: %v", f.capability, err)
 	}
@@ -155,17 +155,15 @@ func checkTableIsWhatTheHubGenerates(t *testing.T, f format) {
 	if err != nil {
 		t.Fatalf("generate the %s image rows from %s: %v", f.capability, hub(t), err)
 	}
-	var slots []slotFeature
-	if f.slots {
-		if slots, err = generateSlotFeaturesFromHub(hub(t), f, f.table()); err != nil {
-			t.Fatalf("generate the %s slot features from %s: %v", f.capability, hub(t), err)
-		}
+	facts, err := generateFactsFromHub(hub(t), f, f.table())
+	if err != nil {
+		t.Fatalf("generate the %s Recipe facts from %s: %v", f.capability, hub(t), err)
 	}
 	got, err := os.ReadFile(committedTable(f))
 	if err != nil {
 		t.Fatalf("read the committed %s table: %v", f.capability, err)
 	}
-	for _, d := range tableDrift(t, got, rows, images, slots, hub(t), f) {
+	for _, d := range tableDrift(t, got, rows, images, facts, hub(t), f) {
 		t.Errorf("the committed %s table: %s; %s", f.capability, d, regenerate)
 	}
 
@@ -176,7 +174,7 @@ func checkTableIsWhatTheHubGenerates(t *testing.T, f format) {
 			"nothing", f.capability)
 	}
 	planted := slices.Concat(got[:at+len(field)], []byte("core/planted/needle-"), got[at+len(field):])
-	if found := tableDrift(t, planted, rows, images, slots, hub(t), f); !slices.ContainsFunc(found,
+	if found := tableDrift(t, planted, rows, images, facts, hub(t), f); !slices.ContainsFunc(found,
 		func(d string) bool { return strings.Contains(d, "core/planted/needle-") }) {
 		t.Errorf("a generated row edited by hand passes the drift check: %v", found)
 	}
@@ -187,7 +185,7 @@ func checkTableIsWhatTheHubGenerates(t *testing.T, f format) {
 	}
 	madeUp := revisionLine.ReplaceAll(slices.Clone(got),
 		[]byte(`const TableRevision = "0123456789abcdef0123456789abcdef01234567"`))
-	if found := tableDrift(t, madeUp, rows, images, slots, hub(t), f); !slices.ContainsFunc(found,
+	if found := tableDrift(t, madeUp, rows, images, facts, hub(t), f); !slices.ContainsFunc(found,
 		func(d string) bool { return strings.Contains(d, "0123456789abcdef0123456789abcdef01234567") }) {
 		t.Errorf("a revision the hub holds no commit of passes the drift check: %v", found)
 	}
@@ -201,11 +199,11 @@ func checkTableIsWhatTheHubGenerates(t *testing.T, f format) {
 		t.Fatalf("%s holds one commit that changed what the %s table reads, so no older one can be named", hub(t),
 			f.capability)
 	}
-	older, err := renderTable(rows, images, slots, commits[1], f)
+	older, err := renderTable(rows, images, facts, commits[1], f)
 	if err != nil {
 		t.Fatalf("render the %s table naming %s: %v", f.capability, commits[1], err)
 	}
-	if found := tableDrift(t, older, rows, images, slots, hub(t), f); len(found) > 0 {
+	if found := tableDrift(t, older, rows, images, facts, hub(t), f); len(found) > 0 {
 		t.Errorf("a table naming the older commit %s, its rows the same, fails the drift check: %v", commits[1],
 			found)
 	}

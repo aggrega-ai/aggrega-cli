@@ -1,0 +1,24 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Events:
+    Type: AWS::MSK::Cluster
+    Properties:
+      ClusterName: orders-events
+      KafkaVersion: 3.6.0
+      NumberOfBrokerNodes: 3
+      BrokerNodeGroupInfo:
+        InstanceType: kafka.m5.large
+        ClientSubnets:
+          - subnet-0a1b2c3d
+          - subnet-4e5f6a7b
+          - subnet-8c9d0e1f
+  Consumer:
+    Type: AWS::Lambda::Function
+    Properties:
+      PackageType: Image
+      Code:
+        ImageUri: 123456789012.dkr.ecr.us-east-1.amazonaws.com/consumer:1.0.0
+      Role: arn:aws:iam::123456789012:role/consumer
+      Environment:
+        Variables:
+          BROKERS: !GetAtt Events.Arn

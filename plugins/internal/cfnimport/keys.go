@@ -28,14 +28,38 @@ func Key(logicalID string) string {
 
 // keyNote returns the comment line written above the instance keyed key that
 // is drafted from the resource of the logical ID id, where the stack the build
-// writes names that resource otherwise than the template does: the
-// cloudformation Recipes name it by the capitalised words of its key, read by
+// writes names that resource otherwise than the template does: the Recipe
+// drafted for it names it by the capitalised words of its key, read by
 // [alphanumeric.CapitalizedWords]. It is empty where those words are the ID.
 func keyNote(id, key string) string {
-	built := alphanumeric.CapitalizedWords(key)
+	return renamed(id, alphanumeric.CapitalizedWords(key), "the capitalised words of its key")
+}
+
+// mappedNote returns the comment line written above the instance keyed key
+// that the Recipe named recipe realizes for the resource of the logical ID id,
+// where the stack the build writes names that resource otherwise than the
+// template does, as the Recipe names it ([logicalIDSuffix]); empty where it
+// names it as the template does.
+func mappedNote(id, key, recipe string) string {
+	suffix, known := logicalIDSuffix(recipe)
+	if !known {
+		return "The stack the build writes names it as the Recipe " + recipe + " names the resource it deploys, " +
+			"where the template names it " + draftyaml.Comment(id) + ": where the two differ, updating a stack " +
+			"the template deployed replaces the resource."
+	}
+	how := "the capitalised words of its key"
+	if suffix != "" {
+		how += " followed by " + suffix
+	}
+	return renamed(id, alphanumeric.CapitalizedWords(key)+suffix, how+", as the Recipe "+recipe+" names it")
+}
+
+// renamed says that the stack the build writes names the resource of the
+// logical ID id built, as how says, where built is not id; empty where it is.
+func renamed(id, built, how string) string {
 	if built == id {
 		return ""
 	}
-	return "The stack the build writes names it " + built + ", the capitalised words of its key, where the " +
-		"template names it " + draftyaml.Comment(id) + "."
+	return "The stack the build writes names it " + built + ", " + how + ", where the template names it " +
+		draftyaml.Comment(id) + ", so updating a stack the template deployed replaces the resource."
 }

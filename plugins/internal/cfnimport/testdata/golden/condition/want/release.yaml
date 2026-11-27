@@ -1,0 +1,19 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
+  version: 0.1.0
+  description: Draft Release imported from a source in the cloudformation format.
+spec:
+  aggregate: imported/flow
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
+  components:
+    archive: {}
+    # Properties UploadsPolicy, folded into this instance, writes and the draft does not place: Properties.Bucket.
+    uploads:
+      infra:
+        overrides:
+          policy: {"Statement": [{"Action": "s3:*", "Condition": {"Bool": {"aws:SecureTransport": "false"}}, "Effect": "Deny", "Principal": "*", "Resource": "!Sub 'arn:${AWS::Partition}:s3:::${Uploads}/*'"}]}

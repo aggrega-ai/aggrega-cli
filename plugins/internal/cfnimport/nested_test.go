@@ -236,10 +236,10 @@ func TestRemoteNestedStackIsNotRead(t *testing.T) {
 	}{
 		{"Endpoint", cloudimport.Opaque{Text: "!GetAtt Remote.Outputs.Endpoint", Target: "cloudformation",
 			Owed: owes("the resource Remote, which the drafted stack may declare under another logical ID, or not at " +
-				"all")}},
+				"all"), Reads: []string{"Remote"}}},
 		{"Url", cloudimport.Opaque{Text: "!Sub 'https://${Published.Outputs.Host}/'", Target: "cloudformation",
 			Owed: owes("the resource Published, which the drafted stack may declare under another logical ID, or not " +
-				"at all")}},
+				"at all"), Reads: []string{"Published"}}},
 	} {
 		if got := valueAt(t, api.Body, "Properties", c.prop); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("Api's %s reads %#v, want %#v", c.prop, got, c.want)
@@ -667,8 +667,9 @@ Resources:
 	if !reflect.DeepEqual(diags, want) {
 		t.Fatalf("the read reports\n%+v\nwant\n%+v", diags, want)
 	}
-	wantValue := cloudimport.Opaque{Text: "!Ref Network", Target: "cloudformation", Owed: owes("the nested stack " +
-		"Network, which the draft reads as the resources of its template, and declares no stack of")}
+	owed := owes("the nested stack Network, which the draft reads as the resources of its template, and declares " +
+		"no stack of")
+	wantValue := cloudimport.Opaque{Text: "!Ref Network", Target: "cloudformation", Owed: owed, OwedBesideReads: owed}
 	if got := valueAt(t, node(t, g, "Api").Body, "Properties", "Stack"); !reflect.DeepEqual(got, wantValue) {
 		t.Errorf("the stack's identifier reads %#v, want %#v", got, wantValue)
 	}
@@ -696,7 +697,9 @@ Resources:
 	want := []cloudimport.Prop{
 		{Name: "Name", Value: cloudimport.Opaque{Text: "!Ref AWS::StackName", Target: "cloudformation",
 			Owed: owes("the pseudo parameter AWS::StackName, which in the nested stack Network names that stack, " +
-				"which the draft reads as the resources of its template and does not deploy")}},
+				"which the draft reads as the resources of its template and does not deploy"),
+			OwedBesideReads: owes("the pseudo parameter AWS::StackName, which in the nested stack Network names " +
+				"that stack, which the draft reads as the resources of its template and does not deploy")}},
 		{Name: "Region", Value: cf("!Ref AWS::Region")},
 	}
 	if got := propsOf(t, node(t, g, "NetworkVpc")); !reflect.DeepEqual(got, want) {

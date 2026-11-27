@@ -21,7 +21,8 @@ func TestLogicalIdKeysRoundTrip(t *testing.T) {
 	}{
 		{"OrdersDb", "orders-db", ""},
 		{"DBInstance", "db-instance", "The stack the build writes names it DbInstance, the capitalised words of its " +
-			"key, where the template names it DBInstance."},
+			"key, where the template names it DBInstance, so updating a stack the template deployed replaces the " +
+			"resource."},
 		{"S3Bucket", "s3-bucket", ""},
 		{"MyQueue2", "my-queue2", ""},
 	}
@@ -43,7 +44,7 @@ func TestLogicalIdKeysRoundTrip(t *testing.T) {
 		t.Errorf("keyNote(Db, db) = %q, want %q", got, want)
 	}
 	if got, want := keyNote("DB", keys[1]), "The stack the build writes names it Db2, the capitalised words of its "+
-		"key, where the template names it DB."; got != want {
+		"key, where the template names it DB, so updating a stack the template deployed replaces the resource."; got != want {
 		t.Errorf("keyNote(DB, db-2) = %q, want %q", got, want)
 	}
 }

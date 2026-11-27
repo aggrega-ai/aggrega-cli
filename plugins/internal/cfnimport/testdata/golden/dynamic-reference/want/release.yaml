@@ -1,0 +1,31 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
+  version: 0.1.0
+  description: Draft Release imported from a source in the cloudformation format.
+spec:
+  aggregate: imported/flow
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
+  components:
+    # Properties the source writes and the draft does not place: Properties.ReplicationGroupDescription.
+    cache:
+      infra:
+        overrides:
+          CacheNodeType: "{{resolve:ssm:/orders/cache-node-type}}"
+      features:
+        password:
+          type: core/referenced-secret
+          infra:
+            # Attached by reference, never as a value: the secret orders/cache the secretsmanager store holds, at the locator the source states.
+            origin: "orders/cache"
+    search:
+      features:
+        password:
+          type: core/referenced-secret
+          infra:
+            # Attached by reference, never as a value: the secret /orders/search-password:1 the ssm-secure store holds, at the locator the source states.
+            origin: "/orders/search-password:1"

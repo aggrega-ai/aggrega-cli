@@ -658,36 +658,6 @@ var generatedRows = []cloudimport.Row{
 	},
 	{
 		Key:       "AWS::RDS::DBInstance",
-		Component: "core/datastore/sql-server",
-		Category:  "datastore",
-		Recipe:    "sql-server-rds",
-		Traits: map[string]string{
-			"component.aggrega.ai/hosting":            "managed",
-			"component.aggrega.ai/type":               "stateful-server",
-			"component.aggrega.ai/upstream-licensing": "proprietary",
-		},
-		Form: cloudimport.FormRaw,
-		Values: []cloudimport.Placement{
-			{From: []string{"Properties", "MasterUsername"}, Key: "user", Conv: "string"},
-		},
-		Infra: []cloudimport.Placement{
-			{From: []string{"Properties", "Port"}, Key: "port"},
-		},
-		Overrides: []cloudimport.Placement{
-			{From: []string{"DeletionPolicy"}, Key: "DeletionPolicy"},
-			{From: []string{"Properties", "DBSubnetGroupName"}, Key: "DBSubnetGroupName"},
-			{From: []string{"Properties", "VPCSecurityGroups"}, Key: "VPCSecurityGroups"},
-			{From: []string{"Properties", "DBParameterGroupName"}, Key: "DBParameterGroupName"},
-			{From: []string{"Properties", "StorageEncrypted"}, Key: "StorageEncrypted"},
-			{From: []string{"Properties", "KmsKeyId"}, Key: "KmsKeyId"},
-		},
-		Provides: []cloudimport.Placement{
-			{From: []string{"Endpoint", "Address"}, Key: "host"},
-		},
-		Origin: "generated aggrega-catalog/recipe/cloudformation/sql-server-rds/1.0.0/recipe.yaml",
-	},
-	{
-		Key:       "AWS::RDS::DBInstance",
 		Component: "core/datastore/mariadb",
 		Category:  "datastore",
 		Recipe:    "mariadb-rds",
@@ -793,6 +763,39 @@ var generatedRows = []cloudimport.Row{
 			{From: []string{"Endpoint", "Address"}, Key: "host"},
 		},
 		Origin: "generated aggrega-catalog/recipe/cloudformation/postgres-rds/1.0.0/recipe.yaml",
+	},
+	{
+		Key:       "AWS::RDS::DBInstance",
+		Component: "core/datastore/sql-server",
+		Category:  "datastore",
+		Recipe:    "sql-server-rds",
+		When: []cloudimport.Pred{
+			{Path: []string{"Properties", "Engine"}, Op: cloudimport.OpPrefix, Value: "sqlserver-"},
+		},
+		Traits: map[string]string{
+			"component.aggrega.ai/hosting":            "managed",
+			"component.aggrega.ai/type":               "stateful-server",
+			"component.aggrega.ai/upstream-licensing": "proprietary",
+		},
+		Form: cloudimport.FormRaw,
+		Values: []cloudimport.Placement{
+			{From: []string{"Properties", "MasterUsername"}, Key: "user", Conv: "string"},
+		},
+		Infra: []cloudimport.Placement{
+			{From: []string{"Properties", "Port"}, Key: "port"},
+		},
+		Overrides: []cloudimport.Placement{
+			{From: []string{"DeletionPolicy"}, Key: "DeletionPolicy"},
+			{From: []string{"Properties", "DBSubnetGroupName"}, Key: "DBSubnetGroupName"},
+			{From: []string{"Properties", "VPCSecurityGroups"}, Key: "VPCSecurityGroups"},
+			{From: []string{"Properties", "DBParameterGroupName"}, Key: "DBParameterGroupName"},
+			{From: []string{"Properties", "StorageEncrypted"}, Key: "StorageEncrypted"},
+			{From: []string{"Properties", "KmsKeyId"}, Key: "KmsKeyId"},
+		},
+		Provides: []cloudimport.Placement{
+			{From: []string{"Endpoint", "Address"}, Key: "host"},
+		},
+		Origin: "generated aggrega-catalog/recipe/cloudformation/sql-server-rds/1.0.0/recipe.yaml",
 	},
 	{
 		Key:       "AWS::RedshiftServerless::Workgroup",
@@ -956,4 +959,44 @@ var generatedSlotFeatures = []SlotFeature{
 	{Recipe: "redshift", Slot: "password", Feature: "core/generated-secret"},
 	{Recipe: "sql-server-rds", Slot: "password", Feature: "core/generated-secret"},
 	{Recipe: "valkey-elasticache", Slot: "password", Feature: "core/random-password"},
+}
+
+// generatedLogicalIDs are how the hub's cloudformation Recipes name the resource that is
+// their instance: the capitalised words of the instance's key followed by
+// Suffix, one per Recipe whose text keys it so, ordered by Recipe.
+var generatedLogicalIDs = []RecipeLogicalID{
+	{Recipe: "amazon-api-gateway", Suffix: "Api"},
+	{Recipe: "athena", Suffix: "WorkGroup"},
+	{Recipe: "aws-certificate-manager", Suffix: "Certificate"},
+	{Recipe: "aws-kms", Suffix: "Key"},
+	{Recipe: "bedrock-knowledge-bases", Suffix: "KnowledgeBase"},
+	{Recipe: "cloudfront", Suffix: "Distribution"},
+	{Recipe: "data-firehose", Suffix: "DeliveryStream"},
+	{Recipe: "dns-record-route-53", Suffix: "RecordSet"},
+	{Recipe: "dynamodb", Suffix: ""},
+	{Recipe: "ecr", Suffix: "Repository"},
+	{Recipe: "efs", Suffix: "FileSystem"},
+	{Recipe: "eventbridge", Suffix: "EventBus"},
+	{Recipe: "function-lambda", Suffix: ""},
+	{Recipe: "glue", Suffix: "Database"},
+	{Recipe: "kinesis-data-streams", Suffix: "Stream"},
+	{Recipe: "mariadb-rds", Suffix: ""},
+	{Recipe: "memcached-elasticache", Suffix: ""},
+	{Recipe: "mysql-aurora", Suffix: ""},
+	{Recipe: "mysql-rds", Suffix: ""},
+	{Recipe: "opensearch-service", Suffix: ""},
+	{Recipe: "postgres-aurora", Suffix: ""},
+	{Recipe: "postgres-rds", Suffix: ""},
+	{Recipe: "rabbitmq-amazon-mq", Suffix: ""},
+	{Recipe: "redis-elasticache", Suffix: ""},
+	{Recipe: "redshift", Suffix: "Workgroup"},
+	{Recipe: "s3-object-store-amazon-s3", Suffix: ""},
+	{Recipe: "server-ecs", Suffix: ""},
+	{Recipe: "sns", Suffix: "Topic"},
+	{Recipe: "sql-server-rds", Suffix: ""},
+	{Recipe: "sqs", Suffix: "Queue"},
+	{Recipe: "step-functions", Suffix: "StateMachine"},
+	{Recipe: "task-ecs", Suffix: "TaskDefinition"},
+	{Recipe: "valkey-elasticache", Suffix: ""},
+	{Recipe: "worker-ecs", Suffix: ""},
 }

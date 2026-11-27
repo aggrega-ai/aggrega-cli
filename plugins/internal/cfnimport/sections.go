@@ -27,8 +27,11 @@ type template struct {
 	// them.
 	params, mappings, conditions, resources, outputs obj
 	// serverlessRead reports that the Globals are merged into its serverless
-	// resources ([reader.serverlessResources]).
+	// resources ([reader.serverlessResources]), and fromGlobals holds, by a
+	// serverless resource's logical ID, the properties it takes from them and
+	// does not write itself.
 	serverlessRead bool
+	fromGlobals    map[string][]string
 }
 
 // sections reads the sections of the template h holds.

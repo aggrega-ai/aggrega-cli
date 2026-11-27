@@ -1,0 +1,1 @@
+info resource-drafted-from-source: the resource Events of the type AWS::MSK::Cluster is drafted from the source as the Component imported/messaging/aws-msk-cluster and the Recipe aws-msk-cluster on cloudformation, carrying the properties the source writes; the decision's swap hint names the import drafting it from the vendor's schema

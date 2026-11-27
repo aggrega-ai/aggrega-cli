@@ -1,0 +1,15 @@
+# Sources read: template.yaml.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the cloudformation format.
+spec:
+  components:
+    # The resource Cache.
+    cache:
+      type: core/datastore/redis
+    # The resource Search.
+    search:
+      type: core/datastore/opensearch

@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  Env:
+    Type: String
+    Default: dev
+Resources:
+  Storage:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./storage.yaml
+      Parameters:
+        Prefix: !Sub ${Env}-orders
+  Reader:
+    Type: AWS::Lambda::Function
+    Properties:
+      PackageType: Image
+      Code:
+        ImageUri: 123456789012.dkr.ecr.us-east-1.amazonaws.com/reader:1.0.0
+      Role: arn:aws:iam::123456789012:role/reader
+      Environment:
+        Variables:
+          QUEUE_URL: !GetAtt Storage.Outputs.QueueUrl

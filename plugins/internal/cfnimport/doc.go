@@ -49,12 +49,32 @@
 // dynamic reference stay text CloudFormation evaluates then, and a dynamic
 // reference is never resolved.
 //
+// Once its values are lowered, a resource the cfnrules package reads as part
+// of another is read so: a child an inline rule names — the task definition of
+// an Amazon ECS service, an ElastiCache parameter group, a Redshift
+// Serverless namespace — in place of each reference its parents write, and a
+// child a parent link names as part of the one resource its link names. A task
+// definition keeps its main container first, the others not carried; an event
+// source mapping and a topic subscription are read as dependencies of their
+// function and their endpoint.
+//
+// [Format] is the format the core imports a request with ([Import]): its type
+// rules leave the network, identity, the hosts, the cluster, log groups,
+// subnet groups, load balancers and a hosted zone to the operator; its attach
+// rules write a Secrets Manager secret a mapped instance reads at a credential
+// slot as the Feature it is; it keys an instance by its logical ID's words and
+// writes deploy-time text reading a resource the stack the build writes keeps
+// under its logical ID; and it drafts a resource no row maps from the source.
+//
 // The table is read from the hub's cloudformation Recipes themselves — the
 // resource each Recipe's fragment writes as the instance, the Component it
 // implements with that Component's labels, and what its text says literally of
 // where a resource's properties go, its own and those of the resources the
 // cfnrules package reads as part of it — and completed by hand with what no
 // Recipe's text says; every cloudformation Recipe and FeatureRecipe of the hub
-// that no row reaches is listed with the reason. Beside the rows it lists the
-// one feature type each Recipe's assertions admit at a credential slot.
+// that no row reaches is listed with the reason. The rows of AWS SAM's
+// serverless types, and of a cache cluster running Redis, are derived from the
+// rows of the types they deploy as. Beside the rows it lists the one feature
+// type each Recipe's assertions admit at a credential slot, and how each
+// Recipe names the resource that is its instance.
 package cfnimport

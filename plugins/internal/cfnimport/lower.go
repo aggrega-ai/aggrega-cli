@@ -28,9 +28,11 @@ const target = "cloudformation"
 // and serverless application deploying a template it reads as that
 // template's resources ([reader.flatten]); leaves out what the serverless
 // transform writes for its serverless resources, reading each event and
-// connector as an edge ([reader.serverless]); and lowers each value of its
+// connector as an edge ([reader.serverless]); lowers each value of its
 // nodes, their conditions and its outputs into the core's values, as
-// [reader.lower] says. It is the cloudformation format's reader.
+// [reader.lower] says; and reads a resource that is part of another as the
+// cfnimport rules say ([reader.relate]). It is the cloudformation format's
+// reader.
 func Read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.ParseFunc) (*cloudimport.Graph,
 	[]aggrega.Diagnostic) {
 	r := &reader{in: in, parse: parse}
@@ -40,6 +42,7 @@ func Read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.Pars
 	}
 	r.flatten(g)
 	r.lower(g)
+	r.relate(g)
 	return g, r.diags
 }
 
@@ -774,10 +777,13 @@ func (l *lowerer) opaque(raw json.RawMessage, at string) cloudimport.Value {
 		l.unwritable("an intrinsic function", at)
 		return nil
 	}
-	out := cloudimport.Opaque{Text: text, Target: target, Params: p.params}
+	out := cloudimport.Opaque{Text: text, Target: target, Params: p.params, Reads: p.read}
+	const evaluated = "it is text CloudFormation evaluates when the stack deploys, and it reads "
 	if len(p.owed) > 0 {
-		out.Owed = "it is text CloudFormation evaluates when the stack deploys, and it reads " +
-			strings.Join(p.owed, ", and ")
+		out.Owed = evaluated + strings.Join(p.owed, ", and ")
+	}
+	if len(p.beside) > 0 {
+		out.OwedBesideReads = evaluated + strings.Join(p.beside, ", and ")
 	}
 	return out
 }
@@ -806,15 +812,29 @@ func (l *lowerer) unwritable(what, at string) {
 }
 
 // placing is one deploy-time text being written: the template parameters
-// written in it as their values, and what it reads that the draft can neither
-// write in its place nor declare, each in the order the text reads it.
+// written in it as their values, what it reads that the draft can neither
+// write in its place nor declare, each in the order the text reads it, and of
+// those, the resources it reads by the ID their nodes take (read), which the
+// draft may declare under that ID, and everything else (beside).
 type placing struct {
-	l            *lowerer
-	params, owed []string
+	l                          *lowerer
+	params, owed, read, beside []string
 }
 
 // owe records what the text reads and owes, once.
 func (p *placing) owe(what string) {
+	if !slices.Contains(p.owed, what) {
+		p.owed = append(p.owed, what)
+		p.beside = append(p.beside, what)
+	}
+}
+
+// reading records the resource id the text reads by the ID its node takes,
+// which it owes, what, unless the draft declares the resource under that ID.
+func (p *placing) reading(id, what string) {
+	if !slices.Contains(p.read, id) {
+		p.read = append(p.read, id)
+	}
 	if !slices.Contains(p.owed, what) {
 		p.owed = append(p.owed, what)
 	}
@@ -948,7 +968,9 @@ func (p *placing) pseudo(name string) {
 }
 
 // reads owes the resource id the text reads, or the name id where the
-// template declares no resource of it.
+// template declares no resource of it; a resource whose node takes the ID the
+// text names it by is one the draft may declare under that ID
+// ([placing.reading]).
 func (p *placing) reads(id string) {
 	if child := p.l.s.nested[id]; child != nil {
 		p.owe("the " + child.kind() + " " + id + ", which the draft reads as the resources of its template, and " +
@@ -956,7 +978,12 @@ func (p *placing) reads(id string) {
 		return
 	}
 	if p.l.isResource(id) {
-		p.owe("the resource " + id + ", which the drafted stack may declare under another logical ID, or not at all")
+		what := "the resource " + id + ", which the drafted stack may declare under another logical ID, or not at all"
+		if node, ok := p.l.s.ids[id]; ok && node == id {
+			p.reading(id, what)
+			return
+		}
+		p.owe(what)
 		return
 	}
 	p.owe(id + ", which the template declares no parameter or resource of")

@@ -1,0 +1,25 @@
+# Sources read: template.yaml.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the cloudformation format.
+spec:
+  components:
+    # The resource Events.
+    events:
+      type: imported/messaging/aws-msk-cluster
+      values:
+        cluster_name: "orders-events"
+    # The resource Consumer.
+    consumer:
+      type: core/compute/function
+      uses:
+        events:
+          events:
+            target: events
+            inject:
+              env:
+                - in: "BROKERS"
+                  from: arn

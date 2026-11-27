@@ -1,0 +1,110 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Orders service and its PostgreSQL database.",
+  "Parameters": {
+    "Subnets": {"Type": "List<AWS::EC2::Subnet::Id>", "Default": "subnet-0a1b2c3d,subnet-4e5f6a7b"},
+    "ImageTag": {"Type": "String", "Default": "1.4.2"}
+  },
+  "Resources": {
+    "Cluster": {"Type": "AWS::ECS::Cluster"},
+    "AppLogs": {"Type": "AWS::Logs::LogGroup", "Properties": {"RetentionInDays": 14}},
+    "OrdersDbParams": {
+      "Type": "AWS::RDS::DBParameterGroup",
+      "Properties": {
+        "Family": "postgres16",
+        "Description": "Orders database parameters",
+        "Parameters": {"max_connections": "200"}
+      }
+    },
+    "OrdersDb": {
+      "Type": "AWS::RDS::DBInstance",
+      "DeletionPolicy": "Snapshot",
+      "UpdateReplacePolicy": "Snapshot",
+      "Properties": {
+        "Engine": "postgres",
+        "EngineVersion": "16.3",
+        "DBInstanceClass": "db.t4g.micro",
+        "AllocatedStorage": "20",
+        "DBName": "orders",
+        "MasterUsername": "orders_app",
+        "ManageMasterUserPassword": true,
+        "DBParameterGroupName": {"Ref": "OrdersDbParams"}
+      }
+    },
+    "Balancer": {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {"Subnets": {"Ref": "Subnets"}}
+    },
+    "Listener": {
+      "Type": "AWS::ElasticLoadBalancingV2::Listener",
+      "Properties": {
+        "LoadBalancerArn": {"Ref": "Balancer"},
+        "Port": 80,
+        "Protocol": "HTTP",
+        "DefaultActions": [{"Type": "forward", "TargetGroupArn": {"Ref": "ApiTargets"}}]
+      }
+    },
+    "ApiTargets": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Properties": {"Port": 8080, "Protocol": "HTTP", "TargetType": "ip"}
+    },
+    "ApiRule": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Properties": {
+        "ListenerArn": {"Ref": "Listener"},
+        "Priority": 10,
+        "Conditions": [{"Field": "path-pattern", "Values": ["/orders/*"]}],
+        "Actions": [{"Type": "forward", "TargetGroupArn": {"Ref": "ApiTargets"}}]
+      }
+    },
+    "ApiTask": {
+      "Type": "AWS::ECS::TaskDefinition",
+      "Properties": {
+        "Family": "orders-api",
+        "Cpu": "256",
+        "Memory": "512",
+        "NetworkMode": "awsvpc",
+        "RequiresCompatibilities": ["FARGATE"],
+        "ExecutionRoleArn": "arn:aws:iam::123456789012:role/orders-exec",
+        "ContainerDefinitions": [
+          {
+            "Name": "log-router",
+            "Image": "public.ecr.aws/aws-observability/aws-for-fluent-bit:stable",
+            "Essential": false
+          },
+          {
+            "Name": "api",
+            "Image": {"Fn::Sub": "123456789012.dkr.ecr.us-east-1.amazonaws.com/orders-api:${ImageTag}"},
+            "Essential": true,
+            "PortMappings": [{"ContainerPort": 8080}],
+            "Environment": [
+              {"Name": "DB_HOST", "Value": {"Fn::GetAtt": ["OrdersDb", "Endpoint.Address"]}},
+              {"Name": "LOG_LEVEL", "Value": "info"}
+            ],
+            "LogConfiguration": {
+              "LogDriver": "awslogs",
+              "Options": {"awslogs-group": {"Ref": "AppLogs"}}
+            }
+          }
+        ]
+      }
+    },
+    "Api": {
+      "Type": "AWS::ECS::Service",
+      "DependsOn": "ApiRule",
+      "Properties": {
+        "Cluster": {"Ref": "Cluster"},
+        "DesiredCount": 2,
+        "LaunchType": "FARGATE",
+        "TaskDefinition": {"Ref": "ApiTask"},
+        "LoadBalancers": [{"ContainerName": "api", "ContainerPort": 8080, "TargetGroupArn": {"Ref": "ApiTargets"}}],
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {"Subnets": {"Ref": "Subnets"}, "AssignPublicIp": "DISABLED"}
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "DatabaseAddress": {"Value": {"Fn::GetAtt": ["OrdersDb", "Endpoint.Address"]}}
+  }
+}

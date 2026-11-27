@@ -11,6 +11,7 @@ import (
 
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cfncore/cfntemplate"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
 	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
@@ -183,6 +184,15 @@ func (r *reader) serverlessResources(t *template) {
 		own := res.get("Properties")
 		if own == nil {
 			own = json.RawMessage("{}")
+		}
+		ownProps, _ := objectOf(own)
+		for _, g := range global {
+			if ownProps.get(g.Key) == nil {
+				if t.fromGlobals == nil {
+					t.fromGlobals = map[string][]string{}
+				}
+				t.fromGlobals[e.Key] = append(t.fromGlobals[e.Key], g.Key)
+			}
 		}
 		props := merged(global.encoded(), own, []string{strings.TrimPrefix(typ, serverlessPrefix)})
 		t.resources[i].Value = res.with("Properties", props).encoded()
@@ -360,4 +370,76 @@ func encodedItems(items []json.RawMessage) json.RawMessage {
 	}
 	b.WriteByte(']')
 	return b.Bytes()
+}
+
+// notTaken are the properties of a serverless function the Recipe deploying a
+// function takes none of, each with what it writes and the fix.
+var notTaken = []struct {
+	property, does, fix string
+}{
+	{"AutoPublishAlias", "from which SAM publishes a version of the function and an alias naming it whenever the " +
+		"function changes", "the Recipe deploying a function publishes no alias, so call the function itself, or " +
+		"write the alias by hand"},
+	{"CodeUri", "the function's code as a .zip package", codeFix},
+	{"DeploymentPreference", "from which SAM writes an AWS::CodeDeploy::Application and an " +
+		"AWS::CodeDeploy::DeploymentGroup shifting the alias to each new version", "the Recipe deploying a function " +
+		"shifts no traffic, so each change is deployed at once; shift traffic with AWS CodeDeploy by hand"},
+	{"InlineCode", "the function's code written in the template", codeFix},
+	{"Policies", "from which SAM writes an execution role for the function", "the Recipe takes an existing role: " +
+		"infra.overrides.Role, so grant what the policies allow in the role the operator supplies there"},
+}
+
+// codeFix is the fix of a serverless function's code the Recipe deploying a
+// function does not take.
+const codeFix = "the Recipe deploying a function runs a container image, infra.image, which is left for the " +
+	"operator, so build the code into an image in Amazon ECR"
+
+// serverlessFunctions records, on each serverless function of g, what the
+// Recipe deploying a function, which a row maps it to, does not take of it:
+// each property of notTaken it writes, or takes from the Globals, reported
+// value-not-carried where it is written — under the Globals where the
+// function takes it from them — and, for a function whose code is a .zip
+// package, the decision saying that the Recipe runs a container image
+// infra.image names, left for the operator. A function drafted from the
+// source keeps them all, so none is reported where no row maps it.
+func (r *reader) serverlessFunctions(g *cloudimport.Graph) {
+	for _, n := range g.Nodes {
+		if n.Type != functionType {
+			continue
+		}
+		h := r.home[n]
+		if h.s == nil {
+			continue
+		}
+		props := propAt(n.Body, []string{"Properties"})
+		if props == nil {
+			continue
+		}
+		for _, p := range notTaken {
+			if propAt(props.Props, []string{p.property}) == nil {
+				continue
+			}
+			file := h.s.t.file
+			at := importer.Pointer("Resources", h.id, "Properties", p.property)
+			where := "the template " + file + " writes " + p.property + " on the function " + h.id + " at " + at
+			if slices.Contains(h.s.t.fromGlobals[h.id], p.property) {
+				at = importer.Pointer(globalsSection, "Function", p.property)
+				where = "the template " + file + " writes " + p.property + " under Globals for Function at " + at +
+					", which the function " + h.id + " takes"
+			}
+			d := cloudimport.Report(cloudimport.CodeValueNotCarried, where+", "+p.does+", so it is not carried: "+
+				p.fix)
+			d.SourceRef = file + "#" + at
+			n.ReportsIfMapped = append(n.ReportsIfMapped, d)
+		}
+		if code, ok := textAt(props.Props, "CodeUri"); ok {
+			n.SaysIfMapped = append(n.SaysIfMapped, "the Recipe deploying a function runs a container image, "+
+				"infra.image, which is left for the operator: build the code at "+draftyaml.Comment(code)+", its "+
+				"CodeUri, into an image in Amazon ECR and set infra.image to it")
+		} else if propAt(props.Props, []string{"CodeUri"}) != nil || propAt(props.Props, []string{"InlineCode"}) != nil {
+			n.SaysIfMapped = append(n.SaysIfMapped, "the Recipe deploying a function runs a container image, "+
+				"infra.image, which is left for the operator: build the function's code into an image in Amazon "+
+				"ECR and set infra.image to it")
+		}
+	}
 }

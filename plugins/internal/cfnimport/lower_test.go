@@ -177,44 +177,56 @@ var (
 			Params: []string{"Env"}}, `{"Fn::Join": ["dev", ["a", "b"]]}`},
 		{"!Join ['', [!Ref Db, !Select [0, [x, z]]]]", cloudimport.Opaque{
 			Text: "!Join ['', [!Ref Db, !Select [0, [x, z]]]]", Target: "cloudformation", Owed: owes("the resource " +
-				"Db, which the drafted stack may declare under another logical ID, or not at all")},
+				"Db, which the drafted stack may declare under another logical ID, or not at all"),
+			Reads: []string{"Db"}},
 			`{"Fn::Join": ["", [{"Ref": "Db"}, {"Fn::Select": [0, ["x", "z"]]}]]}`},
 	}
 	mappingCases = []deployTime{
 		{"!FindInMap [Sizes, test, Class]", cloudimport.Opaque{Text: "!FindInMap [Sizes, test, Class]",
-			Target: "cloudformation", Owed: owes("the mapping Sizes, which no template of the draft declares")},
+			Target: "cloudformation", Owed: owes("the mapping Sizes, which no template of the draft declares"),
+			OwedBesideReads: owes("the mapping Sizes, which no template of the draft declares")},
 			`{"Fn::FindInMap": ["Sizes", "test", "Class"]}`},
 	}
 	owedCases = []deployTime{
 		{"!Select [0, !Split [',', !Ref Name]]", cloudimport.Opaque{Text: "!Select [0, !Split [',', !Ref Name]]",
 			Target: "cloudformation", Owed: owes("the template parameter Name, which neither the parameters file nor " +
-				"a literal default gives a value")}, `{"Fn::Select": [0, {"Fn::Split": [",", {"Ref": "Name"}]}]}`},
+				"a literal default gives a value"), OwedBesideReads: owes("the template parameter Name, which " +
+				"neither the parameters file nor a literal default gives a value")},
+			`{"Fn::Select": [0, {"Fn::Split": [",", {"Ref": "Name"}]}]}`},
 		{"{'Fn::Base64': !Sub 'pw=${Password}'}", cloudimport.Opaque{Text: "!Base64 {Fn::Sub: 'pw=${Password}'}",
 			Target: "cloudformation", Owed: owes("the NoEcho template parameter Password, whose value is never " +
+				"written"), OwedBesideReads: owes("the NoEcho template parameter Password, whose value is never " +
 				"written")}, `{"Fn::Base64": {"Fn::Sub": "pw=${Password}"}}`},
 		{"!Select [0, !Split [',', !Ref Ami]]", cloudimport.Opaque{Text: "!Select [0, !Split [',', !Ref Ami]]",
 			Target: "cloudformation", Owed: owes("the template parameter Ami, whose value CloudFormation reads from " +
-				"the Systems Manager parameter it names")}, `{"Fn::Select": [0, {"Fn::Split": [",", {"Ref": "Ami"}]}]}`},
+				"the Systems Manager parameter it names"), OwedBesideReads: owes("the template parameter Ami, whose " +
+				"value CloudFormation reads from the Systems Manager parameter it names")},
+			`{"Fn::Select": [0, {"Fn::Split": [",", {"Ref": "Ami"}]}]}`},
 		{"!Select [0, !GetAtt Db.SecurityGroups]", cloudimport.Opaque{Text: "!Select [0, !GetAtt Db.SecurityGroups]",
 			Target: "cloudformation", Owed: owes("the resource Db, which the drafted stack may declare under another " +
-				"logical ID, or not at all")}, `{"Fn::Select": [0, {"Fn::GetAtt": "Db.SecurityGroups"}]}`},
+				"logical ID, or not at all"), Reads: []string{"Db"}},
+			`{"Fn::Select": [0, {"Fn::GetAtt": "Db.SecurityGroups"}]}`},
 		{"!Sub '${AWS::StackName}-${Db}'", cloudimport.Opaque{Text: "!Sub '${AWS::StackName}-${Db}'",
 			Target: "cloudformation", Owed: owes("the resource Db, which the drafted stack may declare under another " +
-				"logical ID, or not at all")}, `{"Fn::Sub": "${AWS::StackName}-${Db}"}`},
+				"logical ID, or not at all"), Reads: []string{"Db"}}, `{"Fn::Sub": "${AWS::StackName}-${Db}"}`},
 		{"!Select [0, !Ref Missing]", cloudimport.Opaque{Text: "!Select [0, !Ref Missing]", Target: "cloudformation",
-			Owed: owes("Missing, which the template declares no parameter or resource of")},
+			Owed:            owes("Missing, which the template declares no parameter or resource of"),
+			OwedBesideReads: owes("Missing, which the template declares no parameter or resource of")},
 			`{"Fn::Select": [0, {"Ref": "Missing"}]}`},
 		{"!FindInMap [Sizes, !Ref Env, Class]", cloudimport.Opaque{Text: "!FindInMap [Sizes, dev, Class]",
 			Target: "cloudformation", Params: []string{"Env"}, Owed: owes("the mapping Sizes, which no template of " +
-				"the draft declares")}, `{"Fn::FindInMap": ["Sizes", "dev", "Class"]}`},
+				"the draft declares"), OwedBesideReads: owes("the mapping Sizes, which no template of the draft " +
+				"declares")}, `{"Fn::FindInMap": ["Sizes", "dev", "Class"]}`},
 		{"!If [InEast, a, b]", cloudimport.Opaque{Text: "!If [InEast, a, b]", Target: "cloudformation",
-			Owed: owes("the condition InEast, which no template of the draft declares")},
+			Owed:            owes("the condition InEast, which no template of the draft declares"),
+			OwedBesideReads: owes("the condition InEast, which no template of the draft declares")},
 			`{"Fn::If": ["InEast", "a", "b"]}`},
 		{"!Join ['-', [!Ref AWS::Region, !GetAtt Db.Endpoint.Address, !Ref Name]]", cloudimport.Opaque{
 			Text: "!Join ['-', [!Ref AWS::Region, !GetAtt Db.Endpoint.Address, !Ref Name]]", Target: "cloudformation",
 			Owed: owes("the resource Db, which the drafted stack may declare under another logical ID, or not at " +
 				"all, and the template parameter Name, which neither the parameters file nor a literal default " +
-				"gives a value")},
+				"gives a value"), Reads: []string{"Db"}, OwedBesideReads: owes("the template parameter Name, which " +
+				"neither the parameters file nor a literal default gives a value")},
 			`{"Fn::Join": ["-", [{"Ref": "AWS::Region"}, {"Fn::GetAtt": "Db.Endpoint.Address"}, {"Ref": "Name"}]]}`},
 	}
 )
@@ -386,7 +398,9 @@ func TestLowerIfOnAParameterEqualityIsTheBranchItsValueSelects(t *testing.T) {
 	got, diags = valueOfP(t, "!If [InEast, a, b]")
 	noDiagnostics(t, diags)
 	if want := (cloudimport.Opaque{Text: "!If [InEast, a, b]", Target: "cloudformation",
-		Owed: owes("the condition InEast, which no template of the draft declares")}); !reflect.DeepEqual(got, want) {
+		Owed:            owes("the condition InEast, which no template of the draft declares"),
+		OwedBesideReads: owes("the condition InEast, which no template of the draft declares")}); !reflect.DeepEqual(got,
+		want) {
 		t.Errorf("!If [InEast, a, b] lowers to %#v, want %#v", got, want)
 	}
 }

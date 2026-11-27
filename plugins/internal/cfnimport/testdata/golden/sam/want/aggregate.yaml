@@ -1,0 +1,38 @@
+# Sources read: template.yaml.
+# The template declares the transform AWS::Serverless-2016-10-31.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the cloudformation format.
+spec:
+  components:
+    # The resource AdminApi.
+    admin-api:
+      type: imported/component/aws-serverless-api
+    # The resource ImageFunction.
+    image-function:
+      type: core/compute/function
+    # The resource OrdersTable.
+    orders-table:
+      type: core/datastore/dynamodb
+    # The resource OrdersFunction.
+    orders-function:
+      type: core/compute/function
+      uses:
+        orders-table:
+          orders-table:
+            target: orders-table
+            inject:
+              env:
+                - in: "TABLE_NAME"
+                  from: table_name
+    # The resource OrdersHttpApi.
+    # The stack the build writes names it OrdersHttpApiApi, the capitalised words of its key followed by Api, as the Recipe amazon-api-gateway names it, where the template names it OrdersHttpApi, so updating a stack the template deployed replaces the resource.
+    orders-http-api:
+      type: core/gateway/amazon-api-gateway
+      uses:
+        orders-function:
+          orders-function:
+            target: orders-function

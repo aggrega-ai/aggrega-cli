@@ -1,0 +1,26 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  OrdersDb:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: postgres
+      DBInstanceClass: db.t4g.micro
+      DBSubnetGroupName: !ImportValue shared-db-subnets
+      VPCSecurityGroups:
+        - !ImportValue shared-db-security-group
+  Worker:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !ImportValue shared-cluster
+      TaskDefinition: !Ref WorkerTask
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Select [0, !Split [",", !ImportValue shared-private-subnets]]
+  WorkerTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ExecutionRoleArn: !ImportValue shared-exec-role
+      ContainerDefinitions:
+        - Name: worker
+          Image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/worker:3.1.0

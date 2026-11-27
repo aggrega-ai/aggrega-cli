@@ -20,7 +20,8 @@ import (
 
 // cfnMiniatureHub is the hub this directory's testdata holds for the
 // cloudformation format: Components; postgres-rds, a Recipe writing its
-// fragment inline with an overrides header; redis-elasticache, inlining a
+// fragment inline with an overrides header; sql-server-rds, naming its engine
+// through a local; redis-elasticache, inlining a
 // parameter group and reading a credential slot; s3-object-store-amazon-s3
 // and function-lambda, each linking a child to the instance, the second
 // reading its overrides through a variable and a with block; http-api,
@@ -442,16 +443,16 @@ func TestTheCloudFormationTableRendersFoldsAndSlots(t *testing.T) {
 	t.Parallel()
 	f := cfnFormatOrFail(t)
 	rows, _ := cfnRowsOrFail(t)
-	slots, err := generateSlotFeaturesFromHub(cfnMiniatureHub, f, cloudimport.Table{})
+	facts, err := generateFactsFromHub(cfnMiniatureHub, f, cloudimport.Table{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := renderTable(rows, nil, slots, "r", f)
+	first, err := renderTable(rows, nil, facts, "r", f)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
 	again, _ := cfnRowsOrFail(t)
-	second, err := renderTable(again, nil, slots, "r", f)
+	second, err := renderTable(again, nil, facts, "r", f)
 	if err != nil {
 		t.Fatalf("render again: %v", err)
 	}
@@ -474,4 +475,42 @@ func TestTheCloudFormationTableRendersFoldsAndSlots(t *testing.T) {
 			t.Errorf("the rendered table writes no %s:\n%s", want, first)
 		}
 	}
+}
+
+// TestCloudFormationListsHowEachRecipeNamesItsInstance lists, of each Recipe
+// keying the resource that is its instance by the instance's logical ID — the
+// capitalised words of its key, written as that action, as the local
+// logical_id holding it alone or through a variable bound to either — the
+// literal text after it, and leaves out a Recipe whose local logical_id holds
+// anything else; the Recipe of SQL Server takes the hand-written When of an
+// engine of any edition.
+func TestCloudFormationListsHowEachRecipeNamesItsInstance(t *testing.T) {
+	t.Parallel()
+	f := cfnFormatOrFail(t)
+	facts, err := generateFactsFromHub(cfnMiniatureHub, f, cloudimport.Table{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, "the logical IDs", facts.ids, []logicalID{
+		{recipe: "acme-board-ecs", suffix: ""},
+		{recipe: "function-lambda", suffix: ""},
+		{recipe: "http-api", suffix: "Api"},
+		{recipe: "postgres-rds", suffix: ""},
+		{recipe: "redis-elasticache", suffix: ""},
+		{recipe: "s3-object-store-amazon-s3", suffix: ""},
+		{recipe: "server-ecs", suffix: ""},
+		{recipe: "sql-server-rds", suffix: ""},
+		{recipe: "sqs", suffix: ""},
+		{recipe: "task-ecs", suffix: "TaskDefinition"},
+		{recipe: "worker-ecs", suffix: ""},
+	})
+	planted, err := generateFactsFromHub(cfnHubWith(t, "renamed-logical-id"), f, cloudimport.Table{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, "the logical IDs beside a Recipe renaming its resource", planted.ids, facts.ids)
+
+	rows, _ := cfnRowsOrFail(t)
+	equal(t, "the SQL Server row's When", oneRowOf(t, rows, "sql-server-rds").When, []cloudimport.Pred{
+		{Path: []string{"Properties", "Engine"}, Op: cloudimport.OpPrefix, Value: "sqlserver-"}})
 }

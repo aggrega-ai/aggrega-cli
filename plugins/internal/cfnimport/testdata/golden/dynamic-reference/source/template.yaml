@@ -1,0 +1,15 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Resources:
+  Cache:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      Engine: redis
+      ReplicationGroupDescription: Orders cache
+      CacheNodeType: '{{resolve:ssm:/orders/cache-node-type}}'
+      AuthToken: '{{resolve:secretsmanager:orders/cache:SecretString:token}}'
+  Search:
+    Type: AWS::OpenSearchService::Domain
+    Properties:
+      AdvancedSecurityOptions:
+        MasterUserOptions:
+          MasterUserPassword: '{{resolve:ssm-secure:/orders/search-password:1}}'

@@ -106,7 +106,8 @@ type format struct {
 	// for the generated rows of the Recipes it names.
 	whens func() map[string][][]cloudimport.Pred
 	// slots makes the table list, beside the rows, the one feature type each
-	// Recipe's assertions admit at a credential slot.
+	// Recipe's assertions admit at a credential slot, and how each Recipe names
+	// the resource that is its instance.
 	slots bool
 }
 
@@ -193,18 +194,16 @@ func run(f format, hub, out, revision string, report bool) error {
 	if err != nil {
 		return err
 	}
-	var slots []slotFeature
-	if f.slots {
-		if slots, err = generateSlotFeaturesFromHub(hub, f, f.table()); err != nil {
-			return err
-		}
+	facts, err := generateFactsFromHub(hub, f, f.table())
+	if err != nil {
+		return err
 	}
 	if revision == "" {
 		if revision, err = hubRevision(hub, f); err != nil {
 			return err
 		}
 	}
-	content, err := renderTable(rows, images, slots, revision, f)
+	content, err := renderTable(rows, images, facts, revision, f)
 	if err != nil {
 		return err
 	}

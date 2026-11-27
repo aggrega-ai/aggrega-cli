@@ -1,0 +1,52 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: aws-msk-cluster
+  version: 0.1.0
+  description: "Draft Recipe realizing imported/messaging/aws-msk-cluster on cloudformation with one resource of the type AWS::MSK::Cluster, imported from a source in the cloudformation format."
+spec:
+  # This Recipe realizes imported/messaging/aws-msk-cluster with one resource of the type AWS::MSK::Cluster, drafted from the resource as a source writes it. It reads the keys below, each with its type and its rule, and none with a vendor's description, which a source does not state; any other key under infra.overrides halts the build naming it.
+  # infra.overrides.ClientSubnets: array; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of Properties.BrokerNodeGroupInfo.ClientSubnets.
+  # infra.overrides.InstanceType: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of Properties.BrokerNodeGroupInfo.InstanceType.
+  # values.cluster_name: string, required; identity: the resource's own name or identifier
+  # The source writing the resource gives no description of Properties.ClusterName.
+  # infra.overrides.KafkaVersion: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of Properties.KafkaVersion.
+  # infra.overrides.NumberOfBrokerNodes: integer; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of Properties.NumberOfBrokerNodes.
+  # template.yaml declares the resource under the logical id in locals, and the cloudformation provider projects its provides block into the stack's Outputs.
+  capability: cloudformation
+  implements: imported/messaging/aws-msk-cluster:0.1.0
+  locals:
+    # The resource's logical id: the instance's name in capitalized words, letters and digits alone, so two instances in one stack declare two resources.
+    logical_id: "{{ capitalizedWords .context.instance_id }}"
+  provides:
+    # The String Pipe: each value is piped as written into a consumer's context; the provides block of template.yaml carries the same values into the stack's Outputs.
+    id: "!Ref {{ .locals.logical_id }}"
+    arn: "!GetAtt {{ .locals.logical_id }}.Arn"
+  assertions:
+    # Halts naming any key under infra.overrides this Recipe does not read.
+    overrides_this_recipe_reads: |
+      {{- $o := optional .infra "overrides" dict -}}
+      {{- range $k, $v := $o -}}
+      {{- if not (has $k (list "ClientSubnets" "InstanceType" "KafkaVersion" "NumberOfBrokerNodes")) -}}
+      {{- fail (printf "infra.overrides.%s is not a setting this Recipe reads: it reads %s from infra.overrides; remove infra.overrides.%s from the Release" $k "ClientSubnets, InstanceType, KafkaVersion and NumberOfBrokerNodes" $k) -}}
+      {{- end -}}
+      {{- end -}}
+  artifacts:
+    template.yaml: |
+      {{- $properties := dict -}}
+      {{ $_ := set $properties "ClusterName" (index .values "cluster_name") -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "KafkaVersion") }}{{ $_ := set $properties "KafkaVersion" (index .infra "overrides" "KafkaVersion") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "NumberOfBrokerNodes") }}{{ $_ := set $properties "NumberOfBrokerNodes" (index .infra "overrides" "NumberOfBrokerNodes") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "ClientSubnets") }}{{ $set3 := (index .infra "overrides" "ClientSubnets") }}{{ if hasKey $properties "BrokerNodeGroupInfo" }}{{ $_ := set $properties "BrokerNodeGroupInfo" (deepCopy (index $properties "BrokerNodeGroupInfo")) }}{{ else }}{{ $_ := set $properties "BrokerNodeGroupInfo" dict }}{{ end }}{{ $at3_1 := index $properties "BrokerNodeGroupInfo" }}{{ if not (kindIs "map" $at3_1) }}{{ fail "Properties.BrokerNodeGroupInfo is not an object, and this Recipe writes Properties.BrokerNodeGroupInfo.ClientSubnets inside it" }}{{ end }}{{ $_ := set $at3_1 "ClientSubnets" $set3 }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "InstanceType") }}{{ $set4 := (index .infra "overrides" "InstanceType") }}{{ if hasKey $properties "BrokerNodeGroupInfo" }}{{ $_ := set $properties "BrokerNodeGroupInfo" (deepCopy (index $properties "BrokerNodeGroupInfo")) }}{{ else }}{{ $_ := set $properties "BrokerNodeGroupInfo" dict }}{{ end }}{{ $at4_1 := index $properties "BrokerNodeGroupInfo" }}{{ if not (kindIs "map" $at4_1) }}{{ fail "Properties.BrokerNodeGroupInfo is not an object, and this Recipe writes Properties.BrokerNodeGroupInfo.InstanceType inside it" }}{{ end }}{{ $_ := set $at4_1 "InstanceType" $set4 }}{{ end -}}
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::MSK::Cluster
+          Properties: {{ toJson $properties }}
+      provides:
+        id: !Ref {{ .locals.logical_id }}
+        arn: !GetAtt {{ .locals.logical_id }}.Arn

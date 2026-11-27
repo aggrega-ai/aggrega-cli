@@ -1,0 +1,23 @@
+# Sources read: main.yaml, storage.yaml.
+# The nested stack Storage of main.yaml is read as the resources of its template storage.yaml, each drafted with Storage before its logical ID.
+# Parameters the draft carries nowhere: Env.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the cloudformation format.
+spec:
+  components:
+    # The resource StorageQueue.
+    # The stack the build writes names it StorageQueueQueue, the capitalised words of its key followed by Queue, as the Recipe sqs names it, where the template names it StorageQueue, so updating a stack the template deployed replaces the resource.
+    storage-queue:
+      type: core/messaging/sqs
+    # The resource Reader.
+    reader:
+      type: core/compute/function
+      uses:
+        # Not wired: Reader sets the variable QUEUE_URL at Properties.Environment.Variables.QUEUE_URL from the identifier of StorageQueue; StorageQueue publishes no provides key for it.
+        storage-queue:
+          storage-queue:
+            target: storage-queue

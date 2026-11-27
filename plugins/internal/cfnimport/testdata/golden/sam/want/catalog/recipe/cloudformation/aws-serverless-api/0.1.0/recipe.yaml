@@ -1,0 +1,41 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: aws-serverless-api
+  version: 0.1.0
+  description: "Draft Recipe realizing imported/component/aws-serverless-api on cloudformation with one resource of the type AWS::Serverless::Api, imported from a source in the cloudformation format."
+spec:
+  # This Recipe realizes imported/component/aws-serverless-api with one resource of the type AWS::Serverless::Api, drafted from the resource as a source writes it. It reads the keys below, each with its type and its rule, and none with a vendor's description, which a source does not state; any other key under infra.overrides halts the build naming it.
+  # infra.overrides.StageName: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of Properties.StageName.
+  # template.yaml declares the resource under the logical id in locals, and the cloudformation provider projects its provides block into the stack's Outputs.
+  # The type is a serverless resource, so template.yaml declares the Transform AWS::Serverless-2016-10-31 that expands it.
+  capability: cloudformation
+  implements: imported/component/aws-serverless-api:0.1.0
+  locals:
+    # The resource's logical id: the instance's name in capitalized words, letters and digits alone, so two instances in one stack declare two resources.
+    logical_id: "{{ capitalizedWords .context.instance_id }}"
+  provides:
+    # The String Pipe: each value is piped as written into a consumer's context; the provides block of template.yaml carries the same values into the stack's Outputs.
+    id: "!Ref {{ .locals.logical_id }}"
+  assertions:
+    # Halts naming any key under infra.overrides this Recipe does not read.
+    overrides_this_recipe_reads: |
+      {{- $o := optional .infra "overrides" dict -}}
+      {{- range $k, $v := $o -}}
+      {{- if not (has $k (list "StageName")) -}}
+      {{- fail (printf "infra.overrides.%s is not a setting this Recipe reads: it reads %s from infra.overrides; remove infra.overrides.%s from the Release" $k "StageName" $k) -}}
+      {{- end -}}
+      {{- end -}}
+  artifacts:
+    template.yaml: |
+      Transform: AWS::Serverless-2016-10-31
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::Serverless::Api
+          Properties:{{ if not (or (hasKey (optional .infra "overrides" dict) "StageName")) }} {}{{ end }}
+            {{- if (hasKey (optional .infra "overrides" dict) "StageName") }}
+            StageName: {{ toJson (index .infra "overrides" "StageName") }}
+            {{- end }}
+      provides:
+        id: !Ref {{ .locals.logical_id }}

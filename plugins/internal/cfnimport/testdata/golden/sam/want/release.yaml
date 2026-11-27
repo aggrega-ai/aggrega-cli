@@ -1,0 +1,38 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
+  version: 0.1.0
+  description: Draft Release imported from a source in the cloudformation format.
+spec:
+  aggregate: imported/flow
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
+  components:
+    admin-api:
+      infra:
+        overrides:
+          StageName: "prod"
+    # Properties the source writes and the draft does not place: Properties.AutoPublishAlias, Properties.PackageType.
+    image-function:
+      infra:
+        image: "123456789012.dkr.ecr.us-east-1.amazonaws.com/orders-report:2.0.1"
+        overrides:
+          Role: "arn:aws:iam::123456789012:role/orders-function"
+          Timeout: 20
+    # Properties the source writes and the draft does not place: Properties.PrimaryKey.
+    orders-table:
+      infra:
+        overrides:
+          ReadCapacityUnits: 5
+          WriteCapacityUnits: 5
+    # Properties the source writes and the draft does not place: Properties.AutoPublishAlias, Properties.CodeUri, Properties.Handler, Properties.Runtime.
+    # Environment variables the source sets and no connection delivers: STAGE = prod.
+    orders-function:
+      infra:
+        overrides:
+          Role: "arn:aws:iam::123456789012:role/orders-function"
+          Timeout: 20
+    orders-http-api: {}

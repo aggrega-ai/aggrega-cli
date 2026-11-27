@@ -1,0 +1,27 @@
+# Sources read: template.yaml.
+# Parameters the draft carries nowhere: Region.
+apiVersion: aggrega.ai/v1beta1
+kind: Aggregate
+metadata:
+  name: imported/flow
+  version: 0.1.0
+  description: Draft Aggregate imported from a source in the cloudformation format.
+spec:
+  parameters:
+    # The template parameter WithArchive.
+    with_archive:
+      type: boolean
+      default: false
+      enum: [true, false]
+  components:
+    # The resource Archive.
+    archive:
+      type: core/storage/s3-object-store
+      active: "{{ .parameters.with_archive }}"
+      values:
+        bucket: "orders-archive"
+    # The resource Uploads.
+    uploads:
+      type: core/storage/s3-object-store
+      values:
+        bucket: "orders-uploads-eu"

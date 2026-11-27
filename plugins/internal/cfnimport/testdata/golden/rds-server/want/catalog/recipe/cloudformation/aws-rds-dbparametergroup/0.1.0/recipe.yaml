@@ -1,0 +1,44 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Recipe
+metadata:
+  name: aws-rds-dbparametergroup
+  version: 0.1.0
+  description: "Draft Recipe realizing imported/datastore/aws-rds-dbparametergroup on cloudformation with one resource of the type AWS::RDS::DBParameterGroup, imported from a source in the cloudformation format."
+spec:
+  # This Recipe realizes imported/datastore/aws-rds-dbparametergroup with one resource of the type AWS::RDS::DBParameterGroup, drafted from the resource as a source writes it. It reads the keys below, each with its type and its rule, and none with a vendor's description, which a source does not state; any other key under infra.overrides halts the build naming it.
+  # infra.overrides.Description: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of Properties.Description.
+  # infra.overrides.Family: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of Properties.Family.
+  # infra.overrides.max_connections: string; override: writable, set under infra.overrides in the vendor's spelling
+  # The source writing the resource gives no description of Properties.Parameters.max_connections.
+  # template.yaml declares the resource under the logical id in locals, and the cloudformation provider projects its provides block into the stack's Outputs.
+  capability: cloudformation
+  implements: imported/datastore/aws-rds-dbparametergroup:0.1.0
+  locals:
+    # The resource's logical id: the instance's name in capitalized words, letters and digits alone, so two instances in one stack declare two resources.
+    logical_id: "{{ capitalizedWords .context.instance_id }}"
+  provides:
+    # The String Pipe: each value is piped as written into a consumer's context; the provides block of template.yaml carries the same values into the stack's Outputs.
+    id: "!Ref {{ .locals.logical_id }}"
+  assertions:
+    # Halts naming any key under infra.overrides this Recipe does not read.
+    overrides_this_recipe_reads: |
+      {{- $o := optional .infra "overrides" dict -}}
+      {{- range $k, $v := $o -}}
+      {{- if not (has $k (list "Description" "Family" "max_connections")) -}}
+      {{- fail (printf "infra.overrides.%s is not a setting this Recipe reads: it reads %s from infra.overrides; remove infra.overrides.%s from the Release" $k "Description, Family and max_connections" $k) -}}
+      {{- end -}}
+      {{- end -}}
+  artifacts:
+    template.yaml: |
+      {{- $properties := dict -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "Description") }}{{ $_ := set $properties "Description" (index .infra "overrides" "Description") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "Family") }}{{ $_ := set $properties "Family" (index .infra "overrides" "Family") }}{{ end -}}
+      {{ if (hasKey (optional .infra "overrides" dict) "max_connections") }}{{ $set2 := (index .infra "overrides" "max_connections") }}{{ if hasKey $properties "Parameters" }}{{ $_ := set $properties "Parameters" (deepCopy (index $properties "Parameters")) }}{{ else }}{{ $_ := set $properties "Parameters" dict }}{{ end }}{{ $at2_1 := index $properties "Parameters" }}{{ if not (kindIs "map" $at2_1) }}{{ fail "Properties.Parameters is not an object, and this Recipe writes Properties.Parameters.max_connections inside it" }}{{ end }}{{ $_ := set $at2_1 "max_connections" $set2 }}{{ end -}}
+      Resources:
+        {{ .locals.logical_id }}:
+          Type: AWS::RDS::DBParameterGroup
+          Properties: {{ toJson $properties }}
+      provides:
+        id: !Ref {{ .locals.logical_id }}

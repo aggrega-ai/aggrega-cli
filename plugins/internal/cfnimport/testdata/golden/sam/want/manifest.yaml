@@ -1,0 +1,14 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: imported/flow
+  version: 0.1.0
+spec:
+  mappings:
+    components:
+      name:
+        admin-api: cloudformation/aws-serverless-api
+        image-function: cloudformation/function-lambda
+        orders-table: cloudformation/dynamodb
+        orders-function: cloudformation/function-lambda
+        orders-http-api: cloudformation/amazon-api-gateway

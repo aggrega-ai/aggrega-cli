@@ -1,0 +1,27 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
+  version: 0.1.0
+  description: Draft Release imported from a source in the cloudformation format.
+spec:
+  aggregate: imported/flow
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
+  components:
+    orders-db:
+      infra:
+        overrides:
+          DBInstanceClass: "db.t4g.micro"
+          DBSubnetGroupName: "!ImportValue shared-db-subnets"
+          VPCSecurityGroups: ["!ImportValue shared-db-security-group"]
+    # Properties the source writes and the draft does not place: Properties.TaskDefinition.ContainerDefinitions.0.Name.
+    worker:
+      infra:
+        image: "123456789012.dkr.ecr.us-east-1.amazonaws.com/worker:3.1.0"
+        overrides:
+          Cluster: "!ImportValue shared-cluster"
+          Subnets: ["!Select [0, !Split [',', !ImportValue shared-private-subnets]]"]
+          ExecutionRoleArn: "!ImportValue shared-exec-role"

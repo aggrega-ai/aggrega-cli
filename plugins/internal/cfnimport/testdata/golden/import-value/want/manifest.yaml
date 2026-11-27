@@ -1,0 +1,11 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Manifest
+metadata:
+  name: imported/flow
+  version: 0.1.0
+spec:
+  mappings:
+    components:
+      name:
+        orders-db: cloudformation/postgres-rds
+        worker: cloudformation/worker-ecs

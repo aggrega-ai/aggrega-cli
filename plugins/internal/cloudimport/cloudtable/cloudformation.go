@@ -1133,14 +1133,9 @@ func extractCloudFormation(r recipeSource) (cloudimport.Row, string, error) {
 	if len(r.fragments) == 0 {
 		return cloudimport.Row{}, "it writes no fragment", nil
 	}
-	var resources []*cfnResource
-	for _, text := range r.fragments {
-		f, err := readFragment(text)
-		if err != nil {
-			return cloudimport.Row{}, "", fmt.Errorf("writes a fragment that does not parse as a template (%v): "+
-				"correct the fragment", err)
-		}
-		resources = append(resources, f.resources()...)
+	resources, err := fragmentResources(r)
+	if err != nil {
+		return cloudimport.Row{}, "", err
 	}
 	if len(resources) == 0 {
 		return cloudimport.Row{}, "its fragment writes no resource", nil
@@ -1215,6 +1210,21 @@ func extractCloudFormation(r recipeSource) (cloudimport.Row, string, error) {
 		}
 	}
 	return b.row, strings.Join(notes, "; "), nil
+}
+
+// fragmentResources returns the resources r's fragments write, in the order
+// written.
+func fragmentResources(r recipeSource) ([]*cfnResource, error) {
+	var resources []*cfnResource
+	for _, text := range r.fragments {
+		f, err := readFragment(text)
+		if err != nil {
+			return nil, fmt.Errorf("writes a fragment that does not parse as a template (%v): correct the fragment",
+				err)
+		}
+		resources = append(resources, f.resources()...)
+	}
+	return resources, nil
 }
 
 // slotFeature is the one feature type a Recipe's assertions admit at a
@@ -1360,4 +1370,96 @@ func generateSlotFeaturesFromHub(hub string, f format, hand cloudimport.Table) (
 		return nil, err
 	}
 	return generateSlotFeatures(h, hand)
+}
+
+// logicalID is how a Recipe names the resource that is its instance in the
+// stack the build writes: the capitalised words of the instance's key,
+// followed by suffix.
+type logicalID struct {
+	recipe, suffix string
+}
+
+// logicalIDOf returns the literal text r keys the resource that is its
+// instance by after the instance's logical ID — the capitalised words of the
+// instance's key, written as that action, as the local logical_id holding it
+// alone or as a variable bound to either — and false where r keys it
+// otherwise, declares a local logical_id holding anything else, or its text
+// does not say which resource is the instance.
+func logicalIDOf(r recipeSource) (string, bool) {
+	if r.source != nil || len(r.fragments) == 0 {
+		return "", false
+	}
+	if text, declared := r.locals["logical_id"]; declared && !isSymbol(text, []string{foldedName}) {
+		return "", false
+	}
+	resources, err := fragmentResources(r)
+	if err != nil || len(resources) == 0 {
+		return "", false
+	}
+	_, named := readProvides(r.provides)
+	primary, err := primaryOf(resources, named)
+	if err != nil {
+		return "", false
+	}
+	suffix, keyed := strings.CutPrefix(primary.canon, symbolMark)
+	if !keyed || strings.ContainsAny(suffix, symbolMark+actionMark+otherClose) {
+		return "", false
+	}
+	return suffix, true
+}
+
+// generateLogicalIDs returns how each Recipe of h's capability names the
+// resource that is its instance, where its text says so as logicalIDOf
+// reads it, each Recipe read at the version a reference naming it without one
+// resolves to, ordered by Recipe; a Recipe the hand table lists in
+// notImported gives none.
+func generateLogicalIDs(h *hubCatalog, hand cloudimport.Table) ([]logicalID, error) {
+	notImported := map[string]bool{}
+	for _, n := range hand.NotImported {
+		notImported[n.Recipe] = true
+	}
+	var out []logicalID
+	for _, name := range h.recipeNames() {
+		r, ok := h.recipe(name)
+		if !ok || notImported[name] {
+			continue
+		}
+		src, err := h.read(r)
+		if err != nil {
+			return nil, err
+		}
+		if suffix, ok := logicalIDOf(src); ok {
+			out = append(out, logicalID{recipe: name, suffix: suffix})
+		}
+	}
+	return out, nil
+}
+
+// recipeFacts are what a format's table lists of its Recipes beside the rows:
+// the one feature type each Recipe admits at a credential slot, and how each
+// names the resource that is its instance.
+type recipeFacts struct {
+	slots []slotFeature
+	ids   []logicalID
+}
+
+// generateFactsFromHub generates the facts f's table lists of the Recipes of
+// the checkout at hub, none where f lists none.
+func generateFactsFromHub(hub string, f format, hand cloudimport.Table) (recipeFacts, error) {
+	if !f.slots {
+		return recipeFacts{}, nil
+	}
+	h, err := loadHub(hub, f.capability)
+	if err != nil {
+		return recipeFacts{}, err
+	}
+	slots, err := generateSlotFeatures(h, hand)
+	if err != nil {
+		return recipeFacts{}, err
+	}
+	ids, err := generateLogicalIDs(h, hand)
+	if err != nil {
+		return recipeFacts{}, err
+	}
+	return recipeFacts{slots: slots, ids: ids}, nil
 }

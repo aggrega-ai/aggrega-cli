@@ -1,0 +1,45 @@
+apiVersion: aggrega.ai/v1beta1
+kind: Release
+metadata:
+  name: imported/flow
+  # environment is a drafted default, since no source names the environment this Release deploys to; change it to name the one it deploys to.
+  environment: development
+  version: 0.1.0
+  description: Draft Release imported from a source in the cloudformation format.
+spec:
+  aggregate: imported/flow
+  # manifest: left empty, since the import was given no target; an import given a target drafts the Manifest and names it here.
+  manifest: ""
+  components:
+    orders-db-params:
+      infra:
+        overrides:
+          Description: "Orders database parameters"
+          Family: "postgres16"
+          max_connections: "200"
+    # Properties the source writes and the draft does not place: Properties.ManageMasterUserPassword, UpdateReplacePolicy.
+    orders-db:
+      infra:
+        engine_version: "16.3"
+        storage:
+          size: "20Gi"
+        overrides:
+          DeletionPolicy: "Snapshot"
+          DBInstanceClass: "db.t4g.micro"
+    # Properties the source writes and the draft does not place: Properties.LaunchType, Properties.LoadBalancers.0.ContainerName, Properties.LoadBalancers.0.ContainerPort, Properties.TaskDefinition.ContainerDefinitions.0.Essential, Properties.TaskDefinition.ContainerDefinitions.0.LogConfiguration.LogDriver, Properties.TaskDefinition.ContainerDefinitions.0.Name, Properties.TaskDefinition.ContainerDefinitions.1, Properties.TaskDefinition.Cpu, Properties.TaskDefinition.Family, Properties.TaskDefinition.Memory, Properties.TaskDefinition.NetworkMode, Properties.TaskDefinition.RequiresCompatibilities.
+    # Environment variables the source sets and no connection delivers: LOG_LEVEL = info.
+    api:
+      infra:
+        # From the template parameter ImageTag, its literal default.
+        image: "123456789012.dkr.ecr.us-east-1.amazonaws.com/orders-api:1.4.2"
+        replicas: 2
+        port: 8080
+        overrides:
+          # From the template parameter Subnets, its literal default.
+          Subnets: "subnet-0a1b2c3d,subnet-4e5f6a7b"
+          AssignPublicIp: "DISABLED"
+          ExecutionRoleArn: "arn:aws:iam::123456789012:role/orders-exec"
+          # Left for the Release, since the source cannot supply it: infra.overrides.Cluster, the pointer to the resource Cluster (AWS::ECS::Cluster), which the draft leaves to the operator; the catalog Recipe takes the resource's literal identifier: write it
+          Cluster: ""
+          # Left for the Release, since the source cannot supply it: infra.overrides.awslogs-group, the pointer to the resource AppLogs (AWS::Logs::LogGroup), which the draft leaves to the operator; the catalog Recipe takes the resource's literal identifier: write it
+          awslogs-group: ""
