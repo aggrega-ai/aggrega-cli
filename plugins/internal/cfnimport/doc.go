@@ -17,6 +17,15 @@
 // becomes a node keyed by its logical ID, and an instance drafted from it is
 // keyed by the ID's words ([Key]).
 //
+// [Read] then lowers each intrinsic function, dynamic reference and condition
+// the template writes into the core's values: a parameter, a reference to a
+// resource or its attribute, text composed of those, a secret a store holds,
+// or deploy-time text written as one line of YAML short form, which the
+// cloudformation target's Recipes read back as the function. Nothing the stack
+// learns when it deploys is read: a pseudo parameter, an imported value and a
+// dynamic reference stay text CloudFormation evaluates then, and a dynamic
+// reference is never resolved.
+//
 // The table is read from the hub's cloudformation Recipes themselves — the
 // resource each Recipe's fragment writes as the instance, the Component it
 // implements with that Component's labels, and what its text says literally of

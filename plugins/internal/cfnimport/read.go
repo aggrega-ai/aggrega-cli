@@ -23,8 +23,8 @@ const (
 )
 
 // read reads the CloudFormation templates and the parameters file a request
-// carries into the core's graph, with what it reports of them. It is the
-// cloudformation format's reader.
+// carries into the core's graph, with what it reports of them; [Read] lowers
+// the values it reads.
 //
 // Each source is read with the template reader, cfntemplate.Normalize, which
 // reads YAML with short forms and JSON as CloudFormation reads them, into the

@@ -1,0 +1,991 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Cognitio s.r.l.
+
+package cfnimport
+
+import (
+	"bytes"
+	"encoding/json"
+	"maps"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cfncore/cfntemplate"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/cloudimport"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/draftyaml"
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/schemadraft"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
+)
+
+// target is the target the cloudformation format's own Recipes deploy on,
+// which evaluates the format's deploy-time text.
+const target = "cloudformation"
+
+// Read reads the CloudFormation templates and the parameters file a request
+// carries into the core's graph, as read reads them, and lowers each value of
+// its nodes, their conditions and its outputs into the core's values, as
+// [reader.lower] says. It is the cloudformation format's reader.
+func Read(in aggrega.ImportInput, s cloudimport.Settings, parse cloudimport.ParseFunc) (*cloudimport.Graph,
+	[]aggrega.Diagnostic) {
+	r := &reader{in: in, parse: parse}
+	g := r.read(s)
+	if g != nil {
+		r.lower(g)
+	}
+	return g, r.diags
+}
+
+// lower lowers each value r read into g from the root template, held as the
+// long form the template reader writes, into the core's values, as
+// CloudFormation reads each when the stack deploys:
+//
+//   - Ref to a template parameter is that Param — but for a parameter of a
+//     Systems Manager parameter type naming one value and given a literal
+//     value, which is the dynamic reference resolving that Systems Manager
+//     parameter —; Ref to a pseudo parameter is deploy-time text; Ref to
+//     AWS::NoValue leaves the member or the item holding it absent; Ref to
+//     any other name is a Ref to that resource's identifier;
+//   - Fn::GetAtt, as a list or as one string, is a Ref to the attribute, its
+//     path the attribute's name split at each dot;
+//   - Fn::Sub, in its string or its list form, and Fn::Join with a literal
+//     delimiter and a literal list are composed text where each part is
+//     literal text, a parameter or a reference: a variable the list form
+//     binds is read before one the template declares, ${X.A} is a reference
+//     to the attribute, and ${!X} is the literal text ${X}. One that is wholly
+//     a Secrets Manager dynamic reference whose secret is a resource of the
+//     template is the credential of that resource it reads. Any other is
+//     deploy-time text;
+//   - Fn::FindInMap with literal keys is the value the mapping holds there;
+//   - Fn::If on a condition comparing one template parameter with a literal
+//     is the branch the parameter's value selects, the other named in a
+//     value-not-carried warning;
+//   - Fn::GetStackOutput, which takes a mapping, is not carried;
+//   - every other function — Fn::ImportValue, Fn::Select, Fn::Split,
+//     Fn::GetAZs, Fn::Base64, Fn::Cidr, and those above where they read
+//     anything else — is deploy-time text, as [lowerer.opaque] writes it;
+//   - text that is wholly a dynamic reference is the secret it reads where it
+//     reads Secrets Manager or a SecureString Systems Manager parameter
+//     ([cloudimport.Stored]), and deploy-time text where it reads a plain
+//     Systems Manager parameter; text that is wholly a short form, which
+//     CloudFormation reads as text and a catalog Recipe placing it would read
+//     as the function, is not carried; any other literal is itself.
+//
+// A value not carried is reported value-not-carried, naming where the
+// template writes it, and its member is kept with no value. A parameter's
+// default or supplied value that is wholly a short form is not carried
+// either, and a resource's condition is lowered as [lowerer.condition] says.
+// A nested function is reported on, where it is, only once the value holding
+// it is lowered to more than deploy-time text.
+func (r *reader) lower(g *cloudimport.Graph) {
+	var notes []aggrega.Diagnostic
+	l := &lowerer{r: r, t: r.root, params: g.Params, notes: &notes}
+	l.parameterValues()
+	for _, n := range g.Nodes {
+		l.condition(n)
+	}
+	for _, n := range g.Nodes {
+		n.Body = l.props(n.Body, importer.Pointer("Resources", n.ID), true)
+	}
+	for i := range g.Outputs {
+		g.Outputs[i].Value = l.output(g.Outputs[i])
+	}
+	for _, d := range notes {
+		r.note(d)
+	}
+}
+
+// lowerer lowers the values of one template.
+type lowerer struct {
+	r *reader
+	t *template
+	// params are the template's parameters as the graph holds them, filled
+	// from the parameters file.
+	params []cloudimport.Parameter
+	// notes collects what lowering reports.
+	notes *[]aggrega.Diagnostic
+}
+
+// warn records a diagnostic of code on the value at the JSON pointer at of
+// the lowerer's template.
+func (l *lowerer) warn(code cloudimport.Code, at, message string) {
+	d := cloudimport.Report(code, message)
+	d.SourceRef = l.t.file + "#" + at
+	*l.notes = append(*l.notes, d)
+}
+
+// trial returns a lowerer whose reports are held apart from l's, and keep,
+// which hands them to l: a value lowered as a part of composed text reports
+// only where the text is composed.
+func (l *lowerer) trial() (*lowerer, func()) {
+	var held []aggrega.Diagnostic
+	t := *l
+	t.notes = &held
+	return &t, func() { *l.notes = append(*l.notes, held...) }
+}
+
+// param returns the template parameter named name, nil where the template
+// declares none.
+func (l *lowerer) param(name string) *cloudimport.Parameter {
+	for i := range l.params {
+		if l.params[i].Name == name {
+			return &l.params[i]
+		}
+	}
+	return nil
+}
+
+// isResource reports whether the template declares a resource named id.
+func (l *lowerer) isResource(id string) bool {
+	return l.t.resources.get(id) != nil
+}
+
+// isPseudo reports whether name is a pseudo parameter, AWS:: and its name; a
+// template's own parameter and resource are named in letters and digits.
+func isPseudo(name string) bool {
+	return strings.HasPrefix(name, "AWS::")
+}
+
+// given returns the text of the literal value the parameter p is given — the
+// value the parameters file supplies, else its default; a number or a boolean
+// as written — false where it is given none.
+func given(p *cloudimport.Parameter) (string, bool) {
+	for _, v := range []cloudimport.Value{p.Supplied, p.Default} {
+		if lit, ok := v.(cloudimport.Literal); ok {
+			return draftyaml.ScalarText(lit.JSON)
+		}
+	}
+	return "", false
+}
+
+// isList reports whether a parameter of type typ is a list: CloudFormation
+// reads its value as the comma-separated members of its text.
+func isList(typ string) bool {
+	return typ == "CommaDelimitedList" || strings.HasPrefix(typ, "List<")
+}
+
+// ssmValuePrefix opens the type of a parameter whose value is that of the
+// Systems Manager parameter its own value names.
+const ssmValuePrefix = "AWS::SSM::Parameter::Value<"
+
+// isSSMValue reports whether a parameter of type typ reads its value from the
+// Systems Manager parameter its own value names.
+func isSSMValue(typ string) bool {
+	return strings.HasPrefix(typ, ssmValuePrefix)
+}
+
+// parameterValues leaves out each parameter's default, and each value the
+// parameters file supplies, that is wholly a short form: CloudFormation reads
+// it as text, and a catalog Recipe placing it would read it as the function.
+// Each is reported value-not-carried.
+func (l *lowerer) parameterValues() {
+	for i := range l.params {
+		p := &l.params[i]
+		if shortFormText(p.Default) {
+			p.Default = nil
+			l.warn(cloudimport.CodeValueNotCarried, importer.Pointer("Parameters", p.Name, "Default"), "the template "+
+				l.t.file+" gives the parameter "+p.Name+" a default that is wholly a CloudFormation short form, which "+
+				"CloudFormation reads as text and a catalog Recipe placing it would read as an intrinsic function, so "+
+				"the default is not carried: write the value by hand where the stack deploys")
+		}
+		if shortFormText(p.Supplied) && l.r.sel.params != nil {
+			p.Supplied = nil
+			file := l.r.sel.params.name()
+			d := cloudimport.Report(cloudimport.CodeValueNotCarried, "the parameters file "+file+" gives the "+
+				"parameter "+p.Name+" a value that is wholly a CloudFormation short form, which CloudFormation reads as "+
+				"text and a catalog Recipe placing it would read as an intrinsic function, so the value is not "+
+				"carried: write the value by hand where the stack deploys")
+			d.SourceRef = file
+			*l.notes = append(*l.notes, d)
+		}
+	}
+}
+
+// shortFormText reports whether v is literal text that is wholly a short form.
+func shortFormText(v cloudimport.Value) bool {
+	lit, ok := v.(cloudimport.Literal)
+	if !ok {
+		return false
+	}
+	s, isText := schemadraft.JSONText(lit.JSON)
+	return isText && cfntemplate.LooksLikeShortForm(s)
+}
+
+// props returns the properties in lowered, each written at the JSON pointer
+// at and its member's name, or its index where named is false: a leaf the
+// reader holds as long-form JSON lowered as [lowerer.prop] lowers it, an
+// object's members and an array's items each lowered, and a member or an item
+// lowered to AWS::NoValue left out. An object or an array left with none is
+// its empty literal.
+func (l *lowerer) props(in []cloudimport.Prop, at string, named bool) []cloudimport.Prop {
+	var out []cloudimport.Prop
+	for i, p := range in {
+		seg := p.Name
+		if !named {
+			seg = strconv.Itoa(i)
+		}
+		here := at + importer.Pointer(seg)
+		var lowered cloudimport.Prop
+		present := true
+		switch lit, isLiteral := p.Value.(cloudimport.Literal); {
+		case isLiteral:
+			lowered, present = l.prop(lit.JSON, here)
+		case p.Value != nil:
+			lowered = p
+		case len(p.Props) > 0:
+			lowered.Props = l.props(p.Props, here, true)
+			if len(lowered.Props) == 0 {
+				lowered.Value = literal(json.RawMessage("{}"))
+			}
+		case len(p.Items) > 0:
+			lowered.Items = l.props(p.Items, here, false)
+			if len(lowered.Items) == 0 {
+				lowered.Value = literal(json.RawMessage("[]"))
+			}
+		}
+		if !present {
+			continue
+		}
+		lowered.Name = p.Name
+		out = append(out, lowered)
+	}
+	return out
+}
+
+// prop lowers the JSON value raw, written at the JSON pointer at, into a
+// property: an intrinsic function — an object whose one member is named Ref,
+// Condition, or Fn:: and a function's name — as [lowerer.call] lowers it, any
+// other object into its members and an array into its items, each lowered, an
+// empty object or array, or one left with no member or item, as its empty
+// literal, text as [lowerer.text] lowers it, and any other value as its
+// literal. It is false where raw is AWS::NoValue: the member or the item
+// holding it is absent.
+func (l *lowerer) prop(raw json.RawMessage, at string) (cloudimport.Prop, bool) {
+	switch kind(raw) {
+	case 0:
+		return cloudimport.Prop{}, true
+	case '{':
+		o, _ := objectOf(raw)
+		if len(o) == 1 && cfntemplate.IsIntrinsicKey(o[0].Key) {
+			return l.call(o[0].Key, o[0].Value, raw, at)
+		}
+		var p cloudimport.Prop
+		for _, e := range o {
+			m, present := l.prop(e.Value, at+importer.Pointer(e.Key))
+			if !present {
+				continue
+			}
+			m.Name = e.Key
+			p.Props = append(p.Props, m)
+		}
+		if len(p.Props) == 0 {
+			return cloudimport.Prop{Value: literal(json.RawMessage("{}"))}, true
+		}
+		return p, true
+	case '[':
+		items, _ := itemsOf(raw)
+		var p cloudimport.Prop
+		for i, item := range items {
+			m, present := l.prop(item, at+importer.Pointer(strconv.Itoa(i)))
+			if present {
+				p.Items = append(p.Items, m)
+			}
+		}
+		if len(p.Items) == 0 {
+			return cloudimport.Prop{Value: literal(json.RawMessage("[]"))}, true
+		}
+		return p, true
+	case '"':
+		s, _ := schemadraft.JSONText(raw)
+		return cloudimport.Prop{Value: l.text(s, raw, at)}, true
+	}
+	return cloudimport.Prop{Value: literal(raw)}, true
+}
+
+// text lowers the string s, which raw writes, written at the JSON pointer at:
+// a dynamic reference as [lowerer.dynamic] lowers it; text that is wholly a
+// short form is not carried, as CloudFormation reads it as text and a catalog
+// Recipe placing it would read it as the function; any other is its literal.
+func (l *lowerer) text(s string, raw json.RawMessage, at string) cloudimport.Value {
+	switch {
+	case cfntemplate.IsDynamicReference(s):
+		return l.dynamic(s, at)
+	case cfntemplate.LooksLikeShortForm(s):
+		l.warn(cloudimport.CodeValueNotCarried, at, "the template "+l.t.file+" writes text at "+at+" that is wholly a "+
+			"CloudFormation short form, which CloudFormation reads as text and a catalog Recipe placing it would read "+
+			"as an intrinsic function, so it is not carried: write the value by hand where the stack deploys")
+		return nil
+	}
+	return literal(raw)
+}
+
+// dynamic lowers the dynamic reference s, written at the JSON pointer at: one
+// reading Secrets Manager is the secret it names, located by the secret's
+// name, or its ARN with its colons kept; one reading a SecureString Systems
+// Manager parameter is the secret located by all it writes after
+// ssm-secure:, the parameter's name and the version it names; one reading a
+// plain Systems Manager parameter is deploy-time text, its text as written.
+// The reference is never resolved: CloudFormation resolves it when the stack
+// deploys.
+func (l *lowerer) dynamic(s, at string) cloudimport.Value {
+	body := strings.TrimSuffix(strings.TrimPrefix(s, "{{resolve:"), "}}")
+	store, rest, _ := strings.Cut(body, ":")
+	switch store {
+	case "secretsmanager":
+		return cloudimport.Stored{Store: store, Locator: secretID(rest), Text: s}
+	case "ssm-secure":
+		return cloudimport.Stored{Store: store, Locator: rest, Text: s}
+	}
+	if !writable(s) {
+		l.unwritable("a dynamic reference", at)
+		return nil
+	}
+	return cloudimport.Opaque{Text: s, Target: target}
+}
+
+// secretArnFields is the number of colon-separated fields of a Secrets
+// Manager secret's ARN: arn, partition, service, region, account, secret and
+// the secret's name.
+const secretArnFields = 7
+
+// secretID returns the secret a Secrets Manager dynamic reference names, read
+// from what the reference writes after secretsmanager: its name, the text
+// before the first colon, or its ARN, the ARN's fields before the reference's
+// own.
+func secretID(rest string) string {
+	if !strings.HasPrefix(rest, "arn:") {
+		id, _, _ := strings.Cut(rest, ":")
+		return id
+	}
+	fields := strings.Split(rest, ":")
+	if len(fields) <= secretArnFields {
+		return rest
+	}
+	return strings.Join(fields[:secretArnFields], ":")
+}
+
+// call lowers the intrinsic function fn reading arg, which raw writes whole at
+// the JSON pointer at, as [reader.lower] says.
+func (l *lowerer) call(fn string, arg, raw json.RawMessage, at string) (cloudimport.Prop, bool) {
+	switch fn {
+	case "Ref":
+		name, ok := schemadraft.JSONText(arg)
+		switch {
+		case !ok:
+			return cloudimport.Prop{Value: l.opaque(raw, at)}, true
+		case name == "AWS::NoValue":
+			return cloudimport.Prop{}, false
+		case isPseudo(name):
+			return cloudimport.Prop{Value: l.opaque(raw, at)}, true
+		}
+		if p := l.param(name); p != nil {
+			return cloudimport.Prop{Value: l.paramValue(p)}, true
+		}
+		return cloudimport.Prop{Value: cloudimport.Ref{Node: name}}, true
+	case "Fn::GetAtt":
+		if v, ok := l.getAtt(arg); ok {
+			return cloudimport.Prop{Value: v}, true
+		}
+	case "Fn::Sub":
+		return cloudimport.Prop{Value: l.sub(arg, raw, at)}, true
+	case "Fn::Join":
+		return cloudimport.Prop{Value: l.join(arg, raw, at)}, true
+	case "Fn::FindInMap":
+		return l.findInMap(arg, raw, at)
+	case "Fn::If":
+		return l.branch(arg, raw, at)
+	case "Fn::GetStackOutput":
+		l.warn(cloudimport.CodeValueNotCarried, at, "the template "+l.t.file+" reads another stack's output with "+
+			"Fn::GetStackOutput at "+at+", which takes a mapping, and a catalog Recipe placing its one-line text "+
+			"writes it as text, so it is not carried: export the output and read it with Fn::ImportValue, or write "+
+			"the value by hand")
+		return cloudimport.Prop{}, true
+	}
+	return cloudimport.Prop{Value: l.opaque(raw, at)}, true
+}
+
+// paramValue returns what a Ref to the template parameter p reads: the
+// dynamic reference resolving the Systems Manager parameter p's literal value
+// names, for a parameter of a Systems Manager parameter type naming one
+// value, which names p among its Params; p itself for any other parameter, and
+// for one given no literal value, which the Release supplies.
+func (l *lowerer) paramValue(p *cloudimport.Parameter) cloudimport.Value {
+	name, ok := given(p)
+	read := strings.TrimSuffix(strings.TrimPrefix(p.Type, ssmValuePrefix), ">")
+	if !isSSMValue(p.Type) || isList(read) || p.Secure || !ok {
+		return cloudimport.Param{Name: p.Name}
+	}
+	text := "{{resolve:ssm:" + name + "}}"
+	if !cfntemplate.IsDynamicReference(text) || !writable(text) {
+		return cloudimport.Param{Name: p.Name}
+	}
+	return cloudimport.Opaque{Text: text, Target: target, Params: []string{p.Name}}
+}
+
+// getAtt returns the reference Fn::GetAtt reading arg is: to the attribute of
+// the resource it names, the attribute's name split at each dot; false where
+// it names no resource and an attribute written as text.
+func (l *lowerer) getAtt(arg json.RawMessage) (cloudimport.Value, bool) {
+	var v any
+	if json.Unmarshal(arg, &v) != nil {
+		return nil, false
+	}
+	id, attr, ok := cfntemplate.GetAttParts(v)
+	if !ok || attr == "" || isPseudo(id) || l.param(id) != nil {
+		return nil, false
+	}
+	return cloudimport.Ref{Node: id, Attr: strings.Split(attr, ".")}, true
+}
+
+// sub lowers Fn::Sub reading arg, which raw writes whole at the JSON pointer
+// at: composed text of its literal runs and its variables, or deploy-time text
+// where a variable is no literal text, parameter or reference.
+func (l *lowerer) sub(arg, raw json.RawMessage, at string) cloudimport.Value {
+	text, vars, ok := subArgs(arg)
+	if !ok {
+		return l.opaque(raw, at)
+	}
+	part, keep := l.trial()
+	var parts []cloudimport.Value
+	for _, piece := range cfntemplate.SubPieces(text) {
+		if !piece.Variable {
+			parts = append(parts, str(piece.Text))
+			continue
+		}
+		v, ok := part.variable(piece.Text, vars, at)
+		if !ok {
+			return l.opaque(raw, at)
+		}
+		parts = append(parts, v)
+	}
+	keep()
+	return l.composed(parts, at)
+}
+
+// subArgs returns the text of Fn::Sub reading arg and the variables its list
+// form binds; false where arg is neither text nor a list of text and an
+// object.
+func subArgs(arg json.RawMessage) (string, obj, bool) {
+	if text, ok := schemadraft.JSONText(arg); ok {
+		return text, nil, true
+	}
+	items, _ := itemsOf(arg)
+	if len(items) != 2 {
+		return "", nil, false
+	}
+	text, isText := schemadraft.JSONText(items[0])
+	vars, isObject := objectOf(items[1])
+	return text, vars, isText && isObject
+}
+
+// variable lowers the variable name of an Fn::Sub written at the JSON pointer
+// at, the list form binding vars, to a part of composed text: the value vars
+// binds it to, else the parameter, the resource or the resource's attribute
+// the template names by it; false where that is no literal text, parameter or
+// reference, or name is a pseudo parameter.
+func (l *lowerer) variable(name string, vars obj, at string) (cloudimport.Value, bool) {
+	if raw := vars.get(name); raw != nil {
+		p, present := l.prop(raw, at+importer.Pointer("Fn::Sub", "1", name))
+		if !present {
+			return nil, false
+		}
+		return textPart(p.Value)
+	}
+	id, attr, dotted := strings.Cut(name, ".")
+	switch p := l.param(id); {
+	case isPseudo(id):
+		return nil, false
+	case p != nil && dotted:
+		return nil, false
+	case p != nil:
+		return textPart(l.paramValue(p))
+	case dotted:
+		return cloudimport.Ref{Node: id, Attr: strings.Split(attr, ".")}, true
+	}
+	return cloudimport.Ref{Node: name}, true
+}
+
+// join lowers Fn::Join reading arg, which raw writes whole at the JSON
+// pointer at: with a literal delimiter and a literal list, composed text of
+// its items, an item that is AWS::NoValue left out; deploy-time text where
+// the delimiter or the list is computed, or an item is no literal text,
+// parameter or reference.
+func (l *lowerer) join(arg, raw json.RawMessage, at string) cloudimport.Value {
+	args, _ := itemsOf(arg)
+	if len(args) != 2 {
+		return l.opaque(raw, at)
+	}
+	delimiter, isText := schemadraft.JSONText(args[0])
+	list, isList := itemsOf(args[1])
+	if !isText || !isList {
+		return l.opaque(raw, at)
+	}
+	part, keep := l.trial()
+	var parts []cloudimport.Value
+	for i, item := range list {
+		p, present := part.prop(item, at+importer.Pointer("Fn::Join", "1", strconv.Itoa(i)))
+		if !present {
+			continue
+		}
+		v, ok := textPart(p.Value)
+		if !ok {
+			return l.opaque(raw, at)
+		}
+		if len(parts) > 0 {
+			parts = append(parts, str(delimiter))
+		}
+		parts = append(parts, v)
+	}
+	keep()
+	return l.composed(parts, at)
+}
+
+// textPart returns v as a part of composed text: literal text, a number or a
+// boolean as its text, a parameter, a reference or composed text; false for
+// any other.
+func textPart(v cloudimport.Value) (cloudimport.Value, bool) {
+	switch v := v.(type) {
+	case cloudimport.Literal:
+		if s, ok := draftyaml.ScalarText(v.JSON); ok {
+			return str(s), true
+		}
+	case cloudimport.Param, cloudimport.Ref, cloudimport.Compose:
+		return v, true
+	}
+	return nil, false
+}
+
+// str is the literal text s.
+func str(s string) cloudimport.Literal {
+	return cloudimport.Literal{JSON: importer.String(s)}
+}
+
+// composed returns the concatenation of parts, written at the JSON pointer
+// at: the credential it reads where it is wholly a Secrets Manager dynamic
+// reference to a resource of the template; literal text, lowered as
+// [lowerer.text] lowers it, where every part is literal; composed text
+// otherwise.
+func (l *lowerer) composed(parts []cloudimport.Value, at string) cloudimport.Value {
+	v := compose(parts)
+	if c, ok := l.credential(v); ok {
+		return c
+	}
+	if lit, ok := v.(cloudimport.Literal); ok {
+		s, _ := schemadraft.JSONText(lit.JSON)
+		return l.text(s, lit.JSON, at)
+	}
+	return v
+}
+
+// secretsManagerOpen opens a dynamic reference reading Secrets Manager.
+const secretsManagerOpen = "{{resolve:secretsmanager:"
+
+// credential returns the credential v reads where it is composed text wholly
+// a Secrets Manager dynamic reference whose secret is the identifier of a
+// resource of the template: What is what the reference reads of the secret
+// after its identifier, SecretString where it names nothing more.
+func (l *lowerer) credential(v cloudimport.Value) (cloudimport.Credential, bool) {
+	c, ok := v.(cloudimport.Compose)
+	if !ok || len(c.Parts) != 3 {
+		return cloudimport.Credential{}, false
+	}
+	open, _ := c.Parts[0].(cloudimport.Literal)
+	ref, isRef := c.Parts[1].(cloudimport.Ref)
+	closing, _ := c.Parts[2].(cloudimport.Literal)
+	first, _ := schemadraft.JSONText(open.JSON)
+	rest, _ := schemadraft.JSONText(closing.JSON)
+	if first != secretsManagerOpen || !isRef || len(ref.Attr) > 0 || !l.isResource(ref.Node) ||
+		!strings.HasSuffix(rest, "}}") || strings.ContainsAny(strings.TrimSuffix(rest, "}}"), "{}") ||
+		!(strings.HasPrefix(rest, ":") || rest == "}}") {
+		return cloudimport.Credential{}, false
+	}
+	what := strings.TrimRight(strings.TrimPrefix(strings.TrimSuffix(rest, "}}"), ":"), ":")
+	if what == "" {
+		what = "SecretString"
+	}
+	return cloudimport.Credential{Node: ref.Node, What: what}, true
+}
+
+// compose returns the concatenation of parts: composed parts flattened,
+// adjacent literal text joined and empty text dropped; one part is itself,
+// and none is the empty text.
+func compose(parts []cloudimport.Value) cloudimport.Value {
+	var flat []cloudimport.Value
+	var add func(v cloudimport.Value)
+	add = func(v cloudimport.Value) {
+		if c, ok := v.(cloudimport.Compose); ok {
+			for _, p := range c.Parts {
+				add(p)
+			}
+			return
+		}
+		lit, isLit := v.(cloudimport.Literal)
+		s, isText := schemadraft.JSONText(lit.JSON)
+		if isLit && isText {
+			if s == "" {
+				return
+			}
+			if n := len(flat); n > 0 {
+				if prev, ok := flat[n-1].(cloudimport.Literal); ok {
+					if before, ok := schemadraft.JSONText(prev.JSON); ok {
+						flat[n-1] = str(before + s)
+						return
+					}
+				}
+			}
+		}
+		flat = append(flat, v)
+	}
+	for _, p := range parts {
+		add(p)
+	}
+	switch len(flat) {
+	case 0:
+		return str("")
+	case 1:
+		return flat[0]
+	}
+	return cloudimport.Compose{Parts: flat}
+}
+
+// findInMap lowers Fn::FindInMap reading arg, which raw writes whole at the
+// JSON pointer at: with literal keys the mapping holds a value at, that value,
+// lowered; deploy-time text otherwise.
+func (l *lowerer) findInMap(arg, raw json.RawMessage, at string) (cloudimport.Prop, bool) {
+	args, _ := itemsOf(arg)
+	if len(args) == 3 || len(args) == 4 {
+		name, n := schemadraft.JSONText(args[0])
+		first, f := schemadraft.JSONText(args[1])
+		second, s := schemadraft.JSONText(args[2])
+		if n && f && s {
+			mapping, _ := objectOf(l.t.mappings.get(name))
+			top, _ := objectOf(mapping.get(first))
+			if v := top.get(second); v != nil {
+				return l.prop(v, at)
+			}
+		}
+	}
+	return cloudimport.Prop{Value: l.opaque(raw, at)}, true
+}
+
+// branch lowers Fn::If reading arg, which raw writes whole at the JSON pointer
+// at: on a condition comparing one template parameter with a literal, the
+// branch the parameter's value selects, lowered, a value-not-carried warning
+// naming the other; deploy-time text otherwise.
+func (l *lowerer) branch(arg, raw json.RawMessage, at string) (cloudimport.Prop, bool) {
+	args, _ := itemsOf(arg)
+	if len(args) != 3 {
+		return cloudimport.Prop{Value: l.opaque(raw, at)}, true
+	}
+	condition, _ := schemadraft.JSONText(args[0])
+	holds, param, ok := l.decides(condition)
+	if !ok {
+		return cloudimport.Prop{Value: l.opaque(raw, at)}, true
+	}
+	chosen, other, makes, otherwise := 1, 2, "true", "false"
+	if !holds {
+		chosen, other, makes, otherwise = 2, 1, "false", "true"
+	}
+	carried := at + importer.Pointer("Fn::If", strconv.Itoa(chosen))
+	l.warn(cloudimport.CodeValueNotCarried, at, "the template "+l.t.file+" writes Fn::If on the condition "+
+		condition+" at "+at+", which the value the template parameter "+param+" is given makes "+makes+", so the "+
+		"draft carries its branch at "+carried+" and not the one at "+at+importer.Pointer("Fn::If",
+		strconv.Itoa(other))+": where the stack deploys with a value of "+param+" that makes "+condition+" "+
+		otherwise+", write that branch by hand")
+	return l.prop(args[chosen], carried)
+}
+
+// output lowers the value of the output o as a property's value is lowered;
+// an object or a list it writes is carried as no one value, and is reported
+// value-not-carried.
+func (l *lowerer) output(o cloudimport.Output) cloudimport.Value {
+	lit, ok := o.Value.(cloudimport.Literal)
+	if !ok {
+		return o.Value
+	}
+	at := importer.Pointer("Outputs", o.Name, "Value")
+	inner, keep := l.trial()
+	p, present := inner.prop(lit.JSON, at)
+	switch {
+	case !present:
+		return nil
+	case len(p.Props) == 0 && len(p.Items) == 0:
+		keep()
+		return p.Value
+	}
+	l.warn(cloudimport.CodeValueNotCarried, at, "the template "+l.t.file+" writes the output "+o.Name+" at "+at+
+		" as an object or a list, which the draft carries as no one value, so it is not carried: write it in the "+
+		"draft by hand")
+	return nil
+}
+
+// opaque returns the intrinsic function raw, written at the JSON pointer at,
+// as deploy-time text for the cloudformation target: its one-line short form,
+// as shortForm writes it, with each template parameter it reads written in
+// place as the literal value the parameter is given — a list parameter's as
+// the list of its comma-separated members, a variable of an Fn::Sub as a value
+// its list form binds — each named among the text's Params. A drafted stack
+// declares none of the template's parameters, mappings and conditions, and
+// may declare its resources under other logical IDs or not at all, as the
+// classes the core gives them decide, so text reading a parameter given no
+// literal value, a NoEcho parameter, a parameter of a Systems Manager
+// parameter type, a resource, a mapping or a condition owes it, Owed naming
+// each. A pseudo parameter and Fn::ImportValue read what the stack deploys
+// beside, and owe nothing. A function with no one-line short form, or holding
+// text no one line can hold where a Recipe places it, is not carried.
+func (l *lowerer) opaque(raw json.RawMessage, at string) cloudimport.Value {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if dec.Decode(&v) != nil {
+		return nil
+	}
+	p := &placing{l: l}
+	placed := p.walk(v)
+	text, ok := shortForm(placed)
+	if !ok {
+		if fn, has := noShortForm(placed); has {
+			l.warn(cloudimport.CodeValueNotCarried, at, "the template "+l.t.file+" writes "+fn+" at "+at+", which "+
+				"has no one-line YAML short form a catalog Recipe reads back as the function, so it is not carried: "+
+				"write the value by hand")
+			return nil
+		}
+		l.unwritable("an intrinsic function", at)
+		return nil
+	}
+	out := cloudimport.Opaque{Text: text, Target: target, Params: p.params}
+	if len(p.owed) > 0 {
+		out.Owed = "it is text CloudFormation evaluates when the stack deploys, and it reads " +
+			strings.Join(p.owed, ", and ")
+	}
+	return out
+}
+
+// noShortForm returns the name of the function v is where it has no one-line
+// short form; false where v is a function that has one.
+func noShortForm(v any) (string, bool) {
+	if _, _, ok := shortFormOf(v); ok {
+		return "", false
+	}
+	if m, ok := v.(map[string]any); ok && len(m) == 1 {
+		for fn := range m {
+			return fn, true
+		}
+	}
+	return "an intrinsic function", true
+}
+
+// unwritable reports the value at the JSON pointer at, what it is, not
+// carried, as one line cannot hold its text wherever a Recipe places it.
+func (l *lowerer) unwritable(what, at string) {
+	l.warn(cloudimport.CodeValueNotCarried, at, "the template "+l.t.file+" writes at "+at+" "+what+" holding a "+
+		"double quote, a backslash, a line break or another control character, or text that is wholly a short form, "+
+		"which its one-line short form cannot hold where a catalog Recipe places it, so it is not carried: write the "+
+		"value by hand")
+}
+
+// placing is one deploy-time text being written: the template parameters
+// written in it as their values, and what it reads that the draft can neither
+// write in its place nor declare, each in the order the text reads it.
+type placing struct {
+	l            *lowerer
+	params, owed []string
+}
+
+// owe records what the text reads and owes, once.
+func (p *placing) owe(what string) {
+	if !slices.Contains(p.owed, what) {
+		p.owed = append(p.owed, what)
+	}
+}
+
+// placed records the parameter name written in place, once.
+func (p *placing) placed(name string) {
+	if !slices.Contains(p.params, name) {
+		p.params = append(p.params, name)
+	}
+}
+
+// walk returns the long form v with each template parameter it reads written
+// in place where it can be, recording what it reads and owes. The members of
+// an object are walked in key order.
+func (p *placing) walk(v any) any {
+	switch v := v.(type) {
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = p.walk(item)
+		}
+		return out
+	case map[string]any:
+		keys := slices.Sorted(maps.Keys(v))
+		if len(keys) == 1 && cfntemplate.IsIntrinsicKey(keys[0]) {
+			return p.call(keys[0], v[keys[0]])
+		}
+		out := make(map[string]any, len(v))
+		for _, k := range keys {
+			out[k] = p.walk(v[k])
+		}
+		return out
+	}
+	return v
+}
+
+// call walks the intrinsic function fn reading arg.
+func (p *placing) call(fn string, arg any) any {
+	switch fn {
+	case "Ref":
+		if name, ok := arg.(string); ok {
+			return p.ref(name)
+		}
+	case "Fn::GetAtt":
+		if id, _, ok := cfntemplate.GetAttParts(arg); ok {
+			p.reads(id)
+		}
+	case "Fn::Sub":
+		return map[string]any{fn: p.sub(arg)}
+	case "Fn::FindInMap":
+		name := "a mapping the template names by a function"
+		if args, ok := arg.([]any); ok && len(args) > 0 {
+			if text, ok := args[0].(string); ok {
+				name = "the mapping " + text
+			}
+		}
+		p.owe(name + ", which no template of the draft declares")
+	case "Fn::If", "Condition":
+		condition := arg
+		if args, ok := arg.([]any); ok && fn == "Fn::If" && len(args) > 0 {
+			condition = args[0]
+		}
+		name := "a condition the template names by a function"
+		if text, ok := condition.(string); ok {
+			name = "the condition " + text
+		}
+		p.owe(name + ", which no template of the draft declares")
+	}
+	return map[string]any{fn: p.walk(arg)}
+}
+
+// ref walks a Ref to name: a template parameter written in place where it
+// can be, and a pseudo parameter kept; anything else is read and owed.
+func (p *placing) ref(name string) any {
+	keep := map[string]any{"Ref": name}
+	if isPseudo(name) {
+		return keep
+	}
+	param := p.l.param(name)
+	if param == nil {
+		p.reads(name)
+		return keep
+	}
+	v, ok := p.value(param)
+	if !ok {
+		return keep
+	}
+	p.placed(param.Name)
+	return v
+}
+
+// reads owes the resource id the text reads, or the name id where the
+// template declares no resource of it.
+func (p *placing) reads(id string) {
+	if p.l.isResource(id) {
+		p.owe("the resource " + id + ", which the drafted stack may declare under another logical ID, or not at all")
+		return
+	}
+	p.owe(id + ", which the template declares no parameter or resource of")
+}
+
+// value returns the literal value the template parameter param is given,
+// written in place: its text, or for a list parameter the list of its
+// comma-separated members, each with the space around it trimmed, as
+// CloudFormation reads a list parameter; false, owing it, where it is NoEcho,
+// of a Systems Manager parameter type, given no literal value, or holding
+// text no one line can hold.
+func (p *placing) value(param *cloudimport.Parameter) (any, bool) {
+	text, ok := given(param)
+	switch {
+	case param.Secure:
+		p.owe("the NoEcho template parameter " + param.Name + ", whose value is never written")
+		return nil, false
+	case isSSMValue(param.Type):
+		p.owe("the template parameter " + param.Name + ", whose value CloudFormation reads from the Systems " +
+			"Manager parameter it names")
+		return nil, false
+	case !ok:
+		p.owe("the template parameter " + param.Name + ", which neither the parameters file nor a literal default " +
+			"gives a value")
+		return nil, false
+	}
+	unwritable := "the template parameter " + param.Name + ", whose value holds text a one-line short form " +
+		"cannot hold"
+	if !isList(param.Type) {
+		if !writable(text) {
+			p.owe(unwritable)
+			return nil, false
+		}
+		return text, true
+	}
+	var items []any
+	for _, item := range strings.Split(text, ",") {
+		item = strings.TrimSpace(item)
+		if !writable(item) {
+			p.owe(unwritable)
+			return nil, false
+		}
+		items = append(items, item)
+	}
+	return items, true
+}
+
+// sub walks the argument of an Fn::Sub: each variable its text reads that
+// names a template parameter, and its list form does not bind, is bound to
+// the parameter's value in its list form, written in place; each other is
+// read as [placing.ref] reads it, and each value the list form binds is
+// walked.
+func (p *placing) sub(arg any) any {
+	text, isText := arg.(string)
+	var vars map[string]any
+	if !isText {
+		list, ok := arg.([]any)
+		if !ok || len(list) != 2 {
+			return p.walk(arg)
+		}
+		text, isText = list[0].(string)
+		vars, ok = list[1].(map[string]any)
+		if !isText || !ok {
+			return p.walk(arg)
+		}
+	}
+	bound := map[string]any{}
+	for _, k := range slices.Sorted(maps.Keys(vars)) {
+		bound[k] = p.walk(vars[k])
+	}
+	for _, name := range cfntemplate.SubVariables(text) {
+		if _, ok := vars[name]; ok {
+			continue
+		}
+		id, _, dotted := strings.Cut(name, ".")
+		param := p.l.param(id)
+		switch {
+		case isPseudo(id):
+		case param == nil || dotted:
+			p.reads(id)
+		default:
+			v, ok := p.value(param)
+			if _, list := v.([]any); !ok || list {
+				if list {
+					p.owe("the template parameter " + param.Name + ", a list, which Fn::Sub cannot write in text")
+				}
+				continue
+			}
+			bound[name] = v
+			p.placed(param.Name)
+		}
+	}
+	if len(bound) == 0 && isText && vars == nil {
+		return text
+	}
+	return []any{text, bound}
+}
