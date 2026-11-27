@@ -86,11 +86,13 @@ func (c Class) String() string {
 }
 
 // TypeRule is a format's rule for the resources of one type, matched
-// regardless of case. A rule of ClassSubstrate or ClassNotCarried classes each
-// node of the type no fold takes; a rule of any other class leaves the node to
-// be classed as any other is. Says is what the decision on a node of the type
-// says beside its class and rule, and for a substrate or not-carried resource,
-// what the warning naming it says.
+// regardless of case; a Type ending in * is the rule of every type the text
+// before the * opens, such as AWS::EC2::*, and a node takes the first rule of
+// the format's list matching its type. A rule of ClassSubstrate or
+// ClassNotCarried classes each node of the type no fold takes; a rule of any
+// other class leaves the node to be classed as any other is. Says is what the
+// decision on a node of the type says beside its class and rule, and for a
+// substrate or not-carried resource, what the warning naming it says.
 type TypeRule struct {
 	Type  string
 	Class Class
@@ -237,8 +239,11 @@ type Classified struct {
 // instance of its own, and its decision says why.
 //
 // Each decision's rationale opens with the class and names the rule that gave
-// it. Folded children are reported resource-folded; a not-carried resource
-// resource-not-carried, but a module whose source the format does not locate
+// it, and closes with what the format's reader says of the node (Node.Says,
+// and where a row maps it, Node.SaysIfMapped, the reader's ReportsIfMapped
+// then reported too). Folded children are reported resource-folded; a
+// not-carried resource resource-not-carried, but a module whose source the
+// format does not locate
 // linked-source-not-read; the substrate resources the source creates
 // substrate-left-to-operator, in one warning listing each; a resource the
 // catalog holds back component-exists, naming the Component and the
@@ -297,8 +302,8 @@ type classifier struct {
 	in aggrega.ImportInput
 	f  Format
 	g  *Graph
-	// table holds the merged rows as its generated rows, so a node is
-	// resolved without merging them again.
+	// table holds the merged rows as its generated rows, and the format's
+	// image rows, so a node is resolved without merging them again.
 	table Table
 	// nodes are g's nodes in ID order, and byID each by its ID.
 	nodes []*Node
@@ -376,9 +381,10 @@ func (a assessment) byRow() bool {
 }
 
 func newClassifier(in aggrega.ImportInput, f Format, g *Graph, rows []Row) *classifier {
-	c := &classifier{in: in, f: f, g: g, table: Table{Generated: rows}, nodes: byID(g), byID: map[string]*Node{},
-		kids: map[string][]*Node{}, own: map[string]assessment{}, instances: map[string]instanceOf{},
-		ones: map[string]*oneFold{}, pending: map[string]bool{}, groupOf: map[string]*draftGroup{},
+	c := &classifier{in: in, f: f, g: g, table: Table{Generated: rows, Images: f.Table.Images}, nodes: byID(g),
+		byID: map[string]*Node{}, kids: map[string][]*Node{}, own: map[string]assessment{},
+		instances: map[string]instanceOf{}, ones: map[string]*oneFold{}, pending: map[string]bool{},
+		groupOf: map[string]*draftGroup{},
 		located: map[string]ModuleSource{}, out: map[string]*Classified{}, notes: map[string][]aggrega.Diagnostic{},
 		incoming: map[string][]Edge{}, deferred: map[string]*AttachRule{}, waiting: map[string]bool{},
 		attaching: map[string]attachedTo{}, slots: map[string]bool{}, readings: map[string]bool{}}
@@ -475,11 +481,21 @@ func (c *classifier) byDepth() []*Node {
 // typeRule returns the format's first rule of typ, nil where it has none.
 func (c *classifier) typeRule(typ string) *TypeRule {
 	for i, r := range c.f.Types {
-		if r.Type != "" && strings.EqualFold(r.Type, typ) {
+		if r.matches(typ) {
 			return &c.f.Types[i]
 		}
 	}
 	return nil
+}
+
+// matches reports whether r is a rule of the type typ: its Type, matched
+// regardless of case, or where it ends in *, the text before the * opening
+// typ, matched so.
+func (r TypeRule) matches(typ string) bool {
+	if prefix, wild := strings.CutSuffix(r.Type, "*"); wild {
+		return prefix != "" && len(typ) >= len(prefix) && strings.EqualFold(typ[:len(prefix)], prefix)
+	}
+	return r.Type != "" && strings.EqualFold(r.Type, typ)
 }
 
 // assess records what n is of itself: its type rule and, where that rule
@@ -1139,16 +1155,30 @@ func (c *classifier) undeclared() []*Node {
 }
 
 // result returns the classified nodes in g's order followed by undeclared,
-// and the diagnostics: those naming one node, in ID order, then those of the
+// each node's decision closing with what the reader says of it (Node.Says,
+// and where a row maps it Node.SaysIfMapped), and the diagnostics: those
+// naming one node, in ID order, each followed where a row maps the node by
+// what the reader reports of it so (Node.ReportsIfMapped), then those of the
 // drafts, then the substrate the source creates.
 func (c *classifier) result(undeclared []*Node) ([]Classified, []aggrega.Diagnostic) {
 	var out []Classified
 	for _, n := range append(Order(c.g), undeclared...) {
-		out = append(out, *c.out[n.ID])
+		cl := *c.out[n.ID]
+		says := n.Says
+		if mappedByRow(&cl) {
+			says = append(slices.Clone(says), n.SaysIfMapped...)
+		}
+		if len(says) > 0 {
+			cl.Decision.Rationale = joinNonEmpty("; ", append([]string{cl.Decision.Rationale}, says...)...)
+		}
+		out = append(out, cl)
 	}
 	var diags []aggrega.Diagnostic
 	for _, n := range c.nodes {
 		diags = append(diags, c.notes[n.ID]...)
+		if mappedByRow(c.out[n.ID]) {
+			diags = append(diags, n.ReportsIfMapped...)
+		}
 	}
 	diags = append(diags, c.diags...)
 	if d := c.substrate(); d != nil {
@@ -1353,4 +1383,9 @@ func joinNonEmpty(sep string, parts ...string) string {
 // halts reports whether diags hold a halt.
 func halts(diags []aggrega.Diagnostic) bool {
 	return slices.ContainsFunc(diags, func(d aggrega.Diagnostic) bool { return d.Severity == aggrega.SeverityHalt })
+}
+
+// mappedByRow reports whether cl is a node a row maps.
+func mappedByRow(cl *Classified) bool {
+	return cl != nil && cl.Class == ClassMapped && cl.Row != nil
 }

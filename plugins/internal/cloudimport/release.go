@@ -123,7 +123,7 @@ func (w *aggregateWriter) entry(cl *Classified) importer.ReleaseEntry {
 	switch {
 	case cl.Class == ClassMapped && cl.Row != nil:
 		for _, p := range cl.Row.Infra {
-			b.place(w.readOff(cl, p.From), []string{"infra", p.Key}, p.Conv, false)
+			b.place(w.readOff(cl, p.From), append([]string{"infra"}, strings.Split(p.Key, ".")...), p.Conv, false)
 		}
 		for _, p := range cl.Row.Overrides {
 			b.place(w.readOff(cl, p.From), []string{"infra", "overrides", p.Key}, p.Conv, false)

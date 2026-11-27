@@ -118,7 +118,9 @@ type Placement struct {
 	// From is the property or attribute path the value is read at.
 	From []string
 	// Key is the key the value is placed under: a values or infra key, an
-	// infra.overrides key, a credential slot, or a provides key.
+	// infra.overrides key, a credential slot, or a provides key. An infra key
+	// written with dots is the path of a member inside infra, such as
+	// storage.size.
 	Key string
 	// Conv converts the value on its way.
 	Conv Conv

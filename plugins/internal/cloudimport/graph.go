@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/aggrega-ai/aggrega-pdk/go/pkg/aggrega"
 	"github.com/aggrega-ai/aggrega-pdk/go/pkg/importer"
 )
 
@@ -107,6 +108,18 @@ type Node struct {
 	// Source is the file and JSON pointer the node is read from, named in
 	// decisions and comments.
 	Source string
+	// Says are what the format's reader says of the node beside its class,
+	// each a sentence of report text added, in order, to the decision on it:
+	// what it read in place of a reference, or why it reads the node as no
+	// part of the resource its property names.
+	Says []string
+	// SaysIfMapped and ReportsIfMapped are what the reader says and reports of
+	// the node where a row maps it, which hold of what that row's Recipe
+	// takes: each sentence added after Says to the decision on it, and each
+	// diagnostic reported, once it is classed so; nothing where it is classed
+	// otherwise.
+	SaysIfMapped    []string
+	ReportsIfMapped []aggrega.Diagnostic
 }
 
 // Parameter is one parameter the source declares.

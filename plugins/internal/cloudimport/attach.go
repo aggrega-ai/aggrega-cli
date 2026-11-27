@@ -71,6 +71,13 @@ type AttachRule struct {
 	// Aggregate, its origin the text the node writes as a literal where Values
 	// place origin, and none, for the Release to name, otherwise.
 	Secret bool
+	// Admitted, where set, gives the one feature type the Recipe named recipe
+	// admits at a credential slot, false where it admits more than one or
+	// none: a reader after the first, taking Others, realized by a Recipe
+	// admitting only another type at its slot, is decided with the build
+	// halting at that slot, and the fix, an attachment of the admitted type of
+	// its own. Nil says nothing of it.
+	Admitted func(recipe, slot string) (string, bool)
 }
 
 // Attachment is one attachment a node an attach rule takes is written as, on
@@ -298,8 +305,7 @@ func (c *classifier) targets(n *Node, r *AttachRule) []attachTarget {
 
 // mappedByRow reports whether the node id is an instance a row maps.
 func (c *classifier) mappedByRow(id string) bool {
-	cl := c.out[id]
-	return cl != nil && cl.Class == ClassMapped && cl.Row != nil
+	return mappedByRow(c.out[id])
 }
 
 // slotKey is the key of the slot of the instance of the node into.
@@ -363,6 +369,7 @@ func (c *classifier) attach(ordered []*Classified) {
 				a.Feature, a.Secret = r.Others, &s
 				where += ", attached by reference in its Release entry, its origin the name the attachment on the " +
 					"instance " + first + " pins"
+				c.refusedAt(t, r)
 			default:
 				a.Values, a.Name = r.Values, name
 			}
@@ -379,6 +386,24 @@ func (c *classifier) attach(ordered []*Classified) {
 		c.note(n, Report(CodeResourceFolded, fmt.Sprintf("%s (%s) is attached as %s; nothing is drafted for it", n.ID,
 			n.Type, andList(phrases))))
 	}
+}
+
+// refusedAt adds to the decision on the instance of t, a reader after the
+// first taking r's Others, that the Recipe realizing it admits only another
+// feature type at t's slot, as r's Admitted says, so the build halts there
+// until the instance takes an attachment of that type of its own.
+func (c *classifier) refusedAt(t attachTarget, r *AttachRule) {
+	reader := c.out[t.into]
+	if r.Admitted == nil || reader == nil || reader.Row == nil {
+		return
+	}
+	feature, only := r.Admitted(reader.Row.Recipe, t.slot)
+	if !only || feature == r.Others {
+		return
+	}
+	reader.Decision.Rationale = joinNonEmpty("; ", reader.Decision.Rationale, fmt.Sprintf("the Recipe %s admits "+
+		"only %s at the slot %s, where the instance takes %s, so the build halts at that slot: give the instance "+
+		"a %s of its own", reader.Row.Recipe, feature, t.slot, r.Others, feature))
 }
 
 // attachPlaced returns the paths of a node r places: each of its values'

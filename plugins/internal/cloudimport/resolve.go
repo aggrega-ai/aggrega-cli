@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/aggrega-ai/aggrega-cli/plugins/internal/composeimport"
 )
 
 // Resolve returns the row of t that maps n. The rows keyed by n's type,
@@ -26,8 +28,10 @@ import (
 // maps n depends on a value set only when the source deploys: Resolve returns
 // no row, and the rows n could take in the order tried, for the caller to
 // report the discriminator unresolved. A type no row keys, or whose every
-// row's When fails, returns no row and no candidate. A table whose rows Rows
-// refuses resolves no node. The rows are returned as the table holds them,
+// row's When fails, returns no row and no candidate. A compute node whose
+// image an image row of t names is mapped by the row that holds as the
+// container product's ([Table.product]). A table whose rows Rows refuses
+// resolves no node. The rows are returned as the table holds them,
 // sharing its slices and maps; [Row.For] reads one in n's form.
 //
 // Types, property names and the values a predicate tests are matched
@@ -57,7 +61,7 @@ func (t Table) Resolve(n *Node, g *Graph) (Row, []Row, bool) {
 		switch read.row(r, n) {
 		case truthHolds:
 			if could == nil {
-				return r, nil, true
+				return t.product(r, n, read), nil, true
 			}
 			return Row{}, append(could, r), false
 		case truthUndecided:
@@ -65,6 +69,58 @@ func (t Table) Resolve(n *Node, g *Graph) (Row, []Row, bool) {
 		}
 	}
 	return Row{}, could, false
+}
+
+// imagePlaced is the infra key a compute row places the image its node runs
+// under.
+const imagePlaced = "image"
+
+// product returns r, the row mapping n, as the row of the container product
+// whose image row of t names the repository of the image n runs — the value r
+// places under infra.image, read as literal text, a parameter through its
+// literal default, its repository read as composeimport.Repository reads it:
+// that row's Component and Recipe, the image placed under the image row's
+// ImageKey, or placed nowhere where it names none, each other field r's own.
+// It returns r as it is where t holds no image row naming that repository, r
+// places no image, or n's image cannot be read so.
+func (t Table) product(r Row, n *Node, read reader) Row {
+	if len(t.Images) == 0 {
+		return r
+	}
+	at := slices.IndexFunc(r.Infra, func(p Placement) bool { return p.Key == imagePlaced })
+	if at < 0 {
+		return r
+	}
+	from := r.Infra[at].From
+	if isModule(n.Form) != isModule(r.Form) {
+		var ok bool
+		if from, ok = translate(from, r.Equivalences, isModule(n.Form)); !ok {
+			return r
+		}
+	}
+	st, v := read.at(n.Body, from)
+	if st != stateRead || v == nil {
+		return r
+	}
+	text, got := read.text(v, 0)
+	repository, ok := composeimport.Repository(text)
+	if got != stateRead || !ok {
+		return r
+	}
+	i := slices.IndexFunc(t.Images, func(img ImageRow) bool { return img.Repository == repository })
+	if i < 0 {
+		return r
+	}
+	img := t.Images[i]
+	out := r
+	out.Component, out.Recipe = img.Component, img.Recipe
+	out.Infra = slices.Delete(slices.Clone(r.Infra), at, at+1)
+	if img.ImageKey != "" {
+		placed := r.Infra[at]
+		placed.Key = img.ImageKey
+		out.Infra = slices.Insert(out.Infra, at, placed)
+	}
+	return out
 }
 
 // For returns r as it reads a node written in form: each path of its When,
