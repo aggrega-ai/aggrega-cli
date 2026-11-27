@@ -1,0 +1,74 @@
+{
+  "terraform": {
+    "required_version": ">= 1.6",
+    "required_providers": {
+      "aws": {
+        "source": "hashicorp/aws",
+        "version": "~> 5.0"
+      }
+    }
+  },
+  "provider": {
+    "aws": {
+      "region": "${var.region}"
+    }
+  },
+  "variable": {
+    "region": {
+      "description": "where the queue runs",
+      "default": "eu-west-1"
+    }
+  },
+  "locals": {
+    "name": "orders-${var.region}"
+  },
+  "resource": {
+    "aws_security_group": {
+      "web": {
+        "name": "${local.name}",
+        "description": "web tier",
+        "ingress": [
+          {
+            "from_port": 443,
+            "to_port": 443,
+            "protocol": "tcp",
+            "cidr_blocks": ["10.0.0.0/8", "172.16.0.0/12"]
+          },
+          {
+            "from_port": 80,
+            "to_port": 80,
+            "protocol": "tcp",
+            "cidr_blocks": ["10.0.0.0/8"]
+          }
+        ],
+        "egress": {
+          "from_port": 0,
+          "to_port": 0,
+          "protocol": "-1"
+        },
+        "tags": {
+          "Name": "web",
+          "Tier": "edge"
+        }
+      }
+    }
+  },
+  "data": {
+    "aws_vpc": {
+      "main": {
+        "default": true
+      }
+    }
+  },
+  "module": {
+    "queue": {
+      "source": "./modules/queue",
+      "name": "${local.name}"
+    }
+  },
+  "output": {
+    "group_id": {
+      "value": "${aws_security_group.web.id}"
+    }
+  }
+}

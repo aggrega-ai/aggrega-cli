@@ -1,0 +1,10 @@
+{
+  "output": {
+    "jobs_url": {
+      "value": "${aws_sqs_queue.jobs.url}"
+    }
+  },
+  "locals": {
+    "team": "orders"
+  }
+}

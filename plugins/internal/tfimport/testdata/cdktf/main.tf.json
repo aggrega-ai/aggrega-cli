@@ -1,0 +1,109 @@
+{
+  "//": {
+    "metadata": {
+      "backend": "local",
+      "stackName": "orders",
+      "version": "0.20.0"
+    },
+    "outputs": {}
+  },
+  "terraform": {
+    "//": "the stack's settings",
+    "required_providers": {
+      "aws": {
+        "source": "aws",
+        "version": "5.0.0"
+      }
+    }
+  },
+  "provider": {
+    "aws": [
+      {
+        "//": "the default configuration",
+        "region": "eu-west-1"
+      }
+    ]
+  },
+  "variable": {
+    "retention": {
+      "//": {
+        "metadata": {
+          "path": "orders/retention",
+          "uniqueId": "retention"
+        }
+      },
+      "default": 86400
+    }
+  },
+  "locals": [
+    {
+      "//": "one locals block",
+      "team": "orders"
+    }
+  ],
+  "resource": {
+    "aws_sqs_queue": {
+      "jobs": {
+        "//": {
+          "metadata": {
+            "path": "orders/jobs",
+            "uniqueId": "jobs"
+          }
+        },
+        "name": "jobs",
+        "message_retention_seconds": "${var.retention}",
+        "lifecycle": {
+          "//": "kept while it is replaced",
+          "create_before_destroy": true
+        }
+      }
+    },
+    "aws_security_group": {
+      "web": {
+        "//": {
+          "metadata": {
+            "path": "orders/web",
+            "uniqueId": "web"
+          }
+        },
+        "name": "web",
+        "ingress": [
+          {
+            "//": "https",
+            "from_port": 443,
+            "to_port": 443,
+            "protocol": "tcp"
+          },
+          {
+            "//": "http",
+            "from_port": 80,
+            "to_port": 80,
+            "protocol": "tcp"
+          }
+        ]
+      }
+    }
+  },
+  "module": {
+    "queue": {
+      "//": {
+        "metadata": {
+          "path": "orders/queue",
+          "uniqueId": "queue"
+        }
+      },
+      "source": "./modules/queue"
+    }
+  },
+  "output": {
+    "jobs_url": {
+      "//": {
+        "metadata": {
+          "path": "orders/jobs_url",
+          "uniqueId": "jobs_url"
+        }
+      },
+      "value": "${aws_sqs_queue.jobs.url}"
+    }
+  }
+}

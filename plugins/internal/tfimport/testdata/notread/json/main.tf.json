@@ -1,0 +1,30 @@
+{
+  "terraform": {
+    "cloud": {
+      "organization": "example",
+      "workspaces": {
+        "name": "orders"
+      }
+    }
+  },
+  "resource": {
+    "aws_sqs_queue": {
+      "jobs": {
+        "name": "jobs"
+      }
+    }
+  },
+  "moved": [
+    {
+      "from": "aws_sqs_queue.old",
+      "to": "aws_sqs_queue.jobs"
+    }
+  ],
+  "ephemeral": {
+    "random_password": {
+      "db": {
+        "length": 16
+      }
+    }
+  }
+}
