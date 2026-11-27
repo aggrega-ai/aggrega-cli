@@ -778,8 +778,14 @@ func (w *aggregateWriter) notCarriedHere(site valueSite, why string) {
 
 // propText returns the YAML text the value p is written as, converted by conv,
 // and what became of writing it. An object or a list is written whole or not at
-// all: one member not written is the whole's outcome.
+// all: one member not written is the whole's outcome. A value the source
+// writes as JSON text, whose every leaf is a literal, is written as that text.
 func (w *aggregateWriter) propText(p Prop, conv Conv) (string, outcome) {
+	if p.Encoded && (conv == "" || conv == "string") {
+		if text, ok := encodedText(p); ok {
+			return w.stringText(text), written()
+		}
+	}
 	switch {
 	case p.Value != nil:
 		return w.leafText(p.Value, conv)

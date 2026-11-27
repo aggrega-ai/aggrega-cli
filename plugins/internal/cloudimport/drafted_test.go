@@ -473,3 +473,80 @@ func TestDraftedListHoldingASecretKeepsItsItems(t *testing.T) {
 		t.Errorf("the queue's Recipe reads, by path and pillar,\n%q\nwant\n%q", got, want)
 	}
 }
+
+// TestWrappedModuleTakesTheModuleSource hands the module writer what the
+// format's Module gives beside the source kind and address: the directory of
+// the module inside its source, the name of its Component's last segment, the
+// type naming it, and the parameters it binds; the version is the one the
+// module's node states. The drafted Component takes that name.
+func TestWrappedModuleTakesTheModuleSource(t *testing.T) {
+	var handed []schemadraft.WrappedModule
+	f := toyFormat(&handed)
+	f.Module = func(ref ModuleRef) ModuleSource {
+		s := toyModule(ref)
+		s.Subdir, s.Name, s.TypeName = "modules/search", "finder", toyQueue
+		return s
+	}
+	in := toyInput(t, "toy", "", []string{"module.json"})
+	out := Import(in, f, toyParse)
+	noHalt(t, out.Diagnostics)
+	if len(handed) != 1 {
+		t.Fatalf("the module writer is handed %d modules, want one", len(handed))
+	}
+	m := handed[0]
+	if m.Type == nil || m.Type.Name != toyQueue || m.SourceKind != "toy-module" || m.URL != toyModuleURL ||
+		m.Version != "1.2.0" || m.Subdir != "modules/search" || m.Name != "finder" || m.AddressOnly != "" ||
+		!reflect.DeepEqual(m.Fixed, []importer.Entry{{Key: "telemetry", Value: "false"}}) {
+		t.Errorf("the module writer is handed %+v, want %s at %s, 1.2.0, in modules/search, named finder", m,
+			toyQueue, toyModuleURL)
+	}
+	name := schemadraft.NameForModule(in, f.Draft, toyQueue, "finder")
+	if !strings.HasSuffix(name, "/finder") {
+		t.Fatalf("the Component name %s does not end in the module's name", name)
+	}
+	fileOf(t, out, "catalog/component/"+name+"/0.1.0/component.yaml")
+	if manifest := fileOf(t, out, "manifest.yaml"); !strings.Contains(manifest, "search: toy/finder") {
+		t.Errorf("the Manifest does not map the module's instance to the Recipe named finder:\n%s", manifest)
+	}
+}
+
+// TestModuleOfAnAddressOnlyIsDrafted groups a module whose source the format
+// gives a kind and an address and no URL, drafting its Recipe with the url
+// left for the author and warning linked-source-not-read once, naming the
+// address; a module whose source has no kind is still not carried, whatever
+// address it gives.
+func TestModuleOfAnAddressOnlyIsDrafted(t *testing.T) {
+	const address = "toy/search-from-a-registry"
+	var handed []schemadraft.WrappedModule
+	f := toyFormat(&handed)
+	f.Module = func(ModuleRef) ModuleSource {
+		return ModuleSource{Kind: "toy-module", AddressOnly: address}
+	}
+	out := Import(toyInput(t, "toy", "", []string{"module.json"}), f, toyParse)
+	noHalt(t, out.Diagnostics)
+	if len(handed) != 1 || handed[0].URL != "" || handed[0].AddressOnly != address {
+		t.Fatalf("the module writer is handed %+v, want one module with no URL and the address %s", handed, address)
+	}
+	unread := onlyCode(t, out.Diagnostics, CodeLinkedSourceNotRead, 1)
+	if unread[0].Severity != aggrega.SeverityWarn || unread[0].SourceRef != "search" {
+		t.Errorf("linked-source-not-read %+v, want a warning on search", unread[0])
+	}
+	mentions(t, "the warning", unread[0].Message, address, "spec.source.url")
+	recipe := fileOf(t, out, "catalog/recipe/toy/toy-search-services/0.1.0/recipe.yaml")
+	if !strings.Contains(recipe, "    url: \n") {
+		t.Errorf("the Recipe does not leave its source url empty:\n%s", recipe)
+	}
+
+	f.Module = func(ModuleRef) ModuleSource { return ModuleSource{AddressOnly: address} }
+	handed = nil
+	out = Import(toyInput(t, "toy", "", []string{"module.json"}), f, toyParse)
+	noHalt(t, out.Diagnostics)
+	if len(handed) != 0 {
+		t.Errorf("the module writer is handed %+v for a module with no source kind, want nothing", handed)
+	}
+	unread = onlyCode(t, out.Diagnostics, CodeLinkedSourceNotRead, 1)
+	mentions(t, "the warning", unread[0].Message, "search", "not carried")
+	if strings.Contains(fileOf(t, out, "aggregate.yaml"), "\n    search:\n") {
+		t.Errorf("the Aggregate writes an instance of the module with no source kind")
+	}
+}

@@ -431,3 +431,41 @@ func TestAttachRuleThatCannotBeReadHalts(t *testing.T) {
 		})
 	}
 }
+
+// TestSecretRuleTakesADataSource attaches a secret the source reads and does
+// not create, read at a credential slot, as the kit's referenced secret in the
+// Release entry of the instance reading it, its origin the placement keyed
+// origin; a rule without Secret takes no such node, which is classed existing.
+func TestSecretRuleTakesADataSource(t *testing.T) {
+	read := func() []*Node {
+		secret := toySecret("dbSecret", "orders-db", false)
+		secret.Existing = true
+		return []*Node{toyReader("db", readsSecret("dbSecret")), secret}
+	}
+
+	t.Run("a rule with Secret", func(t *testing.T) {
+		cls, out := attached(t, "cloudformation", []AttachRule{keptSecret()}, read)
+		cl := classOf(t, cls, "dbSecret")
+		if cl.Class != ClassAttached || len(cl.Drafts) != 0 {
+			t.Fatalf("the secret is classed %s, drafting %d, want attached, drafting nothing", cl.Class, len(cl.Drafts))
+		}
+		if len(cl.Attach) != 1 || cl.Attach[0].Into != "db" || cl.Attach[0].Slot != "admin_password" ||
+			cl.Attach[0].Secret == nil || cl.Attach[0].Secret.Origin != "orders-db" {
+			t.Errorf("the secret is attached as %+v, want a referenced secret of origin orders-db on db's admin_password",
+				cl.Attach)
+		}
+		if aggregate := fileOf(t, out, "aggregate.yaml"); strings.Contains(aggregate, "referenced-secret") {
+			t.Errorf("the Aggregate declares the referenced secret:\n%s", aggregate)
+		}
+		mentions(t, "the Release entry of db", instanceBlock(t, fileOf(t, out, "release.yaml"), "db"),
+			"admin_password", "referenced-secret", "orders-db")
+	})
+
+	t.Run("a rule without Secret", func(t *testing.T) {
+		rule := AttachRule{Type: toySecretType, Feature: "core/referenced-secret"}
+		cls, _ := attached(t, "toy", []AttachRule{rule}, read)
+		if cl := classOf(t, cls, "dbSecret"); cl.Class != ClassExisting || len(cl.Attach) != 0 {
+			t.Errorf("the secret is classed %s attaching %+v, want existing and attached nowhere", cl.Class, cl.Attach)
+		}
+	})
+}

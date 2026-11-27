@@ -5,6 +5,7 @@ package cloudimport
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -706,7 +707,7 @@ type draftGroup struct {
 }
 
 // settleUnmatched holds back each node no Component maps whose draft's name
-// the catalog holds, classes not carried each module whose source the format
+// the catalog holds (a module's, the name its located source gives), classes not carried each module whose source the format
 // does not locate, and groups the others by name and form, each group to be
 // drafted once its instances are wired; a module whose name a resource takes
 // is held back. It returns a halt where the format has no writer for a node it
@@ -718,6 +719,11 @@ func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 			continue
 		}
 		name := schemadraft.NameFor(c.in, c.f.Draft, n.Type)
+		var located ModuleSource
+		if isModule(n.Form) && c.f.Wrap != nil && c.f.Module != nil {
+			located = c.f.Module(moduleRef(n))
+			name = schemadraft.NameForModule(c.in, c.f.Draft, cmp.Or(located.TypeName, n.Type), located.Name)
+		}
 		held, holds := c.held(name)
 		switch {
 		case holds:
@@ -725,7 +731,7 @@ func (c *classifier) settleUnmatched() *aggrega.Diagnostic {
 		case isModule(n.Form) && (c.f.Wrap == nil || c.f.Module == nil), !isModule(n.Form) && c.f.Draft.Write == nil:
 			unwritable = append(unwritable, n.ID+" ("+n.Type+")")
 		case isModule(n.Form):
-			c.groupModule(n, name)
+			c.groupModule(n, name, located)
 		default:
 			c.group(n, name)
 		}
@@ -879,6 +885,11 @@ func (c *classifier) union(nodes []*Node) []*writtenProp {
 			add([]string{"name"}, raw, secret, true)
 		}
 		for _, l := range leavesWith(n.Body, c.listedScalar) {
+			if l.encoded != nil {
+				raw, secret := c.typedEncoded(l)
+				add(l.path, raw, secret, false)
+				continue
+			}
 			raw, secret := c.typedLeaf(l)
 			add(l.path, raw, secret, false)
 		}
@@ -914,6 +925,73 @@ func (c *classifier) listedScalar(v Value) bool {
 		return !slices.ContainsFunc(v.Parts, func(part Value) bool { return !c.listedScalar(part) })
 	}
 	return false
+}
+
+// typedEncoded returns the JSON a drafted property is typed from for the
+// encoded value l reads, and whether a secret feeds it: the text the value
+// encodes to where every leaf of it is a literal. Any other value is typed
+// from nothing, and the Release says why it writes none, naming the property.
+func (c *classifier) typedEncoded(l leafAt) (json.RawMessage, bool) {
+	if text, ok := encodedText(*l.encoded); ok {
+		return importer.String(text), false
+	}
+	return nil, c.secretFed(*l.encoded)
+}
+
+// encodedText returns the JSON text of p as the source encodes it, object keys
+// sorted, and false where p holds a leaf that is no literal.
+func encodedText(p Prop) (string, bool) {
+	v, ok := encodedValue(p)
+	if !ok {
+		return "", false
+	}
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	if enc.Encode(v) != nil {
+		return "", false
+	}
+	return strings.TrimSuffix(b.String(), "\n"), true
+}
+
+// encodedValue returns p as a value json encodes: json.Number, string and
+// bool for a literal, a slice for items, and a map, which json writes with
+// its keys sorted, for members.
+func encodedValue(p Prop) (any, bool) {
+	switch {
+	case p.Value != nil:
+		lit, ok := p.Value.(Literal)
+		if !ok {
+			return nil, false
+		}
+		dec := json.NewDecoder(bytes.NewReader(lit.JSON))
+		dec.UseNumber()
+		var v any
+		if dec.Decode(&v) != nil {
+			return nil, false
+		}
+		return v, true
+	case len(p.Props) > 0:
+		members := map[string]any{}
+		for _, m := range p.Props {
+			v, ok := encodedValue(m)
+			if !ok {
+				return nil, false
+			}
+			members[m.Name] = v
+		}
+		return members, true
+	case len(p.Items) > 0:
+		items := make([]any, len(p.Items))
+		for i, item := range p.Items {
+			v, ok := encodedValue(item)
+			if !ok {
+				return nil, false
+			}
+			items[i] = v
+		}
+		return items, true
+	}
+	return nil, false
 }
 
 // typedLeaf returns the JSON a drafted property is typed from for the leaf l,
@@ -1288,11 +1366,13 @@ func origin(r *Row) string {
 
 // leafAt is one leaf of a node's properties: the path it sits at and its
 // value, nil for an object or array the source writes with nothing in it; or,
-// read by leavesWith, a list read whole, its items under list.
+// read by leavesWith, a list read whole, its items under list, or a value the
+// source writes as JSON text, held whole under encoded.
 type leafAt struct {
-	path  []string
-	value Value
-	list  []Prop
+	path    []string
+	value   Value
+	list    []Prop
+	encoded *Prop
 }
 
 // leaves returns the leaves of body in its order: each member's and each
@@ -1303,7 +1383,9 @@ func leaves(body []Prop) []leafAt {
 
 // leavesWith returns the leaves of body as leaves does, but for each list
 // every value in which, at any depth, is one whole holds, which is one leaf
-// at the list's path holding its items; a nil whole reads no list whole.
+// at the list's path holding its items; a nil whole reads no list whole. With
+// whole set, the leaves are a draft's, and an Encoded value is one leaf at its
+// path, held under encoded.
 func leavesWith(body []Prop, whole func(Value) bool) []leafAt {
 	var out []leafAt
 	for _, p := range body {
@@ -1314,6 +1396,8 @@ func leavesWith(body []Prop, whole func(Value) bool) []leafAt {
 
 func leavesOf(out []leafAt, p Prop, path []string, whole func(Value) bool) []leafAt {
 	switch {
+	case p.Encoded && whole != nil && (p.Value != nil || len(p.Props) > 0 || len(p.Items) > 0):
+		return append(out, leafAt{path: path, encoded: &p})
 	case p.Value != nil:
 		return append(out, leafAt{path: path, value: p.Value})
 	case len(p.Props) > 0:

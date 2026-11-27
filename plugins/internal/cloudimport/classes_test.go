@@ -576,3 +576,65 @@ func TestEveryNodeClassesAlikeTwice(t *testing.T) {
 		t.Errorf("two runs differ:\n%v\n%v", classes(a), classes(b))
 	}
 }
+
+// encodedPolicy is an object the source writes as JSON text, its members in
+// an order JSON text sorts differently.
+func encodedPolicy() Prop {
+	return Prop{Name: "policy", Encoded: true, Props: []Prop{
+		{Name: "version", Value: text("2012")},
+		{Name: "statements", Items: []Prop{
+			{Props: []Prop{{Name: "effect", Value: text("Allow")}, {Name: "actions", Items: []Prop{
+				{Value: text("read")}, {Value: text("write")}}}}},
+		}},
+		{Name: "limit", Value: literal("10")},
+	}}
+}
+
+// TestEncodedPropWrittenAsJSONText drafts a resource writing a value as JSON
+// text, every leaf of it a literal, as one property at its path whose value is
+// that text with the object keys sorted: the Release writes the text whole.
+func TestEncodedPropWrittenAsJSONText(t *testing.T) {
+	var written []schemadraft.Resource
+	g := &Graph{Nodes: []*Node{staticSite(encodedPolicy())}}
+	_, _, release, _, diags := released(t, edgeView(), edgeFormat(&written), g)
+	if len(written) != 1 {
+		t.Fatalf("the writer is handed %d resources, want the site alone", len(written))
+	}
+	if got, want := inputNames(written[0].Inputs), []string{`name from (index .values "name")`,
+		`policy from (index .infra "overrides" "policy")`}; !slices.Equal(got, want) {
+		t.Errorf("the site's Recipe reads\n%q\nwant\n%q", got, want)
+	}
+	want := `          policy: "{\"limit\":10,\"statements\":[{\"actions\":[\"read\",\"write\"],\"effect\":\"Allow\"}],\"version\":\"2012\"}"` + "\n"
+	if block := instanceBlock(t, release, "site"); !strings.Contains(block, want) {
+		t.Errorf("the site's Release entry does not hold\n%s\n%s", want, block)
+	}
+	onlyCode(t, diags, CodeValueNotCarried, 0)
+}
+
+// TestEdgesInsideAnEncodedProp reads a reference inside a value the source
+// writes as JSON text as an edge at its full path.
+func TestEdgesInsideAnEncodedProp(t *testing.T) {
+	p := encodedPolicy()
+	p.Props[1].Items[0].Props[1].Items[1] = Prop{Value: Ref{Node: "server", Attr: []string{"host"}}}
+	got := Edges(&Graph{Nodes: []*Node{staticSite(p), pgServer()}})
+	want := []Edge{{From: "site", To: "server", Kind: EdgeRef, Path: []string{"policy", "statements", "0", "actions", "1"},
+		Attr: []string{"host"}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Edges = %+v, want %+v", got, want)
+	}
+}
+
+// TestEncodedPropHoldingAReferenceIsLeftForTheAuthor drafts a resource writing
+// JSON text built from a neighbour's value: the property is drafted with no
+// value, and value-not-carried names it.
+func TestEncodedPropHoldingAReferenceIsLeftForTheAuthor(t *testing.T) {
+	p := encodedPolicy()
+	p.Props[1].Items[0].Props[1].Items[1] = Prop{Value: Ref{Node: "server", Attr: []string{"host"}}}
+	var written []schemadraft.Resource
+	_, _, _, _, diags := released(t, edgeView(), edgeFormat(&written), &Graph{Nodes: []*Node{staticSite(p), pgServer()}})
+	warnsAbout(t, diags, CodeValueNotCarried, "site", "policy")
+	onlyCode(t, diags, CodeValueNotCarried, 1)
+	if len(written) != 1 || !slices.Contains(inputNames(written[0].Inputs), `policy from (index .infra "overrides" "policy")`) {
+		t.Errorf("the site's Recipe is handed %+v, want it to read policy from infra.overrides", written)
+	}
+}

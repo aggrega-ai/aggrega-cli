@@ -36,8 +36,8 @@ const (
 // A node is taken by the first rule of its type, matched regardless of case,
 // whose When holds of it, each predicate read as a row's is read; a predicate
 // a value set only when the source deploys leaves undecided does not hold. A
-// node the source reads and does not create is never taken, nor one a fold of
-// an ancestor's row writes. A node the rule holds for that no instance takes,
+// node the source reads and does not create is taken only by a rule with Secret
+// set, and one a fold of an ancestor's row writes is never taken. A node the rule holds for that no instance takes,
 // as Via says, is classed as any other node is.
 type AttachRule struct {
 	// Type is the vendor type of the nodes the rule takes.
@@ -69,7 +69,10 @@ type AttachRule struct {
 	// Secret makes each attachment the kit's referenced secret, attached in
 	// the Release entry of the instance taking it and declared nowhere in the
 	// Aggregate, its origin the text the node writes as a literal where Values
-	// place origin, and none, for the Release to name, otherwise.
+	// place origin, and none, for the Release to name, otherwise. It also lets
+	// the rule take a node the source reads and does not create, such as a
+	// data source reading a secret store's secret: the secret it names exists
+	// already, which a referenced secret says.
 	Secret bool
 	// Admitted, where set, gives the one feature type the Recipe named recipe
 	// admits at a credential slot, false where it admits more than one or
@@ -165,13 +168,14 @@ func attachRefused(rules []AttachRule) *aggrega.Diagnostic {
 }
 
 // attachRule returns the first attach rule of n's type whose When holds of n;
-// nil where none does, or where the source reads n and does not create it.
+// nil where none does, or where the source reads n and does not create it and
+// no rule of its type has Secret set.
 func (c *classifier) attachRule(n *Node) *AttachRule {
-	if n.Existing {
-		return nil
-	}
 	rd := reader{g: c.g}
 	for i, r := range c.f.Attach {
+		if n.Existing && !r.Secret {
+			continue
+		}
 		if r.Type != "" && strings.EqualFold(r.Type, n.Type) && rd.holds(r.When, n.Body) {
 			return &c.f.Attach[i]
 		}

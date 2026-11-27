@@ -79,6 +79,7 @@ func TestVocabularySeverities(t *testing.T) {
 		{CodeAVMModuleRecognised, aggrega.SeverityInfo},
 		{CodeModuleVersionUnpinned, aggrega.SeverityWarn},
 		{CodeComponentExists, aggrega.SeverityWarn},
+		{CodeProviderConfigurationNotCarried, aggrega.SeverityWarn},
 	}
 	spelled := map[Code]string{
 		CodeSourceRefused: "source-refused", CodeParameterFilesNotRead: "parameter-files-not-read",
@@ -89,7 +90,7 @@ func TestVocabularySeverities(t *testing.T) {
 		CodeDiscriminatorUnresolved: "discriminator-unresolved", CodeRepetitionNotExpanded: "repetition-not-expanded",
 		CodeConditionNotCarried: "condition-not-carried", CodeDeploymentScopeMerged: "deployment-scope-merged",
 		CodeAVMModuleRecognised: "avm-module-recognised", CodeModuleVersionUnpinned: "module-version-unpinned",
-		CodeComponentExists: "component-exists",
+		CodeComponentExists: "component-exists", CodeProviderConfigurationNotCarried: "provider-configuration-not-carried",
 	}
 
 	t.Run("each code has its severity", func(t *testing.T) {

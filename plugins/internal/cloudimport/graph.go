@@ -38,6 +38,12 @@ type Prop struct {
 	Props []Prop
 	// Items are an array's items, in order.
 	Items []Prop
+	// Encoded says the subtree is one value the source writes as its JSON
+	// text, as Terraform's jsonencode does: Props and Items hold it so that
+	// references and rows read inside it. A draft from the source writes it
+	// as that text, its object keys sorted, where every leaf of it is a
+	// literal, and leaves it to the author where one is not.
+	Encoded bool
 }
 
 // ModuleRef identifies the module a FormAVM or FormModule node calls.

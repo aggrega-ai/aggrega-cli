@@ -98,9 +98,7 @@ func DraftWrapped(in aggrega.ImportInput, f Format, m WrappedModule, w ModuleWri
 		id = typeName(m.Type)
 	}
 	name, category := componentName(importer.TargetNamespace(in.Settings), f, m.Type)
-	if m.Name != "" {
-		name = path.Dir(name) + "/" + importer.Slug(m.Name)
-	}
+	name = withLastSegment(name, m.Name)
 	format := in.Format
 	if format == "" {
 		format = f.Name
@@ -137,6 +135,22 @@ func DraftWrapped(in aggrega.ImportInput, f Format, m WrappedModule, w ModuleWri
 		diags = append(diags, moduleVersionUnpinned(m, id))
 	}
 	return Drafted{Name: name, Recipe: spec.name, Entities: drafts, Decision: decision, Inputs: res.Inputs}, diags
+}
+
+// NameForModule is the Component name a draft of a module takes in the import
+// in, for the format f: NameFor of typeName, its last segment name, slugged,
+// where name is not empty.
+func NameForModule(in aggrega.ImportInput, f Format, typeName, name string) string {
+	return withLastSegment(NameFor(in, f, typeName), name)
+}
+
+// withLastSegment returns the Component name component with its last segment
+// replaced by the slug of name, component itself where name is empty.
+func withLastSegment(component, name string) string {
+	if name == "" {
+		return component
+	}
+	return path.Dir(component) + "/" + importer.Slug(name)
 }
 
 // malformedModule halts on a module a draft cannot be written for: no type, no

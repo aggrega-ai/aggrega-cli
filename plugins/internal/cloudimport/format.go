@@ -82,8 +82,8 @@ type Format struct {
 	// ModuleRef the reader gives the node: the source kind and the address
 	// the Recipe Wrap writes sources it from, and the parameters that Recipe
 	// binds itself. The version the Recipe sources is the one the ModuleRef
-	// states. A module whose ModuleSource has no kind or no address is not
-	// located: its node is not carried, nothing is drafted for it, and a
+	// states. A module whose ModuleSource has no kind, or neither a URL nor
+	// an AddressOnly, is not located: its node is not carried, nothing is drafted for it, and a
 	// linked-source-not-read warning names it. Nil where Wrap is nil; a format
 	// setting Wrap and no Module halts on a module no row maps.
 	Module func(ref ModuleRef) ModuleSource
@@ -95,6 +95,20 @@ type Format struct {
 type ModuleSource struct {
 	// Kind is the Recipe's source kind, and URL the module's address.
 	Kind, URL string
+	// Subdir is the directory of the module inside the source at URL; empty
+	// where the module is its root.
+	Subdir string
+	// Name names the drafted Component's last segment, in place of the one
+	// the module node's type gives; empty keeps that one.
+	Name string
+	// TypeName is the name of the type the drafted Component is categorised
+	// and named by, in place of the module node's own type; empty keeps it.
+	TypeName string
+	// AddressOnly is the module's address as the source writes it, set where
+	// the format derives no URL from it: with URL empty, the Recipe is drafted
+	// with its url left for the author, and a linked-source-not-read warning
+	// names the address.
+	AddressOnly string
 	// Fixed are the parameters the Recipe binds itself, in order, which no
 	// Release sets: a parameter of one of these names the source sets is not
 	// carried, and is reported value-not-carried. Each Value is a single-line

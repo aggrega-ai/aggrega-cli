@@ -62,6 +62,10 @@ const (
 	// CodeModuleVersionUnpinned warns of a module-wrapping draft whose exact
 	// module version the source does not state.
 	CodeModuleVersionUnpinned = Code(schemadraft.CodeModuleVersionUnpinned)
+	// CodeProviderConfigurationNotCarried warns of a provider configuration
+	// the source writes, which the draft does not carry: its settings and its
+	// credentials are the operator's to supply where the Aggregate is built.
+	CodeProviderConfigurationNotCarried Code = "provider-configuration-not-carried"
 	// CodeComponentExists warns of a resource held back because the Component
 	// name its draft would take is taken already: the resource-schema drafting
 	// code's component-exists, raised here as a warning.
@@ -90,6 +94,7 @@ var vocabulary = []struct {
 	{CodeAVMModuleRecognised, aggrega.SeverityInfo},
 	{CodeModuleVersionUnpinned, aggrega.SeverityWarn},
 	{CodeComponentExists, aggrega.SeverityWarn},
+	{CodeProviderConfigurationNotCarried, aggrega.SeverityWarn},
 }
 
 // Report returns the diagnostic of code c with message, which says what to fix

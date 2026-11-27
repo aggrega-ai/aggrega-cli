@@ -4,6 +4,7 @@
 package cloudimport
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -16,17 +17,21 @@ import (
 )
 
 // groupModule adds n, a node of a module form no Component maps, to the group
-// of name where the format's Module locates its module, recording the source
-// it gives; where that source has no kind or no address, n is not carried.
-func (c *classifier) groupModule(n *Node, name string) {
-	ref := moduleRef(n)
-	located := c.f.Module(ref)
-	if located.Kind == "" || located.URL == "" {
-		c.unlocated(n, ref)
+// of name where the format's Module locates its module, located, recording the
+// source it gives; where that source has no kind, or neither a URL nor an
+// address, n is not carried.
+func (c *classifier) groupModule(n *Node, name string, located ModuleSource) {
+	if located.Kind == "" || located.label() == "" {
+		c.unlocated(n, moduleRef(n))
 		return
 	}
 	c.located[n.ID] = located
 	c.group(n, name)
+}
+
+// label is where the module is: its URL, or its address where it has no URL.
+func (s ModuleSource) label() string {
+	return cmp.Or(s.URL, s.AddressOnly)
 }
 
 // moduleRef is the module n calls, the empty one where its reader names none.
@@ -99,7 +104,7 @@ func (c *classifier) heldBeside(n *Node, name string, resources []*Node) {
 	for i, r := range resources {
 		ids[i] = r.ID
 	}
-	url := c.located[n.ID].URL
+	url := c.located[n.ID].label()
 	why := fmt.Sprintf("the Component %s a draft of %s takes is the one this import drafts from %s, and one "+
 		"Component takes one drafted Recipe, which cannot both declare a resource and source the module %s whole, "+
 		"so the module is neither drafted nor referenced", name, n.Type, andList(ids), url)
@@ -115,20 +120,25 @@ func (c *classifier) heldBeside(n *Node, name string, resources []*Node) {
 // module form no Component maps that take its name, once: with the format's
 // module writer, a Recipe sourcing whole the module the first node by ID
 // calls, from where the format's Module locates it, at the version that node
-// states. Each parameter a secret feeds is left out of the Recipe, and
+// states; where the format gives an address and no URL, the Recipe's url is
+// left for the author and the module writer's draft warns
+// linked-source-not-read once. Each parameter a secret feeds is left out of the Recipe, and
 // value-not-carried warns of it on each node setting it.
 func (c *classifier) draftModule(grp *draftGroup) {
 	first := grp.nodes[0]
 	located := c.located[first.ID]
 	inputs, secrets := c.moduleParameters(grp)
 	m := schemadraft.WrappedModule{
-		Type:       &schemadraft.Type{Name: first.Type, Source: first.ID},
-		SourceKind: located.Kind,
-		URL:        located.URL,
-		Version:    moduleRef(first).Version,
-		Inputs:     append(inputs, grp.injectInputs()...),
-		Fixed:      slices.Clone(located.Fixed),
-		Outputs:    slices.Clone(grp.provides),
+		Type:        &schemadraft.Type{Name: cmp.Or(located.TypeName, first.Type), Source: first.ID},
+		SourceKind:  located.Kind,
+		URL:         located.URL,
+		Subdir:      located.Subdir,
+		Name:        located.Name,
+		AddressOnly: located.AddressOnly,
+		Version:     moduleRef(first).Version,
+		Inputs:      append(inputs, grp.injectInputs()...),
+		Fixed:       slices.Clone(located.Fixed),
+		Outputs:     slices.Clone(grp.provides),
 	}
 	for _, n := range grp.nodes {
 		c.leaveOutSecrets(n, grp.name, secrets)
@@ -274,7 +284,7 @@ func (c *classifier) leaveOutSecrets(n *Node, component string, secrets []string
 		warned = append(warned, p.Name)
 		c.note(n, Report(CodeValueNotCarried, fmt.Sprintf("%s sets the parameter %s of the module %s, which a secret "+
 			"feeds and the draft never carries, so the Recipe drafted for %s does not read it: bind %s in that "+
-			"Recipe, from where the secret is kept", n.ID, p.Name, c.located[n.ID].URL, component, p.Name)))
+			"Recipe, from where the secret is kept", n.ID, p.Name, c.located[n.ID].label(), component, p.Name)))
 	}
 }
 
